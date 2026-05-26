@@ -1654,6 +1654,7 @@ mod tests {
             )),
             content_indices: DashMap::new(),
             index_in_flight: std::sync::Arc::new(dashmap::DashSet::new()),
+            worktree_recreate_in_flight: std::sync::Arc::new(dashmap::DashSet::new()),
             index_build_sem: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
             indexer_throttle: std::sync::Arc::new(crate::content_index::IndexerThrottle::default()),
             slash_mode: DashMap::new(),

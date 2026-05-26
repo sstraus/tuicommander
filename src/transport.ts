@@ -621,10 +621,13 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 		}),
 	},
 	remove_worktree: {
-		map: (args, p) => ({
-			method: "DELETE",
-			path: `/worktrees/${p("branchName")}?repoPath=${p("repoPath")}&deleteBranch=${args.deleteBranch ?? true}`,
-		}),
+		map: (args, p) => {
+			const force = args.force === true ? "&force=true" : "";
+			return {
+				method: "DELETE",
+				path: `/worktrees/${p("branchName")}?repoPath=${p("repoPath")}&deleteBranch=${args.deleteBranch ?? true}${force}`,
+			};
+		},
 	},
 	generate_worktree_name_cmd: {
 		map: (args) => ({

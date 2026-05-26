@@ -67,11 +67,30 @@ pub(super) async fn create_worktree_http(
         std::path::Path::new(&config.base_repo),
         &state.worktrees_dir,
     );
-    match crate::worktree::create_worktree_internal(
-        &worktrees_dir,
-        &config,
-        body.base_ref.as_deref(),
-    ) {
+    // Use the stale-recovery wrapper so MCP clients heal automatically when an
+    // orphaned worktree directory is sitting where the new one should land.
+    // Off-loaded onto spawn_blocking because git worktree add can take seconds.
+    let base_ref = body.base_ref.clone();
+    let config_bg = config.clone();
+    let worktrees_dir_bg = worktrees_dir.clone();
+    let result = match tokio::task::spawn_blocking(move || {
+        crate::worktree::create_worktree_with_stale_recovery(
+            &worktrees_dir_bg,
+            &config_bg,
+            base_ref.as_deref(),
+        )
+    })
+    .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("task panic: {e}")})),
+            );
+        }
+    };
+    match result {
         Ok(wt) => {
             state.invalidate_repo_caches(&body.base_repo);
             (

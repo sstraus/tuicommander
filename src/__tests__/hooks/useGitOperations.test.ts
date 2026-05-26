@@ -1272,7 +1272,9 @@ describe("useGitOperations", () => {
 
 			await gitOps.handleRemoveBranch("/repo", "feature");
 
-			expect(mockDialogs.confirmRemoveLockedWorktree).toHaveBeenCalledWith("feature");
+			// Dialog now receives the deleteBranch flag so it can warn about
+			// unmerged-commit loss when `-D` will run.
+			expect(mockDialogs.confirmRemoveLockedWorktree).toHaveBeenCalledWith("feature", true);
 		});
 
 		it("retries with force=true when user confirms force removal of locked worktree", async () => {

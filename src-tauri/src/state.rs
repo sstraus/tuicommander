@@ -950,6 +950,10 @@ pub struct AppState {
     /// Repos whose content index build is currently in-flight (shared by
     /// `ensure_index` and `rebuild_index` to prevent duplicate concurrent builds).
     pub(crate) index_in_flight: Arc<DashSet<String>>,
+    /// Stale-dir worktree recreate tasks in-flight. Key: `${base_repo}::${task_name}`.
+    /// Prevents double-spawn racing on the same path when a user triggers two
+    /// concurrent create_worktree calls before the first background recreate finishes.
+    pub(crate) worktree_recreate_in_flight: Arc<DashSet<String>>,
     /// Global semaphore limiting concurrent index builds to 1. Prevents startup
     /// pre-warm from spawning N simultaneous BM25 builds that saturate the CPU.
     pub(crate) index_build_sem: Arc<tokio::sync::Semaphore>,
@@ -1151,6 +1155,7 @@ impl AppState {
             content_indices: DashMap::new(),
             indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
             index_in_flight: Arc::new(DashSet::new()),
+            worktree_recreate_in_flight: Arc::new(DashSet::new()),
             index_build_sem: Arc::new(tokio::sync::Semaphore::new(1)),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
@@ -3102,6 +3107,7 @@ mod tests {
             content_indices: DashMap::new(),
             indexer_throttle: Arc::new(crate::content_index::IndexerThrottle::default()),
             index_in_flight: Arc::new(DashSet::new()),
+            worktree_recreate_in_flight: Arc::new(DashSet::new()),
             index_build_sem: Arc::new(tokio::sync::Semaphore::new(1)),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),

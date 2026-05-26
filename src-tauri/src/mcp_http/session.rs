@@ -574,16 +574,27 @@ pub(super) async fn create_session_with_worktree(
         branch: Some(body.branch_name),
         create_branch: true,
     };
-    let worktree =
-        match crate::worktree::create_worktree_internal(&state.worktrees_dir, &wt_config, None) {
-            Ok(wt) => wt,
-            Err(e) => {
-                return (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    Json(serde_json::json!({"error": e})),
-                );
-            }
-        };
+    let worktrees_dir = state.worktrees_dir.clone();
+    let wt_config_bg = wt_config.clone();
+    let worktree = match tokio::task::spawn_blocking(move || {
+        crate::worktree::create_worktree_with_stale_recovery(&worktrees_dir, &wt_config_bg, None)
+    })
+    .await
+    {
+        Ok(Ok(wt)) => wt,
+        Ok(Err(e)) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e})),
+            );
+        }
+        Err(e) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": format!("task panic: {e}")})),
+            );
+        }
+    };
 
     let rows = body.config.rows.unwrap_or(24);
     let cols = body.config.cols.unwrap_or(80);

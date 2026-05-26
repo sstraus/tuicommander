@@ -1430,7 +1430,11 @@ fn handle_worktree(
                 std::path::Path::new(&path),
                 &state.worktrees_dir,
             );
-            match crate::worktree::create_worktree_internal(&worktrees_dir, &config, base_ref) {
+            match crate::worktree::create_worktree_with_stale_recovery(
+                &worktrees_dir,
+                &config,
+                base_ref,
+            ) {
                 Ok(wt) => {
                     state.invalidate_repo_caches(&path);
                     let wt_path = wt.path.to_string_lossy().to_string();
@@ -3525,6 +3529,7 @@ mod tests {
             )),
             content_indices: dashmap::DashMap::new(),
             index_in_flight: std::sync::Arc::new(dashmap::DashSet::new()),
+            worktree_recreate_in_flight: std::sync::Arc::new(dashmap::DashSet::new()),
             index_build_sem: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
             indexer_throttle: std::sync::Arc::new(crate::content_index::IndexerThrottle::default()),
             slash_mode: dashmap::DashMap::new(),

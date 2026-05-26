@@ -2321,7 +2321,10 @@ mod tests {
         let home = TempDir::new().unwrap();
         let other = TempDir::new().unwrap();
         let result = validate_external_write_path(&other.path().join("file.txt"), home.path());
-        assert!(result.is_ok(), "paths outside home should be allowed for local tool");
+        assert!(
+            result.is_ok(),
+            "paths outside home should be allowed for local tool"
+        );
     }
 
     #[test]
@@ -2363,7 +2366,10 @@ mod tests {
         symlink(outside.path(), &link).unwrap();
         let target = link.join("file.txt");
         let result = validate_external_write_path(&target, home.path());
-        assert!(result.is_ok(), "symlinks should be allowed — user is the trust boundary");
+        assert!(
+            result.is_ok(),
+            "symlinks should be allowed — user is the trust boundary"
+        );
     }
 
     // --- fs_transfer_paths tests ---

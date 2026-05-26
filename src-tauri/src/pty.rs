@@ -17,8 +17,8 @@ use crate::state::{
     strip_kitty_sequences,
 };
 use crate::worktree::{
-    WorktreeConfig, WorktreeResult, create_worktree_internal, remove_worktree_internal,
-    sanitize_name,
+    STALE_DIR_PREFIX, WorktreeConfig, WorktreeResult, create_worktree_internal,
+    remove_worktree_internal, sanitize_name,
 };
 
 /// Get the platform-appropriate default shell when no override is configured.
@@ -3425,9 +3425,18 @@ pub(crate) async fn create_pty_with_worktree(
         std::path::Path::new(&worktree_config.base_repo),
         &state.worktrees_dir,
     );
-    let worktree = match create_worktree_internal(&worktrees_dir, &worktree_config, None) {
+    // Run the blocking git worktree calls off the async executor so a slow
+    // checkout (LFS, large repo) doesn't stall other Tauri commands.
+    let first_create = {
+        let d = worktrees_dir.clone();
+        let c = worktree_config.clone();
+        tokio::task::spawn_blocking(move || create_worktree_internal(&d, &c, None))
+            .await
+            .map_err(|e| format!("create_worktree task panic: {e}"))?
+    };
+    let worktree = match first_create {
         Ok(wt) => wt,
-        Err(ref e) if e.starts_with("STALE_DIR:") => {
+        Err(ref e) if e.starts_with(STALE_DIR_PREFIX) => {
             // Stale directory from a prior worktree on a different branch. Unlike the
             // Tauri command (which returns `pending` and recreates in the background),
             // PTY creation is synchronous — clean up inline and retry once.
@@ -3441,32 +3450,58 @@ pub(crate) async fn create_pty_with_worktree(
             // Try `git worktree remove --force` first (for entries git still tracks)
             let base_repo = std::path::PathBuf::from(&worktree_config.base_repo);
             let stale_for_blocking = stale_path.clone();
-            let git_ok = tokio::task::spawn_blocking(move || {
-                crate::git_cli::git_cmd(&base_repo)
+            let _ = tokio::task::spawn_blocking(move || {
+                let _ = crate::git_cli::git_cmd(&base_repo)
                     .args([
                         "worktree",
                         "remove",
                         "--force",
                         &stale_for_blocking.to_string_lossy(),
                     ])
-                    .run()
-                    .is_ok()
+                    .run();
             })
-            .await
-            .unwrap_or(false);
+            .await;
 
-            // Fall back to a plain rm -rf when git didn't know about the dir
-            if !git_ok
-                && let Err(err) = tokio::fs::remove_dir_all(&stale_path).await
-                && stale_path.exists()
-            {
-                return Err(format!(
-                    "STALE_DIR cleanup failed for '{}': {err}",
-                    stale_path.display()
-                ));
+            // Verify the dir is gone before retrying; if not, fall back to rm -rf
+            // regardless of whether git claimed success — git can remove its
+            // metadata while leaving the directory on disk (file locks etc.).
+            let stale_check = stale_path.clone();
+            let still_exists = tokio::task::spawn_blocking(move || stale_check.exists())
+                .await
+                .unwrap_or(false);
+            if still_exists {
+                if let Err(err) = tokio::fs::remove_dir_all(&stale_path).await {
+                    let p = stale_path.clone();
+                    let blocking_err =
+                        tokio::task::spawn_blocking(move || std::fs::remove_dir_all(&p))
+                            .await
+                            .ok()
+                            .and_then(|r| r.err());
+                    if let Some(blocking_err) = blocking_err {
+                        return Err(format!(
+                            "stale dir cleanup failed for '{}': {err}; retry: {blocking_err}",
+                            stale_path.display()
+                        ));
+                    }
+                }
+                // Re-verify; abort with a clear error if cleanup still failed.
+                let p = stale_path.clone();
+                let still_there = tokio::task::spawn_blocking(move || p.exists())
+                    .await
+                    .unwrap_or(false);
+                if still_there {
+                    return Err(format!(
+                        "stale dir '{}' still present after cleanup",
+                        stale_path.display()
+                    ));
+                }
             }
 
-            create_worktree_internal(&worktrees_dir, &worktree_config, None)?
+            let d = worktrees_dir.clone();
+            let c = worktree_config.clone();
+            tokio::task::spawn_blocking(move || create_worktree_internal(&d, &c, None))
+                .await
+                .map_err(|e| format!("create_worktree retry task panic: {e}"))??
         }
         Err(e) => return Err(e),
     };

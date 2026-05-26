@@ -588,6 +588,7 @@ const App: Component = () => {
 			setCurrentBranch: gitOps.setCurrentBranch,
 			handleBranchSelect: gitOps.handleBranchSelect,
 			refreshAllBranchStats: gitOps.refreshAllBranchStats,
+			handleWorktreeCreateFailed: gitOps.handleWorktreeCreateFailed,
 			getDefaultFontSize,
 			stores: {
 				hydrate: async () => {

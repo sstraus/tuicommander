@@ -41,6 +41,7 @@ export interface AppInitDeps {
 	setCurrentBranch: (branch: string | null) => void;
 	handleBranchSelect: (repoPath: string, branchName: string) => Promise<void>;
 	refreshAllBranchStats: () => Promise<void> | void;
+	handleWorktreeCreateFailed: (payload: { repoPath: string; branch: string; reason: string }) => void;
 	getDefaultFontSize: () => number;
 	stores: {
 		hydrate: () => Promise<void>;
@@ -262,6 +263,12 @@ export async function initApp(deps: AppInitDeps) {
 			}
 		}, delay);
 	}).catch((err) => appLogger.error("app", "Failed to register repo-changed listener", err));
+
+	// Worktree background recreation failed — clear the pending placeholder,
+	// release the per-repo create lock, and tell the user what went wrong.
+	listen<{ repoPath: string; branch: string; reason: string }>("worktree-create-failed", (event) => {
+		deps.handleWorktreeCreateFailed(event.payload);
+	}).catch((err) => appLogger.error("app", "Failed to register worktree-create-failed listener", err));
 
 	// Listen for MCP toast notifications from the Rust backend
 	listen<{ title: string; message: string | null; level: string; sound: boolean | null }>("mcp-toast", (event) => {

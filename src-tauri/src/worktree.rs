@@ -144,16 +144,21 @@ pub(crate) fn create_worktree_internal(
             && actual.as_str() != expected.as_str()
         {
             return Err(format!(
-                "STALE_DIR: directory '{}' is checked out on branch '{}', not '{}'",
+                "{STALE_DIR_PREFIX} directory '{}' is checked out on branch '{}', not '{}'",
                 worktree_path.display(),
                 actual,
                 expected,
             ));
         }
+        // Fall back to config.branch when actual_branch is None (detached HEAD):
+        // the worktree was created for `config.branch`, the detach is transient, and
+        // the JS layer's `BranchState` keys on `result.branch: string` — returning
+        // `null` would corrupt the store. The branch field reflects logical
+        // ownership, not the live HEAD state.
         return Ok(WorktreeInfo {
             name: worktree_name,
             path: worktree_path,
-            branch: actual_branch,
+            branch: actual_branch.or_else(|| config.branch.clone()),
             base_repo: PathBuf::from(&config.base_repo),
         });
     }
@@ -198,20 +203,25 @@ pub(crate) fn create_worktree_internal(
             if stderr.contains("already exists") || stderr.contains("already checked out") =>
         {
             let actual_branch = crate::git::read_branch_from_head(&worktree_path);
+            // Mirror the earlier idempotent-path STALE_DIR check: only treat a
+            // KNOWN-mismatched branch as stale. Detached HEAD (None) is preserved
+            // as transient state. Use the same STALE_DIR_PREFIX so the recovery
+            // path in `create_worktree` (background cleanup + retry) handles it.
             if let Some(ref expected) = config.branch
-                && actual_branch.as_deref() != Some(expected.as_str())
+                && let Some(ref actual) = actual_branch
+                && actual.as_str() != expected.as_str()
             {
                 return Err(format!(
-                    "Directory '{}' already exists and is checked out on branch '{}', not '{}'",
+                    "{STALE_DIR_PREFIX} directory '{}' already exists and is checked out on branch '{}', not '{}'",
                     worktree_path.display(),
-                    actual_branch.as_deref().unwrap_or("<detached>"),
+                    actual,
                     expected,
                 ));
             }
             return Ok(WorktreeInfo {
                 name: worktree_name,
                 path: worktree_path,
-                branch: actual_branch,
+                branch: actual_branch.or_else(|| config.branch.clone()),
                 base_repo: PathBuf::from(&config.base_repo),
             });
         }
@@ -242,6 +252,73 @@ pub(crate) const LOCKED_WORKTREE_PREFIX: &str = "worktree_locked:";
 /// The JS layer treats this as a non-fatal condition and does NOT remove the branch
 /// from the store (to avoid resurrection on the next refresh).
 pub(crate) const MAIN_WORKTREE_PREFIX: &str = "worktree_is_main:";
+
+/// Error prefix returned when a worktree directory exists but is checked out on a
+/// different branch than requested. The Tauri command's stale-recovery path matches
+/// this prefix to trigger background cleanup + recreate. Centralised here so callers
+/// don't drift on the literal string.
+pub(crate) const STALE_DIR_PREFIX: &str = "STALE_DIR:";
+
+/// Force-remove a stale worktree directory.
+///
+/// Runs `git worktree remove --force` (cleans the registry entry) and then verifies
+/// the directory is gone, falling back to `fs::remove_dir_all` (async then blocking
+/// to handle file-locks on Windows / AV scanners). Returns `Ok(())` only when the
+/// path is verified absent. Synchronous wrapper used by callers that can't spawn a
+/// background task (PTY creation, MCP request handlers).
+pub(crate) fn cleanup_stale_worktree_dir(base_repo: &str, stale_path: &Path) -> Result<(), String> {
+    let _ = git_cmd(&PathBuf::from(base_repo))
+        .args([
+            "worktree",
+            "remove",
+            "--force",
+            &stale_path.to_string_lossy(),
+        ])
+        .run();
+
+    if stale_path.exists()
+        && let Err(e) = std::fs::remove_dir_all(stale_path)
+    {
+        return Err(format!(
+            "stale dir cleanup failed for '{}': {e}",
+            stale_path.display()
+        ));
+    }
+
+    if stale_path.exists() {
+        return Err(format!(
+            "stale dir '{}' still present after cleanup",
+            stale_path.display()
+        ));
+    }
+    Ok(())
+}
+
+/// Synchronous create-with-STALE_DIR-recovery for non-Tauri callers (MCP HTTP routes,
+/// `create_session_with_worktree`, etc.). Tries `create_worktree_internal`; on a
+/// STALE_DIR error, runs `cleanup_stale_worktree_dir` and retries once. The retry's
+/// result is returned as-is — a second STALE_DIR (e.g. TOCTOU with another caller)
+/// surfaces to the caller rather than looping.
+pub(crate) fn create_worktree_with_stale_recovery(
+    worktrees_dir: &Path,
+    config: &WorktreeConfig,
+    base_ref: Option<&str>,
+) -> Result<WorktreeInfo, String> {
+    match create_worktree_internal(worktrees_dir, config, base_ref) {
+        Ok(wt) => Ok(wt),
+        Err(ref e) if e.starts_with(STALE_DIR_PREFIX) => {
+            let stale_path = worktrees_dir.join(sanitize_name(&config.task_name));
+            tracing::warn!(
+                source = "worktree",
+                stale = %stale_path.display(),
+                "create_worktree_with_stale_recovery: STALE_DIR detected, cleaning up + retrying"
+            );
+            cleanup_stale_worktree_dir(&config.base_repo, &stale_path)?;
+            create_worktree_internal(worktrees_dir, config, base_ref)
+        }
+        Err(e) => Err(e),
+    }
+}
 
 pub(crate) fn remove_worktree_internal(worktree: &WorktreeInfo, force: bool) -> Result<(), String> {
     let wt_path_str = worktree.path.to_string_lossy().to_string();
@@ -481,50 +558,60 @@ pub(crate) async fn create_worktree(
                 "base_repo": worktree.base_repo.to_string_lossy(),
             }))
         }
-        Err(ref e) if e.starts_with("STALE_DIR:") => {
-            // Stale directory: return immediately with pending status, clean up + recreate in background
-            let stale_path = worktrees_dir.join(sanitize_name(&config.task_name));
+        Err(ref e) if e.starts_with(STALE_DIR_PREFIX) => {
+            // Stale directory: return immediately with pending status, clean up + recreate in background.
             let worktree_name = sanitize_name(&config.task_name);
+            let stale_path = worktrees_dir.join(&worktree_name);
+            let in_flight_key = format!("{}::{worktree_name}", config.base_repo);
+
+            // Re-entrancy guard: if another background task is already recreating
+            // this path, don't spawn a second one — that would race on git worktree
+            // remove + recreate against the same directory.
+            if !state
+                .worktree_recreate_in_flight
+                .insert(in_flight_key.clone())
+            {
+                tracing::info!(
+                    source = "worktree",
+                    key = %in_flight_key,
+                    "create_worktree: recreate already in-flight, returning pending without re-spawning"
+                );
+                return Ok(serde_json::json!({
+                    "status": "pending",
+                    "name": worktree_name,
+                    "path": stale_path.to_string_lossy(),
+                    "branch": config.branch.clone().unwrap_or_else(|| worktree_name.clone()),
+                    "base_repo": config.base_repo,
+                }));
+            }
+
             let state_arc = Arc::clone(&*state);
             let config_bg = config.clone();
             let worktrees_dir_bg = worktrees_dir.clone();
             let base_ref_bg = base_ref.clone();
+            let stale_path_bg = stale_path.clone();
+            let in_flight_key_bg = in_flight_key.clone();
+            let branch_for_err = config
+                .branch
+                .clone()
+                .unwrap_or_else(|| worktree_name.clone());
 
             tokio::spawn(async move {
-                // Try git worktree remove first (for registered worktrees)
-                let git_ok = tokio::task::spawn_blocking({
-                    let p = stale_path.clone();
-                    let r = PathBuf::from(&config_bg.base_repo);
-                    move || {
-                        git_cmd(&r)
-                            .args(["worktree", "remove", "--force", &p.to_string_lossy()])
-                            .run()
-                            .is_ok()
+                // Ensure the in-flight key is removed on every exit path.
+                struct Guard(Arc<crate::state::AppState>, String);
+                impl Drop for Guard {
+                    fn drop(&mut self) {
+                        self.0.worktree_recreate_in_flight.remove(&self.1);
                     }
-                })
-                .await
-                .unwrap_or(false);
-
-                if !git_ok && let Err(e) = tokio::fs::remove_dir_all(&stale_path).await {
-                    tracing::error!("create_worktree: failed to remove stale dir: {e}");
-                    return;
                 }
+                let _guard = Guard(Arc::clone(&state_arc), in_flight_key_bg);
 
-                // Recreate worktree
-                let result = tokio::task::spawn_blocking({
-                    let d = worktrees_dir_bg.clone();
-                    let c = config_bg.clone();
-                    let r = base_ref_bg.clone();
-                    move || create_worktree_internal(&d, &c, r.as_deref())
-                })
-                .await;
-
-                // Always emit repo-changed (success OR failure) so the JS layer
-                // clears the isPreparing placeholder. Without it on the failure
-                // arms, the branch stays dimmed and non-clickable forever.
                 let emit_repo_changed = || {
                     state_arc.invalidate_repo_caches(&config_bg.base_repo);
-                    if let Some(ref handle) = *state_arc.app_handle.read() {
+                    // Clone the handle out of the lock so we don't hold the read
+                    // guard across the (potentially blocking) emit call.
+                    let handle = state_arc.app_handle.read().clone();
+                    if let Some(handle) = handle {
                         use tauri::Emitter as _;
                         let _ = handle.emit(
                             "repo-changed",
@@ -535,25 +622,109 @@ pub(crate) async fn create_worktree(
                     }
                 };
 
+                let emit_creation_failed = |reason: String| {
+                    let handle = state_arc.app_handle.read().clone();
+                    if let Some(handle) = handle {
+                        use tauri::Emitter as _;
+                        let _ = handle.emit(
+                            "worktree-create-failed",
+                            serde_json::json!({
+                                "repoPath": config_bg.base_repo.clone(),
+                                "branch": branch_for_err.clone(),
+                                "reason": reason,
+                            }),
+                        );
+                    }
+                };
+
+                // Step 1: try `git worktree remove --force` for registered worktrees.
+                let _ = tokio::task::spawn_blocking({
+                    let p = stale_path_bg.clone();
+                    let r = PathBuf::from(&config_bg.base_repo);
+                    move || {
+                        let _ = git_cmd(&r)
+                            .args(["worktree", "remove", "--force", &p.to_string_lossy()])
+                            .run();
+                    }
+                })
+                .await;
+
+                // Step 2: if the directory still exists (git removed metadata only,
+                // or never knew about this path), force-remove the filesystem entry.
+                let stale_path_check = stale_path_bg.clone();
+                let still_exists = tokio::task::spawn_blocking(move || stale_path_check.exists())
+                    .await
+                    .unwrap_or(false);
+                if still_exists {
+                    if let Err(e) = tokio::fs::remove_dir_all(&stale_path_bg).await {
+                        // Try one more time via blocking std::fs in case the async
+                        // path failed due to file locks (Windows, AV scanners).
+                        let p = stale_path_bg.clone();
+                        let blocking_res =
+                            tokio::task::spawn_blocking(move || std::fs::remove_dir_all(&p))
+                                .await
+                                .ok()
+                                .and_then(|r| r.err());
+                        if let Some(blocking_err) = blocking_res {
+                            let reason =
+                                format!("stale dir cleanup failed: {e}; retry: {blocking_err}");
+                            tracing::error!(source = "worktree", reason = %reason);
+                            emit_creation_failed(reason);
+                            emit_repo_changed();
+                            return;
+                        }
+                    }
+                    // Re-verify after cleanup attempts; if still present, abort.
+                    let p = stale_path_bg.clone();
+                    let still_there = tokio::task::spawn_blocking(move || p.exists())
+                        .await
+                        .unwrap_or(false);
+                    if still_there {
+                        let reason = format!(
+                            "stale dir '{}' still present after cleanup",
+                            stale_path_bg.display()
+                        );
+                        tracing::error!(source = "worktree", reason = %reason);
+                        emit_creation_failed(reason);
+                        emit_repo_changed();
+                        return;
+                    }
+                }
+
+                // Step 3: recreate the worktree.
+                let result = tokio::task::spawn_blocking({
+                    let d = worktrees_dir_bg.clone();
+                    let c = config_bg.clone();
+                    let r = base_ref_bg.clone();
+                    move || create_worktree_internal(&d, &c, r.as_deref())
+                })
+                .await;
+
                 match result {
                     Ok(Ok(_)) => emit_repo_changed(),
                     Ok(Err(e)) => {
-                        tracing::error!("create_worktree background: recreation failed: {e}");
+                        let reason = format!("recreation failed: {e}");
+                        tracing::error!(source = "worktree", reason = %reason);
+                        emit_creation_failed(reason);
                         emit_repo_changed();
                     }
                     Err(e) => {
-                        tracing::error!("create_worktree background: task panicked: {e}");
+                        let reason = format!("background task panicked: {e}");
+                        tracing::error!(source = "worktree", reason = %reason);
+                        emit_creation_failed(reason);
                         emit_repo_changed();
                     }
                 }
             });
 
-            // Return pending immediately — JS will show placeholder until repo-changed fires
+            // Return pending immediately — JS will show placeholder until
+            // either repo-changed (success/cleared) or worktree-create-failed
+            // (error toast) fires.
             Ok(serde_json::json!({
                 "status": "pending",
                 "name": worktree_name,
-                "path": worktrees_dir.join(sanitize_name(&config.task_name)).to_string_lossy(),
-                "branch": config.branch,
+                "path": stale_path.to_string_lossy(),
+                "branch": config.branch.clone().unwrap_or_else(|| worktree_name.clone()),
                 "base_repo": config.base_repo,
             }))
         }
@@ -644,8 +815,10 @@ pub(crate) fn remove_worktree_by_branch(
     // confirmation dialog already warned the user) do we use `-D`.
     if delete_branch {
         let flag = if force { "-D" } else { "-d" };
+        // `--` separates flags from positional args so a branch name beginning
+        // with `-` (e.g. `-D`, `--force`) cannot be misparsed as a git option.
         match git_cmd(&worktree.base_repo)
-            .args(["branch", flag, branch_name])
+            .args(["branch", flag, "--", branch_name])
             .run()
         {
             Ok(_) => tracing::info!(
@@ -789,7 +962,7 @@ pub(crate) fn delete_local_branch_impl(
                     )
                 })?;
             git_cmd(&base_repo)
-                .args(["branch", "-d", branch_name])
+                .args(["branch", "-d", "--", branch_name])
                 .run()
                 .map_err(|e| format!("git branch -d {branch_name} failed: {e}"))?;
         }
@@ -800,7 +973,7 @@ pub(crate) fn delete_local_branch_impl(
         (None, _) => {
             // Bare branch — no worktree to consider
             git_cmd(&base_repo)
-                .args(["branch", "-d", branch_name])
+                .args(["branch", "-d", "--", branch_name])
                 .run()
                 .map_err(|e| format!("git branch -d {branch_name} failed: {e}"))?;
         }
@@ -1751,9 +1924,13 @@ mod tests {
         );
         let returned = result.unwrap();
         assert_eq!(returned.path, wt.path);
-        assert!(
-            returned.branch.is_none(),
-            "branch should reflect detached state (None), got {:?}",
+        // Detached HEAD is NOT stale; branch field falls back to the logical
+        // owner (config.branch) so the JS layer's `string`-typed contract holds
+        // even when the worktree's HEAD is transiently detached.
+        assert_eq!(
+            returned.branch,
+            Some("feature/x".to_string()),
+            "branch should fall back to config.branch on detached HEAD, got {:?}",
             returned.branch
         );
     }
