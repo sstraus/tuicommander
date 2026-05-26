@@ -2,6 +2,7 @@ import { type Component, createEffect, createMemo, createSignal, For, Show } fro
 import { t } from "../../i18n";
 import { togglePanel } from "../../panelRouter";
 import { githubStore } from "../../stores/github";
+import { remoteConnectionsStore } from "../../stores/remoteConnections";
 import type { RepositoryState } from "../../stores/repositories";
 import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
@@ -9,7 +10,7 @@ import { tunnelPanelStore } from "../../stores/tunnelPanel";
 import { tunnelsStore } from "../../stores/tunnels";
 import { uiStore } from "../../stores/ui";
 import { getRepoColor } from "../../utils/repoColor";
-import type { ContextMenuItem } from "../ContextMenu";
+import { ContextMenu, type ContextMenuItem, createContextMenu } from "../ContextMenu";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { PromptDialog } from "../PromptDialog";
 import { ColorPickerDialog } from "../shared/ColorPickerDialog";
@@ -33,6 +34,7 @@ export interface SidebarProps {
 	onCreateWorktreeFromBranch?: (repoPath: string, branchName: string) => void;
 	onMergeAndArchive?: (repoPath: string, branchName: string) => void;
 	onAddRepo: () => void;
+	onAddRemoteRepo?: (connectionId: string) => void;
 	onRepoSettings: (repoPath: string) => void;
 	onRemoveRepo: (repoPath: string) => void;
 	onOpenSettings: () => void;
@@ -59,6 +61,37 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 	const groupedLayout = createMemo(() => repositoriesStore.getGroupedLayout());
 
 	const drag = useSidebarDragDrop();
+
+	// Add-repo context menu for local vs remote
+	const addRepoMenu = createContextMenu();
+
+	const connectedRemotes = createMemo(() => {
+		const all = remoteConnectionsStore.getConnections();
+		return Object.values(all).filter((c) => c.status === "connected");
+	});
+
+	const handleAddRepoClick = (e: MouseEvent) => {
+		const remotes = connectedRemotes();
+		if (remotes.length === 0 || !props.onAddRemoteRepo) {
+			props.onAddRepo();
+			return;
+		}
+		addRepoMenu.open(e);
+	};
+
+	const addRepoMenuItems = createMemo((): ContextMenuItem[] => {
+		const items: ContextMenuItem[] = [
+			{ label: t("sidebar.localRepository", "Local Repository"), action: () => props.onAddRepo() },
+		];
+		for (const conn of connectedRemotes()) {
+			const id = conn.connection.id;
+			items.push({
+				label: conn.connection.name,
+				action: () => props.onAddRemoteRepo?.(id),
+			});
+		}
+		return items;
+	});
 
 	// PR detail popover state
 	const [prDetailTarget, setPrDetailTarget] = createSignal<{ repoPath: string; branch: string } | null>(null);
@@ -275,7 +308,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 						<Show when={repos().length === 0}>
 							<div class={s.empty}>
 								<p>{t("sidebar.noRepositories", "No repositories")}</p>
-								<button onClick={props.onAddRepo}>{t("sidebar.addRepository", "Add Repository")}</button>
+								<button onClick={handleAddRepoClick}>{t("sidebar.addRepository", "Add Repository")}</button>
 							</div>
 						</Show>
 					</div>
@@ -425,7 +458,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
 			{/* Footer */}
 			<div class={s.footer}>
-				<button class={s.addRepo} onClick={props.onAddRepo} title={t("sidebar.addRepository", "Add Repository")}>
+				<button class={s.addRepo} onClick={handleAddRepoClick} title={t("sidebar.addRepository", "Add Repository")}>
 					<svg class={s.addRepoIcon} width="14" height="14" viewBox="0 0 16 16" fill="none">
 						<path
 							d="M1.5 2A1.5 1.5 0 0 1 3 .5h3.379a1.5 1.5 0 0 1 1.06.44l1.122 1.12H13A1.5 1.5 0 0 1 14.5 3.5v9a1.5 1.5 0 0 1-1.5 1.5H3A1.5 1.5 0 0 1 1.5 12.5V2Z"
@@ -558,6 +591,15 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 
 			{/* Drag handle for resizing */}
 			<div class={s.resizeHandle} onMouseDown={handleResizeStart} />
+
+			{/* Add repo context menu (local vs remote) */}
+			<ContextMenu
+				items={addRepoMenuItems()}
+				x={addRepoMenu.position().x}
+				y={addRepoMenu.position().y}
+				visible={addRepoMenu.visible()}
+				onClose={addRepoMenu.close}
+			/>
 		</aside>
 	);
 };

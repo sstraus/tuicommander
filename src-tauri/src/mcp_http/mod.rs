@@ -982,6 +982,7 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
 
     let public_routes = Router::new()
         .route("/health", get(session::health))
+        .layer(cors.clone())
         .with_state(state.clone());
 
     let routes = Router::new()

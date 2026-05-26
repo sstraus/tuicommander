@@ -1828,6 +1828,10 @@ pub async fn run_headless(port: u16) -> anyhow::Result<()> {
 /// - Binds TCP directly without spawning an IPC socket.
 #[cfg(not(feature = "desktop"))]
 pub async fn run_remote(port: u16) -> anyhow::Result<()> {
+    rustls::crypto::ring::default_provider()
+        .install_default()
+        .map_err(|_| anyhow::anyhow!("Failed to install rustls CryptoProvider"))?;
+
     let log_buffer = Arc::new(parking_lot::Mutex::new(app_logger::LogRingBuffer::new(
         app_logger::LOG_RING_CAPACITY,
     )));

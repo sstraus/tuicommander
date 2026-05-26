@@ -2415,6 +2415,7 @@ const App: Component = () => {
 					creatingWorktreeRepos={gitOps.creatingWorktreeRepos()}
 					removingBranches={gitOps.removingBranches()}
 					onAddRepo={gitOps.handleAddRepo}
+					onAddRemoteRepo={gitOps.handleAddRemoteRepo}
 					onRepoSettings={(repoPath) =>
 						gitOps.handleRepoSettings(repoPath, (ctx) => {
 							setSettingsContext(ctx);
