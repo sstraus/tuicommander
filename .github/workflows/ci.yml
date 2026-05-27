@@ -11,6 +11,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  socket:
+    name: Socket Security
+    runs-on: ubuntu-22.04
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: SocketDev/socket-security-action@v1
+        with:
+          enable_npm: true
+          enable_cargo: true
+
   frontend:
     name: Frontend (typecheck + tests)
     runs-on: ubuntu-22.04
