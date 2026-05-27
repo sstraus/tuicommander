@@ -4,6 +4,8 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use std::sync::Arc;
+#[cfg(feature = "desktop")]
+use tauri::Emitter;
 
 use super::types::*;
 use super::{err_500, json_result, validate_repo_path};
@@ -99,15 +101,59 @@ pub(super) async fn create_worktree_http(
     match result {
         Ok(wt) => {
             state.invalidate_repo_caches(&body.base_repo);
-            (
-                StatusCode::CREATED,
-                Json(serde_json::json!({
-                    "name": wt.name,
-                    "path": wt.path.to_string_lossy(),
-                    "branch": wt.branch,
-                    "base_repo": wt.base_repo.to_string_lossy(),
-                })),
-            )
+            let wt_path = wt.path.to_string_lossy().to_string();
+            let branch_name = wt.branch.clone().unwrap_or_default();
+            let _ = state
+                .event_bus
+                .send(crate::state::AppEvent::WorktreeCreated {
+                    repo_path: body.base_repo.clone(),
+                    branch: branch_name.clone(),
+                    worktree_path: wt_path.clone(),
+                });
+            #[cfg(feature = "desktop")]
+            if let Some(handle) = state.app_handle.read().as_ref() {
+                let _ = handle.emit(
+                    "worktree-created",
+                    serde_json::json!({
+                        "repo_path": &body.base_repo,
+                        "branch": &branch_name,
+                        "worktree_path": &wt_path,
+                    }),
+                );
+            }
+            let mut response = serde_json::json!({
+                "name": wt.name,
+                "path": &wt_path,
+                "branch": wt.branch,
+                "base_repo": wt.base_repo.to_string_lossy(),
+            });
+            let repo_for_script = body.base_repo.clone();
+            let cwd_for_script = wt_path.clone();
+            if let Some(script) = tokio::task::spawn_blocking(move || {
+                crate::config::resolve_effective_setup_script(&repo_for_script)
+            })
+            .await
+            .ok()
+            .flatten()
+            {
+                match tokio::task::spawn_blocking(move || {
+                    crate::worktree::run_setup_script(script, cwd_for_script)
+                })
+                .await
+                {
+                    Ok(Ok(result)) => {
+                        response["setup_script"] = result;
+                    }
+                    Ok(Err(e)) => {
+                        response["setup_script_error"] = serde_json::json!(e);
+                    }
+                    Err(e) => {
+                        response["setup_script_error"] =
+                            serde_json::json!(format!("task panic: {e}"));
+                    }
+                }
+            }
+            (StatusCode::CREATED, Json(response))
         }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,

@@ -1372,7 +1372,7 @@ fn create_session_in_dir(state: &Arc<AppState>, cwd: &str) -> Result<String, Str
         })
 }
 
-fn handle_worktree(
+async fn handle_worktree(
     state: &Arc<AppState>,
     args: &serde_json::Value,
     is_claude_code: bool,
@@ -1404,7 +1404,7 @@ fn handle_worktree(
                 return e;
             }
             let branch = args["branch"].as_str().map(|s| s.to_string());
-            let base_ref = args["base_ref"].as_str();
+            let base_ref = args["base_ref"].as_str().map(|s| s.to_string());
 
             // Generate a branch name if not specified
             let branch_name = branch.unwrap_or_else(|| {
@@ -1430,12 +1430,18 @@ fn handle_worktree(
                 std::path::Path::new(&path),
                 &state.worktrees_dir,
             );
-            match crate::worktree::create_worktree_with_stale_recovery(
-                &worktrees_dir,
-                &config,
-                base_ref,
-            ) {
-                Ok(wt) => {
+            let config_bg = config.clone();
+            let worktrees_dir_bg = worktrees_dir.clone();
+            let wt_result = tokio::task::spawn_blocking(move || {
+                crate::worktree::create_worktree_with_stale_recovery(
+                    &worktrees_dir_bg,
+                    &config_bg,
+                    base_ref.as_deref(),
+                )
+            })
+            .await;
+            match wt_result {
+                Ok(Ok(wt)) => {
                     state.invalidate_repo_caches(&path);
                     let wt_path = wt.path.to_string_lossy().to_string();
                     let branch_name = wt.branch.clone().unwrap_or_default();
@@ -1473,6 +1479,33 @@ fn handle_worktree(
                             }
                         }
                     }
+                    let repo_path_for_script = path.clone();
+                    let wt_path_for_script = wt_path.clone();
+                    if let Some(script) = tokio::task::spawn_blocking(move || {
+                        crate::config::resolve_effective_setup_script(&repo_path_for_script)
+                    })
+                    .await
+                    .ok()
+                    .flatten()
+                    {
+                        let cwd = wt_path_for_script;
+                        match tokio::task::spawn_blocking(move || {
+                            crate::worktree::run_setup_script(script, cwd)
+                        })
+                        .await
+                        {
+                            Ok(Ok(result)) => {
+                                response["setup_script"] = result;
+                            }
+                            Ok(Err(e)) => {
+                                response["setup_script_error"] = serde_json::json!(e);
+                            }
+                            Err(e) => {
+                                response["setup_script_error"] =
+                                    serde_json::json!(format!("task panic: {e}"));
+                            }
+                        }
+                    }
                     // Add structured hint for Claude Code clients to spawn a subagent in the worktree
                     if is_claude_code {
                         // Sanitize branch name to prevent prompt injection via backticks/newlines
@@ -1489,7 +1522,8 @@ fn handle_worktree(
                     }
                     response
                 }
-                Err(e) => serde_json::json!({"error": e}),
+                Ok(Err(e)) => serde_json::json!({"error": e}),
+                Err(e) => serde_json::json!({"error": format!("task panic: {e}")}),
             }
         }
         "remove" => {
@@ -3094,9 +3128,9 @@ async fn handle_repo(
         "active" => handle_workspace(state, &serde_json::json!({"action": "active"})),
         "prs" => handle_github(state, &remap_action(args, "prs")).await,
         "status" => handle_github(state, &remap_action(args, "status")).await,
-        "worktree_list" => handle_worktree(state, &remap_action(args, "list"), is_claude_code),
-        "worktree_create" => handle_worktree(state, &remap_action(args, "create"), is_claude_code),
-        "worktree_remove" => handle_worktree(state, &remap_action(args, "remove"), is_claude_code),
+        "worktree_list" => handle_worktree(state, &remap_action(args, "list"), is_claude_code).await,
+        "worktree_create" => handle_worktree(state, &remap_action(args, "create"), is_claude_code).await,
+        "worktree_remove" => handle_worktree(state, &remap_action(args, "remove"), is_claude_code).await,
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'repo'. Available: {}", other, REPO_ACTIONS
         )}),

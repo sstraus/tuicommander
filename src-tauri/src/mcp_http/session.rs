@@ -574,7 +574,10 @@ pub(super) async fn create_session_with_worktree(
         branch: Some(body.branch_name),
         create_branch: true,
     };
-    let worktrees_dir = state.worktrees_dir.clone();
+    let worktrees_dir = crate::worktree::resolve_worktree_dir_for_repo(
+        std::path::Path::new(&wt_config.base_repo),
+        &state.worktrees_dir,
+    );
     let wt_config_bg = wt_config.clone();
     let worktree = match tokio::task::spawn_blocking(move || {
         crate::worktree::create_worktree_with_stale_recovery(&worktrees_dir, &wt_config_bg, None)
@@ -596,6 +599,30 @@ pub(super) async fn create_session_with_worktree(
         }
     };
 
+    let base_repo = wt_config.base_repo.clone();
+    state.invalidate_repo_caches(&base_repo);
+    let worktree_path_str = worktree.path.to_string_lossy().to_string();
+    let worktree_branch = worktree.branch.clone();
+    let branch_name = worktree_branch.clone().unwrap_or_default();
+    let _ = state
+        .event_bus
+        .send(crate::state::AppEvent::WorktreeCreated {
+            repo_path: base_repo.clone(),
+            branch: branch_name.clone(),
+            worktree_path: worktree_path_str.clone(),
+        });
+    #[cfg(feature = "desktop")]
+    if let Some(handle) = state.app_handle.read().as_ref() {
+        let _ = handle.emit(
+            "worktree-created",
+            serde_json::json!({
+                "repo_path": &base_repo,
+                "branch": &branch_name,
+                "worktree_path": &worktree_path_str,
+            }),
+        );
+    }
+
     let rows = body.config.rows.unwrap_or(24);
     let cols = body.config.cols.unwrap_or(80);
     if let Err(msg) = super::validate_terminal_size(rows, cols) {
@@ -605,8 +632,6 @@ pub(super) async fn create_session_with_worktree(
         );
     }
     let shell = resolve_shell(body.config.shell);
-    let worktree_path_str = worktree.path.to_string_lossy().to_string();
-    let worktree_branch = worktree.branch.clone();
 
     match spawn_pty_session(
         state,
@@ -616,14 +641,40 @@ pub(super) async fn create_session_with_worktree(
         cols,
         Some(worktree),
     ) {
-        Ok(session_id) => (
-            StatusCode::CREATED,
-            Json(serde_json::json!({
+        Ok(session_id) => {
+            let mut response = serde_json::json!({
                 "session_id": session_id,
-                "worktree_path": worktree_path_str,
+                "worktree_path": worktree_path_str.clone(),
                 "branch": worktree_branch,
-            })),
-        ),
+            });
+            let repo_for_script = base_repo.clone();
+            let cwd_for_script = worktree_path_str;
+            if let Some(script) = tokio::task::spawn_blocking(move || {
+                crate::config::resolve_effective_setup_script(&repo_for_script)
+            })
+            .await
+            .ok()
+            .flatten()
+            {
+                match tokio::task::spawn_blocking(move || {
+                    crate::worktree::run_setup_script(script, cwd_for_script)
+                })
+                .await
+                {
+                    Ok(Ok(result)) => {
+                        response["setup_script"] = result;
+                    }
+                    Ok(Err(e)) => {
+                        response["setup_script_error"] = serde_json::json!(e);
+                    }
+                    Err(e) => {
+                        response["setup_script_error"] =
+                            serde_json::json!(format!("task panic: {e}"));
+                    }
+                }
+            }
+            (StatusCode::CREATED, Json(response))
+        }
         Err(err) => err,
     }
 }

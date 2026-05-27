@@ -1369,6 +1369,33 @@ pub(crate) fn save_repo_defaults(config: RepoDefaultsConfig) -> Result<(), Strin
     save_json_config(REPO_DEFAULTS_FILE, &config)
 }
 
+/// Resolve the effective setup script for a repo using the three-tier hierarchy:
+/// per-repo override > global defaults. Returns `None` if the resolved script is empty.
+pub(crate) fn resolve_effective_setup_script(repo_path: &str) -> Option<String> {
+    let settings: RepoSettingsMap = load_json_config(REPO_SETTINGS_FILE);
+    let defaults: RepoDefaultsConfig = load_json_config(REPO_DEFAULTS_FILE);
+    resolve_setup_script_from(&settings, &defaults, repo_path)
+}
+
+fn resolve_setup_script_from(
+    settings: &RepoSettingsMap,
+    defaults: &RepoDefaultsConfig,
+    repo_path: &str,
+) -> Option<String> {
+    if let Some(entry) = settings.repos.get(repo_path) {
+        if let Some(ref script) = entry.setup_script {
+            if !script.is_empty() {
+                return Some(script.clone());
+            }
+            return None;
+        }
+    }
+    if !defaults.setup_script.is_empty() {
+        return Some(defaults.setup_script.clone());
+    }
+    None
+}
+
 // Repositories (opaque JSON — schema owned by frontend)
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_repositories() -> serde_json::Value {
@@ -2697,6 +2724,86 @@ mod tests {
                 .is_symlink()
         );
         assert_eq!(fs::read_to_string(dest.join("real.txt")).unwrap(), "hello");
+    }
+
+    #[test]
+    fn resolve_setup_script_per_repo_override() {
+        let mut settings = RepoSettingsMap::default();
+        settings.repos.insert(
+            "/repo".to_string(),
+            RepoSettingsEntry {
+                setup_script: Some("pnpm install".to_string()),
+                ..RepoSettingsEntry::default()
+            },
+        );
+        let defaults = RepoDefaultsConfig::default();
+        assert_eq!(
+            resolve_setup_script_from(&settings, &defaults, "/repo"),
+            Some("pnpm install".to_string()),
+        );
+    }
+
+    #[test]
+    fn resolve_setup_script_falls_through_to_defaults() {
+        let settings = RepoSettingsMap::default();
+        let defaults = RepoDefaultsConfig {
+            setup_script: "npm install".to_string(),
+            ..RepoDefaultsConfig::default()
+        };
+        assert_eq!(
+            resolve_setup_script_from(&settings, &defaults, "/repo"),
+            Some("npm install".to_string()),
+        );
+    }
+
+    #[test]
+    fn resolve_setup_script_empty_override_blocks_default() {
+        let mut settings = RepoSettingsMap::default();
+        settings.repos.insert(
+            "/repo".to_string(),
+            RepoSettingsEntry {
+                setup_script: Some(String::new()),
+                ..RepoSettingsEntry::default()
+            },
+        );
+        let defaults = RepoDefaultsConfig {
+            setup_script: "npm install".to_string(),
+            ..RepoDefaultsConfig::default()
+        };
+        assert_eq!(
+            resolve_setup_script_from(&settings, &defaults, "/repo"),
+            None,
+        );
+    }
+
+    #[test]
+    fn resolve_setup_script_no_config_returns_none() {
+        let settings = RepoSettingsMap::default();
+        let defaults = RepoDefaultsConfig::default();
+        assert_eq!(
+            resolve_setup_script_from(&settings, &defaults, "/repo"),
+            None,
+        );
+    }
+
+    #[test]
+    fn resolve_setup_script_null_override_falls_through() {
+        let mut settings = RepoSettingsMap::default();
+        settings.repos.insert(
+            "/repo".to_string(),
+            RepoSettingsEntry {
+                setup_script: None,
+                ..RepoSettingsEntry::default()
+            },
+        );
+        let defaults = RepoDefaultsConfig {
+            setup_script: "yarn install".to_string(),
+            ..RepoDefaultsConfig::default()
+        };
+        assert_eq!(
+            resolve_setup_script_from(&settings, &defaults, "/repo"),
+            Some("yarn install".to_string()),
+        );
     }
 
     #[test]
