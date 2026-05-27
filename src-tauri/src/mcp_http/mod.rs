@@ -1377,14 +1377,15 @@ pub async fn start_server(
                             let app = build_router(watchdog_state.clone(), false, mcp_enabled);
                             let app =
                                 app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
-                            if let Err(e) = axum::serve(uds, app.into_make_service()).await {
-                                tracing::error!(
+                            match axum::serve(uds, app.into_make_service()).await {
+                                Err(e) => tracing::error!(
                                     source = "mcp_http",
                                     "Unix socket server error: {e}"
-                                );
-                            } else {
-                                // Clean exit (should not happen now — nobody aborts us).
-                                break;
+                                ),
+                                Ok(()) => tracing::warn!(
+                                    source = "mcp_http",
+                                    "Unix socket server exited cleanly (unexpected)"
+                                ),
                             }
                             // Unexpected exit — rebind and restart.
                             tracing::warn!(source = "mcp_http", path = %sock.display(), "Unix socket server stopped unexpectedly, restarting…");
@@ -1418,8 +1419,9 @@ pub async fn start_server(
                     let app = build_router(state.clone(), false, mcp_enabled);
                     let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
                     tokio::spawn(async move {
-                        if let Err(e) = axum::serve(pipe, app.into_make_service()).await {
-                            tracing::error!(source = "mcp_http", "Named pipe server error: {e}");
+                        match axum::serve(pipe, app.into_make_service()).await {
+                            Err(e) => tracing::error!(source = "mcp_http", "Named pipe server error: {e}"),
+                            Ok(()) => tracing::warn!(source = "mcp_http", "Named pipe server exited cleanly (unexpected)"),
                         }
                     });
                 }
