@@ -1382,13 +1382,12 @@ fn resolve_setup_script_from(
     defaults: &RepoDefaultsConfig,
     repo_path: &str,
 ) -> Option<String> {
-    if let Some(entry) = settings.repos.get(repo_path) {
-        if let Some(ref script) = entry.setup_script {
-            if !script.is_empty() {
-                return Some(script.clone());
-            }
-            return None;
-        }
+    if let Some(Some(script)) = settings.repos.get(repo_path).map(|e| &e.setup_script) {
+        return if script.is_empty() {
+            None
+        } else {
+            Some(script.clone())
+        };
     }
     if !defaults.setup_script.is_empty() {
         return Some(defaults.setup_script.clone());

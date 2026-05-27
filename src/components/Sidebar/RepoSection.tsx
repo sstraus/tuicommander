@@ -376,112 +376,114 @@ export const BranchItem: Component<{
 				</div>
 			}
 		>
-		<div class={cx(s.branchItem, props.isActive && s.active)} onClick={props.onSelect} onContextMenu={ctxMenu.open}>
-			<BranchIcon
-				isMainBranch={props.branch.isMain}
-				isMainWorktree={props.branch.worktreePath === props.repoPath}
-				isShell={props.branch.isShell}
-				hasError={hasError()}
-				hasQuestion={hasQuestion()}
-				hasBusy={hasBusy()}
-				hasUnseen={hasUnseen()}
-				repoHasTerminals={props.repoHasTerminals}
-			/>
-			<div class={s.branchContent}>
-				<span class={s.branchName} onDblClick={handleDoubleClick} title={branchLabel() ?? props.branch.name}>
-					{branchLabel() ?? props.branch.name}
-				</span>
-				<Show when={branchLabel()}>
-					<span class={b.subLabel} title={props.branch.name}>
-						{props.branch.name}
+			<div class={cx(s.branchItem, props.isActive && s.active)} onClick={props.onSelect} onContextMenu={ctxMenu.open}>
+				<BranchIcon
+					isMainBranch={props.branch.isMain}
+					isMainWorktree={props.branch.worktreePath === props.repoPath}
+					isShell={props.branch.isShell}
+					hasError={hasError()}
+					hasQuestion={hasQuestion()}
+					hasBusy={hasBusy()}
+					hasUnseen={hasUnseen()}
+					repoHasTerminals={props.repoHasTerminals}
+				/>
+				<div class={s.branchContent}>
+					<span class={s.branchName} onDblClick={handleDoubleClick} title={branchLabel() ?? props.branch.name}>
+						{branchLabel() ?? props.branch.name}
+					</span>
+					<Show when={branchLabel()}>
+						<span class={b.subLabel} title={props.branch.name}>
+							{props.branch.name}
+						</span>
+					</Show>
+				</div>
+				<Show
+					when={
+						props.branch.isMerged &&
+						!props.branch.isMain &&
+						!props.branch.terminals.length &&
+						!(props.branch.additions + props.branch.deletions)
+					}
+				>
+					<span class={s.mergedBadge} title="Branch is merged into main">
+						Merged
 					</span>
 				</Show>
-			</div>
-			<Show
-				when={
-					props.branch.isMerged &&
-					!props.branch.isMain &&
-					!props.branch.terminals.length &&
-					!(props.branch.additions + props.branch.deletions)
-				}
-			>
-				<span class={s.mergedBadge} title="Branch is merged into main">
-					Merged
-				</span>
-			</Show>
-			<Show when={pr()}>
-				<span
-					class={(() => {
-						const st = pr()?.state?.toLowerCase();
-						return st === "closed" || st === "merged" ? s.prBadgeDimmed : undefined;
-					})()}
-					onClick={(e) => {
-						e.stopPropagation();
-						props.onShowPrDetail();
-					}}
-				>
-					<PrStateBadge
-						prNumber={pr()!.number}
-						state={pr()!.state}
-						isDraft={pr()!.is_draft}
-						mergeable={pr()!.mergeable}
-						reviewDecision={pr()!.review_decision}
-						ciPassed={checks()?.passed}
-						ciFailed={checks()?.failed}
-						ciPending={checks()?.pending}
-					/>
-				</span>
-			</Show>
-			<StatsBadge
-				additions={props.branch.additions}
-				deletions={props.branch.deletions}
-				onClick={
-					props.onShowChanges
-						? (e) => {
-								e.stopPropagation();
-								props.onShowChanges?.();
-							}
-						: undefined
-				}
-			/>
-			<div class={s.branchActions} style={{ display: props.shortcutIndex !== undefined ? "none" : undefined }}>
-				<button
-					class={s.branchAddBtn}
-					onClick={(e) => {
-						e.stopPropagation();
-						props.onAddTerminal();
-					}}
-					title={t("sidebar.addTerminal", "Add terminal")}
-				>
-					+
-				</button>
-				<Show when={!props.branch.isMain && props.branch.worktreePath && props.canRemove}>
-					<button
-						class={s.branchRemoveBtn}
-						disabled={props.isRemoving}
+				<Show when={pr()}>
+					<span
+						class={(() => {
+							const st = pr()?.state?.toLowerCase();
+							return st === "closed" || st === "merged" ? s.prBadgeDimmed : undefined;
+						})()}
 						onClick={(e) => {
 							e.stopPropagation();
-							props.onRemove();
+							props.onShowPrDetail();
 						}}
-						title={props.isRemoving
-							? t("sidebar.removingWorktree", "Removing…")
-							: t("sidebar.removeWorktree", "Remove worktree")}
 					>
-						{props.isRemoving ? "…" : "×"}
-					</button>
+						<PrStateBadge
+							prNumber={pr()!.number}
+							state={pr()!.state}
+							isDraft={pr()!.is_draft}
+							mergeable={pr()!.mergeable}
+							reviewDecision={pr()!.review_decision}
+							ciPassed={checks()?.passed}
+							ciFailed={checks()?.failed}
+							ciPending={checks()?.pending}
+						/>
+					</span>
 				</Show>
+				<StatsBadge
+					additions={props.branch.additions}
+					deletions={props.branch.deletions}
+					onClick={
+						props.onShowChanges
+							? (e) => {
+									e.stopPropagation();
+									props.onShowChanges?.();
+								}
+							: undefined
+					}
+				/>
+				<div class={s.branchActions} style={{ display: props.shortcutIndex !== undefined ? "none" : undefined }}>
+					<button
+						class={s.branchAddBtn}
+						onClick={(e) => {
+							e.stopPropagation();
+							props.onAddTerminal();
+						}}
+						title={t("sidebar.addTerminal", "Add terminal")}
+					>
+						+
+					</button>
+					<Show when={!props.branch.isMain && props.branch.worktreePath && props.canRemove}>
+						<button
+							class={s.branchRemoveBtn}
+							disabled={props.isRemoving}
+							onClick={(e) => {
+								e.stopPropagation();
+								props.onRemove();
+							}}
+							title={
+								props.isRemoving
+									? t("sidebar.removingWorktree", "Removing…")
+									: t("sidebar.removeWorktree", "Remove worktree")
+							}
+						>
+							{props.isRemoving ? "…" : "×"}
+						</button>
+					</Show>
+				</div>
+				<span class={s.branchShortcut} style={{ display: props.shortcutIndex !== undefined ? undefined : "none" }}>
+					{props.shortcutIndex !== undefined ? keyFor(`switch-branch-${props.shortcutIndex}`) : ""}
+				</span>
+				<ContextMenu
+					items={contextMenuItems()}
+					x={ctxMenu.position().x}
+					y={ctxMenu.position().y}
+					visible={ctxMenu.visible()}
+					onClose={ctxMenu.close}
+				/>
 			</div>
-			<span class={s.branchShortcut} style={{ display: props.shortcutIndex !== undefined ? undefined : "none" }}>
-				{props.shortcutIndex !== undefined ? keyFor(`switch-branch-${props.shortcutIndex}`) : ""}
-			</span>
-			<ContextMenu
-				items={contextMenuItems()}
-				x={ctxMenu.position().x}
-				y={ctxMenu.position().y}
-				visible={ctxMenu.visible()}
-				onClose={ctxMenu.close}
-			/>
-		</div>
 		</Show>
 	);
 };

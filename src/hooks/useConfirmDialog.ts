@@ -77,10 +77,7 @@ export function useConfirmDialog() {
 	 *  the dialog then warns that any unmerged/unpushed commits will be
 	 *  destroyed along with the worktree (force-remove uses `git branch -D`).
 	 */
-	async function confirmRemoveLockedWorktree(
-		branchName: string,
-		deleteBranch: boolean = true,
-	): Promise<boolean> {
+	async function confirmRemoveLockedWorktree(branchName: string, deleteBranch: boolean = true): Promise<boolean> {
 		const branchWarning = deleteBranch
 			? `\n\nThe branch "${branchName}" will be force-deleted (\`git branch -D\`). Any unmerged or unpushed commits will be permanently lost.`
 			: "";

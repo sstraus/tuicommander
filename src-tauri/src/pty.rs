@@ -17,8 +17,7 @@ use crate::state::{
     strip_kitty_sequences,
 };
 use crate::worktree::{
-    WorktreeConfig, WorktreeResult, create_worktree_with_stale_recovery,
-    remove_worktree_internal,
+    WorktreeConfig, WorktreeResult, create_worktree_with_stale_recovery, remove_worktree_internal,
 };
 
 /// Get the platform-appropriate default shell when no override is configured.

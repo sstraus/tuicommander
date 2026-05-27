@@ -3128,9 +3128,15 @@ async fn handle_repo(
         "active" => handle_workspace(state, &serde_json::json!({"action": "active"})),
         "prs" => handle_github(state, &remap_action(args, "prs")).await,
         "status" => handle_github(state, &remap_action(args, "status")).await,
-        "worktree_list" => handle_worktree(state, &remap_action(args, "list"), is_claude_code).await,
-        "worktree_create" => handle_worktree(state, &remap_action(args, "create"), is_claude_code).await,
-        "worktree_remove" => handle_worktree(state, &remap_action(args, "remove"), is_claude_code).await,
+        "worktree_list" => {
+            handle_worktree(state, &remap_action(args, "list"), is_claude_code).await
+        }
+        "worktree_create" => {
+            handle_worktree(state, &remap_action(args, "create"), is_claude_code).await
+        }
+        "worktree_remove" => {
+            handle_worktree(state, &remap_action(args, "remove"), is_claude_code).await
+        }
         other => serde_json::json!({"error": format!(
             "Unknown action '{}' for tool 'repo'. Available: {}", other, REPO_ACTIONS
         )}),

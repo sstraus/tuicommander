@@ -4,6 +4,7 @@ vi.mock("../../../../transport", () => ({
 	rpc: vi.fn(),
 }));
 
+import type { AgentsConfig } from "../../../../agents";
 import { rpc } from "../../../../transport";
 import { loadRemoteAgentConfig, saveRemoteAgentConfig } from "../remoteAgentConfig";
 
@@ -29,7 +30,7 @@ describe("loadRemoteAgentConfig", () => {
 describe("saveRemoteAgentConfig", () => {
 	it("calls rpc with connectionId and config payload", async () => {
 		mockRpc.mockResolvedValueOnce(undefined);
-		const config = { agents: {}, headless_agent: "claude" } as any;
+		const config: AgentsConfig = { agents: {}, headless_agent: "claude" };
 
 		await saveRemoteAgentConfig("conn-123", config);
 
@@ -38,6 +39,6 @@ describe("saveRemoteAgentConfig", () => {
 
 	it("propagates rpc errors", async () => {
 		mockRpc.mockRejectedValueOnce(new Error("write failed"));
-		await expect(saveRemoteAgentConfig("conn-bad", {} as any)).rejects.toThrow("write failed");
+		await expect(saveRemoteAgentConfig("conn-bad", { agents: {} })).rejects.toThrow("write failed");
 	});
 });

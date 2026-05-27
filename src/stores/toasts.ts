@@ -92,7 +92,10 @@ function createToastsStore() {
 			const toast: Toast = { id, title, message, level, createdAt: Date.now(), action };
 			setState("toasts", (prev) => [...prev, toast]);
 			if (sound) playSound(level);
-			dismissTimers.set(id, setTimeout(() => this.remove(id), 4000));
+			dismissTimers.set(
+				id,
+				setTimeout(() => this.remove(id), 4000),
+			);
 			return id;
 		},
 

@@ -51,8 +51,8 @@ pub(super) async fn get_worktree_paths_http(Query(q): Query<PathQuery>) -> Respo
         return e.into_response();
     }
     let path = q.path;
-    let result = tokio::task::spawn_blocking(move || crate::worktree::get_worktree_paths(path))
-        .await;
+    let result =
+        tokio::task::spawn_blocking(move || crate::worktree::get_worktree_paths(path)).await;
     match result {
         Ok(r) => json_result(r),
         Err(e) => err_500(&format!("task panic: {e}")),
@@ -330,7 +330,9 @@ pub(super) async fn finalize_merged_worktree_http(
                 None,
                 false,
             )
-            .map(|_| serde_json::json!({"merged": true, "action": "deleted", "archive_path": null})),
+            .map(
+                |_| serde_json::json!({"merged": true, "action": "deleted", "archive_path": null}),
+            ),
             other => Err(format!(
                 "Unknown action '{other}': expected 'archive' or 'delete'"
             )),

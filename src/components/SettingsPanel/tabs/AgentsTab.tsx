@@ -13,7 +13,6 @@ import { invoke } from "../../../invoke";
 import { setClaudeUsageEnabled } from "../../../plugins";
 import { isPluginDisabled, setPluginEnabled } from "../../../plugins/pluginLoader";
 import { agentConfigsStore } from "../../../stores/agentConfigs";
-import { AgentConfigProvider, createRemoteAgentConfigStore, useAgentConfig } from "./agentConfigContext";
 import { aiPromptsStore, DEFAULT_DIFF_TRIAGE_PROMPT } from "../../../stores/aiPrompts";
 import { appLogger } from "../../../stores/appLogger";
 import { editorTabsStore } from "../../../stores/editorTabs";
@@ -26,6 +25,7 @@ import { AgentIcon } from "../../ui/AgentIcon";
 import { SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
 import a from "./AgentsTab.module.css";
+import { AgentConfigProvider, createRemoteAgentConfigStore, useAgentConfig } from "./agentConfigContext";
 
 const ALL_AGENT_TYPES = AGENT_TYPES.filter((t): t is AgentType => t !== "git" && t !== "api");
 
@@ -716,10 +716,7 @@ const AgentRow: Component<{
 								type="checkbox"
 								checked={configStore.isAutoRetryEnabled(props.agentType)}
 								onChange={() =>
-									configStore.setAutoRetry(
-										props.agentType,
-										!configStore.isAutoRetryEnabled(props.agentType),
-									)
+									configStore.setAutoRetry(props.agentType, !configStore.isAutoRetryEnabled(props.agentType))
 								}
 							/>
 							<span>Auto-retry on server errors</span>
@@ -748,9 +745,7 @@ const AgentRow: Component<{
 							<label class={a.toggleRow} onClick={(e) => e.stopPropagation()}>
 								<input
 									type="checkbox"
-									checked={
-										configStore.getSuggestFollowups(props.agentType) ?? settingsStore.state.suggestFollowups
-									}
+									checked={configStore.getSuggestFollowups(props.agentType) ?? settingsStore.state.suggestFollowups}
 									onChange={(e) => configStore.setSuggestFollowups(props.agentType, e.currentTarget.checked)}
 								/>
 								<span>Show suggested follow-ups</span>

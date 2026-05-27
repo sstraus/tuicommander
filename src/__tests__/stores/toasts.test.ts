@@ -66,7 +66,7 @@ describe("toastsStore", () => {
 		testInScope(() => {
 			const id = toastsStore.add("Tmp");
 			// Add a second toast to verify it is not affected
-			const id2 = toastsStore.add("Keeper");
+			toastsStore.add("Keeper");
 			toastsStore.remove(id);
 			expect(toastsStore.toasts).toHaveLength(1);
 			vi.advanceTimersByTime(4000);

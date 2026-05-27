@@ -330,11 +330,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
 						// Skip branches just created — git may not have fully registered the
 						// worktree by the time the first repo-changed refresh fires.
 						if (isRecentlyCreated(repoPath, branchName)) {
-							appLogger.info(
-								"git",
-								`refreshAllBranchStats: CREATION GRACE skipping "${branchName}" (just created)`,
-								{ repoPath },
-							);
+							appLogger.info("git", `refreshAllBranchStats: CREATION GRACE skipping "${branchName}" (just created)`, {
+								repoPath,
+							});
 							continue;
 						}
 						// If this is the stale activeBranch and we found a replacement, allow removal
@@ -969,7 +967,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
 			if (reason.startsWith("worktree_locked:")) {
 				// Worktree is locked by a Claude agent — ask user to confirm force removal
 				repositoriesStore.setBranch(repoPath, branchName, { isRemoving: false });
-				appLogger.warn("git", `handleRemoveBranch: worktree locked — showing confirmation dialog`, { branchName, reason });
+				appLogger.warn("git", `handleRemoveBranch: worktree locked — showing confirmation dialog`, {
+					branchName,
+					reason,
+				});
 				// Pass deleteBranch so the dialog can warn about unmerged-commit loss
 				// when force=true causes `git branch -D` to run on a branch with
 				// unpushed work. Catch dialog rejection so the removingBranches
@@ -999,14 +1000,19 @@ export function useGitOperations(deps: GitOperationsDeps) {
 					deps.setStatusInfo(`Removed ${branchName}`);
 				} catch (forceErr) {
 					const forceReason = forceErr instanceof Error ? forceErr.message : String(forceErr);
-					appLogger.error("git", `handleRemoveBranch: force remove_worktree FAILED`, { branchName, reason: forceReason });
+					appLogger.error("git", `handleRemoveBranch: force remove_worktree FAILED`, {
+						branchName,
+						reason: forceReason,
+					});
 					deps.setStatusInfo(`Failed to remove ${branchName}: ${forceReason}`);
 					repositoriesStore.setBranch(repoPath, branchName, { isRemoving: false });
 					clearLock();
 					return;
 				}
 			} else if (reason.startsWith("worktree_is_main:")) {
-				appLogger.warn("git", `handleRemoveBranch: branch is in main worktree — cannot remove as worktree`, { branchName });
+				appLogger.warn("git", `handleRemoveBranch: branch is in main worktree — cannot remove as worktree`, {
+					branchName,
+				});
 				deps.setStatusInfo(`Cannot remove ${branchName}: branch is in the main worktree, not a linked worktree`);
 				repositoriesStore.setBranch(repoPath, branchName, { isRemoving: false });
 				clearLock();
@@ -1845,11 +1851,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 	 *  recreate task. Drops the pending creation (no setup), removes the
 	 *  placeholder from the store, releases the per-repo create lock, and
 	 *  surfaces the error to the user. */
-	const handleWorktreeCreateFailed = (payload: {
-		repoPath: string;
-		branch: string;
-		reason: string;
-	}) => {
+	const handleWorktreeCreateFailed = (payload: { repoPath: string; branch: string; reason: string }) => {
 		const { repoPath, branch, reason } = payload;
 		appLogger.error("git", `Worktree creation failed`, payload);
 		pendingCreations.delete(pendingKey(repoPath, branch));

@@ -587,9 +587,8 @@ describe("useGitOperations", () => {
 
 			// Block the first invoke until we release it
 			let resolveFirst: (() => void) | undefined;
-			let firstInvokedPromise: Promise<void>;
 			let resolveFirstInvoked: (() => void) | undefined;
-			firstInvokedPromise = new Promise<void>((r) => {
+			const firstInvokedPromise = new Promise<void>((r) => {
 				resolveFirstInvoked = r;
 			});
 			let invocationCount = 0;
