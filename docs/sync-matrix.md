@@ -72,6 +72,7 @@ When adding a new `app.emit(event_name, payload)` call, document it here and lis
 | Event | Payload | Emitted from | Frontend listener |
 |-------|---------|-------------|-------------------|
 | `session-standby` | `{ session_id: string, standby: bool }` | `pty.rs emit_standby_event()` | `useAppInit.ts` → `terminalsStore.update(termId, { standby })` |
+| `worktree-created` | `{ repo_path: string, branch: string, worktree_path: string }` | `mcp_transport.rs`, `session.rs`, `worktree_routes.rs` | TBD — frontend switch prompt |
 
 ### HTTP & MCP Server
 When adding routes or changing server behavior:

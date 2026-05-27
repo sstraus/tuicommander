@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Worktree setup scripts** — All three worktree creation paths (MCP `repo action=worktree_create`, HTTP `POST /worktrees`, HTTP `POST /sessions/worktree`) now resolve and execute the configured `setup_script` (per-repo override > global default) after creating the worktree. Result or error returned in the response as `setup_script` / `setup_script_error`.
+- **Worktree-created event emission** — `worktree-created` Tauri event and `AppEvent::WorktreeCreated` event bus message now emitted from all three worktree creation paths (MCP, HTTP worktree, HTTP session+worktree), enabling frontend switch prompts.
+- **AI Chat FileSandbox auto-init** — `run_conversation` now creates a `FileSandbox` from the session's CWD before tool dispatch, so file tools (`list_files`, `read_file`, etc.) work without a prior explicit sandbox setup.
+
 ### Fixed
 - **IME candidate window positioning** — Hidden input element now tracks the terminal cursor position so East Asian IME candidate windows (Chinese Pinyin, Japanese, Korean) appear near the cursor instead of at the top-left corner of the screen. Also adds `compositionstart` handler for accurate position at composition onset. ([#42](https://github.com/sstraus/tuicommander/issues/42))
 - **Git diff crash on deleted files** — `get_file_diff` no longer attempts `--no-index` for files deleted from disk, falling through to standard `git diff` which reads from the index.

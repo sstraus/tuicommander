@@ -2,6 +2,21 @@
 
 Features to test when TUICommander is more usable.
 
+## MCP Worktree Create: Event Emission + Setup Script (2026-05-27 — Issue #50)
+- [HUMAN] Create worktree via MCP `repo action=worktree_create` → frontend shows switch prompt (worktree-created event fires)
+- [HUMAN] Create worktree via HTTP `POST /worktrees` → same switch prompt appears
+- [HUMAN] Create worktree via HTTP `POST /sessions/worktree` → same switch prompt appears
+- [HUMAN] After MCP worktree_create, `repo action=worktree_list` shows the new branch immediately
+- [HUMAN] Configure `setup_script: "touch /tmp/tuic-setup-ran"` in repo-settings.json for a repo → create worktree via MCP → `/tmp/tuic-setup-ran` exists
+- [HUMAN] Configure setup_script in repo-defaults.json (global) → create worktree for a repo with no per-repo override → global script runs
+- [HUMAN] Per-repo empty string override blocks global default (set `setup_script: ""` per-repo, non-empty global → script does NOT run)
+
+## AI Chat Filesystem Sandbox (2026-05-27)
+- [HUMAN] Open a shell session, cd into a repo, then open AI Chat on that session
+- [HUMAN] Ask "list all files starting with x" → `list_files` should succeed (no "No filesystem sandbox" error)
+- [HUMAN] Ask "read file README.md" → `read_file` should return file contents
+- [HUMAN] Ask "write a test file" → `write_file` should create the file in the session's CWD
+
 ## Terminal Blank Screen Recovery (2026-05-24 — PR #46)
 - [HUMAN] Use terminal normally for extended period → no blank screen
 - [HUMAN] Switch between tabs rapidly → terminal content preserved, no blank flash
