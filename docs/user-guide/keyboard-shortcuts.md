@@ -121,7 +121,6 @@ Font size range: 8px to 32px, step 2px per action.
 | `Cmd+K` | Clear scrollback |
 | `Cmd+Shift+W` | Worktree Manager |
 | `Cmd+J` | Task queue |
-| `Cmd+Shift+P` | Toggle plan panel |
 | `Cmd+Shift+E` | Toggle error log |
 | `Cmd+Shift+M` | MCP servers popup (per-repo) |
 
@@ -269,7 +268,6 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `activity-dashboard` | `Cmd+Shift+A` | Activity dashboard |
 | `toggle-error-log` | `Cmd+Shift+E` | Toggle error log |
 | `toggle-mcp-popup` | `Cmd+Shift+M` | MCP servers popup (per-repo) |
-| `toggle-plan` | `Cmd+Shift+P` | Toggle plan panel |
 | `switch-branch-1..9` | `Cmd+Ctrl+1..9` | Switch to branch N |
 | `scroll-to-top` | `Cmd+Home` | Scroll to top |
 | `scroll-to-bottom` | `Cmd+End` | Scroll to bottom |

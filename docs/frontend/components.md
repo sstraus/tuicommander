@@ -39,7 +39,6 @@ App.tsx (central orchestrator)
 │   ├── NotesPanel/           # Ideas/notes panel with edit, send, delete
 │   ├── FileBrowserPanel/     # File tree browser with content search
 │   │   └── TreeNode          # Recursive tree node (lazy-loaded)
-│   ├── PlanPanel/            # Plan file browser (repo-scoped, from activity store)
 │   ├── PluginPanel/          # Plugin HTML panel (sandboxed iframe)
 │   ├── ClaudeUsageDashboard/ # Claude API usage dashboard (SolidJS)
 │   ├── ErrorLogPanel/        # Application error log viewer
@@ -248,7 +247,6 @@ Native SolidJS component (not a plugin) showing Claude API usage data. Displayed
 | Markdown Panel | `Cmd+Shift+M` | `uiStore.toggleMarkdownPanel()` |
 | Notes/Ideas Panel | `Cmd+Alt+N` | `uiStore.toggleNotesPanel()` |
 | File Browser | `Cmd+E` | `uiStore.toggleFileBrowserPanel()` |
-| Plan Panel | `Cmd+Shift+P` | `uiStore.togglePlanPanel()` |
 | Settings | `Cmd+,` | Local state in App.tsx |
 | Help | `Cmd+?` | Local state in App.tsx |
 | Prompt Library | `Cmd+Shift+K` | `promptLibraryStore.toggleDrawer()` |

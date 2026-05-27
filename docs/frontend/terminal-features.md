@@ -61,7 +61,6 @@ Consolidated reference for all terminal behaviors, keyboard shortcuts, and confi
 | Cmd+B | Quick branch switch |
 | Cmd+G | Branches tab |
 | Cmd+Shift+D | Git operations panel |
-| Cmd+Shift+P | Plan panel |
 | Cmd+Shift+E | Error log |
 | Cmd+Shift+A | Activity dashboard |
 | Cmd+Shift+W | Worktree manager |

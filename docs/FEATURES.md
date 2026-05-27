@@ -402,16 +402,10 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Ring buffer of 1000 entries (oldest dropped when full), Rust-backed — warn/error entries survive webview reloads via `push_log`/`get_logs` Tauri commands
 - Also accessible via Command Palette: "Error log"
 
-### 3.14 Plan Panel (`Cmd+Shift+P`)
-- Lists active plan files for the current repository from the activity store
+### 3.14 Plan Detection
 - Plans are detected via structured `plan-file` events from the output parser and via `plans/` directory watcher
-- Click a plan to open it as a virtual markdown tab (frontmatter auto-stripped)
-- Plan count badge in the header
-- Repo-scoped: only shows plans belonging to the active repository
-- Auto-open: restores the active plan from `.claude/active-plan.json` on startup; new plans opened as background tabs on first detection (no focus change)
-- Directory watcher: monitors `plans/` directory for new plan files created externally
-- Mutually exclusive with Markdown, Diff, and File Browser panels
-- Panel width and visibility persist across restarts via `UIPrefsConfig`
+- Auto-open: restores the active plan from `.claude/active-plan.json` on startup; new plans opened as background markdown tabs on first detection (no focus change)
+- Repo-scoped: only processes plans belonging to the active repository
 
 ### 3.15 Preview Tab
 - Multi-format file previewer opened from clickable file paths, drag & drop, File Browser, or Command Palette
@@ -1274,7 +1268,6 @@ All data persisted to platform config directory via Rust:
 | `Cmd+O` | Open file… (picker) |
 | `Cmd+N` | New file… (picker for name + location) |
 | `Cmd+P` | Command palette |
-| `Cmd+Shift+P` | Toggle plan panel |
 | `Cmd+,` | Open settings |
 | `Cmd+?` | Toggle help panel |
 | `Cmd+Shift+K` | Prompt library |

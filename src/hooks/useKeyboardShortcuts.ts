@@ -23,7 +23,6 @@ const BROWSER_RESERVED_COMBOS = new Set([
 	normalizeCombo("Cmd+L"), // address bar
 	normalizeCombo("Cmd+Shift+T"), // reopen closed tab
 	normalizeCombo("Cmd+P"), // print dialog
-	normalizeCombo("Cmd+Shift+P"), // private/incognito window
 	normalizeCombo("Cmd+Shift+A"), // search tabs (Chrome)
 ]);
 

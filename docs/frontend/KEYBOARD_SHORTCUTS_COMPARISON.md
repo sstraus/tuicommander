@@ -176,7 +176,6 @@ These are reserved by Windows itself and **must never be used**:
 | Ctrl+Shift+W | Close tab |
 | Ctrl+Shift+N | New instance |
 | Ctrl+P | Command palette |
-| Ctrl+Shift+P | Toggle plan panel |
 | Ctrl+Shift+F | Find |
 | Ctrl+, | Settings |
 | Alt+Shift+D | Split pane (auto direction) |
