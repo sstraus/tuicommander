@@ -236,6 +236,12 @@ fn is_tool_error_line(line: &str) -> bool {
 /// How often the timer thread wakes up to check for silence.
 const SILENCE_CHECK_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
 
+/// If the wall-clock gap between two consecutive silence-timer ticks exceeds
+/// this threshold, the system was likely asleep (lid closed). The tick is
+/// skipped and timestamps are reset so stale elapsed times don't trigger
+/// false idle transitions or completion sounds for every terminal.
+const SLEEP_WAKE_GAP: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// Grace period after a PTY resize during which parsed events (Question, RateLimit,
 /// ApiError) are suppressed. The shell redraws visible output after SIGWINCH, which
 /// would otherwise re-trigger notifications for content already on screen.
@@ -1201,10 +1207,41 @@ fn spawn_silence_timer(
 ) {
     let event_bus = state.event_bus.clone();
     tokio::spawn(async move {
+        let mut last_tick = std::time::Instant::now();
         while running.load(Ordering::Relaxed) {
             tokio::time::sleep(SILENCE_CHECK_INTERVAL).await;
             if !running.load(Ordering::Relaxed) {
                 break;
+            }
+
+            // Sleep-wake detection: if the gap between consecutive ticks is
+            // much larger than SILENCE_CHECK_INTERVAL, the system was asleep
+            // (lid closed). Reset timestamps so stale elapsed times don't
+            // trigger false idle transitions / completion sounds.
+            let now_tick = std::time::Instant::now();
+            let tick_gap = now_tick.duration_since(last_tick);
+            last_tick = now_tick;
+            if tick_gap >= SLEEP_WAKE_GAP {
+                tracing::info!(
+                    source = "silence_timer",
+                    session_id = %session_id,
+                    gap_secs = tick_gap.as_secs(),
+                    "Sleep-wake detected — resetting timestamps"
+                );
+                let epoch_now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                if let Some(ts) = state.last_output_ms.get(&session_id) {
+                    ts.store(epoch_now, std::sync::atomic::Ordering::Release);
+                }
+                {
+                    let mut sl = silence.lock();
+                    let now = std::time::Instant::now();
+                    sl.last_output_at = now;
+                    sl.last_chunk_at = now;
+                }
+                continue;
             }
 
             // Sole idle path: the silence timer is the only code that transitions

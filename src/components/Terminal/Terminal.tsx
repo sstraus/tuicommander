@@ -252,7 +252,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 				case "status-line": {
 					retryCount = 0;
 					const awState = terminalsStore.get(props.id)?.awaitingInput;
-					const clearAw = awState && awState !== "question";
+					const clearAw = awState && awState !== "question" && awState !== "error";
 					if (clearAw) {
 						appLogger.debug("terminal", `clearAwaitingInput(${props.id}) was "${awState}" → null`);
 					}
