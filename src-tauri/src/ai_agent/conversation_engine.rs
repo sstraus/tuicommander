@@ -319,6 +319,20 @@ async fn run_conversation(
         Tool, ToolResponse,
     };
 
+    // Create filesystem sandbox from the session's CWD so that file tools
+    // (list_files, read_file, etc.) can resolve paths during the conversation.
+    state.file_sandboxes.entry(session_id.clone()).or_try_insert_with(|| {
+        let dir = state
+            .sessions
+            .get(&session_id)
+            .and_then(|s| s.lock().cwd.clone())
+            .ok_or("no cwd")?;
+        super::sandbox::FileSandbox::new(&dir).map_err(|e| {
+            tracing::warn!(session_id = %session_id, cwd = %dir, "FileSandbox init failed: {e}");
+            e.to_string()
+        })
+    }).ok();
+
     // Resolve LLM from provider registry
     let registry = crate::provider_registry::load_registry();
     let resolved =
