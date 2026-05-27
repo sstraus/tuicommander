@@ -48,7 +48,13 @@ pub(super) async fn get_worktree_paths_http(Query(q): Query<PathQuery>) -> Respo
     if let Err(e) = validate_repo_path(&q.path) {
         return e.into_response();
     }
-    json_result(crate::worktree::get_worktree_paths(q.path))
+    let path = q.path;
+    let result = tokio::task::spawn_blocking(move || crate::worktree::get_worktree_paths(path))
+        .await;
+    match result {
+        Ok(r) => json_result(r),
+        Err(e) => err_500(&format!("task panic: {e}")),
+    }
 }
 
 pub(super) async fn create_worktree_http(
@@ -145,7 +151,13 @@ pub(super) async fn detect_orphan_worktrees_http(Query(q): Query<OptionalRepoQue
     if let Err(e) = validate_repo_path(&repo_path) {
         return e.into_response();
     }
-    json_result(crate::worktree::detect_orphan_worktrees(repo_path))
+    let result =
+        tokio::task::spawn_blocking(move || crate::worktree::detect_orphan_worktrees(repo_path))
+            .await;
+    match result {
+        Ok(r) => json_result(r),
+        Err(e) => err_500(&format!("task panic: {e}")),
+    }
 }
 
 pub(super) async fn remove_orphan_worktree_http(
@@ -155,30 +167,25 @@ pub(super) async fn remove_orphan_worktree_http(
     if let Err(e) = validate_repo_path(&body.repo_path) {
         return e.into_response();
     }
-    if let Err(e) = crate::worktree::validate_worktree_path(&body.repo_path, &body.worktree_path) {
-        return (
-            StatusCode::BAD_REQUEST,
-            Json(serde_json::json!({"error": e})),
-        )
-            .into_response();
-    }
-    let worktree = crate::state::WorktreeInfo {
-        name: std::path::Path::new(&body.worktree_path)
-            .file_name()
-            .map(|n| n.to_string_lossy().to_string())
-            .unwrap_or_else(|| body.worktree_path.clone()),
-        path: std::path::PathBuf::from(&body.worktree_path),
-        branch: None,
-        base_repo: std::path::PathBuf::from(&body.repo_path),
-    };
     let repo_path = body.repo_path.clone();
+    let worktree_path = body.worktree_path.clone();
     let result = tokio::task::spawn_blocking(move || {
+        crate::worktree::validate_worktree_path(&repo_path, &worktree_path)?;
+        let worktree = crate::state::WorktreeInfo {
+            name: std::path::Path::new(&worktree_path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_else(|| worktree_path.clone()),
+            path: std::path::PathBuf::from(&worktree_path),
+            branch: None,
+            base_repo: std::path::PathBuf::from(&repo_path),
+        };
         crate::worktree::remove_worktree_internal(&worktree, false)
     })
     .await;
     match result {
         Ok(Ok(())) => {
-            state.invalidate_repo_caches(&repo_path);
+            state.invalidate_repo_caches(&body.repo_path);
             (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
         }
         Ok(Err(e)) => err_500(&e),
@@ -198,7 +205,13 @@ pub(super) async fn list_local_branches_http(Query(q): Query<PathQuery>) -> Resp
     if let Err(e) = validate_repo_path(&q.path) {
         return e.into_response();
     }
-    json_result(crate::worktree::list_local_branches(q.path))
+    let path = q.path;
+    let result =
+        tokio::task::spawn_blocking(move || crate::worktree::list_local_branches(path)).await;
+    match result {
+        Ok(r) => json_result(r),
+        Err(e) => err_500(&format!("task panic: {e}")),
+    }
 }
 
 pub(super) async fn checkout_remote_branch_http(
@@ -209,16 +222,22 @@ pub(super) async fn checkout_remote_branch_http(
         return e.into_response();
     }
     let repo = std::path::PathBuf::from(&body.repo_path);
+    let branch_name = body.branch_name.clone();
     let remote_ref = format!("origin/{}", body.branch_name);
-    match crate::git_cli::git_cmd(&repo)
-        .args(["checkout", "-b", &body.branch_name, &remote_ref])
-        .run()
-    {
-        Ok(_) => {
+    let result = tokio::task::spawn_blocking(move || {
+        crate::git_cli::git_cmd(&repo)
+            .args(["checkout", "-b", &branch_name, &remote_ref])
+            .run()
+            .map_err(|e| e.to_string())
+    })
+    .await;
+    match result {
+        Ok(Ok(_)) => {
             state.invalidate_repo_caches(&body.repo_path);
             (StatusCode::OK, Json(serde_json::json!(null))).into_response()
         }
-        Err(e) => err_500(&e.to_string()),
+        Ok(Err(e)) => err_500(&e),
+        Err(e) => err_500(&format!("task panic: {e}")),
     }
 }
 

@@ -266,14 +266,21 @@ pub(crate) const STALE_DIR_PREFIX: &str = "STALE_DIR:";
 /// path is verified absent. Synchronous wrapper used by callers that can't spawn a
 /// background task (PTY creation, MCP request handlers).
 pub(crate) fn cleanup_stale_worktree_dir(base_repo: &str, stale_path: &Path) -> Result<(), String> {
-    let _ = git_cmd(&PathBuf::from(base_repo))
+    if let Err(e) = git_cmd(&PathBuf::from(base_repo))
         .args([
             "worktree",
             "remove",
             "--force",
             &stale_path.to_string_lossy(),
         ])
-        .run();
+        .run()
+    {
+        tracing::warn!(
+            source = "worktree",
+            stale = %stale_path.display(),
+            "cleanup_stale_worktree_dir: git worktree remove --force failed (falling back to fs removal): {e}"
+        );
+    }
 
     if stale_path.exists()
         && let Err(e) = std::fs::remove_dir_all(stale_path)

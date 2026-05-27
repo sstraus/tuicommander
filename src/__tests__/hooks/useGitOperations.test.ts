@@ -211,6 +211,30 @@ describe("useGitOperations", () => {
 			expect(terminal?.sessionId).toBeNull();
 		});
 
+		it("preserves agentLaunchCommand during lazy restore", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "feature", {
+				worktreePath: "/repo/wt",
+				hadTerminals: true,
+				savedTerminals: [
+					{
+						name: "Claude Agent",
+						cwd: "/repo/wt",
+						fontSize: 14,
+						agentType: "claude",
+						agentLaunchCommand: "claude --project /repo/wt --model opus",
+					},
+				],
+			});
+
+			await gitOps.handleBranchSelect("/repo", "feature");
+
+			const branch = repositoriesStore.get("/repo")?.branches["feature"];
+			const termId = branch?.terminals[0];
+			const terminal = termId ? terminalsStore.get(termId) : undefined;
+			expect(terminal?.agentLaunchCommand).toBe("claude --project /repo/wt --model opus");
+		});
+
 		it("remaps disk-restored pane layout terminal IDs during lazy restore", async () => {
 			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
 			// Simulate old terminal IDs in the branch (from before app restart)
