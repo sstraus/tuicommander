@@ -4,6 +4,16 @@ import { invoke } from "../invoke";
 import { buildEnvFromEntries, type EnvVarEntry } from "../utils/envVars";
 import { appLogger } from "./appLogger";
 
+export interface AgentConfigIO {
+	load: () => Promise<AgentsConfig>;
+	save: (config: AgentsConfig) => Promise<void>;
+}
+
+const defaultIO: AgentConfigIO = {
+	load: () => invoke<AgentsConfig>("load_agents_config"),
+	save: (config) => invoke("save_agents_config", { config }),
+};
+
 interface AgentConfigsState {
 	agents: Record<
 		string,
@@ -27,7 +37,7 @@ function clone<T>(obj: T): T {
 	return JSON.parse(JSON.stringify(obj));
 }
 
-function createAgentConfigsStore() {
+export function createAgentConfigsStore(io: AgentConfigIO = defaultIO) {
 	const [state, setState] = createStore<AgentConfigsState>({
 		agents: {},
 		headless_agent: null,
@@ -41,9 +51,9 @@ function createAgentConfigsStore() {
 				agents: clone(state.agents),
 				headless_agent: state.headless_agent ?? undefined,
 			};
-			await invoke("save_agents_config", { config: full });
+			await io.save(full);
 		} catch (err) {
-			appLogger.error("config", "Failed to save agent config to disk", err);
+			appLogger.error("config", "Failed to save agent config", err);
 			throw err;
 		}
 	}
@@ -52,7 +62,7 @@ function createAgentConfigsStore() {
 		/** Hydrate store from persisted config */
 		async hydrate(): Promise<void> {
 			try {
-				const config = await invoke<AgentsConfig>("load_agents_config");
+				const config = await io.load();
 				setState(
 					produce((s) => {
 						s.agents = config.agents ?? {};

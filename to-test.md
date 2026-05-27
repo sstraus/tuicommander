@@ -983,3 +983,11 @@ Features to test when TUICommander is more usable.
 
 ## PTY Debug Logging Cleanup (2026-05-25, uncommitted)
 - No user-visible behavior change — removed shell-spike debug logging from BUSY↔IDLE transitions
+
+## Remote Settings Context (2026-05-27)
+- [HUMAN] Open Settings → Agents tab with a local repo selected → verify agent list loads normally (no banner)
+- [HUMAN] Switch to a remote repo in Settings nav → Agents tab shows "Configuring remote: <name>" banner
+- [HUMAN] With remote repo active, add/edit/delete a run config → verify changes persist on remote daemon (not local)
+- [HUMAN] Disconnect remote daemon, open Agents tab with remote repo → verify error state "Remote config unavailable"
+- [HUMAN] Switch from remote repo back to local (or global) → verify banner disappears, local config loads correctly
+- [VISUAL] Remote banner styling: accent border, icon color, spacing

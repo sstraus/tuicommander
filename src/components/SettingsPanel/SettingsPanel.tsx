@@ -28,7 +28,7 @@ import {
 import { ProvidersTab } from "./tabs/ProvidersTab";
 
 /** Context for initial selection when opening the panel */
-export type SettingsContext = { kind: "global" } | { kind: "repo"; repoPath: string };
+export type SettingsContext = { kind: "global" } | { kind: "repo"; repoPath: string; connectionId?: string };
 
 export interface SettingsPanelProps {
 	visible: boolean;
@@ -108,6 +108,11 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
 	const activeRepoPath = (): string | null => {
 		const tab = activeTab();
 		return tab.startsWith("repo:") ? tab.slice(5) : null;
+	};
+
+	const activeConnectionId = (): string | undefined => {
+		const path = activeRepoPath();
+		return path ? repositoriesStore.getConnectionId(path) : undefined;
 	};
 
 	const repoSettings = (path: string) => repoSettingsStore.getOrCreate(path, shortenHomePath(path));
@@ -192,7 +197,7 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
 				<ProvidersTab />
 			</Show>
 			<Show when={activeTab() === "agents"}>
-				<AgentsTab />
+				<AgentsTab connectionId={activeConnectionId()} />
 			</Show>
 			<Show when={activeTab() === "ai-chat" && settingsStore.isAiChatEnabled()}>
 				<AiChatTab />
