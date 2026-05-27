@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { testInScope, testInScopeAsync } from "../helpers/store";
 
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
@@ -60,6 +60,7 @@ describe("mcpPopupStore", () => {
 	let store: typeof import("../../stores/mcpPopup").mcpPopupStore;
 
 	beforeEach(async () => {
+		vi.useFakeTimers();
 		vi.resetModules();
 		mockInvoke.mockReset().mockResolvedValue(undefined);
 		mockListen.mockReset().mockResolvedValue(() => {});
@@ -84,6 +85,10 @@ describe("mcpPopupStore", () => {
 		}));
 
 		store = (await import("../../stores/mcpPopup")).mcpPopupStore;
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
 	});
 
 	describe("open/close/toggle", () => {
