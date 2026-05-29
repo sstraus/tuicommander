@@ -1124,7 +1124,7 @@ pub fn run() {
             // so the app doesn't start as a headless dock icon.
             if app.get_webview_window("main").is_none() {
                 tracing::warn!("Main window missing from config — creating programmatically");
-                tauri::WebviewWindowBuilder::new(
+                let builder = tauri::WebviewWindowBuilder::new(
                     app,
                     "main",
                     tauri::WebviewUrl::App("index.html".into()),
@@ -1133,10 +1133,13 @@ pub fn run() {
                 .inner_size(1200.0, 800.0)
                 .min_inner_size(800.0, 600.0)
                 .decorations(true)
-                .resizable(true)
-                .hidden_title(true)
-                .title_bar_style(tauri::TitleBarStyle::Overlay)
-                .build()?;
+                .resizable(true);
+                // hidden_title / title_bar_style are macOS-only builder methods.
+                #[cfg(target_os = "macos")]
+                let builder = builder
+                    .hidden_title(true)
+                    .title_bar_style(tauri::TitleBarStyle::Overlay);
+                builder.build()?;
             }
 
             // Track desktop window focus so push notifications can be
