@@ -80,6 +80,11 @@ gh-debug-status:
 gh-debug-logs:
 	@curl -s 'localhost:9876/logs?source=github_api&limit=30'
 
+# Tail recent terminal logs (needs Remote Access enabled in Settings).
+# Override source/limit: make logs SRC=mcp N=100
+logs:
+	@curl -s "localhost:9876/logs?source=$(or $(SRC),terminal)&limit=$(or $(N),50)"
+
 gh-rate:
 	@curl -sH "Authorization: Bearer $$(gh auth token)" https://api.github.com/rate_limit | jq '.resources | {graphql, core}'
 

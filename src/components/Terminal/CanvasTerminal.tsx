@@ -2641,7 +2641,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// keys (quotes, accents, etc.) fail when keydown listeners live on the canvas.
 		// When the canvas gains focus, we redirect to keyInputRef.
 		canvasRef.addEventListener("focus", () => {
-			keyInputRef.focus();
+			keyInputRef.focus({ preventScroll: true });
 		});
 		keyInputRef.addEventListener("focus", () => {
 			setFocused(true);
@@ -2680,7 +2680,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		let leftOptionHeld = false;
 
 		keyInputRef.addEventListener("keydown", (e: KeyboardEvent) => {
-			if (composition.shouldSuppressKeydown(e.isComposing)) {
+			if (composition.shouldSuppressKeydown(e.isComposing, e.key)) {
 				e.preventDefault();
 				return;
 			}
@@ -2983,7 +2983,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		let lastClickTime = 0;
 
 		canvasRef.addEventListener("mousedown", (e: MouseEvent) => {
-			keyInputRef.focus();
+			keyInputRef.focus({ preventScroll: true });
 			if (currentFrame && currentFrame.mouseMode > 0 && !e.shiftKey) {
 				const pos = canvasToGrid(e);
 				if (currentFrame.sgrMouse) {
@@ -3348,7 +3348,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		}
 
 		props.onRef?.({
-			focus: () => keyInputRef.focus(),
+			focus: () => keyInputRef.focus({ preventScroll: true }),
 			getSelectionText: () => cachedSelectionText,
 			refresh: () => {
 				rowMap.clear();
@@ -3517,7 +3517,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				e.preventDefault();
 				const quoted = `'${path.replace(/'/g, "'\\''")}' `;
 				writePty(quoted);
-				keyInputRef.focus();
+				keyInputRef.focus({ preventScroll: true });
 			}}
 		>
 			{/* Offscreen textarea for mobile virtual keyboard input */}
