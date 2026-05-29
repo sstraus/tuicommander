@@ -313,8 +313,35 @@ describe("createCompositionState — dead-key / IME composition", () => {
 	it("suppresses regardless of dispatch ordering when delayed within the window", () => {
 		const { state, advance } = makeState();
 		state.onCompositionEnd("ç");
-		advance(50); // WKWebView fires the duplicate keydown a few ms later
+		advance(DUP_KEYDOWN_WINDOW_MS - 1); // WKWebView fires the duplicate a few ms later
 		expect(state.shouldSuppressKeydown(false, "c")).toBe(true);
+	});
+
+	it("suppresses an uppercase composed char's duplicate (É → key 'E')", () => {
+		const { state } = makeState();
+		state.onCompositionEnd("É");
+		expect(state.shouldSuppressKeydown(false, "E")).toBe(true);
+	});
+
+	it("does NOT suppress a multi-char key after an accent (Enter/Backspace pass through)", () => {
+		const { state } = makeState();
+		state.onCompositionEnd("á");
+		expect(state.shouldSuppressKeydown(false, "Enter")).toBe(false);
+		expect(state.shouldSuppressKeydown(false, "Backspace")).toBe(false);
+	});
+
+	it("does NOT suppress when key is undefined even within an armed window", () => {
+		const { state } = makeState();
+		state.onCompositionEnd("é");
+		expect(state.shouldSuppressKeydown(false)).toBe(false);
+	});
+
+	it("does NOT false-suppress an astral-plane composition (emoji base is code-point aware)", () => {
+		const { state } = makeState();
+		// charAt-based extraction would store a lone high surrogate; Array.from keeps
+		// the whole emoji, which can never equal a single-char key.
+		state.onCompositionEnd("😀");
+		expect(state.shouldSuppressKeydown(false, "a")).toBe(false);
 	});
 
 	it("does NOT suppress a non-matching key — fast real keystroke after an accent (é then p)", () => {
@@ -361,6 +388,13 @@ describe("createCompositionState — dead-key / IME composition", () => {
 		const { state } = makeState();
 		state.onCompositionEnd(undefined);
 		expect(state.shouldSuppressKeydown(false, "a")).toBe(false);
+	});
+
+	it("an empty compositionend DISARMS a window still armed from a prior composition", () => {
+		const { state } = makeState();
+		state.onCompositionEnd("ç"); // arms base "c"
+		state.onCompositionEnd(""); // cancelled composition must clear the armed window
+		expect(state.shouldSuppressKeydown(false, "c")).toBe(false);
 	});
 
 	it("isComposing=true keydown during composition is always blocked", () => {

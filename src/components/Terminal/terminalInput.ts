@@ -120,8 +120,14 @@ export function keyToSequence(e: KeyboardEvent): string | null {
 	return null;
 }
 
-/** How long after `compositionend` a matching trailing keydown is treated as the WKWebView duplicate. */
-export const DUP_KEYDOWN_WINDOW_MS = 200;
+/**
+ * How long after `compositionend` a matching trailing keydown is treated as the
+ * WKWebView duplicate. Kept short on purpose: the duplicate arrives within ~1ms,
+ * so a small window absorbs it without swallowing a real base-letter keystroke a
+ * human types later (e.g. the second `e` in "vêem"). Platform-agnostic — engines
+ * that don't emit the duplicate simply never see a matching keydown in time.
+ */
+export const DUP_KEYDOWN_WINDOW_MS = 50;
 
 /**
  * State machine for dead-key / IME composition through a hidden <input>.
@@ -155,14 +161,18 @@ export function createCompositionState(now: () => number = () => performance.now
 	let suppressUntil = 0;
 	return {
 		onCompositionEnd(data) {
-			if (!data) return null;
-			// Strip combining diacritics (NFD) to get the base letter the trailing
-			// keydown reports: "é" → "e", "ç" → "c", "ã" → "a".
-			suppressBase = data
-				.normalize("NFD")
-				.replace(/[\u0300-\u036f]/g, "")
-				.charAt(0)
-				.toLowerCase();
+			if (!data) {
+				// Cancelled/empty composition: disarm any window still armed from a
+				// prior composition so it can't eat a later matching keystroke.
+				suppressBase = "";
+				suppressUntil = 0;
+				return null;
+			}
+			// The first NFD code point is the base letter the trailing keydown
+			// reports ("e-acute" -> "e", cedilla -> "c"). Array.from is code-point
+			// aware, so an astral-plane composition yields the whole character (not a
+			// half-surrogate); such a base never matches a single-char key below.
+			suppressBase = (Array.from(data.normalize("NFD"))[0] ?? "").toLowerCase();
 			suppressUntil = now() + DUP_KEYDOWN_WINDOW_MS;
 			return data;
 		},

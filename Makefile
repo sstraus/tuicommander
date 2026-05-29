@@ -23,7 +23,7 @@ DIST_DIR=dist-release
 
 .PHONY: all clean dev test build build-dmg check fmt sign verify-sign notarize release dist \
        nightly github-release preview bump release-notes \
-       gh-debug-on gh-debug-off gh-debug-status gh-debug-logs gh-rate
+       gh-debug-on gh-debug-off gh-debug-status gh-debug-logs gh-rate logs
 
 all: build sign
 
