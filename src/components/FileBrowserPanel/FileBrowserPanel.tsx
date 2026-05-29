@@ -664,6 +664,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
 	const handlePointerDragStart = (absPath: string, e: PointerEvent) => {
 		if (e.button !== 0) return;
+		// Must mark before drag threshold — Tauri's onDragDropEvent fires on any pointer
+		// hold, and without this flag the OS drop handler in dragDrop.ts would treat an
+		// internal file-browser drag as an external Finder drop (wrong dispatch path).
 		markInternalDragStart();
 		_ptrSrc = absPath;
 		_ptrActive = false;
@@ -937,11 +940,23 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		onCleanup(() => document.removeEventListener("keydown", handleKeydown));
 	});
 
+	// OS file drops are routed by Tauri's onDragDropEvent → dispatchTauriDrop, which
+	// hit-tests via elementFromPoint and walks up to the nearest data-drop-target.
+	// Marking the panel root as a "folder" target with the current directory means a
+	// drop on empty panel space transfers into the current dir; drops on a folder row
+	// win because that row is the inner-most match.
+	const panelDropDir = () => {
+		const dir = root();
+		return dir ? joinPath(dir, currentSubdir()) : undefined;
+	};
+
 	return (
 		<div
 			id="file-browser-panel"
 			class={cx(s.panel, mode() === "detached" && s.detached, !props.visible && s.hidden)}
 			tabIndex={-1}
+			data-drop-target={panelDropDir() ? "folder" : undefined}
+			data-abs-path={panelDropDir()}
 		>
 			<Show when={mode() === "inline"}>
 				<PanelResizeHandle panelId="file-browser-panel" />

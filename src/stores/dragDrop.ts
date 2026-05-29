@@ -30,10 +30,15 @@ let highlightedEl: HTMLElement | null = null;
 const DROP_HOVER_CLASS = "drop-target-hover";
 
 /**
- * Convert Tauri physical-pixel coordinates to CSS pixels for elementFromPoint.
+ * Convert a Tauri drag-drop event position into CSS pixels for elementFromPoint.
+ *
+ * On macOS, Tauri reports the position in logical (point) coordinates, which
+ * already equal CSS pixels — dividing by devicePixelRatio would wrongly halve
+ * them on Retina and land the hit-test on the terminal behind the panel.
+ * On Windows/Linux the position is in physical pixels, so we divide by DPR.
  */
 export function tauriPhysicalToCss(physicalX: number, physicalY: number): { x: number; y: number } {
-	const dpr = window.devicePixelRatio || 1;
+	const dpr = isMac() ? 1 : window.devicePixelRatio || 1;
 	return { x: physicalX / dpr, y: physicalY / dpr };
 }
 

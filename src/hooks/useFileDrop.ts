@@ -7,6 +7,7 @@ import {
 	isInternalDrag,
 	markInternalDragEnd,
 	markInternalDragStart,
+	tauriPhysicalToCss,
 } from "../stores/dragDrop";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
@@ -69,12 +70,12 @@ export function openPathsAsTabs(paths: string[]): void {
 }
 
 /**
- * Hit-test the element under a physical-pixel coordinate from a Tauri drop event.
- * Tauri's `position` is in *physical* pixels; `elementFromPoint` needs CSS pixels.
+ * Hit-test the element under a Tauri drop event position.
+ * `tauriPhysicalToCss` handles the per-platform coordinate space.
  */
-function elementAtDropPoint(physicalX: number, physicalY: number): Element | null {
-	const dpr = window.devicePixelRatio || 1;
-	return document.elementFromPoint(physicalX / dpr, physicalY / dpr);
+function elementAtDropPoint(rawX: number, rawY: number): Element | null {
+	const { x, y } = tauriPhysicalToCss(rawX, rawY);
+	return document.elementFromPoint(x, y);
 }
 
 /**
@@ -216,7 +217,6 @@ let dispatcherRegistered = false;
 function registerGlobalDispatcher() {
 	if (dispatcherRegistered || !isTauri()) return;
 	dispatcherRegistered = true;
-
 	// Use a raw effect at module scope — SolidJS runs it reactively.
 	// We still need a root to avoid "computations created outside a createRoot" warnings.
 	import("solid-js").then(({ createRoot }) => {
