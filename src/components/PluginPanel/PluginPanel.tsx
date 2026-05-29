@@ -10,6 +10,7 @@ import { settingsStore } from "../../stores/settings";
 import { terminalsStore } from "../../stores/terminals";
 import { toastsStore } from "../../stores/toasts";
 import { attachIframeKeyForwarder } from "../../utils/iframeKeyForwarder";
+import { IFRAME_SEARCH_SCRIPT } from "../../utils/iframeSearch";
 import { assignTabToActiveGroup } from "../../utils/paneTabAssign";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 import { PLUGIN_BASE_CSS } from "./pluginBaseStyles";
@@ -98,7 +99,7 @@ function extractThemeObject(): Record<string, string> {
 function injectThemeVars(html: string): string {
 	const themeStyle = extractThemeVars();
 	const baseStyle = `<style id="tuic-base">${PLUGIN_BASE_CSS}</style>`;
-	const injection = baseStyle + themeStyle + TUIC_SDK_SCRIPT;
+	const injection = baseStyle + themeStyle + TUIC_SDK_SCRIPT + IFRAME_SEARCH_SCRIPT;
 	const headClose = html.indexOf("</head>");
 	if (headClose >= 0) {
 		return html.slice(0, headClose) + injection + html.slice(headClose);
@@ -175,14 +176,14 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
 		iframeRef?.contentWindow?.postMessage(data, "*");
 	};
 
-	/** Inject SDK script into a URL-mode iframe (same-origin only) */
+	/** Inject SDK + search scripts into a URL-mode iframe (same-origin only) */
 	const injectSdkIntoUrlIframe = () => {
 		try {
 			const doc = iframeRef?.contentDocument;
 			if (doc && !doc.getElementById("tuic-sdk")) {
 				const range = doc.createRange();
 				range.selectNode(doc.head || doc.documentElement);
-				const frag = range.createContextualFragment(TUIC_SDK_SCRIPT);
+				const frag = range.createContextualFragment(TUIC_SDK_SCRIPT + IFRAME_SEARCH_SCRIPT);
 				(doc.head || doc.documentElement).appendChild(frag);
 			}
 		} catch {

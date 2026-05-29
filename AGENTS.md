@@ -8,6 +8,13 @@ Read [`docs/sync-matrix.md`](docs/sync-matrix.md) before any feature/API/config 
 
 - Tests are the spec. When a test fails after a code change, investigate BOTH sides before deciding which to fix.
 - `to-test.md` tracks features awaiting manual testing — add items there for minor features.
+- **`[HUMAN]` is a last resort.** Before marking a to-test item `[HUMAN]`, you MUST attempt verification through this escalation ladder:
+  1. **Code inspection** — read the source, confirm the logic exists at file:line
+  2. **Test execution** — `cargo test`, `vitest run` with relevant filter
+  3. **CLI probing** — `curl` HTTP endpoints, `grep` for patterns
+  4. **MCP maccontrol** — take screenshots, click UI elements, verify visual state
+  5. **MCP invoke/JS** — call Tauri commands, inspect store state, trigger actions programmatically
+  Only use `[HUMAN]` when the item genuinely requires real hardware (audio, IME, touch), multi-app interaction (drag to Finder, global hotkey from another app), or timing-sensitive observation that none of the above can capture. When code-verifying, change `[HUMAN]` to `[x]` with a `_(verified: file:line explanation)_` annotation. When code reveals the description is wrong, change to `[ ]` with a `_(NOTE: ...)_` correction.
 
 ## Visual
 

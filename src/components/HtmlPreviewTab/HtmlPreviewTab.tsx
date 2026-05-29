@@ -9,6 +9,7 @@ import { editorTabsStore } from "../../stores/editorTabs";
 import { type HtmlPreviewTab as HtmlPreviewTabData, mdTabsStore } from "../../stores/mdTabs";
 import { repositoriesStore } from "../../stores/repositories";
 import { attachIframeKeyForwarder } from "../../utils/iframeKeyForwarder";
+import { IFRAME_SEARCH_SCRIPT } from "../../utils/iframeSearch";
 import { isAbsolutePath, joinPath } from "../../utils/pathUtils";
 import e from "../shared/editor-header.module.css";
 import s from "./HtmlPreviewTab.module.css";
@@ -50,14 +51,35 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 	const [content, setContent] = createSignal("");
 	const [loading, setLoading] = createSignal(false);
 	const [error, setError] = createSignal<string | null>(null);
+	const [reloadKey, setReloadKey] = createSignal(0);
 	const repo = useRepository();
 	let wrapperRef: HTMLDivElement | undefined;
+	let iframeRef: HTMLIFrameElement | undefined;
 	let cleanupKeyForwarder: (() => void) | undefined;
 
-	const handleIframeLoad = (e: Event) => {
+	const handleIframeLoad = (ev: Event) => {
 		cleanupKeyForwarder?.();
-		const iframe = e.target as HTMLIFrameElement;
+		const iframe = ev.target as HTMLIFrameElement;
+		iframeRef = iframe;
 		cleanupKeyForwarder = attachIframeKeyForwarder(iframe);
+	};
+
+	const reloadIframe = () => {
+		if (kind() === "html") {
+			setReloadKey((k) => k + 1);
+		} else if (iframeRef) {
+			const cur = iframeRef.src;
+			iframeRef.src = cur;
+		}
+	};
+
+	const handleMessage = (event: MessageEvent) => {
+		if (!iframeRef || event.source !== iframeRef.contentWindow) return;
+		const data = event.data;
+		if (!data || typeof data !== "object") return;
+		if (data.type === "tuic:reload-request") {
+			reloadIframe();
+		}
 	};
 
 	onCleanup(() => cleanupKeyForwarder?.());
@@ -86,13 +108,14 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 			: await invoke<string>("read_external_file", { path: filePath });
 	};
 
-	// Load text content for plain-text previews (HTML uses src= via asset protocol)
+	// Load content for HTML (srcdoc with search/reload injection) and plain-text previews
 	createEffect(() => {
 		const { repoPath, filePath, fsRoot } = props.tab;
 		void (repoPath ? repositoriesStore.getRevision(repoPath) : 0);
+		void reloadKey();
 		const k = kind();
 
-		if (!filePath || k !== "text") {
+		if (!filePath || (k !== "text" && k !== "html")) {
 			setContent("");
 			return;
 		}
@@ -102,7 +125,21 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 
 		(async () => {
 			try {
-				const fileContent = await readFileContent(fsRoot || repoPath, filePath);
+				let fileContent = await readFileContent(fsRoot || repoPath, filePath);
+				if (k === "html") {
+					const absPath = absolutePath(props.tab);
+					const dirPath = absPath.substring(0, absPath.lastIndexOf("/") + 1);
+					const baseTag = `<base href="${convertFileSrc(dirPath)}">`;
+					fileContent = fileContent.includes("<head")
+						? fileContent.replace(/<head([^>]*)>/i, `<head$1>${baseTag}`)
+						: `${baseTag}${fileContent}`;
+					const headClose = fileContent.indexOf("</head>");
+					if (headClose >= 0) {
+						fileContent = fileContent.slice(0, headClose) + IFRAME_SEARCH_SCRIPT + fileContent.slice(headClose);
+					} else {
+						fileContent = IFRAME_SEARCH_SCRIPT + fileContent;
+					}
+				}
 				setContent(fileContent);
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
@@ -134,6 +171,11 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 
 	return (
 		<div class={s.wrapper} ref={wrapperRef} tabIndex={-1}>
+			{(() => {
+				window.addEventListener("message", handleMessage);
+				onCleanup(() => window.removeEventListener("message", handleMessage));
+				return null;
+			})()}
 			<div class={e.header}>
 				<span class={e.filename} title={displayPath()}>
 					{props.tab.fileName}
@@ -158,13 +200,15 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 			<Show when={!loading() && !error()}>
 				<Switch>
 					<Match when={kind() === "html"}>
-						<iframe
-							class={s.iframe}
-							sandbox="allow-scripts allow-same-origin"
-							src={assetUrl()}
-							title={props.tab.fileName}
-							onLoad={handleIframeLoad}
-						/>
+						<Show when={content()} keyed>
+							<iframe
+								class={s.iframe}
+								sandbox="allow-scripts allow-same-origin"
+								srcdoc={content()}
+								title={props.tab.fileName}
+								onLoad={handleIframeLoad}
+							/>
+						</Show>
 					</Match>
 					<Match when={kind() === "pdf"}>
 						<iframe class={s.iframe} src={assetUrl()} title={props.tab.fileName} onLoad={handleIframeLoad} />

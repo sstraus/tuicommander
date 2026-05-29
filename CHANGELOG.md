@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.8-nightly] - 2026-05-29
+
 ### Added
 - **Worktree setup scripts** — All three worktree creation paths (MCP `repo action=worktree_create`, HTTP `POST /worktrees`, HTTP `POST /sessions/worktree`) now resolve and execute the configured `setup_script` (per-repo override > global default) after creating the worktree. Result or error returned in the response as `setup_script` / `setup_script_error`.
 - **Worktree-created event emission** — `worktree-created` Tauri event and `AppEvent::WorktreeCreated` event bus message now emitted from all three worktree creation paths (MCP, HTTP worktree, HTTP session+worktree), enabling frontend switch prompts.

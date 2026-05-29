@@ -17,6 +17,7 @@ import { appLogger } from "./stores/appLogger";
 import { getDebugSnapshot, listDebugSnapshots } from "./stores/debugRegistry";
 import { pluginStore } from "./stores/pluginStore";
 import { terminalsStore } from "./stores/terminals";
+import { clearFreezes, getFreezes, startFreezeDetector } from "./utils/freezeDetector";
 
 export function initDebugGlobals(): void {
 	(window as unknown as Record<string, unknown>).__TUIC__ = {
@@ -109,6 +110,16 @@ export function initDebugGlobals(): void {
 			};
 		},
 
+		/** UI freeze events (RAF gaps > 200ms) */
+		freezes() {
+			return getFreezes();
+		},
+
+		/** Clear recorded freeze events */
+		clearFreezes() {
+			clearFreezes();
+		},
+
 		/** App log entries (JS ring buffer, all levels) */
 		logs(limit = 50) {
 			return appLogger
@@ -123,4 +134,6 @@ export function initDebugGlobals(): void {
 				}));
 		},
 	};
+
+	startFreezeDetector();
 }

@@ -1119,6 +1119,26 @@ pub fn run() {
             let app_state: &Arc<AppState> = app.state::<Arc<AppState>>().inner();
             *app_state.app_handle.write() = Some(app.handle().clone());
 
+            // Ensure main window exists — if tauri.conf.json windows[] is
+            // empty (accidental edit, merge conflict), create it programmatically
+            // so the app doesn't start as a headless dock icon.
+            if app.get_webview_window("main").is_none() {
+                tracing::warn!("Main window missing from config — creating programmatically");
+                tauri::WebviewWindowBuilder::new(
+                    app,
+                    "main",
+                    tauri::WebviewUrl::App("index.html".into()),
+                )
+                .title("TUICommander")
+                .inner_size(1200.0, 800.0)
+                .min_inner_size(800.0, 600.0)
+                .decorations(true)
+                .resizable(true)
+                .hidden_title(true)
+                .title_bar_style(tauri::TitleBarStyle::Overlay)
+                .build()?;
+            }
+
             // Track desktop window focus so push notifications can be
             // suppressed while the user is at their machine.
             if let Some(window) = app.get_webview_window("main") {

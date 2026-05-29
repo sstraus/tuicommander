@@ -113,6 +113,7 @@ export const TUIC_SDK_SCRIPT = `<script id="tuic-sdk">
   document.addEventListener("keydown",function(e){
     if((e.metaKey||e.ctrlKey)&&!e.shiftKey&&!e.altKey&&(e.key==="r"||e.key==="R")){
       e.preventDefault();
+      e.stopPropagation();
       parent.postMessage({type:"tuic:reload-request"},"*");
     }
   });

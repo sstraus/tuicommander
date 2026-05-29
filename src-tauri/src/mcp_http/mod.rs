@@ -1420,8 +1420,13 @@ pub async fn start_server(
                     let app = app.layer(axum::middleware::from_fn(inject_localhost_connect_info));
                     tokio::spawn(async move {
                         match axum::serve(pipe, app.into_make_service()).await {
-                            Err(e) => tracing::error!(source = "mcp_http", "Named pipe server error: {e}"),
-                            Ok(()) => tracing::warn!(source = "mcp_http", "Named pipe server exited cleanly (unexpected)"),
+                            Err(e) => {
+                                tracing::error!(source = "mcp_http", "Named pipe server error: {e}")
+                            }
+                            Ok(()) => tracing::warn!(
+                                source = "mcp_http",
+                                "Named pipe server exited cleanly (unexpected)"
+                            ),
                         }
                     });
                 }
