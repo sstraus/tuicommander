@@ -158,15 +158,15 @@ bump:
 	@if [ -z "$(V)" ]; then echo "ERROR: specify version with V=x.y.z" && exit 1; fi; \
 	CUR=$$(grep '^version' src-tauri/Cargo.toml | head -1 | sed 's/.*"\(.*\)"/\1/'); \
 	echo "==> Bumping $$CUR → $(V)"; \
-	sed -i '' 's/^version = "'"$$CUR"'"/version = "$(V)"/' src-tauri/Cargo.toml; \
-	sed -i '' 's/"version": "'"$$CUR"'"/"version": "$(V)"/' src-tauri/tauri.conf.json; \
-	sed -i '' 's/"version": "'"$$CUR"'"/"version": "$(V)"/' package.json; \
-	sed -i '' '0,/^version = /{s/^version = ".*"/version = "$(V)"/;}' src-tauri/crates/tuic-bridge/Cargo.toml; \
+	sed -i '' '/^\[package\]/,/^\[/ s/^version = ".*"/version = "$(V)"/' src-tauri/Cargo.toml; \
+	sed -i '' 's/"version": "[^"]*"/"version": "$(V)"/' src-tauri/tauri.conf.json; \
+	sed -i '' 's/^  "version": "[^"]*"/  "version": "$(V)"/' package.json; \
+	sed -i '' '/^\[package\]/,/^\[/ s/^version = ".*"/version = "$(V)"/' src-tauri/crates/tuic-bridge/Cargo.toml; \
 	echo "  src-tauri/Cargo.toml  → $(V)"; \
 	echo "  src-tauri/crates/tuic-bridge/Cargo.toml → $(V)"; \
 	echo "  src-tauri/tauri.conf.json → $(V)"; \
 	echo "  package.json          → $(V)"; \
-	sed -i '' 's/^\*\*Version:\*\* '"$$CUR"'/**Version:** $(V)/' SPEC.md; \
+	sed -i '' 's/^\*\*Version:\*\* .*/**Version:** $(V)/' SPEC.md; \
 	echo "  SPEC.md               → $(V)"; \
 	TODAY=$$(date +%Y-%m-%d); \
 	sed -i '' 's/^## \[Unreleased\]/## [Unreleased]\n\n## [$(V)] - '"$$TODAY"'/' CHANGELOG.md; \
