@@ -77,6 +77,11 @@
   min-width: 0;
 }
 
+.commitRowExpanded .commitSubject {
+  white-space: normal;
+  text-overflow: unset;
+}
+
 /* Line 2: hash + author + time */
 .commitLine2 {
   display: flex;
@@ -114,6 +119,15 @@
 .refHead {
   background: color-mix(in srgb, var(--accent) 20%, transparent);
   color: var(--accent);
+}
+
+/* Expanded: full commit message */
+.commitBody {
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+  white-space: pre-wrap;
+  padding: 4px 0 2px 0;
+  line-height: 1.4;
 }
 
 /* Expanded: changed files */

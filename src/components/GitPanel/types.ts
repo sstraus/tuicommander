@@ -6,6 +6,7 @@ export interface CommitLogEntry {
 	author_name: string;
 	author_date: string;
 	subject: string;
+	body?: string;
 }
 
 /** A single entry from the Rust StatusEntry struct */

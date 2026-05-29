@@ -18,6 +18,8 @@ const ROW_HEIGHT = 48;
 const FILE_LINE_HEIGHT = 22;
 /** Loading indicator + padding for expanded section */
 const EXPANDED_OVERHEAD = 12;
+/** Approximate height per body text line */
+const BODY_LINE_HEIGHT = 17;
 
 export interface LogTabProps {
 	repoPath: string | null;
@@ -162,13 +164,15 @@ export const LogTab: Component<LogTabProps> = (props) => {
 		}
 	}
 
-	/** Compute dynamic row height: collapsed = ROW_HEIGHT, expanded = ROW_HEIGHT + files */
+	/** Compute dynamic row height: collapsed = ROW_HEIGHT, expanded = ROW_HEIGHT + body + files */
 	function estimateSize(index: number): number {
 		const commit = commits()[index];
 		if (!commit || expandedHash() !== commit.hash) return ROW_HEIGHT;
+		const bodyLines = commit.body ? commit.body.split("\n").length : 0;
+		const bodyHeight = bodyLines > 0 ? bodyLines * BODY_LINE_HEIGHT + 8 : 0;
 		const files = changedFiles()[commit.hash];
-		if (!files) return ROW_HEIGHT + EXPANDED_OVERHEAD + FILE_LINE_HEIGHT; // loading state
-		return ROW_HEIGHT + EXPANDED_OVERHEAD + files.length * FILE_LINE_HEIGHT;
+		if (!files) return ROW_HEIGHT + EXPANDED_OVERHEAD + bodyHeight + FILE_LINE_HEIGHT;
+		return ROW_HEIGHT + EXPANDED_OVERHEAD + bodyHeight + files.length * FILE_LINE_HEIGHT;
 	}
 
 	// Re-fetch when repo changes or revision bumps
@@ -325,8 +329,11 @@ export const LogTab: Component<LogTabProps> = (props) => {
 												{commit()?.author_name} · {commit() ? relativeTimeWithClock(commit()!.author_date) : ""}
 											</span>
 										</div>
-										{/* Expanded: changed files list */}
+										{/* Expanded: full body + changed files list */}
 										<Show when={isExpanded()}>
+											<Show when={commit()?.body}>
+												<div class={s.commitBody}>{commit()!.body}</div>
+											</Show>
 											<div class={s.changedFiles}>
 												<Show when={!isFilesLoading()} fallback={<div class={s.filesLoading}>Loading files...</div>}>
 													<For each={files() ?? []}>

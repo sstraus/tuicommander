@@ -2394,12 +2394,14 @@ pub(crate) struct CommitLogEntry {
     pub author_name: String,
     pub author_date: String,
     pub subject: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
 }
 
 /// Parse a NUL-delimited commit log line into a `CommitLogEntry`.
 fn parse_commit_log_line(line: &str) -> Option<CommitLogEntry> {
-    let parts: Vec<&str> = line.splitn(6, '\0').collect();
-    if parts.len() != 6 {
+    let parts: Vec<&str> = line.splitn(7, '\0').collect();
+    if parts.len() < 6 {
         return None;
     }
     let parents = if parts[1].is_empty() {
@@ -2412,6 +2414,10 @@ fn parse_commit_log_line(line: &str) -> Option<CommitLogEntry> {
     } else {
         parts[2].split(", ").map(|s| s.trim().to_string()).collect()
     };
+    let body = parts.get(6).and_then(|b| {
+        let trimmed = b.trim();
+        if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+    });
     Some(CommitLogEntry {
         hash: parts[0].to_string(),
         parents,
@@ -2419,10 +2425,11 @@ fn parse_commit_log_line(line: &str) -> Option<CommitLogEntry> {
         author_name: parts[3].to_string(),
         author_date: parts[4].to_string(),
         subject: parts[5].to_string(),
+        body,
     })
 }
 
-const COMMIT_LOG_FORMAT: &str = "%H%x00%P%x00%D%x00%an%x00%aI%x00%s";
+const COMMIT_LOG_FORMAT: &str = "%x1e%H%x00%P%x00%D%x00%an%x00%aI%x00%s%x00%b";
 const COMMIT_LOG_MAX_COUNT: u32 = 500;
 const COMMIT_LOG_DEFAULT_COUNT: u32 = 50;
 
@@ -2466,8 +2473,9 @@ pub(crate) fn get_commit_log_impl(
 
     let commits = out
         .stdout
-        .lines()
-        .filter_map(parse_commit_log_line)
+        .split('\x1e')
+        .filter(|s| !s.is_empty())
+        .filter_map(|s| parse_commit_log_line(s.trim_matches('\n')))
         .collect();
 
     Ok(commits)
@@ -2658,8 +2666,9 @@ pub(crate) async fn get_file_history(
 
         let commits = out
             .stdout
-            .lines()
-            .filter_map(parse_commit_log_line)
+            .split('\x1e')
+            .filter(|s| !s.is_empty())
+            .filter_map(|s| parse_commit_log_line(s.trim_matches('\n')))
             .collect();
 
         Ok(commits)
@@ -3626,6 +3635,22 @@ mod tests {
         assert_eq!(entry.author_name, "Alice");
         assert_eq!(entry.author_date, "2024-01-15T10:30:00+01:00");
         assert_eq!(entry.subject, "Initial commit");
+        assert!(entry.body.is_none());
+    }
+
+    #[test]
+    fn parse_commit_log_line_with_body() {
+        let line = "abc123\x00def456\x00\x00Alice\x002024-01-15T10:30:00+01:00\x00feat: add feature\x00Detailed description\nof the change.";
+        let entry = parse_commit_log_line(line).expect("should parse");
+        assert_eq!(entry.subject, "feat: add feature");
+        assert_eq!(entry.body.as_deref(), Some("Detailed description\nof the change."));
+    }
+
+    #[test]
+    fn parse_commit_log_line_with_empty_body() {
+        let line = "abc123\x00def456\x00\x00Alice\x002024-01-15T10:30:00+01:00\x00feat: add feature\x00  \n  ";
+        let entry = parse_commit_log_line(line).expect("should parse");
+        assert!(entry.body.is_none());
     }
 
     #[test]
@@ -3634,6 +3659,7 @@ mod tests {
         let entry = parse_commit_log_line(line).expect("should parse");
         assert!(entry.parents.is_empty());
         assert!(entry.refs.is_empty());
+        assert!(entry.body.is_none());
     }
 
     #[test]
