@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Full commit message body in expanded log view** — Expanding a commit in the Git Panel's Log tab now shows the complete multi-line commit message body below the subject; the subject is no longer truncated when expanded. Backed by a new `body` field on `CommitLogEntry`.
+
+### Changed
+- **GitHub OAuth scope reduced to `repo`** — Device Flow login no longer requests `read:org`. TUIC never calls any org/team/membership endpoint; access to org-owned private repos comes from `repo` + per-org SAML SSO authorization.
+- **Bounded monitoring git fan-out** — Background repo-monitoring refreshes (`get_repo_summary`, `get_repo_structure`, `get_repo_diff_stats`) now share a concurrency semaphore (max 8 concurrent refreshes), so a `repo-changed` burst across many registered repos can't spike concurrent git subprocesses past the FD limit (EMFILE) or storm the main thread with IPC. Operational git (commit/push/stage/checkout/diff-on-click) is never throttled.
+- **Faster grid-frame stuck recovery** — The stuck grid-frame back-off was shortened from 5s to 1s (chunked, respecting the running ticker) so the terminal recovers more quickly after a WebView JS-thread stall.
+
+### Fixed
+- **Raised file-descriptor soft limit at startup** — macOS launchd hands GUI apps a soft `RLIMIT_NOFILE` of 256; TUIC now raises it to 65536 at startup, preventing EMFILE errors during git fan-out bursts.
+- **Dead terminal tabs no longer show green** — On PTY exit, the tab's shell state is now set to `exited` (it was left `idle` with a null session ID), so closed/dead tabs render the correct grey indicator instead of a green "active" dot.
+
 ## [1.2.9-nightly] - 2026-05-29
 
 ### Added

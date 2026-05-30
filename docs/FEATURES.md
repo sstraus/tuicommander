@@ -323,7 +323,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Paginated commit log via `get_commit_log` (default 50, max 500)
 - Virtual scroll via `@tanstack/solid-virtual` for large histories
 - Canvas-based commit graph via `get_commit_graph`: lane assignment, Bezier curve connections, 8-color palette, ref badges (branch, tag, HEAD). Graph follows HEAD only
-- Click a commit row to expand and see its changed files (via `get_changed_files`)
+- Click a commit row to expand and see its full commit message body (multi-line, untruncated) and changed files (via `get_changed_files`)
 - Click a file in an expanded commit to open its diff at that commit hash
 - Relative timestamps (e.g., "3h ago")
 

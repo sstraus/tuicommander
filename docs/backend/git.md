@@ -12,6 +12,12 @@ Git data is cached with a 60s TTL. The unified `repo_watcher` (FSEvents on macOS
 
 Internal callers that need synchronous access use `_impl` suffixes (e.g. `get_diff_stats_impl`) to avoid double `spawn_blocking` nesting.
 
+## Monitoring Git Concurrency
+
+Background repo-monitoring refreshes — `get_repo_summary_impl`, `get_repo_structure_impl`, and `get_repo_diff_stats_impl` — each fan out git subprocesses (worktree-list, `branch --merged`, per-worktree diffs). On a `repo-changed` burst across many registered repos this is unbounded and can spike concurrent git pipes past the OS file-descriptor limit (EMFILE) while flooding the main thread with IPC.
+
+Each of these entry points acquires one permit from `AppState.monitoring_git_sem` (`MONITORING_GIT_CONCURRENCY = 8`) for the whole refresh, capping concurrent background refreshes to 8. Gating is per-function (not per-spawn) and deadlock-free because these entry points never call each other. **Operational git** (commit/push/stage/checkout/diff-on-click) is never gated — only monitoring work is throttled.
+
 ## Subprocess Helper (`git_cli.rs`)
 
 Every git subprocess invocation goes through `git_cmd(cwd: &Path) -> GitCmd`. The builder provides three execution modes:
