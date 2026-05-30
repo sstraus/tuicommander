@@ -524,6 +524,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					}
 					const hadAgent = stillExists.agentType !== null;
 					terminalsStore.update(props.id, {
+						// Mark the shell as exited so the tab dot turns grey/dim instead of
+						// staying green ("idle"). Without this, a dead session keeps its last
+						// shellState forever — a ghost tab that looks idle but has no PTY.
+						shellState: "exited",
 						sessionId: null,
 						currentTask: null,
 						agentType: null,
