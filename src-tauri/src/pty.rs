@@ -2951,11 +2951,15 @@ pub(crate) fn spawn_reader_thread(
         // force-reset it so frame delivery resumes. Prevents permanent blank
         // terminal when the frontend fails to ack (crash, corrupt frame, etc.).
         const MAX_IN_FLIGHT_MS: u64 = 500;
-        // After this many consecutive force-resets, sleep for STUCK_PAUSE_MS
+        // After this many consecutive force-resets, back off for STUCK_PAUSE_MS
         // to let the JS event loop drain the Tauri channel backlog before
-        // sending more frames.
+        // sending more frames. Kept short (1s, chunked) so a transient JS stall
+        // — e.g. a repo-changed git/IPC burst that blocks the WebView thread for
+        // ~1-2s — doesn't freeze an otherwise-healthy terminal for the full
+        // pause. The loop re-applies the back-off if the frontend is still
+        // behind, so persistent saturation still gets cumulative backpressure.
         const MAX_STUCK_BEFORE_PAUSE: u32 = 3;
-        const STUCK_PAUSE_MS: u64 = 5_000;
+        const STUCK_PAUSE_MS: u64 = 1_000;
         let mut stuck_since: Option<std::time::Instant> = None;
         let mut stuck_count: u32 = 0;
         while ticker_running.load(Ordering::Relaxed) {
@@ -2985,9 +2989,16 @@ pub(crate) fn spawn_reader_thread(
                     }
                     stuck_since = None;
                     if stuck_count >= MAX_STUCK_BEFORE_PAUSE {
-                        // Pause to let JS drain the channel backlog before retrying
+                        // Back off to let JS drain the channel backlog before retrying.
+                        // Sleep in short chunks so (a) a recovered frontend resumes
+                        // within ~one chunk rather than the full pause, and (b) session
+                        // close isn't delayed up to the full pause on shutdown.
                         stuck_count = 0;
-                        std::thread::sleep(std::time::Duration::from_millis(STUCK_PAUSE_MS));
+                        let mut waited = 0u64;
+                        while waited < STUCK_PAUSE_MS && ticker_running.load(Ordering::Relaxed) {
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+                            waited += 100;
+                        }
                     }
                     ticker_dirty.store(true, Ordering::Relaxed);
                     continue;
