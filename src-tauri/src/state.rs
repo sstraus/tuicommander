@@ -820,6 +820,11 @@ pub(crate) const AGENT_INBOX_CAPACITY: usize = 100;
 /// Max message body size in bytes (64 KB).
 pub(crate) const AGENT_MESSAGE_MAX_BYTES: usize = 64 * 1024;
 
+/// Max concurrent *monitoring* git subprocesses (see `monitoring_git_sem`).
+/// Tuned to keep background refresh responsive while preventing the FD/CPU
+/// storm that a repo-changed burst across many repos would otherwise cause.
+pub(crate) const MONITORING_GIT_CONCURRENCY: usize = 8;
+
 /// Global state for managing PTY sessions and worktrees
 pub struct AppState {
     pub sessions: DashMap<String, Mutex<PtySession>>,
@@ -957,6 +962,12 @@ pub struct AppState {
     /// Global semaphore limiting concurrent index builds to 1. Prevents startup
     /// pre-warm from spawning N simultaneous BM25 builds that saturate the CPU.
     pub(crate) index_build_sem: Arc<tokio::sync::Semaphore>,
+    /// Global semaphore bounding concurrent *monitoring* git subprocesses
+    /// (repo summary/structure/diff-stats fan-out, poller batch). On a
+    /// repo-changed burst these would otherwise spawn hundreds of git pipes at
+    /// once → FD spikes (EMFILE) and CPU/IPC storms that stall the WebView.
+    /// Operational (user-initiated) git is NEVER gated by this.
+    pub(crate) monitoring_git_sem: Arc<tokio::sync::Semaphore>,
     /// Per-session slash command mode (true when input starts with `/`).
     /// Used to suppress false-positive slash menu detection on PTY output.
     pub(crate) slash_mode: DashMap<String, std::sync::atomic::AtomicBool>,
@@ -1083,6 +1094,17 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Acquire one slot in the monitoring-git concurrency limit. Hold the
+    /// returned permit for the lifetime of the background git subprocess, then
+    /// drop it. Operational (user-initiated) git must NOT call this.
+    pub(crate) async fn monitoring_git_permit(&self) -> tokio::sync::OwnedSemaphorePermit {
+        self.monitoring_git_sem
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("monitoring_git_sem is never closed")
+    }
+
     pub fn new(
         data_dir: PathBuf,
         worktrees_dir: PathBuf,
@@ -1157,6 +1179,7 @@ impl AppState {
             index_in_flight: Arc::new(DashSet::new()),
             worktree_recreate_in_flight: Arc::new(DashSet::new()),
             index_build_sem: Arc::new(tokio::sync::Semaphore::new(1)),
+            monitoring_git_sem: Arc::new(tokio::sync::Semaphore::new(MONITORING_GIT_CONCURRENCY)),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),
@@ -3109,6 +3132,7 @@ mod tests {
             index_in_flight: Arc::new(DashSet::new()),
             worktree_recreate_in_flight: Arc::new(DashSet::new()),
             index_build_sem: Arc::new(tokio::sync::Semaphore::new(1)),
+            monitoring_git_sem: Arc::new(tokio::sync::Semaphore::new(MONITORING_GIT_CONCURRENCY)),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
             shell_states: DashMap::new(),

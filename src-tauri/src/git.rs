@@ -1166,6 +1166,10 @@ pub(crate) async fn get_repo_summary_impl(
     state: &AppState,
     repo_path: String,
 ) -> Result<RepoSummary, String> {
+    // Hold one monitoring-git slot for this whole refresh so a repo-changed
+    // burst across many repos can't fan out hundreds of concurrent git
+    // subprocesses (FD spike / CPU-IPC storm). Operational git is never gated.
+    let _permit = state.monitoring_git_permit().await;
     // Spawn worktree_paths concurrently while we fetch/check merged_branches cache.
     let wt_path = repo_path.clone();
     let worktree_handle =
@@ -1194,18 +1198,11 @@ pub(crate) async fn get_repo_summary_impl(
         .map_err(|e| format!("spawn_blocking error: {e}"))?
         .map_err(|e| format!("get_worktree_paths failed: {e}"))?;
 
-    // Run diff stats and last-commit timestamps concurrently.
-    // DEFERRED (2026-05-30) — unbounded git fan-out (FD exhaustion source).
-    // This per-worktree spawn loop, multiplied across all registered repos on
-    // repo_watcher "repo-changed" bursts, can spike concurrent git pipes past
-    // the macOS launchd soft FD limit (256) → EMFILE. Mitigated for now by
-    // raising the soft limit to 65536 at startup (lib.rs raise_fd_limit).
-    // Proper fix (separate session): gate ONLY monitoring git work behind a
-    // shared Semaphore — classify operational (commit/push/stage/checkout/diff-
-    // on-click: never throttle) vs monitoring (this, get_repo_summary/structure/
-    // diff_stats, branches-detail, github_poller ls-remote/rev-list batch).
-    // Chokepoints: get_repo_summary_impl (here), get_repo_structure_impl/
-    // get_repo_diff_stats_impl, github::get_all_batch_impl.
+    // Run diff stats and last-commit timestamps concurrently. The whole
+    // function holds a monitoring_git_sem permit (acquired above), so this
+    // per-worktree fan-out — multiplied across repos on repo-changed bursts —
+    // is bounded to MONITORING_GIT_CONCURRENCY concurrent refreshes instead of
+    // spiking git pipes past the FD limit (EMFILE) and storming CPU/IPC.
     let paths: Vec<String> = worktree_paths.values().cloned().collect();
     let mut diff_handles = Vec::with_capacity(paths.len());
     for path in paths {
@@ -1257,6 +1254,8 @@ pub(crate) async fn get_repo_structure_impl(
     state: &AppState,
     repo_path: String,
 ) -> Result<RepoStructure, String> {
+    // Monitoring slot — see get_repo_summary_impl.
+    let _permit = state.monitoring_git_permit().await;
     let wt_path = repo_path.clone();
     let worktree_handle =
         tokio::task::spawn_blocking(move || crate::worktree::get_worktree_paths(wt_path));
@@ -1302,9 +1301,11 @@ pub(crate) async fn get_repo_structure(
 /// Per-worktree diff stats + last-commit timestamps.
 /// Used by progressive loading Phase 2 — runs after structure is already displayed.
 pub(crate) async fn get_repo_diff_stats_impl(
-    _state: &AppState,
+    state: &AppState,
     repo_path: String,
 ) -> Result<RepoDiffStats, String> {
+    // Monitoring slot — see get_repo_summary_impl.
+    let _permit = state.monitoring_git_permit().await;
     // Need worktree paths to know which directories to diff
     let wt_path = repo_path.clone();
     let worktree_paths =
