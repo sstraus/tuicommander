@@ -49,5 +49,16 @@
       "UI freeze detector tracks main-thread stalls for diagnostics"
     ],
     "date": "2026-05-29"
+  },
+  "1.2.10-nightly": {
+    "highlights": [
+      "Git Panel log now shows the full commit message body when you expand a commit",
+      "GitHub login requests fewer permissions (dropped unnecessary read:org scope)",
+      "Background repo monitoring is now throttled to prevent file descriptor exhaustion with many repos",
+      "Terminal recovers from WebView stalls in 1s instead of 5s",
+      "macOS file descriptor limit raised at startup to prevent EMFILE crashes during git operations",
+      "Dead terminal tabs now correctly show grey instead of a misleading green indicator"
+    ],
+    "date": "2026-05-30"
   }
 }

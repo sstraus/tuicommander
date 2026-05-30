@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.2.10-nightly] - 2026-05-30
+
 ### Added
 - **Full commit message body in expanded log view** — Expanding a commit in the Git Panel's Log tab now shows the complete multi-line commit message body below the subject; the subject is no longer truncated when expanded. Backed by a new `body` field on `CommitLogEntry`.
 
