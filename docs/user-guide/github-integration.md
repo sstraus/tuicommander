@@ -15,7 +15,7 @@ TUICommander needs a GitHub token to access PRs and CI status. You have two opti
 5. Paste the code and authorize
 6. Done — the token is stored securely in your OS keyring
 
-This method automatically requests the correct scopes (`repo`, `read:org`) and works with private repositories and organization repos.
+This method automatically requests the correct scope (`repo`) and works with private repositories and organization repos.
 
 ### Option 2: gh CLI
 

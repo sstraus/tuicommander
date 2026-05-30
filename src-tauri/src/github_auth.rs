@@ -18,7 +18,13 @@ use crate::credentials::Credential;
 const CLIENT_ID: &str = "Ov23liN95BHKQDboVFRl";
 
 /// Scopes requested during Device Flow authentication.
-const OAUTH_SCOPES: &str = "repo read:org";
+///
+/// Only `repo` is needed: it covers all REST/GraphQL endpoints TUIC calls
+/// (`/repos/...`, `viewer`, PRs, issues, checks) including org-owned private
+/// repos. Access to repos in a SAML-SSO org comes from `repo` + the user's
+/// per-org SSO token authorization — NOT from `read:org`, which only grants
+/// org/team/membership reads that TUIC never performs.
+const OAUTH_SCOPES: &str = "repo";
 
 // ---------------------------------------------------------------------------
 // Device Flow types
@@ -654,14 +660,14 @@ mod tests {
         let json = r#"{
             "access_token": "gho_16C7e42F292c6912E7710c838347Ae178B4a",
             "token_type": "bearer",
-            "scope": "repo read:org"
+            "scope": "repo"
         }"#;
         let resp: GithubTokenResponse = serde_json::from_str(json).unwrap();
         assert_eq!(
             resp.access_token,
             "gho_16C7e42F292c6912E7710c838347Ae178B4a"
         );
-        assert_eq!(resp.scope, "repo read:org");
+        assert_eq!(resp.scope, "repo");
     }
 
     #[test]

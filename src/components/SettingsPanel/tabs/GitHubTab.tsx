@@ -628,7 +628,7 @@ export const GitHubTab: Component = () => {
 						</button>
 					</div>
 					<div class={g.scopeList} style="margin-top: 16px">
-						Requested permissions: <strong>repo</strong>, <strong>read:org</strong>
+						Requested permissions: <strong>repo</strong>
 					</div>
 				</div>
 			</Show>

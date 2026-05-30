@@ -871,7 +871,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - One-click GitHub authentication from Settings > GitHub tab
 - Uses GitHub OAuth App Device Flow (no client secret, works on desktop)
 - Token stored in OS keyring (macOS Keychain, Windows Credential Manager, Linux Secret Service)
-- Requested scopes: `repo`, `read:org`
+- Requested scope: `repo`
 - Shows user avatar, login name, and token source after authentication
 - Logout removes OAuth token, falls back to env/gh CLI
 - On 401: auto-clears invalid OAuth token and prompts re-auth
