@@ -1546,6 +1546,17 @@ impl ChunkProcessor {
                 self.pending_command_started = Some(std::time::Instant::now());
             }
             'D' => {
+                // A 'D' (command finished) with no preceding 'C' (command
+                // started) means no command actually ran — e.g. Enter on an
+                // empty prompt, where the shell still emits D carrying the
+                // previous command's exit code. Recording it would create a
+                // phantom outcome with an empty command and "unknown" error
+                // type, polluting both the knowledge panel and the agent's
+                // injected prompt. Skip it.
+                if self.pending_command_started.is_none() {
+                    self.pending_command = None;
+                    return;
+                }
                 let exit_code = params.parse::<i32>().unwrap_or(0);
                 let command = self.pending_command.take().unwrap_or_default();
                 let duration_ms = self
@@ -9236,6 +9247,58 @@ mod tests {
             current, SHELL_BUSY,
             "OSC 133 D alone should NOT transition — wait for A"
         );
+    }
+
+    #[test]
+    fn osc133_d_without_c_records_no_outcome() {
+        // A 'D' (command finished) without a preceding 'C' (command started) —
+        // e.g. Enter on an empty prompt — must NOT record a phantom outcome
+        // (empty command, "unknown" error) that would pollute the knowledge
+        // panel and the agent's injected prompt.
+        let state = crate::state::tests_support::make_test_app_state();
+        let session_id = "test-osc133-d-no-c";
+        state
+            .has_osc133_integration
+            .insert(session_id.to_string(), ());
+
+        let mut proc = ChunkProcessor::new(None, None);
+        proc.handle_osc133_event('D', "1", session_id, &state);
+
+        let recorded = state
+            .session_knowledge
+            .get(session_id)
+            .map(|k| k.lock().commands.len())
+            .unwrap_or(0);
+        assert_eq!(recorded, 0, "D without C must not record an outcome");
+    }
+
+    #[test]
+    fn osc133_c_then_d_records_outcome() {
+        // Regression guard: the normal path still records — C captures the
+        // command start, D finalizes the outcome.
+        let state = crate::state::tests_support::make_test_app_state();
+        let session_id = "test-osc133-c-then-d";
+        state.shell_states.insert(
+            session_id.to_string(),
+            std::sync::atomic::AtomicU8::new(SHELL_IDLE),
+        );
+        state
+            .shell_state_since_ms
+            .insert(session_id.to_string(), std::sync::atomic::AtomicU64::new(0));
+        state
+            .has_osc133_integration
+            .insert(session_id.to_string(), ());
+
+        let mut proc = ChunkProcessor::new(None, None);
+        proc.handle_osc133_event('C', "", session_id, &state);
+        proc.handle_osc133_event('D', "0", session_id, &state);
+
+        let recorded = state
+            .session_knowledge
+            .get(session_id)
+            .map(|k| k.lock().commands.len())
+            .unwrap_or(0);
+        assert_eq!(recorded, 1, "C→D should record exactly one outcome");
     }
 
     // --- is_cc_tool_call_header tests ---
