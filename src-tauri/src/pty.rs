@@ -916,6 +916,14 @@ impl IdleDecision {
     };
 }
 
+/// Current wall-clock time as milliseconds since the Unix epoch.
+fn now_epoch_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
 /// Check whether the session should transition to idle (busy → idle).
 /// Conditions: last real output > threshold ago AND no active sub-tasks.
 /// Agent sessions use a longer threshold (AGENT_IDLE_MS) because AI agents
@@ -1206,20 +1214,28 @@ fn spawn_silence_timer(
 ) {
     let event_bus = state.event_bus.clone();
     tokio::spawn(async move {
-        let mut last_tick = std::time::Instant::now();
+        // Track the inter-tick gap in WALL-CLOCK time, not `Instant`.
+        // `should_transition_idle` measures idle elapsed against the wall clock
+        // (`last_output_ms` is epoch millis), so sleep detection MUST use the
+        // same clock. On macOS, `Instant` (mach_absolute_time) does not advance
+        // while the system is asleep — an Instant-based gap stays ~1s across a
+        // lid-close sleep and never detects the wake, letting the wall-clock
+        // jump fire a false busy→idle (completion sound) on every terminal.
+        let mut last_tick_ms = now_epoch_ms();
         while running.load(Ordering::Relaxed) {
             tokio::time::sleep(SILENCE_CHECK_INTERVAL).await;
             if !running.load(Ordering::Relaxed) {
                 break;
             }
 
-            // Sleep-wake detection: if the gap between consecutive ticks is
-            // much larger than SILENCE_CHECK_INTERVAL, the system was asleep
-            // (lid closed). Reset timestamps so stale elapsed times don't
-            // trigger false idle transitions / completion sounds.
-            let now_tick = std::time::Instant::now();
-            let tick_gap = now_tick.duration_since(last_tick);
-            last_tick = now_tick;
+            // Sleep-wake detection: if the wall-clock gap between consecutive
+            // ticks is much larger than SILENCE_CHECK_INTERVAL, the system was
+            // asleep (lid closed) or the clock stepped. Reset timestamps so
+            // stale elapsed times don't trigger false idle transitions /
+            // completion sounds.
+            let epoch_now = now_epoch_ms();
+            let tick_gap = std::time::Duration::from_millis(epoch_now.saturating_sub(last_tick_ms));
+            last_tick_ms = epoch_now;
             if tick_gap >= SLEEP_WAKE_GAP {
                 tracing::info!(
                     source = "silence_timer",
@@ -1227,10 +1243,6 @@ fn spawn_silence_timer(
                     gap_secs = tick_gap.as_secs(),
                     "Sleep-wake detected — resetting timestamps"
                 );
-                let epoch_now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_millis() as u64;
                 if let Some(ts) = state.last_output_ms.get(&session_id) {
                     ts.store(epoch_now, std::sync::atomic::Ordering::Release);
                 }
