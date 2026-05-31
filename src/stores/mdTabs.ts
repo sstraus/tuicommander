@@ -137,6 +137,11 @@ function createMdTabsStore() {
 				(tab) => tab.type === "file" && (tab as FileTab).fsRoot === effectiveRoot && tab.filePath === filePath,
 			) as FileTab | undefined;
 			if (existing) {
+				const key = currentBranchKey();
+				if (existing.repoPath !== repoPath || existing.branchKey !== key) {
+					base._setState("tabs", existing.id, "repoPath" as keyof MdTabData, repoPath as MdTabData[keyof MdTabData]);
+					base._setState("tabs", existing.id, "branchKey" as keyof MdTabData, key as MdTabData[keyof MdTabData]);
+				}
 				base.setActive(existing.id);
 
 				return existing.id;
@@ -366,6 +371,11 @@ function createMdTabsStore() {
 					tab.type === "html-preview" && (tab as HtmlPreviewTab).fsRoot === effectiveRoot && tab.filePath === filePath,
 			) as HtmlPreviewTab | undefined;
 			if (existing) {
+				const key = currentBranchKey();
+				if (existing.repoPath !== repoPath || existing.branchKey !== key) {
+					base._setState("tabs", existing.id, "repoPath" as keyof MdTabData, repoPath as MdTabData[keyof MdTabData]);
+					base._setState("tabs", existing.id, "branchKey" as keyof MdTabData, key as MdTabData[keyof MdTabData]);
+				}
 				base.setActive(existing.id);
 				return existing.id;
 			}
