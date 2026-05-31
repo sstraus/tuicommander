@@ -121,6 +121,21 @@ function handleShellState(
 	return {};
 }
 
+/**
+ * Simulates the "user typing" skip branch of checkWakeups(): a wake was
+ * committed (pendingWake set, counters incremented), then the input-buffer
+ * check found unsent text. Rolls back the attempt and records the unsent
+ * text as user activity so the idle guard suppresses re-attempts.
+ */
+function applyTypingSkip(session: SessionTracker, now: number): void {
+	session.pendingWake = false;
+	session.pendingWakeAt = 0;
+	session.wakeBusySeen = false;
+	session.wakeCount--;
+	session.totalWakesEver--;
+	session.lastUserInputAt = now;
+}
+
 // ── Tests ───────────────────────────────────────────────────────────
 
 describe("canWake", () => {
@@ -356,5 +371,56 @@ describe("re-arm after disarm", () => {
 		handleShellState(s, "idle", 25_000);
 
 		expect(s.disarmed).toBe(true);
+	});
+});
+
+describe("typing skip backs off (no 5s busy-retry on unsent input)", () => {
+	/** Build a session that canWake() would fire on, then commit the wake. */
+	function committedWake(now: number): SessionTracker {
+		const s = new SessionTracker();
+		s.shellState = "idle";
+		s.lastIdleAt = now - DEFAULTS.idleThresholdMs - 1;
+		expect(canWake(s, now)).toBe(true);
+		// checkWakeups commits the attempt before the async buffer check:
+		s.pendingWake = true;
+		s.pendingWakeAt = now;
+		s.wakeCount++;
+		s.totalWakesEver++;
+		return s;
+	}
+
+	it("rolls back the committed wake counters", () => {
+		const now = 100_000;
+		const s = committedWake(now);
+		expect(s.wakeCount).toBe(1);
+
+		applyTypingSkip(s, now);
+
+		expect(s.pendingWake).toBe(false);
+		expect(s.wakeCount).toBe(0);
+		expect(s.totalWakesEver).toBe(0);
+	});
+
+	it("suppresses re-attempt on the next 5s check tick", () => {
+		const now = 100_000;
+		const s = committedWake(now);
+
+		applyTypingSkip(s, now);
+
+		// Without recording the unsent input as activity, canWake would return
+		// true again on the very next tick → log + IPC every 5s forever.
+		expect(canWake(s, now + DEFAULTS.checkIntervalMs)).toBe(false);
+	});
+
+	it("resumes waking once typing stops (after idle backoff elapses)", () => {
+		const now = 100_000;
+		const s = committedWake(now);
+		applyTypingSkip(s, now);
+
+		// Still suppressed within 2x idle threshold...
+		expect(canWake(s, now + DEFAULTS.idleThresholdMs * 2 - 1)).toBe(false);
+		// ...but eligible again once the user has been quiet long enough.
+		s.lastIdleAt = now; // genuinely idle since the skip
+		expect(canWake(s, now + DEFAULTS.idleThresholdMs * 2 + 1)).toBe(true);
 	});
 });
