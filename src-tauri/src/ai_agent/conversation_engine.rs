@@ -268,12 +268,18 @@ pub(crate) async fn start_conversation(
 }
 
 /// Cancel an active conversation.
+///
+/// Idempotent: cancelling a session with no active conversation is a no-op
+/// success — the desired end state (stopped) is already satisfied. This avoids
+/// a false "No active conversation" error when the user clicks Stop in the
+/// instant the conversation finishes on its own (the spawned task removes its
+/// `ACTIVE_CONVERSATIONS` entry the moment the loop ends, so a Stop click that
+/// races the natural completion would otherwise surface a scary error banner).
 pub(crate) fn cancel_conversation(session_id: &str) -> Result<(), String> {
-    let entry = ACTIVE_CONVERSATIONS
-        .get(session_id)
-        .ok_or_else(|| format!("No active conversation on session {session_id}"))?;
-    entry.cancel.store(true, Ordering::Release);
-    *entry.state.write() = AgentState::Cancelled;
+    if let Some(entry) = ACTIVE_CONVERSATIONS.get(session_id) {
+        entry.cancel.store(true, Ordering::Release);
+        *entry.state.write() = AgentState::Cancelled;
+    }
     Ok(())
 }
 
@@ -732,8 +738,11 @@ mod tests {
     }
 
     #[test]
-    fn cancel_missing_session_errors() {
-        assert!(cancel_conversation("nonexistent-conv").is_err());
+    fn cancel_missing_session_is_idempotent_ok() {
+        // Cancel is "ensure stopped" — a session with no active conversation is
+        // already stopped, so cancelling it succeeds rather than erroring. This
+        // prevents a false error banner when Stop races natural completion.
+        assert!(cancel_conversation("nonexistent-conv").is_ok());
     }
 
     #[test]
