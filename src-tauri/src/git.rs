@@ -2428,7 +2428,11 @@ fn parse_commit_log_line(line: &str) -> Option<CommitLogEntry> {
     };
     let body = parts.get(6).and_then(|b| {
         let trimmed = b.trim();
-        if trimmed.is_empty() { None } else { Some(trimmed.to_string()) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
     });
     Some(CommitLogEntry {
         hash: parts[0].to_string(),
@@ -3655,7 +3659,10 @@ mod tests {
         let line = "abc123\x00def456\x00\x00Alice\x002024-01-15T10:30:00+01:00\x00feat: add feature\x00Detailed description\nof the change.";
         let entry = parse_commit_log_line(line).expect("should parse");
         assert_eq!(entry.subject, "feat: add feature");
-        assert_eq!(entry.body.as_deref(), Some("Detailed description\nof the change."));
+        assert_eq!(
+            entry.body.as_deref(),
+            Some("Detailed description\nof the change.")
+        );
     }
 
     #[test]

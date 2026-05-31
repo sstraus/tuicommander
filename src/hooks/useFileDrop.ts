@@ -82,10 +82,7 @@ function elementAtDropPoint(rawX: number, rawY: number): Element | null {
  * Walk up from `el` looking for an ancestor declaring `data-drop-target`.
  * Returns the element and its associated data (absolute path for folder drops).
  */
-type DropTargetInfo =
-	| { kind: "folder"; absPath: string }
-	| { kind: "tab-bar" }
-	| { kind: "pane" };
+type DropTargetInfo = { kind: "folder"; absPath: string } | { kind: "tab-bar" } | { kind: "pane" };
 function findDropTarget(el: Element | null): DropTargetInfo | null {
 	let cur: Element | null = el;
 	while (cur) {
