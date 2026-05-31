@@ -15,6 +15,7 @@ pub(crate) mod claude_usage;
 pub(crate) mod cli;
 pub(crate) mod config;
 pub(crate) mod content_index;
+pub(crate) mod cpu_watchdog;
 pub(crate) mod credentials;
 #[cfg(feature = "desktop")]
 mod dictation;
@@ -896,7 +897,10 @@ fn raise_fd_limit() {
         rlim_max: 0,
     };
     if unsafe { libc::getrlimit(libc::RLIMIT_NOFILE, &mut lim) } != 0 {
-        tracing::warn!(source = "boot", "getrlimit(RLIMIT_NOFILE) failed; leaving FD limit unchanged");
+        tracing::warn!(
+            source = "boot",
+            "getrlimit(RLIMIT_NOFILE) failed; leaving FD limit unchanged"
+        );
         return;
     }
     let target = if lim.rlim_max == libc::RLIM_INFINITY {
@@ -912,7 +916,10 @@ fn raise_fd_limit() {
     if unsafe { libc::setrlimit(libc::RLIMIT_NOFILE, &lim) } == 0 {
         tracing::info!(source = "boot", "Raised FD soft limit {old} → {target}");
     } else {
-        tracing::warn!(source = "boot", "setrlimit(RLIMIT_NOFILE) {old} → {target} failed");
+        tracing::warn!(
+            source = "boot",
+            "setrlimit(RLIMIT_NOFILE) {old} → {target} failed"
+        );
     }
 }
 
@@ -1725,6 +1732,7 @@ fn spawn_background_tasks(state: &Arc<AppState>) {
     mcp_http::mcp_transport::spawn_tool_search_index_updater(state.clone());
     pty::spawn_tombstone_sweeper(state.clone());
     content_index::spawn_content_index_updater(state.clone());
+    cpu_watchdog::spawn(state.clone());
     ai_agent::knowledge::spawn_persist_task(state.clone());
     {
         let sched_state = state.clone();

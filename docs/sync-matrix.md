@@ -84,6 +84,15 @@ When adding routes or changing server behavior:
 | `docs/user-guide/remote-access.md` | User setup guide |
 | `src-tauri/src/mcp_http/plugin_docs.rs` | PLUGIN_DOCS (if plugin-facing) |
 
+### Diagnostics
+When modifying `cpu_watchdog.rs` or the `/diagnostics` HTTP endpoint:
+
+| File | What to update |
+|------|----------------|
+| `src-tauri/src/cpu_watchdog.rs` | Watchdog logic, thresholds, snapshot fields |
+| `src-tauri/src/mcp_http/log_routes.rs` | `/diagnostics` GET/POST handlers |
+| `AGENTS.md` | Diagnostics section (usage, known failure patterns) |
+
 ### MCP Tool Surface (native tools, upstream proxy, meta-tools)
 When changing the tool list, tool handlers, `disabled_native_tools`, upstream allow/deny filters, or the Speakeasy meta-tools:
 

@@ -64,3 +64,25 @@ pub(crate) async fn clear_logs(State(state): State<Arc<AppState>>) -> StatusCode
     buf.clear();
     StatusCode::NO_CONTENT
 }
+
+// ---------------------------------------------------------------------------
+// Diagnostic mode toggle
+// ---------------------------------------------------------------------------
+
+/// GET /diagnostics — current diagnostic mode state.
+pub(crate) async fn diagnostics_get() -> Json<serde_json::Value> {
+    Json(serde_json::json!({
+        "enabled": crate::cpu_watchdog::diagnostic_mode(),
+    }))
+}
+
+/// POST /diagnostics — toggle diagnostic mode. Body: `{ "enabled": true }`.
+pub(crate) async fn diagnostics_set(
+    Json(body): Json<super::types::SetApiDebugRequest>,
+) -> Json<serde_json::Value> {
+    crate::cpu_watchdog::set_diagnostic_mode(body.enabled);
+    Json(serde_json::json!({
+        "ok": true,
+        "enabled": body.enabled,
+    }))
+}

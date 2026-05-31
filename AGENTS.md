@@ -65,6 +65,39 @@ When adding a new agent: choose discovery-based if the agent writes session file
 
 Use `appLogger` from `src/stores/appLogger.ts` — never `console.log/warn/error`. Check app logs via `GET http://localhost:9876/logs` (supports `?level=`, `?source=`, `?limit=` filters) before asking Boss for logs.
 
+## Diagnostics
+
+Runtime diagnostics for debugging performance issues. Code: `src-tauri/src/cpu_watchdog.rs`.
+
+**Always on (zero overhead when idle):**
+- CPU spike detection via `getrusage(RUSAGE_SELF)` — only the TUIC process, not PTY children
+- Logs `CPU SPIKE` warning when >80% for 10+ consecutive seconds with full snapshot
+- Sleep/wake detection — skips stale ticks after lid close/open
+
+**Diagnostic mode (toggle at runtime):**
+
+```bash
+# Enable diagnostic mode
+curl -X POST http://localhost:9876/diagnostics -d '{"enabled":true}' -H 'Content-Type: application/json'
+
+# Check status
+curl http://localhost:9876/diagnostics
+
+# Read diagnostic logs
+curl 'http://localhost:9876/logs?source=diagnostics'
+```
+
+When enabled, emits health snapshots every 30s and alerts on FD/thread growth trends. Each snapshot includes: CPU%, thread count, FD count, PTY session count, content index build state, semaphore permits, `grid_frame_in_flight` stuck sessions, event bus subscriber count.
+
+**When to enable:** Boss reports sluggishness, CPU spikes, or UI freezes. Enable it, reproduce the issue, then check the logs. The snapshot at the time of the spike tells you what subsystem is overloaded.
+
+**Known past failure patterns this catches:**
+- IPC flush loop (ack_terminal_frame sending frames in ack path → 240+ IPC/sec)
+- Content index build saturating CPU on large repos
+- `grid_frame_in_flight` stuck (WebView JS thread blocked)
+- FD/thread leak (progressive growth without cleanup)
+- Sleep/wake false idle cascades (tokio timers firing stale)
+
 ## Releases
 
 See [`docs/release-checklist.md`](docs/release-checklist.md) for version bump, tag, and GitHub release steps. After creating any release or nightly tag, **verify CI completes successfully** — check `gh run list`, inspect failures, and confirm all platform assets (macOS .dmg, Linux .deb/.rpm/.AppImage, Windows .exe) are uploaded before reporting done.

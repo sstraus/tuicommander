@@ -740,6 +740,11 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
                 .post(log_routes::push_log)
                 .delete(log_routes::clear_logs),
         )
+        // Diagnostics
+        .route(
+            "/diagnostics",
+            get(log_routes::diagnostics_get).post(log_routes::diagnostics_set),
+        )
         // Worktrees
         .route(
             "/worktrees",
@@ -1097,6 +1102,11 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
             get(log_routes::get_logs)
                 .post(log_routes::push_log)
                 .delete(log_routes::clear_logs),
+        )
+        // Diagnostics
+        .route(
+            "/diagnostics",
+            get(log_routes::diagnostics_get).post(log_routes::diagnostics_set),
         )
         // Worktrees
         .route(
