@@ -522,5 +522,59 @@ describe("transport", () => {
 			debugSpy.mockRestore();
 			globalThis.WebSocket = origWs;
 		});
+
+		it("log mode reconnect resumes from the tracked cursor, not the mount offset", async () => {
+			const { subscribePty } = await import("../transport");
+			vi.useFakeTimers();
+
+			const instances: {
+				url: string;
+				onopen: (() => void) | null;
+				onmessage: ((e: { data: string }) => void) | null;
+				onclose: ((e: { code: number; reason?: string }) => void) | null;
+				onerror: unknown;
+				close: () => void;
+			}[] = [];
+
+			class MockWebSocket {
+				url: string;
+				onopen: (() => void) | null = null;
+				onmessage: ((e: { data: string }) => void) | null = null;
+				onclose: ((e: { code: number; reason?: string }) => void) | null = null;
+				onerror: unknown = null;
+				close = vi.fn();
+				constructor(url: string) {
+					this.url = url;
+					instances.push(this as never);
+				}
+			}
+
+			const origWs = globalThis.WebSocket;
+			globalThis.WebSocket = MockWebSocket as unknown as typeof WebSocket;
+
+			// Mount in log mode with the HTTP-fetched offset (50).
+			const subscribePromise = subscribePty("sess-1", vi.fn(), vi.fn(), { format: "log", logOffset: 50 });
+			instances[0].onopen?.();
+			const unsub = await subscribePromise;
+			expect(instances[0].url).toContain("offset=50");
+
+			// Server advances the monotonic line cursor to 80 via a log frame.
+			instances[0].onmessage?.({
+				data: JSON.stringify({ type: "log", lines: [{ spans: [{ text: "x" }] }], offset: 50, total_lines: 80 }),
+			});
+
+			// Abnormal close → reconnect after backoff.
+			instances[0].onclose?.({ code: 1006 });
+			await vi.advanceTimersByTimeAsync(1000);
+
+			// Reconnect must resume from the consumed cursor (80), NOT replay from mount (50).
+			expect(instances.length).toBe(2);
+			expect(instances[1].url).toContain("offset=80");
+			expect(instances[1].url).not.toContain("offset=50");
+
+			unsub();
+			globalThis.WebSocket = origWs;
+			vi.useRealTimers();
+		});
 	});
 });

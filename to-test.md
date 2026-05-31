@@ -1014,3 +1014,11 @@ Features to test when TUICommander is more usable.
 - [HUMAN] Disconnect remote daemon, open Agents tab with remote repo → verify error state "Remote config unavailable"
 - [HUMAN] Switch from remote repo back to local (or global) → verify banner disappears, local config loads correctly
 - [VISUAL] Remote banner styling: accent border, icon color, spacing
+
+## PWA log-mode reconnect dedup + shell typing (2026-05-31)
+- [x] WS log reconnect resumes from tracked cursor, not mount offset _(verified: transport.test.ts "log mode reconnect resumes from the tracked cursor"; server total_lines in session.rs catch-up + poll frames)_
+- [x] computeInputDelta sends minimal end-anchored delta (no full-line storm) _(verified: CommandInput.test.ts "REGRESSION: mid-line fix sends a minimal delta")_
+- [HUMAN] Mobile PWA: background/foreground or lock/unlock the phone during an active session → scrollback is NOT duplicated on reconnect (the original bug)
+- [HUMAN] Mobile PWA shell: type a command, tap mid-line and fix a typo (no arrows) → terminal shows correct line, no flicker/garbage burst
+- [HUMAN] Mobile PWA shell: use the new ← / → keybar keys to move the readline cursor mid-line and insert/delete → readline edits at the right position (textarea may show a stale tail; screen is authoritative)
+- [HUMAN] Mobile PWA agent (Claude/Codex): typing + slash menu + tab completion still work (no regression from the delta change)

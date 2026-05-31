@@ -7,7 +7,7 @@ import { retryWrite } from "../utils/retryWrite";
 import { ChoicePromptOverlay } from "./ChoicePromptOverlay";
 import styles from "./CommandInput.module.css";
 import { SlashMenuOverlay } from "./SlashMenuOverlay";
-import { isPostSendGuardActive, isSupersetEcho } from "./syncGuards";
+import { computeInputDelta, isPostSendGuardActive, isSupersetEcho } from "./syncGuards";
 
 interface CommandInputProps {
 	sessionId: string;
@@ -81,21 +81,13 @@ export function CommandInput(props: CommandInputProps) {
 		});
 	}
 
-	/** Send character deltas to PTY so the remote input stays in sync. */
+	/** Send character deltas to PTY so the remote input stays in sync.
+	 *  Uses a minimal end-anchored delta (computeInputDelta) — a mid-line edit
+	 *  backspaces only the divergent tail instead of nuking and retyping the
+	 *  whole line, which previously caused a keystroke storm and visible mess. */
 	function syncDelta(newText: string) {
-		const oldText = syncedText;
-
-		if (newText.startsWith(oldText)) {
-			const delta = newText.slice(oldText.length);
-			if (delta) writePty(delta);
-		} else if (oldText.startsWith(newText)) {
-			const count = oldText.length - newText.length;
-			writePty("\x7f".repeat(count));
-		} else {
-			// Complex edit (paste, cut, etc.) — delete old text with backspaces, then type new
-			writePty("\x7f".repeat(oldText.length) + newText);
-		}
-
+		const delta = computeInputDelta(syncedText, newText);
+		if (delta) writePty(delta);
 		syncedText = newText;
 	}
 

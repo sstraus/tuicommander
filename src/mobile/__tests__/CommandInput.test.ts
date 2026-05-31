@@ -1,58 +1,48 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { isPostSendGuardActive, isSupersetEcho, POST_SEND_GUARD_MS } from "../components/syncGuards";
+import { computeInputDelta, isPostSendGuardActive, isSupersetEcho, POST_SEND_GUARD_MS } from "../components/syncGuards";
 
 const css = readFileSync(resolve(__dirname, "../components/CommandInput.module.css"), "utf-8");
 
 const tsx = readFileSync(resolve(__dirname, "../components/CommandInput.tsx"), "utf-8");
 
-/**
- * Extract the sync logic for unit testing. The delta algorithm is pure:
- * given oldText (what PTY has) and newText (what we want), compute the
- * minimal sequence of writes (append, backspace, or clear+retype).
- */
-function computeDelta(oldText: string, newText: string): string {
-	if (newText.startsWith(oldText)) {
-		return newText.slice(oldText.length);
-	} else if (oldText.startsWith(newText)) {
-		const count = oldText.length - newText.length;
-		return "\x7f".repeat(count);
-	} else {
-		return "\x7f".repeat(oldText.length) + newText;
-	}
-}
-
-describe("CommandInput delta sync algorithm", () => {
+describe("CommandInput delta sync algorithm (computeInputDelta)", () => {
 	it("appends characters when new text extends old", () => {
-		expect(computeDelta("/", "/wiz")).toBe("wiz");
-		expect(computeDelta("/wiz", "/wiz:plan")).toBe(":plan");
-		expect(computeDelta("", "/")).toBe("/");
+		expect(computeInputDelta("/", "/wiz")).toBe("wiz");
+		expect(computeInputDelta("/wiz", "/wiz:plan")).toBe(":plan");
+		expect(computeInputDelta("", "/")).toBe("/");
 	});
 
-	it("sends backspaces when characters are deleted", () => {
-		expect(computeDelta("/wiz", "/wi")).toBe("\x7f");
-		expect(computeDelta("/wiz:plan", "/wiz")).toBe("\x7f\x7f\x7f\x7f\x7f");
-		expect(computeDelta("/", "")).toBe("\x7f");
+	it("sends backspaces when characters are deleted from the end", () => {
+		expect(computeInputDelta("/wiz", "/wi")).toBe("\x7f");
+		expect(computeInputDelta("/wiz:plan", "/wiz")).toBe("\x7f\x7f\x7f\x7f\x7f");
+		expect(computeInputDelta("/", "")).toBe("\x7f");
 	});
 
-	it("deletes all then retypes for complex edits (no common prefix)", () => {
-		const delta = computeDelta("/pla", "/wiz:changelog");
-		expect(delta).toBe("\x7f\x7f\x7f\x7f/wiz:changelog");
+	it("backspaces only the divergent tail for complex edits (keeps common prefix)", () => {
+		// Previously a full nuke: "\x7f\x7f\x7f\x7f/wiz:changelog" (4 backspaces + retype).
+		// Now keeps the common "/" prefix → 3 backspaces + new tail.
+		expect(computeInputDelta("/pla", "/wiz:changelog")).toBe("\x7f\x7f\x7fwiz:changelog");
 	});
 
 	it("handles slash menu selection: /pl → /wiz:plan (space)", () => {
-		const delta = computeDelta("/pl", "/wiz:plan ");
-		expect(delta).toBe("\x7f\x7f\x7f/wiz:plan ");
+		expect(computeInputDelta("/pl", "/wiz:plan ")).toBe("\x7f\x7fwiz:plan ");
+	});
+
+	it("REGRESSION: mid-line fix sends a minimal delta, not a full-line storm", () => {
+		// "echo hllo" → "echo hello": keeps "echo h", backspaces "llo", types "ello".
+		// 7 keystrokes instead of the old 19 (9 backspaces + 10 chars) — the storm
+		// that flickered readline and corrupted the line over a laggy mobile link.
+		expect(computeInputDelta("echo hllo", "echo hello")).toBe("\x7f\x7f\x7fello");
 	});
 
 	it("handles empty to command", () => {
-		const delta = computeDelta("", "/wiz:plan ");
-		expect(delta).toBe("/wiz:plan ");
+		expect(computeInputDelta("", "/wiz:plan ")).toBe("/wiz:plan ");
 	});
 
 	it("handles same text (no-op)", () => {
-		expect(computeDelta("/wiz", "/wiz")).toBe("");
+		expect(computeInputDelta("/wiz", "/wiz")).toBe("");
 	});
 });
 
@@ -78,17 +68,11 @@ class InputSimulator {
 	/** Raw writes sent to the PTY (for assertions on delta correctness). */
 	writes: string[] = [];
 
-	/** User typing in the textarea: updates display + streams delta to PTY. */
+	/** User typing in the textarea: updates display + streams delta to PTY.
+	 *  Mirrors production syncDelta() — uses the shared computeInputDelta. */
 	type(newText: string) {
-		const oldText = this.syncedText;
-		if (newText.startsWith(oldText)) {
-			const delta = newText.slice(oldText.length);
-			if (delta) this.writes.push(delta);
-		} else if (oldText.startsWith(newText)) {
-			this.writes.push("\x7f".repeat(oldText.length - newText.length));
-		} else {
-			this.writes.push("\x7f".repeat(oldText.length) + newText);
-		}
+		const delta = computeInputDelta(this.syncedText, newText);
+		if (delta) this.writes.push(delta);
 		this.syncedText = newText;
 		this.displayed = newText;
 	}

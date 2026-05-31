@@ -908,7 +908,10 @@ async fn handle_ws_log_session(
                 let frame = if total > skip_offset {
                     let (lines, _) = buf.lines_since_owned(skip_offset, usize::MAX);
                     if !lines.is_empty() {
-                        Some(serde_json::json!({"type": "log", "lines": lines, "offset": skip_offset}).to_string())
+                        // total_lines is the post-read cursor (monotonic): the client
+                        // stores it and passes it back as ?offset= on reconnect, so the
+                        // next catch-up resumes from here instead of replaying from mount.
+                        Some(serde_json::json!({"type": "log", "lines": lines, "offset": skip_offset, "total_lines": total}).to_string())
                     } else {
                         None
                     }
@@ -1037,7 +1040,9 @@ async fn handle_ws_log_session(
                 let screen_changed = screen_hash != prev_screen_hash && !screen_lines.is_empty();
                 // Send frame if there are new log lines OR screen content changed
                 if !lines.is_empty() || screen_changed {
-                    let mut frame = serde_json::json!({"type": "log", "offset": offset});
+                    // total_lines = post-read monotonic cursor (== offset when no new
+                    // lines). The client tracks it for reconnect resume — see catch-up above.
+                    let mut frame = serde_json::json!({"type": "log", "offset": offset, "total_lines": new_offset});
                     if !lines.is_empty() {
                         frame["lines"] = serde_json::json!(lines);
                     }

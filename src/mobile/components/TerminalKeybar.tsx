@@ -29,6 +29,8 @@ const STANDARD_KEYS: KeyDef[] = [
 	{ label: "Esc", seq: "\x1b" },
 	{ label: "\u2191", seq: "\x1b[A" },
 	{ label: "\u2193", seq: "\x1b[B" },
+	{ label: "\u2190", seq: "\x1b[D" },
+	{ label: "\u2192", seq: "\x1b[C" },
 	{ label: "\u21B5", seq: "\r" },
 ];
 

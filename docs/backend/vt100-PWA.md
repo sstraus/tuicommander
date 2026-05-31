@@ -157,7 +157,7 @@ Initial data fetch before WebSocket connects.
 
 - `total_lines` serves as the offset cursor for WS catch-up
 - `screen` has chrome trimmed via `trim_screen_chrome()`
-- `input_line` from `prompt_input_text()` (dim text excluded)
+- `input_line` from `prompt_input_text()` (dim text excluded). **Only agent prompts (`❯`, `›`, `>`) are recognized — a plain shell prompt (`$`/`#`/`%`/`➜`) yields `null`, so the textarea gets no PTY-driven reconciliation for shells.**
 
 ### `WS /sessions/:id/stream?format=log&offset=N`
 
@@ -188,11 +188,15 @@ Frame sent only when `!lines.is_empty() || screen_changed`:
 {
   "type": "log",
   "offset": 100,
+  "total_lines": 142,
   "lines": [...],
   "screen": [...],
   "input_line": "text"
 }
 ```
+
+- `offset` is the **start** position of `lines` (where the delta begins).
+- `total_lines` is the **post-read monotonic cursor** (`== offset` when no new lines). The client stores it and passes it back as `?offset=` on reconnect, so catch-up resumes from the last consumed line instead of replaying the whole scrollback from the mount offset. The catch-up frame on connect carries `total_lines` too. (Without this, every WS reconnect — frequent on mobile: background/foreground, lock, network change — re-injected the entire session scrollback, duplicating it.)
 
 **Branch 2: event bus** — forwards SessionState on parsed events:
 ```json
@@ -272,9 +276,11 @@ interface SubscribePtyOptions {
 
 | Frame type | Callback | Data |
 |------------|----------|------|
-| `"log"` | `onLogLines`, `onScreenRows`, `onInputLine` | Styled lines, screen rows, prompt input |
+| `"log"` | `onLogLines`, `onScreenRows`, `onInputLine` | Styled lines, screen rows, prompt input. `total_lines` is tracked as the reconnect cursor. |
 | `"state"` | `onStateChange` | SessionState snapshot |
 | `"exit"` / `"closed"` | `onExit` | Session ended |
+
+On reconnect the WebSocket reopens with `?offset=<last total_lines>` (log mode) so the server's catch-up only sends lines committed since the last one the client received. The raw (`format` omitted) path uses `total_written` byte offsets for the same purpose.
 
 ### `rpc("write_pty", { sessionId, data })`
 
@@ -313,61 +319,70 @@ displayedLines = [...logLines, ...screenRows]  // combined
 - `scrollToBottom(force?)`: skips if user scrolled up, unless `force=true`
 - Initial load and session exit force-scroll
 
-### CommandInput — Last-Writer-Wins Sync
+### CommandInput — Delta Sync (textarea is source of truth)
 
 **File:** `src/mobile/components/CommandInput.tsx`
+**Helpers:** `src/mobile/components/syncGuards.ts`
 
-The textarea syncs bidirectionally with the PTY input line using a **last-writer-wins** strategy. Only one side writes at a time — there is no attempt at incremental character-by-character synchronization.
+The textarea is the source of truth; the PTY is a write-only sink fed character
+deltas as the user types. Echoes from the PTY are accepted back only under
+strict conditions, so a laggy link can't clobber what the user sees.
 
-#### Direction 1: PTY → Textarea
+#### Direction 2: Textarea → PTY (`syncDelta`)
 
-Source: `ptyInputLine` prop (from WebSocket `input_line` field).
-
-When `userEditing` is false, every incoming `input_line` replaces the textarea content entirely:
-
-```typescript
-createEffect(() => {
-  const il = props.ptyInputLine;
-  if (userEditing) return;
-  setValue(il ?? "");
-});
-```
-
-#### Direction 2: Textarea → PTY
-
-On every input event, the **full textarea content** is sent to the PTY after a 300ms debounce:
+On every input event, `syncDelta(newText)` streams a **minimal end-anchored
+delta** computed by `computeInputDelta(syncedText, newText)`:
 
 ```typescript
-function debouncedSync(text: string) {
-  if (syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => {
-    rpc("write_pty", { data: "\x15" + text }); // Ctrl-U + full text
-  }, SYNC_DEBOUNCE_MS);
+// keep longest common prefix, backspace the divergent tail from the end,
+// then type the new tail
+function computeInputDelta(oldText, newText) {
+  let prefix = 0;
+  const max = Math.min(oldText.length, newText.length);
+  while (prefix < max && oldText[prefix] === newText[prefix]) prefix++;
+  return "\x7f".repeat(oldText.length - prefix) + newText.slice(prefix);
 }
 ```
 
-This handles all input methods uniformly: typing, paste, cut, autocomplete, composition, cursor-based edits. No `InputEvent.inputType` parsing needed.
+Append (no backspaces) and truncate (no retype) fall out as special cases. A
+mid-line edit backspaces **only the divergent tail** instead of nuking and
+retyping the whole line. This is correct as long as the remote cursor is at
+end-of-line (true while the user only appends/backspaces and hasn't moved the
+readline cursor via arrow keys).
 
-On blur, any pending debounce flushes immediately.
+> **Why minimal, not full-nuke:** the old "complex edit" branch sent
+> `\x7f`×oldLen + newText on any mid-line change. That keystroke storm flickered
+> readline and corrupted the line when a write dropped/reordered over a laggy
+> mobile link — the "typing fa casino" symptom. Minimal deltas send the fewest
+> keystrokes and keep the textarea consistent with the screen.
+
+#### Direction 1: PTY → Textarea (guarded echo)
+
+Source: `ptyInputLine` prop (from WebSocket `input_line`). An echo is accepted
+into the textarea only when **both** gates pass (`syncGuards.ts`):
+
+1. **Post-send guard** — within `POST_SEND_GUARD_MS` (500ms) of Enter, every
+   echo is ignored (suppresses the ghost flash of the just-sent command).
+2. **Strict-extension rule** — `isSupersetEcho(echo, syncedText)`: accept only
+   if the echo strictly extends what we've sent (tab completion / autocomplete).
+   Prompt redraws, lagging echoes, and history-nav replacements are ignored so
+   the textarea can't be clobbered.
+
+For a plain **shell**, `ptyInputLine` is `null` (see `prompt_input_text` — it
+only recognizes agent prompts), so there is no PTY-driven reconciliation; the
+authoritative display of the shell line is the **screen** rendered by OutputView.
 
 #### Send (Enter)
 
-On Enter: `Ctrl-U` → text → `\r` as three separate writes.
+The typed text is already in the PTY via live delta sync, so Enter just writes
+`\r` (and clears the textarea + arms the post-send guard).
 
-Ink-based TUIs (Claude Code) treat `\r` combined with text as a newline in their multiline input, not as submit. Splitting into separate writes works around this.
+#### Mid-line editing
 
-#### State Transitions
-
-```
-idle (no focus)     → PTY input_line updates textarea
-  │
-  ▼ (tap/focus)
-editing             → debounced Ctrl-U + full text to PTY
-  │
-  ├── Enter         → flush + send + clear + back to idle
-  ├── blur (empty)  → flush + back to idle
-  └── blur (draft)  → flush + stays in editing (preserves draft)
-```
+Moving the readline cursor is done with the **← / → keys in TerminalKeybar**
+(`\x1b[D` / `\x1b[C`), not by moving the textarea caret. When arrows move the
+remote cursor, the textarea's end-anchored model can diverge from the screen —
+the screen stays authoritative.
 
 ### SlashMenuOverlay
 
@@ -453,6 +468,8 @@ The output parser emits `PtyParsed` events. These accumulate into `SessionState`
 | `\r` | Carriage Return | Submit input |
 | `\x1b[A` | Arrow Up | Navigate menu / history |
 | `\x1b[B` | Arrow Down | Navigate menu / history |
+| `\x1b[C` | Arrow Right | Move readline cursor right (mid-line edit) |
+| `\x1b[D` | Arrow Left | Move readline cursor left (mid-line edit) |
 | `\x1b[3~` | Delete | Delete char after cursor |
 | `\x03` | Ctrl-C | Interrupt |
 | `\x04` | Ctrl-D | EOF / exit |

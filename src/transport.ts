@@ -1171,6 +1171,13 @@ export async function subscribePty(
 						onData(frame.data as string);
 						break;
 					case "log": {
+						// Track the monotonic line cursor so reconnect resumes from the last
+						// line we consumed instead of replaying from the mount offset (which
+						// duplicated the whole scrollback on every WS reconnect).
+						const logCursor = (frame as Record<string, unknown>).total_lines;
+						if (typeof logCursor === "number") {
+							lastTotalWritten = logCursor;
+						}
 						const lines = frame.lines as LogLine[] | undefined;
 						if (lines && lines.length > 0) {
 							if (opts.onLogLines) {
