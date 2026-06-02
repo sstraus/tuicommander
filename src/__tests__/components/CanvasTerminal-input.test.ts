@@ -1,5 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
-import { altSequenceFromCode, createCompositionState, keyToSequence } from "../../components/Terminal/terminalInput";
+import { describe, expect, it } from "vitest";
+import {
+	altSequenceFromCode,
+	createCompositionState,
+	DUP_KEYDOWN_WINDOW_MS,
+	keyToSequence,
+} from "../../components/Terminal/terminalInput";
 
 describe("keyToSequence", () => {
 	const evt = (key: string, opts: Partial<KeyboardEvent> = {}): KeyboardEvent =>
@@ -245,25 +250,20 @@ describe("altSequenceFromCode", () => {
 
 describe("createCompositionState — dead-key / IME composition", () => {
 	function makeState() {
-		// Capture the reset callback so tests can fire it manually.
-		let pendingReset: (() => void) | undefined;
-		const scheduleReset = vi.fn((cb: () => void) => {
-			pendingReset = cb;
-		});
-		const state = createCompositionState(scheduleReset);
-		const fireReset = () => {
-			pendingReset?.();
-			pendingReset = undefined;
+		// Controllable clock so tests can advance time deterministically.
+		let nowMs = 1000;
+		const advance = (ms: number) => {
+			nowMs += ms;
 		};
-		return { state, scheduleReset, fireReset };
+		const state = createCompositionState(() => nowMs);
+		return { state, advance };
 	}
 
 	// --- compositionend ---
 
-	it("onCompositionEnd returns composed data and schedules reset", () => {
-		const { state, scheduleReset } = makeState();
+	it("onCompositionEnd returns composed data", () => {
+		const { state } = makeState();
 		expect(state.onCompositionEnd("ç")).toBe("ç");
-		expect(scheduleReset).toHaveBeenCalledOnce();
 	});
 
 	it("onCompositionEnd returns null for empty string", () => {
@@ -286,47 +286,88 @@ describe("createCompositionState — dead-key / IME composition", () => {
 
 	it("does NOT suppress normal keydown when not composing", () => {
 		const { state } = makeState();
-		expect(state.shouldSuppressKeydown(false)).toBe(false);
+		expect(state.shouldSuppressKeydown(false, "a")).toBe(false);
 	});
 
 	// --- WKWebView duplicate keydown suppression ---
 
-	it("suppresses the duplicate keydown immediately after compositionend", () => {
+	it("suppresses the trailing duplicate matching the base letter (ç → c)", () => {
 		const { state } = makeState();
 		state.onCompositionEnd("ç");
-		// Simulates WKWebView's spurious keydown(key="c", isComposing=false)
-		expect(state.shouldSuppressKeydown(false)).toBe(true);
+		expect(state.shouldSuppressKeydown(false, "c")).toBe(true);
+	});
+
+	it("suppresses an accented-vowel duplicate by its base letter (é → e)", () => {
+		const { state } = makeState();
+		state.onCompositionEnd("é");
+		expect(state.shouldSuppressKeydown(false, "e")).toBe(true);
 	});
 
 	it("suppresses only ONE duplicate keydown after compositionend", () => {
 		const { state } = makeState();
 		state.onCompositionEnd("ç");
-		state.shouldSuppressKeydown(false); // consume the one suppressed duplicate
-		expect(state.shouldSuppressKeydown(false)).toBe(false);
+		state.shouldSuppressKeydown(false, "c"); // consume the one suppressed duplicate
+		expect(state.shouldSuppressKeydown(false, "c")).toBe(false);
 	});
 
-	it("stops suppressing after reset fires (next event-loop task)", () => {
-		const { state, fireReset } = makeState();
+	it("suppresses regardless of dispatch ordering when delayed within the window", () => {
+		const { state, advance } = makeState();
+		state.onCompositionEnd("ç");
+		advance(DUP_KEYDOWN_WINDOW_MS - 1); // WKWebView fires the duplicate a few ms later
+		expect(state.shouldSuppressKeydown(false, "c")).toBe(true);
+	});
+
+	it("suppresses an uppercase composed char's duplicate (É → key 'E')", () => {
+		const { state } = makeState();
+		state.onCompositionEnd("É");
+		expect(state.shouldSuppressKeydown(false, "E")).toBe(true);
+	});
+
+	it("does NOT suppress a multi-char key after an accent (Enter/Backspace pass through)", () => {
+		const { state } = makeState();
 		state.onCompositionEnd("á");
-		fireReset(); // simulate setTimeout(0) completing
+		expect(state.shouldSuppressKeydown(false, "Enter")).toBe(false);
+		expect(state.shouldSuppressKeydown(false, "Backspace")).toBe(false);
+	});
+
+	it("does NOT suppress when key is undefined even within an armed window", () => {
+		const { state } = makeState();
+		state.onCompositionEnd("é");
 		expect(state.shouldSuppressKeydown(false)).toBe(false);
 	});
 
-	it("full sequence: dead-key compositionend then duplicate then next real key", () => {
-		const { state, fireReset } = makeState();
+	it("does NOT false-suppress an astral-plane composition (emoji base is code-point aware)", () => {
+		const { state } = makeState();
+		// charAt-based extraction would store a lone high surrogate; Array.from keeps
+		// the whole emoji, which can never equal a single-char key.
+		state.onCompositionEnd("😀");
+		expect(state.shouldSuppressKeydown(false, "a")).toBe(false);
+	});
 
-		// '  + c → ç
-		const written = state.onCompositionEnd("ç");
-		expect(written).toBe("ç");
+	it("does NOT suppress a non-matching key — fast real keystroke after an accent (é then p)", () => {
+		const { state } = makeState();
+		state.onCompositionEnd("é");
+		expect(state.shouldSuppressKeydown(false, "p")).toBe(false);
+	});
 
-		// WKWebView duplicate keydown(key="c", isComposing=false) — must be eaten
-		expect(state.shouldSuppressKeydown(false)).toBe(true);
+	it("stops suppressing once the time window elapses (no duplicate ever arrived)", () => {
+		const { state, advance } = makeState();
+		state.onCompositionEnd("á");
+		advance(DUP_KEYDOWN_WINDOW_MS + 1);
+		expect(state.shouldSuppressKeydown(false, "a")).toBe(false);
+	});
 
-		// setTimeout(0) fires
-		fireReset();
+	it("full sequence: compositionend → duplicate eaten → next real key passes", () => {
+		const { state } = makeState();
+
+		// ´ + e → é
+		expect(state.onCompositionEnd("é")).toBe("é");
+
+		// WKWebView duplicate keydown(key="e", isComposing=false) — must be eaten
+		expect(state.shouldSuppressKeydown(false, "e")).toBe(true);
 
 		// Next real keystroke must pass through
-		expect(state.shouldSuppressKeydown(false)).toBe(false);
+		expect(state.shouldSuppressKeydown(false, "e")).toBe(false);
 	});
 
 	// --- Cancelled composition must NOT suppress next keydown ---
@@ -334,19 +375,26 @@ describe("createCompositionState — dead-key / IME composition", () => {
 	it("does not suppress next keydown after empty compositionend", () => {
 		const { state } = makeState();
 		state.onCompositionEnd("");
-		expect(state.shouldSuppressKeydown(false)).toBe(false);
+		expect(state.shouldSuppressKeydown(false, "a")).toBe(false);
 	});
 
 	it("does not suppress next keydown after null compositionend", () => {
 		const { state } = makeState();
 		state.onCompositionEnd(null);
-		expect(state.shouldSuppressKeydown(false)).toBe(false);
+		expect(state.shouldSuppressKeydown(false, "a")).toBe(false);
 	});
 
 	it("does not suppress next keydown after undefined compositionend", () => {
 		const { state } = makeState();
 		state.onCompositionEnd(undefined);
-		expect(state.shouldSuppressKeydown(false)).toBe(false);
+		expect(state.shouldSuppressKeydown(false, "a")).toBe(false);
+	});
+
+	it("an empty compositionend DISARMS a window still armed from a prior composition", () => {
+		const { state } = makeState();
+		state.onCompositionEnd("ç"); // arms base "c"
+		state.onCompositionEnd(""); // cancelled composition must clear the armed window
+		expect(state.shouldSuppressKeydown(false, "c")).toBe(false);
 	});
 
 	it("isComposing=true keydown during composition is always blocked", () => {

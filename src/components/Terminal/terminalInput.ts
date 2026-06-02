@@ -121,6 +121,15 @@ export function keyToSequence(e: KeyboardEvent): string | null {
 }
 
 /**
+ * How long after `compositionend` a matching trailing keydown is treated as the
+ * WKWebView duplicate. Kept short on purpose: the duplicate arrives within ~1ms,
+ * so a small window absorbs it without swallowing a real base-letter keystroke a
+ * human types later (e.g. the second `e` in "vêem"). Platform-agnostic — engines
+ * that don't emit the duplicate simply never see a matching keydown in time.
+ */
+export const DUP_KEYDOWN_WINDOW_MS = 50;
+
+/**
  * State machine for dead-key / IME composition through a hidden <input>.
  *
  * Canvas elements in WKWebView don't participate in macOS text input, so dead
@@ -130,29 +139,54 @@ export function keyToSequence(e: KeyboardEvent): string | null {
  * Two WKWebView quirks this handles:
  * 1. `compositionend` may fire with empty data → we return null (no write).
  * 2. WKWebView fires a spurious keydown for the resolution key right after
- *    compositionend (e.g. `'` + `c` → `ç` but also a trailing `c` keydown).
+ *    compositionend (e.g. `´` + `e` → `é` but also a trailing `e` keydown).
  *    `shouldSuppressKeydown` eats that duplicate.
  *
- * `scheduleReset` defaults to `setTimeout(..., 0)` — injectable for tests.
+ * The duplicate fires within a couple of ms of `compositionend` and carries the
+ * composed character's *base* letter (`é` → `e`, `ç` → `c`). We therefore eat a
+ * non-composing keydown only when it lands inside `DUP_KEYDOWN_WINDOW_MS` AND its
+ * key matches that base letter. A timer-based one-shot was previously used but
+ * raced: a `setTimeout(0)` reset could fire before the (also async) duplicate
+ * keydown, letting it leak through as a doubled character ("ée", "çc"). Matching
+ * on the base letter + time window removes the ordering dependency and avoids
+ * eating an unrelated fast keystroke after an accent.
+ *
+ * `now` defaults to `performance.now` — injectable for tests.
  */
-export function createCompositionState(scheduleReset: (cb: () => void) => void = (cb) => setTimeout(cb, 0)): {
+export function createCompositionState(now: () => number = () => performance.now()): {
 	onCompositionEnd(data: string | null | undefined): string | null;
-	shouldSuppressKeydown(isComposing: boolean): boolean;
+	shouldSuppressKeydown(isComposing: boolean, key?: string): boolean;
 } {
-	let suppressNext = false;
+	let suppressBase = "";
+	let suppressUntil = 0;
 	return {
 		onCompositionEnd(data) {
-			if (!data) return null;
-			suppressNext = true;
-			scheduleReset(() => {
-				suppressNext = false;
-			});
+			if (!data) {
+				// Cancelled/empty composition: disarm any window still armed from a
+				// prior composition so it can't eat a later matching keystroke.
+				suppressBase = "";
+				suppressUntil = 0;
+				return null;
+			}
+			// The first NFD code point is the base letter the trailing keydown
+			// reports ("e-acute" -> "e", cedilla -> "c"). Array.from is code-point
+			// aware, so an astral-plane composition yields the whole character (not a
+			// half-surrogate); such a base never matches a single-char key below.
+			suppressBase = (Array.from(data.normalize("NFD"))[0] ?? "").toLowerCase();
+			suppressUntil = now() + DUP_KEYDOWN_WINDOW_MS;
 			return data;
 		},
-		shouldSuppressKeydown(isComposing) {
+		shouldSuppressKeydown(isComposing, key) {
 			if (isComposing) return true;
-			if (suppressNext) {
-				suppressNext = false;
+			if (
+				suppressBase !== "" &&
+				now() <= suppressUntil &&
+				key !== undefined &&
+				key.length === 1 &&
+				key.toLowerCase() === suppressBase
+			) {
+				suppressBase = "";
+				suppressUntil = 0;
 				return true;
 			}
 			return false;

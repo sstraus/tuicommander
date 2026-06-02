@@ -130,7 +130,7 @@ export function installTouchHandlers(
 		if (e.changedTouches.length > 0 && !longPressFired && e.touches.length === 0) {
 			const moved = moveHistory.length > 0;
 			if (!moved) {
-				textarea.focus();
+				textarea.focus({ preventScroll: true });
 				opts.onFocus();
 			} else {
 				const v = computeVelocity();
