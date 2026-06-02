@@ -2237,6 +2237,31 @@ describe("useGitOperations", () => {
 			expect(mockRepo.removeOrphanWorktree).not.toHaveBeenCalled();
 		});
 
+		it("does not re-prompt for an orphan the user chose to keep (#65)", async () => {
+			const confirmOrphanCleanup = vi.fn().mockResolvedValue(false);
+			const askGitOps = useGitOperations({
+				repo: mockRepo,
+				pty: mockPty,
+				dialogs: { ...mockDialogs, confirmOrphanCleanup },
+				closeTerminal: mockCloseTerminal,
+				createNewTerminal: mockCreateNewTerminal,
+				setStatusInfo: mockSetStatusInfo,
+				getDefaultFontSize: () => 14,
+				getMaxTabNameLength: () => 25,
+			});
+			// Same orphan detected on every refresh
+			mockRepo.detectOrphanWorktrees.mockResolvedValue(["/wt/detached-1"]);
+
+			// First refresh: user clicks "Keep" (cancel)
+			await askGitOps.refreshAllBranchStats();
+			// Subsequent refreshes must NOT re-open the dialog for the kept orphan
+			await askGitOps.refreshAllBranchStats();
+			await askGitOps.refreshAllBranchStats();
+
+			expect(confirmOrphanCleanup).toHaveBeenCalledTimes(1);
+			expect(mockRepo.removeOrphanWorktree).not.toHaveBeenCalled();
+		});
+
 		it("does nothing when orphanCleanup=off", async () => {
 			repoSettingsStore.getOrCreate("/repo", "Repo");
 			repoSettingsStore.update("/repo", { orphanCleanup: "off" });

@@ -500,6 +500,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
 
 	/** Detect orphaned linked worktrees and act based on the orphanCleanup setting. */
 	let orphanDialogOpen = false;
+	// Orphans the user chose to "Keep" this session — don't nag about them again
+	// on every subsequent refresh/poll. Session-scoped (re-detected on next launch). (#65)
+	const keptOrphans = new Set<string>();
 	const handleOrphanCleanup = async (repoPath: string) => {
 		const orphanCleanup = repoSettingsStore.getEffective(repoPath)?.orphanCleanup ?? "ask";
 		if (orphanCleanup === "off") return;
@@ -527,17 +530,26 @@ export function useGitOperations(deps: GitOperationsDeps) {
 		}
 
 		// orphanCleanup === "ask"
+		// Skip orphans the user already chose to keep — otherwise the dialog re-fires
+		// on every refresh until the underlying worktree state changes. (#65)
+		const pending = orphanPaths.filter((p) => !keptOrphans.has(p));
+		if (pending.length === 0) return;
+
 		if (orphanDialogOpen) return; // Prevent duplicate dialogs from concurrent refreshes
 		orphanDialogOpen = true;
 		let confirmed: boolean;
 		try {
-			confirmed = (await deps.dialogs.confirmOrphanCleanup?.(orphanPaths)) ?? false;
+			confirmed = (await deps.dialogs.confirmOrphanCleanup?.(pending)) ?? false;
 		} finally {
 			orphanDialogOpen = false;
 		}
-		if (!confirmed) return;
+		if (!confirmed) {
+			// User chose "Keep" — remember these so we don't prompt again this session.
+			for (const p of pending) keptOrphans.add(p);
+			return;
+		}
 
-		for (const wtPath of orphanPaths) {
+		for (const wtPath of pending) {
 			try {
 				await closeTerminalsInWorktree(wtPath);
 				await deps.repo.removeOrphanWorktree(repoPath, wtPath);
@@ -545,7 +557,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 				appLogger.warn("git", `Failed to remove orphan worktree ${wtPath}`, err);
 			}
 		}
-		deps.setStatusInfo(`Removed ${orphanPaths.length} orphaned worktree(s)`);
+		deps.setStatusInfo(`Removed ${pending.length} orphaned worktree(s)`);
 	};
 
 	/** Archive all merged linked worktrees when the autoArchiveMerged setting is enabled. */
