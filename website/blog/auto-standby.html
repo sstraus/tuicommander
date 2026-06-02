@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Auto-standby: SIGSTOP for idle agent terminals — TUICommander Blog</title>
+  <meta name="description" content="Dozens of idle agent terminals quietly burn CPU and battery. Auto-standby SIGSTOPs the whole process group when a tab is unfocused and idle, and SIGCONTs it the instant you look back or a message arrives." />
+
+  <meta property="og:title" content="Auto-standby: SIGSTOP for idle agent terminals — TUICommander" />
+  <meta property="og:description" content="Dozens of idle agent terminals quietly burn CPU and battery. Auto-standby SIGSTOPs the process group when a tab is unfocused and idle, and wakes it the instant you return." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>May 23, 2026</time>
+      <h1>Auto-standby: SIGSTOP for idle agent terminals</h1>
+      <p class="blog-post-summary">When you run a dozen agents across a dozen repos, most of them are idle most of the time — and a few of them are quietly spinning anyway. Auto-standby freezes the entire process group of a tab that's been unfocused and idle long enough, and unfreezes it the instant you look back.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The quiet CPU tax</h2>
+      <p>The whole point of TUICommander is running many agents at once. But "many agents" means many process trees, and not all of them sit politely at zero when they have nothing to do. A watch loop here, a dev server there, a TUI that repaints on a timer — individually trivial, collectively a steady drain on CPU and, on a laptop, battery. You're paying for terminals you aren't even looking at.</p>
+      <p>You could close them, but then you lose the session. You could remember to suspend them by hand, but you won't. The OS already has the right primitive for "pause this and let it resume exactly where it was" — job-control signals. We just needed to apply them automatically and safely.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The rule: unfocused <em>and</em> idle <em>and</em> patient</h2>
+      <p>A background checker ticks every 30 seconds and walks every session. A tab enters standby only when <strong>all</strong> of these hold:</p>
+      <ul>
+        <li>The standby timeout is enabled (<code>standby_timeout_minutes &gt; 0</code>).</li>
+        <li>The tab is <strong>not focused</strong> — you're not looking at it.</li>
+        <li>Its shell state is <strong>idle</strong> — no command is running.</li>
+        <li>It's been idle for at least the configured timeout.</li>
+        <li>It isn't already in standby.</li>
+        <li>Its startup has settled — we never freeze a session mid-boot.</li>
+      </ul>
+      <p>The "unfocused AND idle" pairing is the important part. Idle-but-focused means you're reading the output, so we leave it alone. Unfocused-but-busy means it's doing real work in the background — also left alone. Only a tab that's both out of sight and doing nothing is a candidate, and even then only after it's been that way for a while. The default timeout is 5 minutes; <code>0</code> disables the feature entirely. It lives under <em>Settings &gt; General &gt; Auto-Standby Timeout</em>.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Freeze the whole tree, not just the shell</h2>
+      <p>When a session qualifies, we send <code>SIGSTOP</code> to the <em>negative</em> PID of the process-group leader — <code>kill(-pgid, SIGSTOP)</code> — which stops the entire process group, not just the top-level shell. That matters: the thing burning CPU is usually a child (the dev server, the agent's node process), not the shell itself. Stopping only the leader would leave the actual culprit running.</p>
+      <p>Power tools cut both ways, so there's a guard: before signalling, we validate the pgid and refuse to act on an unsafe one. Sending a stop signal to the wrong group — or to group 0, which means "every process in my group" — would be catastrophic, so that path simply errors out instead of firing.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Waking up is instant and automatic</h2>
+      <p>A frozen tab is useless if you have to manually thaw it. Standby is reversed with <code>SIGCONT</code> the moment either of two things happens: you focus the tab, or a message arrives for that agent. The process resumes exactly where it stopped — same memory, same open files, same scroll position — because <code>SIGSTOP</code>/<code>SIGCONT</code> is suspend-and-resume, not kill-and-restart. There's no session loss and no "reconnecting" state to wait through. A small pause badge in the tab bar tells you which tabs are currently sleeping.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The tradeoffs</h2>
+      <p>This is a Unix feature — it's built on POSIX job-control signals and is compiled in only on Unix targets. A process that holds a network connection or a lock while stopped will keep holding it; for the local dev tools and agents this targets that's fine, but it's the reason we gate on idle-and-unfocused rather than freezing aggressively. And we deliberately chose signals over killing-and-restarting: restarting would reclaim more memory, but it would also destroy session state, which defeats the purpose. Pausing is the honest answer to "I'm not using this right now, but I will be."</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What's next</h2>
+      <p>The obvious extension is smarter wake triggers — resuming a standby session just before a scheduled job or an inbound agent hand-off, rather than only on focus. The checker already has the session model it needs; it's a question of which events deserve to count as "you're about to need this again".</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>Apache License 2.0 &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

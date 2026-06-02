@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Command blocks for agent terminals — TUICommander Blog</title>
+  <meta name="description" content="AI agent sessions turn the terminal into an endless wall of text. We segmented that wall into navigable command blocks — and made detection work even for agents that emit no markers." />
+
+  <meta property="og:title" content="Command blocks for agent terminals — TUICommander" />
+  <meta property="og:description" content="AI agent sessions turn the terminal into an endless wall of text. We segmented it into navigable command blocks, with detection that works even when the agent emits no markers." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>May 28, 2026</time>
+      <h1>Command blocks for agent terminals</h1>
+      <p class="blog-post-summary">An AI agent's terminal is a wall of text. You can't tell where one command ends and the next begins, and finding an old result is a scroll-and-pray expedition. So we segmented the wall into command blocks — and made detection work even for agents that emit no markers at all.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The wall of output</h2>
+      <p>Run Claude Code or Codex for an afternoon and the terminal becomes one continuous scroll. Tool calls, file diffs, test runs, build logs — all flowing into the same undifferentiated stream. When you want to go back to "that command that failed twenty minutes ago", there are no boundaries to navigate by. You scroll, you squint, you give up and re-run it.</p>
+      <p>A traditional shell session has natural rhythm: you type a command, you read its output, you type the next one. Even then the scrollback is flat. With an agent driving the terminal the problem is worse — the agent fires off dozens of commands faster than you can read them, and you weren't the one who typed them, so you don't even have muscle memory of what ran.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Why now</h2>
+      <p>This wasn't worth building until two things were true. First, agent sessions got long. Short sessions don't accumulate enough scrollback to hurt; multi-hour autonomous runs do, and those became our normal. Second, we'd already <a href="/blog/native-terminal.html">replaced xterm.js with a native Alacritty-based terminal</a>, which gave us direct access to the grid and to the VTE escape-sequence stream. Command blocks need both: a model of the output and a reliable signal for where one block starts and the next ends.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The detection problem</h2>
+      <p>The textbook answer is OSC 133 — the shell-integration protocol where the shell emits escape sequences marking the start of a prompt, the start of a command, and the start of its output. We support it: TUIC injects OSC 133 markers into zsh, bash, and fish via shell integration, so a plain shell session segments cleanly.</p>
+      <p>But here's the catch that shaped the whole design: <strong>AI agents don't emit OSC 133.</strong> Claude Code, Codex, and the rest run as Ink-based TUIs. They paint their own output; they don't go through your shell's prompt hooks. If we'd relied on explicit markers alone, the feature would have been empty for the exact case it was built for — an agent session.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Agent-aware detection</h2>
+      <p>So detection runs on two rails. When explicit markers exist (OSC 133 from the shell, or our own <code>OSC 7770;block=</code> protocol for agents that want to cooperate), we use them. When they don't, a heuristic in the output parser reconstructs blocks from the shape of the output itself.</p>
+      <p>The key signal is the tool-call glyph. Claude Code decorates each tool invocation with a <code>⏺</code> bullet (U+23FA) — <code>⏺ ToolName(args)</code> — and closes diff summaries with <code>⏺⎿</code>. The parser watches for these, treats a tool call as a block boundary, and synthesizes <code>AgentBlock</code> start/end events that feed the same block model the OSC path produces. The rest of the system doesn't care which rail produced the boundary — it just sees blocks.</p>
+      <p>That's the insight the feature rests on: <em>don't require the agent to announce its blocks; infer them from what the agent already prints.</em></p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What you get once output has structure</h2>
+      <p>Once each prompt-and-output cycle is a first-class object, a pile of navigation falls out almost for free:</p>
+      <ul>
+        <li><strong>Semantic scrollbar marks.</strong> Each block leaves a color-coded tick on the scrollbar — a map of the whole session you can read at a glance and click to jump.</li>
+        <li><strong>Block folding.</strong> <code>Cmd+Shift+.</code> collapses a block to its first line. Hide the build logs you've already read; keep the diff you care about.</li>
+        <li><strong>Gutter selection.</strong> Click the gutter next to a block to select its entire output — no more dragging across page breaks to copy one command's result.</li>
+        <li><strong>Block-scoped search.</strong> <code>Cmd+Shift+B</code> scopes find-in-terminal to a single block instead of the whole 10,000-line buffer.</li>
+        <li><strong>Block navigation.</strong> <code>Cmd+Shift+Up/Down</code> jumps prompt to prompt, skipping the output in between.</li>
+        <li><strong>Timestamp overlay.</strong> Hold <code>Ctrl+Cmd</code> to show when each block ran.</li>
+      </ul>
+      <p>All of it lives under <em>Settings &gt; Terminal &gt; Blocks</em>.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The tradeoffs we accepted</h2>
+      <p>We considered the clean, marker-only design — trust OSC 133 and <code>OSC 7770;block=</code>, build nothing else. It's simpler and never wrong about a boundary. We rejected it because it would be <em>correct and useless</em>: the agents we care about emit no markers, so the block list would sit empty during the sessions that need it most. Heuristics are messier — a glyph match can occasionally mis-segment — but a feature that works for 90% of real sessions beats a pristine one that works for none of them.</p>
+      <p>We also capped blocks at 500 per session, evicting the oldest. Keeping every block forever is a slow memory leak in a long-running session; 500 covers far more history than anyone scrolls back to, and the buffer underneath still holds 10,000 lines regardless.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What's next</h2>
+      <p>Blocks are the substrate, not the destination. Now that output is structured, the interesting questions are about what we can do with that structure: per-block status (did this command succeed?), folding entire categories of output at once, and letting agents emit richer <code>OSC 7770</code> metadata so a tool call carries its own label and outcome. The wall is a list now — and a list is something you can actually work with.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>Apache License 2.0 &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

@@ -47,21 +47,45 @@
       <p class="blog-index-subtitle">Deep-dives into why we build what we build.</p>
 
       <div class="blog-list">
+        <a href="/blog/ai-chat.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>June 2, 2026</time></div>
+          <h3>AI Chat: an agent that reads your terminal, not its screenshot</h3>
+          <p>Most chat sidebars are blind to your terminal. AI Chat reads structured OSC 133 state — commands, outputs, exit codes, links — runs local (Ollama) or cloud models, and can arm approval-gated reactive watchers. In beta behind the Experimental toggle.</p>
+        </a>
+        <a href="/blog/command-blocks.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>May 28, 2026</time></div>
+          <h3>Command blocks for agent terminals</h3>
+          <p>An AI agent's terminal is a wall of text. We segmented it into navigable command blocks — with detection that works even for agents that emit no markers, via heuristic ⏺ tool-call recognition alongside OSC 133 / OSC 7770.</p>
+        </a>
+        <a href="/blog/auto-standby.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>May 23, 2026</time></div>
+          <h3>Auto-standby: SIGSTOP for idle agent terminals</h3>
+          <p>Dozens of idle agent terminals quietly burn CPU and battery. Auto-standby SIGSTOPs the whole process group when a tab is unfocused and idle, and SIGCONTs it the instant you look back or a message arrives.</p>
+        </a>
+        <a href="/blog/process-monitor.html" class="blog-card">
+          <div class="blog-card-meta">
+            <time>May 18, 2026</time></div>
+          <h3>A built-in process monitor for your terminal trees</h3>
+          <p>When one of a dozen agents pins a core, which one is it? A process monitor reports CPU and RSS for TUIC and every child process tree — over MCP, over HTTP, and as a self-contained dashboard.</p>
+        </a>
         <a href="/blog/beta-features.html" class="blog-card">
           <div class="blog-card-meta">
             <time>May 10, 2026</time>          </div>
           <h3>SSH tunnels, remote access, and the beta features you can try today</h3>
           <p>A tour of the features behind the Experimental toggle: SSH tunnel management, the tuicommander-remote daemon, AI-powered code triage, terminal watchers, and chat. All in beta — feedback welcome.</p>
         </a>
-        <a href="/blog/tuic-remote.html" class="blog-card blog-draft">
+        <a href="/blog/tuic-remote.html" class="blog-card">
           <div class="blog-card-meta">
-            <time>May 8, 2026</time><span class="blog-badge-draft">DRAFT</span></div>
+            <time>May 8, 2026</time></div>
           <h3>One daemon, every environment: meet tuicommander-remote</h3>
           <p>A headless Rust daemon that runs inside WSL, Docker dev containers, and remote servers. The desktop app drives them as if they were local — same protocol, no path translation, no cross-OS shims.</p>
         </a>
-        <a href="/blog/ai-triage.html" class="blog-card blog-draft">
+        <a href="/blog/ai-triage.html" class="blog-card">
           <div class="blog-card-meta">
-            <time>May 5, 2026</time><span class="blog-badge-draft">DRAFT</span></div>
+            <time>May 5, 2026</time></div>
           <h3>AI Triage: code review that understands what changed</h3>
           <p>Every AI IDE can generate code. None of them review the diff before you commit. AI Triage classifies every changed file by risk, relevance, and category — streaming results as the LLM works through your changes.</p>
         </a>

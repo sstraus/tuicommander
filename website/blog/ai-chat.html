@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Chat: an agent that reads your terminal, not its screenshot — TUICommander Blog</title>
+  <meta name="description" content="Most chat sidebars are blind to your terminal. TUICommander's AI Chat reads structured OSC 133 state — commands, outputs, exit codes, links — runs local or cloud models, and can arm reactive watchers. Here's why that matters and how it's wired in." />
+
+  <meta property="og:title" content="AI Chat: an agent that reads your terminal, not its screenshot — TUICommander" />
+  <meta property="og:description" content="An in-app agent that reads structured OSC 133 terminal state instead of scraping pixels, runs local (Ollama) or cloud models, and arms reactive watchers. Advantages, potential, integration." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>June 2, 2026</time>
+      <h1>AI Chat: an agent that reads your terminal, not its screenshot</h1>
+      <p class="blog-post-summary">Every editor now ships a chat sidebar, and almost all of them are blind to the one thing you're actually working in — the terminal. TUICommander's AI Chat is built the other way around: it reads structured terminal state, runs local or cloud models, and can arm reactive watchers that wake up on their own. It's in beta today behind the Experimental toggle.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>Turning it on</h2>
+      <p>AI Chat lives behind <em>Settings &gt; Experimental Features</em>. Flip <strong>Enable experimental features</strong>, then <strong>AI Chat</strong> — that switches on the chat panel, its keyboard shortcut, and a command-palette entry. The related <strong>AI Watchers</strong> toggle in the same group unlocks the reactive side covered below. It's beta: under active development, occasionally rough, and exactly the part where early feedback is most useful.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The problem with chat sidebars</h2>
+      <p>The standard pattern is a chat panel bolted next to your editor. It can read files. What it usually <em>can't</em> read is your terminal — the build that just failed, the test output, the command you ran three minutes ago. So you copy-paste error text into the chat by hand, stripping it of all the context that made it meaningful. The assistant is reasoning about a screenshot you transcribed, not about what actually happened.</p>
+      <p>That's backwards for an agent-driven workflow, where the terminal <em>is</em> the workspace. We built AI Chat to start from the terminal and work outward.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The advantage: structured state, not scraped pixels</h2>
+      <p>AI Chat doesn't screen-scrape ANSI bytes. It reads the same structured terminal model the rest of TUICommander is built on — OSC 133 semantic blocks. Because every command, its output, and its exit code are first-class data, the agent can answer questions the raw scrollback can't support:</p>
+      <ul>
+        <li><strong>Command history with outcomes</strong> — what ran, in what order, and which ones failed (exit code is captured per block, not guessed from text).</li>
+        <li><strong>"Why did that fail?"</strong> — it reads the last failing block directly instead of you pasting it.</li>
+        <li><strong>Semantic zones</strong> — prompt vs. input vs. output are distinguished per cell, so the model isn't confused about which lines are <em>your</em> command and which are the program's reply.</li>
+        <li><strong>Hyperlinks</strong> — OSC 8 links in the output (a failing CI URL, a docs link) are enumerable, not lost in the text.</li>
+        <li><strong>Scrollback search</strong> — it can grep the buffer for a string instead of asking you to find it.</li>
+      </ul>
+      <p>All of it runs through secret redaction before it reaches a model, and read tools cap their output so a chatty buffer can't blow the context budget.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The potential: a copilot that wakes itself up</h2>
+      <p>Reading state on demand is useful. Reacting to it without being asked is where this gets interesting. AI Chat can arm <strong>reactive watchers</strong>: rules that fire a fresh autonomous conversation when something happens in a terminal — it goes idle, a command finishes, an error appears, a question is asked, or a pattern shows up. "Watch this deploy and tell me if it errors" becomes a thing the agent does while you look elsewhere.</p>
+      <p>The power here is obvious, so the safety is deliberate. Arming a watch is <strong>approval-gated</strong> — the model can't silently set up loops that run on their own; you confirm first. Every watcher carries a cooldown, a burst limit, and a maximum number of fires, and a watcher won't fire on top of an active conversation or while you're typing. Model-armed watches default to a low fire cap. The goal is a copilot that can act on its own without ever surprising you with a runaway.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Local-first, with a cost meter</h2>
+      <p>AI Chat is provider-agnostic. It auto-detects a local <strong>Ollama</strong> install and lists your installed models, so you can run entirely on-device — nothing leaves your machine — or point it at a cloud provider when you want a bigger model. Each conversation picks its own model independently, so a throwaway question and a serious refactor don't have to share one setting.</p>
+      <p>Two details make this practical rather than just flexible. First, there's a per-token <strong>cost estimate</strong> in USD for known cloud models, so you can see what a conversation actually costs. Second, tools are split into read and write <strong>phases</strong> — the cheaper, safe read tools can run on a smaller model while the heavier write actions escalate to a stronger one. You're not paying frontier-model prices to grep your scrollback.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>How it's wired into the rest of TUICommander</h2>
+      <p>AI Chat isn't a separate app stapled on — it reuses the machinery TUIC already has:</p>
+      <ul>
+        <li><strong>Per-session context.</strong> The agent's view is scoped to the terminal it's attached to. Its file tools operate in a sandbox rooted at that session's working directory, so "list the files" means <em>this</em> project.</li>
+        <li><strong>Persisted conversations.</strong> Chats are saved to disk and can be listed, reopened, and deleted — they survive restarts like everything else in TUIC.</li>
+        <li><strong>The same panel system.</strong> It's a dockable panel with a shortcut and a command-palette entry, alongside the file browser, outline, and triage panels.</li>
+        <li><strong>Shared notifications.</strong> It speaks the same toast and sound layer the rest of the app uses, so an agent's output can reach you even when its tab isn't focused.</li>
+      </ul>
+      <p>And it's distinct from the terminal agents you already run. Claude Code or Codex live <em>inside</em> a PTY and you drive them as processes; AI Chat is TUIC's own agent looking <em>at</em> those terminals through structured state. The two compose — see <a href="/blog/cross-agent-orchestration.html">cross-agent orchestration</a> for the other half of that story.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What's next</h2>
+      <p>The roadmap is about closing the loop between an event and a response. Next up: a one-click "ask why" when a command fails, a <code>notify_user</code> action so the agent can get your attention (with an OS notification when the window is unfocused), and routing CI failures through the watcher engine so a red build can trigger a heal attempt through the same safe, gated path instead of a raw write to the terminal. The foundation — OSC-native reading and approval-gated reactive watches — is in place; the rest is teaching it when to speak up.</p>
+      <p>It's beta, the toggle is one click away, and the feedback loop is short. If you try it, tell us where it's blind.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>Apache License 2.0 &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

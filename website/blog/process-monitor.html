@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>A built-in process monitor for your terminal trees — TUICommander Blog</title>
+  <meta name="description" content="When one of a dozen agents pins a core, which one is it? We added a process monitor that reports CPU and RSS for TUIC and every child process tree — over MCP, over HTTP, and as a self-contained dashboard." />
+
+  <meta property="og:title" content="A built-in process monitor for your terminal trees — TUICommander" />
+  <meta property="og:description" content="When one of a dozen agents pins a core, which one is it? A process monitor reporting CPU and RSS for TUIC and every child tree — over MCP, HTTP, and a self-contained dashboard." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>May 18, 2026</time>
+      <h1>A built-in process monitor for your terminal trees</h1>
+      <p class="blog-post-summary">The fan spins up. One of a dozen agents is pinning a core — but which one? Instead of dropping to <code>htop</code> and matching PIDs by hand, we built a process monitor that knows which session owns each process, and exposes it over MCP, over HTTP, and as a self-contained dashboard.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>"Something is eating my CPU"</h2>
+      <p>Running many agents in parallel has a failure mode: one of them goes off the rails — a runaway test loop, a dev server stuck rebuilding, a model thrashing — and the only outward sign is the fan. The system process monitor shows you a list of PIDs and percentages, but it doesn't know that PID 48211 is the agent in your <em>auth-refactor</em> worktree. You're left correlating process trees against terminals by hand, which is exactly the kind of bookkeeping a session orchestrator should do for you.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>CPU and memory, attributed to sessions</h2>
+      <p>TUICommander already tracks which PTY belongs to which session, so it already knows the process-tree roots. The monitor walks those trees and, for every PID, reports resident memory (RSS) and CPU percent — each row tagged with the session it belongs to. On Unix it batches a single <code>ps -o pid,rss,%cpu</code> query across all the PIDs at once rather than stat-ing each process individually; on Windows it queries each process's working-set size through the platform API. The output is a flat list of <code>{ session_id, name, pid, rss_kb, cpu_pct }</code> — TUIC itself included, so you can see the app's own footprint alongside its children.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Three ways to read it</h2>
+      <p>The same data is exposed through three surfaces, because the question gets asked in three different contexts:</p>
+      <ul>
+        <li><strong>Over MCP.</strong> The session tool gained a <code>process_stats</code> action. An agent — or another agent orchestrating TUIC — can ask "what's the resource picture right now?" and get structured JSON back, which is exactly what you want when something is diagnosing itself.</li>
+        <li><strong>Over HTTP.</strong> <code>GET /process/stats</code> returns the same JSON for scripts, dashboards, or a quick <code>curl</code> when you're already in a terminal.</li>
+        <li><strong>As a dashboard.</strong> <code>GET /process/monitor</code> serves a self-contained HTML page — process, PID, session, RSS, CPU in a sortable table — with no build step and no external assets. Open it in a browser tab or pin it as a TUIC panel.</li>
+      </ul>
+    </div>
+
+    <div class="blog-section">
+      <h2>Why a self-contained page</h2>
+      <p>The dashboard is one HTML file that fetches <code>/process/stats</code> and renders the table client-side. No bundler, no framework, no asset pipeline. That's deliberate: a diagnostic tool you reach for when things are misbehaving must not itself depend on a healthy build or a running dev server. It has to work in the degraded state you're trying to debug. A single static page served by the same Rust process that has the data is about as robust as it gets.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What's next</h2>
+      <p>Point-in-time numbers answer "what's hot now"; the natural next step is "what got hot, and when". The data the monitor already collects is the right input for trend lines and for the always-on diagnostics that watch for FD and thread growth — turning a manual "why is the fan on?" check into something that notices on its own and points straight at the session responsible.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>Apache License 2.0 &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

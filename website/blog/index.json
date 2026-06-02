@@ -1,6 +1,42 @@
 {
   "posts": [
     {
+      "slug": "ai-chat",
+      "title": "AI Chat: an agent that reads your terminal, not its screenshot",
+      "date": "2026-06-02",
+      "status": "published",
+      "feature": "AI Chat",
+      "summary": "Most chat sidebars are blind to your terminal. AI Chat reads structured OSC 133 state — commands, outputs, exit codes, links — runs local (Ollama) or cloud models, and can arm approval-gated reactive watchers. In beta behind the Experimental toggle.",
+      "screenshots": []
+    },
+    {
+      "slug": "command-blocks",
+      "title": "Command blocks for agent terminals",
+      "date": "2026-05-28",
+      "status": "published",
+      "feature": "Command block system",
+      "summary": "An AI agent's terminal is a wall of text. We segmented it into navigable command blocks — with detection that works even for agents that emit no markers, via heuristic ⏺ tool-call recognition alongside OSC 133 / OSC 7770.",
+      "screenshots": []
+    },
+    {
+      "slug": "auto-standby",
+      "title": "Auto-standby: SIGSTOP for idle agent terminals",
+      "date": "2026-05-23",
+      "status": "published",
+      "feature": "Auto-standby",
+      "summary": "Dozens of idle agent terminals quietly burn CPU and battery. Auto-standby SIGSTOPs the whole process group when a tab is unfocused and idle, and SIGCONTs it the instant you look back or a message arrives.",
+      "screenshots": []
+    },
+    {
+      "slug": "process-monitor",
+      "title": "A built-in process monitor for your terminal trees",
+      "date": "2026-05-18",
+      "status": "published",
+      "feature": "Process stats & monitor",
+      "summary": "When one of a dozen agents pins a core, which one is it? A process monitor reports CPU and RSS for TUIC and every child process tree — over MCP, over HTTP, and as a self-contained dashboard.",
+      "screenshots": []
+    },
+    {
       "slug": "beta-features",
       "title": "SSH tunnels, remote access, and the beta features you can try today",
       "date": "2026-05-10",
@@ -13,7 +49,7 @@
       "slug": "tuic-remote",
       "title": "One daemon, every environment: meet tuicommander-remote",
       "date": "2026-05-08",
-      "status": "draft",
+      "status": "published",
       "feature": "tuicommander-remote / headless daemon / WSL / Docker / remote servers",
       "summary": "A headless Rust daemon that runs inside WSL, Docker dev containers, and remote servers. The desktop app drives them as if they were local — same protocol, no path translation, no cross-OS shims.",
       "screenshots": []
@@ -22,7 +58,7 @@
       "slug": "ai-triage",
       "title": "AI Triage: code review that understands what changed",
       "date": "2026-05-05",
-      "status": "draft",
+      "status": "published",
       "feature": "AI Diff Triage",
       "summary": "Every AI IDE can generate code. None of them review the diff before you commit. AI Triage classifies every changed file by risk, relevance, and category — streaming results as the LLM works through your changes.",
       "screenshots": ["hero.png", "command-palette.png"]
