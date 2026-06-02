@@ -98,7 +98,8 @@ enum Command {
     Status,
     /// Install the tuic CLI to system PATH
     InstallCli {
-        /// Target path (default: /usr/local/bin/tuic)
+        /// Target path (default: /usr/local/bin/tuic on Unix,
+        /// %LOCALAPPDATA%\Microsoft\WindowsApps\tuic.exe on Windows)
         #[arg(long)]
         path: Option<String>,
     },
@@ -552,9 +553,10 @@ fn cmd_status() -> Result<(), String> {
 
 fn cmd_install_cli(target: Option<&str>) -> Result<(), String> {
     let default_path = if cfg!(target_os = "windows") {
-        // On Windows, suggest a directory in PATH
-        let home = std::env::var("USERPROFILE").unwrap_or_default();
-        format!("{home}\\.local\\bin\\tuic.exe")
+        // %LOCALAPPDATA%\Microsoft\WindowsApps is user-writable and already in
+        // PATH on modern Windows — matches the GUI installer (tuic_cli.rs).
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        format!("{local_app_data}\\Microsoft\\WindowsApps\\tuic.exe")
     } else {
         "/usr/local/bin/tuic".to_string()
     };
@@ -621,6 +623,11 @@ fn cmd_install_cli(target: Option<&str>) -> Result<(), String> {
 
     #[cfg(windows)]
     {
+        // Create the target directory if it doesn't exist (avoids OS error 3).
+        if let Some(parent) = std::path::Path::new(target_path).parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+        }
         std::fs::copy(&self_exe, target_path).map_err(|e| format!("Failed to copy: {e}"))?;
         println!("Installed {target_path}");
     }
@@ -633,8 +640,9 @@ fn cmd_alias(remove: bool) -> Result<(), String> {
         std::env::current_exe().map_err(|e| format!("Cannot find own executable: {e}"))?;
 
     let tmux_path = if cfg!(target_os = "windows") {
-        let home = std::env::var("USERPROFILE").unwrap_or_default();
-        format!("{home}\\.local\\bin\\tmux.exe")
+        // Same user-writable, in-PATH location as the tuic install (see cmd_install_cli).
+        let local_app_data = std::env::var("LOCALAPPDATA").unwrap_or_default();
+        format!("{local_app_data}\\Microsoft\\WindowsApps\\tmux.exe")
     } else {
         "/usr/local/bin/tmux".to_string()
     };
@@ -734,6 +742,11 @@ fn cmd_alias(remove: bool) -> Result<(), String> {
 
     #[cfg(windows)]
     {
+        // Create the target directory if it doesn't exist (avoids OS error 3).
+        if let Some(parent) = std::path::Path::new(&tmux_path).parent() {
+            std::fs::create_dir_all(parent)
+                .map_err(|e| format!("Failed to create {}: {e}", parent.display()))?;
+        }
         std::fs::copy(&self_exe, &tmux_path).map_err(|e| format!("Failed to copy: {e}"))?;
         println!("Created tmux alias at {tmux_path}");
     }
