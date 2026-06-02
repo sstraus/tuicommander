@@ -131,6 +131,11 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
 	// Scroll position cache: saves scrollTop + selectedIndex per subdir path
 	const scrollCache = new Map<string, { scrollTop: number; selectedIndex: number }>();
+	// Per-root subdir memory: when the user switches repos and comes back, restore
+	// the directory they were browsing instead of resetting to root. The panel
+	// instance persists across repo switches (only props.repoPath changes), so a
+	// component-scoped map survives. (#72)
+	const rootToSubdir = new Map<string, string>();
 	let contentRef: HTMLDivElement | undefined;
 	let pendingScrollRestore: string | null = null;
 
@@ -185,12 +190,14 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		const fsRoot = root()!;
 		const gen = ++fetchGeneration;
 
-		// Reset subdir when root changes (merged from separate effect to avoid double fetch)
+		// Restore subdir when root changes (merged from separate effect to avoid double fetch)
 		if (fsRoot !== lastRepoPath) {
+			// Remember where we were in the previous root before switching away. (#72)
+			if (lastRepoPath !== null) rootToSubdir.set(lastRepoPath, untrack(() => currentSubdir()));
 			lastRepoPath = fsRoot;
 			scrollCache.clear();
 			pendingScrollRestore = null;
-			setCurrentSubdir(".");
+			setCurrentSubdir(rootToSubdir.get(fsRoot) ?? ".");
 		}
 
 		const subdir = currentSubdir();
@@ -251,6 +258,13 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 				}
 			} catch (err) {
 				if (gen !== fetchGeneration) return;
+				// A remembered subdir may have been deleted while we were away (#72) —
+				// fall back to the root instead of stranding the user on an error.
+				if (subdir !== ".") {
+					rootToSubdir.delete(fsRoot);
+					setCurrentSubdir(".");
+					return;
+				}
 				setError(String(err));
 				setEntries([]);
 			} finally {

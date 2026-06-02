@@ -1022,3 +1022,8 @@ Features to test when TUICommander is more usable.
 - [HUMAN] Mobile PWA shell: type a command, tap mid-line and fix a typo (no arrows) → terminal shows correct line, no flicker/garbage burst
 - [HUMAN] Mobile PWA shell: use the new ← / → keybar keys to move the readline cursor mid-line and insert/delete → readline edits at the right position (textarea may show a stale tail; screen is authoritative)
 - [HUMAN] Mobile PWA agent (Claude/Codex): typing + slash menu + tab completion still work (no regression from the delta change)
+
+## File browser per-repo directory memory (#72, 2026-06-03)
+- [x] FileBrowser remembers current subdir per root: switch away to another repo and back restores the subdir, not the root _(verified: FileBrowserPanel.tsx rootToSubdir map saved on root-change in the load effect, restored via setCurrentSubdir(rootToSubdir.get(fsRoot) ?? "."))_
+- [HUMAN] Browse into a subdir in repo A, switch to repo B, switch back to A → file browser is still in that subdir
+- [HUMAN] Browse into a subdir in repo A, switch to B, delete that subdir externally, switch back to A → falls back to root without an error screen
