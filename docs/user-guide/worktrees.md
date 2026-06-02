@@ -18,7 +18,7 @@ Main branches (main, master, develop) use the original repository directory — 
 
 ## Worktree Storage Strategies
 
-Configure where worktrees are stored (Settings → General → Worktree Defaults → Storage):
+Configure where worktrees are stored (Settings → Git & GitHub → Worktree Defaults → Storage):
 
 | Strategy | Location | Use case |
 |----------|----------|----------|
@@ -41,7 +41,7 @@ Click `+` next to a repository name. A dialog opens where you can:
 
 ### From the `+` Button (instant mode)
 
-When "Prompt on create" is off (Settings → Worktree Defaults), clicking `+` instantly creates a worktree with an auto-generated name based on the default branch.
+When "Prompt on create" is off (Settings → Git & GitHub → Worktree Defaults), clicking `+` instantly creates a worktree with an auto-generated name based on the default branch.
 
 ### From Branch Right-Click (quick-clone)
 
@@ -51,7 +51,7 @@ Right-click any non-main branch without a worktree → **Create Worktree**. This
 
 Global defaults apply to all repos. Per-repo overrides take precedence when set.
 
-### Global Defaults (Settings → General → Worktree Defaults)
+### Global Defaults (Settings → Git & GitHub → Worktree Defaults)
 
 | Setting | Options | Default |
 |---------|---------|---------|
