@@ -53,19 +53,21 @@ vi.mock("../../stores/ui", () => ({
 	},
 }));
 
-vi.mock("../../stores/repositories", () => ({
-	repositoriesStore: {
-		state: {
-			repositories: {
-				"/repo/alpha": { path: "/repo/alpha", displayName: "Alpha" },
-				"/repo/beta": { path: "/repo/beta", displayName: "Beta" },
-			},
-			repoOrder: ["/repo/alpha", "/repo/beta"],
+vi.mock("../../stores/repositories", () => {
+	const repositories = {
+		"/repo/alpha": { path: "/repo/alpha", displayName: "Alpha" },
+		"/repo/beta": { path: "/repo/beta", displayName: "Beta" },
+	};
+	const repoOrder = ["/repo/alpha", "/repo/beta"];
+	return {
+		repositoriesStore: {
+			state: { repositories, repoOrder },
+			setDisplayName: vi.fn(),
+			getGroupForRepo: vi.fn(() => undefined),
+			getAllReposOrdered: vi.fn(() => repoOrder.map((p) => repositories[p as keyof typeof repositories])),
 		},
-		setDisplayName: vi.fn(),
-		getGroupForRepo: vi.fn(() => undefined),
-	},
-}));
+	};
+});
 
 vi.mock("../../stores/repoSettings", () => ({
 	repoSettingsStore: {

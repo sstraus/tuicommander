@@ -34,18 +34,20 @@ vi.mock("../../stores/ui", () => ({
 	},
 }));
 
-vi.mock("../../stores/repositories", () => ({
-	repositoriesStore: {
-		state: {
-			repositories: {
-				"/repo": { path: "/repo", displayName: "my-repo" },
-			},
-			repoOrder: ["/repo"],
+vi.mock("../../stores/repositories", () => {
+	const repositories = {
+		"/repo": { path: "/repo", displayName: "my-repo" },
+	};
+	const repoOrder = ["/repo"];
+	return {
+		repositoriesStore: {
+			state: { repositories, repoOrder },
+			setDisplayName: vi.fn(),
+			getGroupForRepo: vi.fn(() => undefined),
+			getAllReposOrdered: vi.fn(() => repoOrder.map((p) => repositories[p as keyof typeof repositories])),
 		},
-		setDisplayName: vi.fn(),
-		getGroupForRepo: vi.fn(() => undefined),
-	},
-}));
+	};
+});
 
 vi.mock("../../stores/repoSettings", () => {
 	const mockReset = vi.fn();
