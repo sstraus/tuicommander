@@ -530,7 +530,10 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 				<Show when={!isExternal() && props.repoPath}>
 					<button
 						class={e.btn}
-						onClick={() => diffTabsStore.add(props.repoPath, props.filePath, "M")}
+						// Diff against fsRoot (the worktree) where the file actually lives and is
+						// modified — props.repoPath is the canonical repo, so on a worktree git diff
+						// would run in the wrong tree and report "No changes". (#67)
+						onClick={() => diffTabsStore.add(fsRoot(), props.filePath, "M")}
 						title={t("codeEditor.viewDiff", "View diff")}
 					>
 						<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
