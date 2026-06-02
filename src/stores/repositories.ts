@@ -884,6 +884,29 @@ function createRepositoriesStore() {
 			return { groups, ungrouped };
 		},
 
+		/** Every configured repo in display order (ungrouped first, then each
+		 *  group's repos in group order). Includes parked repos. Used by the
+		 *  Settings nav, which must list every repo regardless of group/park
+		 *  state — grouped repos live in group.repoOrder, not state.repoOrder. (#64) */
+		getAllReposOrdered(): RepositoryState[] {
+			const seen = new Set<string>();
+			const result: RepositoryState[] = [];
+			const push = (path: string) => {
+				if (seen.has(path)) return;
+				const repo = state.repositories[path];
+				if (!repo) return;
+				seen.add(path);
+				result.push(repo);
+			};
+			for (const path of state.repoOrder) push(path);
+			for (const gid of state.groupOrder) {
+				const group = state.groups[gid];
+				if (!group) continue;
+				for (const path of group.repoOrder) push(path);
+			}
+			return result;
+		},
+
 		setBranchSwitching(value: boolean): void {
 			setState("branchSwitching", value);
 		},

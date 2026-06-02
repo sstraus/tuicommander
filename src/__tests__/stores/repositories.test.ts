@@ -1117,4 +1117,36 @@ describe("repositoriesStore", () => {
 			});
 		});
 	});
+
+	describe("getAllReposOrdered()", () => {
+		it("includes repos nested in groups, not just ungrouped (#64)", () => {
+			testInScope(() => {
+				store.add({ path: "/repo-a", displayName: "A" });
+				store.add({ path: "/repo-b", displayName: "B" });
+				store.add({ path: "/repo-c", displayName: "C" });
+
+				const gid = store.createGroup("Group 1") as string;
+				store.addRepoToGroup("/repo-b", gid);
+				store.addRepoToGroup("/repo-c", gid);
+
+				// ungrouped first (a), then the group's repos in order (b, c)
+				expect(store.getAllReposOrdered().map((r) => r.path)).toEqual(["/repo-a", "/repo-b", "/repo-c"]);
+			});
+		});
+
+		it("returns every repo even when all are grouped (#64)", () => {
+			testInScope(() => {
+				store.add({ path: "/repo-a", displayName: "A" });
+				store.add({ path: "/repo-b", displayName: "B" });
+
+				const gid = store.createGroup("Group 1") as string;
+				store.addRepoToGroup("/repo-a", gid);
+				store.addRepoToGroup("/repo-b", gid);
+
+				// repoOrder is empty, but the repos still surface via the group
+				expect(store.state.repoOrder).toEqual([]);
+				expect(store.getAllReposOrdered().map((r) => r.path)).toEqual(["/repo-a", "/repo-b"]);
+			});
+		});
+	});
 });

@@ -57,8 +57,14 @@ const DRAG_CLASSES: Record<string, string> = {
 };
 
 export const Sidebar: Component<SidebarProps> = (props) => {
-	const repos = createMemo(() => repositoriesStore.getOrderedRepos());
 	const groupedLayout = createMemo(() => repositoriesStore.getGroupedLayout());
+	// Empty state must account for grouped repos too — a repo moved into a group
+	// leaves state.repoOrder, so checking ungrouped alone would falsely report
+	// "No repositories" when every repo is grouped. (#64)
+	const hasVisibleRepos = createMemo(() => {
+		const layout = groupedLayout();
+		return layout.ungrouped.length > 0 || layout.groups.some((g) => g.repos.length > 0);
+	});
 
 	const drag = useSidebarDragDrop();
 
@@ -305,7 +311,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 						</For>
 						{/* Ungrouped repos */}
 						<For each={groupedLayout().ungrouped}>{(repo) => renderRepoSection(repo)}</For>
-						<Show when={repos().length === 0}>
+						<Show when={!hasVisibleRepos()}>
 							<div class={s.empty}>
 								<p>{t("sidebar.noRepositories", "No repositories")}</p>
 								<button onClick={handleAddRepoClick}>{t("sidebar.addRepository", "Add Repository")}</button>

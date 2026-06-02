@@ -64,9 +64,10 @@ function defaultTab(ctx: SettingsContext): string {
 
 /** Build the full nav from global sections + configured repos */
 function buildNavItems(): SettingsShellTab[] {
-	const repos = repositoriesStore.state.repoOrder
-		.map((path) => repositoriesStore.state.repositories[path])
-		.filter(Boolean);
+	// All repos, including those nested in groups — grouped repos live in
+	// group.repoOrder, not state.repoOrder, so iterating repoOrder alone would
+	// hide them from the Settings nav. (#64)
+	const repos = repositoriesStore.getAllReposOrdered();
 
 	const items: SettingsShellTab[] = [...getGlobalTabs()];
 
