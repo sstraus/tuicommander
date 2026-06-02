@@ -18,10 +18,28 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: SocketDev/socket-security-action@v1
+      # Socket Firewall (free): blocks known-malicious npm/cargo packages at
+      # install time. The legacy socket-security-action manifest scanner was
+      # retired (repo deleted), so SocketDev/action now installs the `sfw`
+      # wrapper and we run the installs through it. No Socket API token needed.
+      # Pinned to an immutable SHA per Socket's supply-chain guidance.
+      - uses: SocketDev/action@ba6de6cc0565af1f42295590380973573297e31f # v1.3.2
         with:
-          enable_npm: true
-          enable_cargo: true
+          mode: firewall-free
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Scan npm install through Socket Firewall
+        run: sfw npm ci
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Scan cargo fetch through Socket Firewall
+        run: cd src-tauri && sfw cargo fetch
 
   frontend:
     name: Frontend (typecheck + tests)
