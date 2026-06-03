@@ -15,6 +15,12 @@ jobs:
     name: Socket Security
     runs-on: ubuntu-22.04
     if: github.event_name == 'pull_request'
+    # Informational supply-chain scan — never a hard PR blocker. Socket's
+    # sfw-wrapped installs add a network dependency on Socket's service, and an
+    # upstream action retirement (socketdev/socket-security-action was deleted)
+    # previously failed every PR at "Set up job". continue-on-error keeps the
+    # scan running + reporting without gating merges on Socket availability.
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
@@ -186,7 +192,10 @@ jobs:
 
       - name: Install Vulkan SDK (Windows)
         if: matrix.platform == 'windows-latest'
-        uses: jakoch/install-vulkan-sdk-action@v1
+        # Pinned to v1.5.4 (Node20). v1.5.5 moved to Node24, which crashes
+        # instantly with no output on windows-latest runners mid-migration to
+        # windows-2025 — the source of intermittent "Install Vulkan SDK" failures.
+        uses: jakoch/install-vulkan-sdk-action@655818d26aa39d663e587b5620dd26519358981f # v1.5.4
         with:
           vulkan_version: 1.4.309.0
           cache: true
