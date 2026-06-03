@@ -1,9 +1,11 @@
 import { onCleanup } from "solid-js";
+import { t } from "../i18n";
 import { invoke } from "../invoke";
 import { appLogger } from "../stores/appLogger";
 import { githubStore } from "../stores/github";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
+import { toastsStore } from "../stores/toasts";
 import { rpc } from "../transport";
 
 const MAX_ATTEMPTS = 3;
@@ -46,6 +48,13 @@ export function useCiHeal(): void {
 		const agentTerminal = findAgentTerminal(repoPath, branch);
 		if (!agentTerminal) {
 			appLogger.debug("ci-heal", `No agent terminal found for ${branch}, skipping auto-heal`);
+			// Surface why nothing happened — auto-heal injects the fix request into an
+			// agent terminal, which doesn't exist on this branch.
+			toastsStore.add(
+				t("ciHeal.noAgentTitle", "Auto-heal CI: no agent"),
+				`Open an AI agent on "${branch}" so auto-heal can hand it the CI failures.`,
+				"warn",
+			);
 			return;
 		}
 

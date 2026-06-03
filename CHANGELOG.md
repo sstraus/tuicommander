@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+- **Inline review comments on markdown ("tweaks")** — Select any passage in a rendered markdown file and attach a review comment from a floating button + inline popover. Comments are highlighted in place (hover to read, click to edit/delete) and stored *inside* the `.md` source as HTML-comment markers that are invisible to standard renderers but readable by humans and LLMs — the first comment prepends a convention header so an AI agent can apply the feedback and remove the markers. Highlights are wrapped in the DOM after parsing, so selections that straddle inline formatting render intact. Shared by the Markdown panel and the PR detail popover.
+- **Cmd/Ctrl+hover link affordance in the code editor** — Holding Cmd (macOS) / Ctrl underlines the symbol under the cursor as a Cmd+Click go-to-definition affordance; the underline tracks document edits and clears on release.
+- **Cycle All Tab Types setting** (#58) — Optional setting (Appearance, default off) that lets next/prev-tab shortcuts cycle file/diff/markdown/editor tabs in addition to terminals, ordered like the tab bar.
+- **Right-click menu on terminal links** (#57) — Right-clicking a detected file path or URL in the terminal offers **Open** and **Copy link** (copy the resolved target without opening). Single left-click still opens instantly.
+- **JetBrains IDE family in the IDE launcher** (#70) — IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, PhpStorm, RubyMine, Rider, DataGrip, RustRover, Android Studio, and Fleet are now selectable as the default IDE and in the "Open in…" launcher (new "JetBrains" category). They launch via their CLI launcher with `--line`/`--column` goto and fall back to `open -a` on macOS when the Toolbox shell scripts aren't on PATH. Official brand icons.
+
+### Changed
+- **Error Log level filter is now a severity threshold** (#69) — Selecting a level shows that level and everything more severe (e.g. Warn shows Warn + Error), with a tooltip on each tab describing what it includes.
+
 ## [1.2.11-nightly] - 2026-06-02
 
 ### Fixed

@@ -92,6 +92,7 @@ When modifying `cpu_watchdog.rs` or the `/diagnostics` HTTP endpoint:
 | `src-tauri/src/cpu_watchdog.rs` | Watchdog logic, thresholds, snapshot fields |
 | `src-tauri/src/mcp_http/log_routes.rs` | `/diagnostics` GET/POST handlers |
 | `AGENTS.md` | Diagnostics section (usage, known failure patterns) |
+| `docs/FEATURES.md` | Section 20.11 (Runtime Diagnostics) |
 
 ### MCP Tool Surface (native tools, upstream proxy, meta-tools)
 When changing the tool list, tool handlers, `disabled_native_tools`, upstream allow/deny filters, or the Speakeasy meta-tools:
@@ -289,6 +290,18 @@ When adding or modifying panels, status bar, toolbar, sidebar:
 | `docs/frontend/STYLE_GUIDE.md` | If changing visual patterns |
 | `docs/frontend/components.md` | Component tree, panel descriptions |
 | Domain user guide | e.g. `docs/user-guide/sidebar.md`, `docs/user-guide/file-browser.md` |
+
+### Markdown Inline Review Comments (tweaks) & Highlight Rendering
+When modifying the tweak-comment format, the selection/popover UI, or the DOM highlight wrapping:
+
+| File | What to update |
+|------|----------------|
+| `src/utils/tweakComments.ts` | Marker format, parse/insert/remove/update, sentinels, convention header |
+| `src/utils/tweakDomHighlight.ts` | DOM-side sentinel→`.tweak-highlight` span wrapping |
+| `src/components/MarkdownTab/CommentOverlay.tsx` | Floating Comment button + inline popover + hover tooltip |
+| `src/components/MarkdownTab/MarkdownTab.tsx` | Save/delete wiring, write-back to disk |
+| `src/components/ui/ContentRenderer.tsx` | Sentinel injection + `applyTweakDomHighlights` on render (shared by PR detail) |
+| `docs/FEATURES.md` | Section 3.3 (Markdown Panel) — Inline review comments |
 
 ### TUIC SDK & iframe Integration
 When modifying the TUIC SDK, iframe postMessage protocol, path resolution, or tab injection:

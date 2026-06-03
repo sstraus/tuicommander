@@ -52,6 +52,7 @@ pub fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), 
 | `ipv6_enabled` | `bool` | `false` | IPv6 dual-stack binding |
 | `language` | `String` | `"en"` | UI language code |
 | `max_tab_name_length` | `u32` | `20` | Max tab name display length |
+| `tab_cycling_all_types` | `bool` | `false` | When true, next/prev-tab shortcuts cycle file/diff/markdown/editor tabs too (default cycles terminals only) |
 | `prevent_sleep_when_busy` | `bool` | `false` | Prevent macOS sleep when terminal is busy |
 | `push_enabled` | `bool` | `false` | Enable push notifications to PWA clients |
 | `relay_enabled` | `bool` | `false` | Cloud relay for mobile access |

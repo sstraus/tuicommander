@@ -1,3 +1,11 @@
+<!-- tweak-comments v1: inline review comments.
+     Format: [tweak:begin:ID]highlighted text[tweak:end:ID @ISO-TIMESTAMP
+     comment body (free text, may span multiple lines)
+     ] — where [ ] are the HTML comment delimiters <!-- -->.
+     The only escape is '-->' → '--&gt;' inside the comment body.
+     Read each comment, apply the feedback to the highlighted text,
+     then remove the tweak markers. -->
+
 # To Test
 
 Features to test when TUICommander is more usable.
@@ -5,6 +13,71 @@ Features to test when TUICommander is more usable.
 ## Tab close kills agent process group (2026-06-03 — `b4ab1fb6`)
 - [x] Closing a tab whose agent (grandchild of the PTY shell) ignores Ctrl-C kills the agent too — no orphan reparented to launchd _(verified end-to-end: MCP `session create` → ran a foreground `sh` simulant (PID 4109, traps INT/TERM/HUP, sleeps) under `target/debug/tuicommander` (dev build with fix) → MCP `session close` → PID dead within 100ms, no `sleep 600` residue. Also unit test `pty.rs::close_pty_core_kills_agent_grandchild` — confirmed it FAILS without the killpg call.)_
 - [x] `kill_foreground_process_group` refuses unsafe pgid (≤1 or our own group) _(verified: pty.rs guard `pgid <= 1 || pgid == getpgid(0)` before `kill(-pgid, SIGKILL)`)_
+
+## Issue Triage Fixes (2026-06-03 — see PR.md)
+
+### #57 — Terminal link right-click menu (Open / Copy link)
+- [x] Right-click ON a detected link span → ONLY the Open/Copy-link menu appears (App copy/paste/AI menu must NOT also open and cover it)
+- [x] Right-click OUTSIDE a link → normal terminal context menu (copy / Explain with AI) still works
+- [x] "Copy link" copies the resolved path/URL to clipboard WITHOUT opening it
+- [x] "Open" opens the link (same as single left-click)
+- [x] Single left-click on a link still opens instantly (UI-first, not Cmd-gated); drag-select over a link still copies without opening
+
+### #58 — Cycle All Tab Types setting
+- [x] Default OFF → next/prev tab cycles terminals only _(verified: useTerminalLifecycle.test.ts:564 default false excludes diff tab from cycle)_
+- [ ] Settings → Appearance → "Cycle All Tab Types" toggle present next to Tab Ordering
+- [ ] Toggle ON → prev/next also cycles diff/md/editor tabs, ordered via tabOrderingStore.getOrdered
+- [ ] Setting persists across app restart (round-trips through config.rs tab_cycling_all_types)
+
+### #69 — Error log multi-level (severity threshold) filter
+- [x] levelPassesThreshold: picking a level shows it + all more-severe levels _(verified: errorLogLevelFilter.test.ts — warn shows warn+error, hides info/debug)_
+- [ ] ErrorLogPanel: select "Warn" → Warn and Error entries shown intermingled; select "Error" → only Error
+- [ ] Each level button shows a tooltip describing the threshold
+
+### Tweak-comment DOM highlight + hover-link (WIP, not in PR.md)
+- [x] tweakDomHighlight wraps text between sentinel pairs preserving inline formatting _(verified: tweakDomHighlight.test.ts, hoverLinkField.test.ts)_
+- [x] Open a markdown with tweak-comments → highlight spans wrap the commented text without breaking **bold**/*italic*/`code` across boundaries
+- [x] Hover a highlighted span / link → metadata field shows the comment info
+- [x] Same highlight rendering works in CodeEditorTab and ContentRenderer
+
+### #70 — JetBrains IDE family (open-in / default IDE)
+- [x] 12 JetBrains IDEs added across all sync points _(verified: settings.ts IdeType/IDE_NAMES/IDE_ICON_PATHS/IDE_ICONS/IDE_CATEGORIES.jetbrains; agent.rs open_in_app arms + jetbrains_cmd helper + detect_installed_ides CLI+.app; IdeLauncher.tsx category + FILE_CAPABLE_IDES; tsc + cargo check clean)_
+- [ ] IdeLauncher dropdown shows a "JetBrains" section listing only installed JetBrains IDEs
+- [ ] GeneralTab default-IDE selector lists all 12 JetBrains entries (data-driven from IDE_NAMES)
+- [ ] Open a file in (e.g.) PyCharm/IntelliJ → opens at the correct line/column via `--line`/`--column`
+- [HUMAN] macOS: JetBrains IDE with Toolbox shell scripts NOT enabled → `open -a "<App>"` fallback still launches it
+- [HUMAN] Each IDE icon (official JetBrains/Android Studio brand logo) renders crisply in the launcher
+
+### #56 — Copy repo settings into `.tuic.json` (uncommitted)
+- [x] `save_repo_local_config` exports effective resolved worktree/branch settings, preserves existing `.tuic.json` fields, never writes scripts _(verified: config.rs tests fill_repo_local_defaults_populates_empty_config / _preserves_existing_and_skips_mcp / export_precedence_per_repo_over_defaults / overlay_repo_local_config_never_includes_scripts / repo_local_config_serializes_sparsely)_
+- [x] <!--tweak:begin:c_mpyalrjpe20lsq-->Settings → a repo → "Share with Team" → "Copy settings to .tuic.json" writes `.tuic.json` in repo root; toast confirms<!--tweak:end:c_mpyalrjpe20lsq @2026-06-03T16:40:30.133Z
+lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_repo_local_config via MCP on the dev build → `.tuic.json` = 317 bytes, 10 worktree/branch fields with resolved values, NOT empty)_
+- [x] Export writes the **effective resolved** worktree/branch values (global defaults + per-repo overrides), not just sparse per-repo overrides _(NOTE: behaviour intentionally changed from sparse-overrides-only — that wrote an empty `{}` for users relying on global defaults. config.rs fill_repo_local_defaults; verified end-to-end)_
+- [x] Existing `.tuic.json` with a manually-set field (e.g. `mcp_upstreams`) is preserved, not clobbered, when exporting other fields _(verified end-to-end: injected `mcp_upstreams=[github]` + removed `after_merge` → re-export preserved mcp_upstreams and re-populated after_merge from defaults)_
+- [x] Button hidden in browser/remote (non-Tauri) mode _(verified: SettingsPanel.tsx:194 wraps the "Share with Team" section in `<Show when={isTauri()}>`)_
+
+### Committed fixes — quick manual confirm
+- [ ] #67 (`c9056df0`): file modified inside a worktree → "View diff" shows the actual diff (not "No changes")
+- [ ] #65 (`9b36711b`): after choosing "Keep" on the orphaned-worktrees dialog → it stops re-prompting for the session
+- [HUMAN] #53 (`40282679`): Windows — `tuic install-cli`/`alias` install to `%LOCALAPPDATA%\Microsoft\WindowsApps` (in PATH); needs Windows env
+
+## Command Palette cross-repo content search (2026-06-03, uncommitted)
+- [x] `search_content_all_impl` merges ready indices, tags each match with repo_path, skips unready, empty on no match _(verified: fs.rs tests search_content_all_merges_and_tags_each_repo / _skips_unready_indices / _no_matches_returns_empty)_
+- [ ] Palette `?query` shows a "Search all repos" checkbox in content mode
+- [ ] Toggle ON → results span all indexed repos, each row shows a repo-name badge
+- [ ] Toggle re-runs the current query immediately (no need to retype)
+- [ ] Clicking a cross-repo result opens the file in ITS repo (uses match.repo_path), not the active repo
+- [ ] All-repos mode works even with no active repo selected ("No repository selected" only when single-repo + no active)
+- [ ] Coverage depends on Content Indexing strategy: with "Active repo only" cross-repo effectively returns just the active repo (cold repos skipped) — verify no crash/empty handling
+- [ ] Switching toggle off returns to active-repo-only search
+
+## TUIC CLI version check + honest update banner (2026-06-03, uncommitted)
+- [x] `version_match` compares `tuic --version` strings, not file size _(verified: tuic_cli.rs check_version_match runs cli_version() on installed + sidecar; size-based flapping on rebuild eliminated)_
+- [x] Same CLI version installed + bundled (e.g. both `tuic 1.1.0`) → NO "update pending" banner, even if the sidecar was rebuilt (different size)
+- [ ] Genuinely older installed version + writable file (user-owned `/usr/local/bin/tuic`) → "(update pending — restart to apply)"; restart silently applies it
+- [ ] Genuinely older version + root-owned file (not writable) → "(update available)" (NOT "restart to apply"); an **Update** button appears
+- [ ] Update button → triggers elevation prompt (osascript) and overwrites the installed binary; banner clears after
+- [ ] When versions match → no Update button, only Uninstall
 
 ## MCP Worktree Create: Event Emission + Setup Script (2026-05-27 — Issue #50)
 - [x] Create worktree via MCP `repo action=worktree_create` → frontend shows switch prompt (worktree-created event fires) _(verified: mcp_transport.rs:1449-1465 WorktreeCreated emitted on event_bus and via handle.emit("worktree-created"); sse_routes.rs:98 maps to SSE event; worktree_routes.rs:108 same for HTTP)_
@@ -1031,3 +1104,11 @@ Features to test when TUICommander is more usable.
 - [x] FileBrowser remembers current subdir per root: switch away to another repo and back restores the subdir, not the root _(verified: FileBrowserPanel.tsx rootToSubdir map saved on root-change in the load effect, restored via setCurrentSubdir(rootToSubdir.get(fsRoot) ?? "."))_
 - [HUMAN] Browse into a subdir in repo A, switch to repo B, switch back to A → file browser is still in that subdir
 - [HUMAN] Browse into a subdir in repo A, switch to B, delete that subdir externally, switch back to A → falls back to root without an error screen
+
+## Terminal link context menu (#57, 2026-06-03)
+- [HUMAN] In a shell, `ls` a dir → right-click on an underlined filename/URL → context menu shows "Open" and "Copy link"
+- [HUMAN] Right-click NOT on a link → no link menu appears (default behavior preserved)
+- [HUMAN] Context menu "Open" → opens the file (md preview / editor) or URL, same as left-click
+- [HUMAN] Context menu "Copy link" → clipboard contains the resolved path / URL, file is NOT opened
+- [HUMAN] Left single-click on a link still opens immediately (UI-first: open is primary, not Cmd-gated)
+- [HUMAN] Drag-select across a filename still selects text without opening (copyOnSelect copies)

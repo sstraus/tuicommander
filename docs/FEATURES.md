@@ -71,6 +71,8 @@
 - `file://` URLs are recognized in addition to plain paths — the prefix is stripped and the path resolved like any other
 - OSC 8 hyperlinks: programs that emit hyperlink escape sequences (e.g. Claude Code, modern `ls`) produce clickable links; hover underline spans the full link text (via `terminal_hyperlink_span` backend API)
 - Supports `:line` and `:line:col` suffixes for precise navigation
+- Single left-click opens the link instantly (UI-first — opening is a primary action, not gated behind a modifier); drag-select over a link still copies text without opening
+- Right-click on a link shows a context menu with **Open** and **Copy link** (copy the resolved path/URL without opening). Right-clicking elsewhere shows the standard terminal context menu
 - Recognized extensions: rs, ts, tsx, js, jsx, py, go, java, kt, swift, c, cpp, cs, rb, php, lua, zig, css, scss, html, vue, svelte, json, yaml, toml, sql, graphql, tf, sh, dockerfile, and more
 
 ### 1.8 Find in Content
@@ -248,7 +250,12 @@ Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens t
 - `Cmd+F` search: find text in rendered markdown with highlight navigation (shared SearchBar component)
 - **Interactive GFM checkboxes**: `- [ ]`, `- [x]`, and `- [~]` task-list items render as clickable checkboxes. Clicking cycles through unchecked → checked → in-progress → unchecked. Changes are written back to the source `.md` file on disk. The `[~]` state renders as an indeterminate (half-filled) checkbox — non-standard GFM extension for tracking in-progress items
 - **Mermaid diagrams**: fenced code blocks with ` ```mermaid ` are rendered as interactive SVG diagrams. Mermaid.js is lazy-loaded on first use with dark theme
-- **Inline review comments (tweaks)**: select text in rendered markdown, add a comment — stored as HTML comment markers invisible to standard renderers but readable by humans and LLMs
+- **Inline review comments (tweaks)**: review-comment any passage of a rendered markdown file without leaving the viewer.
+  - **Create**: select text in the rendered markdown → a floating **Comment** button appears next to the selection → click it to open an inline popover and type the note (`Ctrl+Enter` to save)
+  - **View / edit / delete**: commented passages are highlighted (`.tweak-highlight`); hovering one shows the comment in a tooltip, clicking it reopens the popover to edit or delete
+  - **Storage**: comments live *inside* the `.md` source as HTML-comment markers — `<!--tweak:begin:ID-->highlighted text<!--tweak:end:ID @<ISO-timestamp>` + body + `-->`. They are invisible to any standard markdown renderer, survive round-trips, and are committed with the file. The only escaped sequence is `-->` (→ `--&gt;`)
+  - **LLM-friendly**: the first comment added to a file prepends a one-time convention header explaining the format, so an AI agent reading the file understands it without external context — the intended workflow is "human highlights + comments → agent applies the feedback to the highlighted text → agent removes the markers"
+  - **Rendering**: highlights are wrapped in the DOM *after* markdown parsing, so a selection that straddles inline formatting (`**bold**`, `` `code` ``) stays intact and the highlight spans contiguously. Shared across the Markdown panel and the PR detail popover via `ContentRenderer`
 
 ### 3.4 File Browser Panel (`Cmd+E`)
 - Directory tree of active repository
@@ -402,7 +409,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 ### 3.13 Error Log Panel (`Cmd+Shift+E`)
 - Centralized log of all errors, warnings, and info messages across the app
 - Sources: App, Plugin, Git, Network, Terminal, GitHub, Dictation, Store, Config
-- Level filter tabs: All, Error, Warn, Info, Debug
+- Level filter tabs: All, Error, Warn, Info, Debug — uses a **severity threshold**: selecting a level shows that level and everything more severe (e.g. Warn shows Warn + Error intermingled). Each tab has a tooltip describing what it includes
 - Source filter dropdown to narrow by subsystem
 - Text search across all log messages
 - Each entry shows timestamp, level badge (color-coded), source tag, and message
@@ -480,8 +487,9 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 ### 4.5 IDE Launcher
 - Button with current IDE icon — click to open repo/file in IDE
 - Dropdown: shows all detected installed IDEs, grouped by category
-- Categories: Code Editors, Terminals, Git Tools, System
-- File-capable editors open the focused file (from editor or MD tab); others open the repo
+- Categories: Code Editors, JetBrains, Terminals, Git Tools, System
+- JetBrains family: IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, PhpStorm, RubyMine, Rider, DataGrip, RustRover, Android Studio, Fleet — launched via their CLI launcher (`idea`, `pycharm`, …) with `--line`/`--column` goto, falling back to `open -a` on macOS when the Toolbox shell scripts aren't on PATH
+- File-capable editors (including JetBrains IDEs) open the focused file (from editor or MD tab); others open the repo
 - Run command button: `Cmd+R` (run), `Cmd+Shift+R` (edit & run)
 
 ---
@@ -1197,7 +1205,7 @@ All data persisted to platform config directory via Rust:
 - Requires `mdkb` binary on PATH (installed separately)
 
 ### 14.8 Code Intelligence (MDKB integration)
-- Go-to-definition: Cmd+Click on symbols in the editor navigates to the definition via `mdkb_goto_definition`
+- Go-to-definition: Cmd+Click on symbols in the editor navigates to the definition via `mdkb_goto_definition`. Holding Cmd (macOS) / Ctrl underlines the symbol under the cursor (`cm-hover-link`) as a click affordance; the underline clears on release or when the pointer leaves the editor, and its position is remapped through edits so it never goes stale
 - Find references: Shift+F12 finds all callers of a symbol via `mdkb_references` (uses code_graph callers query)
 - Symbol outline: file-level symbol tree via `mdkb_outline` (functions, types, structs)
 - Install/uninstall managed from Settings → General → Code Intelligence
@@ -1721,6 +1729,14 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 - Three surfaces over the same data: MCP `session action=process_stats`, HTTP `GET /process/stats` (JSON `{ session_id, name, pid, rss_kb, cpu_pct }`), and `GET /process/monitor` (a self-contained HTML dashboard with no build step or external assets)
 - Frontend `ProcessManagerModal` opens the dashboard in-app
 - Use to diagnose which agent/terminal is driving high CPU or memory
+
+### 20.11 Runtime Diagnostics (CPU watchdog + diagnostic mode)
+- **Always-on CPU watchdog** (zero overhead when idle): polls `getrusage(RUSAGE_SELF)` every 5s and logs a full snapshot when TUIC's own CPU stays above 80% for 10+ consecutive seconds. PTY children (cargo, rustc, …) are separate OS processes and don't count toward the measurement
+- **Sleep/wake aware**: inter-tick gaps over 30s are treated as the machine having been asleep (lid closed) and skipped, so stale tokio-timer ticks after wake don't trigger false spikes or idle cascades
+- **Diagnostic mode** (toggleable at runtime, off by default): emits a health snapshot every 30s and alerts on FD/thread growth trends. Each snapshot includes CPU%, thread count, FD count, PTY session count, content-index build state, semaphore permits, stuck `grid_frame_in_flight` sessions, and event-bus subscriber count
+- Control via HTTP: `POST /diagnostics {"enabled":true}` to toggle, `GET /diagnostics` for status, `GET /logs?source=diagnostics` to read the snapshots
+- Catches known failure patterns: IPC flush loops, content-index CPU saturation, blocked WebView JS thread (`grid_frame_in_flight` stuck), FD/thread leaks, and sleep/wake false-idle cascades
+- Backend: `src-tauri/src/cpu_watchdog.rs`
 
 ## 21. CLI Companion (`tuic`)
 

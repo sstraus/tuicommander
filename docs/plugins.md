@@ -287,7 +287,7 @@ host.registerOutputWatcher({
 });
 ```
 
-#### host.getClaudeProjectDir(repoPath) -> Promise\<string | null>
+#### `host.getClaudeProjectDir(repoPath) -> Promise<string | null>`
 
 Resolves a repository path to the absolute path of its Claude Code project directory (`~/.claude/projects/<slug>`). The slug encoding is handled by the Rust side — plugins should use this instead of constructing paths manually. Requires `"fs:read"` capability.
 
@@ -338,21 +338,21 @@ const sub = host.onStateChange((event) => {
 
 These methods require declaring `"git:read"` in `manifest.json`. They provide read-only access to git repository state.
 
-#### host.getGitBranches(repoPath) -> Promise<Array<{ name, isCurrent }>>
+#### `host.getGitBranches(repoPath) -> Promise<Array<{ name, isCurrent }>>`
 
 ```typescript
 const branches = await host.getGitBranches("/Users/me/project");
 // [{ name: "main", isCurrent: true }, { name: "feature/x", isCurrent: false }]
 ```
 
-#### host.getRecentCommits(repoPath, count?) -> Promise<Array<{ hash, message, author, date }>>
+#### `host.getRecentCommits(repoPath, count?) -> Promise<Array<{ hash, message, author, date }>>`
 
 ```typescript
 const commits = await host.getRecentCommits("/Users/me/project", 5);
 // [{ hash: "abc1234", message: "fix: bug", author: "name", date: "2026-02-25" }]
 ```
 
-#### host.getGitDiff(repoPath, scope?) -> Promise<string>
+#### `host.getGitDiff(repoPath, scope?) -> Promise<string>`
 
 ```typescript
 const diff = await host.getGitDiff("/Users/me/project", "staged");
@@ -363,7 +363,7 @@ const diff = await host.getGitDiff("/Users/me/project", "staged");
 
 These methods require declaring capabilities in `manifest.json`. Calling without the required capability throws `PluginCapabilityError`.
 
-#### host.writePty(sessionId, data) -> Promise<void>
+#### `host.writePty(sessionId, data) -> Promise<void>`
 
 Sends raw bytes to a terminal session. **Requires `"pty:write"` capability.**
 
@@ -373,7 +373,7 @@ Sends raw bytes to a terminal session. **Requires `"pty:write"` capability.**
 await host.writePty(sessionId, "\x03"); // Send Ctrl-C
 ```
 
-#### host.sendAgentInput(sessionId, text) -> Promise<void>
+#### `host.sendAgentInput(sessionId, text) -> Promise<void>`
 
 Sends user input to an agent session with correct Enter handling. **Requires `"pty:write"` capability.**
 
@@ -401,7 +401,7 @@ Opens a local markdown file in the markdown panel. **Requires `"ui:markdown"` ca
 host.openMarkdownFile("/Users/me/.config/tuicommander/plugins/my-plugin/README.md");
 ```
 
-#### host.playNotificationSound(sound?) -> Promise<void>
+#### `host.playNotificationSound(sound?) -> Promise<void>`
 
 Plays a notification sound. **Requires `"ui:sound"` capability.**
 
@@ -420,7 +420,7 @@ await host.playNotificationSound();              // defaults to "info"
 
 These methods provide sandboxed filesystem access. All paths must be absolute and within the user's home directory (`$HOME`).
 
-#### host.readFile(absolutePath) -> Promise<string>
+#### `host.readFile(absolutePath) -> Promise<string>`
 
 Read a file's content as UTF-8 text. Maximum file size: 10 MB. **Requires `"fs:read"` capability.**
 
@@ -428,7 +428,7 @@ Read a file's content as UTF-8 text. Maximum file size: 10 MB. **Requires `"fs:r
 const content = await host.readFile("/Users/me/.claude/projects/foo/conversation.jsonl");
 ```
 
-#### host.listDirectory(path, pattern?, options?) -> Promise<string[]>
+#### `host.listDirectory(path, pattern?, options?) -> Promise<string[]>`
 
 List filenames in a directory, optionally filtered by a glob pattern. Returns filenames only (not full paths). **Requires `"fs:list"` capability.**
 
@@ -444,7 +444,7 @@ const recent = await host.listDirectory(dir, "*.jsonl", { sortBy: "mtime" });
 const activeFile = recent[0]; // most recently written
 ```
 
-#### host.watchPath(path, callback, options?) -> Promise<Disposable>
+#### `host.watchPath(path, callback, options?) -> Promise<Disposable>`
 
 Watch a path for filesystem changes. Emits batched events after a debounce period. **Requires `"fs:watch"` capability.**
 
@@ -475,7 +475,7 @@ interface FsChangeEvent {
 }
 ```
 
-#### host.writeFile(absolutePath, content) -> Promise<void>
+#### `host.writeFile(absolutePath, content) -> Promise<void>`
 
 Write content to a file within `$HOME`. Creates parent directories if needed. Refuses to overwrite directories. Max 10 MB. **Requires `"fs:write"` capability.**
 
@@ -483,7 +483,7 @@ Write content to a file within `$HOME`. Creates parent directories if needed. Re
 await host.writeFile("/Users/me/project/stories/new-story.md", "---\nstatus: pending\n---\n# New Story");
 ```
 
-#### host.renamePath(from, to) -> Promise<void>
+#### `host.renamePath(from, to) -> Promise<void>`
 
 Rename or move a file within `$HOME`. Both paths must be absolute. Source must exist. Creates parent directories for destination if needed. **Requires `"fs:rename"` capability.**
 
@@ -931,7 +931,7 @@ host.registerContextMenuAction({
 
 ### Tier 3g: Credential Access (capability-gated)
 
-#### host.readCredential(serviceName) -> Promise<string | null>
+#### `host.readCredential(serviceName) -> Promise<string | null>`
 
 Read credentials from the system credential store by service name. Returns the raw credential JSON string, or `null` if not found. **Requires `"credentials:read"` capability.**
 
@@ -951,7 +951,7 @@ if (credJson) {
 
 ### Tier 3h: HTTP Requests (capability-gated)
 
-#### host.httpFetch(url, options?) -> Promise<HttpResponse>
+#### `host.httpFetch(url, options?) -> Promise<HttpResponse>`
 
 Make an HTTP request. Non-2xx status codes are returned normally (not thrown as errors). **Requires `"net:http"` capability.**
 
@@ -992,7 +992,7 @@ interface HttpResponse {
 
 ### Tier 3i: File Tail (capability-gated)
 
-#### host.readFileTail(absolutePath, maxBytes) -> Promise<string>
+#### `host.readFileTail(absolutePath, maxBytes) -> Promise<string>`
 
 Read the last N bytes of a file, skipping any partial first line. Useful for reading recent entries from large JSONL files. **Requires `"fs:read"` capability.**
 
@@ -1003,7 +1003,7 @@ const lines = tail.split("\n").filter(Boolean);
 
 ### Tier 3j: CLI Execution (capability-gated)
 
-#### host.execCli(binary, args, cwd?) -> Promise<string>
+#### `host.execCli(binary, args, cwd?) -> Promise<string>`
 
 Execute a CLI binary declared in the plugin's manifest and return its stdout. **Requires `"exec:cli"` capability.**
 
@@ -1029,7 +1029,7 @@ console.log(status.index.documents); // 1486
 
 ### Tier 4: Scoped Tauri Invoke (whitelisted commands only)
 
-#### host.invoke<T>(cmd, args?) -> Promise<T>
+#### `host.invoke<T>(cmd, args?) -> Promise<T>`
 
 Invokes a whitelisted Tauri command. Non-whitelisted commands throw immediately.
 

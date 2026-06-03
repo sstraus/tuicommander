@@ -9421,8 +9421,7 @@ mod tests {
     fn close_pty_core_kills_agent_grandchild() {
         use std::time::{Duration, Instant};
 
-        let pidfile =
-            std::env::temp_dir().join(format!("tuic_pgkill_{}.pid", std::process::id()));
+        let pidfile = std::env::temp_dir().join(format!("tuic_pgkill_{}.pid", std::process::id()));
         let _ = std::fs::remove_file(&pidfile);
 
         let pty = native_pty_system()
@@ -9449,7 +9448,10 @@ mod tests {
 
         let state = crate::state::tests_support::make_test_app_state();
         let sid = "test-pgkill";
-        state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
+        state
+            .metrics
+            .active_sessions
+            .fetch_add(1, Ordering::Relaxed);
         state.sessions.insert(
             sid.to_string(),
             Mutex::new(PtySession {

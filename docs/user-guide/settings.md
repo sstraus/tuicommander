@@ -7,7 +7,7 @@ Open settings with `Cmd+,`. Settings are organized into tabs.
 | Setting | Description |
 |---------|-------------|
 | **Language** | UI language |
-| **Default IDE** | IDE for "Open in..." actions. Detected IDEs grouped by category: Editors (VS Code, Cursor, Zed, Sublime, Vim, Neovim, Emacs), IDEs (IntelliJ, WebStorm, PyCharm, GoLand, etc.), Terminals (iTerm2, Warp, Kitty, etc.), Git (GitKraken, GitHub Desktop, Tower, etc.) |
+| **Default IDE** | IDE for "Open in..." actions. Only installed apps are offered, grouped by category: Code Editors (VS Code, Cursor, Zed, Windsurf, Neovim, Xcode, `$EDITOR`), JetBrains (IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, PhpStorm, RubyMine, Rider, DataGrip, RustRover, Android Studio, Fleet), Terminals (Ghostty, WezTerm, Alacritty, Kitty, Warp), Git Tools (Sourcetree, GitHub Desktop, Fork, GitKraken, Sublime Merge), System (Terminal, Finder) |
 | **Shell** | Custom shell path (e.g., `/bin/zsh`, `/usr/local/bin/fish`). Leave empty for system default. |
 | **Confirm before quitting** | Show dialog when closing app with active terminals |
 | **Confirm before closing tab** | Ask before closing terminal tab |
@@ -26,6 +26,7 @@ Open settings with `Cmd+,`. Settings are organized into tabs.
 | **Terminal font** | — | JetBrains Mono | 13 bundled monospace fonts: Fira Code, Hack, Cascadia Code, Source Code Pro, IBM Plex Mono, Inconsolata, Ubuntu Mono, Anonymous Pro, Roboto Mono, Space Mono, Monaspace Neon, Geist Mono |
 | **Default font size** | — | — | 8–32px slider. Applies to new terminals; existing terminals keep their zoom level. |
 | **Split tab mode** | — | — | Separate or unified tab appearance |
+| **Cycle All Tab Types** | — | Off | When on, next/prev-tab shortcuts also cycle file/diff/markdown/editor tabs (ordered like the tab bar). Off cycles terminals only. |
 | **Max tab name length** | — | — | 10–60 slider |
 | **Repository groups** | — | — | Create, rename, delete, and color-code groups |
 | **Reset panel sizes** | — | — | Restore sidebar and panel widths to defaults |
