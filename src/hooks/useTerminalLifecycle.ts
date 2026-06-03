@@ -7,6 +7,7 @@ import { mdTabsStore } from "../stores/mdTabs";
 import { paneLayoutStore } from "../stores/paneLayout";
 import { currentBranchKey, repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
+import { tabOrderingStore } from "../stores/tabOrdering";
 import { terminalsStore } from "../stores/terminals";
 import { navigateToTerminal } from "../utils/navigateToTerminal";
 import { assignTabToActiveGroup } from "../utils/paneTabAssign";
@@ -344,11 +345,33 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
 		return filterValidTerminals(repositoriesStore.getActiveTerminals(), terminalsStore.getIds());
 	});
 
+	/** Tab IDs that prev/next cycles through. Terminals only by default; when the
+	 *  `tabCyclingAllTypes` setting is on, include diff/md/editor tabs too, ordered
+	 *  via the shared tabOrdering primitive (same one TabBar uses in free mode). */
+	const cycleTabIds = (): string[] => {
+		const terminals = terminalIds();
+		if (!settingsStore.state.tabCyclingAllTypes) return terminals;
+		const branchKey = currentBranchKey() ?? null;
+		const union = new Set<string>([
+			...terminals,
+			...diffTabsStore.getVisibleIds(branchKey),
+			...mdTabsStore.getVisibleIds(branchKey),
+			...editorTabsStore.getVisibleIds(branchKey),
+		]);
+		return tabOrderingStore.getOrdered(union);
+	};
+
 	const navigateTab = (direction: "prev" | "next") => {
-		const ids = terminalIds();
+		const ids = cycleTabIds();
 		if (ids.length <= 1) return;
 
-		const currentIndex = ids.indexOf(terminalsStore.state.activeId || "");
+		const activeId =
+			terminalsStore.state.activeId ||
+			diffTabsStore.state.activeId ||
+			mdTabsStore.state.activeId ||
+			editorTabsStore.state.activeId ||
+			"";
+		const currentIndex = ids.indexOf(activeId);
 		if (currentIndex === -1) return;
 
 		let newIndex: number;

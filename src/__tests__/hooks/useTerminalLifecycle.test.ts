@@ -5,6 +5,7 @@ import { editorTabsStore } from "../../stores/editorTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { paneLayoutStore, resetGroupCounter } from "../../stores/paneLayout";
 import { repositoriesStore } from "../../stores/repositories";
+import { settingsStore } from "../../stores/settings";
 import { terminalsStore } from "../../stores/terminals";
 import { makeTerminal } from "../helpers/store";
 import { mockInvoke } from "../mocks/tauri";
@@ -542,6 +543,57 @@ describe("useTerminalLifecycle", () => {
 
 			lifecycle.navigateTab("next");
 			expect(terminalsStore.state.activeId).toBe(id1);
+		});
+
+		it("excludes non-terminal tabs by default (terminals only)", () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+			repositoriesStore.setActive("/repo");
+			repositoriesStore.setActiveBranch("/repo", "main");
+
+			const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+			const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
+			repositoriesStore.addTerminalToBranch("/repo", "main", id1);
+			repositoriesStore.addTerminalToBranch("/repo", "main", id2);
+
+			// Opening a diff tab makes it active and deactivates terminals
+			diffTabsStore.add("/repo", "/repo/file.ts", "M");
+			terminalsStore.setActive(id1);
+			diffTabsStore.setActive(null);
+
+			// Default: tabCyclingAllTypes is false → diff tab is not in the cycle
+			lifecycle.navigateTab("next");
+			expect(terminalsStore.state.activeId).toBe(id2);
+		});
+
+		it("includes diff tabs in the cycle when tabCyclingAllTypes is enabled", () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+			repositoriesStore.setActive("/repo");
+			repositoriesStore.setActiveBranch("/repo", "main");
+
+			const id1 = terminalsStore.add(makeTerminal({ name: "T1" }));
+			const id2 = terminalsStore.add(makeTerminal({ name: "T2" }));
+			repositoriesStore.addTerminalToBranch("/repo", "main", id1);
+			repositoriesStore.addTerminalToBranch("/repo", "main", id2);
+
+			const diffId = diffTabsStore.add("/repo", "/repo/file.ts", "M");
+			expect(diffTabsStore.state.activeId).toBe(diffId);
+
+			settingsStore.setTabCyclingAllTypes(true);
+			try {
+				// Cycle order is [id1, id2, diffId]; from the diff (last) → wraps to first terminal
+				lifecycle.navigateTab("next");
+				expect(terminalsStore.state.activeId).toBe(id1);
+				expect(diffTabsStore.state.activeId).toBe(null);
+
+				// From the first terminal, prev wraps back to the diff tab
+				lifecycle.navigateTab("prev");
+				expect(diffTabsStore.state.activeId).toBe(diffId);
+				expect(terminalsStore.state.activeId).toBe(null);
+			} finally {
+				settingsStore.setTabCyclingAllTypes(false);
+			}
 		});
 	});
 

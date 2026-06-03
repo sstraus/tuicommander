@@ -8,7 +8,7 @@ import { uiStore } from "../../../stores/ui";
 import { getTerminalTheme, getThemeNames } from "../../../themes";
 import { UiLegend } from "../../HelpPanel/UiLegend";
 import { ColorSwatchPicker } from "../../shared/ColorSwatchPicker";
-import { SettingSelect, SettingSlider } from "../SettingFields";
+import { SettingSelect, SettingSlider, SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
 
 interface PreviewSpan {
@@ -431,6 +431,16 @@ export const AppearanceTab: Component = () => {
 				hint={t(
 					"appearance.hint.tabOrderingMode",
 					"How tabs are ordered: grouped by type, terminals first, or freely interleaved",
+				)}
+			/>
+
+			<SettingToggle
+				checked={settingsStore.state.tabCyclingAllTypes}
+				onChange={(v) => settingsStore.setTabCyclingAllTypes(v)}
+				label={t("appearance.label.tabCyclingAllTypes", "Cycle All Tab Types")}
+				hint={t(
+					"appearance.hint.tabCyclingAllTypes",
+					"Next/previous tab shortcuts cycle through diff, markdown and editor tabs too — not just terminals",
 				)}
 			/>
 
