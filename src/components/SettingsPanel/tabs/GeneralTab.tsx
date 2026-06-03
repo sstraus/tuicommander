@@ -13,6 +13,7 @@ interface CliStatus {
 	installed: boolean;
 	path: string | null;
 	version_match: boolean;
+	auto_updatable: boolean;
 	prompt_dismissed: boolean;
 }
 
@@ -163,13 +164,22 @@ export const GeneralTab: Component = () => {
 							})}
 							{!cliStatus()!.version_match && (
 								<span style={{ color: "var(--warning, #e5c07b)", "margin-left": "8px" }}>
-									{t("general.hint.cliOutdated", "(update pending — restart to apply)")}
+									{cliStatus()!.auto_updatable
+										? t("general.hint.cliOutdated", "(update pending — restart to apply)")
+										: t("general.hint.cliUpdateAvailable", "(update available)")}
 								</span>
 							)}
 						</p>
-						<button class={s.testBtn} onClick={handleUninstallCli} style={{ "margin-top": "8px" }}>
-							{t("general.btn.uninstallCli", "Uninstall")}
-						</button>
+						<div style={{ display: "flex", gap: "8px", "margin-top": "8px" }}>
+							<Show when={!cliStatus()!.version_match}>
+								<button class={s.testBtn} onClick={handleInstallCli} disabled={cliInstalling()}>
+									{cliInstalling() ? t("general.btn.updating", "Updating...") : t("general.btn.updateCli", "Update")}
+								</button>
+							</Show>
+							<button class={s.testBtn} onClick={handleUninstallCli}>
+								{t("general.btn.uninstallCli", "Uninstall")}
+							</button>
+						</div>
 					</Show>
 				</div>
 			</Show>

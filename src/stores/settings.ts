@@ -25,6 +25,7 @@ interface RustAppConfig {
 	max_tab_name_length: number;
 	split_tab_mode: string;
 	tab_ordering_mode: string;
+	tab_cycling_all_types: boolean;
 	auto_show_pr_popover: boolean;
 	prevent_sleep_when_busy: boolean;
 	auto_update_enabled: boolean;
@@ -85,6 +86,18 @@ export type IdeType =
 	| "fork"
 	| "gitkraken"
 	| "smerge"
+	| "intellij"
+	| "pycharm"
+	| "webstorm"
+	| "goland"
+	| "clion"
+	| "phpstorm"
+	| "rubymine"
+	| "rider"
+	| "datagrip"
+	| "rustrover"
+	| "android-studio"
+	| "fleet"
 	| "terminal"
 	| "finder"
 	| "editor";
@@ -121,27 +134,51 @@ export const IDE_NAMES: Record<IdeType, string> = {
 	fork: "Fork",
 	gitkraken: "GitKraken",
 	smerge: "Sublime Merge",
+	intellij: "IntelliJ IDEA",
+	pycharm: "PyCharm",
+	webstorm: "WebStorm",
+	goland: "GoLand",
+	clion: "CLion",
+	phpstorm: "PhpStorm",
+	rubymine: "RubyMine",
+	rider: "Rider",
+	datagrip: "DataGrip",
+	rustrover: "RustRover",
+	"android-studio": "Android Studio",
+	fleet: "Fleet",
 	terminal: "Terminal",
 	finder: "Finder",
 	editor: "$EDITOR",
 };
 
 import alacritySvg from "../assets/icons/alacritty.svg";
+import androidStudioSvg from "../assets/icons/android-studio.svg";
+import clionSvg from "../assets/icons/clion.svg";
 import cursorSvg from "../assets/icons/cursor.svg";
+import datagripSvg from "../assets/icons/datagrip.svg";
 import editorSvg from "../assets/icons/editor.svg";
 import finderSvg from "../assets/icons/finder.svg";
+import fleetSvg from "../assets/icons/fleet.svg";
 import forkSvg from "../assets/icons/fork.svg";
 import ghosttySvg from "../assets/icons/ghostty.svg";
 import githubDesktopSvg from "../assets/icons/github-desktop.svg";
 import gitkrakenSvg from "../assets/icons/gitkraken.svg";
+import golandSvg from "../assets/icons/goland.svg";
+import intellijSvg from "../assets/icons/intellij.svg";
 import kittySvg from "../assets/icons/kitty.svg";
 import neovimSvg from "../assets/icons/neovim.svg";
+import phpstormSvg from "../assets/icons/phpstorm.svg";
+import pycharmSvg from "../assets/icons/pycharm.svg";
+import riderSvg from "../assets/icons/rider.svg";
+import rubymineSvg from "../assets/icons/rubymine.svg";
+import rustroverSvg from "../assets/icons/rustrover.svg";
 import smergeSvg from "../assets/icons/smerge.svg";
 import sourcetreeSvg from "../assets/icons/sourcetree.svg";
 import terminalSvg from "../assets/icons/terminal.svg";
 /** IDE icon SVG imports */
 import vscodeSvg from "../assets/icons/vscode.svg";
 import warpSvg from "../assets/icons/warp.svg";
+import webstormSvg from "../assets/icons/webstorm.svg";
 import weztermSvg from "../assets/icons/wezterm.svg";
 import windsurfSvg from "../assets/icons/windsurf.svg";
 import xcodeSvg from "../assets/icons/xcode.svg";
@@ -165,6 +202,18 @@ export const IDE_ICON_PATHS: Record<IdeType, string> = {
 	fork: forkSvg,
 	gitkraken: gitkrakenSvg,
 	smerge: smergeSvg,
+	intellij: intellijSvg,
+	pycharm: pycharmSvg,
+	webstorm: webstormSvg,
+	goland: golandSvg,
+	clion: clionSvg,
+	phpstorm: phpstormSvg,
+	rubymine: rubymineSvg,
+	rider: riderSvg,
+	datagrip: datagripSvg,
+	rustrover: rustroverSvg,
+	"android-studio": androidStudioSvg,
+	fleet: fleetSvg,
 	terminal: terminalSvg,
 	finder: finderSvg,
 	editor: editorSvg,
@@ -188,6 +237,18 @@ export const IDE_ICONS: Record<IdeType, string> = {
 	fork: "🔱",
 	gitkraken: "🦑",
 	smerge: "🔀",
+	intellij: "IJ",
+	pycharm: "PC",
+	webstorm: "WS",
+	goland: "GO",
+	clion: "CL",
+	phpstorm: "PS",
+	rubymine: "RM",
+	rider: "RD",
+	datagrip: "DG",
+	rustrover: "RR",
+	"android-studio": "AS",
+	fleet: "FL",
 	terminal: ">_",
 	finder: "📁",
 	editor: "$_",
@@ -196,6 +257,20 @@ export const IDE_ICONS: Record<IdeType, string> = {
 /** IDE categories */
 export const IDE_CATEGORIES: Record<string, IdeType[]> = {
 	editors: ["vscode", "cursor", "zed", "windsurf", "neovim", "xcode", "editor"],
+	jetbrains: [
+		"intellij",
+		"pycharm",
+		"webstorm",
+		"goland",
+		"clion",
+		"phpstorm",
+		"rubymine",
+		"rider",
+		"datagrip",
+		"rustrover",
+		"android-studio",
+		"fleet",
+	],
 	terminals: ["ghostty", "wezterm", "alacritty", "kitty", "warp"],
 	git: ["sourcetree", "github-desktop", "fork", "gitkraken", "smerge"],
 	utilities: ["terminal", "finder"],
@@ -284,6 +359,7 @@ interface SettingsStoreState {
 	maxTabNameLength: number;
 	splitTabMode: SplitTabMode;
 	tabOrderingMode: TabOrderingMode;
+	tabCyclingAllTypes: boolean;
 	autoShowPrPopover: boolean;
 	preventSleepWhenBusy: boolean;
 	autoUpdateEnabled: boolean;
@@ -331,6 +407,7 @@ function createSettingsStore() {
 		maxTabNameLength: 25,
 		splitTabMode: "separate",
 		tabOrderingMode: "grouped-by-type",
+		tabCyclingAllTypes: false,
 		autoShowPrPopover: true,
 		preventSleepWhenBusy: false,
 		autoUpdateEnabled: true,
@@ -383,6 +460,7 @@ function createSettingsStore() {
 			max_tab_name_length: state.maxTabNameLength,
 			split_tab_mode: state.splitTabMode,
 			tab_ordering_mode: state.tabOrderingMode,
+			tab_cycling_all_types: state.tabCyclingAllTypes,
 			auto_show_pr_popover: state.autoShowPrPopover,
 			prevent_sleep_when_busy: state.preventSleepWhenBusy,
 			auto_update_enabled: state.autoUpdateEnabled,
@@ -461,6 +539,7 @@ function createSettingsStore() {
 				setState("splitTabMode", config.split_tab_mode === "unified" ? "unified" : "separate");
 				const tom = config.tab_ordering_mode;
 				setState("tabOrderingMode", tom === "terminals-first" || tom === "free" ? tom : "grouped-by-type");
+				setState("tabCyclingAllTypes", config.tab_cycling_all_types ?? false);
 				setState("autoShowPrPopover", config.auto_show_pr_popover ?? true);
 				setState("preventSleepWhenBusy", config.prevent_sleep_when_busy ?? false);
 				setState("autoUpdateEnabled", config.auto_update_enabled ?? true);
@@ -557,6 +636,11 @@ function createSettingsStore() {
 
 		setTabOrderingMode(mode: TabOrderingMode): void {
 			setState("tabOrderingMode", mode);
+			save();
+		},
+
+		setTabCyclingAllTypes(enabled: boolean): void {
+			setState("tabCyclingAllTypes", enabled);
 			save();
 		},
 
@@ -785,6 +869,7 @@ registerDebugSnapshot("settings", () => {
 		language: s.language,
 		splitTabMode: s.splitTabMode,
 		tabOrderingMode: s.tabOrderingMode,
+		tabCyclingAllTypes: s.tabCyclingAllTypes,
 		bellStyle: s.bellStyle,
 		updateChannel: s.updateChannel,
 		intentTabTitle: s.intentTabTitle,

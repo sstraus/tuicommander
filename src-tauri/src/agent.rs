@@ -59,6 +59,43 @@ fn goto_editor_cmd(
     }
 }
 
+/// Build a Command for a JetBrains IDE launcher (idea, pycharm, webstorm, ...).
+/// JetBrains launchers use `--line`/`--column` goto syntax. Falls back to
+/// `open -a` on macOS when the CLI launcher isn't on PATH (the user hasn't
+/// enabled Toolbox shell scripts).
+fn jetbrains_cmd(
+    cli_name: &str,
+    #[cfg_attr(not(target_os = "macos"), allow(unused))] app_name: &str,
+    path: &str,
+    line: Option<u32>,
+    col: Option<u32>,
+) -> Command {
+    let resolved = resolve_cli(cli_name);
+    if resolved != cli_name || has_cli(cli_name) {
+        let mut c = Command::new(&resolved);
+        if let Some(l) = line {
+            c.arg("--line").arg(l.to_string());
+            if let Some(col) = col {
+                c.arg("--column").arg(col.to_string());
+            }
+        }
+        c.arg(path);
+        return c;
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut c = Command::new("open");
+        c.arg("-a").arg(app_name).arg(path);
+        c
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let mut c = Command::new(cli_name);
+        c.arg(path);
+        c
+    }
+}
+
 /// Open a path in an IDE or application.
 /// `line` and `col` are optional and only used by editors that support them.
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -93,6 +130,20 @@ pub(crate) fn open_in_app(
             c.arg(&path);
             c
         }
+
+        // JetBrains IDEs — CLI launchers with --line/--column, `open -a` fallback on macOS
+        "intellij" => jetbrains_cmd("idea", "IntelliJ IDEA", &path, line, col),
+        "pycharm" => jetbrains_cmd("pycharm", "PyCharm", &path, line, col),
+        "webstorm" => jetbrains_cmd("webstorm", "WebStorm", &path, line, col),
+        "goland" => jetbrains_cmd("goland", "GoLand", &path, line, col),
+        "clion" => jetbrains_cmd("clion", "CLion", &path, line, col),
+        "phpstorm" => jetbrains_cmd("phpstorm", "PhpStorm", &path, line, col),
+        "rubymine" => jetbrains_cmd("rubymine", "RubyMine", &path, line, col),
+        "rider" => jetbrains_cmd("rider", "Rider", &path, line, col),
+        "datagrip" => jetbrains_cmd("datagrip", "DataGrip", &path, line, col),
+        "rustrover" => jetbrains_cmd("rustrover", "RustRover", &path, line, col),
+        "android-studio" => jetbrains_cmd("studio", "Android Studio", &path, line, col),
+        "fleet" => jetbrains_cmd("fleet", "Fleet", &path, line, col),
 
         // Terminal emulators with CLI (cross-platform)
         "kitty" => {
@@ -280,6 +331,19 @@ pub(crate) fn detect_installed_ides() -> Vec<String> {
         ("neovim", "nvim"),
         ("smerge", "smerge"),
         ("kitty", "kitty"),
+        // JetBrains CLI launchers (present when Toolbox shell scripts are enabled)
+        ("intellij", "idea"),
+        ("pycharm", "pycharm"),
+        ("webstorm", "webstorm"),
+        ("goland", "goland"),
+        ("clion", "clion"),
+        ("phpstorm", "phpstorm"),
+        ("rubymine", "rubymine"),
+        ("rider", "rider"),
+        ("datagrip", "datagrip"),
+        ("rustrover", "rustrover"),
+        ("android-studio", "studio"),
+        ("fleet", "fleet"),
     ];
     for (id, bin) in cli_tools {
         if has_cli(bin) {
@@ -305,6 +369,20 @@ pub(crate) fn detect_installed_ides() -> Vec<String> {
             ("wezterm", "/Applications/WezTerm.app"),
             ("alacritty", "/Applications/Alacritty.app"),
             ("warp", "/Applications/Warp.app"),
+            // JetBrains .app bundles (CLI symlinks may not be on PATH when
+            // launched from Finder; best-effort — Toolbox naming can vary)
+            ("intellij", "/Applications/IntelliJ IDEA.app"),
+            ("pycharm", "/Applications/PyCharm.app"),
+            ("webstorm", "/Applications/WebStorm.app"),
+            ("goland", "/Applications/GoLand.app"),
+            ("clion", "/Applications/CLion.app"),
+            ("phpstorm", "/Applications/PhpStorm.app"),
+            ("rubymine", "/Applications/RubyMine.app"),
+            ("rider", "/Applications/Rider.app"),
+            ("datagrip", "/Applications/DataGrip.app"),
+            ("rustrover", "/Applications/RustRover.app"),
+            ("android-studio", "/Applications/Android Studio.app"),
+            ("fleet", "/Applications/Fleet.app"),
         ];
         for (id, path) in app_bundles {
             if std::path::Path::new(path).exists() && !installed.contains(&id.to_string()) {

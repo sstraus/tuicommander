@@ -6,7 +6,7 @@ import { IDE_CATEGORIES, IDE_ICON_PATHS, IDE_NAMES, settingsStore } from "../../
 import { isTauri } from "../../transport";
 
 /** Code editors that can open individual files (as opposed to terminals, git clients, etc.) */
-const FILE_CAPABLE_IDES = new Set<string>(IDE_CATEGORIES.editors);
+const FILE_CAPABLE_IDES = new Set<string>([...IDE_CATEGORIES.editors, ...IDE_CATEGORIES.jetbrains]);
 
 import { useRepository } from "../../hooks/useRepository";
 import { t } from "../../i18n";
@@ -49,6 +49,7 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
 
 	const categoryOrder = [
 		{ key: "editors", label: t("ideLauncher.codeEditors", "Code Editors") },
+		{ key: "jetbrains", label: t("ideLauncher.jetbrains", "JetBrains") },
 		{ key: "terminals", label: t("ideLauncher.terminals", "Terminals") },
 		{ key: "git", label: t("ideLauncher.gitTools", "Git Tools") },
 		{ key: "utilities", label: t("ideLauncher.system", "System") },
