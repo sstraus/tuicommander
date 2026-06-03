@@ -6,7 +6,8 @@ import "./markdown-content.css";
 import { type Component, createEffect, createMemo, onCleanup, Show } from "solid-js";
 import { appLogger } from "../../stores/appLogger";
 import { stripAnsi } from "../../utils/stripAnsi";
-import { applyTweakHighlights } from "../../utils/tweakComments";
+import { injectTweakSentinels, parseTweakComments } from "../../utils/tweakComments";
+import { applyTweakDomHighlights } from "../../utils/tweakDomHighlight";
 
 /** File extensions that can be previewed inline when clicked as relative links.
  *  .md files open in a markdown tab; all others open in the file preview tab. */
@@ -169,9 +170,10 @@ export const ContentRenderer: Component<ContentRendererProps> = (props) => {
 			//    This must use the tilde-cleaned source (same checkbox count as marked sees).
 			const lineMap = buildCheckboxLineMap(cleaned);
 
-			// 3. Convert tweak markers to highlight spans, then parse markdown.
-			const withHighlights = applyTweakHighlights(cleaned);
-			let html = marked.parse(withHighlights, { async: false }) as string;
+			// 3. Replace tweak markers with sentinel delimiters (highlight spans are
+			//    applied to the rendered DOM afterwards), then parse markdown.
+			const withSentinels = injectTweakSentinels(cleaned);
+			let html = marked.parse(withSentinels, { async: false }) as string;
 
 			// 4. Rewrite relative image src attributes to loadable asset:// URLs.
 			const baseDir = props.baseDir;
@@ -211,6 +213,9 @@ export const ContentRenderer: Component<ContentRendererProps> = (props) => {
 	});
 
 	const isEmpty = createMemo(() => (props.content ?? "").trim() === "");
+
+	// Tweak comments parsed from the raw source — applied to the rendered DOM below.
+	const tweakComments = createMemo(() => parseTweakComments(props.content ?? ""));
 
 	const handleClick = (e: MouseEvent) => {
 		const target = e.target as HTMLElement;
@@ -262,6 +267,9 @@ export const ContentRenderer: Component<ContentRendererProps> = (props) => {
 			containerRef.querySelectorAll<HTMLInputElement>(`input[${TILDE_SENTINEL}]`).forEach((cb) => {
 				cb.indeterminate = true;
 			});
+			// Turn highlight sentinels into <span class="tweak-highlight"> wrappers.
+			const comments = tweakComments();
+			if (comments.length > 0) applyTweakDomHighlights(containerRef, comments);
 			renderMermaidBlocks(containerRef);
 		});
 		onCleanup(() => cancelAnimationFrame(raf));

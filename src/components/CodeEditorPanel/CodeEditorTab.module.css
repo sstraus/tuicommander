@@ -24,6 +24,34 @@
   color: var(--fg-muted);
 }
 
+.notice {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.noticeIcon {
+  color: var(--fg-muted);
+  opacity: 0.55;
+}
+
+.noticeTitle {
+  font-size: var(--font-md);
+  color: var(--fg-secondary);
+}
+
+.noticeSub {
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  word-break: break-all;
+  max-width: 480px;
+}
+
 .conflictBanner {
   display: flex;
   align-items: center;

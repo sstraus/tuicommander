@@ -1,16 +1,22 @@
 import { describe, expect, it } from "vitest";
 import {
-	applyTweakHighlights,
 	CONVENTION_HEADER,
 	ensureConventionHeader,
+	findSourceMatch,
+	injectTweakSentinels,
 	insertTweakComment,
 	parseTweakComments,
 	removeTweakComment,
 	serializeTweakComment,
 	type TweakComment,
 	toggleCheckbox,
+	tweakBeginSentinel,
+	tweakEndSentinel,
 	updateTweakComment,
 } from "../../utils/tweakComments";
+
+/** Spread a findSourceMatch result into String.slice(start, end) arguments. */
+const offsets = (m: { start: number; end: number }): [number, number] => [m.start, m.end];
 
 describe("tweakComments parser/serializer", () => {
 	describe("serializeTweakComment", () => {
@@ -157,6 +163,88 @@ describe("tweakComments parser/serializer", () => {
 				}),
 			).toThrow();
 		});
+
+		it("matches a rendered selection fully inside inline bold (markers stripped by the DOM)", () => {
+			// Source has **bold**; the DOM selection drops the asterisks. We wrap the
+			// visible inner text so the result renders as `**<span>…</span>**` (bold + highlight).
+			const src = "x **bold text** y";
+			const out = insertTweakComment(src, {
+				id: "c_1",
+				highlighted: "bold text",
+				comment: "nota",
+				createdAt: "2026-04-05T10:00:00.000Z",
+			});
+			expect(out).toContain("**<!--tweak:begin:c_1-->bold text<!--tweak:end:c_1");
+			expect(parseTweakComments(out)[0].highlighted).toBe("bold text");
+		});
+
+		it("matches a rendered selection that straddles a bold boundary (the real-world case)", () => {
+			// Boss's actual failure: selecting "This repo: notes" across the end of **…**.
+			const src = "- **This repo:** notes, plans, analysis.";
+			const out = insertTweakComment(src, {
+				id: "c_1",
+				highlighted: "This repo: notes",
+				comment: "nota",
+				createdAt: "2026-04-05T10:00:00.000Z",
+			});
+			// It no longer throws, and removal restores the byte-identical original.
+			expect(removeTweakComment(out, "c_1")).toBe(src);
+		});
+
+		it("matches a rendered selection that spans a hard line wrap", () => {
+			const src = "alpha beta\ngamma delta";
+			const out = insertTweakComment(src, {
+				id: "c_1",
+				highlighted: "beta gamma",
+				comment: "x",
+				createdAt: "2026-04-05T10:00:00.000Z",
+			});
+			expect(parseTweakComments(out)[0].highlighted).toBe("beta\ngamma");
+		});
+
+		it("removeTweakComment restores the original markdown after a fully-inside insert", () => {
+			const src = "x **bold text** y";
+			const inserted = insertTweakComment(src, {
+				id: "c_1",
+				highlighted: "bold text",
+				comment: "nota",
+				createdAt: "2026-04-05T10:00:00.000Z",
+			});
+			expect(removeTweakComment(inserted, "c_1")).toBe(src);
+		});
+	});
+
+	describe("findSourceMatch", () => {
+		it("returns exact offsets for a verbatim match (fast path)", () => {
+			expect(findSourceMatch("hello world", "world")).toEqual({ start: 6, end: 11 });
+		});
+
+		it("maps a bold-stripped selection back to the inner visible source slice", () => {
+			const src = "x **bold text** y";
+			const m = findSourceMatch(src, "bold text");
+			expect(m).not.toBeNull();
+			expect(src.slice(m!.start, m!.end)).toBe("bold text");
+		});
+
+		it("maps italic/code/strike selections back to the inner visible text", () => {
+			const src = "a *em* b `code` c ~~gone~~ d";
+			expect(src.slice(...offsets(findSourceMatch(src, "em")!))).toBe("em");
+			expect(src.slice(...offsets(findSourceMatch(src, "code")!))).toBe("code");
+			expect(src.slice(...offsets(findSourceMatch(src, "gone")!))).toBe("gone");
+		});
+
+		it("matches across a hard line wrap and collapsed whitespace", () => {
+			const src = "alpha beta\ngamma   delta";
+			expect(src.slice(...offsets(findSourceMatch(src, "beta gamma delta")!))).toBe("beta\ngamma   delta");
+		});
+
+		it("returns null when the text is genuinely absent", () => {
+			expect(findSourceMatch("hello world", "absent")).toBeNull();
+		});
+
+		it("returns null for an empty/whitespace-only selection", () => {
+			expect(findSourceMatch("hello", "   ")).toBeNull();
+		});
 	});
 
 	describe("removeTweakComment", () => {
@@ -223,38 +311,30 @@ describe("tweakComments parser/serializer", () => {
 		});
 	});
 
-	describe("applyTweakHighlights", () => {
-		it("converts tweak markers to highlight spans with plain-text data attrs", () => {
+	describe("injectTweakSentinels", () => {
+		it("replaces tweak markers with begin/end sentinels keeping the inline text", () => {
 			const src = "Hello <!--tweak:begin:c_1-->world<!--tweak:end:c_1 @2026-04-05T10:00:00.000Z\nnota-->!";
-			const out = applyTweakHighlights(src);
-			expect(out).toContain(
-				'<span class="tweak-highlight" data-tweak-id="c_1" data-tweak-at="2026-04-05T10:00:00.000Z" data-tweak-comment="nota">world</span>',
-			);
+			const out = injectTweakSentinels(src);
+			expect(out).toBe(`Hello ${tweakBeginSentinel("c_1")}world${tweakEndSentinel("c_1")}!`);
 			expect(out).not.toContain("<!--tweak:");
 		});
 
-		it('escapes `&` and `"` in the data-tweak-comment attribute', () => {
-			const src = '<!--tweak:begin:c_1-->x<!--tweak:end:c_1 @2026-04-05T10:00:00.000Z\nhas "quotes" & amp-->';
-			const out = applyTweakHighlights(src);
-			expect(out).toContain('data-tweak-comment="has &quot;quotes&quot; &amp; amp"');
-		});
-
-		it("unescapes `--&gt;` back to `-->` in the rendered span attribute", () => {
-			const src = "<!--tweak:begin:c_1-->x<!--tweak:end:c_1 @2026-04-05T10:00:00.000Z\nclose --&gt; now-->";
-			const out = applyTweakHighlights(src);
-			expect(out).toContain('data-tweak-comment="close --> now"');
+		it("preserves markdown formatting inline between the sentinels", () => {
+			const src = "<!--tweak:begin:c_1-->**bold** and `code`<!--tweak:end:c_1 @2026-04-05T10:00:00.000Z\nx-->";
+			const out = injectTweakSentinels(src);
+			expect(out).toBe(`${tweakBeginSentinel("c_1")}**bold** and \`code\`${tweakEndSentinel("c_1")}`);
 		});
 
 		it("strips the convention header", () => {
 			const src = CONVENTION_HEADER + "# Title\n\nBody text.";
-			const out = applyTweakHighlights(src);
+			const out = injectTweakSentinels(src);
 			expect(out).not.toContain(CONVENTION_HEADER);
 			expect(out).toContain("# Title");
 		});
 
 		it("is a no-op on plain markdown without markers", () => {
 			const src = "# Title\n\nSome **bold** text.";
-			expect(applyTweakHighlights(src)).toBe(src);
+			expect(injectTweakSentinels(src)).toBe(src);
 		});
 	});
 

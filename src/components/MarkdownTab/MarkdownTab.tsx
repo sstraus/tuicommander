@@ -9,6 +9,7 @@ import { diffTabsStore } from "../../stores/diffTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { type FileTab, type MdTabData, mdTabsStore } from "../../stores/mdTabs";
 import { repositoriesStore } from "../../stores/repositories";
+import { toastsStore } from "../../stores/toasts";
 import { openFileAction } from "../../utils/filePreview";
 import { isAbsolutePath, joinPath, pathDirname } from "../../utils/pathUtils";
 import {
@@ -286,6 +287,14 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 			await writeTweakedSource(updated);
 		} catch (err) {
 			appLogger.error("app", `handleTweakSave failed: ${err instanceof Error ? err.message : String(err)}`);
+			toastsStore.add(
+				t("markdownTab.commentAnchorFailed", "Couldn't add comment"),
+				t(
+					"markdownTab.commentAnchorFailedMsg",
+					"The selected text couldn't be located in the file source. Try selecting within a single formatted span.",
+				),
+				"error",
+			);
 		}
 	};
 

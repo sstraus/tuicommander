@@ -62,11 +62,11 @@ const LARGE_FILE_BYTES = 500 * 1024;
 
 // --- Cmd+Hover underline (VS Code-style go-to-definition hint) ---
 
-const setHoverLink = StateEffect.define<{ from: number; to: number } | null>();
+export const setHoverLink = StateEffect.define<{ from: number; to: number } | null>();
 
 const hoverLinkMark = Decoration.mark({ class: "cm-hover-link" });
 
-const hoverLinkField = StateField.define<DecorationSet>({
+export const hoverLinkField = StateField.define<DecorationSet>({
 	create: () => Decoration.none,
 	update(decos, tr) {
 		for (const e of tr.effects) {
@@ -74,7 +74,10 @@ const hoverLinkField = StateField.define<DecorationSet>({
 				return e.value ? Decoration.set([hoverLinkMark.range(e.value.from, e.value.to)]) : Decoration.none;
 			}
 		}
-		return decos;
+		// Remap decoration positions through document edits — otherwise a stale hover
+		// range (e.g. from a previous, larger file) survives a content swap and CodeMirror
+		// throws "Position N is out of range" when mapping it against the new document.
+		return tr.docChanged ? decos.map(tr.changes) : decos;
 	},
 	provide: (f) => EditorView.decorations.from(f),
 });
@@ -142,6 +145,8 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	const [savedContent, setSavedContent] = createSignal("");
 	const [loading, setLoading] = createSignal(true);
 	const [error, setError] = createSignal<string | null>(null);
+	/** True when the read failed because the file isn't valid UTF-8 text (binary/non-text file) */
+	const [notDisplayable, setNotDisplayable] = createSignal(false);
 	const [isReadOnly, setIsReadOnly] = createSignal(false);
 	/** True when the file changed on disk while editor has unsaved changes */
 	const [diskConflict, setDiskConflict] = createSignal(false);
@@ -185,6 +190,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
 				setLoading(true);
 				setError(null);
+				setNotDisplayable(false);
 				if (isExternal() && !props.externalEditable) setIsReadOnly(true);
 
 				try {
@@ -206,7 +212,10 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 						});
 					}
 				} catch (err) {
-					setError(String(err));
+					const msg = String(err);
+					// A non-UTF-8 read means the file is binary or otherwise not text.
+					setNotDisplayable(/valid UTF-8/i.test(msg));
+					setError(msg);
 					currentCode = "";
 					setCode("");
 					setSavedContent("");
@@ -575,9 +584,24 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 			</Show>
 
 			<Show when={error()}>
-				<div class={s.empty} style={{ color: "var(--error)" }}>
-					{t("codeEditor.error", "Error:")} {error()}
-				</div>
+				<Show
+					when={notDisplayable()}
+					fallback={
+						<div class={s.empty} style={{ color: "var(--error)" }}>
+							{t("codeEditor.error", "Error:")} {error()}
+						</div>
+					}
+				>
+					<div class={s.notice}>
+						<svg class={s.noticeIcon} width="48" height="48" viewBox="0 0 16 16" fill="currentColor">
+							<path d="M9.5 1H4a1.5 1.5 0 0 0-1.5 1.5v11A1.5 1.5 0 0 0 4 15h8a1.5 1.5 0 0 0 1.5-1.5V5L9.5 1zM9 2.5 12.5 6H9.5A.5.5 0 0 1 9 5.5V2.5zM5 8.5h6v1H5v-1zm0 2.5h6v1H5v-1zm0-5h2v1H5v-1z" />
+						</svg>
+						<div class={s.noticeTitle}>{t("codeEditor.notDisplayableTitle", "This file can't be displayed")}</div>
+						<div class={s.noticeSub}>
+							{t("codeEditor.notDisplayableSub", "It looks like a binary or non-text file.")}
+						</div>
+					</div>
+				</Show>
 			</Show>
 
 			{/* Always mount the editor div so solid-codemirror's ref callback fires during
