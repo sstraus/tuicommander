@@ -1,6 +1,6 @@
 [package]
 name = "tuic-bridge"
-version = "1.2.11-nightly"
+version = "1.3.0"
 description = "MCP stdio-to-IPC bridge sidecar for TUICommander"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"
