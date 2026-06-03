@@ -7,6 +7,7 @@ import { terminalsStore } from "../../stores/terminals";
 import { filterMatchesToBlock } from "../../utils/blockSearchFilter";
 import { formatRelativeTime } from "../../utils/formatRelativeTime";
 import { handleOpenUrl } from "../../utils/openUrl";
+import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 import { installTouchHandlers } from "./canvasTerminalTouch";
 import { createTransport, type TerminalTransport } from "./canvasTerminalTransport";
 import {
@@ -132,6 +133,28 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		spans?: { row: number; colStart: number; colEnd: number }[];
 	} | null = null;
 	const detectedLinks = new Map<number, { colStart: number; colEnd: number }[]>();
+
+	// Link context menu: right-clicking a detected link offers Open / Copy link.
+	// TUIC is UI-first — opening a link (e.g. a markdown file) is a primary action,
+	// so plain left-click still opens; this menu adds a non-destructive way to copy
+	// the target without opening it.
+	type LinkTarget = { path: string; line?: number; col?: number };
+	const linkMenu = createContextMenu();
+	const [linkMenuTarget, setLinkMenuTarget] = createSignal<LinkTarget | null>(null);
+
+	const openLink = (link: LinkTarget) => {
+		if (link.path.startsWith("http://") || link.path.startsWith("https://")) {
+			handleOpenUrl(link.path);
+		} else {
+			const path = link.path.startsWith("file://") ? link.path.slice(7) : link.path;
+			props.onOpenFilePath?.(path, link.line, link.col);
+		}
+	};
+
+	const copyLink = (link: LinkTarget) => {
+		const text = link.path.startsWith("file://") ? link.path.slice(7) : link.path;
+		navigator.clipboard.writeText(text).catch(() => {});
+	};
 
 	// Cached CSS custom properties (re-read on remeasure, not every frame)
 	let cachedBgDefault = "#1e1e1e";
@@ -3166,12 +3189,23 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				selectionEnd &&
 				(selectionStart.row !== selectionEnd.row || selectionStart.col !== selectionEnd.col);
 			if (dragged) return;
-			if (hoveredLink.path.startsWith("http://") || hoveredLink.path.startsWith("https://")) {
-				handleOpenUrl(hoveredLink.path);
-			} else {
-				const path = hoveredLink.path.startsWith("file://") ? hoveredLink.path.slice(7) : hoveredLink.path;
-				props.onOpenFilePath?.(path, hoveredLink.line, hoveredLink.col);
-			}
+			openLink(hoveredLink);
+		});
+
+		// Right-click on a detected link → context menu (Open / Copy link).
+		// Only when the click lands on a link span; elsewhere the default is left alone.
+		canvasRef.addEventListener("contextmenu", async (e: MouseEvent) => {
+			const pos = canvasToGrid(e);
+			const onLink = detectedLinks.get(pos.row)?.some((sp) => pos.col >= sp.colStart && pos.col < sp.colEnd);
+			if (!onLink) return;
+			e.preventDefault();
+			// Stop the App-level terminal context menu (#terminal-panes onContextMenu)
+			// from also opening and covering our Open/Copy-link menu.
+			e.stopPropagation();
+			await checkLinksAtRow(pos.row, pos.col);
+			if (!hoveredLink) return;
+			setLinkMenuTarget({ path: hoveredLink.path, line: hoveredLink.line, col: hoveredLink.col });
+			linkMenu.openAt(e.clientX, e.clientY);
 		});
 
 		// --- Scroll ---
@@ -3629,6 +3663,28 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					}}
 				/>
 			</div>
+			<ContextMenu
+				items={[
+					{
+						label: "Open",
+						action: () => {
+							const t = linkMenuTarget();
+							if (t) openLink(t);
+						},
+					},
+					{
+						label: "Copy link",
+						action: () => {
+							const t = linkMenuTarget();
+							if (t) copyLink(t);
+						},
+					},
+				]}
+				x={linkMenu.position().x}
+				y={linkMenu.position().y}
+				visible={linkMenu.visible()}
+				onClose={() => linkMenu.close()}
+			/>
 		</div>
 	);
 };
