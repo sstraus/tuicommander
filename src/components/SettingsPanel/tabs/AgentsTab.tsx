@@ -530,6 +530,15 @@ const EnvFlagsSection: Component<{ agentType: AgentType }> = (props) => {
 															onInput={(e) => handleValueChange(flag.key, e.currentTarget.value)}
 														/>
 													</Show>
+													<Show when={flag.type === "string"}>
+														<input
+															type="text"
+															class={a.envFlagInput}
+															value={getFlagValue(flag.key)}
+															placeholder={flag.defaultValue ?? ""}
+															onInput={(e) => handleValueChange(flag.key, e.currentTarget.value)}
+														/>
+													</Show>
 													<span class={a.envFlagKey}>{flag.key}</span>
 													<span class={a.envFlagDesc} title={flag.description}>
 														{flag.description}

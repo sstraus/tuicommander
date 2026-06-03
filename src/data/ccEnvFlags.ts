@@ -6,7 +6,7 @@
  * See ideas/cc-env-flags.md for the full catalog (109 vars).
  */
 
-export type EnvFlagType = "boolean" | "boolean_inverted" | "enum" | "number";
+export type EnvFlagType = "boolean" | "boolean_inverted" | "enum" | "number" | "string";
 
 export interface EnvFlagDef {
 	/** Environment variable name */
@@ -415,6 +415,57 @@ export const CC_ENV_FLAGS: EnvFlagDef[] = [
 		key: "CLAUDE_CODE_USE_FOUNDRY",
 		description: "Route API calls through Microsoft Foundry",
 		type: "boolean",
+		category: "provider",
+	},
+	// AWS Bedrock configuration (used when CLAUDE_CODE_USE_BEDROCK is on)
+	{
+		key: "AWS_REGION",
+		description: "AWS region hosting the Bedrock models",
+		type: "enum",
+		options: [
+			"us-east-1",
+			"us-east-2",
+			"us-west-2",
+			"eu-central-1",
+			"eu-west-1",
+			"eu-west-3",
+			"ap-northeast-1",
+			"ap-southeast-1",
+			"ap-southeast-2",
+			"ap-south-1",
+			"ca-central-1",
+			"sa-east-1",
+		],
+		category: "provider",
+	},
+	{
+		key: "AWS_PROFILE",
+		description: "Named AWS credentials profile to use for Bedrock",
+		type: "string",
+		category: "provider",
+	},
+	{
+		key: "AWS_BEARER_TOKEN_BEDROCK",
+		description: "Bedrock API-key (bearer token) auth, instead of SigV4 credentials",
+		type: "string",
+		category: "provider",
+	},
+	{
+		key: "ANTHROPIC_BEDROCK_BASE_URL",
+		description: "Custom Bedrock endpoint (e.g. VPC/PrivateLink)",
+		type: "string",
+		category: "provider",
+	},
+	{
+		key: "ANTHROPIC_MODEL",
+		description: "Primary model ID — on Bedrock this is the inference-profile ID",
+		type: "string",
+		category: "provider",
+	},
+	{
+		key: "ANTHROPIC_SMALL_FAST_MODEL",
+		description: "Small/fast model ID — on Bedrock this is the inference-profile ID",
+		type: "string",
 		category: "provider",
 	},
 	{
