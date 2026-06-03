@@ -1,10 +1,12 @@
 import { type Component, createEffect, createSignal, Show } from "solid-js";
 import { t } from "../../i18n";
+import { invoke } from "../../invoke";
 import { shortenHomePath } from "../../platform";
 import { repoDefaultsStore } from "../../stores/repoDefaults";
 import { type RepoSettings, repoSettingsStore } from "../../stores/repoSettings";
 import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
+import { toastsStore } from "../../stores/toasts";
 import { uiStore } from "../../stores/ui";
 import { isTauri } from "../../transport";
 import { pathBasename } from "../../utils/pathUtils";
@@ -127,6 +129,20 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
 			}
 		};
 
+	/** Write this repo's UI settings into a committable `.tuic.json` at its root */
+	const copyToProject = async (repoPath: string) => {
+		try {
+			await invoke("save_repo_local_config", { repoPath });
+			toastsStore.add(
+				t("settings.copyToProject.done", "Saved .tuic.json"),
+				t("settings.copyToProject.doneHint", "Repo settings written to the project root — commit to share"),
+				"info",
+			);
+		} catch (err) {
+			toastsStore.add(t("settings.copyToProject.failed", "Failed to write .tuic.json"), String(err), "error");
+		}
+	};
+
 	const footer = () => {
 		const path = activeRepoPath();
 		return (
@@ -167,6 +183,22 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
 						<>
 							<RepoWorktreeTab settings={settings} defaults={repoDefaultsStore.state} onUpdate={onUpdate} />
 							<RepoScriptsTab settings={settings} defaults={repoDefaultsStore.state} onUpdate={onUpdate} />
+							<Show when={isTauri()}>
+								<div class={s.section}>
+									<h3>{t("settings.copyToProject.heading", "Share with Team")}</h3>
+									<p class={s.hint}>
+										{t(
+											"settings.copyToProject.hint",
+											"Write this repo's worktree/branch settings to a .tuic.json in the project root. Commit it so teammates inherit the same defaults. Scripts are never exported.",
+										)}
+									</p>
+									<div class={s.actions}>
+										<button onClick={() => copyToProject(path)}>
+											{t("settings.copyToProject.button", "Copy settings to .tuic.json")}
+										</button>
+									</div>
+								</div>
+							</Show>
 						</>
 					);
 				}}

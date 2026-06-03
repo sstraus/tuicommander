@@ -158,6 +158,7 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `load_activity` | -- | `ActivityConfig` | Load activity dashboard state |
 | `save_activity` | `config` | `()` | Save activity dashboard state |
 | `load_repo_local_config` | `repo_path` | `RepoLocalConfig?` | Read `.tuic.json` from repo root; returns null if absent or malformed |
+| `save_repo_local_config` | `repo_path` | `()` | Write the repo's **effective resolved** worktree/branch settings (global defaults + per-repo overrides) to `.tuic.json` at its root (committable, team-shareable). Preserves fields already in the file (e.g. `mcp_upstreams`); never writes script fields |
 
 ## SSH Tunnels (`tunnels/tauri_commands.rs`)
 
@@ -406,6 +407,7 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `add_to_gitignore` | `path, pattern` | `()` | Add pattern to .gitignore |
 | `search_files` | `path, query` | `Vec<SearchResult>` | Search files by name in directory |
 | `search_content` | `repoPath, query, caseSensitive?, useRegex?, wholeWord?, limit?` | `()` | Full-text content search; streams results progressively via `content-search-batch` events. Binary files and files >1 MB are skipped. Supports cancellation. |
+| `search_content_all` | `query, caseSensitive?, limit?` | `()` | Cross-repo BM25 content search over every ready index; streams via the same `content-search-batch` events with each match tagged `repo_path`. Only repos whose index is built participate (depends on Content Indexing strategy). Shares the cancellation slot with `search_content`. |
 
 ## Plugin Management (`plugins.rs`)
 
