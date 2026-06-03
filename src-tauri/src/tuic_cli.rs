@@ -15,6 +15,11 @@ pub(crate) struct CliStatus {
     installed: bool,
     path: Option<String>,
     version_match: bool,
+    /// True when the installed binary can be overwritten without elevation, i.e.
+    /// the silent startup auto-update can actually apply a pending update.
+    /// False (e.g. a root-owned file) means "restart to apply" would never work —
+    /// the user must click Update to trigger the elevation prompt.
+    auto_updatable: bool,
     prompt_dismissed: bool,
 }
 
@@ -32,17 +37,20 @@ pub(crate) fn get_cli_status(app: tauri::AppHandle) -> CliStatus {
             installed: false,
             path: None,
             version_match: false,
+            auto_updatable: false,
             prompt_dismissed,
         };
     }
 
     // Check if installed version matches current sidecar
     let version_match = check_version_match(&app, &install_path);
+    let auto_updatable = install_path_writable(&install_path);
 
     CliStatus {
         installed: true,
         path: Some(install_path),
         version_match,
+        auto_updatable,
         prompt_dismissed,
     }
 }
@@ -196,20 +204,39 @@ fn current_target_triple() -> String {
     env!("TUIC_TARGET_TRIPLE").to_string()
 }
 
+/// Run `<path> --version` and return its trimmed stdout (e.g. "tuic 1.1.0").
+/// Returns None if the binary can't be executed or exits non-zero.
+fn cli_version(path: &str) -> Option<String> {
+    let output = std::process::Command::new(path)
+        .arg("--version")
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    (!version.is_empty()).then_some(version)
+}
+
+/// Compare the installed CLI against the bundled sidecar by their reported
+/// version strings — NOT file size, which flaps on every rebuild of the same
+/// version (different rustc/deps produce different-sized but identical-version
+/// binaries). If either version can't be determined, treat as a mismatch.
 fn check_version_match(app: &tauri::AppHandle, installed_path: &str) -> bool {
     let Ok(sidecar_path) = resolve_sidecar_path(app) else {
         return false;
     };
+    match (cli_version(installed_path), cli_version(&sidecar_path)) {
+        (Some(installed), Some(sidecar)) => installed == sidecar,
+        _ => false,
+    }
+}
 
-    // Compare file sizes as a quick check — different sizes = different versions
-    let installed_size = std::fs::metadata(installed_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
-    let sidecar_size = std::fs::metadata(&sidecar_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
-
-    installed_size == sidecar_size
+/// True when we can overwrite the installed binary without elevation. Opening it
+/// for write (without truncating) is a faithful proxy for whether the startup
+/// auto-update's `fs::copy` will succeed — a root-owned file returns false here.
+fn install_path_writable(path: &str) -> bool {
+    std::fs::OpenOptions::new().write(true).open(path).is_ok()
 }
 
 pub(crate) fn copy_with_elevation(src: &str, dst: &str) -> Result<(), String> {
