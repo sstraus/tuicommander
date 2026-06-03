@@ -1,3 +1,4 @@
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { createMemo, createSignal } from "solid-js";
 import { invoke } from "../invoke";
 import { appLogger } from "../stores/appLogger";
@@ -181,8 +182,8 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
 			const windowLabel = terminalsStore.state.detachedWindows[id];
 			terminalsStore.reattach(id);
 			if (windowLabel) {
-				import("@tauri-apps/api/webviewWindow")
-					.then(({ WebviewWindow }) => WebviewWindow.getByLabel(windowLabel).then((w) => w?.close()))
+				WebviewWindow.getByLabel(windowLabel)
+					.then((w) => w?.close())
 					.catch((err) =>
 						appLogger.warn("terminal", `Failed to close floating window ${windowLabel} on tab close`, err),
 					);

@@ -11,19 +11,19 @@
 
 import { invoke as tauriInvoke } from "@tauri-apps/api/core";
 import { listen as tauriListen } from "@tauri-apps/api/event";
-import { isTauri } from "./transport";
+import { appLogger } from "./stores/appLogger";
+import { isTauri, rpc } from "./transport";
 
 type InvokeFn = <T>(cmd: string, args?: Record<string, unknown>) => Promise<T>;
 
-// Browser mode: lazily resolved HTTP transport
+// Browser mode: lazily resolved HTTP transport. transport.ts is already a static
+// import (isTauri above), so rpc is wired statically — no dynamic import needed.
 let _httpInvoke: InvokeFn | undefined;
 
 function getHttpInvoke(): Promise<InvokeFn> {
 	if (_httpInvoke) return Promise.resolve(_httpInvoke);
-	return import("./transport").then(({ rpc }) => {
-		_httpInvoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => rpc<T>(cmd, args ?? {});
-		return _httpInvoke;
-	});
+	_httpInvoke = <T>(cmd: string, args?: Record<string, unknown>): Promise<T> => rpc<T>(cmd, args ?? {});
+	return Promise.resolve(_httpInvoke);
 }
 
 // ---------------------------------------------------------------------------
@@ -116,9 +116,7 @@ function ensureSse(): EventSource {
 
 	_sseSource.onerror = () => {
 		// EventSource auto-reconnects; just log
-		import("./stores/appLogger").then(({ appLogger }) =>
-			appLogger.debug("network", "SSE connection error — will auto-reconnect"),
-		);
+		appLogger.debug("network", "SSE connection error — will auto-reconnect");
 	};
 
 	// Re-attach listeners for all registered event types

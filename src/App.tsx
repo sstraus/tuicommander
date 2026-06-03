@@ -58,6 +58,7 @@ const ActivityDashboard = lazy(() =>
 const TunnelsPanel = lazy(() => import("./components/TunnelsPanel").then((m) => ({ default: m.TunnelsPanel })));
 
 import { getVersion } from "@tauri-apps/api/app";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { getActionEntries } from "./actions/actionRegistry";
@@ -1465,7 +1466,6 @@ const App: Component = () => {
 		const term = terminalsStore.get(tabId);
 		if (!term?.sessionId) return;
 
-		const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
 		const windowLabel = `floating-${tabId}`;
 		const url = `index.html#/floating?sessionId=${encodeURIComponent(term.sessionId)}&tabId=${encodeURIComponent(tabId)}&name=${encodeURIComponent(term.name)}`;
 
@@ -1511,7 +1511,6 @@ const App: Component = () => {
 		const windowLabel = terminalsStore.state.detachedWindows[tabId];
 		if (!windowLabel) return;
 		try {
-			const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
 			const win = await WebviewWindow.getByLabel(windowLabel);
 			if (win) {
 				await win.unminimize();
@@ -1532,7 +1531,6 @@ const App: Component = () => {
 		const windowLabel = terminalsStore.state.detachedWindows[tabId];
 		if (!windowLabel) return;
 		try {
-			const { WebviewWindow } = await import("@tauri-apps/api/webviewWindow");
 			const win = await WebviewWindow.getByLabel(windowLabel);
 			await win?.close();
 		} catch (err) {
