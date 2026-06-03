@@ -39,6 +39,11 @@ jobs:
         # Pinned to v1.5.4 (Node20). v1.5.5 moved to Node24, which crashes
         # instantly with no output on windows-latest runners mid-migration to
         # windows-2025 — the source of intermittent "Install Vulkan SDK" failures.
+        # DEFERRED (2026-06-03) — RISK: this pin is a flakiness mitigation, NOT
+        # validated against the release pipeline. If a Windows release build
+        # breaks at the Vulkan step, suspect this pin first: bump back to @v1
+        # (latest) or a newer Node20-safe tag. Re-evaluate after the
+        # windows-latest -> windows-2025 migration completes (~2026-06-15).
         uses: jakoch/install-vulkan-sdk-action@655818d26aa39d663e587b5620dd26519358981f # v1.5.4
         with:
           vulkan_version: 1.4.309.0
