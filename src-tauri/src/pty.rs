@@ -4124,6 +4124,34 @@ pub(crate) fn get_kitty_flags(state: State<'_, Arc<AppState>>, session_id: Strin
         .unwrap_or(0)
 }
 
+/// SIGKILL the foreground process group of a PTY session.
+///
+/// An agent (e.g. claude) runs as a *grandchild* inside the PTY's shell and, under
+/// job control, sits in its own foreground process group. SIGKILL on the shell
+/// alone leaves that group orphaned — the cloned reader fd keeps the pty master
+/// open, so the kernel never delivers SIGHUP to the foreground group, and the
+/// agent is reparented to init and keeps running. killpg nukes the agent plus
+/// every descendant in one shot. The shell (the session leader, in its own
+/// process group) is reaped separately by the caller's `_child.kill()`.
+#[cfg(unix)]
+fn kill_foreground_process_group(session: &PtySession, session_id: &str) {
+    let Some(pgid) = session.master.process_group_leader() else {
+        return;
+    };
+    // Never signal pid <= 1 or our own group — that would take down TUIC itself.
+    if pgid <= 1 || pgid == unsafe { libc::getpgid(0) } {
+        tracing::warn!(session_id, pgid, "Refusing killpg on unsafe pgid");
+        return;
+    }
+    if unsafe { libc::kill(-pgid, libc::SIGKILL) } != 0 {
+        let err = std::io::Error::last_os_error();
+        // ESRCH just means the group already exited — not worth a warning.
+        if err.raw_os_error() != Some(libc::ESRCH) {
+            tracing::warn!(session_id, pgid, "killpg(SIGKILL) failed: {err}");
+        }
+    }
+}
+
 /// Close a PTY session core: sends Ctrl-C, waits briefly for graceful exit,
 /// captures the exit code for the tombstone, and leaves `output_buffers` +
 /// `vt_log_buffers` + `last_output_ms` + `exit_codes` alive so post-mortem
@@ -4164,6 +4192,12 @@ pub(crate) fn close_pty_core(
     // the cloned reader fd keeps the pty master alive, the slave never sees
     // EOF, and the reader thread spins forever.
     if matches!(session._child.try_wait(), Ok(None)) {
+        // Nuke the agent's foreground process group first; SIGKILL on the shell
+        // alone leaves the agent (a grandchild) orphaned. See
+        // kill_foreground_process_group.
+        #[cfg(unix)]
+        kill_foreground_process_group(&session, session_id);
+
         if let Err(e) = session._child.kill() {
             tracing::warn!(session_id = %session_id, "close_pty_core SIGKILL fallback failed: {e}");
         }
@@ -4214,6 +4248,12 @@ pub(crate) fn kill_pty_core(state: &AppState, session_id: &str) -> bool {
         .active_sessions
         .fetch_sub(1, Ordering::Relaxed);
     let mut session = session_mutex.into_inner();
+
+    // Nuke the agent's foreground process group first; SIGKILL on the shell
+    // alone leaves the agent (a grandchild) orphaned. See
+    // kill_foreground_process_group.
+    #[cfg(unix)]
+    kill_foreground_process_group(&session, session_id);
 
     if let Err(e) = session._child.kill() {
         tracing::warn!(session_id = %session_id, "SIGKILL failed: {e}");
@@ -9368,5 +9408,101 @@ mod tests {
     fn cc_no_bullet_not_tool_call() {
         assert!(!is_cc_tool_call_header("Bash(ls)"));
         assert!(!is_cc_tool_call_header("plain text"));
+    }
+
+    /// Closing a tab must kill the agent grandchild, not just the shell.
+    ///
+    /// Mirrors `claude` launched inside the PTY's shell: shell → grandchild,
+    /// both ignoring SIGINT/SIGTERM/SIGHUP so only the SIGKILL on the foreground
+    /// process group can reap them. Before the killpg fix, `close_pty_core`
+    /// SIGKILLed the shell alone and the grandchild was orphaned to init.
+    #[cfg(unix)]
+    #[test]
+    fn close_pty_core_kills_agent_grandchild() {
+        use std::time::{Duration, Instant};
+
+        let pidfile =
+            std::env::temp_dir().join(format!("tuic_pgkill_{}.pid", std::process::id()));
+        let _ = std::fs::remove_file(&pidfile);
+
+        let pty = native_pty_system()
+            .openpty(PtySize {
+                rows: 24,
+                cols: 80,
+                pixel_width: 0,
+                pixel_height: 0,
+            })
+            .expect("openpty");
+
+        // Outer shell ignores the catchable signals and backgrounds a grandchild
+        // that also ignores them, recording the grandchild PID for the probe.
+        let script = format!(
+            "trap '' INT TERM HUP; sh -c 'trap \"\" INT TERM HUP; sleep 30' & echo $! > {}; wait",
+            pidfile.display()
+        );
+        let mut cmd = CommandBuilder::new("/bin/sh");
+        cmd.args(["-c", &script]);
+        let child = pty.slave.spawn_command(cmd).expect("spawn shell");
+
+        let master = pty.master;
+        let writer = master.take_writer().expect("writer");
+
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "test-pgkill";
+        state.metrics.active_sessions.fetch_add(1, Ordering::Relaxed);
+        state.sessions.insert(
+            sid.to_string(),
+            Mutex::new(PtySession {
+                writer,
+                master,
+                _child: child,
+                paused: Arc::new(AtomicBool::new(false)),
+                worktree: None,
+                cwd: None,
+                display_name: None,
+                shell: "/bin/sh".to_string(),
+            }),
+        );
+
+        let pid_alive = |pid: libc::pid_t| unsafe { libc::kill(pid, 0) } == 0;
+        let read_pid = || {
+            std::fs::read_to_string(&pidfile)
+                .ok()
+                .and_then(|s| s.trim().parse::<libc::pid_t>().ok())
+        };
+
+        // Wait for the grandchild to come up and record its PID (up to ~3s).
+        let mut grandchild = None;
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while Instant::now() < deadline {
+            if let Some(pid) = read_pid() {
+                grandchild = Some(pid);
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let grandchild = grandchild.expect("grandchild PID should be written");
+        assert!(
+            pid_alive(grandchild),
+            "grandchild should be alive before close"
+        );
+
+        close_pty_core(&state, sid, false);
+
+        // killpg(SIGKILL) is untrappable: the grandchild must be gone shortly.
+        let mut dead = false;
+        let deadline = Instant::now() + Duration::from_secs(2);
+        while Instant::now() < deadline {
+            if !pid_alive(grandchild) {
+                dead = true;
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let _ = std::fs::remove_file(&pidfile);
+        assert!(
+            dead,
+            "grandchild {grandchild} survived tab close — orphaned process tree"
+        );
     }
 }
