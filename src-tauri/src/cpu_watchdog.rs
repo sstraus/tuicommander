@@ -61,6 +61,9 @@ pub(crate) fn diagnostic_mode() -> bool {
 // CPU measurement via getrusage(RUSAGE_SELF)
 // ---------------------------------------------------------------------------
 
+// Never constructed on non-Unix (getrusage is POSIX-only) — the watchdog
+// disables itself there. Suppress the resulting dead-code lint on Windows.
+#[cfg_attr(not(unix), allow(dead_code))]
 struct CpuSample {
     user_us: i64,
     sys_us: i64,
@@ -68,6 +71,7 @@ struct CpuSample {
 }
 
 impl CpuSample {
+    #[cfg(unix)]
     fn now() -> Option<Self> {
         let mut usage: libc::rusage = unsafe { std::mem::zeroed() };
         let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, &mut usage) };
@@ -81,6 +85,15 @@ impl CpuSample {
         })
     }
 
+    /// `getrusage(RUSAGE_SELF)` is POSIX-only; there's no equivalent self-usage
+    /// probe wired up on non-Unix, so CPU sampling is unavailable and the
+    /// watchdog disables itself (callers treat `None` as "watchdog unavailable").
+    #[cfg(not(unix))]
+    fn now() -> Option<Self> {
+        None
+    }
+
+    #[cfg_attr(not(unix), allow(dead_code))]
     fn cpu_pct_since(&self, prev: &CpuSample) -> f64 {
         let cpu_delta_us = (self.user_us - prev.user_us) + (self.sys_us - prev.sys_us);
         let wall_us = self.wall.duration_since(prev.wall).as_micros() as f64;
