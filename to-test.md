@@ -2,6 +2,10 @@
 
 Features to test when TUICommander is more usable.
 
+## Tab close kills agent process group (2026-06-03 — `b4ab1fb6`)
+- [x] Closing a tab whose agent (grandchild of the PTY shell) ignores Ctrl-C kills the agent too — no orphan reparented to launchd _(verified end-to-end: MCP `session create` → ran a foreground `sh` simulant (PID 4109, traps INT/TERM/HUP, sleeps) under `target/debug/tuicommander` (dev build with fix) → MCP `session close` → PID dead within 100ms, no `sleep 600` residue. Also unit test `pty.rs::close_pty_core_kills_agent_grandchild` — confirmed it FAILS without the killpg call.)_
+- [x] `kill_foreground_process_group` refuses unsafe pgid (≤1 or our own group) _(verified: pty.rs guard `pgid <= 1 || pgid == getpgid(0)` before `kill(-pgid, SIGKILL)`)_
+
 ## MCP Worktree Create: Event Emission + Setup Script (2026-05-27 — Issue #50)
 - [x] Create worktree via MCP `repo action=worktree_create` → frontend shows switch prompt (worktree-created event fires) _(verified: mcp_transport.rs:1449-1465 WorktreeCreated emitted on event_bus and via handle.emit("worktree-created"); sse_routes.rs:98 maps to SSE event; worktree_routes.rs:108 same for HTTP)_
 - [HUMAN] Create worktree via HTTP `POST /worktrees` → same switch prompt appears
