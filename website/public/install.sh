@@ -27,8 +27,8 @@ install_macos() {
   local APP_HOME
   local APP_VER
 
-  if [ -d /Applications/TUICommander.app ]; then
-    APP_HOME="/Applications/TUICommander.app"
+  if [ -d "$OSX_HOME/TUICommander.app" ]; then
+    APP_HOME="$OSX_HOME/TUICommander.app"
   else
     # might not be in the usual place, but if the user has set up tuic we can find it from that
     if [ -e $(command -v tuic) ]; then
