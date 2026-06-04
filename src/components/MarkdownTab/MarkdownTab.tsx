@@ -115,7 +115,13 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 				try {
 					const fileContent = await readFileContent(fsRoot || repoPath, filePath);
 					if (!fileContent) {
-						appLogger.warn("app", "readFileContent returned empty", { repoPath, filePath, fsRoot });
+						// Empty result = genuinely-empty file OR a deleted/missing file
+						// (repo.readFile returns "" for both, no throw). Neither is
+						// warn-worthy: empty content renders fine and a deleted file is
+						// expected — matches the focus-reload effect's silent handling
+						// below. This effect re-runs on every repo-revision bump, so a
+						// stale tab on a deleted file would otherwise spam warnings.
+						appLogger.debug("app", "readFileContent returned empty", { repoPath, filePath, fsRoot });
 					}
 					setContent(fileContent);
 				} catch (err) {

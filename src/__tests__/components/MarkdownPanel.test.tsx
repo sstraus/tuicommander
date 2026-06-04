@@ -85,4 +85,29 @@ describe("MarkdownPanel", () => {
 		const content = container.querySelector(".content");
 		expect(content).not.toBeNull();
 	});
+
+	it("defaults to filename search mode", () => {
+		const { container } = render(() => <MarkdownPanel visible={true} repoPath="/test/repo" onClose={() => {}} />);
+		const input = container.querySelector(".searchInput") as HTMLInputElement;
+		expect(input).not.toBeNull();
+		expect(input.placeholder).toContain("Filter");
+		const toggle = container.querySelector(".modeToggle");
+		expect(toggle).not.toBeNull();
+		expect(toggle!.classList.contains("modeToggleActive")).toBe(false);
+	});
+
+	it("toggles to content search mode, switching placeholder and active state", () => {
+		const { container } = render(() => <MarkdownPanel visible={true} repoPath="/test/repo" onClose={() => {}} />);
+		const toggle = container.querySelector(".modeToggle")!;
+		fireEvent.click(toggle);
+
+		const input = container.querySelector(".searchInput") as HTMLInputElement;
+		expect(input.placeholder).toContain("contents");
+		expect(toggle.classList.contains("modeToggleActive")).toBe(true);
+
+		// Toggling back restores filename mode.
+		fireEvent.click(toggle);
+		expect(input.placeholder).toContain("Filter");
+		expect(toggle.classList.contains("modeToggleActive")).toBe(false);
+	});
 });

@@ -71,6 +71,11 @@ interface UIStoreState {
 	// path instead of the active repo. Used by "Open Folder…" / "Open Path…".
 	fileBrowserExternalRoot: string | null;
 
+	// Content-search request nonce (ephemeral) — bumped by the
+	// `toggle-file-browser-content-search` shortcut (Cmd+Shift+F). FileBrowserPanel
+	// watches it and switches its local searchMode to "content" + focuses the input.
+	fileBrowserContentSearchNonce: number;
+
 	// Active dropdown (mutually exclusive)
 	activeDropdown: "ide" | "font" | "agent" | null;
 
@@ -108,6 +113,7 @@ function createUIStore() {
 		diffViewMode: "split" as DiffViewMode,
 		fileBrowserViewMode: "flat" as "flat" | "tree",
 		fileBrowserExternalRoot: null,
+		fileBrowserContentSearchNonce: 0,
 		activeDropdown: null,
 		isLoading: false,
 		loadingMessage: "",
@@ -282,6 +288,13 @@ function createUIStore() {
 		// repo scoping for "Open Folder…" / "Open Path…".
 		setFileBrowserExternalRoot(path: string | null): void {
 			setState("fileBrowserExternalRoot", path);
+		},
+
+		// Open the file browser (if not already) and ask it to enter content-search
+		// mode. Bumping the nonce lets the panel react even when it's already visible.
+		requestFileBrowserContentSearch(): void {
+			setExclusivePanel("fileBrowserPanelVisible", true);
+			setState("fileBrowserContentSearchNonce", (n) => n + 1);
 		},
 
 		// Panel toggles — mutually exclusive

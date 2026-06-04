@@ -155,10 +155,11 @@ export function useRepository() {
 			return await invoke<string>("read_file", { path, file });
 		} catch (err) {
 			const msg = String(err);
-			// ENOENT is legitimate (file deleted/renamed while a tab still points at it);
-			// downgrade to warn so the app log isn't spammed on every repo revision bump.
+			// ENOENT is legitimate (file deleted/renamed while a tab still points at it)
+			// and not actionable; log at debug so the app log isn't spammed on every
+			// repo revision bump (a stale tab re-reads the missing file each bump).
 			if (msg.includes("No such file or directory") || msg.includes("os error 2")) {
-				appLogger.warn("git", "File not found", { path, file });
+				appLogger.debug("git", "File not found", { path, file });
 			} else {
 				appLogger.error("git", "Failed to read file", { path, file, error: msg });
 			}

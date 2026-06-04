@@ -90,6 +90,35 @@
   color: var(--error);
 }
 
+/* Filename/content search mode toggle (inline with search, shared visual with FileBrowser) */
+.modeToggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  margin-right: 6px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+
+.modeToggle:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.modeToggleActive,
+.modeToggleActive:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-color: var(--accent);
+}
+
 /* Sort control (inline with search) */
 .sortControl {
   position: relative;

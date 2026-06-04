@@ -54,6 +54,7 @@ export interface ShortcutHandlers {
 	toggleHelpPanel: () => void;
 	toggleNotesPanel: () => void;
 	toggleFileBrowserPanel: () => void;
+	requestFileBrowserContentSearch: () => void;
 	toggleOutlinePanel: () => void;
 	findInTerminal: () => void;
 	toggleCommandPalette: () => void;
@@ -238,6 +239,9 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
 			return true;
 		case "toggle-file-browser":
 			handlers.toggleFileBrowserPanel();
+			return true;
+		case "toggle-file-browser-content-search":
+			handlers.requestFileBrowserContentSearch();
 			return true;
 		case "toggle-outline":
 			handlers.toggleOutlinePanel();

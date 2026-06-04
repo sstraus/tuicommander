@@ -133,6 +133,7 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
 		"toggle-notes": handlers.toggleNotesPanel,
 		"toggle-help": handlers.toggleHelpPanel,
 		"toggle-file-browser": handlers.toggleFileBrowserPanel,
+		"toggle-file-browser-content-search": handlers.requestFileBrowserContentSearch,
 		"toggle-outline": handlers.toggleOutlinePanel,
 		"toggle-git-ops": handlers.toggleGitOpsPanel,
 		"toggle-diff-scroll": handlers.toggleDiffScroll,

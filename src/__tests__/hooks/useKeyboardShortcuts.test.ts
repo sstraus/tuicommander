@@ -41,6 +41,7 @@ function createMockHandlers(): ShortcutHandlers {
 		toggleHelpPanel: vi.fn(),
 		toggleNotesPanel: vi.fn(),
 		toggleFileBrowserPanel: vi.fn(),
+		requestFileBrowserContentSearch: vi.fn(),
 		toggleOutlinePanel: vi.fn(),
 		findInTerminal: vi.fn(),
 		toggleCommandPalette: vi.fn(),
@@ -270,6 +271,11 @@ describe("useKeyboardShortcuts", () => {
 		it("Cmd+E toggles file browser panel", () => {
 			fireKeydown("e", { metaKey: true });
 			expect(handlers.toggleFileBrowserPanel).toHaveBeenCalled();
+		});
+
+		it("Cmd+Shift+F opens file browser in content-search mode", () => {
+			fireKeydown("F", { metaKey: true, shiftKey: true });
+			expect(handlers.requestFileBrowserContentSearch).toHaveBeenCalled();
 		});
 
 		it("Cmd+Shift+D toggles git ops panel", () => {

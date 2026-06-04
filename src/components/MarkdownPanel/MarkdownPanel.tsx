@@ -1,5 +1,17 @@
 import { createVirtualizer } from "@tanstack/solid-virtual";
-import { type Component, createEffect, createMemo, createSignal, For, Match, Show, Switch, untrack } from "solid-js";
+import {
+	type Component,
+	createEffect,
+	createMemo,
+	createSignal,
+	For,
+	Match,
+	onCleanup,
+	Show,
+	Switch,
+	untrack,
+} from "solid-js";
+import { useFileBrowser } from "../../hooks/useFileBrowser";
 import { useRepository } from "../../hooks/useRepository";
 import { t } from "../../i18n";
 import { shortenHomePath } from "../../platform";
@@ -25,6 +37,22 @@ interface MdFileEntry {
 }
 
 type SortMode = "folder" | "date";
+/** Filter the list by filename glob, or full-text by file contents. */
+type SearchMode = "filename" | "content";
+
+/** Filename mode icon — simple "F" in a doc shape (shared visual with FileBrowser) */
+const FilenameModeIcon = () => (
+	<svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+		<path d="M4 2h5l3 3v9H4V2zm1 1v10h6V6H9V3H5zm1.5 4h3v1h-3V7zm0 2h3v1h-3V9z" />
+	</svg>
+);
+
+/** Content mode icon — magnifier with lines (shared visual with FileBrowser) */
+const ContentModeIcon = () => (
+	<svg viewBox="0 0 16 16" fill="currentColor" width="14" height="14">
+		<path d="M11.5 7a4.5 4.5 0 1 0-1.77 3.56l3.35 3.36.71-.71-3.36-3.35A4.48 4.48 0 0 0 11.5 7zM7 10.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7zM5 6h4v1H5V6zm0 2h4v1H5V8z" />
+	</svg>
+);
 
 /** Flat row for virtualization: either a directory header or a file entry. */
 type Row = { kind: "header"; dir: string } | { kind: "file"; entry: MdFileEntry };
@@ -65,8 +93,13 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 	const [loading, setLoading] = createSignal(false);
 	const [error, setError] = createSignal<string | null>(null);
 	const [searchQuery, setSearchQuery] = createSignal("");
+	const [searchMode, setSearchMode] = createSignal<SearchMode>("filename");
+	// Relative paths of markdown files whose contents match the content-search query.
+	const [contentPaths, setContentPaths] = createSignal<Set<string>>(new Set<string>());
+	const [contentSearching, setContentSearching] = createSignal(false);
 	const [sortBy, setSortBy] = createSignal<SortMode>("folder");
 	const [sortDropdownOpen, setSortDropdownOpen] = createSignal(false);
+	const fb = useFileBrowser();
 	const repo = useRepository();
 	const contextMenu = createContextMenu();
 	const [contextEntry, setContextEntry] = createSignal<MdFileEntry | null>(null);
@@ -74,12 +107,91 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 	// Generation counter: incremented on every effect run so stale async fetches are discarded.
 	let fetchGeneration = 0;
 
-	/** Files filtered by search query (supports glob wildcards) */
+	/**
+	 * Files filtered by the search query. In "filename" mode the query is a glob
+	 * matched against the path; in "content" mode it's a full-text search whose
+	 * matching paths (collected via search_content) are intersected with the
+	 * markdown file list — so only `.md`/`.mdx` files survive automatically.
+	 */
 	const filteredFiles = createMemo(() => {
 		const q = searchQuery().trim();
 		if (!q) return files();
+		if (searchMode() === "content") {
+			const paths = contentPaths();
+			return files().filter((f) => paths.has(f.path));
+		}
 		const re = globToRegex(q);
 		return files().filter((f) => re.test(f.path));
+	});
+
+	// Full-text content search: mirrors FileBrowserPanel's streaming search but
+	// only keeps the set of matching paths (the list-filter UX needs no snippets).
+	// Reuses the shared search_content backend + content-search-batch events.
+	createEffect(() => {
+		if (searchMode() !== "content") return;
+		const q = searchQuery().trim();
+		const fsRoot = props.fsRoot || props.repoPath;
+
+		if (!q || q.length < 3 || !fsRoot) {
+			setContentPaths(new Set<string>());
+			setContentSearching(false);
+			return;
+		}
+
+		setContentSearching(true);
+		setContentPaths(new Set<string>());
+
+		let cancelled = false;
+		let unlistenBatch: (() => void) | null = null;
+		let unlistenError: (() => void) | null = null;
+
+		const timer = setTimeout(async () => {
+			if (cancelled) return;
+			try {
+				const batchPromise = fb.onContentSearchBatch((batch) => {
+					if (cancelled) return;
+					setContentPaths((prev) => {
+						const next = new Set(prev);
+						for (const m of batch.matches) next.add(m.path);
+						return next;
+					});
+					if (batch.is_final) setContentSearching(false);
+				});
+				const errorPromise = fb.onContentSearchError((err) => {
+					if (cancelled) return;
+					appLogger.error("app", "Markdown content search error", err);
+					setContentSearching(false);
+				});
+
+				const [batchUn, errorUn] = await Promise.all([batchPromise, errorPromise]);
+				unlistenBatch = batchUn;
+				unlistenError = errorUn;
+
+				if (cancelled) {
+					unlistenBatch();
+					unlistenError();
+					return;
+				}
+
+				// DEFERRED (2026-06-03) — search_content uses a single global cancel
+				// token, so a simultaneous FileBrowser content search cancels this one
+				// (and vice versa). Harmless in practice (one panel active at a time);
+				// revisit only if both panels are commonly searched at once.
+				await fb.searchContent(fsRoot, q);
+			} catch (err) {
+				if (!cancelled) {
+					appLogger.error("app", "Markdown content search failed", err);
+					setContentSearching(false);
+				}
+			}
+		}, 250);
+
+		onCleanup(() => {
+			cancelled = true;
+			clearTimeout(timer);
+			unlistenBatch?.();
+			unlistenError?.();
+		});
 	});
 
 	// Load markdown files when visible, repo changes, or repo content changes.
@@ -233,12 +345,35 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 				<PanelWindowControls panelId="markdown" mode={mode()} onInlineClose={props.onClose} />
 			</div>
 
-			{/* Search filter + sort control */}
+			{/* Search filter (filename glob / full-text content) + sort control */}
 			<div class={p.search}>
+				<button
+					class={cx(s.modeToggle, searchMode() === "content" && s.modeToggleActive)}
+					onClick={() => {
+						const next = searchMode() === "filename" ? "content" : "filename";
+						setSearchMode(next);
+						// Reset the other mode's state so stale results don't leak across modes.
+						setContentPaths(new Set<string>());
+						setContentSearching(false);
+					}}
+					title={
+						searchMode() === "filename"
+							? t("markdownPanel.switchToContent", "Switch to content search")
+							: t("markdownPanel.switchToFilename", "Switch to filename search")
+					}
+				>
+					<Show when={searchMode() === "filename"} fallback={<ContentModeIcon />}>
+						<FilenameModeIcon />
+					</Show>
+				</button>
 				<input
 					type="text"
 					class={p.searchInput}
-					placeholder={t("markdownPanel.filter", "Filter... (*, ** wildcards)")}
+					placeholder={
+						searchMode() === "filename"
+							? t("markdownPanel.filter", "Filter... (*, ** wildcards)")
+							: t("markdownPanel.searchContent", "Search in file contents…")
+					}
 					value={searchQuery()}
 					onInput={(e) => setSearchQuery(e.currentTarget.value)}
 					autocomplete="off"
@@ -280,8 +415,12 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 				{/* Scroll container is always mounted so the virtualizer keeps a stable
             scrollElement reference across loading/empty/populated state changes. */}
 				<div ref={scrollRef} class={s.fileList}>
-					<Show when={loading()}>
-						<div class={s.empty}>{t("markdownPanel.loading", "Loading files...")}</div>
+					<Show when={(loading() || contentSearching()) && filteredFiles().length === 0}>
+						<div class={s.empty}>
+							{contentSearching()
+								? t("markdownPanel.searching", "Searching contents…")
+								: t("markdownPanel.loading", "Loading files...")}
+						</div>
 					</Show>
 
 					<Show when={error()}>
@@ -290,7 +429,7 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 						</div>
 					</Show>
 
-					<Show when={!loading() && !error() && filteredFiles().length === 0}>
+					<Show when={!loading() && !contentSearching() && !error() && filteredFiles().length === 0}>
 						<div class={s.empty}>
 							{!props.repoPath
 								? t("markdownPanel.noRepo", "No repository selected")

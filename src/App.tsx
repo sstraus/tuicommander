@@ -1645,6 +1645,7 @@ const App: Component = () => {
 		toggleHelpPanel: () => setHelpPanelVisible((v) => !v),
 		toggleNotesPanel: uiStore.toggleNotesPanel,
 		toggleFileBrowserPanel: uiStore.toggleFileBrowserPanel,
+		requestFileBrowserContentSearch: uiStore.requestFileBrowserContentSearch,
 		toggleOutlinePanel: uiStore.toggleOutlinePanel,
 		findInTerminal: () => {
 			// Context-aware: open search in whichever tab type is active

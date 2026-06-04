@@ -25,14 +25,14 @@ Features to test when TUICommander is more usable.
 
 ### #58 — Cycle All Tab Types setting
 - [x] Default OFF → next/prev tab cycles terminals only _(verified: useTerminalLifecycle.test.ts:564 default false excludes diff tab from cycle)_
-- [ ] Settings → Appearance → "Cycle All Tab Types" toggle present next to Tab Ordering
-- [ ] Toggle ON → prev/next also cycles diff/md/editor tabs, ordered via tabOrderingStore.getOrdered
-- [ ] Setting persists across app restart (round-trips through config.rs tab_cycling_all_types)
+- [x] Settings → Appearance → "Cycle All Tab Types" toggle present next to Tab Ordering _(verified: AppearanceTab.tsx:440 Toggle "Cycle All Tab Types" immediately after :421 "Tab Ordering")_
+- [x] Toggle ON → prev/next also cycles diff/md/editor tabs, ordered via tabOrderingStore.getOrdered _(verified: useTerminalLifecycle.ts:354 returns terminals-only unless tabCyclingAllTypes; :362 tabOrderingStore.getOrdered(union))_
+- [x] Setting persists across app restart (round-trips through config.rs tab_cycling_all_types) _(verified: config.rs:499 tab_cycling_all_types field; settings.ts maps tab_cycling_all_types↔state; runtime settings store has tabCyclingAllTypes)_
 
 ### #69 — Error log multi-level (severity threshold) filter
 - [x] levelPassesThreshold: picking a level shows it + all more-severe levels _(verified: errorLogLevelFilter.test.ts — warn shows warn+error, hides info/debug)_
-- [ ] ErrorLogPanel: select "Warn" → Warn and Error entries shown intermingled; select "Error" → only Error
-- [ ] Each level button shows a tooltip describing the threshold
+- [x] ErrorLogPanel: select "Warn" → Warn and Error entries shown intermingled; select "Error" → only Error _(verified: ErrorLogPanel.tsx:132 filteredEntries uses levelPassesThreshold (:20-22, LEVEL_SEVERITY) — Warn shows ≥2 (warn+error), Error shows ≥3 (error only); LEVEL_OPTIONS :6-12)_
+- [x] Each level button shows a tooltip describing the threshold _(verified: ErrorLogPanel.tsx:168 title="Show {label} and more severe levels" (or "Show all log levels" for All) on every level button)_
 
 ### Tweak-comment DOM highlight + hover-link (WIP, not in PR.md)
 - [x] tweakDomHighlight wraps text between sentinel pairs preserving inline formatting _(verified: tweakDomHighlight.test.ts, hoverLinkField.test.ts)_
@@ -42,9 +42,9 @@ Features to test when TUICommander is more usable.
 
 ### #70 — JetBrains IDE family (open-in / default IDE)
 - [x] 12 JetBrains IDEs added across all sync points _(verified: settings.ts IdeType/IDE_NAMES/IDE_ICON_PATHS/IDE_ICONS/IDE_CATEGORIES.jetbrains; agent.rs open_in_app arms + jetbrains_cmd helper + detect_installed_ides CLI+.app; IdeLauncher.tsx category + FILE_CAPABLE_IDES; tsc + cargo check clean)_
-- [ ] IdeLauncher dropdown shows a "JetBrains" section listing only installed JetBrains IDEs
-- [ ] GeneralTab default-IDE selector lists all 12 JetBrains entries (data-driven from IDE_NAMES)
-- [ ] Open a file in (e.g.) PyCharm/IntelliJ → opens at the correct line/column via `--line`/`--column`
+- [x] IdeLauncher dropdown shows a "JetBrains" section listing only installed JetBrains IDEs _(verified: IdeLauncher.tsx:42-43 detect_installed_ides; :50-52 categoryOrder has jetbrains section; :58-60 filters each category to installedIdes().includes(ide))_
+- [x] GeneralTab default-IDE selector lists all 12 JetBrains entries (data-driven from IDE_NAMES) _(verified: GeneralTab.tsx:104 ideOptions = Object.entries(IDE_NAMES).map(...) — fully data-driven; :378-380 Default IDE SettingSelect; 12 JetBrains entries in IDE_NAMES already confirmed at line 44)_
+- [x] Open a file in (e.g.) PyCharm/IntelliJ → opens at the correct line/column via `--line`/`--column` _(verified: agent.rs:66-79 jetbrains_cmd appends `--line {l}` and `--column {c}`; :135-140 intellij/pycharm/webstorm/goland/clion/phpstorm route to jetbrains_cmd(.., line, col). Command wiring verified; actual IDE honoring of the flag is the JetBrains CLI contract)_
 - [HUMAN] macOS: JetBrains IDE with Toolbox shell scripts NOT enabled → `open -a "<App>"` fallback still launches it
 - [HUMAN] Each IDE icon (official JetBrains/Android Studio brand logo) renders crisply in the launcher
 
@@ -56,28 +56,32 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [x] Existing `.tuic.json` with a manually-set field (e.g. `mcp_upstreams`) is preserved, not clobbered, when exporting other fields _(verified end-to-end: injected `mcp_upstreams=[github]` + removed `after_merge` → re-export preserved mcp_upstreams and re-populated after_merge from defaults)_
 - [x] Button hidden in browser/remote (non-Tauri) mode _(verified: SettingsPanel.tsx:194 wraps the "Share with Team" section in `<Show when={isTauri()}>`)_
 
+### get_remote_url command registration (2026-06-03, uncommitted)
+- [ ] "Open in GitHub" appears in the **repo** context menu for a GitHub repo (e.g. mdkb) — _(FIX: get_remote_url was defined (git.rs:199) + called (RepoSection.tsx:536, BranchesTab.tsx:515) but NEVER registered in lib.rs invoke_handler → every call rejected "Command not found", swallowed by `.catch(()=>{})`, githubBaseUrl stayed null, item hidden. Added `git::get_remote_url` to lib.rs:1341. cargo check green. Audit confirms it was the only unregistered invoke.ts command. **Needs `make build` to take effect in the running app.**)_
+- [ ] "Open in GitHub" + "Open PR" appear in the **branch** context menu for a GitHub repo (same root cause — also fixed by the registration)
+
 ### Committed fixes — quick manual confirm
-- [ ] #67 (`c9056df0`): file modified inside a worktree → "View diff" shows the actual diff (not "No changes")
-- [ ] #65 (`9b36711b`): after choosing "Keep" on the orphaned-worktrees dialog → it stops re-prompting for the session
+- [x] #67 (`c9056df0`): file modified inside a worktree → "View diff" shows the actual diff (not "No changes") _(verified: CodeEditorTab.tsx:545 diffTabsStore.add(fsRoot(), ...) — fsRoot() (:166 = props.fsRoot ?? props.repoPath) is the worktree tree where the file is actually modified, so git diff runs in the right tree)_
+- [x] #65 (`9b36711b`): after choosing "Keep" on the orphaned-worktrees dialog → it stops re-prompting for the session _(verified: useGitOperations.ts:505 session-scoped keptOrphans Set; :535 pending=orphanPaths.filter(!keptOrphans.has); :546-549 on "Keep" (!confirmed) adds each to keptOrphans → next refresh's pending is empty, no re-prompt)_
 - [HUMAN] #53 (`40282679`): Windows — `tuic install-cli`/`alias` install to `%LOCALAPPDATA%\Microsoft\WindowsApps` (in PATH); needs Windows env
 
 ## Command Palette cross-repo content search (2026-06-03, uncommitted)
 - [x] `search_content_all_impl` merges ready indices, tags each match with repo_path, skips unready, empty on no match _(verified: fs.rs tests search_content_all_merges_and_tags_each_repo / _skips_unready_indices / _no_matches_returns_empty)_
-- [ ] Palette `?query` shows a "Search all repos" checkbox in content mode
-- [ ] Toggle ON → results span all indexed repos, each row shows a repo-name badge
-- [ ] Toggle re-runs the current query immediately (no need to retype)
-- [ ] Clicking a cross-repo result opens the file in ITS repo (uses match.repo_path), not the active repo
-- [ ] All-repos mode works even with no active repo selected ("No repository selected" only when single-repo + no active)
-- [ ] Coverage depends on Content Indexing strategy: with "Active repo only" cross-repo effectively returns just the active repo (cold repos skipped) — verify no crash/empty handling
-- [ ] Switching toggle off returns to active-repo-only search
+- [x] Palette `?query` shows a "Search all repos" checkbox in content mode _(verified: CommandPalette.tsx:296-304 `<Show when={mode()==="content"}>` renders scopeToggle checkbox bound to allReposContent()/setContentAllRepos)_
+- [x] Toggle ON → results span all indexed repos, each row shows a repo-name badge _(verified: commandPalette.ts:151-152 allRepos→invoke("search_content_all"); CommandPalette.tsx:344-346 `<Show when={match.repo_path}>` renders s.repoBadge with pathBasename(repo_path))_
+- [x] Toggle re-runs the current query immediately (no need to retype) _(verified: commandPalette.ts:296-308 setContentAllRepos cancels listeners and calls triggerContentSearch(searchQuery) when mode=content and query≥3)_
+- [x] Clicking a cross-repo result opens the file in ITS repo (uses match.repo_path), not the active repo _(verified: CommandPalette.tsx:126-127 repoPath = match.repo_path ?? activeRepoPath)_
+- [x] All-repos mode works even with no active repo selected ("No repository selected" only when single-repo + no active) _(verified: commandPalette.ts:118-119 `if (!allRepos && !repoPath) return` — all-repos skips the active-repo requirement; CommandPalette.tsx:235 canSearchContent=allReposContent()||hasActiveRepo(); :305 "No repository selected" gated on !canSearchContent())_
+- [x] Coverage depends on Content Indexing strategy: with "Active repo only" cross-repo effectively returns just the active repo (cold repos skipped) — verify no crash/empty handling _(verified: backend search_content_all skips unready indices (fs.rs test search_content_all_skips_unready_indices, line 65); frontend shows graceful "No results"/empty states CommandPalette.tsx:330 — no crash on empty)_
+- [x] Switching toggle off returns to active-repo-only search _(verified: commandPalette.ts:152-159 !allRepos branch invokes search_content with repoPath; setContentAllRepos(false) re-triggers immediately)_
 
 ## TUIC CLI version check + honest update banner (2026-06-03, uncommitted)
 - [x] `version_match` compares `tuic --version` strings, not file size _(verified: tuic_cli.rs check_version_match runs cli_version() on installed + sidecar; size-based flapping on rebuild eliminated)_
 - [x] Same CLI version installed + bundled (e.g. both `tuic 1.1.0`) → NO "update pending" banner, even if the sidecar was rebuilt (different size)
-- [ ] Genuinely older installed version + writable file (user-owned `/usr/local/bin/tuic`) → "(update pending — restart to apply)"; restart silently applies it
-- [ ] Genuinely older version + root-owned file (not writable) → "(update available)" (NOT "restart to apply"); an **Update** button appears
-- [ ] Update button → triggers elevation prompt (osascript) and overwrites the installed binary; banner clears after
-- [ ] When versions match → no Update button, only Uninstall
+- [x] Genuinely older installed version + writable file (user-owned `/usr/local/bin/tuic`) → "(update pending — restart to apply)"; restart silently applies it _(verified: GeneralTab.tsx:167-168 shows "(update pending — restart to apply)" when !version_match && auto_updatable; auto_updatable=install_path_writable (tuic_cli.rs:45); silent apply via auto_update_cli (tuic_cli.rs:111-130) — direct fs::copy, no elevation, succeeds when writable)_
+- [x] Genuinely older version + root-owned file (not writable) → "(update available)" (NOT "restart to apply"); an **Update** button appears _(verified: GeneralTab.tsx:169 "(update available)" branch when !auto_updatable; root-owned → install_path_writable false (tuic_cli.rs:239-243); :174 `<Show when={!version_match}>` renders Update button)_
+- [x] Update button → triggers elevation prompt (osascript) and overwrites the installed binary; banner clears after _(verified: GeneralTab.tsx:175-177 Update→handleInstallCli→install_cli (tuic_cli.rs:59)→copy_with_elevation osascript (tuic_cli.rs:246/267); banner is `!version_match`-gated so it clears once re-check passes. Live osascript dialog is the OS contract)_
+- [x] When versions match → no Update button, only Uninstall _(verified: GeneralTab.tsx:174 Update button inside `<Show when={!version_match}>` (hidden on match); :179 Uninstall button always rendered)_
 
 ## MCP Worktree Create: Event Emission + Setup Script (2026-05-27 — Issue #50)
 - [x] Create worktree via MCP `repo action=worktree_create` → frontend shows switch prompt (worktree-created event fires) _(verified: mcp_transport.rs:1449-1465 WorktreeCreated emitted on event_bus and via handle.emit("worktree-created"); sse_routes.rs:98 maps to SSE event; worktree_routes.rs:108 same for HTTP)_
@@ -161,7 +165,7 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [HUMAN] Activity Dashboard detached: rows show live terminal status updates (~1 Hz)
 - [HUMAN] Activity Dashboard detached: click row → navigates to terminal in main window
 - [HUMAN] Activity Dashboard detached: globe button toggles Global Workspace promotion
-- [ ] Activity Dashboard detached: close window → main window clears detached state **BUG: ghost tab remains, closing float doesn't restore panel. Fix: #1719-989c**
+- [x] Activity Dashboard detached: close window → main window clears detached state _(verified: fix #1719-989c in — panel_window.rs:93 emits "panel-window-closed" with panel_id on window close; App.tsx:521-532 listener calls uiStore.clearDetached(panelId) (removes ghost) AND panelRegistry[panelId].toggle() (restores panel to main window))_
 - [HUMAN] AI Chat: detach button → opens in separate window with streaming intact
 - [HUMAN] AI Chat detached: send message, verify streaming response renders
 - [HUMAN] AI Chat detached: close window → main window shows panel again (not placeholder)
@@ -176,7 +180,7 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [x] Toggle persists across app restart (check config.json) _(verified: settings.ts:403 saves to disk, line 483 loads back)_
 
 ## AI Chat (Level 1)
-- [ ] Settings > AI Chat tab: provider dropdown shows Ollama/Anthropic/OpenAI/OpenRouter/Custom _(NOTE: provider dropdown is in **Providers** tab, not AI Chat tab — ProvidersTab.tsx:20-38. AI Chat tab has only temperature slider and scheduled tasks. Fix description.)_
+- [x] Settings > **Providers** tab: provider dropdown shows Ollama/Anthropic/OpenAI/OpenRouter/Custom _(verified + description corrected: dropdown is in Providers tab — ProvidersTab.tsx:20-38, NOT AI Chat tab (which has only temperature slider + scheduled tasks))_
 - [HUMAN] Ollama selected + running: green dot, model list populated from /api/tags
 - [HUMAN] Ollama selected + not running: red dot with "Not detected" message
 - [x] API key field: masked, saved to keyring, "Key saved" indicator after save _(verified: ProvidersTab.tsx:368 type="password"; credentials.rs uses keyring crate; ProvidersTab.tsx:269 "Key saved" message)_
@@ -184,11 +188,11 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [ ] Context lines slider: 50-500, persists across restart _(NOTE: no context_lines slider exists in the codebase. AI Chat tab only has temperature slider and scheduled tasks. Feature not implemented.)_
 - [x] Temperature slider: 0.0-1.0, persists across restart _(verified: AiChatTab.tsx:229-244 slider min=0 max=1 step=0.1; ai_chat.rs:157-163 load/save_ai_chat_config backed by JSON file on disk)_
 - [x] Cmd+Alt+A toggles AI Chat panel open/closed _(verified: keybindingDefaults.ts:132 binding; App.tsx:2136-2138 wired to toggleAiChatPanel)_
-- [ ] Status bar: chat bubble icon toggles panel, highlighted when active _(PARTIAL: icon exists at StatusBar.tsx:407-418, toggles panel — but no highlighted/active class when panel is open)_
+- [ ] Status bar: chat bubble icon toggles panel, highlighted when active _(NOTE: toggle works (StatusBar.tsx:408-417); the "highlighted when active" part is NOT implemented for ANY status-bar panel toggle (markdown :346, notes :360, git :373, file-browser :383, changes :394, ai-chat :409 all use bare s.toggleBtn; no .toggleBtnActive class exists). Highlighting only AI-chat would be inconsistent; adding active state to all six is a visual enhancement — needs Boss decision + style-guide/screenshot, NOT a bug.)_
 - [ ] Panel: terminal dropdown lists all open terminals, switching attaches _(NOT IMPLEMENTED: no dropdown — panel auto-attaches to focused terminal via useActiveSessionId)_
 - [ ] Panel: pin button prevents auto-attach on terminal focus change _(NOT IMPLEMENTED: no pin button exists in AIChatPanel.tsx)_
-- [ ] Panel: send message with Cmd+Enter, Shift+Enter for newline _(WRONG: plain Enter sends, Cmd/Ctrl/Shift+Enter all insert newline — AIChatPanel.tsx:303-313. Fix description.)_
-- [ ] Panel: streaming response shown as raw text, markdown rendered on completion _(WRONG: markdown is rendered during streaming too via ContentRenderer — AIChatPanel.tsx:724-730)_
+- [x] Panel: send message with plain Enter; Cmd/Ctrl/Shift+Enter insert newline _(verified + description corrected: AIChatPanel.tsx:303-313 — plain Enter sends, modifier+Enter inserts newline (original description had it backwards))_
+- [x] Panel: streaming response renders markdown live (via ContentRenderer), not just on completion _(verified + description corrected: AIChatPanel.tsx:724-730 renders markdown during streaming, not raw-text-until-done as originally described)_
 - [x] Panel: code blocks have Copy and Run buttons after stream ends _(verified: AIChatPanel.tsx:708-712 enhanceCodeBlocks called only for completed messages)_
 - [x] Panel: Run button sends code to attached terminal via sendCommand _(verified: AIChatPanel.tsx:315-351 runCodeInTerminal calls sendCommand for each code line using the attached session)_
 - [x] Panel: Stop button visible during streaming, cancels generation _(verified: AIChatPanel.tsx:777-797 Show when={isStreaming()} renders stop button calling cancelStream)_
@@ -223,7 +227,7 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [ ] Rejoining session after reload: agent state recovered from store; tool-call history preserved (schema v2) _(PARTIALLY CONFIRMED: chat messages reload via initFromDisk at conversationStore.ts:443-494 (schema v1). But toolCalls, agentState, currentIteration are NOT persisted — lost on reload. "schema v2" is for session knowledge files in knowledge.rs:51, not conversation store.)_
 
 ## AI Agent — External MCP Tools (1303)
-- [ ] Remote MCP client (Claude Code / Cursor) lists six `ai_terminal_*` tools via `tools/list` _(NOTE: there are **13** ai_terminal_* tools, not 6 — see ai_terminal.rs:31-45: read_screen, send_input, send_key, wait_for, get_state, get_context, read_file, write_file, edit_file, list_files, search_files, run_command, drive_agent)_
+- [x] Remote MCP client (Claude Code / Cursor) lists **13** `ai_terminal_*` tools via `tools/list` _(verified + count corrected: ai_terminal.rs:31-45 = read_screen, send_input, send_key, wait_for, get_state, get_context, read_file, write_file, edit_file, list_files, search_files, run_command, drive_agent (13, not 6))_
 - [x] `ai_terminal_read_screen` returns redacted screen text; respects `lines` cap _(verified: tools.rs:496 max_lines from args["lines"] defaulting to 50; line 522 redact_secrets applied before return)_
 - [HUMAN] `ai_terminal_send_input` on an idle session prompts user confirm dialog; rejects while internal agent loop is active on that session
 - [HUMAN] `ai_terminal_send_key` honours named keys (enter, tab, ctrl+c, escape, up/down) with same confirmation semantics
@@ -234,14 +238,14 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 ## AI Agent — Filesystem Tools (1325-1331)
 - [x] `ai_terminal_read_file` returns line-numbered content; respects offset/limit; rejects binary and >10MB; secrets redacted _(verified: tools.rs:15 READ_FILE_MAX_LINES=2000; line 945 limit.clamp; line 1012 redact_secrets; tool desc documents binary and >10MB rejection)_
 - [HUMAN] `ai_terminal_write_file` creates a new file; overwrites existing; confirm dialog appears for MCP callers
-- [ ] `ai_terminal_write_file` to `.env` or `Cargo.toml` triggers "sensitive path" rejection _(NOTE: .env triggers NeedsApproval (not Block) per safety.rs:257-278; Cargo.toml is EXPLICITLY allowed per safety.rs:270-271 "agents routinely manage dependencies". Description is wrong about Cargo.toml.)_
+- [x] `ai_terminal_write_file` to `.env` triggers approval gate (NeedsApproval); `Cargo.toml` is allowed _(verified + description corrected: safety.rs:257-278 .env → NeedsApproval (not Block); :270-271 Cargo.toml EXPLICITLY allowed ("agents routinely manage dependencies") — original description wrongly expected Cargo.toml rejection)_
 - [HUMAN] `ai_terminal_edit_file` replaces unique occurrence; rejects non-unique without replace_all; confirm dialog for MCP
 - [x] `ai_terminal_list_files` matches glob patterns (e.g. `**/*.rs`); reports dir vs file type; max 500 _(verified: tools.rs:1234-1327 list_files uses glob, distinguishes dir/file type, enforces max 500 with truncation flag)_
 - [x] `ai_terminal_search_files` finds regex matches with context; respects .gitignore; max 50 matches _(verified: tools.rs:1329-1430 search_files; tool desc confirms .gitignore via ignore crate, max 50 matches, context lines)_
 - [x] `ai_terminal_run_command` captures stdout/stderr; sanitized env (only PATH/HOME/TERM/LANG); safety blocks sudo; confirm dialog for MCP _(verified: tools.rs:1713-1717 env_clear + only PATH/HOME/TERM/LANG; lines 1771-1772 redact_secrets; safety.rs blocks destructive; ai_terminal.rs:248-258 confirm dialog for MCP)_
 - [HUMAN] `ai_terminal_run_command` with 500ms timeout kills the process cleanly
 - [x] Filesystem tools only work within the session's sandbox root — `../` traversal rejected _(verified: sandbox.rs:300-302 resolve_for_write rejects ../ traversal; safety.rs:244-249 additional ../ block; tools.rs:852-856 all file ops use get_sandbox)_
-- [ ] Agent system prompt now documents all 12 tools with when-to-use guidance _(NOTE: system prompt documents **18** tools, not 12: engine.rs:158-196 lists 6 terminal + 6 filesystem + 1 search_code + 2 MCP bridge + 3 multi-session tools. Count is wrong.)_
+- [x] Agent system prompt documents all **18** tools with when-to-use guidance _(verified + count corrected: engine.rs:158-196 = 6 terminal + 6 filesystem + 1 search_code + 2 MCP bridge + 3 multi-session = 18, not 12)_
 
 ## AI Agent — Session Knowledge (1305/1306/1307/1309)
 - [x] OSC 133 shell (with `shell-integration.sh` sourced): running a command populates SessionKnowledgeBar with a Success/Error row and exit code _(verified: SessionKnowledgeBar.tsx:99 listens pty-parsed-{sid}, line 72 invokes get_session_knowledge; lines 147-158 render recent_outcomes with kind badge + exit code)_
@@ -298,7 +302,7 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [HUMAN] Modify `.gitignore` → new rules take effect without restart
 
 ## Global Hotkey Toggle
-- [ ] Settings > Keyboard Shortcuts > Global Hotkey section visible (desktop only) _(NOTE: KeyboardShortcutsTab is in HelpPanel.tsx:143, NOT in Settings panel. Settings has no "Keyboard Shortcuts" tab. Should say "Help Panel > Keyboard Shortcuts".)_
+- [x] Help Panel > Keyboard Shortcuts > Global Hotkey section visible (desktop only) _(verified + location corrected: KeyboardShortcutsTab is in HelpPanel.tsx:143, NOT the Settings panel — Settings has no "Keyboard Shortcuts" tab)_
 - [HUMAN] Click "Click to set hotkey" → capture mode activates
 - [HUMAN] Press a key combo → registers and shows in the field
 - [HUMAN] Switch to another app → press hotkey → TUICommander appears focused
@@ -398,15 +402,16 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [x] No purple unseen dot while agent is actively working (status line timer ticking) _(verified: TabBar.tsx:827-828 shellUnseen only applied when !isBusy(); App.tsx:918 sets unseen=true only inside fireCompletion after idle)_
 
 ## Plan Panel (515-660c / 516-41a5 / 517-74c2)
-- [x] `Cmd+Shift+P` opens plan panel on right side (MCP maccontrol verified 2026-04-10)
-- [x] Plan panel shows plans only for the active repository _(verified: planPlugin.ts:87-90 skips plans when cwd outside active repo; line 103-106 only scans active repo's plans/ dir)_
+> **OBSOLETE (panel removed 2026-04-02, commit `123f7a2c` "refactor(plan): remove HTML panel"; sidebar panel also dropped, `1634e0b1`; stale doc refs cleaned in `331bd649`).** The plan feature is now plugin-only (`planPlugin.ts`): it DETECTS plan files and OPENS them as **markdown tabs** — there is no Plan Panel, no `Cmd+Shift+P`, no `planPanelVisible`, no count badge. Panel-based items below are dead; only the tab-opening items (open-as-md-tab, auto-open, no-duplicate) still describe real behavior.
+- [~] `Cmd+Shift+P` opens plan panel on right side — **OBSOLETE: panel + keybinding removed (`123f7a2c`)**
+- [x] Plan plugin processes plans only for the active repository _(verified + reworded for plugin-only model: planPlugin.ts:87-90 skips plans when session cwd is outside the active repo; :103-106 scans only the active repo's plans/ dir — detection scoping survives the panel removal)_
 - [HUMAN] Click plan item opens it as markdown tab (frontmatter stripped)
-- [HUMAN] Switching repos changes visible plans in the panel
+- [HUMAN] Switching repos rescans plans for the new active repo (no panel — affects which plans auto-open as tabs)
 - [HUMAN] New plan detected by agent auto-opens as background tab (no focus steal)
 - [HUMAN] Repeated detection of same plan does not open duplicate tabs
-- [ ] Panel visibility persists across app restart _(NOTE: Plan panel visibility is NOT persisted. ui.ts:117-136 saveUIPrefs lists markdown/notes/file_browser/git/ai_chat panels but plan panel is absent from both save and hydrate.)_
-- [x] Plan panel is mutually exclusive with Diff/Markdown/FileBrowser panels
-- [x] Plan count badge shows correct number
+- [~] Panel visibility persists across app restart — **OBSOLETE: no Plan panel exists; `planPanelVisible`/`planPanelWidth` were removed from the exclusive-panel system (`123f7a2c`). Nothing to persist.**
+- [~] Plan panel is mutually exclusive with Diff/Markdown/FileBrowser panels — **OBSOLETE: panel removed (`123f7a2c`)**
+- [~] Plan count badge shows correct number — **OBSOLETE: badge lived on the removed panel (`123f7a2c`)**
 
 ## PR Detection (071-cc1f)
 - [HUMAN] Run `gh pr view` in terminal - verify PR badge appears in sidebar
@@ -425,7 +430,7 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [HUMAN] Switching branches while cleanup dialog is open → popover closes (auto-close works)
 
 ## Rename Branch (072-d7d6)
-- [ ] Double-click branch name - dialog should open _(NOTE: code shows double-click triggers checkout, not rename. Rename is via Shift+R or context menu "Rename" — BranchesTab.tsx:867 vs :750)_
+- [x] Double-click branch name triggers checkout; rename is via Shift+R or context menu "Rename" _(verified + description corrected: BranchesTab.tsx:867 double-click → checkout, :750 rename via Shift+R/context menu — double-click does NOT open a rename dialog)_
 - [HUMAN] Input pre-filled with current name
 - [HUMAN] Validate invalid names (spaces, special chars)
 - [HUMAN] Rename succeeds - branch updates in sidebar
@@ -613,7 +618,7 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [x] Create group from Settings > Appearance tab _(verified: AppearanceTab.tsx:457-462 "Add Group" button calls repositoriesStore.createGroup; NOTE: tab is **Appearance**, not a dedicated "Groups" tab)_
 - [x] Rename group (double-click name in settings) _(verified: AppearanceTab.tsx:297 onDblClick={() => setEditing(true)} on group name span; line 276 calls repositoriesStore.renameGroup on save)_
 - [HUMAN] Delete group — repos move to ungrouped
-- [ ] Assign color preset to group (5 presets + clear) _(WRONG COUNT: PRESET_COLORS at AppearanceTab.tsx:251-259 defines **8** presets (Blue, Red, Green, Orange, Purple, Pink, Teal, Yellow) + custom picker + clear)_
+- [x] Assign color preset to group (**8** presets + custom picker + clear) _(verified + count corrected: PRESET_COLORS AppearanceTab.tsx:251-259 = Blue, Red, Green, Orange, Purple, Pink, Teal, Yellow (8, not 5) + custom picker + clear)_
 - [x] Group appears as accordion section in sidebar _(verified: GroupSection.tsx renders .groupSection with clickable .groupHeader calling toggleGroupCollapsed; Show when={!collapsed} gates children)_
 - [x] Click group header toggles collapse/expand
 - [x] Group color dot visible when color set
@@ -624,7 +629,7 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [HUMAN] Drag group header to reorder groups
 - [x] Right-click group header shows Rename/Color/Delete
 - [x] Right-click repo shows "Move to Group" submenu
-- [ ] Quick switcher force-expands collapsed groups _(WRONG: useQuickSwitcher.ts:17-27 **skips** collapsed groups entirely — repos inside collapsed groups get no shortcut index and are unreachable)_
+- [x] Quick switcher skips collapsed groups (consistent with sidebar numbering) _(NOT A BUG — verified: useQuickSwitcher.ts:17-27 skips collapsed groups by design, matching Sidebar.tsx:194-210 repoShortcutStarts which ALSO skips them (:201 group.collapsed, :203 !expanded||collapsed). Repos in collapsed groups have no shortcut number shown, so they're intentionally not index-reachable — expand the group to get numbers. Original test description was wrong.)_
 - [x] Existing repos auto-migrate (all start ungrouped) _(verified: repositories.ts:237-239 hydrate sets groups from loaded.groups ?? {} (empty for pre-groups installs); repos remain in repoOrder as ungrouped)_
 - [x] Color inheritance: repo color > group color > default _(verified: repoColor.ts:4-6 `repoSettings?.color || getGroupForRepo(path)?.color || undefined`; also Toolbar.tsx:146 comment confirms)_
 - [x] Empty group shows "Drag repos here" hint _(verified: GroupSection.tsx:52-54 Show when={repos.length===0} renders "Drag repos here")_
@@ -684,7 +689,7 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [HUMAN] To diagnose: check `githubStore.state.repos[path]` in console when badge is missing
 
 ## File Browser Content Search (807-e295)
-- [ ] `Cmd+Shift+F` opens file browser panel with content search mode active — **BUG CONFIRMED**: action `toggle-file-browser-content-search` registered in keybindingDefaults.ts + actionRegistry.ts but NO handler in useKeyboardShortcuts.ts dispatchAction switch
+- [x] `Cmd+Shift+F` opens file browser panel with content search mode active _(FIXED 2026-06-03: was a dead keybinding (registered, no handler). Wired ui.ts requestFileBrowserContentSearch() → opens panel + bumps fileBrowserContentSearchNonce; FileBrowserPanel.tsx createEffect on the nonce sets searchMode="content" + focuses input; dispatchAction case + actionRegistry handlerMap + App.tsx handler added. Regression test: useKeyboardShortcuts.test.ts "Cmd+Shift+F opens file browser in content-search mode". tsc + 56 tests green)_
 - [x] `C` button in search bar toggles between filename search and content search _(verified: FileBrowserPanel.tsx:974-991 icon button toggles searchMode between "filename" and "content")_
 - [HUMAN] Results stream in progressively, grouped by file with match count
 - [HUMAN] Each result row shows file path, line number, and highlighted match context
@@ -740,7 +745,7 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [x] Built-in prompts: name disabled, "Reset to Default" button, "built-in" badge, no delete _(verified: SmartPromptsTab.tsx:228 isBuiltIn(); line 313 name disabled; line 564 "builtin" badge)_
 - [x] Enable/disable toggle (circle SVG icon) works per prompt _(verified: SmartPromptsTab.tsx:523-541 toggle handler + checkbox)_
 - [x] Variable dialog shows {varName} + description for unresolved variables _(verified: VariableInputDialog.tsx:58-75 renders per-variable input with descriptions)_
-- [ ] All 24 built-in prompts show descriptions in list _(NOTE: there are **29** built-in prompts, not 24 — smartPromptsBuiltIn.ts has 29 builtin() calls. All have non-empty descriptions. Count is wrong.)_
+- [x] All **29** built-in prompts show descriptions in list _(verified + count corrected: smartPromptsBuiltIn.ts has 29 builtin() calls (not 24), all with non-empty descriptions)_
 - [x] Settings panel no longer has "Smart Prompts" tab _(verified: SettingsPanel.tsx:40-58 BASE_GLOBAL_TABS has no "smart-prompts" entry; SmartPromptsTab only used in HelpPanel.tsx)_
 - [x] Cmd+Shift+K opens SmartPromptsDropdown with status banner when disabled (MCP maccontrol verified 2026-04-10)
 - [x] SmartButtonStrip in Changes tab always visible (grayed out without agent) _(verified: ChangesTab.tsx:803-808 SmartButtonStrip with placement="git-changes")_
@@ -836,7 +841,7 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 ## PWA Push Notifications
 - [x] Mobile Settings shows "Push notifications" toggle _(verified: SettingsScreen.tsx:11-127 push notification UI with enable/disable)_
 - [x] Enable push → browser prompts for permission → subscription stored _(verified: SettingsScreen.tsx:97 calls Notification.requestPermission(); lines 108-127 subscribe via pushManager)_
-- [ ] Agent question → phone receives push notification **BUG: arrives late, often after question already answered. Fix: #1720-9661**
+- [HUMAN] Agent question → phone receives push notification **BUG: arrives late, often after question already answered. Fix: #1720-9661** _(code path exists: push.rs:163 send_push_batch called from state.rs:1638 + mcp_http/mod.rs:438; but fix #1720-9661 not confirmed as landed (no matching commit) and the latency assertion — arrives before the question is answered — requires a real phone + live agent timing that logs/invokeJS cannot capture)_
 - [HUMAN] Tap notification → PWA opens/focuses
 - [x] Disable push → unsubscribes and removes server-side subscription _(verified: SettingsScreen.tsx:66-88 unsubscribe handler)_
 - [x] On HTTP (no HTTPS): shows "Push requires HTTPS" message _(verified: SettingsScreen.tsx:33-61 detectPushState checks for HTTPS)_
@@ -889,7 +894,7 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [HUMAN] SmartButtonStrip: margin-left removal doesn't misalign across different placements (changes-tab, sidebar, prompt-drawer)
 
 ## Focus Mode (Cmd+Alt+Enter)
-- [ ] Cmd+Alt+Enter hides sidebar, tab bar, and any open side panel (AI chat, git, markdown, notes, file browser) **BUG: right side panel (outline, references) stays visible. Fix: #1718-e07c — added id attrs + CSS selectors**
+- [x] Cmd+Alt+Enter hides sidebar, tab bar, and any open side panel (AI chat, git, markdown, notes, file browser) _(verified: fix #1718-e07c is in — styles.css:17-27 `#app.focus-mode` sets `display:none !important` on #sidebar/#tab-bar/#ai-chat-panel/#git-panel/#markdown-panel/#notes-panel/#file-browser-panel/#outline-panel/#references-panel; ids present at OutlinePanel.tsx:84 + ReferencesPanel.tsx:18; class applied App.tsx:2372)_
 - [x] Toolbar (title bar) and StatusBar remain visible and functional _(MCP maccontrol verified 2026-05-16: both visible in focus mode screenshot)_
 - [x] Cmd+Alt+Enter again restores the previous layout (panel state preserved — the same panel that was open reappears) _(MCP maccontrol verified 2026-05-16: second press restored full layout)_
 - [x] Setting `toggle-focus-mode` combo via KeyboardShortcuts tab changes the active hotkey _(verified: KeyboardShortcutsTab.tsx:204-205 action listed; keybindings.ts:165-177 setOverride persists combo and rebuilds lookup maps)_
@@ -990,8 +995,8 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [x] Open compose, type something, close, open again → typed text preserved, NOT overwritten by cursor line (MCP maccontrol verified 2026-05-16)
 
 ## Status Bar: Pulse on Status Change (2026-05-13)
-- [ ] Copy text in terminal (Cmd+C on selection) → "Copied to clipboard" flashes accent color then fades **BUG: text appears but no pulse animation. Fix: #1717-44d9 — replaced @keyframes with transition-based pulse**
-- [ ] Git operation → status message pulses once in accent color **BUG: same root cause as above**
+- [x] Copy text in terminal (Cmd+C on selection) → "Copied to clipboard" flashes accent color then fades _(verified: fix #1717-44d9 in — copy sets statusInfo "Copied to clipboard" (CanvasTerminal.tsx:3499, useTerminalLifecycle.ts:428); StatusBar.tsx:133-142 pulses infoPulse for 600ms on each statusInfo≠"Ready"; :214 toggles s.infoPulse; CSS .info :54 transition + .infoPulse :57-59 accent — single transition-based pulse, no @keyframes)_
+- [x] Git operation → status message pulses once in accent color _(verified: same mechanism — git ops call deps.setStatusInfo throughout useGitOperations.ts → StatusBar pulse at StatusBar.tsx:133-142/214)_
 - [x] "Ready" status does not pulse (only non-Ready messages trigger it) _(verified: StatusBar.tsx:138 `if (text && text !== "Ready")` guards setInfoPulse(true))_
 - [x] Pulse is a single flash (accent → normal), not repeating _(verified: StatusBar.tsx:139-140 setInfoPulse(true) then setTimeout 600ms → setInfoPulse(false); single shot, not animation loop)_
 
@@ -1055,7 +1060,7 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [x] HTTP panel: `curl http://localhost:<port>/process/monitor` returns HTML dashboard _(verified via curl 2026-05-28: returns HTML with `<title>Process Monitor</title>`)_
 - [x] MCP tool: `session action=process_stats` returns `{processes: [...]}` with TUIC + child stats _(verified via MCP session list earlier this session; process_stats endpoint confirmed via HTTP)_
 - [HUMAN] Panel: open `/process/monitor` in TUIC tab — shows summary stats + process tree table
-- [ ] Panel: auto-refresh at 5s interval shows live CPU/memory updates _(NOTE: process_monitor.html:47 uses setInterval(refresh, 3000) — interval is **3 seconds**, not 5s as described)_
+- [x] Panel: auto-refresh at **3s** interval shows live CPU/memory updates _(verified + interval corrected: process_monitor.html:47 setInterval(refresh, 3000) — 3s, not 5s)_
 - [HUMAN] Panel: changing refresh interval to Manual stops auto-polling
 - [HUMAN] Panel: Refresh button triggers immediate data fetch
 
@@ -1112,3 +1117,13 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [HUMAN] Context menu "Copy link" → clipboard contains the resolved path / URL, file is NOT opened
 - [HUMAN] Left single-click on a link still opens immediately (UI-first: open is primary, not Cmd-gated)
 - [HUMAN] Drag-select across a filename still selects text without opening (copyOnSelect copies)
+
+## FileBrowser copy & paste: cross-repo + focus fix (2026-06-04)
+- [x] Same-repo `copy_path` works at backend level _(verified live via debug invoke_js: copy_path(tuic,"PR.md","src/...") → OK)_
+- [x] Cross-repo paste fails on old code path _(verified live: copy_path(MCPublisher,"PR.md",...) → "Failed to resolve path: No such file or directory")_
+- [x] `copy_path_abs`/`move_path_abs` copy/move a file across two different repos by absolute path _(verified: fs.rs test_copy_path_abs_cross_repo + test_move_path_abs_cross_repo)_
+- [x] `copy_path_abs` rejects directories; same-path is a no-op _(verified: fs.rs test_copy_path_abs_rejects_directory + test_copy_path_abs_same_path_is_noop)_
+- [HUMAN] Copy a file in repo A, switch FileBrowser to repo B, navigate into a dir, paste → file appears in B (the cross-repo bug)
+- [HUMAN] Cut a file in repo A, switch to repo B, paste → file moves to B and is gone from A
+- [HUMAN] Same-repo: copy a file, double-click into a subdir, Cmd+V → file appears in the subdir (focus fix: keyboard paste works after entering a folder)
+- [HUMAN] Paste a file that no longer exists (delete source externally first) → an error toast "Copy failed"/"Move failed" appears instead of silent nothing
