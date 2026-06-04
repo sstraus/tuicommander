@@ -1478,7 +1478,17 @@ fn parse_suggest_with_line(clean: &str, agent_active: bool) -> Option<(ParsedEve
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    if items.len() < 2 {
+    // Protocol contract: a suggest is a short list of follow-up actions (spec
+    // says exactly 3; the overlay only binds number keys 1–4). Anything larger
+    // means the continuation walk greedily swallowed pipe-heavy content sitting
+    // under the `suggest:` line — markdown table rows or mermaid edges like
+    // `-->|x|` / `||--o{` — which rendered as 20+ garbage numbered chips.
+    // Reject it instead of surfacing a broken overlay.
+    // DEFERRED (2026-06-04) — the deeper cause is the continuation collector
+    // treating any pipe-bearing line as a wrapped item; a tighter fix would
+    // refuse continuation lines that look like diagram/table syntax. The count
+    // cap bounds the damage for now; revisit if a ≤4-item false positive appears.
+    if items.len() < 2 || items.len() > 4 {
         return None;
     }
     // Canonical line includes the fully-joined content (all continuation rows
@@ -3829,6 +3839,25 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         let events = parser.parse("suggest: Run tests | Check logs | Push changes");
         let items = get_suggest(&events).expect("should parse plain-prefix suggest");
         assert_eq!(items, vec!["Run tests", "Check logs", "Push changes"]);
+    }
+
+    #[test]
+    fn test_suggest_rejects_pipe_heavy_diagram_overcollection() {
+        // Regression: a `suggest:` line immediately followed by mermaid /
+        // markdown pipe content (||--o{, table rows) was greedily collected into
+        // 20+ items and rendered as a row of numbered garbage chips. A valid
+        // suggest is ≤4 items, so this must parse to nothing.
+        let mut parser = OutputParser::new();
+        let events = parser.parse(
+            "suggest: A | B | C\n\
+             software_product ||--o{ software_signature | product_id\n\
+             software_version ||--o{ product_risk | product_id, version\n\
+             file_artifact ||--o{ software_instance | sha256\n",
+        );
+        assert!(
+            get_suggest(&events).is_none(),
+            "pipe-heavy continuation must not parse as a suggest"
+        );
     }
 
     #[test]
