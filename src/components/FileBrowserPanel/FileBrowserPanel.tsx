@@ -8,6 +8,7 @@ import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
 import { markInternalDragEnd, markInternalDragStart, startNativeDrag } from "../../stores/dragDrop";
 import { repositoriesStore } from "../../stores/repositories";
+import { toastsStore } from "../../stores/toasts";
 import { uiStore } from "../../stores/ui";
 import type { ContentMatch, DirEntry } from "../../types/fs";
 import { cx } from "../../utils";
@@ -107,8 +108,14 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	/** Parent dir the new item is created in, relative to root(). "" = root. */
 	const [createParent, setCreateParent] = createSignal<string>("");
 
-	// File clipboard state for copy/cut/paste
-	const [clipboard, setClipboard] = createSignal<{ entry: DirEntry; mode: "copy" | "cut" } | null>(null);
+	// File clipboard state for copy/cut/paste. `sourceRoot` is the repo the entry
+	// was copied from — captured so paste works across different repos (entry.path
+	// is relative to its own repo, not the paste destination's).
+	const [clipboard, setClipboard] = createSignal<{
+		entry: DirEntry;
+		mode: "copy" | "cut";
+		sourceRoot: string;
+	} | null>(null);
 
 	// Search mode: "filename" (default) or "content" (full-text grep)
 	type SearchMode = "filename" | "content";
@@ -137,7 +144,23 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	// component-scoped map survives. (#72)
 	const rootToSubdir = new Map<string, string>();
 	let contentRef: HTMLDivElement | undefined;
+	let searchInputRef: HTMLInputElement | undefined;
 	let pendingScrollRestore: string | null = null;
+
+	// Cmd+Shift+F (toggle-file-browser-content-search) bumps this nonce. Enter
+	// content-search mode and focus the input. Guard the initial 0 so a fresh
+	// mount doesn't force content mode; the panel instance persists (hidden via
+	// CSS, not unmounted) so this fires even when re-triggered while open.
+	createEffect(() => {
+		const nonce = uiStore.state.fileBrowserContentSearchNonce;
+		if (nonce === 0) return;
+		if (untrack(searchMode) !== "content") {
+			setSearchMode("content");
+			setSearchResults([]); // clear filename-mode results
+			setSelectedIndex(0);
+		}
+		requestAnimationFrame(() => searchInputRef?.focus());
+	});
 
 	const changeSubdir = (newSubdir: string) => {
 		if (contentRef) {
@@ -145,6 +168,11 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		}
 		pendingScrollRestore = newSubdir;
 		setCurrentSubdir(newSubdir);
+		// Keep keyboard focus in the panel after navigating into a directory. Entry
+		// rows aren't focusable in WebKit, so a click never grants the panel focus —
+		// without this, Cmd+C/X/V (which require panel focus, line ~919) silently
+		// no-op after entering a folder.
+		document.getElementById("file-browser-panel")?.focus();
 	};
 
 	// Tree view state
@@ -585,33 +613,47 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	};
 
 	const handleCopy = (entry: DirEntry) => {
-		setClipboard({ entry, mode: "copy" });
+		const r = root();
+		if (!r) return;
+		setClipboard({ entry, mode: "copy", sourceRoot: r });
 	};
 
 	const handleCut = (entry: DirEntry) => {
-		setClipboard({ entry, mode: "cut" });
+		const r = root();
+		if (!r) return;
+		setClipboard({ entry, mode: "cut", sourceRoot: r });
 	};
 
 	const handlePaste = async () => {
 		const clip = clipboard();
-		if (!clip || !root()) return;
+		const destRoot = root();
+		if (!clip || !destRoot) return;
 		const destDir = currentSubdir() === "." ? "" : `${currentSubdir()}/`;
-		const destPath = `${destDir}${clip.entry.name}`;
+		const destRel = `${destDir}${clip.entry.name}`;
 
-		// Avoid pasting onto itself
-		if (destPath === clip.entry.path) return;
+		// Resolve to absolute paths so paste works across different repos: the
+		// source belongs to clip.sourceRoot, the destination to the current repo.
+		const fromAbs = joinPath(clip.sourceRoot, clip.entry.path);
+		const toAbs = joinPath(destRoot, destRel);
+
+		// Avoid pasting a file onto itself
+		if (fromAbs === toAbs) return;
 
 		try {
 			if (clip.mode === "copy") {
-				await fb.copyPath(root()!, clip.entry.path, destPath);
+				await fb.copyPathAbs(fromAbs, toAbs);
 			} else {
-				// Cut = rename (move)
-				await fb.renamePath(root()!, clip.entry.path, destPath);
+				await fb.movePathAbs(fromAbs, toAbs);
 				setClipboard(null);
 			}
 			refresh();
 		} catch (err) {
 			appLogger.error("app", `Failed to ${clip.mode === "copy" ? "copy" : "move"}`, err);
+			toastsStore.add(
+				clip.mode === "copy" ? t("fileBrowser.copyFailed", "Copy failed") : t("fileBrowser.moveFailed", "Move failed"),
+				String(err),
+				"error",
+			);
 		}
 	};
 
@@ -1025,6 +1067,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 					</Show>
 				</button>
 				<input
+					ref={searchInputRef}
 					type="text"
 					class={p.searchInput}
 					data-focus-target="file-browser-search"
@@ -1305,7 +1348,10 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 												entry.is_dir && s.entryDir,
 												selectedIndex() === index() && s.entrySelected,
 												entry.is_ignored && s.entryIgnored,
-												clipboard()?.mode === "cut" && clipboard()?.entry.path === entry.path && s.entryCut,
+												clipboard()?.mode === "cut" &&
+													clipboard()?.sourceRoot === root() &&
+													clipboard()?.entry.path === entry.path &&
+													s.entryCut,
 											)}
 											data-drop-target={entry.is_dir ? "folder" : undefined}
 											data-abs-path={entry.is_dir ? absPath() : undefined}

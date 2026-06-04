@@ -42,6 +42,16 @@ export function useFileBrowser() {
 		await invoke("copy_path", { repoPath, from, to });
 	}
 
+	/** Copy a file by absolute paths — supports pasting across different repos. */
+	async function copyPathAbs(from: string, to: string): Promise<void> {
+		await invoke("copy_path_abs", { from, to });
+	}
+
+	/** Move a file by absolute paths — supports cut+paste across different repos. */
+	async function movePathAbs(from: string, to: string): Promise<void> {
+		await invoke("move_path_abs", { from, to });
+	}
+
 	async function addToGitignore(repoPath: string, pattern: string): Promise<void> {
 		await invoke("add_to_gitignore", { repoPath, pattern });
 	}
@@ -77,6 +87,8 @@ export function useFileBrowser() {
 		deletePath,
 		renamePath,
 		copyPath,
+		copyPathAbs,
+		movePathAbs,
 		addToGitignore,
 		searchContent,
 		onContentSearchBatch,

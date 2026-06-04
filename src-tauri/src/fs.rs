@@ -1171,6 +1171,60 @@ pub fn copy_path(repo_path: String, from: String, to: String) -> Result<(), Stri
     Ok(())
 }
 
+/// Copy a file by absolute source/destination paths.
+///
+/// Unlike [`copy_path`] (repo-scoped), this supports **cross-repo paste**: the
+/// FileBrowser captures the source repo root at copy time, so a file can be
+/// pasted from one registered repo into another. TUIC is a local tool — the
+/// user is the trust boundary — so any path the user can already see is allowed
+/// (mirrors `read_external_file`).
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn copy_path_abs(from: String, to: String) -> Result<(), String> {
+    let from_path = PathBuf::from(&from);
+    let to_path = PathBuf::from(&to);
+    if from_path == to_path {
+        return Ok(());
+    }
+    let canonical_from = from_path
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve source: {e}"))?;
+    if canonical_from.is_dir() {
+        return Err("Cannot copy directories. Only files can be copied.".to_string());
+    }
+    std::fs::copy(&canonical_from, &to_path).map_err(|e| format!("Failed to copy file: {e}"))?;
+    Ok(())
+}
+
+/// Move/rename a file by absolute source/destination paths (cross-repo cut+paste).
+///
+/// Falls back to copy+remove when `rename` fails across filesystems (EXDEV).
+/// See [`copy_path_abs`] for the trust-boundary rationale.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub fn move_path_abs(from: String, to: String) -> Result<(), String> {
+    let from_path = PathBuf::from(&from);
+    let to_path = PathBuf::from(&to);
+    if from_path == to_path {
+        return Ok(());
+    }
+    let canonical_from = from_path
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve source: {e}"))?;
+    if canonical_from.is_dir() {
+        return Err("Cannot move directories. Only files can be moved.".to_string());
+    }
+    match std::fs::rename(&canonical_from, &to_path) {
+        Ok(()) => Ok(()),
+        Err(_) => {
+            // Cross-filesystem move (EXDEV): rename is rejected, so copy then remove.
+            std::fs::copy(&canonical_from, &to_path)
+                .map_err(|e| format!("Failed to move file: {e}"))?;
+            std::fs::remove_file(&canonical_from)
+                .map_err(|e| format!("Failed to remove source after move: {e}"))?;
+            Ok(())
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // fs_transfer_paths — drag-drop move/copy from OS filesystem into a target dir.
 // ---------------------------------------------------------------------------
@@ -1792,6 +1846,64 @@ mod tests {
             "../escaped.rs".to_string(),
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_copy_path_abs_cross_repo() {
+        let src = setup_test_repo();
+        let dst = setup_test_repo();
+        let from = src.path().join("main.rs").to_string_lossy().to_string();
+        let to = dst.path().join("copied.rs").to_string_lossy().to_string();
+
+        copy_path_abs(from, to).unwrap();
+
+        assert!(
+            dst.path().join("copied.rs").exists(),
+            "file copied into dst repo"
+        );
+        assert!(src.path().join("main.rs").exists(), "source preserved");
+    }
+
+    #[test]
+    fn test_copy_path_abs_rejects_directory() {
+        let src = setup_test_repo();
+        let dst = setup_test_repo();
+        let from = src.path().join("src").to_string_lossy().to_string();
+        let to = dst.path().join("src_copy").to_string_lossy().to_string();
+
+        assert!(
+            copy_path_abs(from, to).is_err(),
+            "directories cannot be copied"
+        );
+    }
+
+    #[test]
+    fn test_copy_path_abs_same_path_is_noop() {
+        let src = setup_test_repo();
+        let p = src.path().join("main.rs").to_string_lossy().to_string();
+
+        copy_path_abs(p.clone(), p).unwrap();
+
+        assert!(src.path().join("main.rs").exists());
+    }
+
+    #[test]
+    fn test_move_path_abs_cross_repo() {
+        let src = setup_test_repo();
+        let dst = setup_test_repo();
+        let from = src.path().join("main.rs").to_string_lossy().to_string();
+        let to = dst.path().join("moved.rs").to_string_lossy().to_string();
+
+        move_path_abs(from, to).unwrap();
+
+        assert!(
+            dst.path().join("moved.rs").exists(),
+            "file moved into dst repo"
+        );
+        assert!(
+            !src.path().join("main.rs").exists(),
+            "source removed after move"
+        );
     }
 
     #[test]

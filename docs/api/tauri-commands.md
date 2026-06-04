@@ -403,6 +403,8 @@ Uses incremental parsing with a file-size-based cache (`claude-usage-cache.json`
 | `delete_path` | `path` | `()` | Delete file or directory |
 | `rename_path` | `src, dest` | `()` | Rename/move path |
 | `copy_path` | `src, dest` | `()` | Copy file or directory |
+| `copy_path_abs` | `from, to` | `()` | Copy a file by absolute paths (cross-repo paste). Rejects directories. |
+| `move_path_abs` | `from, to` | `()` | Move a file by absolute paths (cross-repo cut+paste); copy+remove fallback across filesystems. |
 | `fs_transfer_paths` | `destDir, paths, mode ("move"\|"copy"), allowRecursive` | `TransferResult { moved, skipped, errors, needs_confirm }` | Move/copy OS paths into a destination directory. Skips silently on name conflicts; returns `needs_confirm=true` (no-op) when a source is a directory and `allowRecursive=false`. Used by the drag-drop handler when dropping files onto a folder in the file browser. |
 | `add_to_gitignore` | `path, pattern` | `()` | Add pattern to .gitignore |
 | `search_files` | `path, query` | `Vec<SearchResult>` | Search files by name in directory |
