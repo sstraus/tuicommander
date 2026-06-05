@@ -1154,3 +1154,12 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 ## PrDetailPopover: footer buttons aligned to PR panel (2026-06-05)
 - [x] View Diff / GitHub / Merge buttons restyled to `.ghActionBtn` language: compact (font-xs, 4px/12px, radius-sm), transparent bg, wrap layout, accent border-glow on hover _(verified: PrDetailPopover.module.css; PrDetailPopover.test.tsx 39 tests pass)_
 - [VISUAL] Open PR detail popover: footer buttons match the GitHub PR panel buttons in size/border/hover; no always-on filled background — screenshot after rebuild
+
+## CanvasTerminal: right-click link menu under mouse-reporting (2026-06-05)
+- [x] mousedown no longer preventDefaults a right-click that lands on a detected link while an app has mouse reporting on (mouseMode>0) — lets the contextmenu (Open/Copy link) fire _(verified: CanvasTerminal.tsx mousedown `e.button === 2 && detectedLinks.get(pos.row)?.some(...)` early-return before forward/preventDefault; tsc+biome green)_
+- [HUMAN] Rebuild, run Claude Code (or any TUI with mouse reporting) in a pane, right-click a URL/file link in its output → Open / Copy link menu appears. Root cause was WKWebView suppressing `contextmenu` after a preventDefault'd right-button mousedown; needs a live macOS WKWebView run to confirm (debug server was off, no static repro).
+- [HUMAN] Regression check: right-click OUTSIDE a link (still under mouse reporting) keeps prior behavior; left-click/drag forwarding to the app unchanged.
+
+## Global Workspace: terminal hidden after repo round-trip (2026-06-05)
+- [x] activate() restores focus to a promoted terminal after restoring the layout — TerminalArea gates pane visibility on terminalsStore.activeId, which a repo switch reset to a repo terminal _(verified: globalWorkspace.ts activate() setActive(target); regression test "activate restores focus to a promoted terminal" fails without fix, passes with it; 40/40 globalWorkspace tests)_
+- [HUMAN] Live: activate Global Workspace, configure (promote terminals), switch to another repo, switch back, click Global Workspace → the workspace terminal/split appears immediately (no need to click a tab first).

@@ -164,6 +164,15 @@ function createGlobalWorkspaceStore() {
 			// Restore global layout (or reset if none)
 			if (layout) {
 				paneLayoutStore.restore(layout);
+				// Restore focus to a promoted terminal too. TerminalArea gates pane
+				// visibility on terminalsStore.activeId, so without this the workspace
+				// shows no terminal until the user clicks a tab — e.g. after a repo
+				// round-trip, which reset activeId to a repo terminal. Mirrors
+				// handleBranchSelect, which setActive()s after restoring a layout.
+				const activeGroup = layout.activeGroupId ? layout.groups[layout.activeGroupId] : undefined;
+				const activeTab = activeGroup?.activeTabId;
+				const target = activeTab && promoted.has(activeTab) ? activeTab : [...promoted][0];
+				if (target) terminalsStore.setActive(target);
 			} else {
 				paneLayoutStore.reset();
 			}

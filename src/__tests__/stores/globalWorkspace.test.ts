@@ -300,6 +300,30 @@ describe("globalWorkspaceStore", () => {
 			});
 		});
 
+		it("activate restores focus to a promoted terminal (pane shows without a tab click)", () => {
+			testInScope(() => {
+				// Regression: after a repo round-trip, activeId points at a repo terminal.
+				// Re-activating the workspace must focus a promoted terminal, otherwise
+				// TerminalArea (which gates pane visibility on activeId) shows no terminal
+				// until the user clicks a tab.
+				const repoTerm = terminalsStore.add(makeTerminal({ name: "repo" }));
+				const wsTerm = terminalsStore.add(makeTerminal({ name: "ws" }));
+				store.setLayout({
+					root: { type: "leaf", id: "g10" },
+					groups: { g10: { id: "g10", tabs: [{ id: wsTerm, type: "terminal" }], activeTabId: wsTerm } },
+					activeGroupId: "g10",
+				});
+				store.promote(wsTerm);
+
+				// Simulate having returned to a repo: the active terminal is NOT promoted.
+				terminalsStore.setActive(repoTerm);
+				expect(terminalsStore.state.activeId).toBe(repoTerm);
+
+				store.activate("/repo\0main");
+				expect(terminalsStore.state.activeId).toBe(wsTerm);
+			});
+		});
+
 		it("activate saves single-pane repo layout (not just split)", () => {
 			testInScope(() => {
 				// Restore a single-pane layout directly (mirrors real usage: one terminal, no split)
