@@ -30,6 +30,47 @@ pub(crate) fn resolve_archive_script(repo_path: &str) -> Option<String> {
     None
 }
 
+/// Classification of a failed `git worktree add` based on its stderr, used to
+/// decide how `create_worktree_internal` should recover.
+///
+/// Git emits several distinct "already exists" failures from `worktree add` and
+/// they require different handling — a single `contains("already exists")` guard
+/// conflates them and can swallow a hard failure as success.
+#[derive(Debug, PartialEq, Eq)]
+enum WorktreeAddFailure {
+    /// The destination PATH (or registered worktree) already exists / is already
+    /// checked out / already used by another worktree. A real worktree directory
+    /// may genuinely exist here → caller may treat it as idempotent, but MUST
+    /// verify the directory is present before returning Ok.
+    PathExists,
+    /// A branch with the requested name already exists, so `-b <branch>` failed.
+    /// No worktree directory was created → caller must recover (retry without
+    /// `-b` to check the existing branch out into a new worktree).
+    BranchExists,
+    /// Any other failure → propagate as an error.
+    Other,
+}
+
+/// Classify a `git worktree add` failure from its stderr. Pure function so the
+/// branching logic can be unit-tested without invoking real git.
+fn classify_worktree_add_failure(stderr: &str) -> WorktreeAddFailure {
+    // Branch collision: git says e.g. "fatal: a branch named 'X' already exists".
+    // Check this FIRST — it also contains "already exists", so the broader
+    // path-exists check below would otherwise misclassify it.
+    if stderr.contains("a branch named") && stderr.contains("already exists") {
+        return WorktreeAddFailure::BranchExists;
+    }
+    // Path / worktree already present: "'<path>' already exists",
+    // "is already checked out", "already used by worktree".
+    if stderr.contains("already exists")
+        || stderr.contains("already checked out")
+        || stderr.contains("already used by worktree")
+    {
+        return WorktreeAddFailure::PathExists;
+    }
+    WorktreeAddFailure::Other
+}
+
 /// Parse `git worktree list --porcelain` output and return the worktree path
 /// for the given branch name, if any.
 fn find_worktree_path_for_branch(stdout: &str, branch_name: &str) -> Option<PathBuf> {
@@ -199,31 +240,69 @@ pub(crate) fn create_worktree_internal(
     let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     match git_cmd(&base_repo_path).args(&args_str).run() {
         Ok(_) => {}
-        Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. })
-            if stderr.contains("already exists") || stderr.contains("already checked out") =>
-        {
-            let actual_branch = crate::git::read_branch_from_head(&worktree_path);
-            // Mirror the earlier idempotent-path STALE_DIR check: only treat a
-            // KNOWN-mismatched branch as stale. Detached HEAD (None) is preserved
-            // as transient state. Use the same STALE_DIR_PREFIX so the recovery
-            // path in `create_worktree` (background cleanup + retry) handles it.
-            if let Some(ref expected) = config.branch
-                && let Some(ref actual) = actual_branch
-                && actual.as_str() != expected.as_str()
-            {
-                return Err(format!(
-                    "{STALE_DIR_PREFIX} directory '{}' already exists and is checked out on branch '{}', not '{}'",
-                    worktree_path.display(),
-                    actual,
-                    expected,
-                ));
+        Err(crate::git_cli::GitError::NonZeroExit { ref stderr, .. }) => {
+            match classify_worktree_add_failure(stderr) {
+                WorktreeAddFailure::BranchExists => {
+                    // `-b <branch>` failed because the branch already exists, but
+                    // NO worktree was created. The user intent ("give me a worktree
+                    // for this branch") is still satisfiable: retry without `-b` to
+                    // check the existing branch out into a fresh worktree. Only
+                    // reachable when create_branch && branch is Some (that's the
+                    // only way `-b` was passed), so `branch` is guaranteed present.
+                    let branch = config
+                        .branch
+                        .as_ref()
+                        .expect("BranchExists implies -b was passed, so branch is Some");
+                    let retry_args = [
+                        "worktree",
+                        "add",
+                        &worktree_path.to_string_lossy(),
+                        branch.as_str(),
+                    ];
+                    if let Err(e) = git_cmd(&base_repo_path).args(retry_args).run() {
+                        return Err(format!(
+                            "Git worktree failed: branch '{branch}' already exists and could not be checked out into a new worktree: {e}"
+                        ));
+                    }
+                    // Retry creates the dir at config.branch — fall through to the
+                    // success return below.
+                }
+                WorktreeAddFailure::PathExists => {
+                    // A path/worktree already exists. Defensive fail-loud: only treat
+                    // this as idempotent if the directory is genuinely present on disk.
+                    if !worktree_path.exists() {
+                        return Err(format!(
+                            "Git worktree failed: git reported '{}' already exists but no worktree directory is present: {stderr}",
+                            worktree_path.display(),
+                        ));
+                    }
+                    let actual_branch = crate::git::read_branch_from_head(&worktree_path);
+                    // Mirror the earlier idempotent-path STALE_DIR check: only treat a
+                    // KNOWN-mismatched branch as stale. Detached HEAD (None) is preserved
+                    // as transient state. Use the same STALE_DIR_PREFIX so the recovery
+                    // path in `create_worktree` (background cleanup + retry) handles it.
+                    if let Some(ref expected) = config.branch
+                        && let Some(ref actual) = actual_branch
+                        && actual.as_str() != expected.as_str()
+                    {
+                        return Err(format!(
+                            "{STALE_DIR_PREFIX} directory '{}' already exists and is checked out on branch '{}', not '{}'",
+                            worktree_path.display(),
+                            actual,
+                            expected,
+                        ));
+                    }
+                    return Ok(WorktreeInfo {
+                        name: worktree_name,
+                        path: worktree_path,
+                        branch: actual_branch.or_else(|| config.branch.clone()),
+                        base_repo: PathBuf::from(&config.base_repo),
+                    });
+                }
+                WorktreeAddFailure::Other => {
+                    return Err(format!("Git worktree failed: git exited with: {stderr}"));
+                }
             }
-            return Ok(WorktreeInfo {
-                name: worktree_name,
-                path: worktree_path,
-                branch: actual_branch.or_else(|| config.branch.clone()),
-                base_repo: PathBuf::from(&config.base_repo),
-            });
         }
         Err(e) => return Err(format!("Git worktree failed: {e}")),
     }
@@ -1860,6 +1939,92 @@ mod tests {
 
         assert_eq!(first.path, second.path);
         assert_eq!(second.branch, Some("feature/x".to_string()));
+    }
+
+    #[test]
+    fn test_classify_worktree_add_failure() {
+        // Branch collision must win over the broad "already exists" substring.
+        assert_eq!(
+            classify_worktree_add_failure("fatal: a branch named 'feature/x' already exists"),
+            WorktreeAddFailure::BranchExists
+        );
+        // Path already exists.
+        assert_eq!(
+            classify_worktree_add_failure("fatal: '/tmp/wt/foo' already exists"),
+            WorktreeAddFailure::PathExists
+        );
+        // Already checked out by another worktree.
+        assert_eq!(
+            classify_worktree_add_failure(
+                "fatal: 'feature/x' is already checked out at '/tmp/wt/foo'"
+            ),
+            WorktreeAddFailure::PathExists
+        );
+        // Already used by worktree.
+        assert_eq!(
+            classify_worktree_add_failure(
+                "fatal: '/tmp/wt/foo' is already used by worktree at '/tmp/wt/bar'"
+            ),
+            WorktreeAddFailure::PathExists
+        );
+        // Unrelated failure.
+        assert_eq!(
+            classify_worktree_add_failure("fatal: invalid reference: nope"),
+            WorktreeAddFailure::Other
+        );
+    }
+
+    #[test]
+    fn test_create_worktree_orphan_branch_no_worktree_recovers() {
+        // The confirmed bug: a branch exists but has NO linked worktree (left over
+        // after worktree_remove with delete_branch=false). A fresh create for that
+        // branch hits "a branch named 'X' already exists". The fix must NOT swallow
+        // this as a phantom Ok — it must either produce a REAL worktree or Err,
+        // but never return Ok with a non-existent path.
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        // 1. Create branch B with a worktree.
+        let config = WorktreeConfig {
+            task_name: "orphan-task".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: Some("orphan-branch".to_string()),
+            create_branch: true,
+        };
+        let wt = create_worktree_internal(&worktrees_dir, &config, None)
+            .expect("First create should succeed");
+
+        // 2. Remove the worktree but PRESERVE the branch (delete_branch=false path).
+        remove_worktree_internal(&wt, true).expect("remove should succeed");
+        assert!(
+            !wt.path.exists(),
+            "worktree dir should be gone after removal"
+        );
+        // Branch still exists (we never deleted it).
+
+        // 3. Create again for the same branch → `-b` fails "branch already exists".
+        let result = create_worktree_internal(&worktrees_dir, &config, None);
+
+        // Invariant: never Ok with a missing path.
+        match result {
+            Ok(info) => {
+                assert!(
+                    info.path.exists(),
+                    "create returned Ok but worktree path does not exist: {}",
+                    info.path.display()
+                );
+                // It must be a REAL linked worktree checked out on the branch.
+                assert_eq!(
+                    crate::git::read_branch_from_head(&info.path).as_deref(),
+                    Some("orphan-branch"),
+                    "recovered worktree should be on the existing branch"
+                );
+            }
+            Err(e) => {
+                // Failing loud is acceptable; silently-Ok-with-no-dir is not.
+                assert!(!e.is_empty(), "error must carry git stderr context");
+            }
+        }
     }
 
     #[test]
