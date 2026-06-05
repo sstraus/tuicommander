@@ -54,6 +54,7 @@ export interface GitOperationsDeps {
 			baseRef?: string,
 		) => Promise<{ status: "ok" | "pending"; name: string; path: string; branch: string; base_repo: string }>;
 		renameBranch: (repoPath: string, oldName: string, newName: string) => Promise<void>;
+		createBranch: (repoPath: string, name: string, startPoint: string | null, checkout: boolean) => Promise<void>;
 		generateWorktreeName: (existingNames: string[]) => Promise<string>;
 		generateCloneBranchName: (sourceBranch: string, existingNames: string[]) => Promise<string>;
 		listBaseRefOptions: (repoPath: string) => Promise<import("./useRepository").BaseRefOption[]>;
@@ -112,6 +113,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
 	const [currentBranch, setCurrentBranch] = createSignal<string | null>(null);
 	const [repoStatus, setRepoStatus] = createSignal<"clean" | "dirty" | "conflict" | "merge" | "unknown">("unknown");
 	const [branchToRename, setBranchToRename] = createSignal<{ repoPath: string; branchName: string } | null>(null);
+	const [branchToCreate, setBranchToCreate] = createSignal<{ repoPath: string; startPoint: string | null } | null>(
+		null,
+	);
 	const [creatingWorktreeRepos, setCreatingWorktreeRepos] = createSignal<Set<string>>(new Set());
 	// Key: `${repoPath}::${branchName}` — prevents concurrent remove calls for same branch
 	const [removingBranches, setRemovingBranches] = createSignal<Set<string>>(new Set());
@@ -1054,6 +1058,23 @@ export function useGitOperations(deps: GitOperationsDeps) {
 		setBranchToRename({ repoPath, branchName });
 	};
 
+	const handleOpenCreateBranchDialog = (repoPath: string, startPoint?: string | null) => {
+		setBranchToCreate({ repoPath, startPoint: startPoint ?? null });
+	};
+
+	const handleCreateBranch = async (name: string, checkout: boolean) => {
+		const target = branchToCreate();
+		if (!target) return;
+
+		// Throw on failure so the dialog can surface the error inline.
+		await deps.repo.createBranch(target.repoPath, name, target.startPoint, checkout);
+
+		repositoriesStore.setBranch(target.repoPath, name, {});
+		if (checkout) setCurrentBranch(name);
+		deps.setStatusInfo(`Created branch ${name}${checkout ? " (checked out)" : ""}`);
+		void refreshAllBranchStats();
+	};
+
 	const handleRenameBranch = async (oldName: string, newName: string) => {
 		const branch = branchToRename();
 		if (!branch) return;
@@ -1938,6 +1959,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
 		handleRemoveBranch,
 		handleOpenRenameBranchDialog,
 		handleRenameBranch,
+		branchToCreate,
+		setBranchToCreate,
+		handleOpenCreateBranchDialog,
+		handleCreateBranch,
 		activeWorktreePath,
 		activeRunCommand,
 		handleAddRepo,

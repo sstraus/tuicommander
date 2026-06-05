@@ -345,25 +345,25 @@
   color: var(--warning);
 }
 
-/* View Diff action button */
+/* Footer action buttons — aligned to the GitHub PR panel's `.ghActionBtn` language:
+ * compact, transparent background, natural width, wrap, accent border-glow on hover. */
 .actions {
   display: flex;
-  gap: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
   padding: 8px 12px;
   border-top: 1px solid var(--border);
 }
 
 .viewDiffBtn {
-  flex: 1;
-  padding: 6px 12px;
-  font-size: var(--font-sm);
-  font-weight: 600;
-  border-radius: var(--radius-md);
+  padding: 4px 12px;
+  font-size: var(--font-xs);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
-  background: var(--bg-tertiary);
+  background: none;
   color: var(--fg-secondary);
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
 }
 
 .viewDiffBtn:hover {
@@ -378,21 +378,19 @@
 }
 
 .mergeBtn {
-  flex: 1;
-  padding: 6px 12px;
-  font-size: var(--font-sm);
-  font-weight: 600;
-  border-radius: var(--radius-md);
+  padding: 4px 12px;
+  font-size: var(--font-xs);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--success);
-  background: rgba(63, 185, 80, 0.12);
+  background: none;
   color: var(--success);
   cursor: pointer;
-  transition: background 0.1s, color 0.1s;
+  transition: background 0.1s, color 0.1s, border-color 0.1s;
 }
 
 .mergeBtn:hover {
   background: var(--success);
-  color: var(--bg-primary);
+  color: var(--text-on-success);
 }
 
 .mergeBtn:disabled {

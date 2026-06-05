@@ -8,7 +8,8 @@ export type PrNotificationType =
 	| "ci_failed"
 	| "ci_recovered"
 	| "changes_requested"
-	| "ready";
+	| "ready"
+	| "review_started";
 
 export interface PrNotification {
 	id: string;

@@ -35,6 +35,7 @@ describe("useGitOperations", () => {
 		removeWorktree: vi.fn().mockResolvedValue(undefined),
 		createWorktree: vi.fn(),
 		renameBranch: vi.fn().mockResolvedValue(undefined),
+		createBranch: vi.fn().mockResolvedValue(undefined),
 		generateWorktreeName: vi.fn().mockResolvedValue("bold-nexus-042"),
 		generateCloneBranchName: vi.fn().mockResolvedValue("feat-auth--bold-nexus-042"),
 		listBaseRefOptions: vi.fn().mockResolvedValue([{ name: "main", kind: "local", is_default: true }]),
@@ -629,6 +630,30 @@ describe("useGitOperations", () => {
 			expect(repositoriesStore.get("/repo")?.branches["new-name"]).toBeDefined();
 			expect(repositoriesStore.get("/repo")?.branches["old-name"]).toBeUndefined();
 			expect(gitOps.currentBranch()).toBe("new-name");
+		});
+	});
+
+	describe("handleCreateBranch", () => {
+		it("creates a branch in backend + store and checks it out when requested", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			gitOps.setBranchToCreate({ repoPath: "/repo", startPoint: "main" });
+
+			await gitOps.handleCreateBranch("feat/new", true);
+
+			expect(mockRepo.createBranch).toHaveBeenCalledWith("/repo", "feat/new", "main", true);
+			expect(repositoriesStore.get("/repo")?.branches["feat/new"]).toBeDefined();
+			expect(gitOps.currentBranch()).toBe("feat/new");
+		});
+
+		it("does not switch the current branch when checkout is false", async () => {
+			repositoriesStore.add({ path: "/repo2", displayName: "Repo2" });
+			gitOps.setBranchToCreate({ repoPath: "/repo2", startPoint: null });
+			gitOps.setCurrentBranch("main");
+
+			await gitOps.handleCreateBranch("feat/x", false);
+
+			expect(mockRepo.createBranch).toHaveBeenCalledWith("/repo2", "feat/x", null, false);
+			expect(gitOps.currentBranch()).toBe("main");
 		});
 	});
 

@@ -40,6 +40,7 @@ const NOTIFICATION_LABELS: Record<PrNotificationType, { label: string; icon: str
 	ci_recovered: { label: "CI Passed", icon: "\u2714", cls: s.notifReady },
 	changes_requested: { label: "Changes Req.", icon: "\u270E", cls: s.notifChanges },
 	ready: { label: "Ready", icon: "\u2713", cls: s.notifReady },
+	review_started: { label: "Reviewing", icon: "▶", cls: s.notifReady },
 };
 
 // ---------------------------------------------------------------------------

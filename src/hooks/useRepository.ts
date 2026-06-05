@@ -65,6 +65,16 @@ export function useRepository() {
 		await invoke("rename_branch", { path: repoPath, oldName, newName });
 	}
 
+	/** Create a new git branch (optionally checking it out). */
+	async function createBranch(
+		repoPath: string,
+		name: string,
+		startPoint: string | null,
+		checkout: boolean,
+	): Promise<void> {
+		await invoke("create_branch", { path: repoPath, name, startPoint, checkout });
+	}
+
 	/** Get diff stats (additions/deletions) for a repository */
 	async function getDiffStats(path: string, scope?: string): Promise<{ additions: number; deletions: number }> {
 		try {
@@ -369,6 +379,7 @@ export function useRepository() {
 		getDiffStats,
 		openInApp,
 		renameBranch,
+		createBranch,
 		removeWorktree,
 		createWorktree,
 		getWorktreePaths,

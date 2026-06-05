@@ -1,6 +1,8 @@
 import { type Component, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { invoke, listen } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
+import { promptLibraryStore } from "../../stores/promptLibrary";
+import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
 import s from "./WatcherManager.module.css";
 
@@ -11,11 +13,23 @@ type WatcherTrigger =
 	| { type: "question"; confident_only: boolean }
 	| { type: "error" }
 	| { type: "unseen" }
-	| { type: "pattern"; regex: string };
+	| { type: "pattern"; regex: string }
+	| { type: "pr_pushed"; authored_by_others: boolean }
+	| { type: "pr_opened"; authored_by_others: boolean };
 
-type WatcherTriggerKey = "idle" | "busy" | "command_done" | "command_done_fail" | "question" | "error" | "unseen";
+type WatcherTriggerKey =
+	| "idle"
+	| "busy"
+	| "command_done"
+	| "command_done_fail"
+	| "question"
+	| "error"
+	| "unseen"
+	| "pr_pushed"
+	| "pr_opened";
 
-const TRIGGER_MAP: Record<WatcherTriggerKey, WatcherTrigger> = {
+/** Static triggers (the dynamic PR-trigger authored_by_others is set at submit). */
+const TRIGGER_MAP: Record<Exclude<WatcherTriggerKey, "pr_pushed" | "pr_opened">, WatcherTrigger> = {
 	idle: { type: "idle" },
 	busy: { type: "busy" },
 	command_done: { type: "command_done", on_failure_only: false },
@@ -24,6 +38,27 @@ const TRIGGER_MAP: Record<WatcherTriggerKey, WatcherTrigger> = {
 	error: { type: "error" },
 	unseen: { type: "unseen" },
 };
+
+/** PR triggers are git-scoped, not terminal triggers. Drive the repo/author UI. */
+export const isGitTrigger = (key: WatcherTriggerKey): boolean => key === "pr_pushed" || key === "pr_opened";
+
+export function buildTrigger(key: WatcherTriggerKey, authoredByOthers: boolean): WatcherTrigger {
+	if (key === "pr_pushed" || key === "pr_opened") return { type: key, authored_by_others: authoredByOthers };
+	return TRIGGER_MAP[key];
+}
+
+/** A watcher form is submittable when it has an action (prompt or instructions)
+ * and — for the git-scoped PR trigger — a selected repo. */
+export function watcherFormReady(opts: {
+	promptId: string;
+	instructions: string;
+	triggerKey: WatcherTriggerKey;
+	repoPath: string;
+}): boolean {
+	const hasAction = !!opts.promptId || !!opts.instructions.trim();
+	const repoOk = !isGitTrigger(opts.triggerKey) || !!opts.repoPath;
+	return hasAction && repoOk;
+}
 
 function triggerToKey(trigger: WatcherTrigger): WatcherTriggerKey {
 	if (trigger.type === "command_done") return trigger.on_failure_only ? "command_done_fail" : "command_done";
@@ -38,6 +73,8 @@ const TRIGGER_LABELS: Record<string, string> = {
 	error: "Error",
 	unseen: "Unseen",
 	pattern: "Pattern",
+	pr_pushed: "PR pushed",
+	pr_opened: "PR opened",
 };
 
 interface WatcherRule {
@@ -45,8 +82,10 @@ interface WatcherRule {
 	name: string;
 	session_id: string | null;
 	template_id: string | null;
+	prompt_id?: string | null;
+	repo_path?: string | null;
 	trigger: WatcherTrigger;
-	instructions: string;
+	instructions?: string | null;
 	max_fires: number;
 	fire_count: number;
 	cooldown_secs: number;
@@ -83,6 +122,22 @@ export const WatcherManager: Component = () => {
 	const [formInstructions, setFormInstructions] = createSignal("");
 	const [formMaxFires, setFormMaxFires] = createSignal(50);
 	const [formCooldown, setFormCooldown] = createSignal(10);
+	const [formPromptId, setFormPromptId] = createSignal("");
+	const [formRepoPath, setFormRepoPath] = createSignal("");
+	const [formAuthoredByOthers, setFormAuthoredByOthers] = createSignal(true);
+
+	const smartPrompts = () => promptLibraryStore.getAllPrompts();
+	const repos = () => repositoriesStore.getAllReposOrdered();
+
+	// A rule is valid to submit when it references a prompt or has instructions,
+	// and (for PR-pushed) a repo is selected.
+	const canSubmit = () =>
+		watcherFormReady({
+			promptId: formPromptId(),
+			instructions: formInstructions(),
+			triggerKey: formTrigger(),
+			repoPath: formRepoPath(),
+		});
 
 	const templates = () => rules().filter((r) => !r.session_id);
 	const instances = () => rules().filter((r) => r.session_id);
@@ -106,6 +161,9 @@ export const WatcherManager: Component = () => {
 		setFormInstructions("");
 		setFormMaxFires(50);
 		setFormCooldown(10);
+		setFormPromptId("");
+		setFormRepoPath("");
+		setFormAuthoredByOthers(true);
 		setEditingId(null);
 		setShowForm(false);
 	};
@@ -118,22 +176,31 @@ export const WatcherManager: Component = () => {
 	const openEdit = (rule: WatcherRule) => {
 		setFormName(rule.name);
 		setFormTrigger(triggerToKey(rule.trigger));
-		setFormInstructions(rule.instructions);
+		setFormInstructions(rule.instructions ?? "");
 		setFormMaxFires(rule.max_fires);
 		setFormCooldown(rule.cooldown_secs);
+		setFormPromptId(rule.prompt_id ?? "");
+		setFormRepoPath(rule.repo_path ?? "");
+		setFormAuthoredByOthers("authored_by_others" in rule.trigger ? rule.trigger.authored_by_others : true);
 		setEditingId(rule.id);
 		setShowForm(true);
 	};
 
 	const handleSubmit = async () => {
 		const id = editingId();
+		const trigger = buildTrigger(formTrigger(), formAuthoredByOthers());
+		const instructions = formInstructions().trim() || null;
+		const promptId = formPromptId() || null;
+		const repoPath = isGitTrigger(formTrigger()) ? formRepoPath() || null : null;
 		if (id) {
 			try {
 				await invoke("watcher_update", {
 					id,
 					name: formName().trim() || null,
-					trigger: TRIGGER_MAP[formTrigger()],
-					instructions: formInstructions(),
+					trigger,
+					instructions,
+					promptId,
+					repoPath,
 					maxFires: formMaxFires(),
 					cooldownSecs: formCooldown(),
 				});
@@ -148,8 +215,10 @@ export const WatcherManager: Component = () => {
 				await invoke("watcher_create", {
 					name,
 					sessionId: null,
-					trigger: TRIGGER_MAP[formTrigger()],
-					instructions: formInstructions(),
+					trigger,
+					instructions,
+					promptId,
+					repoPath,
 					maxFires: formMaxFires(),
 					cooldownSecs: formCooldown(),
 				});
@@ -241,14 +310,57 @@ export const WatcherManager: Component = () => {
 							<option value="question">Question</option>
 							<option value="error">Error</option>
 							<option value="unseen">Unseen</option>
+							<option value="pr_pushed">PR pushed</option>
+							<option value="pr_opened">PR opened</option>
 						</select>
 					</div>
-					<textarea
-						class={s.formTextarea}
-						placeholder="Instructions for the AI agent..."
-						value={formInstructions()}
-						onInput={(e) => setFormInstructions(e.currentTarget.value)}
-					/>
+
+					{/* PR-pushed: git-scoped fields (repo + authored-by-others). Hidden for terminal triggers. */}
+					<Show when={isGitTrigger(formTrigger())}>
+						<div class={s.formRow}>
+							<select
+								class={s.formSelect}
+								value={formRepoPath()}
+								onChange={(e) => setFormRepoPath(e.currentTarget.value)}
+								style={{ flex: "1" }}
+							>
+								<option value="">Select repo…</option>
+								<For each={repos()}>{(r) => <option value={r.path}>{r.displayName || r.path}</option>}</For>
+							</select>
+						</div>
+						<label
+							class={s.formRow}
+							style={{ "font-size": "var(--font-2xs)", color: "var(--fg-muted)", gap: "var(--space-1)" }}
+						>
+							<input
+								type="checkbox"
+								checked={formAuthoredByOthers()}
+								onChange={(e) => setFormAuthoredByOthers(e.currentTarget.checked)}
+							/>
+							Only PRs authored by others
+						</label>
+					</Show>
+
+					{/* Smart prompt picker — the primary action; instructions is the fallback. */}
+					<div class={s.formRow}>
+						<select
+							class={s.formSelect}
+							value={formPromptId()}
+							onChange={(e) => setFormPromptId(e.currentTarget.value)}
+							style={{ flex: "1" }}
+						>
+							<option value="">No smart prompt (use instructions)</option>
+							<For each={smartPrompts()}>{(p) => <option value={p.id}>{p.name}</option>}</For>
+						</select>
+					</div>
+					<Show when={!formPromptId() && !isGitTrigger(formTrigger())}>
+						<textarea
+							class={s.formTextarea}
+							placeholder="Instructions for the AI agent (fallback when no smart prompt is set)…"
+							value={formInstructions()}
+							onInput={(e) => setFormInstructions(e.currentTarget.value)}
+						/>
+					</Show>
 					<div class={s.formRow}>
 						<label style={{ "font-size": "var(--font-2xs)", color: "var(--fg-muted)" }}>Max fires:</label>
 						<input
@@ -273,7 +385,8 @@ export const WatcherManager: Component = () => {
 						<span class={s.unit}>s</span>
 						<span
 							class={s.helpTip}
-							title="Minimum seconds between consecutive fires. Prevents the watcher from triggering too frequently."
+							data-tooltip="Minimum seconds between consecutive fires. Prevents the watcher from triggering too frequently."
+							data-tooltip-align="right"
 						>
 							?
 						</span>
@@ -282,7 +395,7 @@ export const WatcherManager: Component = () => {
 						<button class={s.cancelBtn} onClick={resetForm}>
 							Cancel
 						</button>
-						<button class={s.submitBtn} disabled={!formInstructions().trim()} onClick={handleSubmit}>
+						<button class={s.submitBtn} disabled={!canSubmit()} onClick={handleSubmit}>
 							{editingId() ? "Save" : "Create Template"}
 						</button>
 					</div>

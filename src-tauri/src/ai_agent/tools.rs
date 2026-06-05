@@ -2278,8 +2278,10 @@ fn exec_watch_for(
         name: args["name"].as_str().unwrap_or("model watch").to_string(),
         session_id: Some(session_id.to_string()),
         template_id: None,
+        prompt_id: None,
+        repo_path: None,
         trigger,
-        instructions,
+        instructions: Some(instructions),
         max_fires: args["max_fires"]
             .as_u64()
             .map(|v| v as u32)

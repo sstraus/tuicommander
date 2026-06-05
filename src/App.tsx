@@ -28,6 +28,7 @@ const SettingsPanel = lazy(() => import("./components/SettingsPanel").then((m) =
 import releaseNotes from "./assets/release-notes.json";
 import { ConfirmDialog } from "./components/ConfirmDialog";
 import { ContextMenu, type ContextMenuItem, createContextMenu } from "./components/ContextMenu";
+import { CreateBranchDialog } from "./components/CreateBranchDialog";
 import { CreateWorktreeDialog } from "./components/CreateWorktreeDialog";
 import { GeneratorsModal } from "./components/GeneratorsModal";
 import {
@@ -144,6 +145,7 @@ import { tunnelPanelStore } from "./stores/tunnelPanel";
 import { uiStore } from "./stores/ui";
 import { updaterStore } from "./stores/updater";
 import { userActivityStore } from "./stores/userActivity";
+import { handleWatcherFire, type WatcherFirePayload, watcherFireDeps } from "./stores/watcherFire";
 import { worktreeManagerStore } from "./stores/worktreeManager";
 import { applyAppTheme, applyFontFamily, themesLoaded } from "./themes";
 import { isTauri } from "./transport";
@@ -260,6 +262,8 @@ const App: Component = () => {
 
 	// Rename branch dialog state
 	const [renameBranchDialogVisible, setRenameBranchDialogVisible] = createSignal(false);
+	// Create branch dialog state
+	const [createBranchDialogVisible, setCreateBranchDialogVisible] = createSignal(false);
 
 	// Run command dialog state
 	const [runCommandDialogVisible, setRunCommandDialogVisible] = createSignal(false);
@@ -559,6 +563,19 @@ const App: Component = () => {
 					conversationStore.startAgent(session_id, proposed_goal);
 				},
 			});
+		}).then((fn) => {
+			unlisten = fn;
+		});
+		onCleanup(() => unlisten?.());
+	}
+
+	// Backend watcher fires: resolve the referenced smart prompt (or instructions)
+	// and run it in the target session. PR fires go through the assisted gate.
+	{
+		let unlisten: (() => void) | undefined;
+		const deps = watcherFireDeps((p) => smartPrompts.executeSmartPrompt(p));
+		listen<WatcherFirePayload>("watcher-fire", (event) => {
+			void handleWatcherFire(event.payload, deps);
 		}).then((fn) => {
 			unlisten = fn;
 		});
@@ -2403,6 +2420,10 @@ const App: Component = () => {
 						gitOps.handleOpenRenameBranchDialog(repoPath, branchName);
 						setRenameBranchDialogVisible(true);
 					}}
+					onCreateBranch={(repoPath, fromBranch) => {
+						gitOps.handleOpenCreateBranchDialog(repoPath, fromBranch);
+						setCreateBranchDialogVisible(true);
+					}}
 					onAddWorktree={gitOps.handleAddWorktree}
 					onCreateWorktreeFromBranch={gitOps.handleCreateWorktreeFromBranch}
 					onMergeAndArchive={(repoPath, branchName) => {
@@ -2618,6 +2639,17 @@ const App: Component = () => {
 					gitOps.setBranchToRename(null);
 				}}
 				onRename={gitOps.handleRenameBranch}
+			/>
+
+			{/* Create branch dialog */}
+			<CreateBranchDialog
+				visible={createBranchDialogVisible()}
+				startPoint={gitOps.branchToCreate()?.startPoint}
+				onClose={() => {
+					setCreateBranchDialogVisible(false);
+					gitOps.setBranchToCreate(null);
+				}}
+				onCreate={gitOps.handleCreateBranch}
 			/>
 
 			{/* Create worktree dialog */}

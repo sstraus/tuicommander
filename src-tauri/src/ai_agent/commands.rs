@@ -438,12 +438,15 @@ pub(crate) fn save_scheduler_config(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command: args are deserialized from a JS object.
 pub(crate) async fn watcher_create(
     state: State<'_, Arc<AppState>>,
     name: String,
     session_id: Option<String>,
     trigger: super::watcher::WatcherTrigger,
-    instructions: String,
+    instructions: Option<String>,
+    prompt_id: Option<String>,
+    repo_path: Option<String>,
     max_fires: Option<u32>,
     cooldown_secs: Option<u32>,
 ) -> Result<String, String> {
@@ -452,6 +455,8 @@ pub(crate) async fn watcher_create(
         name,
         session_id,
         template_id: None,
+        prompt_id,
+        repo_path,
         trigger,
         instructions,
         max_fires: max_fires.unwrap_or(super::watcher::default_max_fires()),
@@ -550,12 +555,15 @@ pub(crate) async fn watcher_detach(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri command: args are deserialized from a JS object.
 pub(crate) async fn watcher_update(
     state: State<'_, Arc<AppState>>,
     id: String,
     name: Option<String>,
     trigger: Option<super::watcher::WatcherTrigger>,
     instructions: Option<String>,
+    prompt_id: Option<String>,
+    repo_path: Option<String>,
     max_fires: Option<u32>,
     cooldown_secs: Option<u32>,
 ) -> Result<(), String> {
@@ -571,6 +579,8 @@ pub(crate) async fn watcher_update(
         name,
         trigger,
         instructions,
+        prompt_id,
+        repo_path,
         max_fires,
         cooldown_secs,
     )

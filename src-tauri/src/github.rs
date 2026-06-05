@@ -762,7 +762,7 @@ fn stamp_merge_policy(nodes: &mut [BranchPrStatus], repo_json: &serde_json::Valu
 
 /// Fetch the authenticated user's GitHub login via `query { viewer { login } }`.
 /// Cached after first successful call for the session lifetime.
-async fn get_viewer_login(state: &AppState) -> Result<String, String> {
+pub(crate) async fn get_viewer_login(state: &AppState) -> Result<String, String> {
     // Check cached value first
     if let Some(login) = state.github_viewer_login.read().as_ref() {
         return Ok(login.clone());

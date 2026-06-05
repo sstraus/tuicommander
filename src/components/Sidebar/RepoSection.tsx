@@ -206,6 +206,7 @@ export const BranchItem: Component<{
 	isRemoving?: boolean;
 	onRemove: () => void;
 	onRename: () => void;
+	onCreateBranch?: () => void;
 	onShowPrDetail: () => void;
 	onShowChanges?: () => void;
 	onCreateWorktreeFromBranch?: () => void;
@@ -276,24 +277,33 @@ export const BranchItem: Component<{
 				items.push(...agentItems);
 			}
 			const isLinkedWorktree = !!props.branch.worktreePath && props.branch.worktreePath !== props.repoPath;
-			items.push({
+
+			// "Branch ›" submenu — condensed git branch operations. The frequent
+			// "Switch Branch" stays a top-level entry below (not nested here).
+			const branchOps: ContextMenuItem[] = [];
+			if (props.onCreateBranch) {
+				branchOps.push({ label: "Create Branch…", action: props.onCreateBranch });
+			}
+			branchOps.push({
 				label: isLinkedWorktree ? "Rename Worktree" : "Rename Branch",
 				action: props.onRename,
 				disabled: props.branch.isMain,
 			});
 			if (!props.branch.isMain && !props.branch.worktreePath && props.onCreateWorktreeFromBranch) {
-				items.push({ label: "Create Worktree", action: props.onCreateWorktreeFromBranch });
+				branchOps.push({ label: "Create Worktree", action: props.onCreateWorktreeFromBranch });
 			}
 			if (!props.branch.isMain && isLinkedWorktree && props.onMergeAndArchive) {
-				items.push({ label: "Merge & Archive", action: props.onMergeAndArchive });
+				branchOps.push({ label: "Merge & Archive", action: props.onMergeAndArchive });
 			}
 			if (!props.branch.isMain && isLinkedWorktree && props.canRemove) {
-				items.push({
+				branchOps.push({
 					label: props.isRemoving ? "Removing…" : "Delete Worktree",
 					action: props.onRemove,
-					separator: true,
 					disabled: props.isRemoving,
 				});
+			}
+			if (branchOps.length > 0) {
+				items.push({ label: "Branch", action: () => {}, children: branchOps });
 			}
 		}
 		// "Switch Branch" submenu — only on main worktree row (worktreePath === repoPath)
@@ -506,6 +516,7 @@ export const RepoSection: Component<{
 	onAddTerminal: (branchName: string) => void;
 	onRemoveBranch: (branchName: string) => void;
 	onRenameBranch: (branchName: string) => void;
+	onCreateBranch?: (fromBranch: string) => void;
 	onShowPrDetail: (branchName: string) => void;
 	onShowChanges?: () => void;
 	buildAgentMenuItems?: (branchName: string) => ContextMenuItem[];
@@ -746,6 +757,7 @@ export const RepoSection: Component<{
 								isRemoving={props.removingBranches?.has(`${props.repo.path}::${branch.name}`)}
 								onRemove={() => props.onRemoveBranch(branch.name)}
 								onRename={() => props.onRenameBranch(branch.name)}
+								onCreateBranch={props.onCreateBranch ? () => props.onCreateBranch!(branch.name) : undefined}
 								onSetLabel={(current) => setLabelDialogBranch({ name: branch.name, current })}
 								onShowPrDetail={() => props.onShowPrDetail(branch.name)}
 								onShowChanges={props.onShowChanges}
