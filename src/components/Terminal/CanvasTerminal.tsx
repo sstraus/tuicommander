@@ -28,7 +28,8 @@ import {
 } from "./frameTiming";
 import { fetchFontPayloads, resolveWorkerFontFaces } from "./fontAssets";
 import { createGridRenderer, type GridRenderer } from "./gridRenderer";
-import { chooseRenderer, dispatchFrameToWorker, WorkerRenderer } from "./workerProtocol";
+import { decideFrameGrid } from "./workerGridState";
+import { chooseRenderer, receiveFrame, WorkerRenderer } from "./workerProtocol";
 import { acquireCache, getSharedMetrics, invalidateGlyphCache, releaseCache } from "./glyphCache";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { filePathRegex, fileUrlRegex } from "./linkProvider";
@@ -209,7 +210,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			if (currentFrame && m) {
 				const dirty = pendingDirtyRows.size > 0 ? new Set(pendingDirtyRows) : undefined;
 				pendingDirtyRows.clear();
-				const timing = isFrameTimingEnabled();
+				// "paint" timing measures the BASE grid paint, which only happens on main.
+				// In worker mode the worker paints the base, so we don't record it here
+				// (paintFrame paints only the cheap overlay) — keeps paint.count a true
+				// signal that the base is NOT being painted on the main thread.
+				const timing = isFrameTimingEnabled() && rendererMode === "main";
 				const paintT0 = timing ? performance.now() : 0;
 				paintFrame(currentFrame, m, dirty);
 				if (timing) recordFrameTiming(props.sessionId, "paint", performance.now() - paintT0);
@@ -355,13 +360,17 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	}
 
 	function paintFrame(frame: DecodedFrame, m: CellMetrics, dirtyIndices?: Set<number>) {
-		// Worker mode paints the base grid off-thread; main never touches it here.
-		if (rendererMode === "worker") return;
-		// Base grid → shared renderer (same impl the worker uses).
-		gridRenderer.paintGrid(rowMap, m, { fullRepaint: fullRepaintNeeded, dirtyIndices });
+		// Base grid: main thread only. In worker mode the base is painted off-thread
+		// (Option A: main decodes + overlays, worker paints the base), so the main
+		// thread paints just the overlay here — that's what makes the cursor/selection/
+		// search/links/scrollbar interactive in worker mode.
+		if (rendererMode === "main") {
+			// Base grid → shared renderer (same impl the worker uses).
+			gridRenderer.paintGrid(rowMap, m, { fullRepaint: fullRepaintNeeded, dirtyIndices });
+		}
 		fullRepaintNeeded = false;
 
-		// Overlay (cursor/selection/search/links/scrollbar/suggest) stays on main.
+		// Overlay (cursor/selection/search/links/scrollbar/suggest) always stays on main.
 		repaintOverlay(frame, m);
 
 		updateScrollbar(frame);
@@ -883,34 +892,41 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	function onFrame(data: ArrayBuffer | number[]) {
 		const buffer = data instanceof ArrayBuffer ? data : new Uint8Array(data).buffer;
 
-		// Worker mode: ack on the MAIN thread FIRST (ticker must not starve), then
-		// transfer the buffer to the worker for decode + base-grid paint. The main
-		// thread does NO decode/paint here. (Cursor/selection overlay + currentFrame-
-		// driven input are not updated in worker mode — finalized in Phase 3/4.)
-		if (rendererMode === "worker" && workerRenderer) {
-			dispatchFrameToWorker(buffer, workerRenderer, () => {
-				invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame"));
-			});
-			return;
-		}
-
-		// Ack before decode. The backend ack path only clears the in-flight flag —
-		// the ticker sends the next frame on its own 8ms schedule. Acking before
-		// decode ensures the flag is cleared even if decodeBinaryFrame throws.
-		invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame"));
-
+		// Frame receipt ordering (Option A — main decodes + overlays, worker paints):
+		// ack FIRST (the ticker must not starve), then ALWAYS decode on the MAIN thread
+		// — decode is cheap and keeps rowMap + currentFrame alive so the overlay
+		// (cursor/selection/links/search/scrollbar) and currentFrame-driven input work
+		// in worker mode too — then, in worker mode only, transfer the buffer to the
+		// worker for the expensive base-grid paint. Decode runs BEFORE the transfer
+		// neuters the buffer. See receiveFrame for the sacrosanct ordering.
 		const timing = isFrameTimingEnabled();
-		const decodeT0 = timing ? performance.now() : 0;
-		const frame = decodeBinaryFrame(buffer);
-		if (timing) recordFrameTiming(props.sessionId, "decode", performance.now() - decodeT0);
+		const frame = receiveFrame(buffer, {
+			ack: () =>
+				invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame")),
+			decode: (buf) => {
+				const decodeT0 = timing ? performance.now() : 0;
+				const f = decodeBinaryFrame(buf);
+				if (timing) recordFrameTiming(props.sessionId, "decode", performance.now() - decodeT0);
+				return f;
+			},
+			transferToWorker:
+				rendererMode === "worker" && workerRenderer ? (buf) => workerRenderer?.postFrame(buf) : undefined,
+		});
 		if (!frame) return;
 
 		if (frame.bell) props.onBell?.();
 
-		// When geometry changes, viewport is entirely different — must clear and repaint
-		const geomChanged = frame.screenRows !== lastScreenRows || frame.screenCols !== lastScreenCols;
-		const scrollChanged = frame.displayOffset !== lastDisplayOffset || frame.historySize !== lastHistorySize;
+		// Grid decision (geom/scroll/full-replace/scroll-wait) is shared with the
+		// worker's applyFrameToGrid via decideFrameGrid, so the main overlay's rowMap
+		// and the worker's paint rowMap never diverge on what to clear/merge.
+		const decision = decideFrameGrid(
+			{ lastScreenRows, lastScreenCols, lastDisplayOffset, lastHistorySize },
+			frame,
+			lastResizeRows,
+		);
+		const { geomChanged, scrollChanged } = decision;
 
+		// When geometry changes, viewport is entirely different — must clear and repaint
 		if (geomChanged) {
 			selectionStart = null;
 			selectionEnd = null;
@@ -932,17 +948,17 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		}
 
 		// When backend sends all screen rows, replace rowMap to discard stale entries
-		const screenRowCount = frame.screenRows || lastResizeRows || 24;
-		if (frame.rows.length >= screenRowCount) {
+		if (decision.fullReplace) {
 			rowMap.clear();
 			detectedLinks.clear();
 
 			fullRepaintNeeded = true;
-		} else if (scrollChanged && !geomChanged) {
+		} else if (decision.scrollWait) {
 			// Scroll changed but only partial rows arrived. Old rowMap entries are keyed
 			// to the previous viewportTop — rendering them with the new displayOffset maps
 			// them to wrong screen positions, producing ghost content.
-			// Clear immediately (brief blank < ~5ms) and request a full frame.
+			// Clear immediately (brief blank < ~5ms) and request a full frame. The worker
+			// (if any) already got this buffer and clears+waits in lock-step.
 			rowMap.clear();
 			detectedLinks.clear();
 			fullRepaintNeeded = true;
@@ -960,7 +976,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		// Only compare content when the selection is fully on-screen — off-screen rows return empty
 		// strings from getLocalSelectionText() causing spurious mismatches that clear the selection.
-		if (selectionStart && cachedSelectionText && frame.rows.length >= screenRowCount && !selectionSpansOffscreen()) {
+		if (selectionStart && cachedSelectionText && decision.fullReplace && !selectionSpansOffscreen()) {
 			const nowText = getLocalSelectionText();
 			if (nowText !== cachedSelectionText) {
 				selectionStart = null;

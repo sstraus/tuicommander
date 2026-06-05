@@ -187,17 +187,6 @@ export class WorkerRenderer {
 	}
 }
 
-/**
- * Sacrosanct frame-receipt ordering: ack on the MAIN thread FIRST (the backend
- * ack only clears the in-flight flag; the ticker sends the next frame on its
- * own schedule), THEN transfer the buffer to the worker. Worker paint is never
- * on the ack path, so the 16ms ticker cannot starve.
- */
-export function dispatchFrameToWorker(buf: ArrayBuffer, renderer: WorkerRenderer, ack: () => void): void {
-	ack();
-	renderer.postFrame(buf);
-}
-
 /** Hooks for the shared frame-receipt ordering. `transferToWorker` is present only in worker mode. */
 export interface FrameReceipt<T> {
 	/** Ack the backend FIRST — clears the in-flight flag so the ticker never starves. */

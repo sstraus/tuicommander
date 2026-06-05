@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	chooseRenderer,
 	createRendererState,
-	dispatchFrameToWorker,
 	type FontEnv,
 	type FontFaceLike,
 	type FontPayload,
@@ -284,44 +283,6 @@ describe("WorkerRenderer.postFrame + buffer pool (ping-pong)", () => {
 			r.postFrame(buf); // transfer to worker
 			r.recycle(new ArrayBuffer(32)); // worker returns a drained buffer
 		}
-	});
-});
-
-describe("dispatchFrameToWorker — ack BEFORE transfer (ticker must not starve)", () => {
-	it("calls ack on the main thread before transferring to the worker", () => {
-		const worker = makeFakeWorker();
-		const r = new WorkerRenderer(worker);
-		const order: string[] = [];
-		const ack = vi.fn(() => order.push("ack"));
-		const originalPost = worker.postMessage.bind(worker);
-		worker.postMessage = (msg: unknown, transfer?: Transferable[]) => {
-			order.push("post");
-			originalPost(msg, transfer);
-		};
-		const buf = new ArrayBuffer(48);
-
-		dispatchFrameToWorker(buf, r, ack);
-
-		expect(ack).toHaveBeenCalledTimes(1);
-		expect(order).toEqual(["ack", "post"]); // ack strictly before transfer
-		expect(worker.posts[0].transfer).toEqual([buf]);
-	});
-
-	it("acks before each transfer across back-to-back frames", () => {
-		const worker = makeFakeWorker();
-		const r = new WorkerRenderer(worker);
-		const order: string[] = [];
-		const ack = () => order.push("ack");
-		const originalPost = worker.postMessage.bind(worker);
-		worker.postMessage = (msg: unknown, transfer?: Transferable[]) => {
-			order.push("post");
-			originalPost(msg, transfer);
-		};
-
-		dispatchFrameToWorker(new ArrayBuffer(8), r, ack);
-		dispatchFrameToWorker(new ArrayBuffer(8), r, ack);
-
-		expect(order).toEqual(["ack", "post", "ack", "post"]);
 	});
 });
 
