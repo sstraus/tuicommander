@@ -198,6 +198,59 @@ fn build_gitignore(repo_root: &Path) -> Gitignore {
     }
 }
 
+/// Fold the meaningful git-state inputs into a single u64 fingerprint.
+///
+/// Deliberately EXCLUDES `.git/index` mtime: a bare `touch .git/index` — or a
+/// `--no-optional-locks` status that rewrites the index only to refresh its stat
+/// cache — bumps mtime without changing the logical state, and must NOT be treated
+/// as a change. Index *size*, the resolved HEAD target, and the porcelain status
+/// together capture every meaningful change (stage/unstage, commit, branch switch)
+/// while staying stable across those no-op mtime touches.
+pub(crate) fn compute_git_fingerprint(index_size: u64, head_target: &str, porcelain_status: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    index_size.hash(&mut hasher);
+    head_target.hash(&mut hasher);
+    porcelain_status.hash(&mut hasher);
+    hasher.finish()
+}
+
+/// Resolve HEAD to a stable target string (cheap file reads, no subprocess):
+/// - attached HEAD → `"<refpath>=<sha>"` (resolving the loose ref), or `"ref: <refpath>"`
+///   if the ref is packed/unreadable (still distinguishes branches);
+/// - detached HEAD → the raw commit SHA.
+/// Empty string if HEAD can't be read.
+fn resolve_head_target(git_dir: &Path) -> String {
+    let head = std::fs::read_to_string(git_dir.join("HEAD")).unwrap_or_default();
+    let trimmed = head.trim();
+    if let Some(refpath) = trimmed.strip_prefix("ref: ") {
+        match std::fs::read_to_string(git_dir.join(refpath)) {
+            Ok(sha) if !sha.trim().is_empty() => format!("{refpath}={}", sha.trim()),
+            _ => format!("ref: {refpath}"),
+        }
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// Compute the current git-state fingerprint for a repo. Gathers the cheap inputs
+/// — index size, resolved HEAD, and the porcelain status via the existing
+/// `--no-optional-locks` (non-writing) read path — and folds them with
+/// `compute_git_fingerprint`. Runs on the post-debounce emit task, not the
+/// FSEvents hot path.
+fn repo_git_fingerprint(repo_root: &Path, git_dir: &Path) -> u64 {
+    let index_size = std::fs::metadata(git_dir.join("index"))
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let head_target = resolve_head_target(git_dir);
+    let porcelain = crate::git_cli::git_cmd(repo_root)
+        .args(["status", "--porcelain"])
+        .run_silent()
+        .map(|o| o.stdout)
+        .unwrap_or_default();
+    compute_git_fingerprint(index_size, &head_target, &porcelain)
+}
+
 /// Thread-safe wrapper for `RecommendedWatcher`.
 ///
 /// `RecommendedWatcher` is `Send` but not `Sync`. Wrapping in `Mutex`
@@ -310,7 +363,19 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
                 #[cfg(feature = "desktop")]
                 let h = handle.clone();
                 let st = Arc::clone(&state_cb);
+                let repo = repo_for_cb.clone();
+                let git_dir = git_dir_for_cb.clone();
                 emitter.trigger(&EventCategory::GitState, move || {
+                    // Skip the emit (and cache invalidation) when the meaningful git
+                    // state is unchanged. A no-op `.git` touch — e.g. a non-writing
+                    // status refreshing the index stat cache — leaves the fingerprint
+                    // identical, so we avoid the redundant ~20-panel frontend cascade.
+                    let fp = repo_git_fingerprint(&repo, &git_dir);
+                    if st.repo_git_fingerprints.get(&repo_path).map(|v| *v) == Some(fp) {
+                        tracing::debug!(source = "repo_watcher", path = %repo_path, "Skip repo-changed (git-state unchanged)");
+                        return;
+                    }
+                    st.repo_git_fingerprints.insert(repo_path.clone(), fp);
                     tracing::info!(source = "repo_watcher", path = %repo_path, "Emit repo-changed (git-state)");
                     st.invalidate_repo_caches(&repo_path);
                     let _ = bus.send(AppEvent::RepoChanged {
@@ -672,6 +737,97 @@ mod tests {
             COLD_WORKING_TREE_DEBOUNCE.as_millis() / WORKING_TREE_DEBOUNCE.as_millis(),
             10
         );
+    }
+
+    // --- git-state fingerprint (skip-emit-when-unchanged) ---
+
+    #[test]
+    fn test_fingerprint_same_state_is_equal() {
+        let a = compute_git_fingerprint(1024, "refs/heads/main=abc123", " M src/main.rs\n");
+        let b = compute_git_fingerprint(1024, "refs/heads/main=abc123", " M src/main.rs\n");
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn test_fingerprint_changed_file_differs() {
+        let clean = compute_git_fingerprint(1024, "refs/heads/main=abc123", "");
+        let dirty = compute_git_fingerprint(1024, "refs/heads/main=abc123", " M src/main.rs\n");
+        assert_ne!(clean, dirty);
+    }
+
+    #[test]
+    fn test_fingerprint_branch_switch_differs() {
+        let on_main = compute_git_fingerprint(1024, "refs/heads/main=abc123", "");
+        let on_feat = compute_git_fingerprint(1024, "refs/heads/feature=def456", "");
+        assert_ne!(on_main, on_feat);
+    }
+
+    #[test]
+    fn test_fingerprint_commit_changes_head_sha() {
+        // Same branch, new commit → resolved HEAD sha changes even if porcelain matches.
+        let before = compute_git_fingerprint(1024, "refs/heads/main=abc123", "");
+        let after = compute_git_fingerprint(1024, "refs/heads/main=zzz999", "");
+        assert_ne!(before, after);
+    }
+
+    #[test]
+    fn test_fingerprint_index_size_differs() {
+        let small = compute_git_fingerprint(512, "refs/heads/main=abc123", "");
+        let large = compute_git_fingerprint(2048, "refs/heads/main=abc123", "");
+        assert_ne!(small, large);
+    }
+
+    #[test]
+    fn test_fingerprint_ignores_index_mtime_noop_touch() {
+        // mtime is NOT an input — a bare `touch .git/index` (size/head/status all
+        // unchanged) yields the identical fingerprint, so the emit is skipped.
+        let before = compute_git_fingerprint(1024, "refs/heads/main=abc123", " M a.txt\n");
+        let after_noop_touch = compute_git_fingerprint(1024, "refs/heads/main=abc123", " M a.txt\n");
+        assert_eq!(before, after_noop_touch);
+    }
+
+    #[test]
+    fn test_resolve_head_target_attached_resolves_ref_sha() {
+        let dir = tempfile::tempdir().unwrap();
+        let git_dir = dir.path();
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        std::fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
+        std::fs::write(git_dir.join("refs/heads/main"), "abc123def456\n").unwrap();
+
+        assert_eq!(resolve_head_target(git_dir), "refs/heads/main=abc123def456");
+    }
+
+    #[test]
+    fn test_resolve_head_target_branch_switch_changes() {
+        let dir = tempfile::tempdir().unwrap();
+        let git_dir = dir.path();
+        std::fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
+        std::fs::write(git_dir.join("refs/heads/main"), "aaa\n").unwrap();
+        std::fs::write(git_dir.join("refs/heads/feature"), "bbb\n").unwrap();
+
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        let on_main = resolve_head_target(git_dir);
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/feature\n").unwrap();
+        let on_feat = resolve_head_target(git_dir);
+
+        assert_ne!(on_main, on_feat);
+    }
+
+    #[test]
+    fn test_resolve_head_target_packed_ref_falls_back_to_ref_path() {
+        // Loose ref absent (packed) → fall back to "ref: <path>", still distinguishes branches.
+        let dir = tempfile::tempdir().unwrap();
+        let git_dir = dir.path();
+        std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
+        assert_eq!(resolve_head_target(git_dir), "ref: refs/heads/main");
+    }
+
+    #[test]
+    fn test_resolve_head_target_detached() {
+        let dir = tempfile::tempdir().unwrap();
+        let git_dir = dir.path();
+        std::fs::write(git_dir.join("HEAD"), "deadbeefcafe\n").unwrap();
+        assert_eq!(resolve_head_target(git_dir), "deadbeefcafe");
     }
 
     #[tokio::test]

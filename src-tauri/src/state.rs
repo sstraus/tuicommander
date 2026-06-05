@@ -845,6 +845,11 @@ pub struct AppState {
     /// .git/ and working tree, with per-category debounce (keyed by repo path).
     /// Uses raw notify::RecommendedWatcher (no debouncer-full walkdir overhead).
     pub(crate) repo_watchers: DashMap<String, crate::repo_watcher::WatchHandle>,
+    /// Last emitted git-state fingerprint per repo path. The repo watcher skips
+    /// the `repo-changed` (git-state) emit when the fingerprint is unchanged, so a
+    /// no-op `.git` touch (e.g. a `--no-optional-locks` status refreshing the index
+    /// stat cache) doesn't trigger the full ~20-panel frontend re-render cascade.
+    pub(crate) repo_git_fingerprints: DashMap<String, u64>,
     /// File watchers for directory contents (keyed by absolute dir path)
     pub(crate) dir_watchers: DashMap<String, crate::repo_watcher::WatchHandle>,
     /// File watcher for the themes/ directory — kept alive for the app lifetime.
@@ -1133,6 +1138,7 @@ impl AppState {
             config: parking_lot::RwLock::new(config),
             git_cache: GitCacheState::new(),
             repo_watchers: DashMap::new(),
+            repo_git_fingerprints: DashMap::new(),
             dir_watchers: DashMap::new(),
             theme_watcher: parking_lot::Mutex::new(None),
             mdkb_daemon: crate::mdkb_daemon::create_shared_daemon(),
@@ -3090,6 +3096,7 @@ mod tests {
             config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
             git_cache: GitCacheState::new(),
             repo_watchers: dashmap::DashMap::new(),
+            repo_git_fingerprints: dashmap::DashMap::new(),
             dir_watchers: dashmap::DashMap::new(),
             theme_watcher: parking_lot::Mutex::new(None),
             mdkb_daemon: crate::mdkb_daemon::create_shared_daemon(),

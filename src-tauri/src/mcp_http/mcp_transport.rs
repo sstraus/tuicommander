@@ -3523,6 +3523,7 @@ mod tests {
             config: parking_lot::RwLock::new(crate::config::AppConfig::default()),
             git_cache: crate::state::GitCacheState::new(),
             repo_watchers: dashmap::DashMap::new(),
+            repo_git_fingerprints: dashmap::DashMap::new(),
             dir_watchers: dashmap::DashMap::new(),
             theme_watcher: parking_lot::Mutex::new(None),
             mdkb_daemon: crate::mdkb_daemon::create_shared_daemon(),
