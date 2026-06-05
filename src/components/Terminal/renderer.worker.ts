@@ -1,9 +1,23 @@
 // --- Phase 1 render worker entry (DedicatedWorker, type: "module") ---
 //
-// Thin shell: all logic lives in the pure, unit-tested workerProtocol module.
+// Thin shell wiring the pure, unit-tested modules together:
+//   decode (canvasTerminalUtils) -> grid state (workerGridState) -> paint
+//   (gridRenderer) on the transferred OffscreenCanvas, gated on fonts ready
+//   (workerProtocol) and coalesced via a dirty-flag rAF.
 // Instantiated once per canvas node from CanvasTerminal (gated by the
 // offscreenRenderer setting + capability detection in later steps).
+//
+// NOTE: metrics + theme + font are posted by the main thread in Step 1.5; until
+// then paintGrid is a no-op (no metrics), but the decode/grid/scheduling
+// pipeline is fully wired.
 
+import { type CellMetrics, decodeBinaryFrame } from "./canvasTerminalUtils";
+import { createGridRenderer, type GridRenderer } from "./gridRenderer";
+import {
+	applyFrameToGrid,
+	createRepaintScheduler,
+	createWorkerGridState,
+} from "./workerGridState";
 import {
 	createRendererState,
 	type FontDescriptors,
@@ -25,8 +39,47 @@ const fontEnv: FontEnv = {
 	},
 };
 
-const state = createRendererState({ fontEnv });
+const gridState = createWorkerGridState();
+let gridRenderer: GridRenderer | null = null;
+
+// Set by Step 1.5 resize/theme messages; until then paint is skipped.
+let metrics: CellMetrics | null = null;
+let fontFamily = "monospace";
+let fontWeight: number | string = 400;
+
+const scheduler = createRepaintScheduler(
+	(cb) => self.requestAnimationFrame(cb),
+	(id) => self.cancelAnimationFrame(id),
+	() => {
+		if (!gridRenderer || !metrics) return;
+		const dirty = gridState.pendingDirtyRows.size > 0 ? new Set(gridState.pendingDirtyRows) : undefined;
+		gridRenderer.paintGrid(gridState.rowMap, metrics, {
+			fullRepaint: gridState.fullRepaintNeeded,
+			dirtyIndices: dirty,
+		});
+		gridState.fullRepaintNeeded = false;
+		gridState.pendingDirtyRows.clear();
+	},
+);
+
+const state = createRendererState({
+	fontEnv,
+	// Gated by fonts-ready in the reducer; never called before fonts load.
+	onFrame: (buf) => {
+		const frame = decodeBinaryFrame(buf);
+		if (!frame) return;
+		applyFrameToGrid(gridState, frame);
+		scheduler.schedule();
+	},
+});
 
 self.onmessage = (e: MessageEvent<WorkerInboundMessage>) => {
 	reduceRendererMessage(state, e.data);
+	// Once the OffscreenCanvas context exists (after init), build the renderer.
+	if (e.data.type === "init" && state.ctx && !gridRenderer) {
+		gridRenderer = createGridRenderer(state.ctx, {
+			fontWeight: () => fontWeight,
+			getFontFamily: () => fontFamily,
+		});
+	}
 };
