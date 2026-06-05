@@ -402,6 +402,16 @@ export const AppearanceTab: Component = () => {
 				<TerminalPreview />
 			</div>
 
+			<SettingToggle
+				checked={settingsStore.state.offscreenRenderer}
+				onChange={(v) => settingsStore.setOffscreenRenderer(v)}
+				label={t("appearance.label.offscreenRenderer", "Off-Main-Thread Rendering (Experimental)")}
+				hint={t(
+					"appearance.hint.offscreenRenderer",
+					"Render terminals in a Web Worker via OffscreenCanvas to keep the UI thread free under heavy output. Reopen terminals to apply. Falls back to the standard renderer where unsupported.",
+				)}
+			/>
+
 			<h3>{t("appearance.heading.tabs", "Tabs")}</h3>
 
 			<SettingSelect

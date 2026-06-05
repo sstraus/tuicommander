@@ -51,6 +51,7 @@ interface RustAppConfig {
 	ai_triage_enabled?: boolean;
 	ai_watchers_enabled?: boolean;
 	scrollback_reflow?: boolean;
+	offscreen_renderer?: boolean;
 	cursor_style?: string;
 	terminal_renderer?: string;
 	show_block_timestamps?: boolean;
@@ -382,6 +383,7 @@ interface SettingsStoreState {
 	aiTriageEnabled: boolean;
 	aiWatchersEnabled: boolean;
 	scrollbackReflow: boolean;
+	offscreenRenderer: boolean;
 	cursorStyle: "bar" | "block" | "underline";
 	terminalRenderer: TerminalRenderer;
 	showBlockTimestamps: boolean;
@@ -430,6 +432,7 @@ function createSettingsStore() {
 		aiTriageEnabled: false,
 		aiWatchersEnabled: false,
 		scrollbackReflow: false,
+		offscreenRenderer: false,
 		cursorStyle: "bar" as SettingsStoreState["cursorStyle"],
 		terminalRenderer: "webgl",
 		showBlockTimestamps: true,
@@ -483,6 +486,7 @@ function createSettingsStore() {
 			ai_triage_enabled: state.aiTriageEnabled,
 			ai_watchers_enabled: state.aiWatchersEnabled,
 			scrollback_reflow: state.scrollbackReflow,
+			offscreen_renderer: state.offscreenRenderer,
 			cursor_style: state.cursorStyle,
 			terminal_renderer: state.terminalRenderer,
 			show_block_timestamps: state.showBlockTimestamps,
@@ -564,6 +568,7 @@ function createSettingsStore() {
 				setState("aiTriageEnabled", config.ai_triage_enabled ?? false);
 				setState("aiWatchersEnabled", config.ai_watchers_enabled ?? false);
 				setState("scrollbackReflow", config.scrollback_reflow ?? false);
+				setState("offscreenRenderer", config.offscreen_renderer ?? false);
 				const cs = config.cursor_style;
 				setState("cursorStyle", cs === "block" || cs === "underline" ? cs : "bar");
 				setState("terminalRenderer", validateTerminalRenderer(config.terminal_renderer || null));
@@ -784,6 +789,11 @@ function createSettingsStore() {
 
 		setScrollbackReflow(enabled: boolean): void {
 			setState("scrollbackReflow", enabled);
+			save();
+		},
+
+		setOffscreenRenderer(enabled: boolean): void {
+			setState("offscreenRenderer", enabled);
 			save();
 		},
 
