@@ -43,6 +43,10 @@ function timerTick() {
 	const gap = now - lastTimerTick;
 	lastTimerTick = now;
 	if (gap > SLEEP_GAP_MS) return; // sleep/suspend — re-baseline silently
+	// When the window is hidden/occluded the OS clamps setInterval to ~1Hz and
+	// pauses rAF — every clamped tick looks like a ~1000ms "freeze". Skip: a
+	// throttled background timer says nothing about main-thread responsiveness.
+	if (document.hidden) return;
 	if (gap > THRESHOLD_MS) {
 		record("main", Math.round(gap), now);
 		if (now - lastMainLogAt > LOG_COOLDOWN_MS) {
