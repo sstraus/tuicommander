@@ -2,7 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { batch, createSignal } from "solid-js";
 import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
 import { invoke } from "../invoke";
-import { timeSync } from "../utils/perfTrace";
+import { markPerf, timeSync } from "../utils/perfTrace";
 import { appLogger } from "../stores/appLogger";
 import { githubStore } from "../stores/github";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
@@ -657,6 +657,10 @@ export function useGitOperations(deps: GitOperationsDeps) {
 	};
 
 	const handleBranchSelectInner = async (repoPath: string, branchName: string) => {
+		// Freeze-investigation: repo/branch switch is the reported foreground-freeze
+		// trigger. Breadcrumb so a main-thread block during the switch cascade
+		// attributes here (the freeze detector reports the freshest crumb).
+		markPerf("branch.select", { repoPath, branchName });
 		// Auto-deactivate global workspace before branch switch
 		if (globalWorkspaceStore.isActive()) {
 			const prevRepoPath = repositoriesStore.state.activeRepoPath;
