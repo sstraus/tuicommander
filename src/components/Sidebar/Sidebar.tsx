@@ -29,6 +29,7 @@ export interface SidebarProps {
 	onAddTerminal: (repoPath: string, branchName: string) => void;
 	onRemoveBranch: (repoPath: string, branchName: string) => void;
 	onRenameBranch: (repoPath: string, branchName: string) => void;
+	onCreateBranch?: (repoPath: string, fromBranch: string) => void;
 	buildAgentMenuItems?: (repoPath: string, branchName: string) => ContextMenuItem[];
 	onAddWorktree: (repoPath: string) => void;
 	onCreateWorktreeFromBranch?: (repoPath: string, branchName: string) => void;
@@ -249,6 +250,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 				onAddTerminal={(branch) => props.onAddTerminal(repo.path, branch)}
 				onRemoveBranch={(branch) => props.onRemoveBranch(repo.path, branch)}
 				onRenameBranch={(branch) => props.onRenameBranch(repo.path, branch)}
+				onCreateBranch={props.onCreateBranch ? (branch) => props.onCreateBranch!(repo.path, branch) : undefined}
 				onShowPrDetail={(branch) => {
 					setPrDetailIsManual(true);
 					setPrDetailTarget({ repoPath: repo.path, branch });
