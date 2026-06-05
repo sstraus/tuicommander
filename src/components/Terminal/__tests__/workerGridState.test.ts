@@ -144,3 +144,73 @@ describe("createRepaintScheduler (dirty-flag rAF coalescing)", () => {
 		expect(cancel).toHaveBeenCalledWith(42);
 	});
 });
+
+// --- applyResize (geometry + dpr + theme + metrics + font) ---
+
+import { GUTTER_PX } from "../canvasTerminalUtils";
+import type { GridRenderer } from "../gridRenderer";
+import { applyResize } from "../workerGridState";
+import type { ResizeMessage } from "../workerProtocol";
+
+function makeMetrics(): import("../canvasTerminalUtils").CellMetrics {
+	return {
+		cellWidth: 8,
+		cellHeight: 16,
+		baseline: 12,
+		fontSize: 14,
+		dpr: 2,
+		scaledCellWidth: 16,
+		scaledCellHeight: 32,
+	};
+}
+
+function makeFakeCtx() {
+	const canvas = { width: 0, height: 0 };
+	const calls: string[] = [];
+	const ctx = {
+		canvas,
+		setTransform: (a: number, b: number, c: number, d: number, e: number, f: number) =>
+			calls.push(`setTransform(${a},${b},${c},${d},${e},${f})`),
+		scale: (x: number, y: number) => calls.push(`scale(${x},${y})`),
+		translate: (x: number, y: number) => calls.push(`translate(${x},${y})`),
+	} as unknown as OffscreenCanvasRenderingContext2D;
+	return { ctx, canvas, calls };
+}
+
+function makeResizeMsg(): ResizeMessage {
+	return {
+		type: "resize",
+		w: 100,
+		h: 50,
+		dpr: 2,
+		cols: 12,
+		rows: 3,
+		metrics: makeMetrics(),
+		bgDefault: "#222",
+		fgDefault: "#ddd",
+		fontFamily: "Hack",
+		fontWeight: 400,
+	};
+}
+
+describe("applyResize", () => {
+	it("sets the canvas device pixels to logical*dpr and applies dpr scale + gutter translate", () => {
+		const { ctx, canvas, calls } = makeFakeCtx();
+		const setTheme = vi.fn();
+		const gridRenderer = { setTheme } as unknown as GridRenderer;
+		let metrics: unknown = null;
+		let font: { family: string; weight: number | string } | null = null;
+
+		applyResize(
+			{ ctx, gridRenderer, setMetrics: (m) => (metrics = m), setFont: (family, weight) => (font = { family, weight }) },
+			makeResizeMsg(),
+		);
+
+		expect(canvas.width).toBe(200); // 100 * dpr 2
+		expect(canvas.height).toBe(100); // 50 * dpr 2
+		expect(calls).toEqual([`setTransform(1,0,0,1,0,0)`, `scale(2,2)`, `translate(${GUTTER_PX},0)`]);
+		expect(setTheme).toHaveBeenCalledWith("#222", "#ddd");
+		expect(metrics).toEqual(makeMetrics());
+		expect(font).toEqual({ family: "Hack", weight: 400 });
+	});
+});

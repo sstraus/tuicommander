@@ -5,6 +5,8 @@
 // is IRREVERSIBLE per canvas node and may only be called once per element — so
 // WorkerRenderer.init() guards on node ref-identity.
 
+import type { CellMetrics } from "./canvasTerminalUtils";
+
 // --- Message types (main -> worker) ---
 
 export interface InitMessage {
@@ -38,8 +40,31 @@ export interface FrameMessage {
 	buf: ArrayBuffer;
 }
 
-/** Discriminated union of all main->worker messages (grows in later steps). */
+/**
+ * Geometry + DPR + theme + metrics + font. Main does ALL DOM reads
+ * (getBoundingClientRect / getComputedStyle) and posts the result; the worker
+ * never touches the DOM. `w`/`h` are logical (CSS) pixels; the worker sets the
+ * device pixels to `w*dpr` / `h*dpr` and scales accordingly.
+ */
+export interface ResizeMessage {
+	type: "resize";
+	w: number;
+	h: number;
+	dpr: number;
+	cols: number;
+	rows: number;
+	metrics: CellMetrics;
+	bgDefault: string;
+	fgDefault: string;
+	fontFamily: string;
+	fontWeight: number | string;
+}
+
+/** Discriminated union of all main->worker messages reduced by the worker state. */
 export type WorkerInboundMessage = InitMessage | FontsMessage | FrameMessage;
+
+/** All messages the worker entry handles (reducer messages + resize config). */
+export type WorkerMessage = WorkerInboundMessage | ResizeMessage;
 
 // --- Minimal structural interfaces so tests can inject fakes ---
 
@@ -115,6 +140,12 @@ export class WorkerRenderer {
 			message,
 			payloads.map((p) => p.source),
 		);
+	}
+
+	/** Post geometry/DPR/theme/metrics/font config to the worker (structured clone). */
+	postResize(config: Omit<ResizeMessage, "type">): void {
+		const message: ResizeMessage = { type: "resize", ...config };
+		this.worker.postMessage(message);
 	}
 
 	/**

@@ -11,7 +11,9 @@
 // subset too is a smaller, separate follow-up; kept apart for now to avoid
 // destabilising the entangled live onFrame.
 
-import type { DecodedFrame, DecodedRow } from "./canvasTerminalUtils";
+import { type CellMetrics, type DecodedFrame, type DecodedRow, GUTTER_PX } from "./canvasTerminalUtils";
+import type { GridRenderer } from "./gridRenderer";
+import type { ResizeMessage } from "./workerProtocol";
 
 export interface WorkerGridState {
 	rowMap: Map<number, DecodedRow>;
@@ -114,4 +116,30 @@ export function createRepaintScheduler(
 	}
 
 	return { schedule, stop };
+}
+
+/** What applyResize needs to mutate (worker entry supplies these). */
+export interface ResizeTarget {
+	ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
+	gridRenderer: GridRenderer;
+	setMetrics(m: CellMetrics): void;
+	setFont(family: string, weight: number | string): void;
+}
+
+/**
+ * Apply a resize/config message inside the worker. Mirrors CanvasTerminal's
+ * remeasure: device pixels = logical * dpr, then re-apply the dpr scale + gutter
+ * translate (setting canvas size resets the transform). Theme/metrics/font are
+ * pushed so the shared gridRenderer can paint identically to the main path.
+ */
+export function applyResize(t: ResizeTarget, msg: ResizeMessage): void {
+	t.ctx.canvas.width = Math.round(msg.w * msg.dpr);
+	t.ctx.canvas.height = Math.round(msg.h * msg.dpr);
+	// Canvas resize clears the transform; re-establish identity → scale → gutter.
+	t.ctx.setTransform(1, 0, 0, 1, 0, 0);
+	t.ctx.scale(msg.dpr, msg.dpr);
+	t.ctx.translate(GUTTER_PX, 0);
+	t.gridRenderer.setTheme(msg.bgDefault, msg.fgDefault);
+	t.setFont(msg.fontFamily, msg.fontWeight);
+	t.setMetrics(msg.metrics);
 }

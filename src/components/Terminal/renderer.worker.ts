@@ -15,6 +15,7 @@ import { type CellMetrics, decodeBinaryFrame } from "./canvasTerminalUtils";
 import { createGridRenderer, type GridRenderer } from "./gridRenderer";
 import {
 	applyFrameToGrid,
+	applyResize,
 	createRepaintScheduler,
 	createWorkerGridState,
 } from "./workerGridState";
@@ -24,7 +25,7 @@ import {
 	type FontEnv,
 	type FontFaceLike,
 	reduceRendererMessage,
-	type WorkerInboundMessage,
+	type WorkerMessage,
 } from "./workerProtocol";
 
 // Real font environment: the global FontFace constructor + the worker's font
@@ -76,10 +77,32 @@ const state = createRendererState({
 	},
 });
 
-self.onmessage = (e: MessageEvent<WorkerInboundMessage>) => {
-	reduceRendererMessage(state, e.data);
+self.onmessage = (e: MessageEvent<WorkerMessage>) => {
+	const msg = e.data;
+	if (msg.type === "resize") {
+		if (gridRenderer && state.ctx) {
+			applyResize(
+				{
+					ctx: state.ctx,
+					gridRenderer,
+					setMetrics: (m) => {
+						metrics = m;
+					},
+					setFont: (family, weight) => {
+						fontFamily = family;
+						fontWeight = weight;
+					},
+				},
+				msg,
+			);
+			scheduler.schedule();
+		}
+		return;
+	}
+
+	reduceRendererMessage(state, msg);
 	// Once the OffscreenCanvas context exists (after init), build the renderer.
-	if (e.data.type === "init" && state.ctx && !gridRenderer) {
+	if (msg.type === "init" && state.ctx && !gridRenderer) {
 		gridRenderer = createGridRenderer(state.ctx, {
 			fontWeight: () => fontWeight,
 			getFontFamily: () => fontFamily,

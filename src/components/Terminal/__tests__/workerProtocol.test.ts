@@ -322,3 +322,44 @@ describe("dispatchFrameToWorker — ack BEFORE transfer (ticker must not starve)
 		expect(order).toEqual(["ack", "post", "ack", "post"]);
 	});
 });
+
+describe("WorkerRenderer.postResize", () => {
+	it("posts a resize message carrying geometry, metrics, theme and font", () => {
+		const worker = makeFakeWorker();
+		const r = new WorkerRenderer(worker);
+		const metrics = {
+			cellWidth: 8,
+			cellHeight: 16,
+			baseline: 12,
+			fontSize: 14,
+			dpr: 2,
+			scaledCellWidth: 16,
+			scaledCellHeight: 32,
+		};
+
+		r.postResize({
+			w: 100,
+			h: 50,
+			dpr: 2,
+			cols: 12,
+			rows: 3,
+			metrics,
+			bgDefault: "#222",
+			fgDefault: "#ddd",
+			fontFamily: "Hack",
+			fontWeight: 400,
+		});
+
+		expect(worker.posts).toHaveLength(1);
+		expect(worker.posts[0].msg).toMatchObject({
+			type: "resize",
+			w: 100,
+			h: 50,
+			dpr: 2,
+			bgDefault: "#222",
+			fontFamily: "Hack",
+		});
+		// config is structured-cloned, not transferred
+		expect(worker.posts[0].transfer).toBeUndefined();
+	});
+});
