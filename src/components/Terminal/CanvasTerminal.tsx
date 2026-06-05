@@ -26,7 +26,9 @@ import {
 	recordFrameTiming,
 	resetFrameTiming,
 } from "./frameTiming";
+import { fetchFontPayloads, resolveWorkerFontFaces } from "./fontAssets";
 import { createGridRenderer, type GridRenderer } from "./gridRenderer";
+import { chooseRenderer, dispatchFrameToWorker, WorkerRenderer } from "./workerProtocol";
 import { acquireCache, getSharedMetrics, invalidateGlyphCache, releaseCache } from "./glyphCache";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { filePathRegex, fileUrlRegex } from "./linkProvider";
@@ -82,6 +84,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	// Shared base-grid renderer (the single canvas2d paint implementation,
 	// also used by the render worker). Created in onMount once ctx exists.
 	let gridRenderer!: GridRenderer;
+	// Renderer mode is decided once at mount (chooseRenderer). "worker" transfers
+	// the base canvas to a Web Worker; "main" uses gridRenderer on this thread.
+	// Flipping the setting only affects terminals opened afterwards.
+	let rendererMode: "worker" | "main" = "main";
+	let renderWorker: Worker | null = null;
+	let workerRenderer: WorkerRenderer | null = null;
 
 	const [metrics, setMetrics] = createSignal<CellMetrics | null>(null);
 	const [focused, setFocused] = createSignal(false);
@@ -269,7 +277,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	}
 
 	function remeasure() {
-		if (!ctx) return;
+		// Worker mode owns the base canvas (no main `ctx`); it only needs octx + worker.
+		if (rendererMode === "main" && !ctx) return;
+		if (rendererMode === "worker" && !workerRenderer) return;
 		const rect = containerRef.getBoundingClientRect();
 		if (rect.width <= 0 || rect.height <= 0) return;
 
@@ -283,19 +293,37 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		cachedBgDefault = getComputedStyle(canvasRef).getPropertyValue("--bg-secondary").trim() || "#1e1e1e";
 		cachedFgDefault = getComputedStyle(canvasRef).getPropertyValue("--text-primary").trim() || "#d4d4d4";
-		gridRenderer.setTheme(cachedBgDefault, cachedFgDefault);
+		if (rendererMode === "main") gridRenderer.setTheme(cachedBgDefault, cachedFgDefault);
 
 		const cols = Math.floor((rect.width - GUTTER_PX - SCROLLBAR_PX) / m.cellWidth);
 		const rows = Math.floor(rect.height / m.cellHeight);
 		if (cols <= 0 || rows <= 0) return;
 		const logicalW = cols * m.cellWidth + GUTTER_PX;
 		const logicalH = rows * m.cellHeight;
-		canvasRef.width = logicalW * dpr;
-		canvasRef.height = logicalH * dpr;
+		if (rendererMode === "main") {
+			// Base canvas lives on this thread.
+			canvasRef.width = logicalW * dpr;
+			canvasRef.height = logicalH * dpr;
+			ctx.scale(dpr, dpr);
+			ctx.translate(GUTTER_PX, 0);
+		} else {
+			// Worker owns the base canvas size/transform via postResize below; the
+			// element still needs its CSS box set on this thread.
+			workerRenderer?.postResize({
+				w: logicalW,
+				h: logicalH,
+				dpr,
+				cols,
+				rows,
+				metrics: m,
+				bgDefault: cachedBgDefault,
+				fgDefault: cachedFgDefault,
+				fontFamily,
+				fontWeight,
+			});
+		}
 		canvasRef.style.width = `${logicalW}px`;
 		canvasRef.style.height = `${logicalH}px`;
-		ctx.scale(dpr, dpr);
-		ctx.translate(GUTTER_PX, 0);
 		overlayCanvasRef.width = logicalW * dpr;
 		overlayCanvasRef.height = logicalH * dpr;
 		overlayCanvasRef.style.width = `${logicalW}px`;
@@ -327,6 +355,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	}
 
 	function paintFrame(frame: DecodedFrame, m: CellMetrics, dirtyIndices?: Set<number>) {
+		// Worker mode paints the base grid off-thread; main never touches it here.
+		if (rendererMode === "worker") return;
 		// Base grid → shared renderer (same impl the worker uses).
 		gridRenderer.paintGrid(rowMap, m, { fullRepaint: fullRepaintNeeded, dirtyIndices });
 		fullRepaintNeeded = false;
@@ -853,6 +883,17 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	function onFrame(data: ArrayBuffer | number[]) {
 		const buffer = data instanceof ArrayBuffer ? data : new Uint8Array(data).buffer;
 
+		// Worker mode: ack on the MAIN thread FIRST (ticker must not starve), then
+		// transfer the buffer to the worker for decode + base-grid paint. The main
+		// thread does NO decode/paint here. (Cursor/selection overlay + currentFrame-
+		// driven input are not updated in worker mode — finalized in Phase 3/4.)
+		if (rendererMode === "worker" && workerRenderer) {
+			dispatchFrameToWorker(buffer, workerRenderer, () => {
+				invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame"));
+			});
+			return;
+		}
+
 		// Ack before decode. The backend ack path only clears the in-flight flag —
 		// the ticker sends the next frame on its own 8ms schedule. Acking before
 		// decode ensures the flag is cleared even if decodeBinaryFrame throws.
@@ -1330,18 +1371,49 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let scrollGestureEndTimer: ReturnType<typeof setTimeout> | undefined;
 
 	onMount(async () => {
-		const baseCtx = canvasRef.getContext("2d", { alpha: false });
 		const overlayCtx = overlayCanvasRef.getContext("2d");
-		if (!baseCtx || !overlayCtx) {
-			appLogger.error("terminal", "Failed to acquire canvas 2D context");
+		if (!overlayCtx) {
+			appLogger.error("terminal", "Failed to acquire overlay 2D context");
 			return;
 		}
-		ctx = baseCtx;
 		octx = overlayCtx;
-		gridRenderer = createGridRenderer(ctx, {
-			fontWeight: () => settingsStore.state.fontWeight,
-			getFontFamily: () => settingsStore.getFontFamily(),
-		});
+
+		rendererMode = chooseRenderer(
+			settingsStore.state.offscreenRenderer,
+			"transferControlToOffscreen" in HTMLCanvasElement.prototype,
+		);
+
+		if (rendererMode === "worker") {
+			// Off-main-thread: transfer the base canvas to the worker (irreversible,
+			// once-per-node) and feed it fonts. Decode + base-grid paint run there.
+			renderWorker = new Worker(new URL("./renderer.worker.ts", import.meta.url), { type: "module" });
+			workerRenderer = new WorkerRenderer(renderWorker);
+			// Worker returns drained frame buffers → recycle into the ping-pong pool.
+			renderWorker.onmessage = (e: MessageEvent) => {
+				if (e.data instanceof ArrayBuffer) workerRenderer?.recycle(e.data);
+			};
+			workerRenderer.init(canvasRef);
+			void (async () => {
+				try {
+					const faces = resolveWorkerFontFaces(settingsStore.state.font);
+					const payloads = await fetchFontPayloads(faces);
+					workerRenderer?.postFonts(payloads);
+				} catch (err) {
+					appLogger.warn("terminal", "worker font prefetch failed", { error: err });
+				}
+			})();
+		} else {
+			const baseCtx = canvasRef.getContext("2d", { alpha: false });
+			if (!baseCtx) {
+				appLogger.error("terminal", "Failed to acquire canvas 2D context");
+				return;
+			}
+			ctx = baseCtx;
+			gridRenderer = createGridRenderer(ctx, {
+				fontWeight: () => settingsStore.state.fontWeight,
+				getFontFamily: () => settingsStore.getFontFamily(),
+			});
+		}
 		installFrameTimingDebugHook();
 		acquireCache();
 		const fontFamily = settingsStore.getFontFamily();
@@ -2226,7 +2298,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		if (!alive) return;
 		settingsStore.state.theme;
 		invalidateGlyphCache();
-		gridRenderer.invalidateCaches();
+		// Worker mode: caches live in the worker's gridRenderer; remeasure()'s
+		// postResize re-pushes theme/font and the worker invalidates on resize.
+		gridRenderer?.invalidateCaches();
 		fullRepaintNeeded = true;
 		remeasure();
 	});
@@ -2281,6 +2355,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		rowMap.clear();
 		detectedLinks.clear();
 		gridRenderer?.invalidateCaches();
+		// Tear down the render worker (no leak): terminate + null refs. The base
+		// canvas was transferred to it, so this node's worker is single-use.
+		renderWorker?.terminate();
+		renderWorker = null;
+		workerRenderer = null;
 		releaseCache();
 	});
 

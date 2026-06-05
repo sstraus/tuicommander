@@ -95,6 +95,8 @@ self.onmessage = (e: MessageEvent<WorkerMessage>) => {
 				},
 				msg,
 			);
+			// Theme/font may have changed; drop memoized color/font strings.
+			gridRenderer.invalidateCaches();
 			scheduler.schedule();
 		}
 		return;

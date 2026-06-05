@@ -130,6 +130,11 @@ export class WorkerRenderer {
 		return true;
 	}
 
+	/** Terminate the underlying worker (teardown on unmount). */
+	terminate(): void {
+		this.worker.terminate?.();
+	}
+
 	/**
 	 * Post prefetched fonts to the worker in a single message, transferring each
 	 * woff2 ArrayBuffer (zero-copy; neuters the sender's copy).
@@ -191,6 +196,16 @@ export class WorkerRenderer {
 export function dispatchFrameToWorker(buf: ArrayBuffer, renderer: WorkerRenderer, ack: () => void): void {
 	ack();
 	renderer.postFrame(buf);
+}
+
+/**
+ * Renderer selection (capability detection): use the worker path only when the
+ * setting is on AND the platform supports transferControlToOffscreen; otherwise
+ * the universal main-thread canvas2d path. `supported` is injected so the
+ * decision is unit-testable.
+ */
+export function chooseRenderer(enabled: boolean, supported: boolean): "worker" | "main" {
+	return enabled && supported ? "worker" : "main";
 }
 
 // --- Worker side ---

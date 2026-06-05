@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+	chooseRenderer,
 	createRendererState,
 	dispatchFrameToWorker,
 	type FontEnv,
@@ -361,5 +362,35 @@ describe("WorkerRenderer.postResize", () => {
 		});
 		// config is structured-cloned, not transferred
 		expect(worker.posts[0].transfer).toBeUndefined();
+	});
+});
+
+describe("chooseRenderer (capability detection)", () => {
+	it("uses the worker only when enabled AND supported", () => {
+		expect(chooseRenderer(true, true)).toBe("worker");
+	});
+	it("falls back to main when the setting is off", () => {
+		expect(chooseRenderer(false, true)).toBe("main");
+	});
+	it("falls back to main when the API is unsupported", () => {
+		expect(chooseRenderer(true, false)).toBe("main");
+	});
+	it("is main when both off", () => {
+		expect(chooseRenderer(false, false)).toBe("main");
+	});
+});
+
+describe("WorkerRenderer.terminate", () => {
+	it("terminates the underlying worker", () => {
+		const terminate = vi.fn();
+		const worker: WorkerLike = { postMessage: () => {}, terminate };
+		const r = new WorkerRenderer(worker);
+		r.terminate();
+		expect(terminate).toHaveBeenCalledTimes(1);
+	});
+
+	it("is a no-op when the worker has no terminate()", () => {
+		const r = new WorkerRenderer({ postMessage: () => {} });
+		expect(() => r.terminate()).not.toThrow();
 	});
 });
