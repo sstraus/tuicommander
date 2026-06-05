@@ -1168,12 +1168,27 @@ describe("Sidebar", () => {
 			// feature/x is second (sorted after main)
 			fireEvent.contextMenu(branchItems[1], { clientX: 100, clientY: 200 });
 
-			const contextMenu = container.querySelector(".menu");
-			const items = contextMenu!.querySelectorAll(".item");
-			// Copy Path, Add Terminal, Set Label…, Rename Branch, Delete Worktree
-			expect(items.length).toBe(5);
-			const labels = Array.from(items).map((i) => i.querySelector(".label")!.textContent);
-			expect(labels).toContain("Delete Worktree");
+			const contextMenu = container.querySelector(".menu")!;
+			// Branch git ops were condensed into a "Branch ›" submenu (commit 37d95eaa),
+			// so top-level is Copy Path, Add Terminal, Set Label, Branch — and
+			// Delete Worktree lives inside the Branch submenu, not at top level.
+			const topLabels = Array.from(contextMenu.querySelectorAll(".item")).map(
+				(i) => i.querySelector(".label")!.textContent,
+			);
+			expect(topLabels).toContain("Branch");
+			expect(topLabels).not.toContain("Delete Worktree");
+
+			// Open the "Branch" submenu (hover) and assert Delete Worktree is inside.
+			const branchWrap = Array.from(contextMenu.querySelectorAll(".itemWrap")).find(
+				(w) => w.querySelector(".label")!.textContent === "Branch",
+			);
+			expect(branchWrap).toBeTruthy();
+			fireEvent.mouseEnter(branchWrap!);
+			const submenu = contextMenu.querySelector(".submenu")!;
+			const subLabels = Array.from(submenu.querySelectorAll(".item")).map(
+				(i) => i.querySelector(".label")!.textContent,
+			);
+			expect(subLabels).toContain("Delete Worktree");
 		});
 	});
 
