@@ -74,6 +74,7 @@ When adding a new `app.emit(event_name, payload)` call, document it here and lis
 |-------|---------|-------------|-------------------|
 | `session-standby` | `{ session_id: string, standby: bool }` | `pty.rs emit_standby_event()` | `useAppInit.ts` → `terminalsStore.update(termId, { standby })` |
 | `worktree-created` | `{ repo_path: string, branch: string, worktree_path: string }` | `mcp_transport.rs`, `session.rs`, `worktree_routes.rs` | TBD — frontend switch prompt |
+| `repo-changed` (git-state) | `{ repo_path: string }` | `repo_watcher.rs` — **only when the git-state fingerprint changed** (index size + resolved HEAD + porcelain status; skips no-op `.git` touches). Last fingerprint in `AppState.repo_git_fingerprints`. | `useAppInit.ts` → coalesced one bump/repo/frame via `revisionCoalescer` → `repositoriesStore.bumpRevision` |
 
 ### HTTP & MCP Server
 When adding routes or changing server behavior:
