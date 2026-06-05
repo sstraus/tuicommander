@@ -376,7 +376,7 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
                         return;
                     }
                     st.repo_git_fingerprints.insert(repo_path.clone(), fp);
-                    tracing::info!(source = "repo_watcher", path = %repo_path, "Emit repo-changed (git-state)");
+                    tracing::debug!(source = "repo_watcher", path = %repo_path, "Emit repo-changed (git-state)");
                     st.invalidate_repo_caches(&repo_path);
                     let _ = bus.send(AppEvent::RepoChanged {
                         repo_path: repo_path.clone(),
@@ -403,7 +403,7 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
                     COLD_WORKING_TREE_DEBOUNCE
                 };
                 emitter.trigger_with_delay(&EventCategory::WorkingTree, wt_delay, move || {
-                    tracing::info!(source = "repo_watcher", path = %repo_path, "Emit repo-changed (working-tree)");
+                    tracing::debug!(source = "repo_watcher", path = %repo_path, "Emit repo-changed (working-tree)");
                     st.invalidate_repo_caches(&repo_path);
                     let _ = bus.send(AppEvent::RepoChanged {
                         repo_path: repo_path.clone(),

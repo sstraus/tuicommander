@@ -1011,7 +1011,7 @@ async function subscribeToRegistry(targetChatId: string): Promise<void> {
 				}
 			},
 		};
-		appLogger.info("conversation", `subscribed to registry: chatId=${targetChatId} subId=${subId}`);
+		appLogger.debug("conversation", `subscribed to registry: chatId=${targetChatId} subId=${subId}`);
 	} catch (e) {
 		appLogger.warn("conversation", "subscribeToRegistry failed", { error: String(e) });
 	}

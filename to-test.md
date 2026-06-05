@@ -1163,3 +1163,10 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 ## Global Workspace: terminal hidden after repo round-trip (2026-06-05)
 - [x] activate() restores focus to a promoted terminal after restoring the layout — TerminalArea gates pane visibility on terminalsStore.activeId, which a repo switch reset to a repo terminal _(verified: globalWorkspace.ts activate() setActive(target); regression test "activate restores focus to a promoted terminal" fails without fix, passes with it; 40/40 globalWorkspace tests)_
 - [HUMAN] Live: activate Global Workspace, configure (promote terminals), switch to another repo, switch back, click Global Workspace → the workspace terminal/split appears immediately (no need to click a tab first).
+
+## BranchesTab: focus-steal fix + mouse-first (remove letter hotkeys) (2026-06-05)
+- [x] Auto-focus now fires once (`didAutoFocus` guard) instead of on every branch reload — the reactive `createEffect` tracked `loading()/branches()`, so each `repo-changed` refresh re-stole focus from the terminal, hijacking keystrokes (`n`/`d`/…) and image paste while the Git panel was open _(verified: BranchesTab.tsx createEffect guard; tsc+biome green)_
+- [x] Letter action shortcuts removed (`n` `d` `r` `R` `M` `p` `P` `f` + `Enter`-checkout); navigation kept (`↑`/`↓`, `/`, `Esc`) _(verified: handleKeyDown now only handles ArrowUp/Down/Escape/"/"; no actionRegistry duplicates)_
+- [x] `+` New-branch button added to the search bar header to preserve mouse-create (was the only `startCreate()` entry point) _(verified: PlusIcon button onClick=startCreate, reuses .foldToggle style)_
+- [VISUAL] Open Git panel → Branches: a `+` button sits left of the folder-fold toggle in the search bar; clicking it opens the inline create form; layout matches STYLE_GUIDE — screenshot after rebuild
+- [HUMAN] With Git panel open, click into a terminal and type (including after the letter "n") + paste an image → all input reaches the terminal; trigger a git refresh (commit/fetch) while typing → focus stays in the terminal (no re-steal)

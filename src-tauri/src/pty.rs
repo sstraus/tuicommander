@@ -1441,6 +1441,10 @@ struct ChunkProcessor {
     pending_planfiles: Vec<(String, std::time::Instant)>,
     /// Plan file paths already emitted — prevents re-emitting on spinner redraws.
     emitted_planfiles: std::collections::HashSet<String>,
+    /// Plan file paths that exhausted their retry window without appearing on
+    /// disk. Tombstoned so a still-on-screen reference (re-parsed every chunk)
+    /// is not re-queued forever — that was a source of endless retry-log spam.
+    gaveup_planfiles: std::collections::HashSet<String>,
     /// Tracks whether the terminal is in alternate screen buffer mode.
     /// Set on ESC[?1049h, cleared on ESC[?1049l.
     pub(crate) in_alt_buffer: bool,
@@ -1490,6 +1494,7 @@ impl ChunkProcessor {
             session_cwd,
             pending_planfiles: Vec::new(),
             emitted_planfiles: std::collections::HashSet::new(),
+            gaveup_planfiles: std::collections::HashSet::new(),
             in_alt_buffer: false,
             terminal_mode: crate::ai_agent::tui_detect::TerminalMode::Shell,
             alt_buffer_needs_clear: false,
@@ -1736,8 +1741,10 @@ impl ChunkProcessor {
         while i < self.pending_planfiles.len() {
             let (ref path, deadline) = self.pending_planfiles[i];
             if now > deadline {
-                tracing::info!("[plan-file] Retry expired (10s), dropping: {path}");
-                self.pending_planfiles.swap_remove(i);
+                tracing::debug!("[plan-file] Retry expired (10s), dropping: {path}");
+                let path = self.pending_planfiles.swap_remove(i).0;
+                // Tombstone so the still-visible reference isn't re-queued forever.
+                self.gaveup_planfiles.insert(path);
                 continue;
             }
             if std::path::Path::new(path).is_file() {
@@ -2235,8 +2242,12 @@ impl ChunkProcessor {
             // queue it for retry — checked each chunk for up to 10 seconds.
             let resolved = if let ParsedEvent::PlanFile { path } = event {
                 match self.resolve_planfile_path(path) {
-                    Some(p) if self.emitted_planfiles.contains(&p) => {
-                        // Already emitted — skip (spinner redraws re-parse the same line)
+                    Some(p)
+                        if self.emitted_planfiles.contains(&p)
+                            || self.gaveup_planfiles.contains(&p) =>
+                    {
+                        // Already emitted, or it exhausted its retry window — skip
+                        // (spinner redraws re-parse the same on-screen line).
                         continue;
                     }
                     Some(p) if std::path::Path::new(&p).is_file() => {
@@ -2247,7 +2258,7 @@ impl ChunkProcessor {
                     Some(p) => {
                         // File not on disk yet — queue for retry if not already pending
                         if !self.pending_planfiles.iter().any(|(pp, _)| pp == &p) {
-                            tracing::info!(
+                            tracing::debug!(
                                 "[plan-file] Queued for retry: {p} (cwd={:?})",
                                 self.session_cwd
                             );

@@ -40,21 +40,13 @@ Type in the search bar at the top of the panel to filter branches by name. The f
 
 ## Keyboard Operations
 
-With the Branches panel focused:
+The Branches panel is mouse-first: all branch actions live in the right-click context menu, the **+** (New branch) button, and row double-click. Only list navigation is on the keyboard:
 
 | Key | Action |
 |-----|--------|
 | `↑` / `↓` | Navigate branches |
-| `Enter` | Checkout selected branch |
-| `n` | Create new branch |
-| `d` | Delete selected branch |
-| `R` | Rename selected branch (inline edit) |
-| `M` | Merge selected branch into current |
-| `r` | Rebase current branch onto selected |
-| `P` | Push selected branch |
-| `p` | Pull current branch |
-| `f` | Fetch all remotes |
-| `Escape` | Close panel |
+| `/` | Focus the filter |
+| `Escape` | Clear filter / deselect |
 
 Switching between Git Panel tabs:
 
@@ -67,7 +59,7 @@ Switching between Git Panel tabs:
 
 ## Checkout
 
-Press `Enter` (or double-click) on any branch to check it out.
+Double-click any branch (or right-click → **Checkout**) to check it out.
 
 If your working tree has uncommitted changes, a dialog appears with three options:
 - **Stash** — automatically stashes changes, then checks out
@@ -76,7 +68,7 @@ If your working tree has uncommitted changes, a dialog appears with three option
 
 ## Create Branch
 
-Press **`n`** to open the inline branch creation form:
+Click the **+** (New branch) button in the panel header to open the inline branch creation form:
 
 1. Type the new branch name
 2. Optionally change the start point (defaults to HEAD)
@@ -85,7 +77,7 @@ Press **`n`** to open the inline branch creation form:
 
 ## Delete Branch
 
-Press **`d`** to delete the selected branch.
+Right-click a branch → **Delete**.
 
 - Uses safe delete (`git branch -d`) by default — refuses to delete unmerged branches
 - A confirmation prompt lets you switch to force-delete (`git branch -D`) if needed
@@ -93,27 +85,27 @@ Press **`d`** to delete the selected branch.
 
 ## Rename Branch
 
-Press **`R`** to edit the branch name inline. The current name is pre-filled. Press `Enter` to confirm or `Escape` to cancel.
+Right-click a branch → **Rename** to edit the branch name inline. The current name is pre-filled. Press `Enter` to confirm or `Escape` to cancel.
 
 ## Merge
 
-Press **`M`** to merge the selected branch into the current branch. The merge runs in the background. Conflicts are reported in the Git Panel header.
+Right-click a branch → **Merge into Current** to merge it into the current branch. The merge runs in the background. Conflicts are reported in the Git Panel header.
 
 ## Rebase
 
-Press **`r`** to rebase the current branch onto the selected branch. Runs in the background; conflicts are reported.
+Right-click a branch → **Rebase Current onto This** to rebase the current branch onto the selected branch. Runs in the background; conflicts are reported.
 
 ## Push
 
-Press **`P`** to push the current branch. If no upstream is set, TUICommander automatically configures the tracking relationship (`--set-upstream origin <branch>`).
+Right-click a branch → **Push**. If no upstream is set, TUICommander automatically configures the tracking relationship (`--set-upstream origin <branch>`).
 
 ## Pull
 
-Press **`p`** to pull the current branch from its upstream.
+Right-click a branch → **Pull** to pull the current branch from its upstream.
 
 ## Fetch
 
-Press **`f`** to fetch all remotes (`git fetch --all`).
+Right-click a branch → **Fetch** to fetch all remotes (`git fetch --all`).
 
 ## Context Menu
 
