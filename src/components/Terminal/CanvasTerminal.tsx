@@ -28,6 +28,12 @@ import {
 	SCROLLBAR_PX,
 	snapLineHeight,
 } from "./canvasTerminalUtils";
+import {
+	installFrameTimingDebugHook,
+	isFrameTimingEnabled,
+	recordFrameTiming,
+	resetFrameTiming,
+} from "./frameTiming";
 import { acquireCache, getSharedMetrics, invalidateGlyphCache, releaseCache } from "./glyphCache";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { filePathRegex, fileUrlRegex } from "./linkProvider";
@@ -223,7 +229,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			if (currentFrame && m) {
 				const dirty = pendingDirtyRows.size > 0 ? new Set(pendingDirtyRows) : undefined;
 				pendingDirtyRows.clear();
+				const timing = isFrameTimingEnabled();
+				const paintT0 = timing ? performance.now() : 0;
 				paintFrame(currentFrame, m, dirty);
+				if (timing) recordFrameTiming(props.sessionId, "paint", performance.now() - paintT0);
 			}
 		});
 	}
@@ -2110,7 +2119,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// decode ensures the flag is cleared even if decodeBinaryFrame throws.
 		invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame"));
 
+		const timing = isFrameTimingEnabled();
+		const decodeT0 = timing ? performance.now() : 0;
 		const frame = decodeBinaryFrame(buffer);
+		if (timing) recordFrameTiming(props.sessionId, "decode", performance.now() - decodeT0);
 		if (!frame) return;
 
 		if (frame.bell) props.onBell?.();
@@ -2587,6 +2599,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		}
 		ctx = baseCtx;
 		octx = overlayCtx;
+		installFrameTimingDebugHook();
 		acquireCache();
 		const fontFamily = settingsStore.getFontFamily();
 		const fontSize = settingsStore.state.defaultFontSize;
@@ -3522,6 +3535,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		clearTimeout(scrollGestureEndTimer);
 		linkCache.clear();
 		fileLinkCache.clear();
+		resetFrameTiming(props.sessionId);
 		rowMap.clear();
 		detectedLinks.clear();
 		colorStringCache.clear();
