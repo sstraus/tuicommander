@@ -451,10 +451,13 @@ describe("initApp", () => {
 		expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(2); // 1 init + 1 debounced
 	});
 
-	it("repo-changed bumps revision synchronously on every event (not debounced)", async () => {
-		// Regression: bumpRevision used to live inside the branchStatsTimer setTimeout,
-		// so when a second repo-changed arrived within the debounce window the first
-		// timer was cleared and its bump was lost — panel data went stale.
+	it("repo-changed coalesces same-frame bumps to one per repo, but never loses them across frames", async () => {
+		// Regression (story 1277-31a0): bumpRevision must NOT be lost when rapid
+		// repo-changed events arrive. It used to live inside the branchStatsTimer
+		// setTimeout, so a second event's clearTimeout dropped the first bump.
+		// It is now per-frame coalesced: a same-frame burst collapses to ONE bump
+		// per repo (avoiding redundant ~20-effect flushes) while still always
+		// delivering — separate frames each bump, so no update is lost.
 
 		const listenMock = vi.mocked(listen);
 		let repoChangedCallback: ((event: { payload: { repo_path: string } }) => void) | null = null;
@@ -473,16 +476,19 @@ describe("initApp", () => {
 		// Capture baseline AFTER initApp — setActive() may bump revision for non-hot repos.
 		const before = repositoriesStore.getRevision("/repo");
 
-		// Two rapid events — without the decoupling fix, the second event's
-		// clearTimeout drops the first bump and the counter only advances once.
+		// Two same-frame events collapse to a single bump after the frame flushes.
 		repoChangedCallback!({ payload: { repo_path: "/repo" } });
 		repoChangedCallback!({ payload: { repo_path: "/repo" } });
+		expect(repositoriesStore.getRevision("/repo")).toBe(before); // not yet delivered
+		await vi.advanceTimersByTimeAsync(20); // flush the animation frame
+		expect(repositoriesStore.getRevision("/repo")).toBe(before + 1); // coalesced to one
 
-		// Bumps must be visible synchronously, before any timer fires.
+		// A later event in a separate frame still bumps — bumps are never lost.
+		repoChangedCallback!({ payload: { repo_path: "/repo" } });
+		await vi.advanceTimersByTimeAsync(20);
 		expect(repositoriesStore.getRevision("/repo")).toBe(before + 2);
 
 		// And the branch-stats refresh stays debounced.
-		expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(1); // init only
 		await vi.advanceTimersByTimeAsync(500);
 		expect(deps.refreshAllBranchStats).toHaveBeenCalledTimes(2);
 	});

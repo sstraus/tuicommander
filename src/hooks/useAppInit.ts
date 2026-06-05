@@ -15,6 +15,7 @@ import { isTauri } from "../transport";
 import type { SavedTerminal } from "../types";
 import { assignTabToActiveGroup } from "../utils/paneTabAssign";
 import { isAbsolutePath, pathStartsWith, pathStripPrefix } from "../utils/pathUtils";
+import { createRevisionCoalescer } from "./revisionCoalescer";
 
 /** Track PTY sessions created by the browser client so we only close our own on unload */
 export const browserCreatedSessions = new Set<string>();
@@ -236,6 +237,13 @@ export async function initApp(deps: AppInitDeps) {
 	// thrash store subscriptions. Extended debounce + dedup (in refreshAllBranchStats)
 	// collapses the burst into a single run without forcing a UI reset.
 	let activeRefresh: Promise<void> | null = null;
+	// Coalesce revision bumps to at most one per repo per animation frame. A real
+	// change can still arrive as a same-frame burst (index + refs, or several
+	// repos), and each synchronous bump fires the full ~20-effect SolidJS flush.
+	// The coalescer collapses the burst WITHOUT losing bumps (each repo is flushed
+	// next frame), so panels re-fetch exactly once. (Backend already skips emits
+	// when git-state is unchanged; this is defense-in-depth for residual bursts.)
+	const revisionCoalescer = createRevisionCoalescer((repoPath) => repositoriesStore.bumpRevision(repoPath));
 	listen<{ repo_path: string }>("repo-changed", (event) => {
 		const { repo_path } = event.payload;
 		// Invalidate caches for this repo so panels fetch fresh data
@@ -244,10 +252,10 @@ export async function initApp(deps: AppInitDeps) {
 		);
 		// Reload .tuic.json (may have changed)
 		repoSettingsStore.loadLocalConfig(repo_path).catch(() => {});
-		// Signal panels to re-fetch on EVERY event. Coalescing the bump into the
-		// setTimeout below loses updates when rapid events clear the pending timer,
-		// leaving panels stuck on stale data (story 1277-31a0).
-		repositoriesStore.bumpRevision(repo_path);
+		// Signal panels to re-fetch on every logical change, coalesced per frame.
+		// (Not folded into the branchStatsTimer below — that setTimeout is cleared
+		// on each event, which would drop bumps and leave panels stale, story 1277-31a0.)
+		revisionCoalescer.bump(repo_path);
 		// Discover external worktree changes. Use 500ms when idle, 1000ms when a
 		// refresh is already running so the next one doesn't race it. Only the
 		// branch-stats refresh is debounced; the revision bump above is not.
