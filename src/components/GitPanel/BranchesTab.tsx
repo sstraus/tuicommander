@@ -4,6 +4,7 @@ import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
+import { branchListsEqual } from "../../utils/branchListsEqual";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ContextMenu, type ContextMenuItem, createContextMenu } from "../ContextMenu/ContextMenu";
@@ -188,7 +189,10 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 					return [] as string[];
 				}),
 			]);
-			setBranches(result);
+			// Early-bail: skip setBranches when a revision bump produced an identical
+			// list (e.g. staging a file bumps the repo revision but the branches are
+			// unchanged) so Solid doesn't re-reconcile identical rows.
+			if (!branchListsEqual(branches(), result)) setBranches(result);
 			setRecentNames(recent);
 		} catch (err) {
 			appLogger.error("git", "Failed to load branches", err);
