@@ -14,7 +14,8 @@ type WatcherTrigger =
 	| { type: "error" }
 	| { type: "unseen" }
 	| { type: "pattern"; regex: string }
-	| { type: "pr_pushed"; authored_by_others: boolean };
+	| { type: "pr_pushed"; authored_by_others: boolean }
+	| { type: "pr_opened"; authored_by_others: boolean };
 
 type WatcherTriggerKey =
 	| "idle"
@@ -24,10 +25,11 @@ type WatcherTriggerKey =
 	| "question"
 	| "error"
 	| "unseen"
-	| "pr_pushed";
+	| "pr_pushed"
+	| "pr_opened";
 
-/** Static triggers (the dynamic pr_pushed.authored_by_others is set at submit). */
-const TRIGGER_MAP: Record<Exclude<WatcherTriggerKey, "pr_pushed">, WatcherTrigger> = {
+/** Static triggers (the dynamic PR-trigger authored_by_others is set at submit). */
+const TRIGGER_MAP: Record<Exclude<WatcherTriggerKey, "pr_pushed" | "pr_opened">, WatcherTrigger> = {
 	idle: { type: "idle" },
 	busy: { type: "busy" },
 	command_done: { type: "command_done", on_failure_only: false },
@@ -37,11 +39,11 @@ const TRIGGER_MAP: Record<Exclude<WatcherTriggerKey, "pr_pushed">, WatcherTrigge
 	unseen: { type: "unseen" },
 };
 
-/** PR-pushed is git-scoped, not a terminal trigger. Drives the repo/author UI. */
-export const isGitTrigger = (key: WatcherTriggerKey): boolean => key === "pr_pushed";
+/** PR triggers are git-scoped, not terminal triggers. Drive the repo/author UI. */
+export const isGitTrigger = (key: WatcherTriggerKey): boolean => key === "pr_pushed" || key === "pr_opened";
 
 export function buildTrigger(key: WatcherTriggerKey, authoredByOthers: boolean): WatcherTrigger {
-	if (key === "pr_pushed") return { type: "pr_pushed", authored_by_others: authoredByOthers };
+	if (key === "pr_pushed" || key === "pr_opened") return { type: key, authored_by_others: authoredByOthers };
 	return TRIGGER_MAP[key];
 }
 
@@ -72,6 +74,7 @@ const TRIGGER_LABELS: Record<string, string> = {
 	unseen: "Unseen",
 	pattern: "Pattern",
 	pr_pushed: "PR pushed",
+	pr_opened: "PR opened",
 };
 
 interface WatcherRule {
@@ -122,7 +125,6 @@ export const WatcherManager: Component = () => {
 	const [formPromptId, setFormPromptId] = createSignal("");
 	const [formRepoPath, setFormRepoPath] = createSignal("");
 	const [formAuthoredByOthers, setFormAuthoredByOthers] = createSignal(true);
-	const [showAdvanced, setShowAdvanced] = createSignal(false);
 
 	const smartPrompts = () => promptLibraryStore.getAllPrompts();
 	const repos = () => repositoriesStore.getAllReposOrdered();
@@ -162,7 +164,6 @@ export const WatcherManager: Component = () => {
 		setFormPromptId("");
 		setFormRepoPath("");
 		setFormAuthoredByOthers(true);
-		setShowAdvanced(false);
 		setEditingId(null);
 		setShowForm(false);
 	};
@@ -180,8 +181,7 @@ export const WatcherManager: Component = () => {
 		setFormCooldown(rule.cooldown_secs);
 		setFormPromptId(rule.prompt_id ?? "");
 		setFormRepoPath(rule.repo_path ?? "");
-		setFormAuthoredByOthers(rule.trigger.type === "pr_pushed" ? rule.trigger.authored_by_others : true);
-		setShowAdvanced(rule.instructions && !rule.prompt_id ? false : !!rule.instructions);
+		setFormAuthoredByOthers("authored_by_others" in rule.trigger ? rule.trigger.authored_by_others : true);
 		setEditingId(rule.id);
 		setShowForm(true);
 	};
@@ -311,6 +311,7 @@ export const WatcherManager: Component = () => {
 							<option value="error">Error</option>
 							<option value="unseen">Unseen</option>
 							<option value="pr_pushed">PR pushed</option>
+							<option value="pr_opened">PR opened</option>
 						</select>
 					</div>
 
@@ -340,7 +341,7 @@ export const WatcherManager: Component = () => {
 						</label>
 					</Show>
 
-					{/* Smart prompt picker — the primary action; instructions is the advanced fallback. */}
+					{/* Smart prompt picker — the primary action; instructions is the fallback. */}
 					<div class={s.formRow}>
 						<select
 							class={s.formSelect}
@@ -351,16 +352,8 @@ export const WatcherManager: Component = () => {
 							<option value="">No smart prompt (use instructions)</option>
 							<For each={smartPrompts()}>{(p) => <option value={p.id}>{p.name}</option>}</For>
 						</select>
-						<button
-							class={s.addBtn}
-							type="button"
-							onClick={() => setShowAdvanced(!showAdvanced())}
-							title="Provide raw instructions instead of / in addition to a smart prompt"
-						>
-							{showAdvanced() ? "Hide advanced" : "Advanced"}
-						</button>
 					</div>
-					<Show when={showAdvanced() || (!formPromptId() && !isGitTrigger(formTrigger()))}>
+					<Show when={!formPromptId() && !isGitTrigger(formTrigger())}>
 						<textarea
 							class={s.formTextarea}
 							placeholder="Instructions for the AI agent (fallback when no smart prompt is set)…"
@@ -392,7 +385,8 @@ export const WatcherManager: Component = () => {
 						<span class={s.unit}>s</span>
 						<span
 							class={s.helpTip}
-							title="Minimum seconds between consecutive fires. Prevents the watcher from triggering too frequently."
+							data-tooltip="Minimum seconds between consecutive fires. Prevents the watcher from triggering too frequently."
+							data-tooltip-align="right"
 						>
 							?
 						</span>

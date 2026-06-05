@@ -69,6 +69,17 @@ pub(crate) enum PrTransition {
         /// PR author login — used by the watcher's authored_by_others filter.
         author: String,
     },
+    /// A brand-new PR appeared on an open branch. Detected in `process_repo_update`
+    /// (no prior state to diff), not in `detect_transitions`. Carries `author` for
+    /// the watcher's authored_by_others filter and `head_ref_oid` for worktree review.
+    Opened {
+        repo_path: String,
+        branch: String,
+        pr_number: i32,
+        title: String,
+        head_ref_oid: String,
+        author: String,
+    },
 }
 
 fn is_ready(pr: &BranchPrStatus) -> bool {
@@ -541,6 +552,9 @@ fn process_repo_update(
     statuses: &[BranchPrStatus],
     prev: &mut PrevState,
 ) -> bool {
+    // First poll for this repo seeds `old_map` with pre-existing PRs; those must
+    // not fire `Opened`. Only PRs that appear on a *later* poll are genuinely new.
+    let first_poll_for_repo = !prev.contains_key(repo_path);
     let old_map = prev.entry(repo_path.to_string()).or_default();
     let mut changed = false;
     for new_pr in statuses {
@@ -559,6 +573,23 @@ fn process_repo_update(
                 || old_pr.checks != new_pr.checks
                 || old_pr.state != new_pr.state
         } else {
+            // Brand-new branch: emit Opened for open PRs (skipping the first poll's
+            // pre-existing set). The poller inserts it into old_map below, so a PR
+            // fires Opened at most once per appearance.
+            if !first_poll_for_repo && new_pr.state.to_uppercase() == "OPEN" {
+                let t = PrTransition::Opened {
+                    repo_path: repo_path.to_string(),
+                    branch: new_pr.branch.clone(),
+                    pr_number: new_pr.number,
+                    title: new_pr.title.clone(),
+                    head_ref_oid: new_pr.head_ref_oid.clone(),
+                    author: new_pr.author.clone(),
+                };
+                let _ = handle.emit("github-transition", &t);
+                let _ = state
+                    .event_bus
+                    .send(AppEvent::GitHubTransition { transition: t });
+            }
             true
         };
         if is_new {

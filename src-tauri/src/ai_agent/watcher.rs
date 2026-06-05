@@ -101,6 +101,11 @@ pub(crate) enum WatcherTrigger {
         #[serde(default = "default_true")]
         authored_by_others: bool,
     },
+    /// A brand-new PR was opened. Git-scoped, evaluated from `AppEvent::GitHubTransition`.
+    PrOpened {
+        #[serde(default = "default_true")]
+        authored_by_others: bool,
+    },
 }
 
 fn default_true() -> bool {
@@ -389,7 +394,8 @@ pub(crate) fn evaluate_trigger(
         | WatcherTrigger::Question { .. }
         | WatcherTrigger::Error
         | WatcherTrigger::Unseen
-        | WatcherTrigger::PrPushed { .. } => TriggerOutcome::Skip,
+        | WatcherTrigger::PrPushed { .. }
+        | WatcherTrigger::PrOpened { .. } => TriggerOutcome::Skip,
     }
 }
 
@@ -413,7 +419,14 @@ fn trigger_matches(trigger: &WatcherTrigger, kind: &EventKind) -> bool {
     }
 }
 
-/// Pure decision: should an active PrPushed rule fire for a given pushed commit?
+/// Which PR transition is being evaluated, so a rule only matches its own kind.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum PrEventKind {
+    Opened,
+    Pushed,
+}
+
+/// Pure decision: should an active PR rule fire for a given PR transition?
 /// Excludes dedup (caller owns the fired-oid set). `viewer` is the authenticated
 /// GitHub login (None when unresolved → cannot confirm authorship, so an
 /// `authored_by_others` rule conservatively skips to avoid reviewing own work).
@@ -422,12 +435,18 @@ fn pr_rule_matches(
     repo_path: &str,
     author: &str,
     viewer: Option<&str>,
+    kind: PrEventKind,
 ) -> bool {
     if rule.status != WatcherStatus::Active {
         return false;
     }
-    let authored_by_others = match &rule.trigger {
-        WatcherTrigger::PrPushed { authored_by_others } => *authored_by_others,
+    let authored_by_others = match (&rule.trigger, kind) {
+        (WatcherTrigger::PrPushed { authored_by_others }, PrEventKind::Pushed) => {
+            *authored_by_others
+        }
+        (WatcherTrigger::PrOpened { authored_by_others }, PrEventKind::Opened) => {
+            *authored_by_others
+        }
         _ => return false,
     };
     if rule.repo_path.as_deref() != Some(repo_path) {
@@ -668,6 +687,20 @@ impl WatcherEngine {
                     self.on_pr_pushed(&repo_path, pr_number, &branch, &head_ref_oid, &author)
                         .await;
                 }
+                Ok(AppEvent::GitHubTransition {
+                    transition:
+                        crate::github_poller::PrTransition::Opened {
+                            repo_path,
+                            branch,
+                            pr_number,
+                            head_ref_oid,
+                            author,
+                            ..
+                        },
+                }) => {
+                    self.on_pr_opened(&repo_path, pr_number, &branch, &head_ref_oid, &author)
+                        .await;
+                }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                     tracing::warn!("Watcher lagged {n} events");
                 }
@@ -831,7 +864,9 @@ going, DONE if it finished, WAITING if it is waiting for user input.",
             config
                 .rules
                 .iter()
-                .filter(|r| pr_rule_matches(r, repo_path, author, viewer.as_deref()))
+                .filter(|r| {
+                    pr_rule_matches(r, repo_path, author, viewer.as_deref(), PrEventKind::Pushed)
+                })
                 .map(|r| r.id.clone())
                 .collect()
         };
@@ -843,6 +878,37 @@ going, DONE if it finished, WAITING if it is waiting for user input.",
                 self.fire_pr_watcher(&rule_id, repo_path, branch, pr_number, head_ref_oid)
                     .await;
             }
+        }
+    }
+
+    /// Handle a brand-new PR: match active PrOpened rules scoped to this repo and
+    /// apply the authored_by_others filter. No dedup needed — the poller emits
+    /// `Opened` at most once per PR appearance (see `process_repo_update`).
+    async fn on_pr_opened(
+        &self,
+        repo_path: &str,
+        pr_number: i32,
+        branch: &str,
+        head_ref_oid: &str,
+        author: &str,
+    ) {
+        let viewer = crate::github::get_viewer_login(&self.state).await.ok();
+
+        let candidates: Vec<String> = {
+            let config = self.config.read();
+            config
+                .rules
+                .iter()
+                .filter(|r| {
+                    pr_rule_matches(r, repo_path, author, viewer.as_deref(), PrEventKind::Opened)
+                })
+                .map(|r| r.id.clone())
+                .collect()
+        };
+
+        for rule_id in candidates {
+            self.fire_pr_watcher(&rule_id, repo_path, branch, pr_number, head_ref_oid)
+                .await;
         }
     }
 
@@ -1303,33 +1369,69 @@ mod tests {
         r
     }
 
+    fn make_pr_opened_rule(repo: &str, authored_by_others: bool) -> WatcherRule {
+        let mut r = make_pr_rule(repo, authored_by_others);
+        r.trigger = WatcherTrigger::PrOpened { authored_by_others };
+        r
+    }
+
     #[test]
     fn pr_rule_matches_other_author_fires() {
         let rule = make_pr_rule("/repo", true);
         // PR by someone else, viewer is "me" → fire.
-        assert!(pr_rule_matches(&rule, "/repo", "octocat", Some("me")));
+        assert!(pr_rule_matches(
+            &rule,
+            "/repo",
+            "octocat",
+            Some("me"),
+            PrEventKind::Pushed
+        ));
     }
 
     #[test]
     fn pr_rule_matches_own_pr_skipped() {
         let rule = make_pr_rule("/repo", true);
         // PR authored by the viewer → skip (don't auto-review own work).
-        assert!(!pr_rule_matches(&rule, "/repo", "me", Some("me")));
+        assert!(!pr_rule_matches(
+            &rule,
+            "/repo",
+            "me",
+            Some("me"),
+            PrEventKind::Pushed
+        ));
     }
 
     #[test]
     fn pr_rule_matches_unresolved_viewer_skipped() {
         let rule = make_pr_rule("/repo", true);
         // Viewer unknown → cannot confirm authorship → skip.
-        assert!(!pr_rule_matches(&rule, "/repo", "octocat", None));
+        assert!(!pr_rule_matches(
+            &rule,
+            "/repo",
+            "octocat",
+            None,
+            PrEventKind::Pushed
+        ));
     }
 
     #[test]
     fn pr_rule_matches_authored_by_others_false_always_fires() {
         let rule = make_pr_rule("/repo", false);
         // No author filter → fire even for own PR / unresolved viewer.
-        assert!(pr_rule_matches(&rule, "/repo", "me", Some("me")));
-        assert!(pr_rule_matches(&rule, "/repo", "octocat", None));
+        assert!(pr_rule_matches(
+            &rule,
+            "/repo",
+            "me",
+            Some("me"),
+            PrEventKind::Pushed
+        ));
+        assert!(pr_rule_matches(
+            &rule,
+            "/repo",
+            "octocat",
+            None,
+            PrEventKind::Pushed
+        ));
     }
 
     #[test]
@@ -1339,7 +1441,8 @@ mod tests {
             &rule,
             "/other-repo",
             "octocat",
-            Some("me")
+            Some("me"),
+            PrEventKind::Pushed
         ));
     }
 
@@ -1347,10 +1450,65 @@ mod tests {
     fn pr_rule_matches_inactive_and_wrong_trigger_skipped() {
         let mut paused = make_pr_rule("/repo", false);
         paused.status = WatcherStatus::Paused;
-        assert!(!pr_rule_matches(&paused, "/repo", "octocat", Some("me")));
+        assert!(!pr_rule_matches(
+            &paused,
+            "/repo",
+            "octocat",
+            Some("me"),
+            PrEventKind::Pushed
+        ));
 
         let idle = make_rule(Some("s1"), "x"); // Idle trigger, not PrPushed
-        assert!(!pr_rule_matches(&idle, "/repo", "octocat", Some("me")));
+        assert!(!pr_rule_matches(
+            &idle,
+            "/repo",
+            "octocat",
+            Some("me"),
+            PrEventKind::Pushed
+        ));
+    }
+
+    #[test]
+    fn pr_opened_rule_matches_only_opened_kind() {
+        let opened = make_pr_opened_rule("/repo", true);
+        // Fires for an Opened transition by someone else.
+        assert!(pr_rule_matches(
+            &opened,
+            "/repo",
+            "octocat",
+            Some("me"),
+            PrEventKind::Opened
+        ));
+        // Inert for a Pushed transition — the kind must match the trigger.
+        assert!(!pr_rule_matches(
+            &opened,
+            "/repo",
+            "octocat",
+            Some("me"),
+            PrEventKind::Pushed
+        ));
+    }
+
+    #[test]
+    fn pr_pushed_rule_inert_for_opened_kind() {
+        let pushed = make_pr_rule("/repo", true);
+        // A PrPushed rule must not fire on a PR-opened transition.
+        assert!(!pr_rule_matches(
+            &pushed,
+            "/repo",
+            "octocat",
+            Some("me"),
+            PrEventKind::Opened
+        ));
+    }
+
+    #[test]
+    fn pr_opened_never_fires_idle_path() {
+        let trigger = WatcherTrigger::PrOpened {
+            authored_by_others: true,
+        };
+        assert_eq!(evaluate_trigger(&trigger, None, &[]), TriggerOutcome::Skip);
+        assert!(!trigger_matches(&trigger, &EventKind::Busy));
     }
 
     #[test]

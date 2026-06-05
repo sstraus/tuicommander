@@ -341,3 +341,67 @@ button:focus-visible {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Reusable CSS tooltip — WKWebView does NOT render native `title` tooltips, so any
+ * hover hint in the desktop app must use this instead. Add `data-tooltip="text"` to
+ * any element; the bubble shows above it on hover/focus, centered by default.
+ * Modifiers:
+ *   data-tooltip-pos="bottom"   flip below (near a panel's top edge)
+ *   data-tooltip-align="right"  anchor bubble's right edge to the element (near a right edge)
+ *   data-tooltip-align="left"   anchor bubble's left edge to the element
+ * Pure CSS, no JS. */
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 6px);
+  transform: translateX(-50%);
+  z-index: 10000;
+  width: max-content;
+  max-width: 240px;
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-2xs);
+  font-weight: 400;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: left;
+  box-shadow: var(--shadow-dropdown);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+[data-tooltip][data-tooltip-pos="bottom"]::after {
+  bottom: auto;
+  top: calc(100% + 6px);
+}
+
+[data-tooltip][data-tooltip-align="right"]::after {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+[data-tooltip][data-tooltip-align="left"]::after {
+  left: 0;
+  transform: none;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  /* Touch devices have no hover — never show the bubble. */
+  [data-tooltip]:hover::after { opacity: 0; }
+}

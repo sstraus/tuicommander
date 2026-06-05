@@ -16,6 +16,11 @@ WatcherEngine::run()          ← subscribes to broadcast channel
     ├─ api-error/rate-limit ► on_event()  ──► evaluate Error triggers
     ├─ user-input         ──► on_user_input() ──► auto-pause all active watchers for session
     └─ SessionClosed      ──► detach + pause all watchers for session
+
+event_bus (AppEvent::GitHubTransition)   ← emitted by github_poller
+    │
+    ├─ PrTransition::Pushed ─► on_pr_pushed() ─► evaluate PrPushed triggers (dedup by head_ref_oid)
+    └─ PrTransition::Opened ─► on_pr_opened() ─► evaluate PrOpened triggers (once per PR appearance)
 ```
 
 ## Data Model
@@ -50,13 +55,16 @@ Persisted in `ai-watchers.json` (app config dir).
 | `Error` | `on_event` | API error or rate limit detected |
 | `Unseen` | `on_idle` | Terminal is idle AND its tab is not visible |
 | `Pattern { regex }` | `on_idle` | Regex matches against last 50 screen lines |
+| `PrPushed { authored_by_others }` | `on_pr_pushed` | New commit pushed to an open PR (git-scoped via `repo_path`) |
+| `PrOpened { authored_by_others }` | `on_pr_opened` | A brand-new PR was opened (git-scoped via `repo_path`) |
 
 ### Trigger Evaluation Paths
 
-Triggers are evaluated in two distinct paths:
+Triggers are evaluated in three distinct paths:
 
 - **Idle path** (`on_idle`): Idle, CommandDone, Pattern, and Unseen are evaluated when the terminal transitions to idle. Unseen additionally checks `session_visibility` (tab visible flag from the frontend).
 - **Event path** (`on_event`): Busy, Question, and Error fire immediately when their corresponding event arrives — they don't wait for idle.
+- **GitHub path** (`on_pr_pushed` / `on_pr_opened`): PrPushed and PrOpened fire from `AppEvent::GitHubTransition` (emitted by `github_poller`), not the terminal paths. They are git-scoped to `repo_path`, apply the `authored_by_others` filter (skips PRs you authored, and skips when the GitHub viewer can't be resolved), and provision/reuse a worktree session to review the PR. `PrOpened` fires at most once per PR appearance (the poller suppresses the first-poll seed so pre-existing PRs don't fire); `PrPushed` dedups by `head_ref_oid` so it fires once per commit.
 
 ## Template / Instance Model
 

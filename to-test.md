@@ -1142,3 +1142,15 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [x] pr_pushed in trigger dropdown; repo selector + authored-by-others toggle gated by isGitTrigger _(verified: WatcherManager.tsx <Show when={isGitTrigger(formTrigger())}> + watcherManager.test.ts)_
 - [x] Smart-prompt picker sets prompt_id; instructions is advanced fallback _(verified: formPromptId signal + showAdvanced toggle; watcherFormReady test covers prompt-or-instructions)_
 - [VISUAL] Open Watchers popover, select "PR pushed": repo dropdown + "authored by others" checkbox appear, terminal-only instruction textarea collapses to advanced; layout matches STYLE_GUIDE — screenshot after rebuild
+
+## WatcherManager: PR-opened trigger + Advanced removal + tooltip (2026-06-05)
+- [x] `pr_opened` trigger end-to-end: WatcherTrigger::PrOpened, PrTransition::Opened, on_pr_opened, pr_rule_matches PrEventKind gating _(verified: watcher.rs tests pr_opened_rule_matches_only_opened_kind / pr_pushed_rule_inert_for_opened_kind; 104 cargo tests pass)_
+- [x] PrOpened fires at most once per PR (first-poll seed suppressed) _(verified: github_poller.rs process_repo_update `first_poll_for_repo` guard)_
+- [x] Advanced toggle removed from form; instructions textarea shows when no smart prompt _(verified: WatcherManager.tsx <Show when={!formPromptId() && !isGitTrigger(...)}>; tsc+biome+vitest green)_
+- [HUMAN] Real PR-opened e2e: open a new PR (by another author) on a repo with an active PrOpened watcher → worktree session provisioned + smart prompt fires (needs live GitHub + poll cycle)
+- [VISUAL] Watchers popover: "PR opened" option in trigger dropdown; selecting it shows repo + authored-by-others fields (same as PR pushed) — screenshot after rebuild
+- [VISUAL] Cooldown `?` shows a CSS tooltip on hover (native `title` is a no-op in WKWebView); bubble not clipped at the panel's right edge — screenshot after rebuild
+
+## PrDetailPopover: footer buttons aligned to PR panel (2026-06-05)
+- [x] View Diff / GitHub / Merge buttons restyled to `.ghActionBtn` language: compact (font-xs, 4px/12px, radius-sm), transparent bg, wrap layout, accent border-glow on hover _(verified: PrDetailPopover.module.css; PrDetailPopover.test.tsx 39 tests pass)_
+- [VISUAL] Open PR detail popover: footer buttons match the GitHub PR panel buttons in size/border/hover; no always-on filled background — screenshot after rebuild
