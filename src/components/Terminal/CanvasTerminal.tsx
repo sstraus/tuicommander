@@ -2849,13 +2849,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				return;
 			}
 
-			// Ctrl/Cmd+C with selection → copy instead of interrupt.
+			// Copy selection with the platform copy modifier (Cmd on macOS, Ctrl on Win/Linux).
+			// On macOS Ctrl+C is the interrupt key — distinct from Cmd+C — so it must NOT be
+			// hijacked into copy here; it falls through to the Emacs Ctrl+letter path → \x03.
 			// Also fires when coords were cleared by mouseup (auto-copy) but cache is still warm.
-			if (
-				(e.ctrlKey || e.metaKey) &&
-				e.key.toLowerCase() === "c" &&
-				((selectionStart && selectionEnd) || cachedSelectionText)
-			) {
+			const copyModifier = isMacOS() ? e.metaKey : e.ctrlKey;
+			if (copyModifier && e.key.toLowerCase() === "c" && ((selectionStart && selectionEnd) || cachedSelectionText)) {
 				e.preventDefault();
 				e.stopPropagation();
 				copySelection();
@@ -2882,8 +2881,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 			// Any keypress clears selection — full repaint to remove ghost highlights.
 			// Skip modifier keys and Cmd+C/V so the chord completes before selection is dropped.
+			// Include cachedSelectionText so a stale warm cache (coords already null) gets cleared
+			// too — otherwise it sticks until a resize and keeps swallowing Ctrl+C into copy.
 			if (
-				selectionStart &&
+				(selectionStart || cachedSelectionText) &&
 				e.key !== "Meta" &&
 				e.key !== "Control" &&
 				e.key !== "Alt" &&
@@ -3009,6 +3010,14 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			keyInputRef.focus({ preventScroll: true });
 			if (currentFrame && currentFrame.mouseMode > 0 && !e.shiftKey) {
 				const pos = canvasToGrid(e);
+				// Right-click on a detected link → let the contextmenu handler fire (Open /
+				// Copy link), even while an app has mouse reporting on. In WKWebView,
+				// preventDefault on a right-button mousedown suppresses the contextmenu event,
+				// so over a link we neither forward nor preventDefault: the app loses this one
+				// right-click, but the link menu works — UI-first (see #57).
+				if (e.button === 2 && detectedLinks.get(pos.row)?.some((sp) => pos.col >= sp.colStart && pos.col < sp.colEnd)) {
+					return;
+				}
 				if (currentFrame.sgrMouse) {
 					writePtyNoScroll(sgrMouseSequence(e.button, pos.col, pos.row, true, e));
 				}
