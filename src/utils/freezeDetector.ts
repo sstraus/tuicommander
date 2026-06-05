@@ -1,4 +1,5 @@
 import { appLogger } from "../stores/appLogger";
+import { getLastCrumb } from "./perfTrace";
 
 const THRESHOLD_MS = 200;
 const MAX_ENTRIES = 100;
@@ -35,7 +36,12 @@ function tick() {
 		}
 		if (now - lastLogAt > LOG_COOLDOWN_MS) {
 			lastLogAt = now;
-			appLogger.warn("app", `UI freeze: ${Math.round(gap)}ms gap (${freezes.length} total)`);
+			const crumb = getLastCrumb();
+			appLogger.warn(
+				"app",
+				`UI freeze: ${Math.round(gap)}ms gap (${freezes.length} total)`,
+				crumb ?? undefined,
+			);
 		}
 	}
 	lastTick = now;

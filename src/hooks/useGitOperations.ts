@@ -2,6 +2,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { batch, createSignal } from "solid-js";
 import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
 import { invoke } from "../invoke";
+import { timeSync } from "../utils/perfTrace";
 import { appLogger } from "../stores/appLogger";
 import { githubStore } from "../stores/github";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
@@ -402,6 +403,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
 				}
 
 				const drainedPendings: PendingCreation[] = [];
+				// Freeze-investigation: time the synchronous store-mutation batch per repo.
+				timeSync(`git.refreshBatch:${repoPath}`, () =>
 				batch(() => {
 					// Guard against race: if a branch was present before our async ops
 					// but is now gone from the live store, the user deleted it while we
@@ -416,7 +419,6 @@ export function useGitOperations(deps: GitOperationsDeps) {
 							});
 							continue;
 						}
-						appLogger.debug("git", `refreshAllBranchStats: setBranch "${branchName}"`, { worktreePath: wtPath });
 						const update: Partial<import("../stores/repositories").BranchState> = {
 							worktreePath: wtPath,
 							isMerged: mergedSet.has(branchName),
@@ -443,7 +445,8 @@ export function useGitOperations(deps: GitOperationsDeps) {
 					for (const branchName of toRemove) {
 						repositoriesStore.removeBranch(repoPath, branchName);
 					}
-				});
+				}),
+				);
 
 				// Drain pending creates: their backing worktree directory finally
 				// exists, so it's safe to run the setup script + spawn the initial

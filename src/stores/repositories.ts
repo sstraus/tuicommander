@@ -2,6 +2,7 @@ import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
 import type { SavedTerminal } from "../types";
+import { markPerf } from "../utils/perfTrace";
 import { appLogger } from "./appLogger";
 import { makeBranchKey } from "./tabManager";
 
@@ -315,6 +316,9 @@ function createRepositoriesStore() {
 
 		/** Set active repository */
 		setActive(path: string | null): void {
+			// Freeze-investigation breadcrumb: the synchronous reactive cascade off
+			// activeRepoPath/revision is the prime repo-switch-hang suspect.
+			markPerf("repo.setActive", { path });
 			setState("activeRepoPath", path);
 			save();
 			if (path && !getHotRepoPaths(state.repositories).includes(path)) {

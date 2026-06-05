@@ -7,6 +7,7 @@ import { terminalsStore } from "../../stores/terminals";
 import { filterMatchesToBlock } from "../../utils/blockSearchFilter";
 import { formatRelativeTime } from "../../utils/formatRelativeTime";
 import { handleOpenUrl } from "../../utils/openUrl";
+import { markPerf, noteFrameRequest } from "../../utils/perfTrace";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 import { installTouchHandlers } from "./canvasTerminalTouch";
 import { createTransport, type TerminalTransport } from "./canvasTerminalTransport";
@@ -890,6 +891,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	}
 
 	function onFrame(data: ArrayBuffer | number[]) {
+		// Freeze-investigation: main-thread frame work (ack+decode) runs here even
+		// in worker mode; a frame storm starving the rAF loop will breadcrumb here.
+		markPerf("term.onFrame");
 		const buffer = data instanceof ArrayBuffer ? data : new Uint8Array(data).buffer;
 
 		// Frame receipt ordering (Option A — main decodes + overlays, worker paints):
@@ -1455,6 +1459,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					hidden = false;
 					fullRepaintNeeded = true;
 					lastDisplayOffset = -1;
+					// Freeze-investigation: hidden→visible is the repo-switch show path.
+					// Breadcrumb + burst note expose the un-staggered thundering herd.
+					markPerf("term.show", { sessionId: props.sessionId });
 					// Don't clear rowMap/currentFrame here — keep showing the
 					// last painted content until the fresh frame arrives.
 					// onFrame() replaces rowMap when a full frame arrives
@@ -1468,11 +1475,13 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					if (rect.width <= 0 || rect.height <= 0) {
 						requestAnimationFrame(() => {
 							remeasure();
+							noteFrameRequest();
 							invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(
 								ipcErr("terminal_request_frame"),
 							);
 						});
 					} else {
+						noteFrameRequest();
 						invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(
 							ipcErr("terminal_request_frame"),
 						);
@@ -1480,8 +1489,17 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				} else if (!isVisible && !hidden) {
 					hidden = true;
 					stopBlink();
-					canvasRef.width = 1;
-					canvasRef.height = 1;
+					// Shrink to free the backing store while hidden. In worker mode the
+					// base canvas was transferred via transferControlToOffscreen(), so
+					// touching canvasRef.width/height from this thread throws
+					// InvalidStateError — only the worker may resize it (see remeasure).
+					// DEFERRED (2026-06-05) — worker-mode offscreen isn't shrunk while
+					// hidden; would need a postResize the worker repaints on. Skipped:
+					// flow control stops frames when hidden, so it just sits idle.
+					if (rendererMode === "main") {
+						canvasRef.width = 1;
+						canvasRef.height = 1;
+					}
 					overlayCanvasRef.width = 1;
 					overlayCanvasRef.height = 1;
 					rowMap.clear();
