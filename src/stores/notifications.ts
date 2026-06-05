@@ -152,7 +152,7 @@ function createNotificationsStore() {
 					.slice(1, 4)
 					.map((l) => l.trim())
 					.join(" <- ") ?? "unknown";
-			appLogger.info("app", `[Notification.Play] sound=${sound} focused=${document.hasFocus()} caller=${caller}`);
+			appLogger.debug("app", `[Notification.Play] sound=${sound} focused=${document.hasFocus()} caller=${caller}`);
 			await notificationManager.play(sound);
 			if (!document.hasFocus()) {
 				actions.incrementBadge();

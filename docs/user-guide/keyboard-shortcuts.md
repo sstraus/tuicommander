@@ -143,18 +143,14 @@ Note: File browser and Markdown panels are mutually exclusive — opening one cl
 
 ## Branches Panel (when panel is focused)
 
+The panel is mouse-first — branch actions (create, delete, rename, merge, rebase, push, pull, fetch, checkout) live in the right-click context menu, the **+** New-branch button, and row double-click. Only list navigation is on the keyboard.
+
 | Shortcut | Action |
 |----------|--------|
 | `↑` / `↓` | Navigate branch list |
-| `Enter` / double-click | Checkout selected branch |
-| `n` | Create new branch (inline form) |
-| `d` | Delete branch (safe; hold to force) |
-| `R` | Rename branch (inline edit) |
-| `M` | Merge selected branch into current |
-| `r` | Rebase current onto selected branch |
-| `P` | Push branch (auto-sets upstream if missing) |
-| `p` | Pull current branch |
-| `f` | Fetch all remotes |
+| `/` | Focus the filter |
+| `Escape` | Clear filter / deselect |
+| double-click | Checkout branch |
 | `Ctrl/Cmd+1–4` | Switch Git Panel tab (1=Changes, 2=Log, 3=Stashes, 4=Branches) |
 
 ## Quick Branch Switcher

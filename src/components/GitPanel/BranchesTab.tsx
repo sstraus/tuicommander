@@ -38,6 +38,12 @@ const FolderIcon = () => (
 	</svg>
 );
 
+const PlusIcon = () => (
+	<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
+		<path d="M7.25 1.75a.75.75 0 0 1 1.5 0V7.25h5.5a.75.75 0 0 1 0 1.5h-5.5v5.5a.75.75 0 0 1-1.5 0v-5.5h-5.5a.75.75 0 0 1 0-1.5h5.5V1.75z" />
+	</svg>
+);
+
 /** Convert an ISO date string to a short relative label like "3d ago", "2mo ago" */
 function relativeDate(isoDate: string | null): string {
 	if (!isoDate) return "";
@@ -721,67 +727,20 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 			searchInputRef?.focus();
 			return;
 		}
-
-		// Key actions require a selected branch
-		if (idx < 0 || idx >= flat.length) {
-			if (e.key === "n") {
-				e.preventDefault();
-				startCreate();
-			}
-			return;
-		}
-		const branch = flat[idx];
-
-		if (e.key === "Enter") {
-			e.preventDefault();
-			handleCheckout(branch);
-			return;
-		}
-		if (e.key === "n") {
-			e.preventDefault();
-			startCreate();
-			return;
-		}
-		if (e.key === "d") {
-			e.preventDefault();
-			startDelete(branch);
-			return;
-		}
-		if (e.key === "R") {
-			e.preventDefault();
-			startRename(branch);
-			return;
-		}
-		if (e.key === "M") {
-			e.preventDefault();
-			startMerge(branch);
-			return;
-		}
-		if (e.key === "r") {
-			e.preventDefault();
-			startRebase(branch);
-			return;
-		}
-		if (e.key === "P") {
-			e.preventDefault();
-			doPush(branch);
-			return;
-		}
-		if (e.key === "p") {
-			e.preventDefault();
-			doPull(branch);
-			return;
-		}
-		if (e.key === "f") {
-			e.preventDefault();
-			doFetch(branch);
-			return;
-		}
+		// Branch actions are mouse-first (context menu / row dblclick / New button).
+		// Only arrow nav + "/" + Escape are handled here — no letter-key shortcuts.
 	}
 
-	// Focus container on mount so keyboard nav works immediately
+	// Focus container ONCE when branches first load so keyboard nav works
+	// immediately. Must NOT re-run on every refresh: this effect tracks
+	// loading()/branches(), which change on each repo-changed reload — without
+	// the guard it would steal focus back from the terminal on every refresh,
+	// hijacking keystrokes (n/d/r/p…) and paste while the panel is open.
+	let didAutoFocus = false;
 	createEffect(() => {
+		if (didAutoFocus) return;
 		if (!loading() && branches().length > 0) {
+			didAutoFocus = true;
 			containerRef?.focus();
 		}
 	});
@@ -968,6 +927,9 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 						}
 					}}
 				/>
+				<button class={s.foldToggle} title="New branch" onClick={() => startCreate()}>
+					<PlusIcon />
+				</button>
 				<button
 					class={cx(s.foldToggle, foldingEnabled() && s.foldToggleActive)}
 					title={foldingEnabled() ? "Disable prefix grouping" : "Enable prefix grouping"}
