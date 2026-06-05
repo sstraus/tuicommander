@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { DecodedFrame, DecodedRow } from "../canvasTerminalUtils";
-import { applyFrameToGrid, createRepaintScheduler, createWorkerGridState } from "../workerGridState";
+import {
+	applyFrameToGrid,
+	createRepaintScheduler,
+	createWorkerGridState,
+	decideFrameGrid,
+	type FrameGridPrev,
+} from "../workerGridState";
 
 function makeRow(index: number, count = 8): DecodedRow {
 	return {
@@ -80,16 +86,146 @@ describe("applyFrameToGrid", () => {
 		expect(s.rowMap.size).toBe(1);
 	});
 
-	it("discards stale rows and forces full repaint when a partial frame arrives after scroll", () => {
+	it("discards stale rows WITHOUT merging the partial frame after a scroll (waits for full frame)", () => {
 		const s = createWorkerGridState();
 		applyFrameToGrid(s, makeFrame({ screenRows: 3, rows: [makeRow(0), makeRow(1), makeRow(2)] }));
 		s.fullRepaintNeeded = false;
 		s.pendingDirtyRows.clear();
 
-		applyFrameToGrid(s, makeFrame({ screenRows: 3, displayOffset: 5, historySize: 100, rows: [makeRow(0, 6)] }));
+		const decision = applyFrameToGrid(
+			s,
+			makeFrame({ screenRows: 3, displayOffset: 5, historySize: 100, rows: [makeRow(0, 6)] }),
+		);
 
+		// Mirrors main onFrame: the partial rows are keyed to the OLD viewportTop, so
+		// merging them under the new displayOffset would paint ghost content. Clear and
+		// wait for the full frame main re-requests — the partial rows are NOT merged.
+		expect(decision.scrollWait).toBe(true);
 		expect(s.fullRepaintNeeded).toBe(true);
-		expect(s.rowMap.size).toBe(1);
+		expect(s.rowMap.size).toBe(0);
+		expect(s.pendingDirtyRows.size).toBe(0);
+	});
+});
+
+describe("decideFrameGrid (shared main/worker grid decision)", () => {
+	const prev: FrameGridPrev = { lastScreenRows: 24, lastScreenCols: 80, lastDisplayOffset: 0, lastHistorySize: 100 };
+
+	it("flags geomChanged when screen rows or cols differ", () => {
+		expect(decideFrameGrid(prev, makeFrame({ screenRows: 30, rows: [] }), 24).geomChanged).toBe(true);
+		expect(decideFrameGrid(prev, makeFrame({ screenRows: 24, screenCols: 100, rows: [] }), 24).geomChanged).toBe(true);
+		expect(decideFrameGrid(prev, makeFrame({ screenRows: 24, screenCols: 80, rows: [] }), 24).geomChanged).toBe(false);
+	});
+
+	it("flags scrollChanged when displayOffset or historySize differ", () => {
+		expect(decideFrameGrid(prev, makeFrame({ screenRows: 24, displayOffset: 5, historySize: 100, rows: [] }), 24).scrollChanged).toBe(true);
+		expect(decideFrameGrid(prev, makeFrame({ screenRows: 24, displayOffset: 0, historySize: 200, rows: [] }), 24).scrollChanged).toBe(true);
+		expect(decideFrameGrid(prev, makeFrame({ screenRows: 24, displayOffset: 0, historySize: 100, rows: [] }), 24).scrollChanged).toBe(false);
+	});
+
+	it("flags fullReplace when the frame carries >= screenRows rows", () => {
+		const rows = Array.from({ length: 24 }, (_, i) => makeRow(i));
+		expect(decideFrameGrid(prev, makeFrame({ screenRows: 24, historySize: 100, rows }), 24).fullReplace).toBe(true);
+		expect(decideFrameGrid(prev, makeFrame({ screenRows: 24, historySize: 100, rows: [makeRow(0)] }), 24).fullReplace).toBe(false);
+	});
+
+	it("uses fallbackRows for the full-replace threshold when frame.screenRows is 0", () => {
+		const rows = Array.from({ length: 3 }, (_, i) => makeRow(i));
+		// frame.screenRows 0 → threshold = fallbackRows (3) → 3 rows is a full replace.
+		// geomChanged because 0 !== prev.lastScreenRows (24).
+		const d = decideFrameGrid(prev, makeFrame({ screenRows: 0, historySize: 100, rows }), 3);
+		expect(d.fullReplace).toBe(true);
+	});
+
+	it("flags scrollWait only for a partial frame after a pure scroll (no geom change)", () => {
+		const partialScroll = decideFrameGrid(
+			prev,
+			makeFrame({ screenRows: 24, displayOffset: 5, historySize: 100, rows: [makeRow(0)] }),
+			24,
+		);
+		expect(partialScroll.scrollWait).toBe(true);
+
+		// A geometry change is not a scrollWait even if scroll also changed.
+		const geomAndScroll = decideFrameGrid(
+			prev,
+			makeFrame({ screenRows: 30, displayOffset: 5, historySize: 100, rows: [makeRow(0)] }),
+			24,
+		);
+		expect(geomAndScroll.scrollWait).toBe(false);
+
+		// A full frame after a scroll is a fullReplace, not a scrollWait.
+		const fullScroll = decideFrameGrid(
+			prev,
+			makeFrame({ screenRows: 24, displayOffset: 5, historySize: 100, rows: Array.from({ length: 24 }, (_, i) => makeRow(i)) }),
+			24,
+		);
+		expect(fullScroll.scrollWait).toBe(false);
+		expect(fullScroll.fullReplace).toBe(true);
+	});
+});
+
+// --- rowMap parity: the worker's applyFrameToGrid must track the SAME rowMap the
+// main onFrame builds. Both use decideFrameGrid; this reference applier replicates
+// the grid-relevant subset of CanvasTerminal.onFrame (side effects omitted) and
+// asserts the rowMap keys + flags stay identical across a representative sequence.
+describe("rowMap parity: worker applyFrameToGrid vs main onFrame grid logic", () => {
+	interface MainGrid extends FrameGridPrev {
+		rowMap: Map<number, DecodedRow>;
+		fullRepaintNeeded: boolean;
+	}
+	function mainGridApply(g: MainGrid, frame: DecodedFrame, lastResizeRows: number): void {
+		const d = decideFrameGrid(g, frame, lastResizeRows);
+		if (d.geomChanged) {
+			g.rowMap.clear();
+			g.fullRepaintNeeded = true;
+		}
+		if (d.scrollChanged || d.geomChanged) {
+			g.lastDisplayOffset = frame.displayOffset;
+			g.lastHistorySize = frame.historySize;
+			g.lastScreenRows = frame.screenRows;
+			g.lastScreenCols = frame.screenCols;
+		}
+		if (d.fullReplace) {
+			g.rowMap.clear();
+			g.fullRepaintNeeded = true;
+		} else if (d.scrollWait) {
+			g.rowMap.clear();
+			g.fullRepaintNeeded = true;
+			return; // main returns early here (re-requests a full frame); rows NOT merged
+		}
+		for (const row of frame.rows) g.rowMap.set(row.index, row);
+	}
+
+	it("keeps identical rowMap keys + fullRepaint across geom/scroll/partial/full frames", () => {
+		const worker = createWorkerGridState();
+		const main: MainGrid = {
+			rowMap: new Map(),
+			fullRepaintNeeded: true,
+			lastScreenRows: -1,
+			lastScreenCols: -1,
+			lastDisplayOffset: -1,
+			lastHistorySize: -1,
+		};
+		const RESIZE_ROWS = 3;
+		const full = () => makeFrame({ screenRows: 3, historySize: 100, rows: [makeRow(0), makeRow(1), makeRow(2)] });
+		const partialEdit = (hist: number) =>
+			makeFrame({ screenRows: 3, historySize: hist, rows: [makeRow(1, 5)] });
+		const partialAfterScroll = () =>
+			makeFrame({ screenRows: 3, displayOffset: 5, historySize: 100, rows: [makeRow(0, 6)] });
+		const geomChange = () => makeFrame({ screenRows: 5, screenCols: 100, rows: [makeRow(0, 4)] });
+
+		const sequence = [full(), partialEdit(100), partialAfterScroll(), full(), geomChange(), full()];
+		for (const frame of sequence) {
+			applyFrameToGrid(worker, frame);
+			mainGridApply(main, frame, RESIZE_ROWS);
+			expect([...worker.rowMap.keys()].sort((a, b) => a - b)).toEqual(
+				[...main.rowMap.keys()].sort((a, b) => a - b),
+			);
+			expect(worker.fullRepaintNeeded).toBe(main.fullRepaintNeeded);
+			// Simulate each side's render pass clearing the repaint flags.
+			worker.fullRepaintNeeded = false;
+			worker.pendingDirtyRows.clear();
+			main.fullRepaintNeeded = false;
+		}
 	});
 });
 

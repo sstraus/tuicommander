@@ -6,10 +6,11 @@
 // to maintain a rowMap + dirty tracking from decoded frames, then paint via the
 // shared gridRenderer.
 //
-// NOTE: this duplicates the rowMap-maintenance logic from onFrame (NOT the
-// paint logic — that is unified in gridRenderer). Unifying onFrame's grid
-// subset too is a smaller, separate follow-up; kept apart for now to avoid
-// destabilising the entangled live onFrame.
+// Phase 3: the frame->grid DECISION (geom/scroll/full-replace/scroll-wait) is now
+// shared with the main onFrame via decideFrameGrid, so the main overlay's rowMap
+// and the worker's paint rowMap can never diverge on what to clear/merge. Only the
+// side effects differ by design (main also clears selection/links, re-requests a
+// full frame, and tracks currentFrame; the worker just maintains its rowMap).
 
 import { type CellMetrics, type DecodedFrame, type DecodedRow, GUTTER_PX } from "./canvasTerminalUtils";
 import type { GridRenderer } from "./gridRenderer";
@@ -37,19 +38,56 @@ export function createWorkerGridState(): WorkerGridState {
 	};
 }
 
+/** Previous frame geometry/scroll state needed to decide what a new frame implies. */
+export interface FrameGridPrev {
+	lastScreenRows: number;
+	lastScreenCols: number;
+	lastDisplayOffset: number;
+	lastHistorySize: number;
+}
+
+/** What a newly-decoded frame means for the rowMap (shared by main + worker). */
+export interface FrameGridDecision {
+	geomChanged: boolean;
+	scrollChanged: boolean;
+	/** The frame carries a full screen of rows → replace the rowMap wholesale. */
+	fullReplace: boolean;
+	/** Partial frame after a scroll → clear and wait for a full frame; do NOT merge. */
+	scrollWait: boolean;
+}
+
 /**
- * Apply a decoded frame to the worker grid state. Mirrors onFrame's grid logic:
- * geometry change or full-screen frame replaces the rowMap (full repaint); a
- * scroll change with a partial frame discards stale rows (full repaint); an
+ * Decide what a decoded frame implies for the rowMap — the single source of truth
+ * shared by the main onFrame (overlay rowMap) and the worker applyFrameToGrid
+ * (paint rowMap), so the two can never diverge on clear/merge.
+ *
+ * `fallbackRows` is the screen-row count to assume when the frame omits its own
+ * (frame.screenRows === 0): the main passes lastResizeRows, the worker passes its
+ * lastScreenRows. The backend always sets frame.screenRows in practice, so the
+ * fallback only differs on degenerate frames.
+ */
+export function decideFrameGrid(prev: FrameGridPrev, frame: DecodedFrame, fallbackRows: number): FrameGridDecision {
+	const geomChanged = frame.screenRows !== prev.lastScreenRows || frame.screenCols !== prev.lastScreenCols;
+	const scrollChanged = frame.displayOffset !== prev.lastDisplayOffset || frame.historySize !== prev.lastHistorySize;
+	const screenRowCount = frame.screenRows || fallbackRows || 24;
+	const fullReplace = frame.rows.length >= screenRowCount;
+	const scrollWait = !fullReplace && scrollChanged && !geomChanged;
+	return { geomChanged, scrollChanged, fullReplace, scrollWait };
+}
+
+/**
+ * Apply a decoded frame to the worker grid state via the shared decideFrameGrid.
+ * Geometry change or full-screen frame replaces the rowMap (full repaint); a
+ * partial frame after a scroll discards stale rows and waits for the full frame
+ * the MAIN thread re-requests — it does NOT merge the partial rows (mirrors
+ * onFrame), else the worker's paint would desync from main's overlay; an
  * otherwise-partial frame merges rows and marks them dirty (incremental).
  * Only ever SETS fullRepaintNeeded; the render pass clears it + pendingDirtyRows.
  */
-export function applyFrameToGrid(s: WorkerGridState, frame: DecodedFrame): void {
-	const screenRowCount = frame.screenRows || s.lastScreenRows || 24;
-	const geomChanged = frame.screenRows !== s.lastScreenRows || frame.screenCols !== s.lastScreenCols;
-	const scrollChanged = frame.displayOffset !== s.lastDisplayOffset || frame.historySize !== s.lastHistorySize;
+export function applyFrameToGrid(s: WorkerGridState, frame: DecodedFrame): FrameGridDecision {
+	const decision = decideFrameGrid(s, frame, s.lastScreenRows);
 
-	if (geomChanged) {
+	if (decision.geomChanged) {
 		s.rowMap.clear();
 		s.fullRepaintNeeded = true;
 	}
@@ -59,20 +97,24 @@ export function applyFrameToGrid(s: WorkerGridState, frame: DecodedFrame): void 
 	s.lastDisplayOffset = frame.displayOffset;
 	s.lastHistorySize = frame.historySize;
 
-	if (frame.rows.length >= screenRowCount) {
+	if (decision.fullReplace) {
 		// Backend sent the whole screen → replace rowMap to discard stale entries.
 		s.rowMap.clear();
 		s.fullRepaintNeeded = true;
-	} else if (scrollChanged && !geomChanged) {
+	} else if (decision.scrollWait) {
 		// Partial frame after a scroll: old rowMap entries map to wrong rows now.
+		// Clear and wait for the re-requested full frame — do NOT merge the partial
+		// rows (that would desync the worker's paint from main's overlay rowMap).
 		s.rowMap.clear();
 		s.fullRepaintNeeded = true;
+		return decision;
 	}
 
 	for (const row of frame.rows) {
 		s.rowMap.set(row.index, row);
 		s.pendingDirtyRows.add(row.index);
 	}
+	return decision;
 }
 
 export interface RepaintScheduler {
