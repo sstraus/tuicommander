@@ -7,6 +7,7 @@ import {
 	type FontEnv,
 	type FontFaceLike,
 	type FontPayload,
+	receiveFrame,
 	reduceRendererMessage,
 	type TransferableCanvas,
 	WorkerRenderer,
@@ -321,6 +322,59 @@ describe("dispatchFrameToWorker — ack BEFORE transfer (ticker must not starve)
 		dispatchFrameToWorker(new ArrayBuffer(8), r, ack);
 
 		expect(order).toEqual(["ack", "post", "ack", "post"]);
+	});
+});
+
+describe("receiveFrame — ack → decode → transfer ordering (Option A: main decodes, worker paints)", () => {
+	it("worker mode: acks first, decodes on main, THEN transfers (decode before neuter)", () => {
+		const order: string[] = [];
+		const buf = new ArrayBuffer(16);
+		const frame = receiveFrame(buf, {
+			ack: () => order.push("ack"),
+			decode: (b) => {
+				order.push("decode");
+				expect(b).toBe(buf); // decode sees the intact buffer
+				return { ok: true };
+			},
+			transferToWorker: (b) => {
+				order.push("transfer");
+				expect(b).toBe(buf);
+			},
+		});
+
+		expect(order).toEqual(["ack", "decode", "transfer"]);
+		expect(frame).toEqual({ ok: true });
+	});
+
+	it("main mode: acks, decodes, and does NOT transfer (no worker)", () => {
+		const order: string[] = [];
+		const frame = receiveFrame(new ArrayBuffer(8), {
+			ack: () => order.push("ack"),
+			decode: () => {
+				order.push("decode");
+				return 42;
+			},
+			// transferToWorker omitted (main mode)
+		});
+
+		expect(order).toEqual(["ack", "decode"]);
+		expect(frame).toBe(42);
+	});
+
+	it("returns a null decode result (caller bails on its own bookkeeping)", () => {
+		const order: string[] = [];
+		const transferred: ArrayBuffer[] = [];
+		const buf = new ArrayBuffer(4);
+		const frame = receiveFrame<null>(buf, {
+			ack: () => order.push("ack"),
+			decode: () => null, // malformed frame
+			transferToWorker: (b) => transferred.push(b),
+		});
+
+		expect(frame).toBeNull();
+		// Ack + transfer still happen even when decode yields null (buffer recycled, flag cleared).
+		expect(order).toEqual(["ack"]);
+		expect(transferred).toEqual([buf]);
 	});
 });
 

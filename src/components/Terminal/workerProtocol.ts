@@ -198,6 +198,35 @@ export function dispatchFrameToWorker(buf: ArrayBuffer, renderer: WorkerRenderer
 	renderer.postFrame(buf);
 }
 
+/** Hooks for the shared frame-receipt ordering. `transferToWorker` is present only in worker mode. */
+export interface FrameReceipt<T> {
+	/** Ack the backend FIRST — clears the in-flight flag so the ticker never starves. */
+	ack: () => void;
+	/** Decode on the MAIN thread (cheap) — keeps rowMap + currentFrame alive for overlay + input. */
+	decode: (buf: ArrayBuffer) => T;
+	/** Worker mode only: transfer the buffer for off-thread paint (neuters it). */
+	transferToWorker?: (buf: ArrayBuffer) => void;
+}
+
+/**
+ * Sacrosanct frame-receipt ordering, extracted so it is unit-testable away from
+ * the CanvasTerminal closure (Option A — main decodes + overlays, worker paints):
+ *   1. ack      — FIRST. The backend ack only clears the in-flight flag; the
+ *                 ticker sends the next frame on its own 8/16ms schedule, so ack
+ *                 must never wait on decode/paint.
+ *   2. decode   — on the MAIN thread in BOTH modes; cheap (sub-0.1ms) and keeps
+ *                 rowMap + currentFrame alive for the overlay + input semantics.
+ *   3. transfer — worker mode only; MUST run after decode, because the transfer
+ *                 neuters the very buffer the decode just read.
+ * Returns the decode result (may be null) for the caller's bookkeeping.
+ */
+export function receiveFrame<T>(buf: ArrayBuffer, hooks: FrameReceipt<T>): T {
+	hooks.ack();
+	const frame = hooks.decode(buf);
+	hooks.transferToWorker?.(buf);
+	return frame;
+}
+
 /**
  * Renderer selection (capability detection): use the worker path only when the
  * setting is on AND the platform supports transferControlToOffscreen; otherwise
