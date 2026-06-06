@@ -77,6 +77,8 @@ pub(crate) mod sleep_prevention;
 pub(crate) mod smart_prompt;
 pub(crate) mod state;
 #[cfg(feature = "desktop")]
+mod press_and_hold;
+#[cfg(feature = "desktop")]
 mod tab_shortcut;
 pub(crate) mod tailscale;
 pub(crate) mod terminal_grid;
@@ -1222,6 +1224,10 @@ pub fn run() {
 
                 // Install Ctrl+Tab monitor (macOS swallows it before JS/WKWebView)
                 tab_shortcut::install(app.handle().clone());
+
+                // Disable macOS press-and-hold accent popup so held keys repeat
+                // in the terminal's hidden input (vim j/l/i — issue #79)
+                press_and_hold::disable();
             }
 
             // Seed built-in themes on first run, then start hot-reload watcher

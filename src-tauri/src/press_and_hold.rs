@@ -1,0 +1,38 @@
+//! Disables the macOS "press-and-hold" accent popup for our app.
+//!
+//! When a key is held over a focused editable element in WKWebView, macOS
+//! shows the diacritic picker (é, ë, ê…) instead of repeating the key. TUIC
+//! routes terminal keystrokes through a hidden `<input>`, so holding `j`/`l`
+//! in vim triggers the picker instead of cursor movement (issue #79).
+//!
+//! Native terminals (iTerm2, Terminal.app) suppress this by registering
+//! `ApplePressAndHoldEnabled = NO` in their own user-defaults registration
+//! domain. We do the same: it is scoped to our app domain only and does NOT
+//! touch `NSGlobalDomain`, so a user who explicitly set `-g true` still wins.
+
+/// Register `ApplePressAndHoldEnabled = NO` in our registration domain.
+///
+/// Must run on the main thread (Tauri setup does) and before the WKWebView
+/// text input context first reads the flag.
+#[cfg(target_os = "macos")]
+pub fn disable() {
+    use objc2_foundation::{NSDictionary, NSNumber, NSString, NSUserDefaults};
+
+    let key = NSString::from_str("ApplePressAndHoldEnabled");
+    let value = NSNumber::new_bool(false);
+    let dict = NSDictionary::from_slices(&[&*key], &[&*value]);
+
+    // SAFETY: standardUserDefaults / registerDefaults are thread-safe AppKit
+    // calls; `dict` is a valid retained NSDictionary for the call duration.
+    let defaults = unsafe { NSUserDefaults::standardUserDefaults() };
+    defaults.registerDefaults(&dict);
+
+    tracing::info!(
+        source = "press-and-hold",
+        "ApplePressAndHoldEnabled=NO registered for app domain"
+    );
+}
+
+/// No-op on non-macOS platforms (the accent popup is macOS-only).
+#[cfg(not(target_os = "macos"))]
+pub fn disable() {}

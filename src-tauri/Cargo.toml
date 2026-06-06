@@ -209,7 +209,7 @@ tokio-console = ["console-subscriber"]
 [target.'cfg(target_os = "macos")'.dependencies]
 whisper-rs = { version = "0.16", features = ["metal"], optional = true }
 objc2 = { version = "0.6", optional = true }
-objc2-foundation = { version = "0.3", optional = true }
+objc2-foundation = { version = "0.3", features = ["NSUserDefaults", "NSDictionary", "NSString", "NSValue"], optional = true }
 objc2-app-kit = { version = "0.3", features = ["NSEvent", "block2"], optional = true }
 block2 = { version = "0.6", optional = true }
 

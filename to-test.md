@@ -10,6 +10,11 @@
 
 Features to test when TUICommander is more usable.
 
+## #79 — vim & repeating key (macOS press-and-hold) (2026-06-06)
+- [ ] [HUMAN] In a release `.app`, open vim and hold `j`/`l`/`i` → cursor repeats, NO accent picker popup _(needs release build: dev build lacks proper bundle domain; fix registers `ApplePressAndHoldEnabled=NO` in `press_and_hold.rs`, called from `lib.rs` setup)_
+- [ ] [HUMAN] Typing accented chars still works where intended (Option-key composition path unaffected — only the hold-for-accent picker is suppressed)
+- [ ] [HUMAN] A user with explicit global `defaults write -g ApplePressAndHoldEnabled -bool true` still sees their override (registration domain is lowest priority)
+
 ## Tab close kills agent process group (2026-06-03 — `b4ab1fb6`)
 - [x] Closing a tab whose agent (grandchild of the PTY shell) ignores Ctrl-C kills the agent too — no orphan reparented to launchd _(verified end-to-end: MCP `session create` → ran a foreground `sh` simulant (PID 4109, traps INT/TERM/HUP, sleeps) under `target/debug/tuicommander` (dev build with fix) → MCP `session close` → PID dead within 100ms, no `sleep 600` residue. Also unit test `pty.rs::close_pty_core_kills_agent_grandchild` — confirmed it FAILS without the killpg call.)_
 - [x] `kill_foreground_process_group` refuses unsafe pgid (≤1 or our own group) _(verified: pty.rs guard `pgid <= 1 || pgid == getpgid(0)` before `kill(-pgid, SIGKILL)`)_
@@ -1170,3 +1175,9 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [x] `+` New-branch button added to the search bar header to preserve mouse-create (was the only `startCreate()` entry point) _(verified: PlusIcon button onClick=startCreate, reuses .foldToggle style)_
 - [VISUAL] Open Git panel → Branches: a `+` button sits left of the folder-fold toggle in the search bar; clicking it opens the inline create form; layout matches STYLE_GUIDE — screenshot after rebuild
 - [HUMAN] With Git panel open, click into a terminal and type (including after the letter "n") + paste an image → all input reaches the terminal; trigger a git refresh (commit/fetch) while typing → focus stays in the terminal (no re-steal)
+
+## useMouseDrag: stuck drag fixed via pointer capture (2026-06-05)
+- [x] initMouseDrag converted from mouse-events to pointer-events; setPointerCapture(pointerId) fires only after the movement threshold is crossed (real drag, not a click) so child onClick semantics are unchanged; listeners stay on document (captured events bubble); pointercancel cleanup added _(verified: src/hooks/useMouseDrag.ts; tsc+biome green)_
+- [x] Call sites onMouseDown→onPointerDown + param MouseEvent→PointerEvent: RepoSection, GroupSection, TabBar (8 bindings), PaneTree _(verified: grep initMouseDrag callers all converted; tsc green)_
+- [HUMAN] Live macOS WKWebView: drag a repo in the Sidebar, a tab in the TabBar, and a pane in a split → the ghost releases on mouseup and the drop-line clears (previously the ghost stayed glued to the cursor). Root cause was native NSDragging swallowing mouseup; needs a real pointer gesture to confirm.
+- [HUMAN] Regression: plain click on a repo header (toggle expand), on inner repo buttons (GitHub badge, menu, collapse initials), and on a tab (activate) still works — capture only engages past the drag threshold.
