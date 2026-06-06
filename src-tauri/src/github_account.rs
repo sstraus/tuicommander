@@ -7,6 +7,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::credentials::Credential;
+
 /// A canonical, validated GitHub host (e.g. `github.com`, `ghe.acme.com`).
 ///
 /// Construction goes through [`GitHubHost::new`], which lowercases, trims, and
@@ -317,6 +319,28 @@ impl RepoBindingStore {
         self.bindings.retain(|_, b| b.account_id != account_id);
         before - self.bindings.len()
     }
+
+    /// Flatten to a stable, sorted list of entries (for the list command / UI).
+    pub(crate) fn entries(&self) -> Vec<RepoBindingEntry> {
+        let mut out: Vec<RepoBindingEntry> = self
+            .bindings
+            .iter()
+            .map(|(root, binding)| RepoBindingEntry {
+                repo_root: root.clone(),
+                binding: binding.clone(),
+            })
+            .collect();
+        out.sort_by(|a, b| a.repo_root.cmp(&b.repo_root));
+        out
+    }
+}
+
+/// A binding paired with the canonical repo root it applies to (for the UI).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct RepoBindingEntry {
+    pub(crate) repo_root: String,
+    #[serde(flatten)]
+    pub(crate) binding: RepoBinding,
 }
 
 // ---------------------------------------------------------------------------
@@ -427,6 +451,143 @@ pub(crate) fn resolve_repo_account(
         0 => RepoResolution::Unmonitored,
         _ => RepoResolution::NeedsBind(candidates),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Persistence operations (testable, no network / no State)
+// ---------------------------------------------------------------------------
+
+/// Add or update an account record, storing its PAT (GHE accounts) in the vault.
+pub(crate) fn add_account_record(account: GitHubAccount, pat: Option<&str>) -> Result<(), String> {
+    if let Some(pat) = pat {
+        crate::credentials::set(Credential::GithubToken(&account.id), pat)?;
+    }
+    let mut registry = GitHubAccountRegistry::load();
+    registry.upsert(account);
+    registry.save()
+}
+
+/// Remove an account everywhere: its PAT, its registry record, and every binding
+/// that referenced it. (Per-account in-memory cache invalidation is layered on
+/// in Step 9, once those caches become account-scoped.)
+pub(crate) fn remove_account_everywhere(account_id: &str) -> Result<(), String> {
+    // Best-effort token delete — absence is not an error.
+    let _ = crate::credentials::delete(Credential::GithubToken(account_id));
+    let mut registry = GitHubAccountRegistry::load();
+    registry.remove(account_id);
+    registry.save()?;
+    let mut bindings = RepoBindingStore::load();
+    bindings.remove_account_bindings(account_id);
+    bindings.save()
+}
+
+/// Persist a repo→account binding derived from the chosen remote (its owner/repo
+/// come from parsing that remote's URL).
+pub(crate) fn bind_repo_to_account(
+    repo_path: &std::path::Path,
+    account_id: &str,
+    remote_name: &str,
+) -> Result<RepoBinding, String> {
+    let (_, url) = crate::git::list_remotes(repo_path)
+        .into_iter()
+        .find(|(name, _)| name == remote_name)
+        .ok_or_else(|| format!("Remote '{remote_name}' not found"))?;
+    let (_, owner, repo) = parse_remote_url(&url)
+        .ok_or_else(|| format!("Remote '{remote_name}' is not a GitHub URL: {url}"))?;
+    let binding = RepoBinding {
+        account_id: account_id.to_string(),
+        owner,
+        repo,
+        remote_name: remote_name.to_string(),
+    };
+    let mut store = RepoBindingStore::load();
+    store.set_binding(repo_path, binding.clone());
+    store.save()?;
+    Ok(binding)
+}
+
+// ---------------------------------------------------------------------------
+// Tauri commands
+// ---------------------------------------------------------------------------
+
+/// Add a GitHub Enterprise Server account: validate the PAT against
+/// `{rest_base}/user`, store it under the new account id, and persist the record.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn github_add_account(
+    state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
+    host: String,
+    pat: String,
+) -> Result<GitHubAccount, String> {
+    let host = GitHubHost::new(&host).ok_or_else(|| format!("Invalid host: {host}"))?;
+    if host.is_cloud() {
+        return Err("github.com uses device-flow login, not a PAT.".to_string());
+    }
+    let pat = pat.trim().to_string();
+    if pat.is_empty() {
+        return Err("Personal Access Token is required".to_string());
+    }
+
+    // Validate the PAT and resolve the viewer login.
+    let url = format!("{}/user", host.rest_base());
+    let resp = state
+        .http_client
+        .get(&url)
+        .header("Authorization", format!("Bearer {pat}"))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "TUICommander")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| format!("Could not reach {}: {e}", host.as_str()))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        return Err(format!(
+            "Token rejected by {} (HTTP {status})",
+            host.as_str()
+        ));
+    }
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse /user response: {e}"))?;
+    let login = body["login"].as_str().map(String::from);
+
+    let account = GitHubAccount::ghe_pat(host, login);
+    add_account_record(account.clone(), Some(&pat))?;
+    Ok(account)
+}
+
+/// Remove an account: its PAT, its record, and all of its repo bindings.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn github_remove_account(id: String) -> Result<(), String> {
+    remove_account_everywhere(&id)
+}
+
+/// Persist a repo→account binding for the chosen remote.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn github_bind_repo(
+    repo_path: String,
+    account_id: String,
+    remote_name: String,
+) -> Result<RepoBinding, String> {
+    bind_repo_to_account(std::path::Path::new(&repo_path), &account_id, &remote_name)
+}
+
+/// List configured (non-github.com) accounts.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn github_list_accounts() -> Result<Vec<GitHubAccount>, String> {
+    Ok(GitHubAccountRegistry::load().list().to_vec())
+}
+
+/// List persisted repo→account bindings.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn github_list_bindings() -> Result<Vec<RepoBindingEntry>, String> {
+    Ok(RepoBindingStore::load().entries())
 }
 
 #[cfg(test)]
@@ -907,5 +1068,87 @@ mod tests {
             Some(&default),
         );
         assert!(matches!(res, RepoResolution::NeedsBind(_)));
+    }
+
+    // --- persistence operations (Step 6) ---
+
+    #[test]
+    fn add_account_record_persists_record_and_pat() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
+
+        let host = GitHubHost::new("ghe.add-test.example").unwrap();
+        let account = GitHubAccount::ghe_pat(host, Some("octocat".into()));
+        add_account_record(account.clone(), Some("ghp_add_test")).unwrap();
+
+        let registry = GitHubAccountRegistry::load();
+        assert_eq!(registry.get("ghe.add-test.example"), Some(&account));
+        assert_eq!(
+            crate::credentials::get(Credential::GithubToken("ghe.add-test.example")).unwrap(),
+            Some("ghp_add_test".to_string())
+        );
+
+        crate::credentials::delete(Credential::GithubToken("ghe.add-test.example")).unwrap();
+    }
+
+    #[test]
+    fn remove_account_everywhere_cascades() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
+        let repo = make_repo(dir.path(), "main");
+
+        let host = GitHubHost::new("ghe.remove-test.example").unwrap();
+        let account = GitHubAccount::ghe_pat(host, None);
+        add_account_record(account.clone(), Some("ghp_remove_test")).unwrap();
+        let mut bindings = RepoBindingStore::load();
+        bindings.set_binding(
+            &repo,
+            RepoBinding {
+                account_id: "ghe.remove-test.example".into(),
+                owner: "team".into(),
+                repo: "project".into(),
+                remote_name: "origin".into(),
+            },
+        );
+        bindings.save().unwrap();
+
+        remove_account_everywhere("ghe.remove-test.example").unwrap();
+
+        assert!(GitHubAccountRegistry::load().get("ghe.remove-test.example").is_none());
+        assert!(RepoBindingStore::load().get_binding(&repo).is_none());
+        assert_eq!(
+            crate::credentials::get(Credential::GithubToken("ghe.remove-test.example")).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn bind_repo_to_account_derives_owner_repo_from_remote() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _guard = crate::config::set_config_dir_override(dir.path().join("config"));
+        let repo = make_repo_with_remotes(
+            dir.path(),
+            "main",
+            &[("origin", "git@ghe.acme.com:team/project.git")],
+        );
+
+        let binding = bind_repo_to_account(&repo, "ghe.acme.com", "origin").unwrap();
+        assert_eq!(binding.owner, "team");
+        assert_eq!(binding.repo, "project");
+        assert_eq!(binding.account_id, "ghe.acme.com");
+
+        assert_eq!(RepoBindingStore::load().get_binding(&repo), Some(&binding));
+    }
+
+    #[test]
+    fn bind_repo_to_account_rejects_unknown_remote() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _guard = crate::config::set_config_dir_override(dir.path().join("config"));
+        let repo = make_repo_with_remotes(
+            dir.path(),
+            "main",
+            &[("origin", "git@github.com:octocat/hello.git")],
+        );
+        assert!(bind_repo_to_account(&repo, "github.com", "upstream").is_err());
     }
 }
