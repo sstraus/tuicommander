@@ -205,6 +205,15 @@ pub(crate) fn parse_remote_url(url: &str) -> Option<(String, String)> {
     None
 }
 
+/// Build the per-repo cooldown-cache key.
+///
+/// Seam for the multi-account refactor: today the key is host-agnostic
+/// (`owner/name`), which collides across hosts. Step 9 prefixes it with the
+/// account id. Keep this the single construction site so the change is local.
+pub(crate) fn cooldown_key(owner: &str, name: &str) -> String {
+    format!("{owner}/{name}")
+}
+
 /// Parse a header value as a u64, returning None if missing or unparseable.
 fn header_as_u64(headers: &reqwest::header::HeaderMap, name: &str) -> Option<u64> {
     headers.get(name)?.to_str().ok()?.parse().ok()
@@ -929,7 +938,7 @@ pub(crate) async fn get_all_issues_impl(
             let repo_path = PathBuf::from(path);
             let url = get_github_remote_url(&repo_path)?;
             let (owner, name) = parse_remote_url(&url)?;
-            let cooldown_key = format!("{owner}/{name}");
+            let cooldown_key = cooldown_key(&owner, &name);
             if state
                 .git_cache
                 .github_repo_cooldown
@@ -972,7 +981,7 @@ pub(crate) async fn get_all_issues_impl(
 /// Build a batched GraphQL query fetching PRs and (optionally) Issues for all
 /// repos in a single HTTP request.  When `filter_mode` is "disabled" the issues
 /// section is omitted entirely, saving GraphQL points.
-fn build_unified_batch_query(
+pub(crate) fn build_unified_batch_query(
     repos: &[(String, String, String)],
     include_merged: bool,
     filter_mode: &str,
@@ -1079,7 +1088,7 @@ pub(crate) async fn get_all_batch_impl(
             let repo_path = PathBuf::from(path);
             let url = get_github_remote_url(&repo_path)?;
             let (owner, name) = parse_remote_url(&url)?;
-            let cooldown_key = format!("{owner}/{name}");
+            let cooldown_key = cooldown_key(&owner, &name);
             if state
                 .git_cache
                 .github_repo_cooldown
@@ -1127,7 +1136,7 @@ pub(crate) async fn get_all_batch_impl(
 
         if repo_json.is_null() {
             if let Some((owner, name)) = alias_repo_names.get(alias.as_str()) {
-                let cooldown_key = format!("{owner}/{name}");
+                let cooldown_key = cooldown_key(owner, name);
                 let was_known = state
                     .git_cache
                     .github_repo_cooldown

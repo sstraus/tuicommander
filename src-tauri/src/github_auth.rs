@@ -307,12 +307,11 @@ pub(crate) struct GitHubDiagnostics {
     pub repos_monitored: u32,
 }
 
-/// Get GitHub integration diagnostics for the settings UI.
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) async fn github_diagnostics(
-    state: State<'_, Arc<AppState>>,
-) -> Result<GitHubDiagnostics, String> {
+/// Compute GitHub integration diagnostics from the current state.
+///
+/// Pure seam (no `State`/network) so the Step 0 characterization net can pin
+/// the diagnostics shape for a github.com-only setup.
+pub(crate) fn compute_diagnostics(state: &AppState) -> GitHubDiagnostics {
     let circuit_breaker_open = state.github_circuit_breaker.check().is_err();
     let circuit_breaker_status = match state.github_circuit_breaker.check() {
         Ok(()) => "OK".to_string(),
@@ -331,12 +330,21 @@ pub(crate) async fn github_diagnostics(
     // Count repos with cached GitHub status (successfully queried)
     let repos_monitored = state.git_cache.github_status.len() as u32;
 
-    Ok(GitHubDiagnostics {
+    GitHubDiagnostics {
         circuit_breaker_open,
         circuit_breaker_status,
         repos_not_found,
         repos_monitored,
-    })
+    }
+}
+
+/// Get GitHub integration diagnostics for the settings UI.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn github_diagnostics(
+    state: State<'_, Arc<AppState>>,
+) -> Result<GitHubDiagnostics, String> {
+    Ok(compute_diagnostics(&state))
 }
 
 /// Get the current GitHub authentication status, including the user's
@@ -502,34 +510,52 @@ pub(crate) fn resolve_all_candidates() -> Vec<(String, TokenSource)> {
 }
 
 fn resolve_all_candidates_inner(include_keychain: bool) -> Vec<(String, TokenSource)> {
-    let mut candidates = Vec::new();
-    if let Ok(token) = std::env::var("GH_TOKEN")
-        && !token.is_empty()
-    {
-        candidates.push((token, TokenSource::Env));
-    }
-    if let Ok(token) = std::env::var("GITHUB_TOKEN")
-        && !token.is_empty()
-        && !candidates.iter().any(|(t, _)| t == &token)
-    {
-        candidates.push((token, TokenSource::Env));
-    }
-    if include_keychain
-        && let Ok(Some(token)) = read_github_oauth_token()
-        && !candidates.iter().any(|(t, _)| t == &token)
-    {
-        candidates.push((token, TokenSource::OAuth));
-    }
-    if let Ok(token) = gh_token::get()
-        && !token.is_empty()
-        && !candidates.iter().any(|(t, _)| t == &token)
-    {
-        candidates.push((token, TokenSource::GhCli));
-    }
-    if let Some(token) = token_from_gh_cli()
-        && !candidates.iter().any(|(t, _)| t == &token)
-    {
-        candidates.push((token, TokenSource::GhCli));
+    // Gather raw inputs (with the same per-source guards as before), then delegate
+    // the priority ordering + value-dedup to the pure `order_token_candidates` seam.
+    let gh_token_env = std::env::var("GH_TOKEN").ok().filter(|t| !t.is_empty());
+    let github_token_env = std::env::var("GITHUB_TOKEN").ok().filter(|t| !t.is_empty());
+    let keychain_oauth = if include_keychain {
+        read_github_oauth_token().ok().flatten()
+    } else {
+        None
+    };
+    let gh_token_crate = gh_token::get().ok().filter(|t| !t.is_empty());
+    let gh_cli = token_from_gh_cli();
+    order_token_candidates(
+        gh_token_env,
+        github_token_env,
+        keychain_oauth,
+        gh_token_crate,
+        gh_cli,
+    )
+}
+
+/// Pure priority-ordering + value-dedup of token candidates.
+///
+/// Seam pinned by the Step 0 characterization net so the github.com fallback
+/// order can't drift during the multi-account refactor. Order is fixed:
+/// GH_TOKEN env → GITHUB_TOKEN env → keyring OAuth → gh_token crate → gh CLI.
+/// A later source is dropped when its token value already appeared earlier.
+pub(crate) fn order_token_candidates(
+    gh_token_env: Option<String>,
+    github_token_env: Option<String>,
+    keychain_oauth: Option<String>,
+    gh_token_crate: Option<String>,
+    gh_cli: Option<String>,
+) -> Vec<(String, TokenSource)> {
+    let mut candidates: Vec<(String, TokenSource)> = Vec::new();
+    for (tok, src) in [
+        (gh_token_env, TokenSource::Env),
+        (github_token_env, TokenSource::Env),
+        (keychain_oauth, TokenSource::OAuth),
+        (gh_token_crate, TokenSource::GhCli),
+        (gh_cli, TokenSource::GhCli),
+    ] {
+        if let Some(t) = tok
+            && !candidates.iter().any(|(existing, _)| existing == &t)
+        {
+            candidates.push((t, src));
+        }
     }
     candidates
 }
