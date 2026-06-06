@@ -161,6 +161,18 @@ When modifying AI Chat panel, settings, context menu actions, or streaming backe
 | `docs/user-guide/ai-chat.md` | User-facing AI Chat guide |
 | `docs/api/tauri-commands.md` | Chat Registry + `open_panel_window` / `close_panel_window` / `focus_main_window` commands |
 
+### Extended thinking (Opus 4.7+ reasoning)
+When modifying reasoning effort, the thinking stream, or its gating:
+
+| File | What to update |
+|------|----------------|
+| `src-tauri/src/ai_agent/conversation_engine.rs` | `ReasoningLevel`, `supports_extended_thinking`, `resolve_reasoning`, `ConversationEvent::ReasoningChunk`, ChatOptions build + `captured_content` (thinking+signature) append |
+| `src-tauri/src/ai_agent/commands.rs` | `reasoning_effort` param + persisted-config fallback + 50ms ReasoningChunk batching |
+| `src-tauri/src/ai_chat.rs` | `AiChatConfig.reasoning_effort` field |
+| `src/stores/conversationStore.ts` | `reasoning_chunk` event + `reasoningChunks` signal + reset on new turn |
+| `src/components/AIChatPanel/AIChatPanel.tsx` | "Thinking" disclosure render |
+| `src/components/SettingsPanel/tabs/AiChatTab.tsx` | Extended-thinking effort dropdown |
+
 ### AI Agent (ReAct loop, knowledge store, MCP terminal tools)
 When modifying the AI agent loop engine, tool dispatch, session knowledge store,
 OSC 133 outcome capture, or the `ai_terminal_*` MCP tools:

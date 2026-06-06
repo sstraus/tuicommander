@@ -4,8 +4,11 @@ import { appLogger } from "../../../stores/appLogger";
 import { toastsStore } from "../../../stores/toasts";
 import s from "../Settings.module.css";
 
+type ReasoningEffort = "auto" | "off" | "low" | "medium" | "high";
+
 interface AiChatConfig {
 	temperature: number;
+	reasoning_effort?: ReasoningEffort;
 }
 
 interface ScheduledJob {
@@ -106,6 +109,7 @@ interface SchedulerConfig {
 
 export const AiChatTab: Component = () => {
 	const [temperature, setTemperature] = createSignal(0.7);
+	const [reasoningEffort, setReasoningEffort] = createSignal<ReasoningEffort>("auto");
 
 	// Scheduler state
 	const [schedulerJobs, setSchedulerJobs] = createSignal<ScheduledJob[]>([]);
@@ -127,6 +131,7 @@ export const AiChatTab: Component = () => {
 				await invoke("save_ai_chat_config", {
 					config: {
 						temperature: temperature(),
+						reasoning_effort: reasoningEffort(),
 					},
 				});
 			} catch (e) {
@@ -139,6 +144,7 @@ export const AiChatTab: Component = () => {
 		try {
 			const config = await invoke<AiChatConfig>("load_ai_chat_config");
 			setTemperature(config.temperature ?? 0.7);
+			setReasoningEffort(config.reasoning_effort ?? "auto");
 		} catch (e) {
 			appLogger.warn("config", "Failed to load AI Chat config", e);
 		}
@@ -241,6 +247,27 @@ export const AiChatTab: Component = () => {
 					<span>{temperature().toFixed(1)}</span>
 				</div>
 				<p class={s.hint}>Controls randomness of responses (0.0 = deterministic, 1.0 = creative)</p>
+			</div>
+
+			<div class={s.group}>
+				<label>Extended thinking</label>
+				<select
+					value={reasoningEffort()}
+					onChange={(e) => {
+						setReasoningEffort(e.currentTarget.value as ReasoningEffort);
+						saveConfig();
+					}}
+				>
+					<option value="auto">Auto (on for Opus 4.7+)</option>
+					<option value="off">Off</option>
+					<option value="low">Low</option>
+					<option value="medium">Medium</option>
+					<option value="high">High</option>
+				</select>
+				<p class={s.hint}>
+					Streams the model's reasoning into a collapsible "Thinking" block. Only models that support extended thinking
+					(Claude Opus 4.7+) are affected; higher effort costs more tokens and latency.
+				</p>
 			</div>
 
 			{/* ── Scheduled Tasks ── */}

@@ -23,12 +23,18 @@ pub(crate) async fn start_conversation(
     temperature: Option<f32>,
     model_override: Option<String>,
     bypassed_tools: Option<Vec<String>>,
+    reasoning_effort: Option<String>,
     on_event: tauri::ipc::Channel<super::conversation_engine::ConversationEvent>,
 ) -> Result<(), String> {
     use super::conversation_engine::{
-        Autonomy, ConversationConfig, ConversationEvent, start_conversation as engine_start,
+        Autonomy, ConversationConfig, ConversationEvent, ReasoningLevel,
+        start_conversation as engine_start,
     };
     use std::collections::HashSet;
+
+    // Per-call param wins; otherwise fall back to the persisted AI-chat setting.
+    let reasoning_effort =
+        reasoning_effort.or_else(|| crate::ai_chat::load_ai_chat_config().reasoning_effort);
 
     let config = ConversationConfig {
         autonomy: match autonomy.as_deref() {
@@ -42,15 +48,32 @@ pub(crate) async fn start_conversation(
             .unwrap_or_default()
             .into_iter()
             .collect::<HashSet<_>>(),
+        reasoning: ReasoningLevel::from_opt(reasoning_effort.as_deref()),
     };
 
     let mut rx = engine_start(state.inner().clone(), session_id, message, config).await?;
 
-    // Bridge broadcast→Channel with 50ms TextChunk batching
+    // Bridge broadcast→Channel with 50ms TextChunk/ReasoningChunk batching
     tokio::spawn(async move {
         let mut text_batch = String::new();
+        let mut reasoning_batch = String::new();
         let mut interval = tokio::time::interval(std::time::Duration::from_millis(50));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+        // Flush text first, then reasoning, so ordering within a tick is stable.
+        let flush = |on_event: &tauri::ipc::Channel<ConversationEvent>,
+                     text: &mut String,
+                     reasoning: &mut String| {
+            if !text.is_empty() {
+                let _ = on_event.send(ConversationEvent::TextChunk {
+                    text: std::mem::take(text),
+                });
+            }
+            if !reasoning.is_empty() {
+                let _ = on_event.send(ConversationEvent::ReasoningChunk {
+                    text: std::mem::take(reasoning),
+                });
+            }
+        };
         loop {
             tokio::select! {
                 result = rx.recv() => {
@@ -58,28 +81,25 @@ pub(crate) async fn start_conversation(
                         Ok(ConversationEvent::TextChunk { text }) => {
                             text_batch.push_str(&text);
                         }
+                        Ok(ConversationEvent::ReasoningChunk { text }) => {
+                            reasoning_batch.push_str(&text);
+                        }
                         Ok(other) => {
-                            // Flush pending text batch before non-text event
-                            if !text_batch.is_empty() {
-                                let _ = on_event.send(ConversationEvent::TextChunk { text: std::mem::take(&mut text_batch) });
-                            }
+                            // Flush pending batches before a non-text event
+                            flush(&on_event, &mut text_batch, &mut reasoning_batch);
                             let done = matches!(other, ConversationEvent::Completed { .. } | ConversationEvent::Error { .. });
                             let _ = on_event.send(other);
                             if done { break; }
                         }
                         Err(_) => {
-                            // Flush remaining text on channel close
-                            if !text_batch.is_empty() {
-                                let _ = on_event.send(ConversationEvent::TextChunk { text: std::mem::take(&mut text_batch) });
-                            }
+                            // Flush remaining batches on channel close
+                            flush(&on_event, &mut text_batch, &mut reasoning_batch);
                             break;
                         }
                     }
                 }
                 _ = interval.tick() => {
-                    if !text_batch.is_empty() {
-                        let _ = on_event.send(ConversationEvent::TextChunk { text: std::mem::take(&mut text_batch) });
-                    }
+                    flush(&on_event, &mut text_batch, &mut reasoning_batch);
                 }
             }
         }

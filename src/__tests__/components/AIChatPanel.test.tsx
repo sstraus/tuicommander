@@ -1,16 +1,27 @@
 import { cleanup, render } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockSubscribe, mockUnsubscribe, mockChatId, mockDetachPanel, mockReattachPanel, mockClosePanel } = vi.hoisted(
-	() => ({
-		mockSubscribe: vi.fn().mockResolvedValue(undefined),
-		mockUnsubscribe: vi.fn().mockResolvedValue(undefined),
-		mockChatId: vi.fn(() => "chat-abc123"),
-		mockDetachPanel: vi.fn().mockResolvedValue(undefined),
-		mockReattachPanel: vi.fn().mockResolvedValue(undefined),
-		mockClosePanel: vi.fn().mockResolvedValue(undefined),
-	}),
-);
+const {
+	mockSubscribe,
+	mockUnsubscribe,
+	mockChatId,
+	mockDetachPanel,
+	mockReattachPanel,
+	mockClosePanel,
+	mockReasoningChunks,
+	mockIsThinking,
+	mockMessages,
+} = vi.hoisted(() => ({
+	mockSubscribe: vi.fn().mockResolvedValue(undefined),
+	mockUnsubscribe: vi.fn().mockResolvedValue(undefined),
+	mockChatId: vi.fn(() => "chat-abc123"),
+	mockDetachPanel: vi.fn().mockResolvedValue(undefined),
+	mockReattachPanel: vi.fn().mockResolvedValue(undefined),
+	mockClosePanel: vi.fn().mockResolvedValue(undefined),
+	mockReasoningChunks: vi.fn(() => ""),
+	mockIsThinking: vi.fn(() => false),
+	mockMessages: vi.fn(() => [] as Array<{ role: string; content: string }>),
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: vi.fn().mockResolvedValue(undefined),
@@ -30,7 +41,7 @@ vi.mock("../../panelRouter", () => ({
 
 vi.mock("../../stores/conversationStore", () => ({
 	conversationStore: {
-		messages: () => [],
+		messages: mockMessages,
 		isStreaming: () => false,
 		streamingText: () => "",
 		error: () => null,
@@ -57,6 +68,8 @@ vi.mock("../../stores/conversationStore", () => ({
 		approveAction: vi.fn(),
 		currentIteration: () => 0,
 		reset: vi.fn(),
+		reasoningChunks: mockReasoningChunks,
+		isThinking: mockIsThinking,
 	},
 }));
 
@@ -100,6 +113,9 @@ import { AIChatPanel } from "../../components/AIChatPanel/AIChatPanel";
 describe("AIChatPanel lifecycle", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
+		mockMessages.mockReturnValue([]);
+		mockReasoningChunks.mockReturnValue("");
+		mockIsThinking.mockReturnValue(false);
 	});
 
 	afterEach(() => {
@@ -133,5 +149,48 @@ describe("AIChatPanel lifecycle", () => {
 		const detachBtn = container.querySelector('button[title="Open in separate window"]') as HTMLButtonElement;
 		detachBtn.click();
 		expect(mockDetachPanel).toHaveBeenCalledWith("ai-chat");
+	});
+});
+
+describe("AIChatPanel extended-thinking disclosure", () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		// Reasoning only streams after a user turn exists, so keep a user message present.
+		mockMessages.mockReturnValue([{ role: "user", content: "hi" }]);
+		mockReasoningChunks.mockReturnValue("");
+		mockIsThinking.mockReturnValue(false);
+	});
+
+	afterEach(() => {
+		cleanup();
+	});
+
+	it("does not render the disclosure when there is no reasoning", () => {
+		mockReasoningChunks.mockReturnValue("");
+		const { container } = render(() => <AIChatPanel visible={true} onClose={() => {}} />);
+		expect(container.querySelector("details")).toBeNull();
+	});
+
+	it("renders the Thinking disclosure when reasoning is present", () => {
+		mockReasoningChunks.mockReturnValue("planning the steps");
+		const { container } = render(() => <AIChatPanel visible={true} onClose={() => {}} />);
+		const details = container.querySelector("details");
+		expect(details).not.toBeNull();
+		expect(details?.querySelector("summary")?.textContent).toBe("Thinking");
+		expect(details?.textContent).toContain("planning the steps");
+	});
+
+	it("auto-opens the disclosure while the model is thinking", () => {
+		mockReasoningChunks.mockReturnValue("still reasoning");
+		mockIsThinking.mockReturnValue(true);
+		const { container } = render(() => <AIChatPanel visible={true} onClose={() => {}} />);
+		expect(container.querySelector("details")?.hasAttribute("open")).toBe(true);
+	});
+
+	it("collapses the disclosure once thinking has finished", () => {
+		mockReasoningChunks.mockReturnValue("done reasoning");
+		mockIsThinking.mockReturnValue(false);
+		const { container } = render(() => <AIChatPanel visible={true} onClose={() => {}} />);
+		expect(container.querySelector("details")?.hasAttribute("open")).toBe(false);
 	});
 });

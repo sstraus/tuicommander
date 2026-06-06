@@ -720,6 +720,17 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 						)}
 					</For>
 
+					{/* Extended-thinking disclosure (Opus 4.7+): live reasoning, collapsible.
+					    Auto-opens while the model is thinking, stays available after. */}
+					<Show when={conversationStore.reasoningChunks()}>
+						<details class={s.reasoningDisclosure} open={conversationStore.isThinking()}>
+							<summary class={s.reasoningSummary}>Thinking</summary>
+							<div class={s.reasoningBody}>
+								<ContentRenderer content={conversationStore.reasoningChunks()} />
+							</div>
+						</details>
+					</Show>
+
 					{/* Streaming text: render as markdown so formatting is progressive */}
 					<Show when={conversationStore.isStreaming() && conversationStore.streamingText()}>
 						{(text) => (

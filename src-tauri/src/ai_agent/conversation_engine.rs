@@ -45,6 +45,56 @@ pub(crate) struct ConversationConfig {
     pub model_override: Option<String>,
     /// Tool names pre-approved for this session — bypass approval prompt.
     pub bypassed_tools: HashSet<String>,
+    /// Extended-thinking effort (Opus 4.7+); gated by model capability.
+    pub reasoning: ReasoningLevel,
+}
+
+/// User-facing reasoning effort. `Auto` enables a sensible default on capable
+/// models; all levels are no-ops on models without extended thinking.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum ReasoningLevel {
+    #[default]
+    Auto,
+    Off,
+    Low,
+    Medium,
+    High,
+}
+
+impl ReasoningLevel {
+    pub(crate) fn from_opt(s: Option<&str>) -> Self {
+        match s {
+            Some("off") => Self::Off,
+            Some("low") => Self::Low,
+            Some("medium") => Self::Medium,
+            Some("high") => Self::High,
+            _ => Self::Auto,
+        }
+    }
+}
+
+/// Opus 4.7+ gained adaptive extended thinking (genai 0.6.3).
+/// DEFERRED (2026-06-06) — extend match as new thinking-capable families ship.
+fn supports_extended_thinking(model: &str) -> bool {
+    let m = model.to_ascii_lowercase();
+    ["opus-4-7", "opus-4-8", "opus-4-9"]
+        .iter()
+        .any(|t| m.contains(t))
+}
+
+/// Resolve the user's reasoning level + the active model into a genai effort.
+/// Returns `None` when the model can't think or the user turned it off.
+fn resolve_reasoning(level: ReasoningLevel, model: &str) -> Option<genai::chat::ReasoningEffort> {
+    use genai::chat::ReasoningEffort;
+    if !supports_extended_thinking(model) {
+        return None;
+    }
+    match level {
+        ReasoningLevel::Off => None,
+        ReasoningLevel::Auto | ReasoningLevel::Medium => Some(ReasoningEffort::Medium),
+        ReasoningLevel::Low => Some(ReasoningEffort::Low),
+        ReasoningLevel::High => Some(ReasoningEffort::High),
+    }
 }
 
 impl Default for ConversationConfig {
@@ -55,6 +105,7 @@ impl Default for ConversationConfig {
             temperature: 0.7,
             model_override: None,
             bypassed_tools: HashSet::new(),
+            reasoning: ReasoningLevel::Auto,
         }
     }
 }
@@ -70,6 +121,10 @@ pub(crate) enum ConversationEvent {
         iteration: usize,
     },
     TextChunk {
+        text: String,
+    },
+    /// Streamed reasoning/thinking content (Opus 4.7+ extended thinking).
+    ReasoningChunk {
         text: String,
     },
     ToolCall {
@@ -333,7 +388,7 @@ async fn run_conversation(
     use futures_util::StreamExt;
     use genai::chat::{
         ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent as GenaiStreamEvent, ContentPart,
-        Tool, ToolResponse,
+        MessageContent, Tool, ToolCall, ToolResponse,
     };
 
     // Create filesystem sandbox from the session's CWD so that file tools
@@ -404,9 +459,8 @@ async fn run_conversation(
         })
         .collect();
 
-    let chat_options = ChatOptions::default()
-        .with_capture_tool_calls(true)
-        .with_temperature(config.temperature.into());
+    // chat_options is rebuilt per-iteration below: reasoning effort depends on the
+    // per-phase model, which is only known inside the loop.
 
     // Build system prompt — merged from agent + chat rules
     let base_system_prompt = build_base_system_prompt(&session_id);
@@ -495,15 +549,24 @@ async fn run_conversation(
         let phase = classify_phase(&phase_refs);
         let model = select_model_for_phase(&base_model, &model_overrides, phase);
 
+        // Reasoning effort depends on the active per-phase model.
+        let mut chat_options = ChatOptions::default()
+            .with_capture_tool_calls(true)
+            .with_temperature(config.temperature.into());
+        if let Some(effort) = resolve_reasoning(config.reasoning, model) {
+            chat_options = chat_options
+                .with_reasoning_effort(effort)
+                .with_capture_reasoning_content(true);
+        }
+
         let stream_resp = client
             .exec_chat_stream(model, chat_req.clone(), Some(&chat_options))
             .await
             .map_err(|e| format!("LLM stream error: {e}"))?;
 
         let mut stream = stream_resp.stream;
-        let mut tool_calls = Vec::new();
         let mut text_buf = String::new();
-        let mut assistant_parts: Vec<ContentPart> = Vec::new();
+        let mut captured: Option<MessageContent> = None;
 
         loop {
             tokio::select! {
@@ -513,15 +576,13 @@ async fn run_conversation(
                             text_buf.push_str(&chunk.content);
                             let _ = event_tx.send(ConversationEvent::TextChunk { text: chunk.content });
                         }
+                        Some(Ok(GenaiStreamEvent::ReasoningChunk(chunk))) => {
+                            // Opus 4.7+ extended thinking. The matching thought-signature
+                            // chunks are preserved via captured_content (see history append).
+                            let _ = event_tx.send(ConversationEvent::ReasoningChunk { text: chunk.content });
+                        }
                         Some(Ok(GenaiStreamEvent::End(end))) => {
-                            if let Some(content) = end.captured_content {
-                                for part in content.into_parts() {
-                                    match part {
-                                        ContentPart::ToolCall(tc) => tool_calls.push(tc),
-                                        other => assistant_parts.push(other),
-                                    }
-                                }
-                            }
+                            captured = end.captured_content;
                             break;
                         }
                         Some(Err(e)) => {
@@ -539,11 +600,24 @@ async fn run_conversation(
             }
         }
 
-        // Append assistant text to history
-        if !text_buf.is_empty() {
-            chat_req = chat_req.append_message(ChatMessage::assistant(&text_buf));
-        }
+        // Extract tool calls from the captured assistant content (clone so the
+        // original stays intact for the signature-preserving history append below).
+        let tool_calls: Vec<ToolCall> = captured
+            .as_ref()
+            .map(|c| {
+                c.clone()
+                    .into_parts()
+                    .into_iter()
+                    .filter_map(|p| match p {
+                        ContentPart::ToolCall(tc) => Some(tc),
+                        _ => None,
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
 
+        // On end_turn the conversation stops, so chat_req is never reused — no point
+        // appending the final assistant message (it would be discarded).
         if tool_calls.is_empty() {
             return Ok("end_turn".into());
         }
@@ -551,8 +625,19 @@ async fn run_conversation(
             return Ok("end_turn".into());
         }
 
-        // Append assistant message with tool calls
-        chat_req = chat_req.append_message(tool_calls.clone());
+        // Continuation: append the FULL captured assistant content so the thinking
+        // block + its signature ride in the same assistant turn as the tool_use
+        // (Anthropic requires this when extended thinking is on). Fall back to the
+        // streamed text when nothing was captured.
+        match captured {
+            Some(content) => {
+                chat_req = chat_req.append_message(ChatMessage::assistant(content));
+            }
+            None if !text_buf.is_empty() => {
+                chat_req = chat_req.append_message(ChatMessage::assistant(text_buf));
+            }
+            None => {}
+        }
 
         // Execute tool calls
         for tc in &tool_calls {
@@ -692,6 +777,72 @@ mod tests {
         let json = serde_json::to_string(&evt).unwrap();
         assert!(json.contains("\"type\":\"thinking\""));
         assert!(json.contains("\"iteration\":3"));
+    }
+
+    #[test]
+    fn conversation_event_reasoning_chunk_serializes() {
+        let evt = ConversationEvent::ReasoningChunk {
+            text: "let me think".into(),
+        };
+        let json = serde_json::to_string(&evt).unwrap();
+        assert!(json.contains("\"type\":\"reasoning_chunk\""));
+        assert!(json.contains("\"text\":\"let me think\""));
+    }
+
+    #[test]
+    fn config_reasoning_default_is_auto() {
+        assert_eq!(
+            ConversationConfig::default().reasoning,
+            ReasoningLevel::Auto
+        );
+    }
+
+    #[test]
+    fn reasoning_level_from_opt_maps_known_values() {
+        assert_eq!(ReasoningLevel::from_opt(Some("off")), ReasoningLevel::Off);
+        assert_eq!(ReasoningLevel::from_opt(Some("low")), ReasoningLevel::Low);
+        assert_eq!(
+            ReasoningLevel::from_opt(Some("medium")),
+            ReasoningLevel::Medium
+        );
+        assert_eq!(ReasoningLevel::from_opt(Some("high")), ReasoningLevel::High);
+        assert_eq!(ReasoningLevel::from_opt(None), ReasoningLevel::Auto);
+        assert_eq!(
+            ReasoningLevel::from_opt(Some("bogus")),
+            ReasoningLevel::Auto
+        );
+    }
+
+    #[test]
+    fn supports_extended_thinking_gates_on_opus_47_plus() {
+        assert!(supports_extended_thinking("claude-opus-4-7"));
+        assert!(supports_extended_thinking("claude-opus-4-8"));
+        assert!(supports_extended_thinking("CLAUDE-OPUS-4-8")); // case-insensitive
+        assert!(!supports_extended_thinking("claude-opus-4-1"));
+        assert!(!supports_extended_thinking("claude-sonnet-4-6"));
+        assert!(!supports_extended_thinking("gpt-5"));
+    }
+
+    #[test]
+    fn resolve_reasoning_off_and_unsupported_return_none() {
+        use genai::chat::ReasoningEffort;
+        // Off always disables, even on a capable model.
+        assert!(resolve_reasoning(ReasoningLevel::Off, "claude-opus-4-8").is_none());
+        // Any level is a no-op on a model without extended thinking.
+        assert!(resolve_reasoning(ReasoningLevel::High, "gpt-5").is_none());
+        // Auto maps to Medium on a capable model (ReasoningEffort has no PartialEq → matches!).
+        assert!(matches!(
+            resolve_reasoning(ReasoningLevel::Auto, "claude-opus-4-8"),
+            Some(ReasoningEffort::Medium)
+        ));
+        assert!(matches!(
+            resolve_reasoning(ReasoningLevel::Low, "claude-opus-4-7"),
+            Some(ReasoningEffort::Low)
+        ));
+        assert!(matches!(
+            resolve_reasoning(ReasoningLevel::High, "claude-opus-4-8"),
+            Some(ReasoningEffort::High)
+        ));
     }
 
     #[test]

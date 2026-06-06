@@ -744,3 +744,36 @@
   line-height: 1.4;
 }
 
+
+/* Extended-thinking disclosure (Opus 4.7+ reasoning) */
+.reasoningDisclosure {
+  margin: 4px 0;
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+
+.reasoningSummary {
+  cursor: pointer;
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+  user-select: none;
+  list-style: none;
+}
+
+.reasoningSummary::before {
+  content: "▸";
+  display: inline-block;
+  margin-right: 6px;
+  transition: transform var(--t-norm, 0.15s);
+}
+
+.reasoningDisclosure[open] > .reasoningSummary::before {
+  transform: rotate(90deg);
+}
+
+.reasoningBody {
+  margin-top: 4px;
+  font-size: var(--font-sm);
+  color: var(--fg-muted);
+  opacity: 0.85;
+}

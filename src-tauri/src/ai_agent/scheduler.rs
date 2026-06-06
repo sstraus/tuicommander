@@ -147,6 +147,7 @@ impl Scheduler {
             temperature: 0.7,
             model_override: None,
             bypassed_tools: HashSet::new(),
+            reasoning: super::conversation_engine::ReasoningLevel::default(),
         };
 
         let timeout = std::time::Duration::from_secs(job.max_duration_secs);

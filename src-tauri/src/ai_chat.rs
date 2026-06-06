@@ -22,6 +22,10 @@ pub(crate) struct AiChatConfig {
     /// Sampling temperature 0.0–1.0
     #[serde(default = "default_temperature")]
     pub temperature: f32,
+    /// Extended-thinking effort for the integrated chat: "off" | "low" | "medium"
+    /// | "high" | "auto" (default). Applied only on models that support it (Opus 4.7+).
+    #[serde(default)]
+    pub reasoning_effort: Option<String>,
     // Legacy fields — read from old ai-chat.json for one-time migration to
     // provider registry, never written again.
     #[serde(default = "default_provider", skip_serializing)]
@@ -46,6 +50,7 @@ impl Default for AiChatConfig {
     fn default() -> Self {
         Self {
             temperature: default_temperature(),
+            reasoning_effort: None,
             provider: default_provider(),
             model: String::new(),
             base_url: None,
@@ -749,6 +754,7 @@ mod tests {
             model: "claude-sonnet-4-5-20241022".to_string(),
             base_url: None,
             temperature: 0.5,
+            reasoning_effort: None,
             agent_model_overrides: None,
         };
         let json = serde_json::to_string(&config).unwrap();
