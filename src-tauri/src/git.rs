@@ -38,6 +38,42 @@ pub(crate) fn resolve_git_dir(repo_path: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Resolve a repo path to its canonical main-worktree root.
+///
+/// Linked worktrees share the binding of their main repo: a linked worktree's
+/// gitdir contains a `commondir` file pointing at the main `.git`; the main
+/// worktree root is that common dir's parent. A normal repo resolves to the
+/// parent of its own `.git`. Falls back to the canonicalized input when the path
+/// is not a git repo, so callers always get a stable key.
+pub(crate) fn canonical_repo_root(repo_path: &Path) -> PathBuf {
+    if let Some(git_dir) = resolve_git_dir(repo_path) {
+        // A linked worktree's gitdir has a `commondir` file → the main `.git`.
+        let common_git_dir = match fs::read_to_string(git_dir.join("commondir")) {
+            Ok(rel) => {
+                let rel = rel.trim();
+                let p = Path::new(rel);
+                if p.is_absolute() {
+                    p.to_path_buf()
+                } else {
+                    git_dir.join(p)
+                }
+            }
+            Err(_) => git_dir.clone(),
+        };
+        let common_git_dir = common_git_dir
+            .canonicalize()
+            .unwrap_or(common_git_dir);
+        if let Some(parent) = common_git_dir.parent() {
+            return parent
+                .canonicalize()
+                .unwrap_or_else(|_| parent.to_path_buf());
+        }
+    }
+    repo_path
+        .canonicalize()
+        .unwrap_or_else(|_| repo_path.to_path_buf())
+}
+
 /// Read the current branch name from .git/HEAD (file I/O, no subprocess).
 /// Returns None for detached HEAD or if the file can't be read.
 pub(crate) fn read_branch_from_head(repo_path: &Path) -> Option<String> {
@@ -2903,6 +2939,44 @@ mod tests {
     fn list_remotes_empty_for_non_repo() {
         let dir = tempfile::tempdir().expect("tempdir");
         assert!(list_remotes(dir.path()).is_empty());
+    }
+
+    // --- canonical_repo_root ---
+
+    #[test]
+    fn canonical_repo_root_normal_repo_is_its_own_root() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().join("main");
+        std::fs::create_dir_all(root.join(".git")).expect("mkdir .git");
+        assert_eq!(
+            canonical_repo_root(&root),
+            root.canonicalize().unwrap()
+        );
+    }
+
+    #[test]
+    fn canonical_repo_root_linked_worktree_resolves_to_main() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Main repo: <base>/main/.git/ with a linked-worktree gitdir.
+        let main = dir.path().join("main");
+        let main_git = main.join(".git");
+        let wt_gitdir = main_git.join("worktrees").join("feat");
+        std::fs::create_dir_all(&wt_gitdir).expect("mkdir worktree gitdir");
+        // commondir points back at the main .git (relative, as git writes it).
+        std::fs::write(wt_gitdir.join("commondir"), "../..\n").expect("write commondir");
+
+        // Linked worktree checkout: <base>/feat/.git is a file → gitdir.
+        let wt = dir.path().join("feat");
+        std::fs::create_dir_all(&wt).expect("mkdir worktree");
+        std::fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}\n", wt_gitdir.display()),
+        )
+        .expect("write .git file");
+
+        // Both the main repo and its linked worktree canonicalize to the same root.
+        assert_eq!(canonical_repo_root(&wt), canonical_repo_root(&main));
+        assert_eq!(canonical_repo_root(&main), main.canonicalize().unwrap());
     }
 
     #[test]

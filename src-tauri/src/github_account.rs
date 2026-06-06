@@ -246,6 +246,79 @@ impl GitHubAccountRegistry {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Repo → account binding (persisted)
+// ---------------------------------------------------------------------------
+
+/// Config filename for the persisted repo→account bindings.
+const GITHUB_BINDINGS_FILE: &str = "github_bindings.json";
+
+/// An explicit association of a repo to a GitHub account.
+///
+/// Persisted (not derived live from the origin remote) so a repo's account is
+/// stable even if its remotes change — drift is then surfaced to the user
+/// rather than silently re-routing API calls.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct RepoBinding {
+    pub(crate) account_id: GitHubAccountId,
+    pub(crate) owner: String,
+    pub(crate) repo: String,
+    /// Which git remote the owner/repo came from (origin, upstream, …).
+    pub(crate) remote_name: String,
+}
+
+/// Map of canonical repo root → binding, persisted to `github_bindings.json`.
+///
+/// Worktrees of the same repo resolve to the same canonical root and therefore
+/// share one binding.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub(crate) struct RepoBindingStore {
+    #[serde(default)]
+    bindings: std::collections::HashMap<String, RepoBinding>,
+}
+
+impl RepoBindingStore {
+    /// Load bindings from disk (empty store if absent/corrupt).
+    pub(crate) fn load() -> Self {
+        crate::config::load_json_config(GITHUB_BINDINGS_FILE)
+    }
+
+    /// Persist bindings to disk atomically.
+    pub(crate) fn save(&self) -> Result<(), String> {
+        crate::config::save_json_config(GITHUB_BINDINGS_FILE, self)
+    }
+
+    /// Canonical-root key for a repo path (worktree-aware).
+    fn key(repo_path: &std::path::Path) -> String {
+        crate::git::canonical_repo_root(repo_path)
+            .to_string_lossy()
+            .into_owned()
+    }
+
+    /// The binding for a repo path, resolved via its canonical root.
+    pub(crate) fn get_binding(&self, repo_path: &std::path::Path) -> Option<&RepoBinding> {
+        self.bindings.get(&Self::key(repo_path))
+    }
+
+    /// Insert or replace the binding for a repo path.
+    pub(crate) fn set_binding(&mut self, repo_path: &std::path::Path, binding: RepoBinding) {
+        self.bindings.insert(Self::key(repo_path), binding);
+    }
+
+    /// Remove the binding for a repo path; returns whether one was removed.
+    pub(crate) fn remove_binding(&mut self, repo_path: &std::path::Path) -> bool {
+        self.bindings.remove(&Self::key(repo_path)).is_some()
+    }
+
+    /// Drop every binding pointing at `account_id` (called when an account is
+    /// removed). Returns the number of bindings dropped.
+    pub(crate) fn remove_account_bindings(&mut self, account_id: &str) -> usize {
+        let before = self.bindings.len();
+        self.bindings.retain(|_, b| b.account_id != account_id);
+        before - self.bindings.len()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,5 +514,97 @@ mod tests {
 
         let loaded = GitHubAccountRegistry::load();
         assert_eq!(loaded, reg);
+    }
+
+    // --- repo → account bindings ---
+
+    fn sample_binding(account_id: &str) -> RepoBinding {
+        RepoBinding {
+            account_id: account_id.to_string(),
+            owner: "octocat".to_string(),
+            repo: "hello".to_string(),
+            remote_name: "origin".to_string(),
+        }
+    }
+
+    /// Create a minimal normal repo (just a `.git` dir) at `<base>/<name>`.
+    fn make_repo(base: &std::path::Path, name: &str) -> std::path::PathBuf {
+        let root = base.join(name);
+        std::fs::create_dir_all(root.join(".git")).expect("mkdir .git");
+        root
+    }
+
+    #[test]
+    fn binding_set_get_remove_round_trip() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = make_repo(dir.path(), "main");
+
+        let mut store = RepoBindingStore::default();
+        assert!(store.get_binding(&repo).is_none());
+
+        let binding = sample_binding("github.com");
+        store.set_binding(&repo, binding.clone());
+        assert_eq!(store.get_binding(&repo), Some(&binding));
+
+        assert!(store.remove_binding(&repo));
+        assert!(store.get_binding(&repo).is_none());
+        assert!(!store.remove_binding(&repo));
+    }
+
+    #[test]
+    fn binding_is_shared_across_worktrees() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Main repo with a linked-worktree gitdir.
+        let main = dir.path().join("main");
+        let wt_gitdir = main.join(".git").join("worktrees").join("feat");
+        std::fs::create_dir_all(&wt_gitdir).expect("mkdir worktree gitdir");
+        std::fs::write(wt_gitdir.join("commondir"), "../..\n").expect("write commondir");
+        let wt = dir.path().join("feat");
+        std::fs::create_dir_all(&wt).expect("mkdir worktree");
+        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", wt_gitdir.display()))
+            .expect("write .git file");
+
+        let mut store = RepoBindingStore::default();
+        store.set_binding(&main, sample_binding("github.com"));
+        // The linked worktree resolves to the same binding.
+        assert_eq!(
+            store.get_binding(&wt),
+            Some(&sample_binding("github.com"))
+        );
+    }
+
+    #[test]
+    fn removing_account_drops_only_its_bindings() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo_a = make_repo(dir.path(), "a");
+        let repo_b = make_repo(dir.path(), "b");
+
+        let mut store = RepoBindingStore::default();
+        store.set_binding(&repo_a, sample_binding("github.com"));
+        store.set_binding(&repo_b, sample_binding("ghe.acme.com"));
+
+        assert_eq!(store.remove_account_bindings("github.com"), 1);
+        assert!(store.get_binding(&repo_a).is_none());
+        assert_eq!(
+            store.get_binding(&repo_b),
+            Some(&sample_binding("ghe.acme.com"))
+        );
+    }
+
+    #[test]
+    fn bindings_persist_to_disk() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = make_repo(dir.path(), "main");
+        let _guard = crate::config::set_config_dir_override(dir.path().join("config"));
+
+        assert!(RepoBindingStore::load().get_binding(&repo).is_none());
+
+        let mut store = RepoBindingStore::default();
+        store.set_binding(&repo, sample_binding("github.com"));
+        store.save().expect("save");
+
+        let loaded = RepoBindingStore::load();
+        assert_eq!(loaded, store);
+        assert_eq!(loaded.get_binding(&repo), Some(&sample_binding("github.com")));
     }
 }
