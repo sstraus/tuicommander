@@ -124,21 +124,51 @@ export interface RepaintScheduler {
 	stop(): void;
 }
 
+/** Optional timer-based fallback for environments where rAF can be suspended. */
+export interface RepaintTimers {
+	setTimer: (cb: () => void, ms: number) => number;
+	clearTimer: (id: number) => void;
+	/** Max wait before forcing a paint when rAF hasn't fired (default 100ms). */
+	fallbackMs?: number;
+}
+
 /**
- * Dirty-flag rAF coalescer: render-on-dirty only, at most one rAF in flight. No
- * continuous loop — a rAF is requested only when schedule() is called, so the
+ * Dirty-flag rAF coalescer: render-on-dirty only, at most one paint in flight. No
+ * continuous loop — work is scheduled only when schedule() is called, so the
  * worker is idle between frames.
+ *
+ * WebKit SUSPENDS `requestAnimationFrame` inside a DedicatedWorker under CPU
+ * pressure or backgrounding (e.g. a Rust build pinning the CPU), which froze the
+ * terminal glyph paint while input still worked. When `timers` is supplied, a
+ * setTimeout fallback races the rAF so a paint always lands within `fallbackMs`
+ * even if rAF never fires; whichever wins cancels the other. Timers are throttled
+ * but not suspended like worker rAF, so this guarantees forward progress.
  */
 export function createRepaintScheduler(
 	raf: (cb: FrameRequestCallback) => number,
 	cancelRaf: (id: number) => void,
 	render: () => void,
+	timers?: RepaintTimers,
 ): RepaintScheduler {
 	let rafId: number | null = null;
+	let timerId: number | null = null;
 	let dirty = false;
+	const fallbackMs = timers?.fallbackMs ?? 100;
+
+	function clearPending(): void {
+		if (rafId !== null) {
+			cancelRaf(rafId);
+			rafId = null;
+		}
+		if (timerId !== null && timers) {
+			timers.clearTimer(timerId);
+			timerId = null;
+		}
+	}
 
 	function tick(): void {
-		rafId = null;
+		// Whichever of rAF/timer fired first — cancel the loser, then paint.
+		clearPending();
 		if (!dirty) return;
 		dirty = false;
 		render();
@@ -147,13 +177,11 @@ export function createRepaintScheduler(
 	function schedule(): void {
 		dirty = true;
 		if (rafId === null) rafId = raf(tick);
+		if (timers && timerId === null) timerId = timers.setTimer(tick, fallbackMs);
 	}
 
 	function stop(): void {
-		if (rafId !== null) {
-			cancelRaf(rafId);
-			rafId = null;
-		}
+		clearPending();
 		dirty = false;
 	}
 

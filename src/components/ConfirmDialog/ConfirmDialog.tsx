@@ -1,4 +1,4 @@
-import { type Component, createEffect, onCleanup, Show } from "solid-js";
+import { type Component, createEffect, createSignal, onCleanup, Show } from "solid-js";
 import d from "../shared/dialog.module.css";
 
 export interface ConfirmDialogProps {
@@ -8,6 +8,8 @@ export interface ConfirmDialogProps {
 	confirmLabel?: string;
 	cancelLabel?: string;
 	kind?: "warning" | "info" | "error";
+	/** When set, auto-clicks the cancel button after this many ms, showing a countdown on its label. */
+	autoCancelMs?: number;
 	onClose: () => void;
 	onConfirm: () => void;
 }
@@ -18,6 +20,27 @@ export interface ConfirmDialogProps {
  * Uses shared dialog CSS module for consistent dark-theme styling.
  */
 export const ConfirmDialog: Component<ConfirmDialogProps> = (props) => {
+	// Countdown until auto-cancel — null when no auto-cancel is configured.
+	const [remaining, setRemaining] = createSignal<number | null>(null);
+
+	createEffect(() => {
+		if (!props.visible || !props.autoCancelMs) {
+			setRemaining(null);
+			return;
+		}
+		let left = Math.ceil(props.autoCancelMs / 1000);
+		setRemaining(left);
+		const interval = setInterval(() => {
+			left -= 1;
+			setRemaining(left);
+			if (left <= 0) {
+				clearInterval(interval);
+				props.onClose();
+			}
+		}, 1000);
+		onCleanup(() => clearInterval(interval));
+	});
+
 	createEffect(() => {
 		if (!props.visible) return;
 
@@ -57,6 +80,7 @@ export const ConfirmDialog: Component<ConfirmDialogProps> = (props) => {
 					<div class={d.actions}>
 						<button class={d.cancelBtn} onClick={props.onClose}>
 							{props.cancelLabel ?? "Cancel"}
+							{remaining() !== null ? ` (${remaining()})` : ""}
 						</button>
 						<button class={d.primaryBtn} onClick={props.onConfirm}>
 							{props.confirmLabel ?? "OK"}

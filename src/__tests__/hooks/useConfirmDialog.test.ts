@@ -65,6 +65,30 @@ describe("useConfirmDialog", () => {
 			dialog.handleClose();
 			await promise;
 		});
+
+		it("threads autoCancelMs into dialogState when provided", async () => {
+			const promise = dialog.confirm({
+				title: "Switch to new worktree?",
+				message: "Switch now?",
+				cancelLabel: "Stay",
+				kind: "info",
+				autoCancelMs: 10_000,
+			});
+
+			expect(dialog.dialogState()?.autoCancelMs).toBe(10_000);
+
+			dialog.handleClose();
+			await promise;
+		});
+
+		it("leaves autoCancelMs undefined when not provided", async () => {
+			const promise = dialog.confirm({ title: "Confirm", message: "Proceed?" });
+
+			expect(dialog.dialogState()?.autoCancelMs).toBeUndefined();
+
+			dialog.handleClose();
+			await promise;
+		});
 	});
 
 	describe("confirmRemoveWorktree()", () => {

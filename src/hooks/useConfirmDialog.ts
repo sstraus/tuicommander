@@ -6,6 +6,8 @@ export interface ConfirmOptions {
 	okLabel?: string;
 	cancelLabel?: string;
 	kind?: "info" | "warning" | "error";
+	/** When set, the dialog auto-clicks cancel after this many ms, with a countdown on the cancel label. */
+	autoCancelMs?: number;
 }
 
 /** Internal state for the currently visible confirm dialog */
@@ -15,6 +17,7 @@ export interface ConfirmDialogState {
 	confirmLabel: string;
 	cancelLabel: string;
 	kind: "info" | "warning" | "error";
+	autoCancelMs?: number;
 }
 
 /**
@@ -38,6 +41,7 @@ export function useConfirmDialog() {
 				confirmLabel: options.okLabel || "OK",
 				cancelLabel: options.cancelLabel || "Cancel",
 				kind: options.kind || "warning",
+				autoCancelMs: options.autoCancelMs,
 			});
 		});
 	}

@@ -117,15 +117,26 @@ describe("decideFrameGrid (shared main/worker grid decision)", () => {
 	});
 
 	it("flags scrollChanged when displayOffset or historySize differ", () => {
-		expect(decideFrameGrid(prev, makeFrame({ screenRows: 24, displayOffset: 5, historySize: 100, rows: [] }), 24).scrollChanged).toBe(true);
-		expect(decideFrameGrid(prev, makeFrame({ screenRows: 24, displayOffset: 0, historySize: 200, rows: [] }), 24).scrollChanged).toBe(true);
-		expect(decideFrameGrid(prev, makeFrame({ screenRows: 24, displayOffset: 0, historySize: 100, rows: [] }), 24).scrollChanged).toBe(false);
+		expect(
+			decideFrameGrid(prev, makeFrame({ screenRows: 24, displayOffset: 5, historySize: 100, rows: [] }), 24)
+				.scrollChanged,
+		).toBe(true);
+		expect(
+			decideFrameGrid(prev, makeFrame({ screenRows: 24, displayOffset: 0, historySize: 200, rows: [] }), 24)
+				.scrollChanged,
+		).toBe(true);
+		expect(
+			decideFrameGrid(prev, makeFrame({ screenRows: 24, displayOffset: 0, historySize: 100, rows: [] }), 24)
+				.scrollChanged,
+		).toBe(false);
 	});
 
 	it("flags fullReplace when the frame carries >= screenRows rows", () => {
 		const rows = Array.from({ length: 24 }, (_, i) => makeRow(i));
 		expect(decideFrameGrid(prev, makeFrame({ screenRows: 24, historySize: 100, rows }), 24).fullReplace).toBe(true);
-		expect(decideFrameGrid(prev, makeFrame({ screenRows: 24, historySize: 100, rows: [makeRow(0)] }), 24).fullReplace).toBe(false);
+		expect(
+			decideFrameGrid(prev, makeFrame({ screenRows: 24, historySize: 100, rows: [makeRow(0)] }), 24).fullReplace,
+		).toBe(false);
 	});
 
 	it("uses fallbackRows for the full-replace threshold when frame.screenRows is 0", () => {
@@ -155,7 +166,12 @@ describe("decideFrameGrid (shared main/worker grid decision)", () => {
 		// A full frame after a scroll is a fullReplace, not a scrollWait.
 		const fullScroll = decideFrameGrid(
 			prev,
-			makeFrame({ screenRows: 24, displayOffset: 5, historySize: 100, rows: Array.from({ length: 24 }, (_, i) => makeRow(i)) }),
+			makeFrame({
+				screenRows: 24,
+				displayOffset: 5,
+				historySize: 100,
+				rows: Array.from({ length: 24 }, (_, i) => makeRow(i)),
+			}),
 			24,
 		);
 		expect(fullScroll.scrollWait).toBe(false);
@@ -207,8 +223,7 @@ describe("rowMap parity: worker applyFrameToGrid vs main onFrame grid logic", ()
 		};
 		const RESIZE_ROWS = 3;
 		const full = () => makeFrame({ screenRows: 3, historySize: 100, rows: [makeRow(0), makeRow(1), makeRow(2)] });
-		const partialEdit = (hist: number) =>
-			makeFrame({ screenRows: 3, historySize: hist, rows: [makeRow(1, 5)] });
+		const partialEdit = (hist: number) => makeFrame({ screenRows: 3, historySize: hist, rows: [makeRow(1, 5)] });
 		const partialAfterScroll = () =>
 			makeFrame({ screenRows: 3, displayOffset: 5, historySize: 100, rows: [makeRow(0, 6)] });
 		const geomChange = () => makeFrame({ screenRows: 5, screenCols: 100, rows: [makeRow(0, 4)] });
@@ -217,9 +232,7 @@ describe("rowMap parity: worker applyFrameToGrid vs main onFrame grid logic", ()
 		for (const frame of sequence) {
 			applyFrameToGrid(worker, frame);
 			mainGridApply(main, frame, RESIZE_ROWS);
-			expect([...worker.rowMap.keys()].sort((a, b) => a - b)).toEqual(
-				[...main.rowMap.keys()].sort((a, b) => a - b),
-			);
+			expect([...worker.rowMap.keys()].sort((a, b) => a - b)).toEqual([...main.rowMap.keys()].sort((a, b) => a - b));
 			expect(worker.fullRepaintNeeded).toBe(main.fullRepaintNeeded);
 			// Simulate each side's render pass clearing the repaint flags.
 			worker.fullRepaintNeeded = false;
@@ -278,6 +291,69 @@ describe("createRepaintScheduler (dirty-flag rAF coalescing)", () => {
 		sched.schedule();
 		sched.stop();
 		expect(cancel).toHaveBeenCalledWith(42);
+	});
+
+	it("renders via the timer fallback when rAF never fires (WebKit worker suspension)", () => {
+		const timerCap: { cb?: () => void } = {};
+		const raf = vi.fn(() => 1); // rAF is requested but never invokes its callback
+		const cancelRaf = vi.fn();
+		const render = vi.fn();
+		const setTimer = vi.fn((cb: () => void) => {
+			timerCap.cb = cb;
+			return 7;
+		});
+		const clearTimer = vi.fn();
+		const sched = createRepaintScheduler(raf, cancelRaf, render, {
+			setTimer,
+			clearTimer,
+			fallbackMs: 100,
+		});
+
+		sched.schedule();
+		expect(raf).toHaveBeenCalledTimes(1);
+		expect(setTimer).toHaveBeenCalledTimes(1);
+		expect(render).not.toHaveBeenCalled();
+
+		// rAF stayed suspended; the timer fires and paints instead.
+		timerCap.cb?.();
+		expect(render).toHaveBeenCalledTimes(1);
+		// The losing rAF is cancelled so it can't double-render later.
+		expect(cancelRaf).toHaveBeenCalledWith(1);
+	});
+
+	it("rAF winning the race cancels the pending fallback timer (no double render)", () => {
+		const rafCap: { cb?: FrameRequestCallback } = {};
+		const raf = vi.fn((cb: FrameRequestCallback) => {
+			rafCap.cb = cb;
+			return 1;
+		});
+		const render = vi.fn();
+		const clearTimer = vi.fn();
+		const sched = createRepaintScheduler(raf, vi.fn(), render, {
+			setTimer: () => 7,
+			clearTimer,
+			fallbackMs: 100,
+		});
+
+		sched.schedule();
+		rafCap.cb?.(0);
+		expect(render).toHaveBeenCalledTimes(1);
+		expect(clearTimer).toHaveBeenCalledWith(7);
+	});
+
+	it("stop() cancels both the rAF and the fallback timer", () => {
+		const cancelRaf = vi.fn();
+		const clearTimer = vi.fn();
+		const sched = createRepaintScheduler(() => 42, cancelRaf, vi.fn(), {
+			setTimer: () => 7,
+			clearTimer,
+			fallbackMs: 100,
+		});
+
+		sched.schedule();
+		sched.stop();
+		expect(cancelRaf).toHaveBeenCalledWith(42);
+		expect(clearTimer).toHaveBeenCalledWith(7);
 	});
 });
 
