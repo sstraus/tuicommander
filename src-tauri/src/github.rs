@@ -270,6 +270,7 @@ pub(crate) fn check_graphql_errors(
 pub(crate) async fn graphql_request(
     client: &reqwest::Client,
     token: &str,
+    url: &str,
     query: &str,
     variables: &serde_json::Value,
 ) -> Result<serde_json::Value, GqlError> {
@@ -279,7 +280,7 @@ pub(crate) async fn graphql_request(
     });
 
     let response = client
-        .post("https://api.github.com/graphql")
+        .post(url)
         .header("Authorization", format!("Bearer {token}"))
         .header("User-Agent", "tuicommander")
         .json(&body)
@@ -365,28 +366,81 @@ fn rate_limit_wait_secs(reset_at: Option<u64>, retry_after: Option<u64>) -> u64 
     60 // Default: wait 60 seconds
 }
 
+/// Synthesize the implicit github.com default account from the current token
+/// source + cached viewer login. github.com keeps resolving with zero user
+/// action, so all existing call sites pass this.
+pub(crate) fn github_com_account(state: &AppState) -> crate::github_account::GitHubAccount {
+    use crate::github_account::AccountKind;
+    use crate::github_auth::TokenSource;
+    let kind = match *state.github_token_source.read() {
+        TokenSource::Env => AccountKind::GithubComEnv,
+        TokenSource::GhCli => AccountKind::GithubComGhCli,
+        // OAuth, Pat (n/a for cloud), and None all map to the OAuth default.
+        TokenSource::OAuth | TokenSource::Pat | TokenSource::None => AccountKind::GithubComOauth,
+    };
+    let login = state.github_viewer_login.read().clone();
+    crate::github_account::GitHubAccount::github_com(kind, login)
+}
+
 /// Execute a GraphQL query with token fallback and circuit breaker protection.
 /// On 401, tries remaining token candidates and updates the stored token on success.
 /// Rate limits are handled separately from failures — they don't inflate the failure count.
 pub(crate) async fn graphql_with_retry(
     state: &AppState,
+    account: &crate::github_account::GitHubAccount,
     query: &str,
     variables: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     // Check circuit breaker first
     state.github_circuit_breaker.check()?;
 
+    let url = account.host.graphql_url();
+
     if crate::github_debug::enabled() {
         let query_name = extract_graphql_name(query);
         tracing::info!(
             source = "github_api",
             method = "POST",
-            url = "https://api.github.com/graphql",
+            url = %url,
             query = query_name,
             "GraphQL request"
         );
     }
 
+    // GitHub Enterprise Server (PAT) accounts: single pasted token, its own
+    // endpoint, no candidate fallback (the github.com env→OAuth→gh chain does
+    // not apply to a GHE host).
+    if !account.is_cloud() {
+        let token = match crate::github_auth::resolve_token_for_account(account).0 {
+            Some(t) => t,
+            None => return Err("No GitHub token available".to_string()),
+        };
+        return match graphql_request(&state.http_client, &token, &url, query, &variables).await {
+            Ok(response) => {
+                state.github_circuit_breaker.record_success();
+                Ok(response)
+            }
+            Err(GqlError::RateLimit {
+                reset_at,
+                retry_after,
+                message,
+            }) => {
+                let wait = rate_limit_wait_secs(reset_at, retry_after);
+                state.github_circuit_breaker.record_rate_limit(wait);
+                Err(format!("rate-limit: {message}"))
+            }
+            Err(GqlError::Auth(msg)) => {
+                state.github_circuit_breaker.record_failure();
+                Err(msg)
+            }
+            Err(GqlError::Other(msg)) => {
+                state.github_circuit_breaker.record_failure();
+                Err(msg)
+            }
+        };
+    }
+
+    // github.com path — cached/rotated token + 401 candidate fallback. Unchanged.
     let mut current_token = state.github_token.read().clone();
     // Lazy resolution: boot skips keychain, resolve on first use.
     if current_token.is_none() {
@@ -404,7 +458,7 @@ pub(crate) async fn graphql_with_retry(
         None => return Err("No GitHub token available".to_string()),
     };
 
-    match graphql_request(&state.http_client, &token, query, &variables).await {
+    match graphql_request(&state.http_client, &token, &url, query, &variables).await {
         Ok(response) => {
             state.github_circuit_breaker.record_success();
             Ok(response)
@@ -429,7 +483,7 @@ pub(crate) async fn graphql_with_retry(
                 if candidate == &token {
                     continue; // Skip the one that already failed
                 }
-                match graphql_request(&state.http_client, candidate, query, &variables).await {
+                match graphql_request(&state.http_client, candidate, &url, query, &variables).await {
                     Ok(response) => {
                         tracing::info!(source = "github", "Token fallback succeeded");
                         *state.github_token.write() = Some(candidate.clone());
@@ -777,7 +831,13 @@ pub(crate) async fn get_viewer_login(state: &AppState) -> Result<String, String>
         return Ok(login.clone());
     }
     let response =
-        graphql_with_retry(state, "query { viewer { login } }", serde_json::Value::Null).await?;
+        graphql_with_retry(
+            state,
+            &github_com_account(state),
+            "query { viewer { login } }",
+            serde_json::Value::Null,
+        )
+        .await?;
     let login = response["data"]["viewer"]["login"]
         .as_str()
         .ok_or_else(|| "Could not resolve viewer login".to_string())?
@@ -961,7 +1021,7 @@ pub(crate) async fn get_all_issues_impl(
     };
     let (query, aliases) = build_multi_repo_issues_query(&repos, &viewer, filter_mode);
 
-    let response = graphql_with_retry(state, &query, serde_json::Value::Null).await?;
+    let response = graphql_with_retry(state, &github_com_account(state), &query, serde_json::Value::Null).await?;
 
     let mut results = std::collections::HashMap::new();
     for (alias, path) in &aliases {
@@ -1113,7 +1173,7 @@ pub(crate) async fn get_all_batch_impl(
 
     let (query, aliases) =
         build_unified_batch_query(&repos, include_merged, filter_mode, &viewer, pr_hide_drafts);
-    let response = graphql_with_retry(state, &query, serde_json::Value::Null).await?;
+    let response = graphql_with_retry(state, &github_com_account(state), &query, serde_json::Value::Null).await?;
 
     // Store rate-limit budget for proactive throttling in the poller
     if let Some(remaining) = response["data"]["rateLimit"]["remaining"].as_u64() {
@@ -1429,7 +1489,7 @@ pub(crate) async fn get_repo_pr_statuses_impl(
     let repos = vec![(path.to_string(), owner, repo)];
     let (query, aliases) = build_multi_repo_pr_query(&repos, include_merged);
 
-    match graphql_with_retry(state, &query, serde_json::Value::Null).await {
+    match graphql_with_retry(state, &github_com_account(state), &query, serde_json::Value::Null).await {
         Ok(response) => {
             let alias = &aliases[0].0;
             let repo_json = &response["data"][alias];
@@ -1772,7 +1832,7 @@ pub(crate) async fn get_ci_checks_impl(
         "number": pr_number,
     });
 
-    match graphql_with_retry(state, PR_CHECKS_QUERY, variables).await {
+    match graphql_with_retry(state, &github_com_account(state), PR_CHECKS_QUERY, variables).await {
         Ok(data) => parse_pr_check_contexts(&data),
         Err(e) => {
             tracing::warn!(source = "github", "GraphQL PR checks query failed: {e}");
@@ -2952,7 +3012,14 @@ mod tests {
             "repo": repo,
             "first": 50,
         });
-        let graphql_result = graphql_request(&client, &token, BATCH_PR_QUERY, &variables).await;
+        let graphql_result = graphql_request(
+            &client,
+            &token,
+            "https://api.github.com/graphql",
+            BATCH_PR_QUERY,
+            &variables,
+        )
+        .await;
         assert!(
             graphql_result.is_ok(),
             "GraphQL request failed: {:?}",
@@ -3074,6 +3141,7 @@ mod tests {
         let result = graphql_request(
             &client,
             &token,
+            "https://api.github.com/graphql",
             "query { viewer { login } rateLimit { remaining resetAt } }",
             &serde_json::json!({}),
         )
@@ -3120,6 +3188,7 @@ mod tests {
     // test to avoid parallel race conditions.
 
     #[test]
+    #[serial_test::serial]
     fn test_resolve_github_token_filters_empty_from_gh_token_crate() {
         // Simulate Tauri GUI process: GITHUB_TOKEN="" (set but empty).
         // gh_token crate's get() uses env::var_os() which returns Some("") for
@@ -3199,6 +3268,7 @@ mod tests {
         let result = graphql_request(
             &client,
             &token,
+            "https://api.github.com/graphql",
             "query { viewer { login } }",
             &serde_json::json!({}),
         )

@@ -816,9 +816,12 @@ mod tests {
     use crate::github_account::{AccountKind, GitHubAccount, GitHubHost};
 
     #[test]
+    #[serial_test::serial]
     fn resolve_for_github_com_delegates_to_existing_chain() {
         // github.com accounts must run the existing env→OAuth→gh chain verbatim,
-        // so the result is identical to resolve_token_with_source().
+        // so the result is identical to resolve_token_with_source(). Serialized
+        // against the env-mutating token tests so the global env is stable across
+        // the two resolutions below.
         let acc = GitHubAccount::github_com(AccountKind::GithubComOauth, None);
         assert_eq!(resolve_token_for_account(&acc), resolve_token_with_source());
     }

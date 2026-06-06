@@ -106,6 +106,19 @@ fn batch_query_empty_viewer_omits_search() {
     assert!(!query.contains("viewerPrs:"));
 }
 
+#[test]
+fn batch_query_viewer_is_not_cross_contaminated() {
+    // Step 7: each account's query embeds ITS OWN viewer login. Two accounts
+    // must produce distinct author: search terms — never each other's.
+    let repos = two_repos();
+    let (alice, _) = github::build_unified_batch_query(&repos, false, "disabled", "alice", false);
+    let (bob, _) = github::build_unified_batch_query(&repos, false, "disabled", "bob", false);
+    assert!(alice.contains("author:alice"));
+    assert!(!alice.contains("author:bob"));
+    assert!(bob.contains("author:bob"));
+    assert!(!bob.contains("author:alice"));
+}
+
 // ---------------------------------------------------------------------------
 // (b) Token candidate fallback ORDER (pure seam)
 // ---------------------------------------------------------------------------
