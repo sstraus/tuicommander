@@ -5,8 +5,35 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => {
 	type Account = { id: string; host: { host: string }; login: string | null; kind: string };
 	const accounts: Account[] = [];
+	// repoPath -> resolution DTO returned by github_resolve_repo
+	const resolutions: Record<string, unknown> = {};
+	const repos: Record<string, { path: string; displayName: string }> = {};
 	const rpc = vi.fn((cmd: string, args?: Record<string, unknown>) => {
 		switch (cmd) {
+			case "github_resolve_repo":
+				return Promise.resolve(resolutions[String(args?.repoPath)] ?? { status: "unmonitored" });
+			case "github_bind_repo":
+				resolutions[String(args?.repoPath)] = {
+					status: "bound",
+					account: { id: args?.accountId },
+					owner: "octocat",
+					repo: "hello",
+				};
+				return Promise.resolve(undefined);
+			case "github_unbind_repo":
+				resolutions[String(args?.repoPath)] = {
+					status: "needs-bind",
+					candidates: [
+						{
+							account_id: "github.com",
+							host: { host: "github.com" },
+							owner: "octocat",
+							repo: "hello",
+							remote_name: "origin",
+						},
+					],
+				};
+				return Promise.resolve(true);
 			case "github_auth_status":
 				return Promise.resolve({
 					authenticated: false,
@@ -43,10 +70,17 @@ const h = vi.hoisted(() => {
 				return Promise.resolve(undefined);
 		}
 	});
-	return { rpc, accounts };
+	return { rpc, accounts, resolutions, repos };
 });
 
 vi.mock("../../transport", () => ({ rpc: h.rpc, isTauri: () => true }));
+vi.mock("../../stores/repositories", () => ({
+	repositoriesStore: {
+		get state() {
+			return { repositories: h.repos };
+		},
+	},
+}));
 vi.mock("../../stores/appLogger", () => ({
 	appLogger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
@@ -64,6 +98,8 @@ describe("GitHubTab — Enterprise accounts", () => {
 
 	beforeEach(async () => {
 		h.accounts.length = 0;
+		for (const k of Object.keys(h.resolutions)) delete h.resolutions[k];
+		for (const k of Object.keys(h.repos)) delete h.repos[k];
 		h.rpc.mockClear();
 		const mod = await import("../../components/SettingsPanel/tabs/GitHubTab");
 		GitHubTab = mod.GitHubTab;
@@ -104,5 +140,68 @@ describe("GitHubTab — Enterprise accounts", () => {
 		fireEvent.click(getByText("Remove"));
 		await waitFor(() => expect(h.rpc).toHaveBeenCalledWith("github_remove_account", { id: "ghe.acme.com" }));
 		expect(await findByText("No Enterprise accounts configured.")).toBeTruthy();
+	});
+});
+
+describe("GitHubTab — Repository bindings", () => {
+	let GitHubTab: typeof import("../../components/SettingsPanel/tabs/GitHubTab").GitHubTab;
+
+	beforeEach(async () => {
+		h.accounts.length = 0;
+		for (const k of Object.keys(h.resolutions)) delete h.resolutions[k];
+		for (const k of Object.keys(h.repos)) delete h.repos[k];
+		h.rpc.mockClear();
+		const mod = await import("../../components/SettingsPanel/tabs/GitHubTab");
+		GitHubTab = mod.GitHubTab;
+	});
+
+	it("binds an ambiguous repo to the chosen candidate via github_bind_repo", async () => {
+		h.repos["/work/proj"] = { path: "/work/proj", displayName: "proj" };
+		h.resolutions["/work/proj"] = {
+			status: "needs-bind",
+			candidates: [
+				{
+					account_id: "github.com",
+					host: { host: "github.com" },
+					owner: "octocat",
+					repo: "hello",
+					remote_name: "origin",
+				},
+				{
+					account_id: "github.com",
+					host: { host: "github.com" },
+					owner: "upstream",
+					repo: "hello",
+					remote_name: "upstream",
+				},
+			],
+		};
+		const { findByText, getByText } = render(() => <GitHubTab />);
+		// The ambiguous repo surfaces a chooser (no silent origin pick).
+		expect(await findByText("proj")).toBeTruthy();
+
+		fireEvent.click(getByText("Bind"));
+		await waitFor(() =>
+			expect(h.rpc).toHaveBeenCalledWith("github_bind_repo", {
+				repoPath: "/work/proj",
+				accountId: "github.com",
+				remoteName: "origin",
+			}),
+		);
+	});
+
+	it("unbinds a bound repo via github_unbind_repo", async () => {
+		h.repos["/work/proj"] = { path: "/work/proj", displayName: "proj" };
+		h.resolutions["/work/proj"] = {
+			status: "bound",
+			account: { id: "github.com", host: { host: "github.com" }, login: "octocat", kind: "github_com_oauth" },
+			owner: "octocat",
+			repo: "hello",
+		};
+		const { findByText, getByText } = render(() => <GitHubTab />);
+		expect(await findByText("proj")).toBeTruthy();
+
+		fireEvent.click(getByText("Unbind"));
+		await waitFor(() => expect(h.rpc).toHaveBeenCalledWith("github_unbind_repo", { repoPath: "/work/proj" }));
 	});
 });

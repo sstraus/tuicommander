@@ -308,9 +308,6 @@ impl RepoBindingStore {
     }
 
     /// Remove the binding for a repo path; returns whether one was removed.
-    /// Part of the binding-store API (symmetric with `set_binding`, exercised by
-    /// tests); a per-repo "unbind" UI affordance will call it.
-    #[allow(dead_code)]
     pub(crate) fn remove_binding(&mut self, repo_path: &std::path::Path) -> bool {
         self.bindings.remove(&Self::key(repo_path)).is_some()
     }
@@ -351,7 +348,7 @@ pub(crate) struct RepoBindingEntry {
 // ---------------------------------------------------------------------------
 
 /// A candidate (account, owner/repo, remote) the user could bind a repo to.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct BindCandidate {
     pub(crate) account_id: GitHubAccountId,
     pub(crate) host: GitHubHost,
@@ -605,6 +602,91 @@ pub(crate) async fn github_list_accounts() -> Result<Vec<GitHubAccount>, String>
 #[tauri::command]
 pub(crate) async fn github_list_bindings() -> Result<Vec<RepoBindingEntry>, String> {
     Ok(RepoBindingStore::load().entries())
+}
+
+/// Serializable view of a repo's resolution for the binding chooser UI.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct RepoResolutionDto {
+    /// "bound" | "needs-bind" | "needs-account" | "unmonitored"
+    pub(crate) status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) account: Option<GitHubAccount>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) owner: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) repo: Option<String>,
+    #[serde(default)]
+    pub(crate) candidates: Vec<BindCandidate>,
+}
+
+impl From<RepoResolution> for RepoResolutionDto {
+    fn from(res: RepoResolution) -> Self {
+        match res {
+            RepoResolution::Bound {
+                account,
+                owner,
+                repo,
+            } => RepoResolutionDto {
+                status: "bound".into(),
+                account: Some(account),
+                owner: Some(owner),
+                repo: Some(repo),
+                candidates: Vec::new(),
+            },
+            RepoResolution::NeedsBind(candidates) => RepoResolutionDto {
+                status: "needs-bind".into(),
+                account: None,
+                owner: None,
+                repo: None,
+                candidates,
+            },
+            RepoResolution::NeedsAccount => RepoResolutionDto {
+                status: "needs-account".into(),
+                account: None,
+                owner: None,
+                repo: None,
+                candidates: Vec::new(),
+            },
+            RepoResolution::Unmonitored => RepoResolutionDto {
+                status: "unmonitored".into(),
+                account: None,
+                owner: None,
+                repo: None,
+                candidates: Vec::new(),
+            },
+        }
+    }
+}
+
+/// Resolve a repo's account binding status (for the binding chooser UI).
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn github_resolve_repo(
+    state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
+    repo_path: String,
+) -> Result<RepoResolutionDto, String> {
+    let registry = GitHubAccountRegistry::load();
+    let bindings = RepoBindingStore::load();
+    let default = crate::github::github_com_account(&state);
+    let resolution = resolve_repo_account(
+        std::path::Path::new(&repo_path),
+        &registry,
+        &bindings,
+        Some(&default),
+    );
+    Ok(RepoResolutionDto::from(resolution))
+}
+
+/// Remove a repo→account binding (re-resolves on the next poll).
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn github_unbind_repo(repo_path: String) -> Result<bool, String> {
+    let mut store = RepoBindingStore::load();
+    let removed = store.remove_binding(std::path::Path::new(&repo_path));
+    if removed {
+        store.save()?;
+    }
+    Ok(removed)
 }
 
 #[cfg(test)]
@@ -1187,6 +1269,40 @@ mod tests {
         assert_eq!(binding.account_id, "ghe.acme.com");
 
         assert_eq!(RepoBindingStore::load().get_binding(&repo), Some(&binding));
+    }
+
+    #[test]
+    fn resolution_dto_maps_each_variant() {
+        let acc = GitHubAccount::ghe_pat(GitHubHost::new("ghe.acme.com").unwrap(), None);
+        let bound = RepoResolutionDto::from(RepoResolution::Bound {
+            account: acc.clone(),
+            owner: "team".into(),
+            repo: "project".into(),
+        });
+        assert_eq!(bound.status, "bound");
+        assert_eq!(
+            bound.account.as_ref().map(|a| a.id.as_str()),
+            Some("ghe.acme.com")
+        );
+
+        let needs = RepoResolutionDto::from(RepoResolution::NeedsBind(vec![BindCandidate {
+            account_id: "github.com".into(),
+            host: GitHubHost::new("github.com").unwrap(),
+            owner: "octocat".into(),
+            repo: "hello".into(),
+            remote_name: "origin".into(),
+        }]));
+        assert_eq!(needs.status, "needs-bind");
+        assert_eq!(needs.candidates.len(), 1);
+
+        assert_eq!(
+            RepoResolutionDto::from(RepoResolution::NeedsAccount).status,
+            "needs-account"
+        );
+        assert_eq!(
+            RepoResolutionDto::from(RepoResolution::Unmonitored).status,
+            "unmonitored"
+        );
     }
 
     #[test]

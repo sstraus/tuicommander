@@ -9,6 +9,7 @@ import type {
 	WorktreeStorage,
 } from "../../../stores/repoDefaults";
 import { repoDefaultsStore } from "../../../stores/repoDefaults";
+import { repositoriesStore } from "../../../stores/repositories";
 import { settingsStore } from "../../../stores/settings";
 import { rpc } from "../../../transport";
 import type { IssueFilterMode } from "../../../types";
@@ -61,6 +62,22 @@ interface GitHubAccount {
 	kind: AccountKind;
 }
 
+interface BindCandidate {
+	account_id: string;
+	host: GitHubHost;
+	owner: string;
+	repo: string;
+	remote_name: string;
+}
+
+interface RepoResolutionDto {
+	status: "bound" | "needs-bind" | "needs-account" | "unmonitored";
+	account?: GitHubAccount;
+	owner?: string;
+	repo?: string;
+	candidates?: BindCandidate[];
+}
+
 const SOURCE_LABELS: Record<string, string> = {
 	oauth: "OAuth (Device Flow)",
 	env: "Environment variable",
@@ -93,6 +110,7 @@ export const GitHubTab: Component = () => {
 		fetchStatus();
 		fetchDiagnostics();
 		fetchAccounts();
+		fetchResolutions();
 	});
 
 	async function fetchAccounts() {
@@ -128,6 +146,48 @@ export const GitHubTab: Component = () => {
 		try {
 			await rpc("github_remove_account", { id });
 			await fetchAccounts();
+			await fetchResolutions();
+		} catch (e) {
+			setAccountError(e instanceof Error ? e.message : String(e));
+		}
+	}
+
+	// Repo→account binding chooser: resolution per repo path + the candidate the
+	// user picked for an ambiguous repo.
+	const [resolutions, setResolutions] = createSignal<Record<string, RepoResolutionDto>>({});
+	const [chosenRemote, setChosenRemote] = createSignal<Record<string, string>>({});
+
+	function activeRepos(): { path: string; name: string }[] {
+		return Object.values(repositoriesStore.state.repositories)
+			.map((r) => ({ path: r.path, name: r.displayName }))
+			.sort((a, b) => a.name.localeCompare(b.name));
+	}
+
+	async function fetchResolutions() {
+		const out: Record<string, RepoResolutionDto> = {};
+		for (const repo of activeRepos()) {
+			try {
+				out[repo.path] = await rpc<RepoResolutionDto>("github_resolve_repo", { repoPath: repo.path });
+			} catch (e) {
+				appLogger.debug("github", "resolve_repo failed", e);
+			}
+		}
+		setResolutions(out);
+	}
+
+	async function bindRepo(repoPath: string, accountId: string, remoteName: string) {
+		try {
+			await rpc("github_bind_repo", { repoPath, accountId, remoteName });
+			await fetchResolutions();
+		} catch (e) {
+			setAccountError(e instanceof Error ? e.message : String(e));
+		}
+	}
+
+	async function unbindRepo(repoPath: string) {
+		try {
+			await rpc("github_unbind_repo", { repoPath });
+			await fetchResolutions();
 		} catch (e) {
 			setAccountError(e instanceof Error ? e.message : String(e));
 		}
@@ -746,6 +806,73 @@ export const GitHubTab: Component = () => {
 					</button>
 				</div>
 			</div>
+
+			{/* Repository → account bindings. Every repo resolves to one account;
+			    ambiguous repos (multiple GitHub remotes/accounts) are chosen here. */}
+			<h3>Repository Bindings</h3>
+			<p class={s.hint} style={{ "margin-bottom": "12px" }}>
+				Each repository is monitored through exactly one account. Ambiguous repositories need you to choose — no remote
+				is picked silently.
+			</p>
+
+			<Show when={activeRepos().length > 0} fallback={<p class={s.hint}>No repositories in the workspace yet.</p>}>
+				<For each={activeRepos()}>
+					{(repo) => {
+						const res = () => resolutions()[repo.path];
+						return (
+							<Show when={res() && res().status !== "unmonitored"}>
+								<div class={g.statusCard}>
+									<div class={g.userInfo}>
+										<div class={g.userName}>{repo.name}</div>
+										<Show when={res().status === "bound"}>
+											<div class={g.tokenSource}>
+												→ {res().owner}/{res().repo} via{" "}
+												{res().account?.login ?? res().account?.host.host ?? res().account?.id}
+											</div>
+										</Show>
+										<Show when={res().status === "needs-account"}>
+											<div class={g.tokenSource}>No account for this host — add one above.</div>
+										</Show>
+										<Show when={res().status === "needs-bind"}>
+											<select
+												value={chosenRemote()[repo.path] ?? res().candidates?.[0]?.remote_name ?? ""}
+												onChange={(e) => setChosenRemote({ ...chosenRemote(), [repo.path]: e.currentTarget.value })}
+											>
+												<For each={res().candidates}>
+													{(c) => (
+														<option value={c.remote_name}>
+															{c.owner}/{c.repo} via {c.remote_name} ({c.account_id})
+														</option>
+													)}
+												</For>
+											</select>
+										</Show>
+									</div>
+									<div class={g.actions}>
+										<Show when={res().status === "bound"}>
+											<button class={cx(g.btn)} onClick={() => unbindRepo(repo.path)}>
+												Unbind
+											</button>
+										</Show>
+										<Show when={res().status === "needs-bind"}>
+											<button
+												class={cx(g.btn, g.btnPrimary)}
+												onClick={() => {
+													const remote = chosenRemote()[repo.path] ?? res().candidates?.[0]?.remote_name ?? "";
+													const cand = res().candidates?.find((c) => c.remote_name === remote);
+													if (cand) bindRepo(repo.path, cand.account_id, cand.remote_name);
+												}}
+											>
+												Bind
+											</button>
+										</Show>
+									</div>
+								</div>
+							</Show>
+						);
+					}}
+				</For>
+			</Show>
 		</div>
 	);
 };

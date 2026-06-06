@@ -1472,6 +1472,8 @@ pub fn run() {
             github_account::github_add_account,
             github_account::github_remove_account,
             github_account::github_bind_repo,
+            github_account::github_unbind_repo,
+            github_account::github_resolve_repo,
             github_account::github_list_accounts,
             github_account::github_list_bindings,
             worktree::generate_worktree_name_cmd,
