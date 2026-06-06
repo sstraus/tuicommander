@@ -60,9 +60,7 @@ pub(crate) fn canonical_repo_root(repo_path: &Path) -> PathBuf {
             }
             Err(_) => git_dir.clone(),
         };
-        let common_git_dir = common_git_dir
-            .canonicalize()
-            .unwrap_or(common_git_dir);
+        let common_git_dir = common_git_dir.canonicalize().unwrap_or(common_git_dir);
         if let Some(parent) = common_git_dir.parent() {
             return parent
                 .canonicalize()
@@ -2899,8 +2897,14 @@ mod tests {
         assert_eq!(
             remotes,
             vec![
-                ("origin".to_string(), "git@github.com:octocat/hello.git".to_string()),
-                ("upstream".to_string(), "https://github.com/upstream/hello.git".to_string()),
+                (
+                    "origin".to_string(),
+                    "git@github.com:octocat/hello.git".to_string()
+                ),
+                (
+                    "upstream".to_string(),
+                    "https://github.com/upstream/hello.git".to_string()
+                ),
             ]
         );
     }
@@ -2914,7 +2918,10 @@ mod tests {
         let remotes = parse_git_config_remotes(config);
         assert_eq!(
             remotes,
-            vec![("origin".to_string(), "git@github.com:octocat/hello.git".to_string())]
+            vec![(
+                "origin".to_string(),
+                "git@github.com:octocat/hello.git".to_string()
+            )]
         );
     }
 
@@ -2931,7 +2938,10 @@ mod tests {
         let remotes = list_remotes(dir.path());
         assert_eq!(
             remotes,
-            vec![("origin".to_string(), "git@github.com:octocat/hello.git".to_string())]
+            vec![(
+                "origin".to_string(),
+                "git@github.com:octocat/hello.git".to_string()
+            )]
         );
     }
 
@@ -2948,10 +2958,7 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let root = dir.path().join("main");
         std::fs::create_dir_all(root.join(".git")).expect("mkdir .git");
-        assert_eq!(
-            canonical_repo_root(&root),
-            root.canonicalize().unwrap()
-        );
+        assert_eq!(canonical_repo_root(&root), root.canonicalize().unwrap());
     }
 
     #[test]

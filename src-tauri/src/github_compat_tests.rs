@@ -22,8 +22,16 @@ use crate::state::tests_support::make_test_app_state;
 
 fn two_repos() -> Vec<(String, String, String)> {
     vec![
-        ("/path/zero".to_string(), "octocat".to_string(), "hello".to_string()),
-        ("/path/one".to_string(), "octocat".to_string(), "world".to_string()),
+        (
+            "/path/zero".to_string(),
+            "octocat".to_string(),
+            "hello".to_string(),
+        ),
+        (
+            "/path/one".to_string(),
+            "octocat".to_string(),
+            "world".to_string(),
+        ),
     ]
 }
 
@@ -41,7 +49,9 @@ fn batch_query_shape_two_repos_disabled_issues() {
     assert!(query.contains("r1: repository(owner: \"octocat\", name: \"world\")"));
 
     // Default (no merged, no hidden drafts) PR page size + states.
-    assert!(query.contains("pullRequests(first: 20, states: [OPEN], orderBy: {field: UPDATED_AT, direction: DESC})"));
+    assert!(query.contains(
+        "pullRequests(first: 20, states: [OPEN], orderBy: {field: UPDATED_AT, direction: DESC})"
+    ));
 
     // Merge-policy fields are always requested.
     assert!(query.contains("mergeCommitAllowed"));
@@ -57,7 +67,10 @@ fn batch_query_shape_two_repos_disabled_issues() {
     assert!(query.contains("rateLimit { cost remaining resetAt }"));
 
     // filter_mode "disabled" omits the issues section entirely.
-    assert!(!query.contains("issues("), "issues section must be absent when disabled");
+    assert!(
+        !query.contains("issues("),
+        "issues section must be absent when disabled"
+    );
 
     // Alias → path mapping is positional.
     assert_eq!(
@@ -72,16 +85,14 @@ fn batch_query_shape_two_repos_disabled_issues() {
 #[test]
 fn batch_query_include_merged_widens_states() {
     let repos = two_repos();
-    let (query, _) =
-        github::build_unified_batch_query(&repos, true, "disabled", "octocat", false);
+    let (query, _) = github::build_unified_batch_query(&repos, true, "disabled", "octocat", false);
     assert!(query.contains("states: [OPEN, MERGED]"));
 }
 
 #[test]
 fn batch_query_hide_drafts_bumps_page_size_and_filters_search() {
     let repos = two_repos();
-    let (query, _) =
-        github::build_unified_batch_query(&repos, false, "disabled", "octocat", true);
+    let (query, _) = github::build_unified_batch_query(&repos, false, "disabled", "octocat", true);
     // Fetch more PRs so draft-filtering still leaves enough valid ones.
     assert!(query.contains("pullRequests(first: 40, states: [OPEN]"));
     // Search excludes drafts.
@@ -91,8 +102,7 @@ fn batch_query_hide_drafts_bumps_page_size_and_filters_search() {
 #[test]
 fn batch_query_assigned_filter_includes_issues_section() {
     let repos = two_repos();
-    let (query, _) =
-        github::build_unified_batch_query(&repos, false, "assigned", "octocat", false);
+    let (query, _) = github::build_unified_batch_query(&repos, false, "assigned", "octocat", false);
     // Issues section present and scoped to the viewer as assignee.
     assert!(query.contains("issues("));
     assert!(query.contains("filterBy: { assignee: \"octocat\" }"));
@@ -215,10 +225,10 @@ fn diagnostics_reports_cooldown_and_monitored_repos() {
         std::time::Instant::now() - std::time::Duration::from_secs(1),
     );
     // A cached status counts as a monitored repo.
-    state
-        .git_cache
-        .github_status
-        .insert("/path/zero".to_string(), (vec![], std::time::Instant::now()));
+    state.git_cache.github_status.insert(
+        "/path/zero".to_string(),
+        (vec![], std::time::Instant::now()),
+    );
 
     let diag = github_auth::compute_diagnostics(&state);
     assert_eq!(diag.repos_not_found, vec!["octocat/hello".to_string()]);

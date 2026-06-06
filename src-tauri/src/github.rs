@@ -598,7 +598,8 @@ pub(crate) async fn graphql_with_retry(
                 if candidate == &token {
                     continue; // Skip the one that already failed
                 }
-                match graphql_request(&state.http_client, candidate, &url, query, &variables).await {
+                match graphql_request(&state.http_client, candidate, &url, query, &variables).await
+                {
                     Ok(response) => {
                         tracing::info!(source = "github", "Token fallback succeeded");
                         *state.github_token.write() = Some(candidate.clone());
@@ -945,14 +946,13 @@ pub(crate) async fn get_viewer_login(state: &AppState) -> Result<String, String>
     if let Some(login) = state.github_viewer_login.read().as_ref() {
         return Ok(login.clone());
     }
-    let response =
-        graphql_with_retry(
-            state,
-            &github_com_account(state),
-            "query { viewer { login } }",
-            serde_json::Value::Null,
-        )
-        .await?;
+    let response = graphql_with_retry(
+        state,
+        &github_com_account(state),
+        "query { viewer { login } }",
+        serde_json::Value::Null,
+    )
+    .await?;
     let login = response["data"]["viewer"]["login"]
         .as_str()
         .ok_or_else(|| "Could not resolve viewer login".to_string())?
@@ -981,9 +981,13 @@ pub(crate) async fn get_viewer_login_for(
             return Ok(login.clone());
         }
     }
-    let response =
-        graphql_with_retry(state, account, "query { viewer { login } }", serde_json::Value::Null)
-            .await?;
+    let response = graphql_with_retry(
+        state,
+        account,
+        "query { viewer { login } }",
+        serde_json::Value::Null,
+    )
+    .await?;
     let login = response["data"]["viewer"]["login"]
         .as_str()
         .ok_or_else(|| "Could not resolve viewer login".to_string())?
@@ -1176,7 +1180,13 @@ pub(crate) async fn get_all_issues_impl(
     };
     let (query, aliases) = build_multi_repo_issues_query(&repos, &viewer, filter_mode);
 
-    let response = graphql_with_retry(state, &github_com_account(state), &query, serde_json::Value::Null).await?;
+    let response = graphql_with_retry(
+        state,
+        &github_com_account(state),
+        &query,
+        serde_json::Value::Null,
+    )
+    .await?;
 
     let mut results = std::collections::HashMap::new();
     for (alias, path) in &aliases {
@@ -1733,7 +1743,14 @@ pub(crate) async fn get_repo_pr_statuses_impl(
     let repos = vec![(path.to_string(), owner, repo)];
     let (query, aliases) = build_multi_repo_pr_query(&repos, include_merged);
 
-    match graphql_with_retry(state, &github_com_account(state), &query, serde_json::Value::Null).await {
+    match graphql_with_retry(
+        state,
+        &github_com_account(state),
+        &query,
+        serde_json::Value::Null,
+    )
+    .await
+    {
         Ok(response) => {
             let alias = &aliases[0].0;
             let repo_json = &response["data"][alias];
@@ -2076,7 +2093,14 @@ pub(crate) async fn get_ci_checks_impl(
         "number": pr_number,
     });
 
-    match graphql_with_retry(state, &github_com_account(state), PR_CHECKS_QUERY, variables).await {
+    match graphql_with_retry(
+        state,
+        &github_com_account(state),
+        PR_CHECKS_QUERY,
+        variables,
+    )
+    .await
+    {
         Ok(data) => parse_pr_check_contexts(&data),
         Err(e) => {
             tracing::warn!(source = "github", "GraphQL PR checks query failed: {e}");
@@ -3873,7 +3897,10 @@ mod tests {
 
     #[test]
     fn cooldown_key_is_account_scoped_for_ghe_only() {
-        assert_eq!(cooldown_key(&cloud_account(), "octocat", "hello"), "octocat/hello");
+        assert_eq!(
+            cooldown_key(&cloud_account(), "octocat", "hello"),
+            "octocat/hello"
+        );
         assert_eq!(
             cooldown_key(&ghe_account(), "team", "project"),
             "ghe.acme.com:team/project"
@@ -3924,7 +3951,10 @@ mod tests {
             .retain(|key, _| key.contains(':'));
 
         assert!(
-            !state.git_cache.github_repo_cooldown.contains_key("octocat/hello"),
+            !state
+                .git_cache
+                .github_repo_cooldown
+                .contains_key("octocat/hello"),
             "cloud cooldown should be cleared"
         );
         assert!(
@@ -3971,7 +4001,10 @@ mod tests {
                 .contains_key("ghe.acme.com:team/project")
         );
         assert!(
-            state.git_cache.github_repo_cooldown.contains_key("octocat/hello"),
+            state
+                .git_cache
+                .github_repo_cooldown
+                .contains_key("octocat/hello"),
             "github.com cooldown must be untouched"
         );
     }

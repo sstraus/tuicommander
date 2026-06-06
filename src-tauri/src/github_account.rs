@@ -615,12 +615,18 @@ mod tests {
 
     #[test]
     fn host_lowercases_and_trims() {
-        assert_eq!(GitHubHost::new("  GitHub.COM  ").unwrap().as_str(), "github.com");
+        assert_eq!(
+            GitHubHost::new("  GitHub.COM  ").unwrap().as_str(),
+            "github.com"
+        );
     }
 
     #[test]
     fn host_strips_trailing_dot() {
-        assert_eq!(GitHubHost::new("github.com.").unwrap().as_str(), "github.com");
+        assert_eq!(
+            GitHubHost::new("github.com.").unwrap().as_str(),
+            "github.com"
+        );
     }
 
     #[test]
@@ -652,7 +658,10 @@ mod tests {
 
     #[test]
     fn host_accepts_ghe() {
-        assert_eq!(GitHubHost::new("ghe.acme.com").unwrap().as_str(), "ghe.acme.com");
+        assert_eq!(
+            GitHubHost::new("ghe.acme.com").unwrap().as_str(),
+            "ghe.acme.com"
+        );
     }
 
     // --- endpoint URLs ---
@@ -862,16 +871,16 @@ mod tests {
         std::fs::write(wt_gitdir.join("commondir"), "../..\n").expect("write commondir");
         let wt = dir.path().join("feat");
         std::fs::create_dir_all(&wt).expect("mkdir worktree");
-        std::fs::write(wt.join(".git"), format!("gitdir: {}\n", wt_gitdir.display()))
-            .expect("write .git file");
+        std::fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}\n", wt_gitdir.display()),
+        )
+        .expect("write .git file");
 
         let mut store = RepoBindingStore::default();
         store.set_binding(&main, sample_binding("github.com"));
         // The linked worktree resolves to the same binding.
-        assert_eq!(
-            store.get_binding(&wt),
-            Some(&sample_binding("github.com"))
-        );
+        assert_eq!(store.get_binding(&wt), Some(&sample_binding("github.com")));
     }
 
     #[test]
@@ -906,7 +915,10 @@ mod tests {
 
         let loaded = RepoBindingStore::load();
         assert_eq!(loaded, store);
-        assert_eq!(loaded.get_binding(&repo), Some(&sample_binding("github.com")));
+        assert_eq!(
+            loaded.get_binding(&repo),
+            Some(&sample_binding("github.com"))
+        );
     }
 
     // --- resolve_repo_account ---
@@ -984,7 +996,10 @@ mod tests {
             RepoResolution::NeedsBind(c) => {
                 assert_eq!(c.len(), 1);
                 assert_eq!(c[0].account_id, "github.com");
-                assert_eq!((c[0].owner.as_str(), c[0].repo.as_str()), ("octocat", "hello"));
+                assert_eq!(
+                    (c[0].owner.as_str(), c[0].repo.as_str()),
+                    ("octocat", "hello")
+                );
             }
             other => panic!("expected NeedsBind([1]), got {other:?}"),
         }
@@ -1144,7 +1159,11 @@ mod tests {
 
         remove_account_everywhere("ghe.remove-test.example").unwrap();
 
-        assert!(GitHubAccountRegistry::load().get("ghe.remove-test.example").is_none());
+        assert!(
+            GitHubAccountRegistry::load()
+                .get("ghe.remove-test.example")
+                .is_none()
+        );
         assert!(RepoBindingStore::load().get_binding(&repo).is_none());
         assert_eq!(
             crate::credentials::get(Credential::GithubToken("ghe.remove-test.example")).unwrap(),

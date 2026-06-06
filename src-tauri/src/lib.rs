@@ -64,6 +64,8 @@ pub(crate) mod plugin_fs;
 pub(crate) mod plugin_http;
 pub(crate) mod plugin_pty;
 pub(crate) mod plugins;
+#[cfg(feature = "desktop")]
+mod press_and_hold;
 pub(crate) mod process_env;
 pub(crate) mod prompt;
 pub(crate) mod provider_registry;
@@ -79,8 +81,6 @@ mod shell_integration;
 pub(crate) mod sleep_prevention;
 pub(crate) mod smart_prompt;
 pub(crate) mod state;
-#[cfg(feature = "desktop")]
-mod press_and_hold;
 #[cfg(feature = "desktop")]
 mod tab_shortcut;
 pub(crate) mod tailscale;

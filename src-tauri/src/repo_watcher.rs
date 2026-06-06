@@ -206,7 +206,11 @@ fn build_gitignore(repo_root: &Path) -> Gitignore {
 /// as a change. Index *size*, the resolved HEAD target, and the porcelain status
 /// together capture every meaningful change (stage/unstage, commit, branch switch)
 /// while staying stable across those no-op mtime touches.
-pub(crate) fn compute_git_fingerprint(index_size: u64, head_target: &str, porcelain_status: &str) -> u64 {
+pub(crate) fn compute_git_fingerprint(
+    index_size: u64,
+    head_target: &str,
+    porcelain_status: &str,
+) -> u64 {
     use std::hash::{Hash, Hasher};
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     index_size.hash(&mut hasher);
@@ -782,7 +786,8 @@ mod tests {
         // mtime is NOT an input — a bare `touch .git/index` (size/head/status all
         // unchanged) yields the identical fingerprint, so the emit is skipped.
         let before = compute_git_fingerprint(1024, "refs/heads/main=abc123", " M a.txt\n");
-        let after_noop_touch = compute_git_fingerprint(1024, "refs/heads/main=abc123", " M a.txt\n");
+        let after_noop_touch =
+            compute_git_fingerprint(1024, "refs/heads/main=abc123", " M a.txt\n");
         assert_eq!(before, after_noop_touch);
     }
 
