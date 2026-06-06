@@ -870,7 +870,12 @@ pub struct AppState {
     pub(crate) github_viewer_login: parking_lot::RwLock<Option<String>>,
     /// Remaining GraphQL points from last poll — used for proactive throttling.
     /// Initialized to u32::MAX (no constraint). Written by each successful batch poll.
+    /// This is the github.com budget; GHE accounts track their own in `ghe_state`.
     pub(crate) github_rate_limit_remaining: std::sync::atomic::AtomicU32,
+    /// Per-account runtime state for non-github.com (GHE) accounts: breaker +
+    /// viewer-login cache + rate budget, keyed by account id. github.com uses the
+    /// global fields above, so a github.com-only user is byte-for-byte unchanged.
+    pub(crate) ghe_state: DashMap<String, crate::github::GheAccountState>,
     /// Shutdown sender for the HTTP server — send () to gracefully stop it.
     /// Only the TCP listener + TLS renewal task listen to this signal now;
     /// IPC listeners (Unix socket / named pipe) and the session reaper live
@@ -1149,6 +1154,7 @@ impl AppState {
             github_poller: parking_lot::Mutex::new(None),
             github_viewer_login: parking_lot::RwLock::new(None),
             github_rate_limit_remaining: std::sync::atomic::AtomicU32::new(u32::MAX),
+            ghe_state: dashmap::DashMap::new(),
             server_shutdown: parking_lot::Mutex::new(None),
             ipc_started: std::sync::atomic::AtomicBool::new(false),
             session_token: parking_lot::RwLock::new(session_token),
@@ -3107,6 +3113,7 @@ mod tests {
             github_poller: parking_lot::Mutex::new(None),
             github_viewer_login: parking_lot::RwLock::new(None),
             github_rate_limit_remaining: std::sync::atomic::AtomicU32::new(u32::MAX),
+            ghe_state: dashmap::DashMap::new(),
             server_shutdown: parking_lot::Mutex::new(None),
             ipc_started: std::sync::atomic::AtomicBool::new(false),
             session_token: parking_lot::RwLock::new(String::from("test-token")),

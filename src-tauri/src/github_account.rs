@@ -153,14 +153,6 @@ pub(crate) enum AccountKind {
     GhePat,
 }
 
-impl AccountKind {
-    /// Whether this kind authenticates with a per-account PAT (vs the github.com
-    /// env→OAuth→gh chain).
-    pub(crate) fn is_pat(&self) -> bool {
-        matches!(self, AccountKind::GhePat)
-    }
-}
-
 /// A configured GitHub account: a host + how it authenticates + (once validated)
 /// the resolved viewer login.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -316,6 +308,9 @@ impl RepoBindingStore {
     }
 
     /// Remove the binding for a repo path; returns whether one was removed.
+    /// Part of the binding-store API (symmetric with `set_binding`, exercised by
+    /// tests); a per-repo "unbind" UI affordance will call it.
+    #[allow(dead_code)]
     pub(crate) fn remove_binding(&mut self, repo_path: &std::path::Path) -> bool {
         self.bindings.remove(&Self::key(repo_path)).is_some()
     }
@@ -566,11 +561,25 @@ pub(crate) async fn github_add_account(
     Ok(account)
 }
 
-/// Remove an account: its PAT, its record, and all of its repo bindings.
+/// Remove an account: its PAT, its record, all of its repo bindings, and its
+/// in-memory caches (per-account breaker/viewer/rate + its cooldown entries).
+/// Only the removed account's state is touched — others are untouched.
 #[cfg(feature = "desktop")]
 #[tauri::command]
-pub(crate) async fn github_remove_account(id: String) -> Result<(), String> {
-    remove_account_everywhere(&id)
+pub(crate) async fn github_remove_account(
+    state: tauri::State<'_, std::sync::Arc<crate::state::AppState>>,
+    id: String,
+) -> Result<(), String> {
+    remove_account_everywhere(&id)?;
+    // Drop the account's per-account runtime state and its cooldown keys
+    // ("{id}:owner/repo"). github.com cooldowns ("owner/repo") are untouched.
+    state.ghe_state.remove(&id);
+    let prefix = format!("{id}:");
+    state
+        .git_cache
+        .github_repo_cooldown
+        .retain(|key, _| !key.starts_with(&prefix));
+    Ok(())
 }
 
 /// Persist a repo→account binding for the chosen remote.
@@ -740,7 +749,7 @@ mod tests {
         assert_eq!(acc.id, "github.com");
         assert!(acc.is_cloud());
         assert_eq!(acc.host.as_str(), "github.com");
-        assert!(!acc.kind.is_pat());
+        assert_eq!(acc.kind, AccountKind::GithubComOauth);
     }
 
     #[test]
@@ -750,7 +759,6 @@ mod tests {
         assert_eq!(acc.id, "ghe.acme.com");
         assert!(!acc.is_cloud());
         assert_eq!(acc.kind, AccountKind::GhePat);
-        assert!(acc.kind.is_pat());
     }
 
     #[test]

@@ -238,10 +238,15 @@ pub(crate) async fn github_poll_login(
         // Activate immediately in runtime state
         *state.github_token.write() = Some(access_token.clone());
         *state.github_token_source.write() = TokenSource::OAuth;
-        // Reset circuit breaker so we retry any previously-failed repos
+        // Reset the github.com circuit breaker so we retry any previously-failed repos
         state.github_circuit_breaker.reset();
-        // Clear the repo cooldown cache so "not found" repos get re-checked
-        state.git_cache.github_repo_cooldown.clear();
+        // Clear only github.com cooldowns ("owner/name", no ':'), leaving GHE
+        // cooldowns ("{id}:owner/name") untouched — github.com login must not
+        // disturb other accounts' state.
+        state
+            .git_cache
+            .github_repo_cooldown
+            .retain(|key, _| key.contains(':'));
         tracing::info!(source = "github", "OAuth Device Flow login successful");
     }
 
@@ -314,10 +319,18 @@ pub(crate) struct GitHubDiagnostics {
 /// Pure seam (no `State`/network) so the Step 0 characterization net can pin
 /// the diagnostics shape for a github.com-only setup.
 pub(crate) fn compute_diagnostics(state: &AppState) -> GitHubDiagnostics {
-    let circuit_breaker_open = state.github_circuit_breaker.check().is_err();
-    let circuit_breaker_status = match state.github_circuit_breaker.check() {
+    let cloud_status = state.github_circuit_breaker.check();
+    // A GHE account whose breaker is open also counts as "open" for the UI, but
+    // never changes the github.com-only output (ghe_state is empty then).
+    let ghe_open = state
+        .ghe_state
+        .iter()
+        .any(|e| e.value().circuit_breaker.check().is_err());
+    let circuit_breaker_open = cloud_status.is_err() || ghe_open;
+    let circuit_breaker_status = match &cloud_status {
+        Ok(()) if ghe_open => "An Enterprise account is backing off".to_string(),
         Ok(()) => "OK".to_string(),
-        Err(msg) => msg,
+        Err(msg) => msg.clone(),
     };
 
     let now = std::time::Instant::now();

@@ -455,9 +455,8 @@ async fn poll_batch(
     if paths.is_empty() {
         return;
     }
-    if state.github_circuit_breaker.check().is_err() {
-        return;
-    }
+    // Per-account circuit breakers are checked inside get_all_batch_impl so a
+    // single failing account no longer blocks polling of the others.
 
     match crate::github::get_all_batch_impl(
         paths,

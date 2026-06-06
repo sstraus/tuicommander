@@ -230,8 +230,16 @@ fn diagnostics_reports_cooldown_and_monitored_repos() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn cooldown_key_is_owner_slash_name_today() {
-    assert_eq!(github::cooldown_key("octocat", "hello"), "octocat/hello");
+fn cooldown_key_is_owner_slash_name_for_github_com() {
+    // The github.com cooldown key MUST stay the bare "owner/name" (no account
+    // prefix) so a github.com-only user's diagnostics/cooldown output is
+    // unchanged. (GHE accounts get an "{id}:" prefix — see github_account tests.)
+    use crate::github_account::{AccountKind, GitHubAccount};
+    let github_com = GitHubAccount::github_com(AccountKind::GithubComOauth, None);
+    assert_eq!(
+        github::cooldown_key(&github_com, "octocat", "hello"),
+        "octocat/hello"
+    );
 }
 
 // ---------------------------------------------------------------------------

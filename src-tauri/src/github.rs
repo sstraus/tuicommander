@@ -207,11 +207,61 @@ pub(crate) fn parse_remote_url(url: &str) -> Option<(String, String)> {
 
 /// Build the per-repo cooldown-cache key.
 ///
-/// Seam for the multi-account refactor: today the key is host-agnostic
-/// (`owner/name`), which collides across hosts. Step 9 prefixes it with the
-/// account id. Keep this the single construction site so the change is local.
-pub(crate) fn cooldown_key(owner: &str, name: &str) -> String {
-    format!("{owner}/{name}")
+/// github.com keeps the host-agnostic `owner/name` key (unchanged, so a
+/// github.com-only user's diagnostics/cooldown behavior is identical). GHE
+/// accounts prefix with the account id (`{id}:owner/name`) so the same
+/// owner/name on different hosts never collides — and the `:` discriminates
+/// cloud vs GHE keys when scoping resets.
+pub(crate) fn cooldown_key(
+    account: &crate::github_account::GitHubAccount,
+    owner: &str,
+    name: &str,
+) -> String {
+    if account.is_cloud() {
+        format!("{owner}/{name}")
+    } else {
+        format!("{}:{owner}/{name}", account.id)
+    }
+}
+
+/// Per-account GitHub runtime state for non-github.com (GHE) accounts.
+///
+/// github.com uses the global `AppState` fields (unchanged); each GHE account
+/// gets its own breaker + viewer-login cache + rate budget here so a failing or
+/// rate-limited GHE account is fully isolated from github.com and from other
+/// GHE accounts.
+pub(crate) struct GheAccountState {
+    pub(crate) circuit_breaker: GitHubCircuitBreaker,
+    pub(crate) viewer_login: parking_lot::RwLock<Option<String>>,
+    pub(crate) rate_limit_remaining: AtomicU32,
+}
+
+impl GheAccountState {
+    pub(crate) fn new() -> Self {
+        Self {
+            circuit_breaker: GitHubCircuitBreaker::new(),
+            viewer_login: parking_lot::RwLock::new(None),
+            rate_limit_remaining: AtomicU32::new(u32::MAX),
+        }
+    }
+}
+
+/// Run a closure with the circuit breaker for `account` (github.com → the global
+/// breaker; GHE → its per-account breaker).
+pub(crate) fn with_account_breaker<R>(
+    state: &AppState,
+    account: &crate::github_account::GitHubAccount,
+    f: impl FnOnce(&GitHubCircuitBreaker) -> R,
+) -> R {
+    if account.is_cloud() {
+        f(&state.github_circuit_breaker)
+    } else {
+        let entry = state
+            .ghe_state
+            .entry(account.id.clone())
+            .or_insert_with(GheAccountState::new);
+        f(&entry.circuit_breaker)
+    }
 }
 
 /// Parse a header value as a u64, returning None if missing or unparseable.
@@ -457,7 +507,7 @@ pub(crate) async fn graphql_with_retry(
     variables: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     // Check circuit breaker first
-    state.github_circuit_breaker.check()?;
+    with_account_breaker(state, account, |b| b.check())?;
 
     let url = account.host.graphql_url();
 
@@ -482,7 +532,7 @@ pub(crate) async fn graphql_with_retry(
         };
         return match graphql_request(&state.http_client, &token, &url, query, &variables).await {
             Ok(response) => {
-                state.github_circuit_breaker.record_success();
+                with_account_breaker(state, account, |b| b.record_success());
                 Ok(response)
             }
             Err(GqlError::RateLimit {
@@ -491,15 +541,15 @@ pub(crate) async fn graphql_with_retry(
                 message,
             }) => {
                 let wait = rate_limit_wait_secs(reset_at, retry_after);
-                state.github_circuit_breaker.record_rate_limit(wait);
+                with_account_breaker(state, account, |b| b.record_rate_limit(wait));
                 Err(format!("rate-limit: {message}"))
             }
             Err(GqlError::Auth(msg)) => {
-                state.github_circuit_breaker.record_failure();
+                with_account_breaker(state, account, |b| b.record_failure());
                 Err(msg)
             }
             Err(GqlError::Other(msg)) => {
-                state.github_circuit_breaker.record_failure();
+                with_account_breaker(state, account, |b| b.record_failure());
                 Err(msg)
             }
         };
@@ -525,7 +575,7 @@ pub(crate) async fn graphql_with_retry(
 
     match graphql_request(&state.http_client, &token, &url, query, &variables).await {
         Ok(response) => {
-            state.github_circuit_breaker.record_success();
+            with_account_breaker(state, account, |b| b.record_success());
             Ok(response)
         }
         Err(GqlError::RateLimit {
@@ -534,7 +584,7 @@ pub(crate) async fn graphql_with_retry(
             message,
         }) => {
             let wait = rate_limit_wait_secs(reset_at, retry_after);
-            state.github_circuit_breaker.record_rate_limit(wait);
+            with_account_breaker(state, account, |b| b.record_rate_limit(wait));
             Err(format!("rate-limit: {message}"))
         }
         Err(GqlError::Auth(msg)) => {
@@ -553,7 +603,7 @@ pub(crate) async fn graphql_with_retry(
                         tracing::info!(source = "github", "Token fallback succeeded");
                         *state.github_token.write() = Some(candidate.clone());
                         *state.github_token_source.write() = *candidate_source;
-                        state.github_circuit_breaker.record_success();
+                        with_account_breaker(state, account, |b| b.record_success());
                         return Ok(response);
                     }
                     Err(GqlError::Auth(_)) => continue, // Try next candidate
@@ -563,21 +613,21 @@ pub(crate) async fn graphql_with_retry(
                         message,
                     }) => {
                         let wait = rate_limit_wait_secs(reset_at, retry_after);
-                        state.github_circuit_breaker.record_rate_limit(wait);
+                        with_account_breaker(state, account, |b| b.record_rate_limit(wait));
                         return Err(format!("rate-limit: {message}"));
                     }
                     Err(GqlError::Other(e)) => {
-                        state.github_circuit_breaker.record_failure();
+                        with_account_breaker(state, account, |b| b.record_failure());
                         return Err(e);
                     }
                 }
             }
             // All candidates failed with 401
-            state.github_circuit_breaker.record_failure();
+            with_account_breaker(state, account, |b| b.record_failure());
             Err(msg)
         }
         Err(GqlError::Other(msg)) => {
-            state.github_circuit_breaker.record_failure();
+            with_account_breaker(state, account, |b| b.record_failure());
             Err(msg)
         }
     }
@@ -911,6 +961,43 @@ pub(crate) async fn get_viewer_login(state: &AppState) -> Result<String, String>
     Ok(login)
 }
 
+/// Like [`get_viewer_login`] but for a specific account. github.com delegates to
+/// the global cache (unchanged); each GHE account caches its own viewer login in
+/// `ghe_state` so viewer search terms never cross-contaminate between accounts.
+pub(crate) async fn get_viewer_login_for(
+    state: &AppState,
+    account: &crate::github_account::GitHubAccount,
+) -> Result<String, String> {
+    if account.is_cloud() {
+        return get_viewer_login(state).await;
+    }
+    // Per-account cache check (guard dropped before the await).
+    {
+        let entry = state
+            .ghe_state
+            .entry(account.id.clone())
+            .or_insert_with(crate::github::GheAccountState::new);
+        if let Some(login) = entry.viewer_login.read().as_ref() {
+            return Ok(login.clone());
+        }
+    }
+    let response =
+        graphql_with_retry(state, account, "query { viewer { login } }", serde_json::Value::Null)
+            .await?;
+    let login = response["data"]["viewer"]["login"]
+        .as_str()
+        .ok_or_else(|| "Could not resolve viewer login".to_string())?
+        .to_string();
+    {
+        let entry = state
+            .ghe_state
+            .entry(account.id.clone())
+            .or_insert_with(crate::github::GheAccountState::new);
+        *entry.viewer_login.write() = Some(login.clone());
+    }
+    Ok(login)
+}
+
 // ── GitHub Issues ────────────────────────────────────────────────────────────
 
 /// GitHub Issue status, analogous to BranchPrStatus for PRs.
@@ -1057,13 +1144,16 @@ pub(crate) async fn get_all_issues_impl(
         .github_repo_cooldown
         .retain(|_key, expiry| *expiry > now);
 
+    // This is the github.com-only issues path (get_github_remote_url filters to
+    // github.com); cooldown keys use the github.com default account.
+    let gh_account = github_com_account(state);
     let repos: Vec<(String, String, String)> = paths
         .iter()
         .filter_map(|path| {
             let repo_path = PathBuf::from(path);
             let url = get_github_remote_url(&repo_path)?;
             let (owner, name) = parse_remote_url(&url)?;
-            let cooldown_key = cooldown_key(&owner, &name);
+            let cooldown_key = cooldown_key(&gh_account, &owner, &name);
             if state
                 .git_cache
                 .github_repo_cooldown
@@ -1185,8 +1275,15 @@ pub(crate) struct BatchPollResult {
     pub(crate) issues: std::collections::HashMap<String, Vec<GitHubIssue>>,
 }
 
-/// Fetch PRs + Issues for all repos in a single batched GraphQL call.
-/// Writes the remaining rate-limit budget to `state` for proactive throttling.
+/// Fetch PRs + Issues for all repos in a single batched GraphQL call per
+/// account.
+///
+/// Groups the given paths by the GitHub account they resolve to (github.com
+/// default + any GHE accounts), then runs one batched query per account against
+/// that account's endpoint with its own token + viewer. A github.com-only user
+/// has exactly one group and sees identical behavior. A failing/rate-limited or
+/// breaker-open GHE account is skipped without affecting the others; a
+/// github.com error still propagates (zero-change), GHE errors are isolated.
 pub(crate) async fn get_all_batch_impl(
     paths: &[String],
     include_merged: bool,
@@ -1194,12 +1291,9 @@ pub(crate) async fn get_all_batch_impl(
     pr_hide_drafts: bool,
     state: &AppState,
 ) -> Result<BatchPollResult, String> {
-    if state.github_token.read().is_none() {
-        return Ok(BatchPollResult {
-            prs: Default::default(),
-            issues: Default::default(),
-        });
-    }
+    use crate::github_account::{
+        GitHubAccountRegistry, RepoBindingStore, RepoResolution, resolve_repo_account,
+    };
 
     let now = Instant::now();
     state
@@ -1207,44 +1301,145 @@ pub(crate) async fn get_all_batch_impl(
         .github_repo_cooldown
         .retain(|_key, expiry| *expiry > now);
 
-    let repos: Vec<(String, String, String)> = paths
-        .iter()
-        .filter_map(|path| {
-            let repo_path = PathBuf::from(path);
-            let url = get_github_remote_url(&repo_path)?;
-            let (owner, name) = parse_remote_url(&url)?;
-            let cooldown_key = cooldown_key(&owner, &name);
-            if state
-                .git_cache
-                .github_repo_cooldown
-                .contains_key(&cooldown_key)
-            {
-                return None;
-            }
-            Some((path.clone(), owner, name))
-        })
-        .collect();
+    // Group paths by resolved account, carrying (path, owner, repo).
+    let registry = GitHubAccountRegistry::load();
+    let bindings = RepoBindingStore::load();
+    let default = github_com_account(state);
+    type Group = (
+        crate::github_account::GitHubAccount,
+        Vec<(String, String, String)>,
+    );
+    let mut by_account: std::collections::HashMap<String, Group> = std::collections::HashMap::new();
 
-    if repos.is_empty() {
-        return Ok(BatchPollResult {
-            prs: Default::default(),
-            issues: Default::default(),
-        });
+    for path in paths {
+        let p = std::path::Path::new(path);
+        let (account, owner, repo) =
+            match resolve_repo_account(p, &registry, &bindings, Some(&default)) {
+                RepoResolution::Bound {
+                    account,
+                    owner,
+                    repo,
+                } => (account, owner, repo),
+                RepoResolution::NeedsBind(mut candidates) if candidates.len() == 1 => {
+                    let cand = candidates.remove(0);
+                    let account = if cand.account_id == default.id {
+                        default.clone()
+                    } else {
+                        match registry.get(&cand.account_id) {
+                            Some(a) => a.clone(),
+                            None => continue,
+                        }
+                    };
+                    (account, cand.owner, cand.repo)
+                }
+                // Ambiguous / no account / not a GitHub repo → not polled.
+                _ => continue,
+            };
+        by_account
+            .entry(account.id.clone())
+            .or_insert_with(|| (account, Vec::new()))
+            .1
+            .push((path.clone(), owner, repo));
     }
 
+    let mut pr_results: std::collections::HashMap<String, Vec<BranchPrStatus>> = Default::default();
+    let mut issue_results: std::collections::HashMap<String, Vec<GitHubIssue>> = Default::default();
+
+    for (_id, (account, repos_all)) in by_account {
+        // Skip accounts with no token or an open breaker (per-account isolation).
+        let has_token = if account.is_cloud() {
+            state.github_token.read().is_some()
+        } else {
+            crate::github_auth::resolve_token_for_account(&account)
+                .0
+                .is_some()
+        };
+        if !has_token {
+            continue;
+        }
+        if with_account_breaker(state, &account, |b| b.check()).is_err() {
+            continue;
+        }
+
+        // Drop repos already in cooldown for THIS account.
+        let repos: Vec<(String, String, String)> = repos_all
+            .into_iter()
+            .filter(|(_p, owner, name)| {
+                !state
+                    .git_cache
+                    .github_repo_cooldown
+                    .contains_key(&cooldown_key(&account, owner, name))
+            })
+            .collect();
+        if repos.is_empty() {
+            continue;
+        }
+
+        match poll_one_account(
+            state,
+            &account,
+            &repos,
+            include_merged,
+            filter_mode,
+            pr_hide_drafts,
+            &mut pr_results,
+            &mut issue_results,
+        )
+        .await
+        {
+            Ok(()) => {}
+            // github.com errors propagate (zero-change); GHE faults are isolated.
+            Err(e) if account.is_cloud() => return Err(e),
+            Err(e) => {
+                tracing::warn!(source = "github", account = %account.id, error = %e, "GHE account poll failed (isolated)");
+            }
+        }
+    }
+
+    Ok(BatchPollResult {
+        prs: pr_results,
+        issues: issue_results,
+    })
+}
+
+/// Run one batched poll for a single account, merging its PRs/issues into the
+/// shared result maps. Stores the account's rate budget and cooldowns null repos.
+#[allow(clippy::too_many_arguments)]
+async fn poll_one_account(
+    state: &AppState,
+    account: &crate::github_account::GitHubAccount,
+    repos: &[(String, String, String)],
+    include_merged: bool,
+    filter_mode: &str,
+    pr_hide_drafts: bool,
+    pr_results: &mut std::collections::HashMap<String, Vec<BranchPrStatus>>,
+    issue_results: &mut std::collections::HashMap<String, Vec<GitHubIssue>>,
+) -> Result<(), String> {
     let include_issues = !matches!(filter_mode, "" | "disabled");
     // Always fetch viewer login — needed for both issue filtering and viewer PR search.
-    let viewer = get_viewer_login(state).await.unwrap_or_default();
+    let viewer = get_viewer_login_for(state, account)
+        .await
+        .unwrap_or_default();
 
     let (query, aliases) =
-        build_unified_batch_query(&repos, include_merged, filter_mode, &viewer, pr_hide_drafts);
-    let response = graphql_with_retry(state, &github_com_account(state), &query, serde_json::Value::Null).await?;
+        build_unified_batch_query(repos, include_merged, filter_mode, &viewer, pr_hide_drafts);
+    let response = graphql_with_retry(state, account, &query, serde_json::Value::Null).await?;
 
-    // Store rate-limit budget for proactive throttling in the poller
+    // Store rate-limit budget for proactive throttling in the poller.
     if let Some(remaining) = response["data"]["rateLimit"]["remaining"].as_u64() {
-        state
-            .github_rate_limit_remaining
-            .store(remaining as u32, std::sync::atomic::Ordering::Relaxed);
+        let budget = remaining as u32;
+        if account.is_cloud() {
+            state
+                .github_rate_limit_remaining
+                .store(budget, std::sync::atomic::Ordering::Relaxed);
+        } else {
+            state
+                .ghe_state
+                .entry(account.id.clone())
+                .or_insert_with(crate::github::GheAccountState::new)
+                .rate_limit_remaining
+                .store(budget, std::sync::atomic::Ordering::Relaxed);
+        }
     }
 
     let alias_repo_names: std::collections::HashMap<&str, (&str, &str)> = repos
@@ -1253,15 +1448,12 @@ pub(crate) async fn get_all_batch_impl(
         .map(|(i, (_path, owner, name))| (aliases[i].0.as_str(), (owner.as_str(), name.as_str())))
         .collect();
 
-    let mut pr_results: std::collections::HashMap<String, Vec<BranchPrStatus>> = Default::default();
-    let mut issue_results: std::collections::HashMap<String, Vec<GitHubIssue>> = Default::default();
-
     for (alias, path) in &aliases {
         let repo_json = &response["data"][alias];
 
         if repo_json.is_null() {
             if let Some((owner, name)) = alias_repo_names.get(alias.as_str()) {
-                let cooldown_key = cooldown_key(owner, name);
+                let cooldown_key = cooldown_key(account, owner, name);
                 let was_known = state
                     .git_cache
                     .github_repo_cooldown
@@ -1320,7 +1512,7 @@ pub(crate) async fn get_all_batch_impl(
         // of the same repo imported as separate workspace entries).
         let mut name_to_paths: std::collections::HashMap<String, Vec<&str>> =
             std::collections::HashMap::new();
-        for (path, owner, name) in &repos {
+        for (path, owner, name) in repos {
             name_to_paths
                 .entry(format!("{owner}/{name}"))
                 .or_default()
@@ -1346,10 +1538,7 @@ pub(crate) async fn get_all_batch_impl(
         }
     }
 
-    Ok(BatchPollResult {
-        prs: pr_results,
-        issues: issue_results,
-    })
+    Ok(())
 }
 
 /// Fetch issues for multiple repos (Tauri command).
@@ -3669,6 +3858,136 @@ mod tests {
             err.contains("github.com accounts"),
             "expected gh-CLI-disabled message, got: {err}"
         );
+    }
+
+    // --- Step 9: per-account state ---
+
+    use crate::github_account::{AccountKind, GitHubAccount, GitHubHost};
+
+    fn cloud_account() -> GitHubAccount {
+        GitHubAccount::github_com(AccountKind::GithubComOauth, None)
+    }
+    fn ghe_account() -> GitHubAccount {
+        GitHubAccount::ghe_pat(GitHubHost::new("ghe.acme.com").unwrap(), None)
+    }
+
+    #[test]
+    fn cooldown_key_is_account_scoped_for_ghe_only() {
+        assert_eq!(cooldown_key(&cloud_account(), "octocat", "hello"), "octocat/hello");
+        assert_eq!(
+            cooldown_key(&ghe_account(), "team", "project"),
+            "ghe.acme.com:team/project"
+        );
+    }
+
+    #[test]
+    fn per_account_breaker_is_isolated() {
+        let state = crate::state::tests_support::make_test_app_state();
+        let cloud = cloud_account();
+        let ghe = ghe_account();
+
+        // Trip the GHE breaker (threshold = 3 consecutive failures).
+        with_account_breaker(&state, &ghe, |b| {
+            for _ in 0..3 {
+                b.record_failure();
+            }
+        });
+
+        assert!(
+            with_account_breaker(&state, &ghe, |b| b.check()).is_err(),
+            "GHE breaker should be open"
+        );
+        assert!(
+            with_account_breaker(&state, &cloud, |b| b.check()).is_ok(),
+            "github.com breaker must stay closed"
+        );
+    }
+
+    #[test]
+    fn github_login_cooldown_clear_preserves_ghe() {
+        // github.com login clears only cloud cooldowns ("owner/name"); GHE keys
+        // ("{id}:owner/name") survive. This mirrors github_poll_login's retain.
+        let state = crate::state::tests_support::make_test_app_state();
+        let future = Instant::now() + std::time::Duration::from_secs(3600);
+        state
+            .git_cache
+            .github_repo_cooldown
+            .insert(cooldown_key(&cloud_account(), "octocat", "hello"), future);
+        state
+            .git_cache
+            .github_repo_cooldown
+            .insert(cooldown_key(&ghe_account(), "team", "project"), future);
+
+        state
+            .git_cache
+            .github_repo_cooldown
+            .retain(|key, _| key.contains(':'));
+
+        assert!(
+            !state.git_cache.github_repo_cooldown.contains_key("octocat/hello"),
+            "cloud cooldown should be cleared"
+        );
+        assert!(
+            state
+                .git_cache
+                .github_repo_cooldown
+                .contains_key("ghe.acme.com:team/project"),
+            "GHE cooldown should survive"
+        );
+    }
+
+    #[test]
+    fn remove_account_invalidates_only_its_caches() {
+        let state = crate::state::tests_support::make_test_app_state();
+        let ghe = ghe_account();
+        let future = Instant::now() + std::time::Duration::from_secs(3600);
+        // Seed per-account state + cooldowns for both a GHE account and github.com.
+        state
+            .ghe_state
+            .entry(ghe.id.clone())
+            .or_insert_with(GheAccountState::new);
+        state
+            .git_cache
+            .github_repo_cooldown
+            .insert(cooldown_key(&ghe, "team", "project"), future);
+        state
+            .git_cache
+            .github_repo_cooldown
+            .insert(cooldown_key(&cloud_account(), "octocat", "hello"), future);
+
+        // Replicate github_remove_account's cache cleanup.
+        state.ghe_state.remove(&ghe.id);
+        let prefix = format!("{}:", ghe.id);
+        state
+            .git_cache
+            .github_repo_cooldown
+            .retain(|key, _| !key.starts_with(&prefix));
+
+        assert!(!state.ghe_state.contains_key("ghe.acme.com"));
+        assert!(
+            !state
+                .git_cache
+                .github_repo_cooldown
+                .contains_key("ghe.acme.com:team/project")
+        );
+        assert!(
+            state.git_cache.github_repo_cooldown.contains_key("octocat/hello"),
+            "github.com cooldown must be untouched"
+        );
+    }
+
+    #[test]
+    fn diagnostics_flags_open_ghe_breaker() {
+        let state = crate::state::tests_support::make_test_app_state();
+        let ghe = ghe_account();
+        with_account_breaker(&state, &ghe, |b| {
+            for _ in 0..3 {
+                b.record_failure();
+            }
+        });
+        let diag = crate::github_auth::compute_diagnostics(&state);
+        assert!(diag.circuit_breaker_open);
+        assert!(diag.circuit_breaker_status.contains("Enterprise"));
     }
 
     #[test]
