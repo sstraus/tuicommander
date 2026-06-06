@@ -382,6 +382,71 @@ pub(crate) fn github_com_account(state: &AppState) -> crate::github_account::Git
     crate::github_account::GitHubAccount::github_com(kind, login)
 }
 
+/// Resolve a repo to `(account, token, owner, repo)` for a REST API call.
+///
+/// Preserves github.com behavior: a github.com repo resolves to the implicit
+/// default account and uses the cached/rotated `state.github_token` (NOT a fresh
+/// chain resolve), exactly as the old per-command preamble did. GHE-bound repos
+/// use their account's PAT + host. Errors when the repo is unbound, ambiguous,
+/// or unauthenticated.
+fn resolve_repo_for_rest(
+    state: &AppState,
+    repo_path: &str,
+) -> Result<(crate::github_account::GitHubAccount, String, String, String), String> {
+    use crate::github_account::{
+        GitHubAccountRegistry, RepoBindingStore, RepoResolution, resolve_repo_account,
+    };
+    let path = std::path::Path::new(repo_path);
+    let registry = GitHubAccountRegistry::load();
+    let bindings = RepoBindingStore::load();
+    let default = github_com_account(state);
+    let resolution = resolve_repo_account(path, &registry, &bindings, Some(&default));
+
+    let (account, owner, repo) = match resolution {
+        RepoResolution::Bound {
+            account,
+            owner,
+            repo,
+        } => (account, owner, repo),
+        // Exactly one candidate is the obvious choice (e.g. a github.com repo
+        // with no explicit binding yet) — resolve it without prompting.
+        RepoResolution::NeedsBind(mut candidates) if candidates.len() == 1 => {
+            let c = candidates.remove(0);
+            let account = if c.account_id == default.id {
+                default.clone()
+            } else {
+                registry
+                    .get(&c.account_id)
+                    .cloned()
+                    .ok_or_else(|| format!("GitHub account '{}' not found", c.account_id))?
+            };
+            (account, c.owner, c.repo)
+        }
+        RepoResolution::NeedsBind(_) => {
+            return Err(
+                "Repository matches multiple GitHub accounts — bind it to one first".to_string(),
+            );
+        }
+        RepoResolution::NeedsAccount => {
+            return Err("No GitHub account configured for this repository".to_string());
+        }
+        RepoResolution::Unmonitored => {
+            return Err("No GitHub remote URL found for this repository".to_string());
+        }
+    };
+
+    // Token: cloud uses the cached/rotated global token (unchanged); a PAT
+    // account uses its vault token.
+    let token = if account.is_cloud() {
+        state.github_token.read().clone()
+    } else {
+        crate::github_auth::resolve_token_for_account(&account).0
+    }
+    .ok_or_else(|| "No GitHub token available".to_string())?;
+
+    Ok((account, token, owner, repo))
+}
+
 /// Execute a GraphQL query with token fallback and circuit breaker protection.
 /// On 401, tries remaining token candidates and updates the stored token on success.
 /// Rate limits are handled separately from failures — they don't inflate the failure count.
@@ -1305,17 +1370,12 @@ pub(crate) async fn close_issue_impl(
     issue_number: i64,
     state: &AppState,
 ) -> Result<(), String> {
-    let token = state
-        .github_token
-        .read()
-        .clone()
-        .ok_or_else(|| "No GitHub token available".to_string())?;
-    let remote_url = get_github_remote_url(std::path::Path::new(repo_path))
-        .ok_or_else(|| "No GitHub remote URL found".to_string())?;
-    let (owner, repo) = parse_remote_url(&remote_url)
-        .ok_or_else(|| format!("Failed to parse remote URL: {remote_url}"))?;
+    let (account, token, owner, repo) = resolve_repo_for_rest(state, repo_path)?;
 
-    let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}");
+    let url = crate::github_account::github_rest_url(
+        &account.host,
+        &format!("/repos/{owner}/{repo}/issues/{issue_number}"),
+    );
     crate::github_debug::log_api("PATCH", &url, "close_issue_impl");
     let body = serde_json::json!({ "state": "closed" });
 
@@ -1358,17 +1418,12 @@ pub(crate) async fn reopen_issue_impl(
     issue_number: i64,
     state: &AppState,
 ) -> Result<(), String> {
-    let token = state
-        .github_token
-        .read()
-        .clone()
-        .ok_or_else(|| "No GitHub token available".to_string())?;
-    let remote_url = get_github_remote_url(std::path::Path::new(repo_path))
-        .ok_or_else(|| "No GitHub remote URL found".to_string())?;
-    let (owner, repo) = parse_remote_url(&remote_url)
-        .ok_or_else(|| format!("Failed to parse remote URL: {remote_url}"))?;
+    let (account, token, owner, repo) = resolve_repo_for_rest(state, repo_path)?;
 
-    let url = format!("https://api.github.com/repos/{owner}/{repo}/issues/{issue_number}");
+    let url = crate::github_account::github_rest_url(
+        &account.host,
+        &format!("/repos/{owner}/{repo}/issues/{issue_number}"),
+    );
     crate::github_debug::log_api("PATCH", &url, "reopen_issue_impl");
     let body = serde_json::json!({ "state": "open" });
 
@@ -1848,19 +1903,12 @@ pub(crate) async fn merge_pr_github_impl(
     merge_method: &str,
     state: &AppState,
 ) -> Result<String, String> {
-    let token = state
-        .github_token
-        .read()
-        .clone()
-        .ok_or_else(|| "No GitHub token available".to_string())?;
+    let (account, token, owner, repo) = resolve_repo_for_rest(state, repo_path)?;
 
-    let remote_url = get_github_remote_url(std::path::Path::new(repo_path))
-        .ok_or_else(|| "No GitHub remote URL found for this repository".to_string())?;
-
-    let (owner, repo) = parse_remote_url(&remote_url)
-        .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
-
-    let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/merge");
+    let url = crate::github_account::github_rest_url(
+        &account.host,
+        &format!("/repos/{owner}/{repo}/pulls/{pr_number}/merge"),
+    );
     crate::github_debug::log_api("PUT", &url, "merge_pr_github_impl");
     let body = serde_json::json!({ "merge_method": merge_method });
 
@@ -1925,19 +1973,12 @@ pub(crate) async fn approve_pr_impl(
     pr_number: i64,
     state: &AppState,
 ) -> Result<(), String> {
-    let token = state
-        .github_token
-        .read()
-        .clone()
-        .ok_or_else(|| "No GitHub token available".to_string())?;
+    let (account, token, owner, repo) = resolve_repo_for_rest(state, repo_path)?;
 
-    let remote_url = get_github_remote_url(std::path::Path::new(repo_path))
-        .ok_or_else(|| "No GitHub remote URL found for this repository".to_string())?;
-
-    let (owner, repo) = parse_remote_url(&remote_url)
-        .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
-
-    let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}/reviews");
+    let url = crate::github_account::github_rest_url(
+        &account.host,
+        &format!("/repos/{owner}/{repo}/pulls/{pr_number}/reviews"),
+    );
     crate::github_debug::log_api("POST", &url, "approve_pr_impl");
     let body = serde_json::json!({ "event": "APPROVE" });
 
@@ -1984,19 +2025,12 @@ pub(crate) async fn get_pr_diff_impl(
     pr_number: i64,
     state: &AppState,
 ) -> Result<String, String> {
-    let token = state
-        .github_token
-        .read()
-        .clone()
-        .ok_or_else(|| "No GitHub token available".to_string())?;
+    let (account, token, owner, repo) = resolve_repo_for_rest(state, repo_path)?;
 
-    let remote_url = get_github_remote_url(std::path::Path::new(repo_path))
-        .ok_or_else(|| "No GitHub remote URL found for this repository".to_string())?;
-
-    let (owner, repo) = parse_remote_url(&remote_url)
-        .ok_or_else(|| format!("Failed to parse GitHub remote URL: {remote_url}"))?;
-
-    let url = format!("https://api.github.com/repos/{owner}/{repo}/pulls/{pr_number}");
+    let url = crate::github_account::github_rest_url(
+        &account.host,
+        &format!("/repos/{owner}/{repo}/pulls/{pr_number}"),
+    );
     crate::github_debug::log_api("GET", &url, "get_pr_diff_impl");
 
     let response = state
@@ -2046,6 +2080,24 @@ fn truncate_ci_logs(logs: &str) -> String {
 /// Resolves the GitHub repo slug from the local repo path.
 fn fetch_ci_failure_logs_impl(repo_path: &str, branch: &str) -> Result<String, String> {
     let repo_path_buf = PathBuf::from(repo_path);
+
+    // gh-CLI-assisted CI log fetch is only available for github.com in v1. If
+    // the repo is explicitly bound to a GitHub Enterprise Server account, say so
+    // clearly instead of falling through to a confusing "no remote" error.
+    {
+        let registry = crate::github_account::GitHubAccountRegistry::load();
+        let bindings = crate::github_account::RepoBindingStore::load();
+        if let Some(binding) = bindings.get_binding(&repo_path_buf)
+            && let Some(account) = registry.get(&binding.account_id)
+            && !account.is_cloud()
+        {
+            return Err(
+                "CI log fetch uses the gh CLI and is only available for github.com accounts in this version."
+                    .to_string(),
+            );
+        }
+    }
+
     let remote_url = get_github_remote_url(&repo_path_buf)
         .ok_or_else(|| "No GitHub remote found for this repo".to_string())?;
     let (owner, repo) = parse_remote_url(&remote_url)
@@ -3582,6 +3634,41 @@ mod tests {
     fn test_ci_log_empty_input() {
         assert_eq!(truncate_ci_logs(""), "");
         assert_eq!(truncate_ci_logs("  \n  "), "");
+    }
+
+    #[test]
+    fn ci_logs_disabled_for_ghe_bound_repo() {
+        use crate::github_account::{
+            GitHubAccount, GitHubAccountRegistry, GitHubHost, RepoBinding, RepoBindingStore,
+        };
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _guard = crate::config::set_config_dir_override(dir.path().join("cfg"));
+        let repo = dir.path().join("repo");
+        std::fs::create_dir_all(repo.join(".git")).expect("mkdir .git");
+
+        let mut registry = GitHubAccountRegistry::default();
+        registry.upsert(GitHubAccount::ghe_pat(
+            GitHubHost::new("ghe.acme.com").unwrap(),
+            None,
+        ));
+        registry.save().unwrap();
+        let mut bindings = RepoBindingStore::default();
+        bindings.set_binding(
+            &repo,
+            RepoBinding {
+                account_id: "ghe.acme.com".into(),
+                owner: "team".into(),
+                repo: "project".into(),
+                remote_name: "origin".into(),
+            },
+        );
+        bindings.save().unwrap();
+
+        let err = fetch_ci_failure_logs_impl(repo.to_str().unwrap(), "main").unwrap_err();
+        assert!(
+            err.contains("github.com accounts"),
+            "expected gh-CLI-disabled message, got: {err}"
+        );
     }
 
     #[test]

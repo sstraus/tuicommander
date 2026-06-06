@@ -383,11 +383,17 @@ pub(crate) async fn github_auth_status(
         });
     };
 
-    // Call GitHub /user to get login + avatar
-    crate::github_debug::log_api("GET", "https://api.github.com/user", "validate_token_impl");
+    // Call GitHub /user to get login + avatar. This validates the github.com
+    // global token, so it uses the cloud REST base (routed through GitHubHost
+    // rather than hardcoding api.github.com).
+    let user_url = crate::github_account::github_rest_url(
+        &crate::github_account::GitHubHost::new("github.com").expect("github.com is valid"),
+        "/user",
+    );
+    crate::github_debug::log_api("GET", &user_url, "validate_token_impl");
     let resp = state
         .http_client
-        .get("https://api.github.com/user")
+        .get(&user_url)
         .header("Authorization", format!("Bearer {token}"))
         .header("Accept", "application/vnd.github+json")
         .header("User-Agent", "TUICommander")

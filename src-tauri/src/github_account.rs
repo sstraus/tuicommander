@@ -66,6 +66,14 @@ impl GitHubHost {
     }
 }
 
+/// Build a REST API URL for a host + path.
+///
+/// `path` must start with `/` (e.g. `/repos/o/r/pulls/1/merge`). Cloud →
+/// `https://api.github.com{path}`; GHE Server → `https://{host}/api/v3{path}`.
+pub(crate) fn github_rest_url(host: &GitHubHost, path: &str) -> String {
+    format!("{}{}", host.rest_base(), path)
+}
+
 /// Split a URL path tail into `(owner, repo)`, stripping a leading `/` and a
 /// trailing `.git`. Returns `None` if either component is empty.
 fn split_owner_repo(path: &str) -> Option<(String, String)> {
@@ -654,6 +662,20 @@ mod tests {
         assert!(!h.is_cloud());
         assert_eq!(h.graphql_url(), "https://ghe.acme.com/api/graphql");
         assert_eq!(h.rest_base(), "https://ghe.acme.com/api/v3");
+    }
+
+    #[test]
+    fn rest_url_cloud_vs_ghe() {
+        let cloud = GitHubHost::new("github.com").unwrap();
+        assert_eq!(
+            github_rest_url(&cloud, "/repos/o/r/pulls/1/merge"),
+            "https://api.github.com/repos/o/r/pulls/1/merge"
+        );
+        let ghe = GitHubHost::new("ghe.acme.com").unwrap();
+        assert_eq!(
+            github_rest_url(&ghe, "/repos/o/r/pulls/1/merge"),
+            "https://ghe.acme.com/api/v3/repos/o/r/pulls/1/merge"
+        );
     }
 
     // --- parse_remote_url: github.com ---
