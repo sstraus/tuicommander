@@ -48,10 +48,24 @@ interface GitHubDiagnostics {
 	repos_monitored: number;
 }
 
+type AccountKind = "github_com_oauth" | "github_com_env" | "github_com_gh_cli" | "ghe_pat";
+
+interface GitHubHost {
+	host: string;
+}
+
+interface GitHubAccount {
+	id: string;
+	host: GitHubHost;
+	login: string | null;
+	kind: AccountKind;
+}
+
 const SOURCE_LABELS: Record<string, string> = {
 	oauth: "OAuth (Device Flow)",
 	env: "Environment variable",
 	gh_cli: "gh CLI",
+	pat: "Personal Access Token",
 	none: "Not connected",
 };
 
@@ -65,13 +79,59 @@ export const GitHubTab: Component = () => {
 	const [avatarBroken, setAvatarBroken] = createSignal(false);
 	const [diagnostics, setDiagnostics] = createSignal<GitHubDiagnostics | null>(null);
 
+	// Enterprise (GHE) accounts — github.com is handled by the device-flow UI above.
+	const [accounts, setAccounts] = createSignal<GitHubAccount[]>([]);
+	const [newHost, setNewHost] = createSignal("");
+	const [newPat, setNewPat] = createSignal("");
+	const [addingAccount, setAddingAccount] = createSignal(false);
+	const [accountError, setAccountError] = createSignal<string | null>(null);
+
 	let pollTimer: ReturnType<typeof setTimeout> | undefined;
 	let cancelled = false;
 
 	onMount(() => {
 		fetchStatus();
 		fetchDiagnostics();
+		fetchAccounts();
 	});
+
+	async function fetchAccounts() {
+		try {
+			setAccounts(await rpc<GitHubAccount[]>("github_list_accounts"));
+		} catch (e) {
+			appLogger.warn("github", "Failed to list GitHub accounts", e);
+		}
+	}
+
+	async function addAccount() {
+		const host = newHost().trim();
+		const pat = newPat().trim();
+		if (!host || !pat) {
+			setAccountError("Host and Personal Access Token are required");
+			return;
+		}
+		setAccountError(null);
+		setAddingAccount(true);
+		try {
+			await rpc<GitHubAccount>("github_add_account", { host, pat });
+			setNewHost("");
+			setNewPat("");
+			await fetchAccounts();
+		} catch (e) {
+			setAccountError(e instanceof Error ? e.message : String(e));
+		} finally {
+			setAddingAccount(false);
+		}
+	}
+
+	async function removeAccount(id: string) {
+		try {
+			await rpc("github_remove_account", { id });
+			await fetchAccounts();
+		} catch (e) {
+			setAccountError(e instanceof Error ? e.message : String(e));
+		}
+	}
 
 	onCleanup(() => {
 		cancelled = true;
@@ -632,6 +692,60 @@ export const GitHubTab: Component = () => {
 					</div>
 				</div>
 			</Show>
+
+			{/* Enterprise accounts (GitHub Enterprise Server, PAT auth) — independent
+			    of the github.com device-flow login above. */}
+			<h3>Enterprise Accounts</h3>
+			<p class={s.hint} style={{ "margin-bottom": "12px" }}>
+				Add GitHub Enterprise Server accounts with a Personal Access Token. github.com uses the device-flow login above.
+			</p>
+
+			<Show when={accountError()}>
+				<div class={g.error}>{accountError()}</div>
+			</Show>
+
+			<For each={accounts()}>
+				{(acc) => (
+					<div class={g.statusCard}>
+						<div class={g.userInfo}>
+							<div class={g.userName}>{acc.login ?? acc.host.host}</div>
+							<div class={g.tokenSource}>
+								{acc.host.host} · {SOURCE_LABELS.pat}
+							</div>
+						</div>
+						<div class={g.actions}>
+							<button class={cx(g.btn, g.btnDanger)} onClick={() => removeAccount(acc.id)}>
+								Remove
+							</button>
+						</div>
+					</div>
+				)}
+			</For>
+
+			<Show when={accounts().length === 0}>
+				<p class={s.hint}>No Enterprise accounts configured.</p>
+			</Show>
+
+			<div class={s.group}>
+				<label>Add Enterprise account</label>
+				<input
+					type="text"
+					placeholder="ghe.example.com"
+					value={newHost()}
+					onInput={(e) => setNewHost(e.currentTarget.value)}
+				/>
+				<input
+					type="password"
+					placeholder="Personal Access Token"
+					value={newPat()}
+					onInput={(e) => setNewPat(e.currentTarget.value)}
+				/>
+				<div class={g.actions}>
+					<button class={cx(g.btn, g.btnPrimary)} onClick={addAccount} disabled={addingAccount()}>
+						{addingAccount() ? "Validating..." : "Add account"}
+					</button>
+				</div>
+			</div>
 		</div>
 	);
 };
