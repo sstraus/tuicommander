@@ -77,6 +77,10 @@ pub(crate) enum Credential<'a> {
     AiChatApiKey,
     LlmApiKey,
     GithubOauthToken,
+    /// Per-account GitHub token (PAT) keyed by stable account id. The github.com
+    /// default account keeps using `GithubOauthToken` instead — this slot is for
+    /// additional accounts (GitHub Enterprise Server) only.
+    GithubToken(&'a str),
     McpUpstream(&'a str),
     Provider(&'a str),
 }
@@ -87,6 +91,7 @@ impl Credential<'_> {
             Self::AiChatApiKey => "ai-chat/api-key".into(),
             Self::LlmApiKey => "llm-api/api-key".into(),
             Self::GithubOauthToken => "github/oauth-token".into(),
+            Self::GithubToken(id) => format!("github/account/{id}/token"),
             Self::McpUpstream(name) => format!("mcp/{name}"),
             Self::Provider(id) => format!("provider/{id}"),
         }
@@ -98,7 +103,7 @@ impl Credential<'_> {
             Self::LlmApiKey => Some(("tuicommander-llm-api", "api-key")),
             Self::GithubOauthToken => Some(("tuicommander-github", "oauth-token")),
             Self::McpUpstream(name) => Some(("tuicommander-mcp", name)),
-            Self::Provider(_) => None,
+            Self::GithubToken(_) | Self::Provider(_) => None,
         }
     }
 }
@@ -503,6 +508,38 @@ mod tests {
     #[test]
     fn provider_credential_has_no_legacy_entry() {
         assert!(Credential::Provider("test").legacy_entry().is_none());
+    }
+
+    #[test]
+    fn github_token_vault_key_is_account_scoped() {
+        assert_eq!(
+            Credential::GithubToken("ghe.acme.com").vault_key(),
+            "github/account/ghe.acme.com/token"
+        );
+    }
+
+    #[test]
+    fn github_token_has_no_legacy_entry() {
+        // Per-account PATs are a new feature — there is no legacy keyring slot to
+        // migrate from (only github.com's OAuth token has one, unchanged).
+        assert!(Credential::GithubToken("acc1").legacy_entry().is_none());
+        assert_eq!(
+            Credential::GithubOauthToken.vault_key(),
+            "github/oauth-token"
+        );
+    }
+
+    #[test]
+    fn github_token_crud() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        reset_vault();
+        set(Credential::GithubToken("ghe.acme.com"), "ghp_test_pat").unwrap();
+        assert_eq!(
+            get(Credential::GithubToken("ghe.acme.com")).unwrap(),
+            Some("ghp_test_pat".to_string())
+        );
+        delete(Credential::GithubToken("ghe.acme.com")).unwrap();
+        assert_eq!(get(Credential::GithubToken("ghe.acme.com")).unwrap(), None);
     }
 
     #[test]
