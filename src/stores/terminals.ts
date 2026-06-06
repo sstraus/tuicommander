@@ -151,6 +151,8 @@ interface TerminalsStoreState {
 	activeId: string | null;
 	/** Last non-null activeId — survives tab switches so non-terminal UI can find the right terminal. */
 	lastActiveId: string | null;
+	/** The terminal that was active before the current one — powers "return to last terminal" toggle. */
+	previousActiveId: string | null;
 	counter: number;
 	/** Tabs currently detached to floating windows: tabId → window label */
 	detachedWindows: Record<string, string>;
@@ -167,6 +169,7 @@ function createTerminalsStore() {
 		terminals: {},
 		activeId: null,
 		lastActiveId: null,
+		previousActiveId: null,
 		counter: 0,
 		detachedWindows: {},
 		debouncedBusy: {},
@@ -430,6 +433,9 @@ function createTerminalsStore() {
 					if (s.lastActiveId === id) {
 						s.lastActiveId = null;
 					}
+					if (s.previousActiveId === id) {
+						s.previousActiveId = null;
+					}
 				}),
 			);
 		},
@@ -448,6 +454,11 @@ function createTerminalsStore() {
 					setState("terminals", id, "activity", false);
 					setState("terminals", id, "unseen", false);
 					setState("lastActiveId", id);
+					// Remember the terminal we're leaving so "return to last terminal"
+					// can toggle back to it (and back again on the next press).
+					if (prevId && prevId !== id) {
+						setState("previousActiveId", prevId);
+					}
 				}
 				setState("activeId", id);
 			});
@@ -650,6 +661,12 @@ function createTerminalsStore() {
 		/** Get active terminal */
 		getActive(): TerminalState | undefined {
 			return state.activeId ? state.terminals[state.activeId] : undefined;
+		},
+
+		/** The terminal that was active before the current one, if it still exists. */
+		getPreviousActiveId(): string | null {
+			const id = state.previousActiveId;
+			return id && state.terminals[id] ? id : null;
 		},
 
 		/** Find the best terminal with an active PTY session: active > lastActive > any. */

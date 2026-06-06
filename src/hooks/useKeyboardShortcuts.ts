@@ -38,6 +38,8 @@ export interface ShortcutHandlers {
 	closeTerminal: (id: string, skipConfirm?: boolean) => void;
 	reopenClosedTab: () => void;
 	navigateTab: (direction: "prev" | "next") => void;
+	focusLastTerminal: () => void;
+	jumpWaitingTerminal: () => void;
 	clearTerminal: () => void;
 	refreshTerminal: () => void;
 	terminalIds: () => string[];
@@ -364,6 +366,12 @@ function dispatchAction(action: ActionName, handlers: ShortcutHandlers): boolean
 			return true;
 		case "next-tab":
 			handlers.navigateTab("next");
+			return true;
+		case "focus-last-terminal":
+			handlers.focusLastTerminal();
+			return true;
+		case "jump-waiting-terminal":
+			handlers.jumpWaitingTerminal();
 			return true;
 
 		default: {

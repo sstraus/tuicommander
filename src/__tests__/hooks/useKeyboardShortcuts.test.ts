@@ -26,6 +26,8 @@ function createMockHandlers(): ShortcutHandlers {
 		closeTerminal: vi.fn(),
 		reopenClosedTab: vi.fn(),
 		navigateTab: vi.fn(),
+		focusLastTerminal: vi.fn(),
+		jumpWaitingTerminal: vi.fn(),
 		clearTerminal: vi.fn(),
 		terminalIds: vi.fn().mockReturnValue([]),
 		handleTerminalSelect: vi.fn(),
@@ -245,8 +247,16 @@ describe("useKeyboardShortcuts", () => {
 		});
 
 		it("Cmd+? toggles help", () => {
-			fireKeydown("?", { metaKey: true });
+			// "?" is a shifted key on every layout, so a real keypress carries
+			// shiftKey:true and e.key:"?" — eventToCombo un-shifts it to "cmd+shift+/".
+			// (Firing without shift was unrealistic and hid the dead-binding bug.)
+			fireKeydown("?", { metaKey: true, shiftKey: true });
 			expect(handlers.toggleHelpPanel).toHaveBeenCalled();
+		});
+
+		it("Cmd+U jumps to the next waiting terminal", () => {
+			fireKeydown("u", { metaKey: true });
+			expect(handlers.jumpWaitingTerminal).toHaveBeenCalled();
 		});
 
 		it("Cmd+Alt+N toggles notes panel", () => {

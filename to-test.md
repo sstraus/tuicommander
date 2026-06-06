@@ -1181,3 +1181,25 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [x] Call sites onMouseDown→onPointerDown + param MouseEvent→PointerEvent: RepoSection, GroupSection, TabBar (8 bindings), PaneTree _(verified: grep initMouseDrag callers all converted; tsc green)_
 - [HUMAN] Live macOS WKWebView: drag a repo in the Sidebar, a tab in the TabBar, and a pane in a split → the ghost releases on mouseup and the drop-line clears (previously the ghost stayed glued to the cursor). Root cause was native NSDragging swallowing mouseup; needs a real pointer gesture to confirm.
 - [HUMAN] Regression: plain click on a repo header (toggle expand), on inner repo buttons (GitHub badge, menu, collapse initials), and on a tab (activate) still works — capture only engages past the drag threshold.
+
+## genai extended thinking (Opus 4.7+) + worker renderer freeze fix (2026-06-06)
+- [x] Backend: `ConversationConfig.reasoning` (ReasoningLevel Auto/Off/Low/Medium/High), `supports_extended_thinking` gates Opus 4.7+, `resolve_reasoning` maps to genai `ReasoningEffort`; ChatOptions rebuilt per-iteration with `with_reasoning_effort`+`with_capture_reasoning_content` _(verified: conversation_engine.rs; 26 module tests pass incl resolve_reasoning/supports_extended_thinking)_
+- [x] Backend: streaming handles `ReasoningChunk` → `ConversationEvent::ReasoningChunk`; assistant turn appended from full `captured_content` to preserve thinking block + ThoughtSignature for the tool-use continuation (Anthropic requirement) _(verified: conversation_engine.rs append path; reasoning_chunk serialization test)_
+- [x] Backend: `commands.rs` threads `reasoning_effort` param, falls back to persisted `AiChatConfig.reasoning_effort`; 50ms bridge batches ReasoningChunk like TextChunk _(verified: cargo build green; ai_chat 56 tests pass)_
+- [x] Frontend: `conversationStore` accumulates `reasoning_chunk` into `reasoningChunks()`, reset on new turn + reset() _(verified: aiAgentStore.test.ts reasoning_chunk accumulation + reset)_
+- [VISUAL] AIChatPanel shows a collapsible "Thinking" disclosure above the answer; auto-open while thinking; muted styling per STYLE_GUIDE — screenshot after rebuild
+- [VISUAL] SettingsPanel → AI Chat: "Extended thinking" dropdown (Auto/Off/Low/Medium/High) below Temperature — screenshot
+- [HUMAN] Live with Claude Opus 4.7+: send a chat message → reasoning streams into the Thinking disclosure; a multi-tool autonomous run continues without an Anthropic thinking/signature rejection; setting Off disables it
+- [x] Worker renderer freeze: `createRepaintScheduler` now races rAF with a 100ms setTimeout fallback (WebKit suspends worker rAF under CPU pressure → glyphs froze while input worked) _(verified: workerGridState.test.ts 17 tests incl timer-fallback/race/stop)_
+- [HUMAN] Live: under heavy CPU load (e.g. a Rust release build at 100%), the terminal keeps painting Ink animations and typed glyphs appear within ~100ms (previously froze "completely immobile" with cursor moving but characters delayed 1s+)
+
+## worktree switch prompt auto-cancel countdown (2026-06-06)
+- [x] `ConfirmDialog` gains opt-in `autoCancelMs`: a per-second countdown signal appended to the cancel-button label that auto-clicks cancel (onClose) at 0; interval cleaned up on hide/interaction _(verified: ConfirmDialog.tsx:23-42; tsc green)_
+- [x] `autoCancelMs` threaded through `ConfirmOptions`→`ConfirmDialogState`→App.tsx ConfirmDialog binding; absent on all other confirm dialogs (remove worktree, folder-drop) _(verified: useConfirmDialog.test.ts 11 pass incl threads/undefined cases)_
+- [x] Worktree-created switch prompt sets `autoCancelMs: 10_000` so "Stay" shows a 10s countdown and is auto-clicked if untouched _(verified: useWorktreeSwitchPrompt.ts:64)_
+- [VISUAL] Create a worktree via TUIC/MCP → switch prompt shows "Stay (10)" counting down; left untouched for 10s it auto-dismisses (stays put); clicking Switch/Stay or pressing Enter/Esc before 0 still works
+
+## focus-last-terminal — return to last terminal (#77) (2026-06-06)
+- [x] `terminalsStore.previousActiveId` tracks the terminal left behind on `setActive`; `getPreviousActiveId()` returns it only if still alive; cleared on `remove` _(verified: terminals.test.ts "previousActiveId (return to last terminal)" 5 cases — toggle, no-op on re-activate, cleared on removal)_
+- [x] Action `focus-last-terminal` wired: ACTION_NAMES + unbound default, ACTION_META (Navigation), keyboard dispatch case, App.tsx handler calls `navigateToTerminal(prevId)` (switches repo/branch/tab/pane + focus) _(verified: tsc green; actionRegistry + useKeyboardShortcuts mocks updated and passing)_
+- [HUMAN] Live: bind `focus-last-terminal` in Settings → Keyboard, open terminals across 2+ repos, switch to a terminal in another repo, press the hotkey → jumps back to the prior terminal (and its repo/branch); press again → toggles forward. Closing the previous terminal makes the hotkey a no-op.

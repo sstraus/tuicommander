@@ -116,6 +116,7 @@ Font size range: 8px to 32px, step 2px per action.
 | `Cmd+O` | Open file… (picker) |
 | `Cmd+N` | New file… (picker for name + location) |
 | `Cmd+,` | Open settings |
+| `Cmd+U` | Jump to next waiting terminal |
 | `Cmd+?` | Toggle help panel |
 | `Cmd+Shift+K` | Prompt library |
 | `Cmd+K` | Clear scrollback |
@@ -244,6 +245,8 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `split-horizontal` | `Cmd+Alt+\` | Split horizontally |
 | `prev-tab` | `Ctrl+Shift+Tab` | Previous tab |
 | `next-tab` | `Ctrl+Tab` | Next tab |
+| `focus-last-terminal` | `Cmd+Ctrl+Backspace` | Return to last terminal (toggle, across repos) |
+| `jump-waiting-terminal` | `Cmd+U` | Jump to the next terminal awaiting input (cycles, across repos) |
 | `switch-tab-1..9` | `Cmd+1..9` | Switch to tab N |
 | `toggle-sidebar` | `Cmd+[` | Toggle sidebar |
 | `toggle-markdown` | `Cmd+Shift+M` | Toggle markdown panel |

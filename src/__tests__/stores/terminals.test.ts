@@ -495,6 +495,63 @@ describe("terminalsStore", () => {
 		});
 	});
 
+	describe("previousActiveId (return to last terminal)", () => {
+		it("is null with no prior active terminal", () => {
+			testInScope(() => {
+				const id = store.add(makeTerminal());
+				store.setActive(id);
+				expect(store.getPreviousActiveId()).toBeNull();
+			});
+		});
+
+		it("remembers the terminal left behind when switching", () => {
+			testInScope(() => {
+				const id1 = store.add(makeTerminal({ name: "T1" }));
+				const id2 = store.add(makeTerminal({ name: "T2" }));
+				store.setActive(id1);
+				store.setActive(id2);
+				expect(store.getPreviousActiveId()).toBe(id1);
+			});
+		});
+
+		it("toggles between two terminals on repeated switches", () => {
+			testInScope(() => {
+				const id1 = store.add(makeTerminal({ name: "T1" }));
+				const id2 = store.add(makeTerminal({ name: "T2" }));
+				store.setActive(id1);
+				store.setActive(id2);
+				// Return to T1: previous becomes T2.
+				store.setActive(id1);
+				expect(store.getPreviousActiveId()).toBe(id2);
+				// Return to T2: previous becomes T1 again.
+				store.setActive(id2);
+				expect(store.getPreviousActiveId()).toBe(id1);
+			});
+		});
+
+		it("does not update when re-activating the already-active terminal", () => {
+			testInScope(() => {
+				const id1 = store.add(makeTerminal({ name: "T1" }));
+				const id2 = store.add(makeTerminal({ name: "T2" }));
+				store.setActive(id1);
+				store.setActive(id2);
+				store.setActive(id2);
+				expect(store.getPreviousActiveId()).toBe(id1);
+			});
+		});
+
+		it("getPreviousActiveId returns null once the previous terminal is removed", () => {
+			testInScope(() => {
+				const id1 = store.add(makeTerminal({ name: "T1" }));
+				const id2 = store.add(makeTerminal({ name: "T2" }));
+				store.setActive(id1);
+				store.setActive(id2);
+				store.remove(id1);
+				expect(store.getPreviousActiveId()).toBeNull();
+			});
+		});
+	});
+
 	describe("findTerminalWithSession()", () => {
 		it("returns active terminal when it has a session", () => {
 			testInScope(() => {

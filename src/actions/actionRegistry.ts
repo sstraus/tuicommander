@@ -38,6 +38,8 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
 	"edit-command": { label: "Edit saved command", category: "Terminal" },
 	"prev-tab": { label: "Previous tab", category: "Terminal" },
 	"next-tab": { label: "Next tab", category: "Terminal" },
+	"focus-last-terminal": { label: "Return to last terminal", category: "Navigation" },
+	"jump-waiting-terminal": { label: "Jump to waiting terminal", category: "Navigation" },
 
 	"zoom-in": { label: "Zoom in", category: "Zoom" },
 	"zoom-out": { label: "Zoom out", category: "Zoom" },
@@ -121,6 +123,8 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
 		"edit-command": () => handlers.handleRunCommand(true),
 		"prev-tab": () => handlers.navigateTab("prev"),
 		"next-tab": () => handlers.navigateTab("next"),
+		"focus-last-terminal": handlers.focusLastTerminal,
+		"jump-waiting-terminal": handlers.jumpWaitingTerminal,
 		"zoom-in": handlers.zoomIn,
 		"zoom-out": handlers.zoomOut,
 		"zoom-reset": handlers.zoomReset,

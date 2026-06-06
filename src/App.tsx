@@ -153,6 +153,7 @@ import { buildAgentLaunchCommand } from "./utils/agentSession";
 import { openFileAction } from "./utils/filePreview";
 import { keyFor } from "./utils/hotkey";
 import { navigateToTerminal } from "./utils/navigateToTerminal";
+import { nextWaitingTerminal } from "./utils/nextWaitingTerminal";
 import { createPanelSyncProvider, type PanelAction } from "./utils/panelSync";
 import { initPaneTabAssignment } from "./utils/paneTabAssign";
 import { pathBasename, pathStartsWith, pathStripPrefix } from "./utils/pathUtils";
@@ -1636,6 +1637,20 @@ const App: Component = () => {
 		closeTerminal: terminalLifecycle.closeTerminal,
 		reopenClosedTab: terminalLifecycle.reopenClosedTab,
 		navigateTab: terminalLifecycle.navigateTab,
+		focusLastTerminal: () => {
+			const prevId = terminalsStore.getPreviousActiveId();
+			if (prevId) navigateToTerminal(prevId);
+		},
+		jumpWaitingTerminal: () => {
+			// Cycle through terminals awaiting input (agent asked a question / hit an
+			// error), across all repos/branches, in tab order. Repeat presses advance
+			// to the next one; does nothing when none are waiting.
+			const waiting = terminalsStore
+				.getIds()
+				.filter((id) => terminalsStore.get(id)?.awaitingInput != null && !terminalsStore.isDetached(id));
+			const next = nextWaitingTerminal(waiting, terminalsStore.state.activeId);
+			if (next) navigateToTerminal(next);
+		},
 		clearTerminal: terminalLifecycle.clearTerminal,
 		refreshTerminal: terminalLifecycle.refreshTerminal,
 		clearScrollback: terminalLifecycle.clearScrollback,
@@ -2096,9 +2111,9 @@ const App: Component = () => {
 				case "copy":
 					terminalLifecycle.copyFromTerminal();
 					break;
-				case "paste":
-					terminalLifecycle.pasteToTerminal();
-					break;
+				// No "paste" case: the Edit > Paste menu item is the native PredefinedMenuItem,
+				// which pastes via NSPasteboard into the focused keyInputRef without a JS
+				// clipboard read (avoids the macOS Sequoia paste-permission popup).
 				case "clear-terminal":
 					terminalLifecycle.clearTerminal();
 					break;
@@ -2742,6 +2757,7 @@ const App: Component = () => {
 				confirmLabel={dialogs.dialogState()?.confirmLabel}
 				cancelLabel={dialogs.dialogState()?.cancelLabel}
 				kind={dialogs.dialogState()?.kind}
+				autoCancelMs={dialogs.dialogState()?.autoCancelMs}
 				onClose={dialogs.handleClose}
 				onConfirm={dialogs.handleConfirm}
 			/>
