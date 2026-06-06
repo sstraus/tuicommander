@@ -16,16 +16,20 @@
 /// text input context first reads the flag.
 #[cfg(target_os = "macos")]
 pub fn disable() {
+    use objc2::runtime::AnyObject;
     use objc2_foundation::{NSDictionary, NSNumber, NSString, NSUserDefaults};
 
     let key = NSString::from_str("ApplePressAndHoldEnabled");
     let value = NSNumber::new_bool(false);
-    let dict = NSDictionary::from_slices(&[&*key], &[&*value]);
+    // registerDefaults wants NSDictionary<NSString, AnyObject>; upcast the NSNumber
+    // value to &AnyObject so from_slices infers the AnyObject value type.
+    let value_obj: &AnyObject = &value;
+    let dict = NSDictionary::from_slices(&[&*key], &[value_obj]);
 
     // SAFETY: standardUserDefaults / registerDefaults are thread-safe AppKit
     // calls; `dict` is a valid retained NSDictionary for the call duration.
     let defaults = unsafe { NSUserDefaults::standardUserDefaults() };
-    defaults.registerDefaults(&dict);
+    unsafe { defaults.registerDefaults(&dict) };
 
     tracing::info!(
         source = "press-and-hold",

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.3.1] - 2026-06-06
+
 ### Added
 - **Inline review comments on markdown ("tweaks")** — Select any passage in a rendered markdown file and attach a review comment from a floating button + inline popover. Comments are highlighted in place (hover to read, click to edit/delete) and stored *inside* the `.md` source as HTML-comment markers that are invisible to standard renderers but readable by humans and LLMs — the first comment prepends a convention header so an AI agent can apply the feedback and remove the markers. Highlights are wrapped in the DOM after parsing, so selections that straddle inline formatting render intact. Shared by the Markdown panel and the PR detail popover.
 - **Cmd/Ctrl+hover link affordance in the code editor** — Holding Cmd (macOS) / Ctrl underlines the symbol under the cursor as a Cmd+Click go-to-definition affordance; the underline tracks document edits and clears on release.
