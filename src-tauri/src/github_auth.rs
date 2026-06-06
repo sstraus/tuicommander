@@ -71,6 +71,8 @@ pub(crate) enum TokenSource {
     OAuth,
     /// gh CLI config or `gh auth token`
     GhCli,
+    /// Personal Access Token pasted for a GitHub Enterprise Server account
+    Pat,
     /// No token available
     #[default]
     None,
@@ -422,6 +424,7 @@ pub(crate) async fn github_auth_status(
                     TokenSource::Env => "environment variable",
                     TokenSource::OAuth => "OAuth",
                     TokenSource::GhCli => "gh CLI",
+                    TokenSource::Pat => "Personal Access Token",
                     TokenSource::None => "current",
                 }
             );
@@ -578,6 +581,30 @@ pub(crate) fn resolve_token_without_keychain() -> (Option<String>, TokenSource) 
         .next()
         .map(|(t, s)| (Some(t), s))
         .unwrap_or((None, TokenSource::None))
+}
+
+/// Resolve the token for a specific account.
+///
+/// - github.com accounts run the EXISTING env→keyring-OAuth→gh chain unchanged
+///   (so a github.com-only user sees no behavior change).
+/// - GitHub Enterprise Server (PAT) accounts return their vault PAT with
+///   [`TokenSource::Pat`]; a missing PAT yields `(None, TokenSource::None)`.
+pub(crate) fn resolve_token_for_account(
+    account: &crate::github_account::GitHubAccount,
+) -> (Option<String>, TokenSource) {
+    match account.kind {
+        crate::github_account::AccountKind::GhePat => {
+            match crate::credentials::get(Credential::GithubToken(&account.id))
+                .ok()
+                .flatten()
+            {
+                Some(token) => (Some(token), TokenSource::Pat),
+                None => (None, TokenSource::None),
+            }
+        }
+        // github.com — existing resolution chain, byte-for-byte unchanged.
+        _ => resolve_token_with_source(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -782,5 +809,41 @@ mod tests {
 
         // Cleanup
         delete_github_oauth_token().unwrap();
+    }
+
+    // --- resolve_token_for_account (Step 4) ---
+
+    use crate::github_account::{AccountKind, GitHubAccount, GitHubHost};
+
+    #[test]
+    fn resolve_for_github_com_delegates_to_existing_chain() {
+        // github.com accounts must run the existing env→OAuth→gh chain verbatim,
+        // so the result is identical to resolve_token_with_source().
+        let acc = GitHubAccount::github_com(AccountKind::GithubComOauth, None);
+        assert_eq!(resolve_token_for_account(&acc), resolve_token_with_source());
+    }
+
+    #[test]
+    fn resolve_for_ghe_returns_vault_pat() {
+        let host = GitHubHost::new("ghe.resolve-pat-test.example").unwrap();
+        let acc = GitHubAccount::ghe_pat(host, None);
+        // The mock keyring is installed lazily on first credential access.
+        crate::credentials::set(Credential::GithubToken(&acc.id), "ghp_resolve_test").unwrap();
+
+        let (token, source) = resolve_token_for_account(&acc);
+        assert_eq!(token, Some("ghp_resolve_test".to_string()));
+        assert_eq!(source, TokenSource::Pat);
+
+        crate::credentials::delete(Credential::GithubToken(&acc.id)).unwrap();
+    }
+
+    #[test]
+    fn resolve_for_ghe_missing_pat_is_none() {
+        let host = GitHubHost::new("ghe.missing-pat-test.example").unwrap();
+        let acc = GitHubAccount::ghe_pat(host, None);
+        // Ensure no token is present for this id.
+        let _ = crate::credentials::delete(Credential::GithubToken(&acc.id));
+
+        assert_eq!(resolve_token_for_account(&acc), (None, TokenSource::None));
     }
 }
