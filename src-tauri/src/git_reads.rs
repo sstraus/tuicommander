@@ -297,7 +297,9 @@ impl GitReads for GixGitReads {
             if !base.exists() {
                 continue;
             }
-            let Ok(wt_repo) = proxy.into_repo() else { continue };
+            let Ok(wt_repo) = proxy.into_repo() else {
+                continue;
+            };
             if let Some(branch) = branch_of(&wt_repo) {
                 map.insert(branch, real(&base));
             }
@@ -349,7 +351,9 @@ impl GitReads for GixGitReads {
 
         let mut out = Vec::new();
         for (entry, lines) in outcome.entries_with_lines() {
-            let commit = grepo.find_commit(entry.commit_id).map_err(|e| e.to_string())?;
+            let commit = grepo
+                .find_commit(entry.commit_id)
+                .map_err(|e| e.to_string())?;
             let sig = commit.author().map_err(|e| e.to_string())?;
             let author = sig.name.to_str_lossy().trim().to_string();
             let author_time = sig.time().map_err(|e| e.to_string())?.seconds;
@@ -670,7 +674,10 @@ mod tests {
             assert_eq!(a.as_ref().ok(), b.as_ref().ok(), "ahead_behind {l}...{r}");
         }
         // Sanity on a known pair.
-        assert_eq!(gix.ahead_behind(&repo, "main", "origin/main").unwrap(), (1, 0));
+        assert_eq!(
+            gix.ahead_behind(&repo, "main", "origin/main").unwrap(),
+            (1, 0)
+        );
 
         // No common ancestor: an orphan branch with its own root.
         run_git(&repo, &["checkout", "--orphan", "orphan"]);
@@ -802,8 +809,11 @@ mod tests {
         let d = git_reads().diff_stats(&repo, None);
         assert_eq!(
             serde_json::to_value(d).unwrap(),
-            serde_json::to_value(crate::git::get_diff_stats_impl(&repo.to_string_lossy(), None))
-                .unwrap()
+            serde_json::to_value(crate::git::get_diff_stats_impl(
+                &repo.to_string_lossy(),
+                None
+            ))
+            .unwrap()
         );
 
         // staged scope.
@@ -919,13 +929,13 @@ mod tests {
 
         // commit_log
         let log_a = cli.commit_log(&repo, None, None).unwrap();
-        let log_b = crate::git::get_commit_log_impl(
-            repo.to_string_lossy().into_owned(),
-            None,
-            None,
-        )
-        .unwrap();
-        assert_eq!(serde_json::to_value(&log_a).unwrap(), serde_json::to_value(&log_b).unwrap());
+        let log_b =
+            crate::git::get_commit_log_impl(repo.to_string_lossy().into_owned(), None, None)
+                .unwrap();
+        assert_eq!(
+            serde_json::to_value(&log_a).unwrap(),
+            serde_json::to_value(&log_b).unwrap()
+        );
 
         // graph_commits (RawCommit has Debug, not Serialize)
         let g_a = cli.graph_commits(&repo, 200).unwrap();

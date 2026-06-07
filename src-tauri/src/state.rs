@@ -3365,8 +3365,7 @@ mod tests {
     #[test]
     fn eviction_observability_counts_only_ttl_expiry() {
         let counter = Arc::new(AtomicU64::new(0));
-        let cache: GitCache<u32> =
-            build_git_cache(Duration::from_millis(60), Arc::clone(&counter));
+        let cache: GitCache<u32> = build_git_cache(Duration::from_millis(60), Arc::clone(&counter));
 
         // Expired path: insert, let it age out, force maintenance.
         cache.insert("expired".to_string(), Arc::new(1));
@@ -3393,10 +3392,10 @@ mod tests {
     #[test]
     fn test_clear_caches_empties_all() {
         let state = make_test_app_state();
-        state
-            .git_cache
-            .repo_info
-            .insert("/some/path".to_string(), Arc::new(sample_repo_info("/some/path", "test")));
+        state.git_cache.repo_info.insert(
+            "/some/path".to_string(),
+            Arc::new(sample_repo_info("/some/path", "test")),
+        );
         state
             .git_cache
             .github_status
@@ -3414,14 +3413,14 @@ mod tests {
     #[test]
     fn test_invalidate_repo_caches_removes_specific_path() {
         let state = make_test_app_state();
-        state
-            .git_cache
-            .repo_info
-            .insert("/repo/a".to_string(), Arc::new(sample_repo_info("/repo/a", "a")));
-        state
-            .git_cache
-            .repo_info
-            .insert("/repo/b".to_string(), Arc::new(sample_repo_info("/repo/b", "b")));
+        state.git_cache.repo_info.insert(
+            "/repo/a".to_string(),
+            Arc::new(sample_repo_info("/repo/a", "a")),
+        );
+        state.git_cache.repo_info.insert(
+            "/repo/b".to_string(),
+            Arc::new(sample_repo_info("/repo/b", "b")),
+        );
 
         state.invalidate_repo_caches("/repo/a");
 

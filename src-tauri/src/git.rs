@@ -2507,11 +2507,9 @@ pub(crate) async fn get_commit_log(
     count: Option<u32>,
     after: Option<String>,
 ) -> Result<Vec<CommitLogEntry>, String> {
-    tokio::task::spawn_blocking(move || {
-        git_reads().commit_log(Path::new(&path), count, after)
-    })
-    .await
-    .map_err(|e| format!("spawn_blocking join error: {e}"))?
+    tokio::task::spawn_blocking(move || git_reads().commit_log(Path::new(&path), count, after))
+        .await
+        .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// A stash entry.

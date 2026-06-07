@@ -230,7 +230,9 @@ pub(super) async fn git_panel_context(
     let p = path.clone();
     match tokio::task::spawn_blocking(move || {
         cache.get_with(p.clone(), || {
-            std::sync::Arc::new(crate::git::get_git_panel_context_impl(std::path::Path::new(&p)))
+            std::sync::Arc::new(crate::git::get_git_panel_context_impl(
+                std::path::Path::new(&p),
+            ))
         })
     })
     .await

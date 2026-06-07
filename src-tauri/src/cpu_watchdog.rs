@@ -204,10 +204,7 @@ fn collect_snapshot(state: &Arc<AppState>, cpu_pct: f64) -> HealthSnapshot {
         index_sem_permits: state.index_build_sem.available_permits(),
         in_flight_stuck,
         event_bus_subscribers: state.event_bus.receiver_count(),
-        git_cache_ttl_fallbacks: state
-            .git_cache
-            .ttl_fallbacks
-            .load(Ordering::Relaxed),
+        git_cache_ttl_fallbacks: state.git_cache.ttl_fallbacks.load(Ordering::Relaxed),
     }
 }
 

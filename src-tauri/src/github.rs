@@ -1467,9 +1467,7 @@ pub(crate) async fn get_repo_pr_statuses(
     // Skip cache when include_merged is true (startup poll only). The loader is
     // async (network GraphQL), so this cache uses plain get/insert (TTL + bound)
     // rather than coalescing get_with.
-    if !include_merged
-        && let Some(cached) = state.git_cache.github_status.get(&path)
-    {
+    if !include_merged && let Some(cached) = state.git_cache.github_status.get(&path) {
         return Ok((*cached).clone());
     }
 
