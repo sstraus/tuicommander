@@ -11,8 +11,8 @@
 //! of this port: they stay on the CLI forever.
 
 use std::collections::HashMap;
-use std::path::Path;
-use std::sync::OnceLock;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, OnceLock};
 
 use crate::git::{BlameLine, BranchDetail, CommitLogEntry, DiffStats};
 use crate::git_graph::RawCommit;
@@ -90,19 +90,144 @@ impl GitReads for CliGitReads {
     }
 }
 
-/// Routes each read op to a backend. Today every op is served by the CLI
-/// adapter; later steps add a gix adapter and flip ops one at a time.
+/// In-process gix adapter. Implements the same port as the CLI adapter; ops are
+/// flipped to gix one at a time in later steps, each gated by a parity test.
+///
+/// Repository handles are cached: opening a `gix::Repository` reads config,
+/// refs and the object DB layout, so we keep a `ThreadSafeRepository` per path
+/// and cheaply derive a thread-local `Repository` per call.
+pub(crate) struct GixGitReads {
+    handles: moka::sync::Cache<PathBuf, gix::ThreadSafeRepository>,
+}
+
+impl GixGitReads {
+    pub(crate) fn new() -> Self {
+        Self {
+            handles: moka::sync::Cache::builder().max_capacity(64).build(),
+        }
+    }
+
+    /// Open (or reuse a cached) repository handle for `repo` and return a
+    /// thread-local `Repository` for use on the current thread.
+    pub(crate) fn repo(&self, repo: &Path) -> Result<gix::Repository, String> {
+        let tsr = self
+            .handles
+            .try_get_with(repo.to_path_buf(), || {
+                // Box the (large) open error to keep the Result small.
+                gix::ThreadSafeRepository::open(repo).map_err(Box::new)
+            })
+            .map_err(|e: Arc<Box<gix::open::Error>>| e.to_string())?;
+        Ok(tsr.to_thread_local())
+    }
+}
+
+impl GitReads for GixGitReads {
+    fn branches_detail(&self, repo: &Path) -> Result<Vec<BranchDetail>, String> {
+        let _repo = self.repo(repo)?;
+        unimplemented!("gix branches_detail — Step 7")
+    }
+
+    fn commit_log(
+        &self,
+        repo: &Path,
+        _count: Option<u32>,
+        _after: Option<String>,
+    ) -> Result<Vec<CommitLogEntry>, String> {
+        let _repo = self.repo(repo)?;
+        unimplemented!("gix commit_log — Step 8")
+    }
+
+    fn graph_commits(&self, repo: &Path, _count: u32) -> Result<Vec<RawCommit>, String> {
+        let _repo = self.repo(repo)?;
+        unimplemented!("gix graph_commits — Step 8")
+    }
+
+    fn ahead_behind(&self, repo: &Path, _left: &str, _right: &str) -> Result<(u32, u32), String> {
+        let _repo = self.repo(repo)?;
+        unimplemented!("gix ahead_behind — Step 9")
+    }
+
+    fn worktree_paths(&self, repo: &Path) -> Result<HashMap<String, String>, String> {
+        let _repo = self.repo(repo)?;
+        unimplemented!("gix worktree_paths — Step 10")
+    }
+
+    fn status_counts(&self, repo: &Path) -> StatusCounts {
+        let _repo = self.repo(repo);
+        unimplemented!("gix status_counts — Step 11")
+    }
+
+    fn diff_stats(&self, repo: &Path, _scope: Option<&str>) -> DiffStats {
+        let _repo = self.repo(repo);
+        unimplemented!("gix diff_stats — Step 12")
+    }
+
+    fn blame(&self, repo: &Path, _file: &str) -> Result<Vec<BlameLine>, String> {
+        let _repo = self.repo(repo)?;
+        unimplemented!("gix blame — Step 13")
+    }
+}
+
+/// Which backend serves a given read op.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub(crate) enum Backend {
+    Cli,
+    // Constructed once the first op is flipped to gix (Step 7); the dispatch
+    // already matches on it. Remove the allow when a default below is `Gix`.
+    #[allow(dead_code)]
+    Gix,
+}
+
+/// Per-op backend selection. Every op defaults to `Cli`; flipping an op to gix
+/// (after its parity test is green) is a one-line change here.
+#[derive(Clone, Copy)]
+struct PerOpBackend {
+    branches_detail: Backend,
+    commit_log: Backend,
+    graph_commits: Backend,
+    ahead_behind: Backend,
+    worktree_paths: Backend,
+    status_counts: Backend,
+    diff_stats: Backend,
+    blame: Backend,
+}
+
+impl Default for PerOpBackend {
+    fn default() -> Self {
+        Self {
+            branches_detail: Backend::Cli,
+            commit_log: Backend::Cli,
+            graph_commits: Backend::Cli,
+            ahead_behind: Backend::Cli,
+            worktree_paths: Backend::Cli,
+            status_counts: Backend::Cli,
+            diff_stats: Backend::Cli,
+            blame: Backend::Cli,
+        }
+    }
+}
+
+/// Routes each read op to its configured backend (CLI or gix).
 pub(crate) struct GitReadsRouter {
     cli: CliGitReads,
+    gix: GixGitReads,
+    backend: PerOpBackend,
 }
 
 impl GitReadsRouter {
     fn new() -> Self {
-        Self { cli: CliGitReads }
+        Self {
+            cli: CliGitReads,
+            gix: GixGitReads::new(),
+            backend: PerOpBackend::default(),
+        }
     }
 
     pub(crate) fn branches_detail(&self, repo: &Path) -> Result<Vec<BranchDetail>, String> {
-        self.cli.branches_detail(repo)
+        match self.backend.branches_detail {
+            Backend::Cli => self.cli.branches_detail(repo),
+            Backend::Gix => self.gix.branches_detail(repo),
+        }
     }
 
     pub(crate) fn commit_log(
@@ -111,11 +236,17 @@ impl GitReadsRouter {
         count: Option<u32>,
         after: Option<String>,
     ) -> Result<Vec<CommitLogEntry>, String> {
-        self.cli.commit_log(repo, count, after)
+        match self.backend.commit_log {
+            Backend::Cli => self.cli.commit_log(repo, count, after),
+            Backend::Gix => self.gix.commit_log(repo, count, after),
+        }
     }
 
     pub(crate) fn graph_commits(&self, repo: &Path, count: u32) -> Result<Vec<RawCommit>, String> {
-        self.cli.graph_commits(repo, count)
+        match self.backend.graph_commits {
+            Backend::Cli => self.cli.graph_commits(repo, count),
+            Backend::Gix => self.gix.graph_commits(repo, count),
+        }
     }
 
     pub(crate) fn ahead_behind(
@@ -124,23 +255,38 @@ impl GitReadsRouter {
         left: &str,
         right: &str,
     ) -> Result<(u32, u32), String> {
-        self.cli.ahead_behind(repo, left, right)
+        match self.backend.ahead_behind {
+            Backend::Cli => self.cli.ahead_behind(repo, left, right),
+            Backend::Gix => self.gix.ahead_behind(repo, left, right),
+        }
     }
 
     pub(crate) fn worktree_paths(&self, repo: &Path) -> Result<HashMap<String, String>, String> {
-        self.cli.worktree_paths(repo)
+        match self.backend.worktree_paths {
+            Backend::Cli => self.cli.worktree_paths(repo),
+            Backend::Gix => self.gix.worktree_paths(repo),
+        }
     }
 
     pub(crate) fn status_counts(&self, repo: &Path) -> StatusCounts {
-        self.cli.status_counts(repo)
+        match self.backend.status_counts {
+            Backend::Cli => self.cli.status_counts(repo),
+            Backend::Gix => self.gix.status_counts(repo),
+        }
     }
 
     pub(crate) fn diff_stats(&self, repo: &Path, scope: Option<&str>) -> DiffStats {
-        self.cli.diff_stats(repo, scope)
+        match self.backend.diff_stats {
+            Backend::Cli => self.cli.diff_stats(repo, scope),
+            Backend::Gix => self.gix.diff_stats(repo, scope),
+        }
     }
 
     pub(crate) fn blame(&self, repo: &Path, file: &str) -> Result<Vec<BlameLine>, String> {
-        self.cli.blame(repo, file)
+        match self.backend.blame {
+            Backend::Cli => self.cli.blame(repo, file),
+            Backend::Gix => self.gix.blame(repo, file),
+        }
     }
 }
 
@@ -231,6 +377,28 @@ pub(crate) mod test_fixtures {
 mod tests {
     use super::test_fixtures::fixture_repo;
     use super::*;
+
+    /// Step 6: gix can open the fixture repo and the handle cache reuses the
+    /// `ThreadSafeRepository` for the same path.
+    #[test]
+    fn gix_open_caches_handle() {
+        let (_guard, repo) = fixture_repo();
+        let gix = GixGitReads::new();
+
+        let r1 = gix.repo(&repo).expect("gix should open the fixture repo");
+        // `path()` is the `.git` directory of the fixture.
+        assert!(
+            r1.path().ends_with(".git"),
+            "unexpected git dir: {:?}",
+            r1.path()
+        );
+
+        // A second open for the same path reuses the cached handle.
+        let r2 = gix.repo(&repo).expect("reuse cached handle");
+        assert_eq!(r1.path(), r2.path());
+        gix.handles.run_pending_tasks();
+        assert_eq!(gix.handles.entry_count(), 1);
+    }
 
     /// Step 5: the CLI adapter is wired to the legacy direct functions and
     /// produces identical results for every op on a fixture repo. This also
