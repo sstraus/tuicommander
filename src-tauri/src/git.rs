@@ -8,6 +8,7 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::git_cli::git_cmd;
+use crate::git_reads::git_reads;
 use crate::state::{AppState, GitCache};
 
 // --- Coalesced git-cache load helpers (Step 1) ---
@@ -717,7 +718,7 @@ pub(crate) async fn get_diff_stats(
     path: String,
     scope: Option<String>,
 ) -> Result<DiffStats, String> {
-    tokio::task::spawn_blocking(move || get_diff_stats_impl(&path, scope.as_deref()))
+    tokio::task::spawn_blocking(move || git_reads().diff_stats(Path::new(&path), scope.as_deref()))
         .await
         .map_err(|e| format!("spawn_blocking join error: {e}"))
 }
@@ -1215,7 +1216,7 @@ pub(crate) async fn get_repo_summary_impl(
     let mut diff_handles = Vec::with_capacity(paths.len());
     for path in paths {
         diff_handles.push(tokio::task::spawn_blocking(move || {
-            let stats = get_diff_stats_impl(&path, None);
+            let stats = git_reads().diff_stats(Path::new(&path), None);
             (path, stats)
         }));
     }
@@ -1316,7 +1317,7 @@ pub(crate) async fn get_repo_diff_stats_impl(
     let mut diff_handles = Vec::with_capacity(paths.len());
     for path in paths {
         diff_handles.push(tokio::task::spawn_blocking(move || {
-            let stats = get_diff_stats_impl(&path, None);
+            let stats = git_reads().diff_stats(Path::new(&path), None);
             (path, stats)
         }));
     }
@@ -1533,16 +1534,11 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
             continue;
         }
         if let Some(base) = crate::worktree::get_branch_base(&path_str, &branch.name) {
-            let range = format!("{base}...{}", branch.name);
-            if let Ok(out) = git_cmd(path)
-                .args(["rev-list", "--count", "--left-right", &range])
-                .run()
-            {
-                let parts: Vec<&str> = out.stdout.trim().split('\t').collect();
-                if parts.len() == 2 {
-                    branch.base_behind = parts[0].trim().parse().ok();
-                    branch.base_ahead = parts[1].trim().parse().ok();
-                }
+            // left=base, right=branch, so (left-not-right, right-not-left) =
+            // (base_behind, base_ahead).
+            if let Ok((behind, ahead)) = git_reads().ahead_behind(path, &base, &branch.name) {
+                branch.base_behind = Some(behind);
+                branch.base_ahead = Some(ahead);
             }
             branch.base_branch = Some(base);
         }
@@ -1582,7 +1578,7 @@ pub(crate) async fn get_branches_detail(
 ) -> Result<Vec<BranchDetail>, String> {
     let p = path.clone();
     cached_try(state.git_cache.branches_detail.clone(), path, move || {
-        get_branches_detail_impl(Path::new(&p))
+        git_reads().branches_detail(Path::new(&p))
     })
     .await
 }
@@ -1650,6 +1646,74 @@ pub(crate) struct GitPanelContext {
 }
 
 /// Core logic for fetching git panel context (no caching, no Tauri state).
+/// CLI status counts via `git status --porcelain=v2` (staged/changed/conflict).
+/// Untracked entries count toward `changed` (matches the panel's prior behavior).
+pub(crate) fn status_counts_cli(path: &Path) -> crate::git_reads::StatusCounts {
+    let porcelain = git_cmd(path)
+        .args(["status", "--porcelain=v2"])
+        .run_silent()
+        .map(|o| o.stdout)
+        .unwrap_or_default();
+
+    let mut staged = 0u32;
+    let mut changed = 0u32;
+    let mut has_conflict = false;
+
+    for line in porcelain.lines() {
+        if let Some(rest) = line.strip_prefix("1 ").or_else(|| line.strip_prefix("2 ")) {
+            // Ordinary ("1 XY ...") or rename/copy ("2 XY ...") entry.
+            let xy: Vec<char> = rest.chars().take(2).collect();
+            if xy.len() == 2 {
+                if xy[0] != '.' {
+                    staged += 1;
+                }
+                if xy[1] != '.' {
+                    changed += 1;
+                }
+            }
+        } else if line.starts_with("u ") {
+            // Unmerged entry
+            has_conflict = true;
+            changed += 1;
+        } else if line.starts_with("? ") {
+            // Untracked
+            changed += 1;
+        }
+    }
+
+    let status = if has_conflict {
+        "conflict"
+    } else if staged > 0 || changed > 0 {
+        "dirty"
+    } else {
+        "clean"
+    }
+    .to_string();
+
+    crate::git_reads::StatusCounts {
+        status,
+        staged,
+        changed,
+    }
+}
+
+/// CLI ahead/behind via `git rev-list --left-right --count <left>...<right>`.
+/// Returns `(ahead, behind)` = (commits in left not right, in right not left).
+pub(crate) fn ahead_behind_cli(repo: &Path, left: &str, right: &str) -> Result<(u32, u32), String> {
+    let range = format!("{left}...{right}");
+    let out = git_cmd(repo)
+        .args(["rev-list", "--left-right", "--count", &range])
+        .run()
+        .map_err(|e| e.to_string())?;
+    let parts: Vec<&str> = out.stdout.trim().split('\t').collect();
+    if parts.len() == 2
+        && let (Ok(a), Ok(b)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
+    {
+        return Ok((a, b));
+    }
+    Err(format!("unexpected rev-list output: {:?}", out.stdout))
+}
+
 pub(crate) fn get_git_panel_context_impl(path: &Path) -> GitPanelContext {
     let git_dir = resolve_git_dir(path);
 
@@ -1665,60 +1729,9 @@ pub(crate) fn get_git_panel_context_impl(path: &Path) -> GitPanelContext {
             .unwrap_or_default()
     });
 
-    // Status (porcelain v2 for staged vs unstaged)
-    let (status, staged_count, changed_count) = {
-        let porcelain = git_cmd(path)
-            .args(["status", "--porcelain=v2"])
-            .run_silent()
-            .map(|o| o.stdout)
-            .unwrap_or_default();
-
-        let mut staged = 0u32;
-        let mut changed = 0u32;
-        let mut has_conflict = false;
-
-        for line in porcelain.lines() {
-            if let Some(rest) = line.strip_prefix("1 ") {
-                // Ordinary entry: "1 XY ..."
-                let xy: Vec<char> = rest.chars().take(2).collect();
-                if xy.len() == 2 {
-                    if xy[0] != '.' {
-                        staged += 1;
-                    }
-                    if xy[1] != '.' {
-                        changed += 1;
-                    }
-                }
-            } else if let Some(rest) = line.strip_prefix("2 ") {
-                // Rename/copy entry: "2 XY ..."
-                let xy: Vec<char> = rest.chars().take(2).collect();
-                if xy.len() == 2 {
-                    if xy[0] != '.' {
-                        staged += 1;
-                    }
-                    if xy[1] != '.' {
-                        changed += 1;
-                    }
-                }
-            } else if line.starts_with("u ") {
-                // Unmerged entry
-                has_conflict = true;
-                changed += 1;
-            } else if line.starts_with("? ") {
-                // Untracked
-                changed += 1;
-            }
-        }
-
-        let status_str = if has_conflict {
-            "conflict"
-        } else if staged > 0 || changed > 0 {
-            "dirty"
-        } else {
-            "clean"
-        };
-        (status_str.to_string(), staged, changed)
-    };
+    // Status (porcelain v2 for staged vs unstaged), routed through the port.
+    let counts = git_reads().status_counts(path);
+    let (status, staged_count, changed_count) = (counts.status, counts.staged, counts.changed);
 
     // Ahead/behind (only when there's an upstream)
     let (ahead, behind) = if !is_detached {
@@ -2484,9 +2497,11 @@ pub(crate) async fn get_commit_log(
     count: Option<u32>,
     after: Option<String>,
 ) -> Result<Vec<CommitLogEntry>, String> {
-    tokio::task::spawn_blocking(move || get_commit_log_impl(path, count, after))
-        .await
-        .map_err(|e| format!("spawn_blocking join error: {e}"))?
+    tokio::task::spawn_blocking(move || {
+        git_reads().commit_log(Path::new(&path), count, after)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
 /// A stash entry.
@@ -2748,29 +2763,33 @@ fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
 }
 
 /// Get per-line blame information for a file.
+/// CLI blame via `git blame --porcelain`. Verifies the file is tracked first so
+/// callers get a clear error instead of git's cryptic "no such path in HEAD".
+pub(crate) fn blame_cli(repo: &Path, file: &str) -> Result<Vec<BlameLine>, String> {
+    let tracked = git_cmd(repo)
+        .args(["ls-files", "--error-unmatch", file])
+        .run();
+    if tracked.is_err() {
+        return Err(format!(
+            "File is not tracked by git — blame unavailable: {file}"
+        ));
+    }
+
+    let out = git_cmd(repo)
+        .args(["blame", "--porcelain", file])
+        .run()
+        .map_err(|e| format!("git blame failed: {e}"))?;
+
+    Ok(parse_blame_porcelain(&out.stdout))
+}
+
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn get_file_blame(path: String, file: String) -> Result<Vec<BlameLine>, String> {
     tokio::task::spawn_blocking(move || {
         let repo_path = PathBuf::from(&path);
         validate_paths_within_repo(&repo_path, std::slice::from_ref(&file))?;
-
-        // Check if file is tracked before running blame — gives a clear error
-        // instead of the cryptic "fatal: no such path ... in HEAD" from git.
-        let tracked = git_cmd(&repo_path)
-            .args(["ls-files", "--error-unmatch", &file])
-            .run();
-        if tracked.is_err() {
-            return Err(format!(
-                "File is not tracked by git — blame unavailable: {file}"
-            ));
-        }
-
-        let out = git_cmd(&repo_path)
-            .args(["blame", "--porcelain", &file])
-            .run()
-            .map_err(|e| format!("git blame failed: {e}"))?;
-
-        Ok(parse_blame_porcelain(&out.stdout))
+        // Routed through the GitReads port (Step 13 may flip to gix).
+        git_reads().blame(&repo_path, &file)
     })
     .await
     .map_err(|e| format!("spawn_blocking join error: {e}"))?

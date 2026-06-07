@@ -1059,7 +1059,11 @@ pub(crate) fn get_worktree_paths_cached(
         .git_cache
         .worktree_paths
         .get_with(repo_path.to_string(), || {
-            std::sync::Arc::new(get_worktree_paths(p).unwrap_or_default())
+            std::sync::Arc::new(
+                crate::git_reads::git_reads()
+                    .worktree_paths(std::path::Path::new(&p))
+                    .unwrap_or_default(),
+            )
         }))
     .clone()
 }
