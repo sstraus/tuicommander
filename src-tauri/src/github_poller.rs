@@ -442,6 +442,15 @@ fn should_emit(prev_ts: Option<&Option<String>>, cur_ts: &Option<String>, force:
     force || prev_ts.is_none_or(|p| p != cur_ts)
 }
 
+/// Change-detection key for a PR/issue snapshot: `<count>|<max updated_at>`.
+/// The count is essential — an item that drops out of the open set (merged/closed
+/// PR, closed issue) shrinks the list without necessarily moving the max
+/// timestamp, so a max-only key would miss the removal and leave the badge stale.
+#[cfg(any(feature = "desktop", test))]
+fn snapshot_key(count: usize, max_updated_at: &str) -> String {
+    format!("{count}|{max_updated_at}")
+}
+
 #[cfg(feature = "desktop")]
 async fn poll_batch(
     state: &AppState,
@@ -485,12 +494,17 @@ async fn poll_batch(
                     ps.last_changed.entry(repo_path.clone()).or_insert(now);
                 }
 
-                let cur_ts = statuses
+                // Key on count + max(updated_at): a PR that drops out of the open
+                // set (merged/closed) shrinks the list without necessarily changing
+                // the max timestamp, so max alone would miss the removal and leave
+                // the badge stale. The count flips the signal in that case.
+                let max_ts = statuses
                     .iter()
                     .map(|s| s.updated_at.as_str())
                     .filter(|s| !s.is_empty())
                     .max()
-                    .map(|s| s.to_string());
+                    .unwrap_or_default();
+                let cur_ts = Some(snapshot_key(statuses.len(), max_ts));
                 let emit = should_emit(ps.last_pr_updated_at.get(&repo_path), &cur_ts, force);
                 ps.last_pr_updated_at.insert(repo_path.clone(), cur_ts);
 
@@ -510,12 +524,18 @@ async fn poll_batch(
             }
 
             for (repo_path, issues) in result.issues {
-                let cur_ts = issues
+                // Key on count + max(updated_at): a closed issue drops out of the
+                // OPEN set, shrinking the list without changing the max timestamp
+                // when it was not the latest — max alone misses the removal and the
+                // badge stays stale (observed: stuck at 7 after closing issues via
+                // the API). The count flips the signal in that case.
+                let max_ts = issues
                     .iter()
                     .map(|i| i.updated_at.as_str())
                     .filter(|s| !s.is_empty())
                     .max()
-                    .map(|s| s.to_string());
+                    .unwrap_or_default();
+                let cur_ts = Some(snapshot_key(issues.len(), max_ts));
                 let emit = should_emit(ps.last_issue_updated_at.get(&repo_path), &cur_ts, force);
                 ps.last_issue_updated_at.insert(repo_path.clone(), cur_ts);
 
@@ -861,6 +881,33 @@ mod tests {
         let t = detect_transitions("/repo", &old, &new);
         assert_eq!(t.len(), 1);
         assert!(matches!(&t[0], PrTransition::Blocked { .. }));
+    }
+
+    #[test]
+    fn snapshot_key_detects_count_shrink_with_unchanged_max_ts() {
+        // A closed issue / merged PR drops out of the open set, shrinking the
+        // list. If it was not the most-recently-updated item, max(updated_at) is
+        // unchanged — only the count moves. The snapshot key must still differ so
+        // should_emit re-emits the smaller list (otherwise the badge stays stale,
+        // the bug that left the sidebar stuck at 7 after closing issues via API).
+        let ts = "2026-06-01T00:00:00Z";
+        let prev = Some(snapshot_key(7, ts));
+        let cur = Some(snapshot_key(4, ts));
+        assert_ne!(prev, cur, "a count change must change the snapshot key");
+        assert!(
+            should_emit(Some(&prev), &cur, false),
+            "a count shrink with unchanged max ts must trigger a re-emit"
+        );
+    }
+
+    #[test]
+    fn snapshot_key_stable_when_unchanged() {
+        // No spurious emit when neither count nor max ts moved.
+        let key = Some(snapshot_key(4, "2026-06-01T00:00:00Z"));
+        assert!(
+            !should_emit(Some(&key), &key, false),
+            "an unchanged snapshot must not re-emit"
+        );
     }
 
     #[test]
