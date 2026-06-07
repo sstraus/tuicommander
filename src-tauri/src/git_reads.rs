@@ -316,9 +316,16 @@ impl GitReads for GixGitReads {
         unimplemented!("status_counts stays on CLI — gix status != porcelain-v2 counts")
     }
 
+    // diff_stats stays on the CLI (Step 12 decision). Its hot mode (scope=None)
+    // is worktree-vs-index, which gix can't byte-match against `git diff
+    // --shortstat` without per-blob worktree diffing plus git-exact binary
+    // detection and rename line-count handling. The commit (tree-to-tree) mode
+    // is achievable via diff_tree_to_tree + imara-diff but is not the hot path,
+    // and the EMFILE fan-out that motivated this is already capped by the
+    // monitoring semaphore (Step 2). So the whole op stays on the CLI.
     fn diff_stats(&self, repo: &Path, _scope: Option<&str>) -> DiffStats {
         let _repo = self.repo(repo);
-        unimplemented!("gix diff_stats — Step 12")
+        unimplemented!("diff_stats stays on CLI — worktree shortstat parity not feasible")
     }
 
     fn blame(&self, repo: &Path, _file: &str) -> Result<Vec<BlameLine>, String> {
@@ -722,6 +729,50 @@ mod tests {
         run_git(&sparse, &["sparse-checkout", "init"]);
         let sc = git_reads().status_counts(&sparse);
         assert_eq!(sc.status, "clean");
+    }
+
+    /// Step 12: diff_stats stays on the CLI (worktree --shortstat parity isn't
+    /// feasible via gix; the fan-out is already capped by the Step-2 semaphore).
+    /// Guards the CLI path across all three scopes: worktree, staged, commit.
+    #[test]
+    fn diff_stats_cli_all_scopes() {
+        let (_g, repo) = clean_repo();
+        // commit a second revision so a commit-scoped diff exists.
+        std::fs::write(repo.join("a.txt"), "a\nb\nc\n").unwrap();
+        run_git(&repo, &["commit", "-am", "grow a.txt", "--no-verify"]);
+        let head = run_git(&repo, &["rev-parse", "HEAD"]).trim().to_string();
+
+        // commit scope: +2 lines over its parent.
+        let d = git_reads().diff_stats(&repo, Some(&head));
+        assert_eq!(
+            serde_json::to_value(d).unwrap(),
+            serde_json::to_value(crate::git::get_diff_stats_impl(
+                &repo.to_string_lossy(),
+                Some(&head)
+            ))
+            .unwrap()
+        );
+
+        // worktree (unstaged) scope.
+        std::fs::write(repo.join("a.txt"), "a\nb\nc\nd\n").unwrap();
+        let d = git_reads().diff_stats(&repo, None);
+        assert_eq!(
+            serde_json::to_value(d).unwrap(),
+            serde_json::to_value(crate::git::get_diff_stats_impl(&repo.to_string_lossy(), None))
+                .unwrap()
+        );
+
+        // staged scope.
+        run_git(&repo, &["add", "a.txt"]);
+        let d = git_reads().diff_stats(&repo, Some("staged"));
+        assert_eq!(
+            serde_json::to_value(d).unwrap(),
+            serde_json::to_value(crate::git::get_diff_stats_impl(
+                &repo.to_string_lossy(),
+                Some("staged")
+            ))
+            .unwrap()
+        );
     }
 
     /// Step 8: commit_log + graph_commits stay on the CLI. gix 0.84's rev_walk
