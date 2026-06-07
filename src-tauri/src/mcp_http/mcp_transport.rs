@@ -12,7 +12,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "desktop")]
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 use uuid::Uuid;
 
 /// Serialize a value to JSON, returning a structured error on failure instead of silent null.
@@ -3284,64 +3284,15 @@ fn handle_debug_unified(
     };
     match action {
         "invoke_js" => {
-            #[cfg(not(feature = "desktop"))]
-            {
-                serde_json::json!({"error": "invoke_js requires desktop feature"})
+            if !addr.ip().is_loopback() {
+                return serde_json::json!({"error": "invoke_js is restricted to localhost connections"});
             }
-            #[cfg(feature = "desktop")]
-            {
-                if !addr.ip().is_loopback() {
-                    return serde_json::json!({"error": "invoke_js is restricted to localhost connections"});
-                }
-                let script = match args["script"].as_str() {
-                    Some(s) => s,
-                    None => return serde_json::json!({"error": "script required (string)"}),
-                };
-                let app_handle = state.app_handle.read().clone();
-                let Some(handle) = app_handle else {
-                    return serde_json::json!({"error": "AppHandle not initialized"});
-                };
-                let Some(window) = handle.get_webview_window("main") else {
-                    return serde_json::json!({"error": "main window not found"});
-                };
-                let wrapped = format!(
-                    r#"(async () => {{
-  const __src = "eval_js";
-  const __logs = [];
-  const __origLog = console.log;
-  const __origWarn = console.warn;
-  const __origError = console.error;
-  const __origInfo = console.info;
-  const __fmt = (a) => typeof a === "string" ? a : JSON.stringify(a);
-  console.log = (...a) => {{ __logs.push(a.map(__fmt).join(" ")); __origLog(...a); }};
-  console.info = (...a) => {{ __logs.push(a.map(__fmt).join(" ")); __origInfo(...a); }};
-  console.warn = (...a) => {{ __logs.push("[WARN] " + a.map(__fmt).join(" ")); __origWarn(...a); }};
-  console.error = (...a) => {{ __logs.push("[ERROR] " + a.map(__fmt).join(" ")); __origError(...a); }};
-  try {{
-    const __result = await (async () => {{ {script} }})();
-    const __val = __result === undefined ? "(undefined)" : JSON.stringify(__result, null, 2);
-    const __msg = __logs.length > 0 ? __logs.join("\n") + "\n---\n" + __val : __val;
-    window.__TAURI__.core.invoke("push_log", {{ level: "info", source: __src, message: __msg, dataJson: null }});
-  }} catch (__e) {{
-    const __val = __e instanceof Error ? `${{__e.name}}: ${{__e.message}}\n${{__e.stack}}` : String(__e);
-    const __msg = __logs.length > 0 ? __logs.join("\n") + "\n---\n" + __val : __val;
-    window.__TAURI__.core.invoke("push_log", {{ level: "error", source: __src, message: __msg, dataJson: null }});
-  }} finally {{
-    console.log = __origLog;
-    console.info = __origInfo;
-    console.warn = __origWarn;
-    console.error = __origError;
-  }}
-}})()"#
-                );
-                match window.eval(&wrapped) {
-                    Ok(()) => serde_json::json!({
-                        "ok": true,
-                        "hint": "Result logged with source='eval_js'. Read via: debug(action='logs', source='eval_js', limit=1)"
-                    }),
-                    Err(e) => serde_json::json!({"error": format!("eval failed: {e}")}),
-                }
-            }
+            let script = match args["script"].as_str() {
+                Some(s) => s,
+                None => return serde_json::json!({"error": "script required (string)"}),
+            };
+            // Shared with the HTTP /debug/invoke_js route (see log_routes::eval_debug_script).
+            super::log_routes::eval_debug_script(state, script)
         }
         "agent_detection" | "logs" | "sessions" => handle_debug(state, args),
         "help" => serde_json::json!({

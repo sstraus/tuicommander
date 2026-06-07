@@ -745,6 +745,9 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             "/diagnostics",
             get(log_routes::diagnostics_get).post(log_routes::diagnostics_set),
         )
+        // Debug: execute JS in the main WebView (loopback-only, enforced in handler).
+        // Local router only — never the remote router (this is an RCE surface).
+        .route("/debug/invoke_js", post(log_routes::invoke_js_http))
         // Worktrees
         .route(
             "/worktrees",

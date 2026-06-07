@@ -650,6 +650,24 @@ POST /logs
 DELETE /logs
 ```
 
+### Execute JS in WebView (debug)
+
+```
+POST /debug/invoke_js
+{ "script": "return window.__TUIC__.terminals().length;" }
+```
+
+Executes JavaScript in the main WebView. **Loopback-only** (rejected with 403 from
+non-localhost peers) — this is an RCE surface and is exposed on the local router only,
+never the remote router. Fire-and-forget: the return value (`return expr`) and any
+captured `console.log/warn/error/info` output are pushed to the ring buffer with
+`source="eval_js"`. Read the result back via `GET /logs?source=eval_js&limit=1`.
+
+The only injected global is `window.__TUIC__` (stores, terminals, plugins, …). Mirrors
+the MCP `debug action=invoke_js` tool — both share `log_routes::eval_debug_script`. The
+HTTP route is what makes the `tauri dev` build (which has no MCP stdio transport)
+scriptable for diagnostics.
+
 ## Configuration Endpoints
 
 ### App Config
