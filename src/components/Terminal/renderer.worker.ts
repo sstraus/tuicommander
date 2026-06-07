@@ -43,11 +43,27 @@ let metrics: CellMetrics | null = null;
 let fontFamily = "monospace";
 let fontWeight: number | string = 400;
 
+// Frame-timing instrumentation (toggled by the main thread via the "timing"
+// message). When off, every guarded block is skipped — zero overhead. `dirtySince`
+// stamps when a frame first made the grid dirty; the gap to paint is the "present"
+// latency that exposes WebKit deprioritizing the worker's rAF/timer.
+let timingEnabled = false;
+let dirtySince = 0;
+
+function postTimingSample(kind: "paint" | "sched", ms: number): void {
+	(self as unknown as { postMessage(m: unknown): void }).postMessage({ type: "frameTiming", kind, ms });
+}
+
 const scheduler = createRepaintScheduler(
 	(cb) => self.requestAnimationFrame(cb),
 	(id) => self.cancelAnimationFrame(id),
 	() => {
 		if (!gridRenderer || !metrics) return;
+		const paintStart = timingEnabled ? performance.now() : 0;
+		if (timingEnabled && dirtySince) {
+			postTimingSample("sched", paintStart - dirtySince);
+			dirtySince = 0;
+		}
 		const dirty = gridState.pendingDirtyRows.size > 0 ? new Set(gridState.pendingDirtyRows) : undefined;
 		gridRenderer.paintGrid(gridState.rowMap, metrics, {
 			fullRepaint: gridState.fullRepaintNeeded,
@@ -55,6 +71,7 @@ const scheduler = createRepaintScheduler(
 		});
 		gridState.fullRepaintNeeded = false;
 		gridState.pendingDirtyRows.clear();
+		if (timingEnabled) postTimingSample("paint", performance.now() - paintStart);
 	},
 	// WebKit can fully suspend worker rAF under CPU pressure (e.g. a Rust build at
 	// 100% CPU), freezing the terminal. A setTimeout fallback guarantees the paint
@@ -79,12 +96,18 @@ const state = createRendererState({
 		(self as unknown as { postMessage(m: unknown, t: Transferable[]): void }).postMessage(buf, [buf]);
 		if (!frame) return;
 		applyFrameToGrid(gridState, frame);
+		if (timingEnabled && dirtySince === 0) dirtySince = performance.now();
 		scheduler.schedule();
 	},
 });
 
 self.onmessage = (e: MessageEvent<WorkerMessage>) => {
 	const msg = e.data;
+	if (msg.type === "timing") {
+		timingEnabled = msg.enabled;
+		dirtySince = 0;
+		return;
+	}
 	if (msg.type === "resize") {
 		if (gridRenderer && state.ctx) {
 			applyResize(

@@ -60,11 +60,24 @@ export interface ResizeMessage {
 	fontWeight: number | string;
 }
 
+/** Toggle frame-timing instrumentation inside the worker (zero overhead when off). */
+export interface TimingMessage {
+	type: "timing";
+	enabled: boolean;
+}
+
 /** Discriminated union of all main->worker messages reduced by the worker state. */
 export type WorkerInboundMessage = InitMessage | FontsMessage | FrameMessage;
 
-/** All messages the worker entry handles (reducer messages + resize config). */
-export type WorkerMessage = WorkerInboundMessage | ResizeMessage;
+/** All messages the worker entry handles (reducer messages + resize/timing config). */
+export type WorkerMessage = WorkerInboundMessage | ResizeMessage | TimingMessage;
+
+/** A timing sample the worker posts back to the main thread (only when enabled). */
+export interface FrameTimingSample {
+	type: "frameTiming";
+	kind: "paint" | "sched";
+	ms: number;
+}
 
 // --- Minimal structural interfaces so tests can inject fakes ---
 
@@ -150,6 +163,12 @@ export class WorkerRenderer {
 	/** Post geometry/DPR/theme/metrics/font config to the worker (structured clone). */
 	postResize(config: Omit<ResizeMessage, "type">): void {
 		const message: ResizeMessage = { type: "resize", ...config };
+		this.worker.postMessage(message);
+	}
+
+	/** Toggle frame-timing instrumentation inside the worker. */
+	postTiming(enabled: boolean): void {
+		const message: TimingMessage = { type: "timing", enabled };
 		this.worker.postMessage(message);
 	}
 

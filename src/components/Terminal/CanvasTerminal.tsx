@@ -21,21 +21,22 @@ import {
 	SCROLLBAR_PX,
 	snapLineHeight,
 } from "./canvasTerminalUtils";
+import { fetchFontPayloads, resolveWorkerFontFaces } from "./fontAssets";
 import {
 	installFrameTimingDebugHook,
 	isFrameTimingEnabled,
+	onFrameTimingEnabledChange,
 	recordFrameTiming,
 	resetFrameTiming,
 } from "./frameTiming";
-import { fetchFontPayloads, resolveWorkerFontFaces } from "./fontAssets";
-import { createGridRenderer, type GridRenderer } from "./gridRenderer";
-import { decideFrameGrid } from "./workerGridState";
-import { chooseRenderer, receiveFrame, WorkerRenderer } from "./workerProtocol";
 import { acquireCache, getSharedMetrics, invalidateGlyphCache, releaseCache } from "./glyphCache";
+import { createGridRenderer, type GridRenderer } from "./gridRenderer";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { filePathRegex, fileUrlRegex } from "./linkProvider";
 import { continuationRowsAfterSuggest, isSuggestBlock } from "./suggestOverlay";
 import { altSequenceFromCode, createCompositionState, keyToSequence } from "./terminalInput";
+import { decideFrameGrid } from "./workerGridState";
+import { chooseRenderer, receiveFrame, WorkerRenderer } from "./workerProtocol";
 
 // Re-export for external consumers
 export type { CellMetrics, CursorShape, DecodedFrame };
@@ -92,6 +93,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let rendererMode: "worker" | "main" = "main";
 	let renderWorker: Worker | null = null;
 	let workerRenderer: WorkerRenderer | null = null;
+	let unregisterTimingListener: (() => void) | null = null;
 
 	const [metrics, setMetrics] = createSignal<CellMetrics | null>(null);
 	const [focused, setFocused] = createSignal(false);
@@ -112,6 +114,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let transport: TerminalTransport | undefined;
 	let invokeRef: ((cmd: string, args: Record<string, unknown>) => Promise<unknown>) | undefined;
 	let rafId: number | undefined;
+	// Main-mode render-scheduling stamp: when a repaint is first requested, the gap
+	// to the rAF callback is the main-thread analog of the worker's "sched" metric
+	// (only meaningful in main mode; 0 = no pending request). Lets us compare main
+	// vs worker scheduling latency under CPU load. Gated by isFrameTimingEnabled().
+	let mainDirtySince = 0;
 	let resizeDebounce: ReturnType<typeof setTimeout> | undefined;
 	let dprMediaQuery: MediaQueryList | undefined;
 	let dprChangeHandler: (() => void) | undefined;
@@ -186,7 +193,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let hidden = false;
 	let lastHistorySize = -1;
 
-
 	function writePtyNoScroll(data: string) {
 		invokeRef?.("write_pty", { sessionId: props.sessionId, data }).catch((e) => {
 			appLogger.warn("terminal", "PTY write failed", { sessionId: props.sessionId, error: e });
@@ -204,6 +210,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 	function scheduleRepaint() {
 		if (rafId !== undefined || hidden || !alive) return;
+		// Stamp the first repaint request of this cycle (main-mode "sched" — see decl).
+		if (mainDirtySince === 0 && isFrameTimingEnabled() && rendererMode === "main") {
+			mainDirtySince = performance.now();
+		}
 		rafId = requestAnimationFrame(() => {
 			rafId = undefined;
 			if (!alive || hidden) return;
@@ -216,10 +226,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				// (paintFrame paints only the cheap overlay) — keeps paint.count a true
 				// signal that the base is NOT being painted on the main thread.
 				const timing = isFrameTimingEnabled() && rendererMode === "main";
+				// "sched": request->rAF-callback delay. Records the main-thread scheduling
+				// latency to mirror the worker's sched and expose vsync rAF priority.
+				if (timing && mainDirtySince) {
+					recordFrameTiming(props.sessionId, "sched", performance.now() - mainDirtySince);
+				}
 				const paintT0 = timing ? performance.now() : 0;
 				paintFrame(currentFrame, m, dirty);
 				if (timing) recordFrameTiming(props.sessionId, "paint", performance.now() - paintT0);
 			}
+			mainDirtySince = 0;
 		});
 	}
 
@@ -652,7 +668,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		return lines.join("\n");
 	}
 
-
 	function paintCursor(frame: DecodedFrame, m: CellMetrics) {
 		if (frame.displayOffset > 0) return;
 		if (!frame.cursorVisible) return;
@@ -880,7 +895,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		if (blinkInterval == null) startBlink();
 	}
 
-
 	function repaintCursorOnly(frame: DecodedFrame, m: CellMetrics) {
 		repaintOverlay(frame, m);
 	}
@@ -905,8 +919,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// neuters the buffer. See receiveFrame for the sacrosanct ordering.
 		const timing = isFrameTimingEnabled();
 		const frame = receiveFrame(buffer, {
-			ack: () =>
-				invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame")),
+			ack: () => invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame")),
 			decode: (buf) => {
 				const decodeT0 = timing ? performance.now() : 0;
 				const f = decodeBinaryFrame(buf);
@@ -1398,6 +1411,13 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		}
 		octx = overlayCtx;
 
+		// Worker mode is off by default (settings.ts). Measured trade-off (2026-06-07,
+		// frameTiming sched + live keyboard, see mdkb worker-firstchar-lag-load-dependent):
+		// under heavy CPU load the worker adds a perceptible first-character lag — the
+		// cursor (main-thread overlay) advances instantly while the glyph trails through
+		// the extra decode→postMessage→worker-paint hop. The main-thread renderer keeps up
+		// even during real builds (paint ~1ms/frame; backend in_flight backpressure already
+		// caps frame load), so the worker's benefit is marginal. Kept as experimental opt-in.
 		rendererMode = chooseRenderer(
 			settingsStore.state.offscreenRenderer,
 			"transferControlToOffscreen" in HTMLCanvasElement.prototype,
@@ -1408,11 +1428,21 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			// once-per-node) and feed it fonts. Decode + base-grid paint run there.
 			renderWorker = new Worker(new URL("./renderer.worker.ts", import.meta.url), { type: "module" });
 			workerRenderer = new WorkerRenderer(renderWorker);
-			// Worker returns drained frame buffers → recycle into the ping-pong pool.
+			// Worker returns drained frame buffers → recycle; or timing samples (only
+			// when instrumentation is on) → record into this session's frameTiming rings
+			// so __terminalFrameTiming.stats() reports worker paint/sched latency too.
 			renderWorker.onmessage = (e: MessageEvent) => {
-				if (e.data instanceof ArrayBuffer) workerRenderer?.recycle(e.data);
+				if (e.data instanceof ArrayBuffer) {
+					workerRenderer?.recycle(e.data);
+				} else if (e.data?.type === "frameTiming") {
+					recordFrameTiming(props.sessionId, e.data.kind, e.data.ms);
+				}
 			};
 			workerRenderer.init(canvasRef);
+			// Mirror the timing toggle into the worker (its own module instance), now
+			// and on every future change, until this terminal is torn down.
+			if (isFrameTimingEnabled()) workerRenderer.postTiming(true);
+			unregisterTimingListener = onFrameTimingEnabledChange((on) => workerRenderer?.postTiming(on));
 			void (async () => {
 				try {
 					const faces = resolveWorkerFontFaces(settingsStore.state.font);
@@ -2400,6 +2430,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		gridRenderer?.invalidateCaches();
 		// Tear down the render worker (no leak): terminate + null refs. The base
 		// canvas was transferred to it, so this node's worker is single-use.
+		unregisterTimingListener?.();
+		unregisterTimingListener = null;
 		renderWorker?.terminate();
 		renderWorker = null;
 		workerRenderer = null;

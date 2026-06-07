@@ -5,6 +5,7 @@ import {
 	getFrameTimingStats,
 	installFrameTimingDebugHook,
 	isFrameTimingEnabled,
+	onFrameTimingEnabledChange,
 	recordFrameTiming,
 	resetFrameTiming,
 	setFrameTimingEnabled,
@@ -38,9 +39,10 @@ describe("frameTiming ring buffer", () => {
 		expect(decode.max).toBe(100);
 	});
 
-	it("tracks decode and paint metrics independently per session", () => {
+	it("tracks decode, paint and sched metrics independently per session", () => {
 		recordFrameTiming("a", "decode", 10);
 		recordFrameTiming("a", "paint", 20);
+		recordFrameTiming("a", "sched", 200);
 		recordFrameTiming("b", "decode", 99);
 
 		const a = getFrameTimingStats("a");
@@ -48,11 +50,15 @@ describe("frameTiming ring buffer", () => {
 		expect(a.decode.max).toBe(10);
 		expect(a.paint.count).toBe(1);
 		expect(a.paint.max).toBe(20);
+		// sched (worker schedule→paint delay) is a first-class, independent metric.
+		expect(a.sched.count).toBe(1);
+		expect(a.sched.max).toBe(200);
 
 		const b = getFrameTimingStats("b");
 		expect(b.decode.count).toBe(1);
 		expect(b.decode.max).toBe(99);
 		expect(b.paint.count).toBe(0);
+		expect(b.sched.count).toBe(0);
 	});
 
 	it("bounds the ring buffer at FRAME_TIMING_CAPACITY, evicting oldest", () => {
@@ -86,6 +92,19 @@ describe("frameTiming enable flag + debug hook", () => {
 		expect(isFrameTimingEnabled()).toBe(false);
 		setFrameTimingEnabled(true);
 		expect(isFrameTimingEnabled()).toBe(true);
+	});
+
+	it("notifies registered listeners on enable change and stops after unregister", () => {
+		const seen: boolean[] = [];
+		const unregister = onFrameTimingEnabledChange((on) => seen.push(on));
+		// This is what propagates the toggle into each worker-mode terminal's worker.
+		setFrameTimingEnabled(true);
+		setFrameTimingEnabled(false);
+		expect(seen).toEqual([true, false]);
+
+		unregister();
+		setFrameTimingEnabled(true);
+		expect(seen).toEqual([true, false]); // no further notifications after unregister
 	});
 
 	it("installs a debug hook exposing stats/enable/reset on globalThis", () => {
