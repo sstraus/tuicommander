@@ -234,9 +234,31 @@ impl GitReads for GixGitReads {
         unimplemented!("graph_commits stays on CLI — gix 0.84 rev_walk lacks topo-order")
     }
 
-    fn ahead_behind(&self, repo: &Path, _left: &str, _right: &str) -> Result<(u32, u32), String> {
-        let _repo = self.repo(repo)?;
-        unimplemented!("gix ahead_behind — Step 9")
+    fn ahead_behind(&self, repo: &Path, left: &str, right: &str) -> Result<(u32, u32), String> {
+        let grepo = self.repo(repo)?;
+        let l = grepo
+            .rev_parse_single(left)
+            .map_err(|e| e.to_string())?
+            .detach();
+        let r = grepo
+            .rev_parse_single(right)
+            .map_err(|e| e.to_string())?
+            .detach();
+
+        // ahead = commits reachable from `left` but not `right`; behind = the
+        // reverse. Counting is order-independent, so the lack of topo-order in
+        // gix's walk is irrelevant here. Hiding the other side prunes the shared
+        // history, which also yields the correct result with no common ancestor.
+        let count_excl = |tip, hide| -> Result<u32, String> {
+            Ok(grepo
+                .rev_walk([tip])
+                .with_hidden([hide])
+                .all()
+                .map_err(|e| e.to_string())?
+                .filter_map(Result::ok)
+                .count() as u32)
+        };
+        Ok((count_excl(l, r)?, count_excl(r, l)?))
     }
 
     fn worktree_paths(&self, repo: &Path) -> Result<HashMap<String, String>, String> {
@@ -288,7 +310,8 @@ impl Default for PerOpBackend {
             branches_detail: Backend::Gix,
             commit_log: Backend::Cli,
             graph_commits: Backend::Cli,
-            ahead_behind: Backend::Cli,
+            // Flipped to gix in Step 9 (parity test: shootout_ahead_behind).
+            ahead_behind: Backend::Gix,
             worktree_paths: Backend::Cli,
             status_counts: Backend::Cli,
             diff_stats: Backend::Cli,
@@ -528,6 +551,54 @@ mod tests {
             !b.unwrap().iter().any(|br| br.is_current),
             "no current branch when detached"
         );
+    }
+
+    /// Step 9: gix ahead_behind == `git rev-list --left-right --count`, including
+    /// the no-common-ancestor case; rev-parse resolves the same OIDs.
+    #[test]
+    fn shootout_ahead_behind() {
+        let (_guard, repo) = fixture_repo();
+        let cli = CliGitReads;
+        let gix = GixGitReads::new();
+
+        for (l, r) in [
+            ("main", "feature"),
+            ("feature", "main"),
+            ("main", "origin/main"),
+            ("origin/main", "main"),
+            ("main", "main"),
+        ] {
+            let a = cli.ahead_behind(&repo, l, r);
+            let b = gix.ahead_behind(&repo, l, r);
+            assert_eq!(a.as_ref().ok(), b.as_ref().ok(), "ahead_behind {l}...{r}");
+        }
+        // Sanity on a known pair.
+        assert_eq!(gix.ahead_behind(&repo, "main", "origin/main").unwrap(), (1, 0));
+
+        // No common ancestor: an orphan branch with its own root.
+        run_git(&repo, &["checkout", "--orphan", "orphan"]);
+        run_git(&repo, &["rm", "-rf", "--cached", "."]);
+        std::fs::write(repo.join("o.txt"), "o\n").unwrap();
+        run_git(&repo, &["add", "o.txt"]);
+        run_git(&repo, &["commit", "-m", "orphan root", "--no-verify"]);
+        let a = cli.ahead_behind(&repo, "main", "orphan");
+        let b = gix.ahead_behind(&repo, "main", "orphan");
+        assert_eq!(
+            a.as_ref().ok(),
+            b.as_ref().ok(),
+            "ahead_behind with no common ancestor"
+        );
+
+        // rev-parse parity: same OID for HEAD.
+        let gix_head = gix
+            .repo(&repo)
+            .unwrap()
+            .rev_parse_single("HEAD")
+            .unwrap()
+            .detach()
+            .to_string();
+        let cli_head = run_git(&repo, &["rev-parse", "HEAD"]).trim().to_string();
+        assert_eq!(gix_head, cli_head);
     }
 
     /// Step 8: commit_log + graph_commits stay on the CLI. gix 0.84's rev_walk
