@@ -13,7 +13,7 @@ export const GroupSection: Component<{
 	repos: RepositoryState[];
 	onRename: (groupId: string) => void;
 	onColorChange: (groupId: string) => void;
-	onMouseDrag?: (e: MouseEvent) => void;
+	onMouseDrag?: (e: PointerEvent) => void;
 	dragOverClass?: string;
 	children: JSX.Element;
 }> = (props) => {
@@ -38,7 +38,7 @@ export const GroupSection: Component<{
 				class={s.groupHeader}
 				onClick={() => repositoriesStore.toggleGroupCollapsed(props.group.id)}
 				onContextMenu={groupMenu.open}
-				onMouseDown={(e) => props.onMouseDrag?.(e)}
+				onPointerDown={(e) => props.onMouseDrag?.(e)}
 			>
 				<Show when={props.group.color}>
 					<span class={s.groupColorDot} style={{ background: props.group.color }} />

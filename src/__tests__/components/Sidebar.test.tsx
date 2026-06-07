@@ -1435,27 +1435,27 @@ describe("Sidebar", () => {
 		});
 	});
 
-	describe("drag-and-drop (mouse-based)", () => {
-		it("mouseDown on repo section initiates drag after movement threshold", () => {
+	describe("drag-and-drop (pointer-based)", () => {
+		it("pointerDown on repo section initiates drag after movement threshold", () => {
 			const repo = makeRepo();
 			setRepos({ "/repo1": repo });
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
 			const repoSection = container.querySelector(".repoSection")!;
 
-			// mouseDown alone should not add dragging class
-			fireEvent.mouseDown(repoSection, { button: 0, clientX: 10, clientY: 10 });
+			// pointerDown alone should not add dragging class
+			fireEvent.pointerDown(repoSection, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
 			expect(repoSection.classList.contains("dragging")).toBe(false);
 
 			// Move past threshold — dragging class appears
-			fireEvent.mouseMove(document, { clientX: 20, clientY: 10 });
+			fireEvent.pointerMove(document, { pointerId: 1, clientX: 20, clientY: 10 });
 			expect(repoSection.classList.contains("dragging")).toBe(true);
 
 			// Cleanup
-			fireEvent.mouseUp(document, { clientX: 20, clientY: 10 });
+			fireEvent.pointerUp(document, { pointerId: 1, clientX: 20, clientY: 10 });
 			expect(repoSection.classList.contains("dragging")).toBe(false);
 		});
 
-		it("mouseDown on group header initiates group drag after threshold", () => {
+		it("pointerDown on group header initiates group drag after threshold", () => {
 			const repo = makeRepo();
 			setRepos({ "/repo1": repo });
 			mockGetGroupedLayout.mockReturnValue({
@@ -1471,15 +1471,15 @@ describe("Sidebar", () => {
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
 			const groupHeader = container.querySelector(".groupHeader")!;
 
-			fireEvent.mouseDown(groupHeader, { button: 0, clientX: 10, clientY: 10 });
-			fireEvent.mouseMove(document, { clientX: 20, clientY: 10 });
+			fireEvent.pointerDown(groupHeader, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+			fireEvent.pointerMove(document, { pointerId: 1, clientX: 20, clientY: 10 });
 
 			// Ghost element should exist in the document
 			const ghosts = document.querySelectorAll("[style*='position: fixed']");
 			expect(ghosts.length).toBeGreaterThan(0);
 
 			// Cleanup
-			fireEvent.mouseUp(document, { clientX: 20, clientY: 10 });
+			fireEvent.pointerUp(document, { pointerId: 1, clientX: 20, clientY: 10 });
 		});
 
 		it("escape cancels drag without performing any action", () => {
@@ -1488,8 +1488,8 @@ describe("Sidebar", () => {
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
 			const repoSection = container.querySelector(".repoSection")!;
 
-			fireEvent.mouseDown(repoSection, { button: 0, clientX: 10, clientY: 10 });
-			fireEvent.mouseMove(document, { clientX: 20, clientY: 10 });
+			fireEvent.pointerDown(repoSection, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+			fireEvent.pointerMove(document, { pointerId: 1, clientX: 20, clientY: 10 });
 			fireEvent.keyDown(document, { key: "Escape" });
 
 			expect(mockReorderRepo).not.toHaveBeenCalled();
@@ -1506,23 +1506,23 @@ describe("Sidebar", () => {
 			const repoSection = container.querySelector(".repoSection")!;
 
 			// button=2 is right-click
-			fireEvent.mouseDown(repoSection, { button: 2, clientX: 10, clientY: 10 });
-			fireEvent.mouseMove(document, { clientX: 20, clientY: 10 });
+			fireEvent.pointerDown(repoSection, { button: 2, pointerId: 1, clientX: 10, clientY: 10 });
+			fireEvent.pointerMove(document, { pointerId: 1, clientX: 20, clientY: 10 });
 
 			expect(repoSection.classList.contains("dragging")).toBe(false);
-			fireEvent.mouseUp(document, { clientX: 20, clientY: 10 });
+			fireEvent.pointerUp(document, { pointerId: 1, clientX: 20, clientY: 10 });
 		});
 
-		it("mouseUp without crossing threshold is a click, not a drag", () => {
+		it("pointerUp without crossing threshold is a click, not a drag", () => {
 			const repo = makeRepo();
 			setRepos({ "/repo1": repo });
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
 			const repoSection = container.querySelector(".repoSection")!;
 
-			fireEvent.mouseDown(repoSection, { button: 0, clientX: 10, clientY: 10 });
+			fireEvent.pointerDown(repoSection, { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
 			// Move less than threshold (5px)
-			fireEvent.mouseMove(document, { clientX: 12, clientY: 10 });
-			fireEvent.mouseUp(document, { clientX: 12, clientY: 10 });
+			fireEvent.pointerMove(document, { pointerId: 1, clientX: 12, clientY: 10 });
+			fireEvent.pointerUp(document, { pointerId: 1, clientX: 12, clientY: 10 });
 
 			// No drag actions
 			expect(mockReorderRepo).not.toHaveBeenCalled();

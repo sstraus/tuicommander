@@ -8,6 +8,7 @@ import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
 import { conversationStore } from "../../stores/conversationStore";
 import { terminalsStore } from "../../stores/terminals";
 import { uiStore } from "../../stores/ui";
+import { switchToTerminalBySession } from "../../utils/switchToTerminalBySession";
 
 const PLUGIN_ID = "ai-chat";
 const MAX_CHARS = 2000;
@@ -15,20 +16,6 @@ const MAX_CHARS = 2000;
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/** Switch the active chat context to the terminal matching sessionId. */
-function switchToTerminalBySession(sessionId: string): void {
-	const ids = terminalsStore.getIds();
-	for (const id of ids) {
-		const t = terminalsStore.get(id);
-		if (t?.sessionId === sessionId) {
-			const key = t.tuicSession ?? id;
-			conversationStore.setActiveTerminal(key);
-			terminalsStore.setActive(id);
-			return;
-		}
-	}
-}
 
 /** Truncate text to maxChars, appending a marker if truncated. */
 export function truncateText(text: string, maxChars: number): string {

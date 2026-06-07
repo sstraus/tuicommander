@@ -30,7 +30,12 @@ describe("branchListsEqual", () => {
 	});
 
 	it("returns true for distinct but value-equal lists", () => {
-		expect(branchListsEqual([branch(), branch({ name: "dev", is_current: false })], [branch(), branch({ name: "dev", is_current: false })])).toBe(true);
+		expect(
+			branchListsEqual(
+				[branch(), branch({ name: "dev", is_current: false })],
+				[branch(), branch({ name: "dev", is_current: false })],
+			),
+		).toBe(true);
 	});
 
 	it("returns false when lengths differ", () => {
@@ -41,7 +46,9 @@ describe("branchListsEqual", () => {
 		expect(branchListsEqual([branch({ ahead: 0 })], [branch({ ahead: 1 })])).toBe(false);
 		expect(branchListsEqual([branch({ is_current: true })], [branch({ is_current: false })])).toBe(false);
 		expect(branchListsEqual([branch({ upstream: "origin/main" })], [branch({ upstream: null })])).toBe(false);
-		expect(branchListsEqual([branch({ last_commit_message: "a" })], [branch({ last_commit_message: "b" })])).toBe(false);
+		expect(branchListsEqual([branch({ last_commit_message: "a" })], [branch({ last_commit_message: "b" })])).toBe(
+			false,
+		);
 		expect(branchListsEqual([branch({ base_branch: null })], [branch({ base_branch: "main" })])).toBe(false);
 	});
 

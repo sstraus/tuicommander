@@ -1,12 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import {
-	ATTR_BOLD,
-	ATTR_DEFAULT_BG,
-	ATTR_DEFAULT_FG,
-	ATTR_INVERSE,
-	ATTR_ITALIC,
-} from "../canvasTerminalUtils";
+import { ATTR_BOLD, ATTR_DEFAULT_BG, ATTR_DEFAULT_FG, ATTR_INVERSE, ATTR_ITALIC } from "../canvasTerminalUtils";
 import { createGridRenderer } from "../gridRenderer";
 
 // resolveFg/resolveBg/buildFontStyle never touch the 2D context, so a stub ctx

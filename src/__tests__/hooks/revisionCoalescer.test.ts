@@ -93,13 +93,17 @@ describe("createRevisionCoalescer", () => {
 		const sched = manualScheduler();
 		const delivered: string[] = [];
 		let reentered = false;
-		const c = createRevisionCoalescer((repoPath) => {
-			delivered.push(repoPath);
-			if (!reentered) {
-				reentered = true;
-				c.bump("/during-flush"); // re-arm during flush
-			}
-		}, sched.schedule, sched.cancel);
+		const c = createRevisionCoalescer(
+			(repoPath) => {
+				delivered.push(repoPath);
+				if (!reentered) {
+					reentered = true;
+					c.bump("/during-flush"); // re-arm during flush
+				}
+			},
+			sched.schedule,
+			sched.cancel,
+		);
 
 		c.bump("/first");
 		sched.flush();

@@ -56,7 +56,11 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
         .separator()
         .item(&PredefinedMenuItem::cut(app, None)?)
         .item(&item!("copy", "Copy", "CmdOrCtrl+C"))
-        .item(&item!("paste", "Paste", "CmdOrCtrl+V"))
+        // Paste stays native: a custom CmdOrCtrl+V item routes to navigator.clipboard.readText(),
+        // which triggers the macOS Sequoia "Paste" system confirmation popup. The native paste
+        // reaches the focused keyInputRef → CanvasTerminal's `paste` event handler (bracketed
+        // paste + image support) with no prompt.
+        .item(&PredefinedMenuItem::paste(app, None)?)
         .item(&PredefinedMenuItem::select_all(app, None)?)
         .separator()
         .item(&item!("find-in-terminal", "Find in Content", "CmdOrCtrl+F"))
@@ -216,7 +220,7 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
     // ---------- Help ----------
     let mut help = SubmenuBuilder::new(app, "&Help");
     help = help
-        .item(&item!("help-panel", "Help Panel", "CmdOrCtrl+?"))
+        .item(&item!("help-panel", "Help Panel", "CmdOrCtrl+Shift+/"))
         .separator();
     if !is_macos {
         help = help.item(&item!("check-for-updates", "Check for Updates…"));

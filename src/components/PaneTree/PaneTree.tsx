@@ -279,7 +279,7 @@ const PaneGroupView: Component<{
 							<button
 								class={`pane-tab ${tabColorClass(tab)}`}
 								classList={{ "pane-tab-active": tab.id === group()?.activeTabId }}
-								onMouseDown={(e) => {
+								onPointerDown={(e) => {
 									if (e.button !== 0) return;
 									initMouseDrag(e, e.currentTarget as HTMLElement, {
 										onMove: () => {},

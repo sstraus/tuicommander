@@ -158,6 +158,7 @@ import { createPanelSyncProvider, type PanelAction } from "./utils/panelSync";
 import { initPaneTabAssignment } from "./utils/paneTabAssign";
 import { pathBasename, pathStartsWith, pathStripPrefix } from "./utils/pathUtils";
 import { getShellFamily, sendCommand } from "./utils/sendCommand";
+import { switchToTerminalBySession } from "./utils/switchToTerminalBySession";
 
 const getDefaultFontSize = () => settingsStore.state.defaultFontSize;
 const getMaxTabNameLength = () => settingsStore.state.maxTabNameLength;
@@ -561,6 +562,15 @@ const App: Component = () => {
 			toastsStore.add(trigger_reason, "", "warn", false, {
 				label: "Investigate",
 				onClick: () => {
+					// Reveal the panel and point the chat context at the failed session
+					// before starting — otherwise startAgent runs on the active terminal's
+					// conversation (the wrong one) and nothing visible happens.
+					if (!settingsStore.isAiChatEnabled()) {
+						toastsStore.add("Enable AI Chat in Settings to investigate", "", "warn", false);
+						return;
+					}
+					uiStore.setAiChatPanelVisible(true);
+					switchToTerminalBySession(session_id);
 					conversationStore.startAgent(session_id, proposed_goal);
 				},
 			});

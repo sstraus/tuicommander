@@ -39,10 +39,25 @@ export const NERD_FALLBACK_FACE: FaceAsset = {
 /** Bundled woff2 faces per selectable family, keyed by FontType (= family name). */
 export const BUNDLED_FONT_FACES: Record<FontType, FaceAsset[]> = {
 	"JetBrains Mono": [
-		{ family: "JetBrains Mono", url: "/fonts/jetbrains-mono-extralight-latin.woff2", weight: "200", unicodeRange: LATIN },
-		{ family: "JetBrains Mono", url: "/fonts/jetbrains-mono-extralight-latin-ext.woff2", weight: "200", unicodeRange: LATIN_EXT },
+		{
+			family: "JetBrains Mono",
+			url: "/fonts/jetbrains-mono-extralight-latin.woff2",
+			weight: "200",
+			unicodeRange: LATIN,
+		},
+		{
+			family: "JetBrains Mono",
+			url: "/fonts/jetbrains-mono-extralight-latin-ext.woff2",
+			weight: "200",
+			unicodeRange: LATIN_EXT,
+		},
 		{ family: "JetBrains Mono", url: "/fonts/jetbrains-mono-latin.woff2", weight: "400 700", unicodeRange: LATIN },
-		{ family: "JetBrains Mono", url: "/fonts/jetbrains-mono-latin-ext.woff2", weight: "400 700", unicodeRange: LATIN_EXT },
+		{
+			family: "JetBrains Mono",
+			url: "/fonts/jetbrains-mono-latin-ext.woff2",
+			weight: "400 700",
+			unicodeRange: LATIN_EXT,
+		},
 	],
 	"Fira Code": [
 		{ family: "Fira Code", url: "/fonts/fira-code-latin.woff2", weight: "400 700", unicodeRange: LATIN },

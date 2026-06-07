@@ -2,7 +2,6 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { batch, createSignal } from "solid-js";
 import type { WorktreeCreateOptions } from "../components/CreateWorktreeDialog";
 import { invoke } from "../invoke";
-import { markPerf, timeSync } from "../utils/perfTrace";
 import { appLogger } from "../stores/appLogger";
 import { githubStore } from "../stores/github";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
@@ -16,6 +15,7 @@ import type { RepoInfo } from "../types";
 import { verifyAndBuildResumeCommand } from "../utils/agentSession";
 import { assignTabToActiveGroup } from "../utils/paneTabAssign";
 import { pathStartsWith } from "../utils/pathUtils";
+import { markPerf, timeSync } from "../utils/perfTrace";
 import { effectiveMergeMethod, isMergeMethodNotAllowed } from "../utils/prMerge";
 import { filterValidTerminals } from "../utils/terminalFilter";
 import { findOrphanTerminals } from "../utils/terminalOrphans";
@@ -405,47 +405,47 @@ export function useGitOperations(deps: GitOperationsDeps) {
 				const drainedPendings: PendingCreation[] = [];
 				// Freeze-investigation: time the synchronous store-mutation batch per repo.
 				timeSync(`git.refreshBatch:${repoPath}`, () =>
-				batch(() => {
-					// Guard against race: if a branch was present before our async ops
-					// but is now gone from the live store, the user deleted it while we
-					// were in-flight. Don't resurrect it via stale worktreePaths data.
-					const liveRepo = repositoriesStore.get(repoPath);
-					// Create new worktree branches first so mergeBranchState has a target
-					for (const [branchName, wtPath] of Object.entries(worktreePaths)) {
-						if (priorBranchKeys.has(branchName) && !liveRepo?.branches[branchName]) {
-							appLogger.info("git", `refreshAllBranchStats: RACE GUARD blocked resurrection of "${branchName}"`, {
-								repoPath,
-								worktreePath: wtPath,
-							});
-							continue;
-						}
-						const update: Partial<import("../stores/repositories").BranchState> = {
-							worktreePath: wtPath,
-							isMerged: mergedSet.has(branchName),
-						};
-						// Branch finished background preparation — clear placeholder state
-						// and queue the deferred setupNewWorktree (setup script, initial
-						// terminal, runScript) for after the batch commits.
-						if (liveRepo?.branches[branchName]?.isPreparing) {
-							update.isPreparing = false;
-							const k = pendingKey(repoPath, branchName);
-							const pend = pendingCreations.get(k);
-							if (pend) {
-								pendingCreations.delete(k);
-								drainedPendings.push(pend);
+					batch(() => {
+						// Guard against race: if a branch was present before our async ops
+						// but is now gone from the live store, the user deleted it while we
+						// were in-flight. Don't resurrect it via stale worktreePaths data.
+						const liveRepo = repositoriesStore.get(repoPath);
+						// Create new worktree branches first so mergeBranchState has a target
+						for (const [branchName, wtPath] of Object.entries(worktreePaths)) {
+							if (priorBranchKeys.has(branchName) && !liveRepo?.branches[branchName]) {
+								appLogger.info("git", `refreshAllBranchStats: RACE GUARD blocked resurrection of "${branchName}"`, {
+									repoPath,
+									worktreePath: wtPath,
+								});
+								continue;
 							}
+							const update: Partial<import("../stores/repositories").BranchState> = {
+								worktreePath: wtPath,
+								isMerged: mergedSet.has(branchName),
+							};
+							// Branch finished background preparation — clear placeholder state
+							// and queue the deferred setupNewWorktree (setup script, initial
+							// terminal, runScript) for after the batch commits.
+							if (liveRepo?.branches[branchName]?.isPreparing) {
+								update.isPreparing = false;
+								const k = pendingKey(repoPath, branchName);
+								const pend = pendingCreations.get(k);
+								if (pend) {
+									pendingCreations.delete(k);
+									drainedPendings.push(pend);
+								}
+							}
+							repositoriesStore.setBranch(repoPath, branchName, update);
 						}
-						repositoriesStore.setBranch(repoPath, branchName, update);
-					}
-					// Migrate terminal state from stale activeBranch to its replacement
-					if (active && activeBranchReplacement && toRemove.includes(active)) {
-						repositoriesStore.mergeBranchState(repoPath, active, activeBranchReplacement);
-						repositoriesStore.setActiveBranch(repoPath, activeBranchReplacement);
-					}
-					for (const branchName of toRemove) {
-						repositoriesStore.removeBranch(repoPath, branchName);
-					}
-				}),
+						// Migrate terminal state from stale activeBranch to its replacement
+						if (active && activeBranchReplacement && toRemove.includes(active)) {
+							repositoriesStore.mergeBranchState(repoPath, active, activeBranchReplacement);
+							repositoriesStore.setActiveBranch(repoPath, activeBranchReplacement);
+						}
+						for (const branchName of toRemove) {
+							repositoriesStore.removeBranch(repoPath, branchName);
+						}
+					}),
 				);
 
 				// Drain pending creates: their backing worktree directory finally

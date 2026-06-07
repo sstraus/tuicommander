@@ -227,7 +227,7 @@ export function useSidebarDragDrop() {
 	};
 
 	// Mouse-based drag for repos
-	const handleRepoMouseDrag = (e: MouseEvent, path: string) => {
+	const handleRepoMouseDrag = (e: PointerEvent, path: string) => {
 		const target = e.target as HTMLElement;
 		if (!target.closest("[data-sidebar-repo]") && !target.closest("[data-sidebar-group]")) return;
 		const fromGroup = repositoriesStore.getGroupForRepo(path);
@@ -241,7 +241,7 @@ export function useSidebarDragDrop() {
 	};
 
 	// Mouse-based drag for groups
-	const handleGroupMouseDrag = (e: MouseEvent, groupId: string) => {
+	const handleGroupMouseDrag = (e: PointerEvent, groupId: string) => {
 		const target = e.target as HTMLElement;
 		if (!target.closest("[data-sidebar-repo]") && !target.closest("[data-sidebar-group]")) return;
 		const payload: DragPayload = { type: "group", groupId };

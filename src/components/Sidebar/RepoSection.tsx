@@ -531,7 +531,7 @@ export const RepoSection: Component<{
 	onSwitchBranch: (branchName: string) => void;
 	switchBranchList: () => string[];
 	currentBranch: () => string;
-	onMouseDrag: (e: MouseEvent) => void;
+	onMouseDrag: (e: PointerEvent) => void;
 }> = (props) => {
 	const repoMenu = createContextMenu();
 	const [labelDialogBranch, setLabelDialogBranch] = createSignal<{ name: string; current: string | undefined } | null>(
@@ -661,7 +661,7 @@ export const RepoSection: Component<{
 				props.dragOverClass,
 			)}
 			data-sidebar-repo={props.repo.path}
-			onMouseDown={(e) => props.onMouseDrag(e)}
+			onPointerDown={(e) => props.onMouseDrag(e)}
 		>
 			{/* Repo header */}
 			<div class={s.repoHeader} onClick={props.onToggle} onContextMenu={repoMenu.open}>

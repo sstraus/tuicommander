@@ -26,9 +26,9 @@ pub fn disable() {
     let value_obj: &AnyObject = &value;
     let dict = NSDictionary::from_slices(&[&*key], &[value_obj]);
 
-    // SAFETY: standardUserDefaults / registerDefaults are thread-safe AppKit
-    // calls; `dict` is a valid retained NSDictionary for the call duration.
-    let defaults = unsafe { NSUserDefaults::standardUserDefaults() };
+    let defaults = NSUserDefaults::standardUserDefaults();
+    // SAFETY: registerDefaults is a thread-safe AppKit call; `dict` is a valid
+    // retained NSDictionary for the call duration.
     unsafe { defaults.registerDefaults(&dict) };
 
     tracing::info!(

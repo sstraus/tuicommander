@@ -536,7 +536,7 @@ describe("TabBar", () => {
 		expect(tabs[1].getAttribute("title")).toBe(`Terminal 2 (${getModifierSymbol()}2)`);
 	});
 
-	it("mouseDown + move initiates drag (dragging class appears after threshold)", () => {
+	it("pointerDown + move initiates drag (dragging class appears after threshold)", () => {
 		addTerminal({ name: "Tab 1" });
 		addTerminal({ name: "Tab 2" });
 
@@ -551,19 +551,19 @@ describe("TabBar", () => {
 		));
 		const tabs = container.querySelectorAll(".tab");
 
-		// mouseDown alone should NOT set dragging
-		fireEvent.mouseDown(tabs[0], { button: 0, clientX: 10, clientY: 10 });
+		// pointerDown alone should NOT set dragging
+		fireEvent.pointerDown(tabs[0], { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
 		expect(tabs[0].classList.contains("dragging")).toBe(false);
 
 		// Move past threshold to start drag
-		fireEvent.mouseMove(document, { clientX: 20, clientY: 10 });
+		fireEvent.pointerMove(document, { pointerId: 1, clientX: 20, clientY: 10 });
 		expect(tabs[0].classList.contains("dragging")).toBe(true);
 
 		// Cleanup
-		fireEvent.mouseUp(document, { clientX: 20, clientY: 10 });
+		fireEvent.pointerUp(document, { pointerId: 1, clientX: 20, clientY: 10 });
 	});
 
-	it("mouseUp without movement does not trigger drag (click works normally)", () => {
+	it("pointerUp without movement does not trigger drag (click works normally)", () => {
 		const handleReorder = vi.fn();
 		addTerminal({ name: "Tab 1" });
 
@@ -579,8 +579,8 @@ describe("TabBar", () => {
 		));
 		const tabs = container.querySelectorAll(".tab");
 
-		fireEvent.mouseDown(tabs[0], { button: 0, clientX: 10, clientY: 10 });
-		fireEvent.mouseUp(document, { clientX: 10, clientY: 10 });
+		fireEvent.pointerDown(tabs[0], { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+		fireEvent.pointerUp(document, { pointerId: 1, clientX: 10, clientY: 10 });
 
 		expect(handleReorder).not.toHaveBeenCalled();
 		expect(tabs[0].classList.contains("dragging")).toBe(false);
@@ -601,8 +601,8 @@ describe("TabBar", () => {
 		));
 		const tabs = container.querySelectorAll(".tab");
 
-		fireEvent.mouseDown(tabs[0], { button: 0, clientX: 10, clientY: 10 });
-		fireEvent.mouseMove(document, { clientX: 20, clientY: 10 });
+		fireEvent.pointerDown(tabs[0], { button: 0, pointerId: 1, clientX: 10, clientY: 10 });
+		fireEvent.pointerMove(document, { pointerId: 1, clientX: 20, clientY: 10 });
 		expect(tabs[0].classList.contains("dragging")).toBe(true);
 
 		fireEvent.keyDown(document, { key: "Escape" });

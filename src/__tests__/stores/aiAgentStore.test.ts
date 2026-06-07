@@ -55,6 +55,22 @@ describe("aiAgentStore (via conversationStore)", () => {
 		});
 	});
 
+	describe("reasoning_chunk accumulation", () => {
+		it("accumulates reasoning chunks separately from text", () => {
+			conversationStore.processEvent({ type: "reasoning_chunk", session_id: "s1", text: "let me " });
+			conversationStore.processEvent({ type: "reasoning_chunk", session_id: "s1", text: "think" });
+			conversationStore.processEvent({ type: "text_chunk", session_id: "s1", text: "answer" });
+			expect(conversationStore.reasoningChunks()).toBe("let me think");
+			expect(conversationStore.textChunks()).toBe("answer");
+		});
+
+		it("resets reasoning on reset", () => {
+			conversationStore.processEvent({ type: "reasoning_chunk", session_id: "s1", text: "data" });
+			conversationStore.reset();
+			expect(conversationStore.reasoningChunks()).toBe("");
+		});
+	});
+
 	describe("tool_call / tool_result matching", () => {
 		it("adds pending tool call", () => {
 			conversationStore.processEvent({

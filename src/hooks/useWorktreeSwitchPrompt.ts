@@ -62,6 +62,7 @@ export function useWorktreeSwitchPrompt(deps: WorktreeSwitchDeps): void {
 			okLabel: isAgentRunning ? "Move & Notify" : "Switch",
 			cancelLabel: "Stay",
 			kind: "info",
+			autoCancelMs: 10_000,
 		});
 		if (!confirmed) return;
 

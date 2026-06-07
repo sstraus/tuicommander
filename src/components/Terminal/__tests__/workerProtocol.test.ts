@@ -9,8 +9,8 @@ import {
 	receiveFrame,
 	reduceRendererMessage,
 	type TransferableCanvas,
-	WorkerRenderer,
 	type WorkerLike,
+	WorkerRenderer,
 } from "../workerProtocol";
 
 // --- Fakes ---

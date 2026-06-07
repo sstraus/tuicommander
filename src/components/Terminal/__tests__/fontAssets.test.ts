@@ -59,7 +59,14 @@ describe("fetchFontPayloads", () => {
 
 	it("propagates unicode-range into descriptors when present", async () => {
 		const fetchFn = vi.fn(async () => ({ arrayBuffer: async () => new ArrayBuffer(8) }) as unknown as Response);
-		const faces = [{ family: "JetBrains Mono", url: "/fonts/jetbrains-mono-latin.woff2", weight: "400 700", unicodeRange: "U+0000-00FF" }];
+		const faces = [
+			{
+				family: "JetBrains Mono",
+				url: "/fonts/jetbrains-mono-latin.woff2",
+				weight: "400 700",
+				unicodeRange: "U+0000-00FF",
+			},
+		];
 
 		const [payload] = await fetchFontPayloads(faces, fetchFn as unknown as typeof fetch);
 

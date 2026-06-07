@@ -3908,7 +3908,8 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     fn test_suggest_dewraps_realistic_wrap() {
         // The exact shape that failed in practice: a ~78-col token on a ~76-col
         // terminal, wrapping between (here) the second and third item.
-        let input = "suggest: [ Crea v1.3.1-nightly | Lascia solo\nrolling | Indaga il gap versionato ]";
+        let input =
+            "suggest: [ Crea v1.3.1-nightly | Lascia solo\nrolling | Indaga il gap versionato ]";
         let items = match parse_suggest(input, true) {
             Some(ParsedEvent::Suggest { items }) => items,
             _ => panic!("realistic wrapped suggest must parse"),
