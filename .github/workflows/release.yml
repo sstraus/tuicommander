@@ -60,11 +60,13 @@ jobs:
         shell: bash
         run: echo "CARGO_TARGET_DIR=C:/t" >> $GITHUB_ENV
 
+      - uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -79,7 +81,7 @@ jobs:
           cache-directories: ${{ matrix.platform == 'windows-latest' && 'C:/t' || '' }}
 
       - name: Install frontend dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Import macOS signing certificate
         if: startsWith(matrix.platform, 'macos-')
@@ -149,7 +151,7 @@ jobs:
           CMAKE_C_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || matrix.label == 'Windows-x64' && '/Z7' || '' }}
           CMAKE_CXX_FLAGS: ${{ matrix.label == 'macOS-ARM' && '-march=armv8.4-a' || matrix.label == 'Linux-x64' && '-fPIC' || matrix.label == 'Windows-x64' && '/Z7' || '' }}
         with:
-          tauriScript: npx tauri
+          tauriScript: pnpm tauri
           tagName: v__VERSION__
           releaseName: 'TUICommander v__VERSION__'
           releaseBody: 'Download the appropriate installer for your platform.'

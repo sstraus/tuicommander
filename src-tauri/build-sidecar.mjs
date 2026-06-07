@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Cross-platform sidecar builder for tuic-bridge and tuic CLI.
-// Called by `npm run build:sidecar` — works on macOS, Linux, and Windows.
+// Called by `pnpm build:sidecar` — works on macOS, Linux, and Windows.
 // Skips rebuild if the source crate hasn't changed since last build.
 import { execSync } from "child_process";
 import { copyFileSync, writeFileSync, statSync, existsSync } from "fs";

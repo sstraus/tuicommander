@@ -25,7 +25,7 @@ Frontend (SolidJS) <──WebSocket── PTY Output Stream
 - HTTP REST for all commands (mapped from Tauri command names)
 - WebSocket for real-time PTY output streaming
 - SSE for MCP JSON-RPC transport
-- Used when running in browser via `npm run dev`
+- Used when running in browser via `pnpm dev`
 
 ### Transport Abstraction
 

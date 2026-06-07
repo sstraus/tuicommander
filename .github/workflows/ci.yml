@@ -33,14 +33,16 @@ jobs:
         with:
           mode: firewall-free
 
+      - uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
-      - name: Scan npm install through Socket Firewall
-        run: sfw npm ci
+      - name: Scan pnpm install through Socket Firewall
+        run: sfw pnpm install --frozen-lockfile
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -53,20 +55,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Install dependencies
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Typecheck
-        run: npx tsc --noEmit
+        run: pnpm exec tsc --noEmit
 
       - name: Tests
-        run: npx vitest run --reporter=verbose
+        run: pnpm exec vitest run --reporter=verbose
 
   # Always runs: clippy + tests on Linux (fastest, catches most issues)
   rust:

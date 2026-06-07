@@ -15,11 +15,13 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: pnpm/action-setup@v4
+
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
+          cache: pnpm
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -27,17 +29,17 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit
 
-      - name: npm audit
-        id: npm_audit
+      - name: pnpm audit
+        id: pnpm_audit
         continue-on-error: true
         run: |
           set +e
-          OUTPUT=$(npm audit --audit-level=high 2>&1)
+          OUTPUT=$(pnpm audit --audit-level=high 2>&1)
           EXIT_CODE=$?
           echo "$OUTPUT"
           echo "exit_code=$EXIT_CODE" >> "$GITHUB_OUTPUT"
           # Save output for issue body (truncate if huge)
-          echo "$OUTPUT" | head -100 > /tmp/npm-audit.txt
+          echo "$OUTPUT" | head -100 > /tmp/pnpm-audit.txt
 
       - name: cargo audit
         id: cargo_audit
@@ -52,15 +54,15 @@ jobs:
           echo "$OUTPUT" | head -100 > /tmp/cargo-audit.txt
 
       - name: Create issue if vulnerabilities found
-        if: steps.npm_audit.outputs.exit_code != '0' || steps.cargo_audit.outputs.exit_code != '0'
+        if: steps.pnpm_audit.outputs.exit_code != '0' || steps.cargo_audit.outputs.exit_code != '0'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           BODY="## Dependency Audit — $(date -u +%Y-%m-%d)"
           BODY="$BODY"$'\n\n'"Automated weekly audit found vulnerabilities."
 
-          if [ "${{ steps.npm_audit.outputs.exit_code }}" != "0" ]; then
-            BODY="$BODY"$'\n\n'"### npm audit"$'\n\n'"<details><summary>Output</summary>"$'\n\n'"\`\`\`"$'\n'"$(cat /tmp/npm-audit.txt)"$'\n'"\`\`\`"$'\n'"</details>"
+          if [ "${{ steps.pnpm_audit.outputs.exit_code }}" != "0" ]; then
+            BODY="$BODY"$'\n\n'"### pnpm audit"$'\n\n'"<details><summary>Output</summary>"$'\n\n'"\`\`\`"$'\n'"$(cat /tmp/pnpm-audit.txt)"$'\n'"\`\`\`"$'\n'"</details>"
           fi
 
           if [ "${{ steps.cargo_audit.outputs.exit_code }}" != "0" ]; then

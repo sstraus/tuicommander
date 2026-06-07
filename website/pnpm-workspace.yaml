@@ -1,0 +1,7 @@
+# Isolated pnpm root — the website is a standalone project, NOT a member of
+# the repo-root pnpm workspace. This file stops pnpm from walking up to the
+# root pnpm-workspace.yaml so the website keeps its own pnpm-lock.yaml.
+
+# Allow esbuild's postinstall build script (transitive vite dependency).
+allowBuilds:
+  esbuild: true

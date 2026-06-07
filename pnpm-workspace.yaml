@@ -1,2 +1,19 @@
 allowBuilds:
-  esbuild: set this to true or false
+  esbuild: true
+
+# pnpm 11 no longer reads the "pnpm.overrides" field from package.json — overrides
+# live here. These pin transitive deps for security and to dedupe versions.
+overrides:
+  "vite-plugin-purgecss>purgecss": "^8.0.0"
+  minimatch: ">=3.1.4"
+  brace-expansion: ">=1.1.13"
+  picomatch: ">=4.0.4"
+  "rollup-plugin-visualizer>picomatch": ">=4.0.4"
+  # Pinned to the previous release 4.61.0 (2026-06-01) rather than the freshly
+  # published 4.61.1 (2026-06-04). Bump deliberately after a version has settled.
+  rollup: "4.61.0"
+  # vite-plugin-purgecss@0.2.13 pulls in vite 6.x (CVE: dev-server file read,
+  # path traversal) plus old postcss/ws. Pin the build-only vite to the patched line.
+  "vite-plugin-purgecss>vite": ">=6.4.3"
+  # happy-dom (test-only) pulls in ws < 8.20.1 (uninitialized memory disclosure).
+  ws: ">=8.20.1"

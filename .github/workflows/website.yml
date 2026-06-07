@@ -24,19 +24,21 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-          cache: npm
-          cache-dependency-path: website/package-lock.json
+          cache: pnpm
+          cache-dependency-path: website/pnpm-lock.yaml
 
       - name: Install website dependencies
         working-directory: website
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Build landing page
         working-directory: website
-        run: npm run build
+        run: pnpm build
 
       - name: Install mdBook
         uses: peaceiris/actions-mdbook@v2

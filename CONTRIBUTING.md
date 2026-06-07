@@ -12,7 +12,7 @@ Thanks for your interest in contributing! This guide covers what we expect from 
 
 ```bash
 # Prerequisites: Node.js 24+, Rust stable, platform dependencies (see README)
-npm ci
+pnpm install --frozen-lockfile
 cd src-tauri && cargo build
 ```
 
@@ -44,8 +44,8 @@ We have ~3900 frontend tests and ~2800 Rust tests. We expect that number to go u
 
 ```bash
 # Frontend: typecheck + tests
-npx tsc --noEmit
-npx vitest run
+pnpm exec tsc --noEmit
+pnpm exec vitest run
 
 # Rust: clippy + tests
 cd src-tauri

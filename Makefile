@@ -30,41 +30,41 @@ all: build sign
 # Run in development mode with hot reload (debug tracing for our code only)
 # Pre-builds frontend so the PWA (served from dist/) is up to date.
 dev:
-	@npx vite build
-	TAURI_CLI_WATCHER_IGNORE_FILENAME=.taurignore RUST_LOG=tuicommander_lib=debug,info npm run tauri dev
+	@pnpm exec vite build
+	TAURI_CLI_WATCHER_IGNORE_FILENAME=.taurignore RUST_LOG=tuicommander_lib=debug,info pnpm tauri dev
 
 # Build frontend + launch Tauri dev (for quick manual testing)
 test:
 	@echo "Building Vite frontend..."
-	@npx vite build
+	@pnpm exec vite build
 	@echo "Starting Tauri dev..."
-	TAURI_CLI_WATCHER_IGNORE_FILENAME=.taurignore npm run tauri dev
+	TAURI_CLI_WATCHER_IGNORE_FILENAME=.taurignore pnpm tauri dev
 
 # Build .app only (default, fast — skips DMG)
 build:
 	@echo "Building TUICommander $(VERSION)..."
-	npm run tauri build
+	pnpm tauri build
 
 # Build .app + DMG (for distribution)
 build-dmg:
 	@echo "Building TUICommander $(VERSION) with DMG..."
-	npm run tauri build -- --bundles app,dmg
+	pnpm tauri build --bundles app,dmg
 
 # Auto-format frontend + Rust
 fmt:
-	@npx biome check --fix src/
+	@pnpm exec biome check --fix src/
 	@cd src-tauri && cargo fmt
 
 # Type-check, lint, format, and test (no Tauri build)
 check:
 	@echo "Running checks..."
-	@rtk npx tsc --noEmit && echo "  tsc ✓"
-	@rtk npx biome check --max-diagnostics=100 src/ && echo "  biome ✓"
+	@rtk pnpm exec tsc --noEmit && echo "  tsc ✓"
+	@rtk pnpm exec biome check --max-diagnostics=100 src/ && echo "  biome ✓"
 	@cd src-tauri && rtk cargo fmt --check && echo "  rustfmt ✓"
 	@cd src-tauri && rtk cargo clippy --release -- -D warnings && echo "  clippy ✓"
 	@cd src-tauri && ulimit -n 10240 && rtk cargo test -q && echo "  cargo test ✓"
-	@rtk npx vitest run --reporter=dot 2>&1 | tail -3
-	@rtk npm audit --audit-level=high && echo "  npm audit ✓"
+	@rtk pnpm exec vitest run --reporter=dot 2>&1 | tail -3
+	@rtk pnpm audit --audit-level=high && echo "  pnpm audit ✓"
 	@cd src-tauri && rtk err cargo audit -q --ignore RUSTSEC-2026-0097 --ignore RUSTSEC-2023-0071 && echo "  cargo audit ✓"
 
 # GitHub API debug logging — toggle at runtime, view logs
@@ -222,9 +222,9 @@ github-release:
 # tests won't confuse it with the production TUICommander.
 # Uses --debug for fast iteration; full release build only on github-release.
 preview:
-	@npx vite build
+	@pnpm exec vite build
 	@echo "Building TUIC-preview $(VERSION) (debug mode)..."
-	npm run tauri build -- --debug --bundles app --config '{"productName":"TUIC-preview","identifier":"com.tuic.preview","bundle":{"createUpdaterArtifacts":false},"app":{"windows":[{"title":"TUIC-preview","width":1200,"height":800,"minWidth":800,"minHeight":600,"decorations":true,"transparent":false,"resizable":true,"fullscreen":false,"hiddenTitle":true,"titleBarStyle":"Overlay","trafficLightPosition":{"x":13,"y":20},"backgroundColor":"#000000","dragDropEnabled":true}]}}'
+	pnpm tauri build --debug --bundles app --config '{"productName":"TUIC-preview","identifier":"com.tuic.preview","bundle":{"createUpdaterArtifacts":false},"app":{"windows":[{"title":"TUIC-preview","width":1200,"height":800,"minWidth":800,"minHeight":600,"decorations":true,"transparent":false,"resizable":true,"fullscreen":false,"hiddenTitle":true,"titleBarStyle":"Overlay","trafficLightPosition":{"x":13,"y":20},"backgroundColor":"#000000","dragDropEnabled":true}]}}'
 	@echo "Launching TUIC-preview..."
 	open "src-tauri/target/debug/bundle/macos/TUIC-preview.app"
 

@@ -252,10 +252,10 @@ Want the bleeding edge? The **[Nightly](https://github.com/sstraus/tuicommander/
 **Prerequisites:** Node.js 22+, Rust toolchain, [Tauri CLI](https://tauri.app/start/)
 
 ```bash
-npm install
-npm run tauri dev      # Development with hot reload
-npm run tauri build    # Production build
-npm test               # Run tests
+pnpm install
+pnpm tauri dev      # Development with hot reload
+pnpm tauri build    # Production build
+pnpm test               # Run tests
 ```
 
 See [docs/guides/development-setup.md](docs/guides/development-setup.md) for platform-specific instructions.

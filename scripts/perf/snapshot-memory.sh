@@ -7,7 +7,7 @@ cat <<'GUIDE'
 === Frontend Memory Profiling Guide ===
 
 SETUP:
-  1. Launch TUICommander in dev mode: npm run tauri dev
+  1. Launch TUICommander in dev mode: pnpm tauri dev
   2. Open DevTools: Cmd+Shift+I (or right-click → Inspect)
   3. Go to Memory tab
 
