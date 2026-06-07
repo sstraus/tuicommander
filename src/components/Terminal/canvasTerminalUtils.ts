@@ -237,3 +237,19 @@ export function measureFont(
 		scaledCellHeight: cellHeightDevice,
 	};
 }
+
+/**
+ * Resolve the terminal's default background/foreground from the theme CSS
+ * custom properties that applyAppTheme (themes.ts) sets on the document root.
+ *
+ * Reads --bg-secondary and --fg-primary. These are the variables the theme
+ * system actually defines (see applyAppTheme); --text-primary is NOT one of
+ * them, so reading it would always fall back and make terminal text invisible
+ * on light themes.
+ */
+export function resolveDefaultTerminalColors(el: HTMLElement): { bg: string; fg: string } {
+	const style = getComputedStyle(el);
+	const bg = style.getPropertyValue("--bg-secondary").trim() || "#1e1e1e";
+	const fg = style.getPropertyValue("--fg-primary").trim() || "#d4d4d4";
+	return { bg, fg };
+}

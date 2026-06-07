@@ -18,6 +18,7 @@ import {
 	type DecodedFrame,
 	decodeBinaryFrame,
 	GUTTER_PX,
+	resolveDefaultTerminalColors,
 	SCROLLBAR_PX,
 	snapLineHeight,
 } from "./canvasTerminalUtils";
@@ -313,8 +314,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const m = getSharedMetrics(fontSize, fontFamily, dpr, snapLineHeight(fontSize), fontWeight);
 		setMetrics(m);
 
-		cachedBgDefault = getComputedStyle(canvasRef).getPropertyValue("--bg-secondary").trim() || "#1e1e1e";
-		cachedFgDefault = getComputedStyle(canvasRef).getPropertyValue("--text-primary").trim() || "#d4d4d4";
+		const defaultColors = resolveDefaultTerminalColors(canvasRef);
+		cachedBgDefault = defaultColors.bg;
+		cachedFgDefault = defaultColors.fg;
 		if (rendererMode === "main") gridRenderer.setTheme(cachedBgDefault, cachedFgDefault);
 
 		const cols = Math.floor((rect.width - GUTTER_PX - SCROLLBAR_PX) / m.cellWidth);
@@ -2563,7 +2565,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 						width: "10px",
 						"margin-left": "2px",
 						"border-radius": "5px",
-						background: "var(--text-primary, rgba(255,255,255,0.3))",
+						background: "var(--fg-primary, rgba(255,255,255,0.3))",
 						opacity: "var(--scrollbar-opacity, 0.3)",
 						"min-height": "20px",
 						position: "absolute",
