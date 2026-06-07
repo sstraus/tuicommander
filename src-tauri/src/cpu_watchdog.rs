@@ -184,6 +184,7 @@ struct HealthSnapshot {
     index_sem_permits: usize,
     in_flight_stuck: Vec<String>,
     event_bus_subscribers: usize,
+    git_cache_ttl_fallbacks: u64,
 }
 
 fn collect_snapshot(state: &Arc<AppState>, cpu_pct: f64) -> HealthSnapshot {
@@ -203,6 +204,10 @@ fn collect_snapshot(state: &Arc<AppState>, cpu_pct: f64) -> HealthSnapshot {
         index_sem_permits: state.index_build_sem.available_permits(),
         in_flight_stuck,
         event_bus_subscribers: state.event_bus.receiver_count(),
+        git_cache_ttl_fallbacks: state
+            .git_cache
+            .ttl_fallbacks
+            .load(Ordering::Relaxed),
     }
 }
 
@@ -214,7 +219,7 @@ fn log_spike(state: &Arc<AppState>, cpu_pct: f64) {
         source = "diagnostics",
         "CPU SPIKE {:.1}% | threads={} fds={} sessions={} \
          index_building={:?} sem_permits={} in_flight_stuck={:?} \
-         bus_subs={}\n  children: {}",
+         bus_subs={} git_cache_ttl_fallbacks={}\n  children: {}",
         s.cpu_pct,
         s.threads,
         s.open_fds,
@@ -223,6 +228,7 @@ fn log_spike(state: &Arc<AppState>, cpu_pct: f64) {
         s.index_sem_permits,
         s.in_flight_stuck,
         s.event_bus_subscribers,
+        s.git_cache_ttl_fallbacks,
         children,
     );
 }
@@ -239,7 +245,7 @@ fn log_periodic(state: &Arc<AppState>, cpu_pct: f64) {
     tracing::info!(
         source = "diagnostics",
         "HEALTH cpu={:.1}% threads={} fds={} sessions={} \
-         index={:?} sem={} bus_subs={}{}",
+         index={:?} sem={} bus_subs={} git_cache_ttl_fallbacks={}{}",
         s.cpu_pct,
         s.threads,
         s.open_fds,
@@ -247,6 +253,7 @@ fn log_periodic(state: &Arc<AppState>, cpu_pct: f64) {
         s.index_building,
         s.index_sem_permits,
         s.event_bus_subscribers,
+        s.git_cache_ttl_fallbacks,
         stuck_note,
     );
 }

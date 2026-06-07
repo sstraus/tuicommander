@@ -1488,10 +1488,28 @@ pub(crate) type GitCache<T> = moka::sync::Cache<String, Arc<T>>;
 const GIT_CACHE_CAPACITY: u64 = 256;
 
 /// Build a git cache with the standard capacity and the given TTL.
-pub(crate) fn build_git_cache<T: Send + Sync + 'static>(ttl: Duration) -> GitCache<T> {
+///
+/// `ttl_fallbacks` is incremented whenever an entry is evicted because its TTL
+/// expired (`RemovalCause::Expired`) — i.e. the event-driven watcher did NOT
+/// invalidate it first and we fell back to the timeout. Explicit invalidations
+/// (the normal watcher path) do not count. A rising counter is a signal the
+/// watcher missed events for some repo.
+pub(crate) fn build_git_cache<T: Send + Sync + 'static>(
+    ttl: Duration,
+    ttl_fallbacks: Arc<AtomicU64>,
+) -> GitCache<T> {
     moka::sync::Cache::builder()
         .max_capacity(GIT_CACHE_CAPACITY)
         .time_to_live(ttl)
+        .eviction_listener(move |key, _v, cause| {
+            if cause == moka::notification::RemovalCause::Expired {
+                ttl_fallbacks.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                tracing::debug!(
+                    repo = %key,
+                    "git cache TTL fallback — watcher may have missed an event"
+                );
+            }
+        })
         .build()
 }
 
@@ -1509,19 +1527,24 @@ pub(crate) struct GitCacheState {
     /// Excluded from batch queries until the cooldown expires (1 hour).
     /// NOT a TTL value cache — kept as a plain `DashMap` set with custom expiry.
     pub(crate) github_repo_cooldown: DashMap<String, Instant>,
+    /// Count of entries evicted by TTL expiry (watcher-miss observability).
+    /// Shared across all git caches; surfaced in the cpu_watchdog snapshot.
+    pub(crate) ttl_fallbacks: Arc<AtomicU64>,
 }
 
 impl GitCacheState {
     pub(crate) fn new() -> Self {
+        let ttl_fallbacks = Arc::new(AtomicU64::new(0));
         Self {
-            repo_info: build_git_cache(GIT_CACHE_TTL),
-            merged_branches: build_git_cache(GIT_CACHE_TTL),
-            branches_detail: build_git_cache(GIT_CACHE_TTL),
-            github_status: build_git_cache(GITHUB_CACHE_TTL),
-            git_status: build_git_cache(GIT_CACHE_TTL),
-            git_panel_context: build_git_cache(GIT_CACHE_TTL),
-            worktree_paths: build_git_cache(GIT_CACHE_TTL),
+            repo_info: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            merged_branches: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            branches_detail: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            github_status: build_git_cache(GITHUB_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            git_status: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            git_panel_context: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            worktree_paths: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
             github_repo_cooldown: DashMap::new(),
+            ttl_fallbacks,
         }
     }
 
@@ -3280,7 +3303,7 @@ mod tests {
     /// invoke the loader exactly once (coalescing collapses the fan-out).
     #[test]
     fn git_cache_get_with_coalesces_concurrent_loads() {
-        let cache: GitCache<String> = build_git_cache(GIT_CACHE_TTL);
+        let cache: GitCache<String> = build_git_cache(GIT_CACHE_TTL, Arc::new(AtomicU64::new(0)));
         let calls = Arc::new(AtomicUsize::new(0));
 
         let handles: Vec<_> = (0..50)
@@ -3335,6 +3358,36 @@ mod tests {
         let v = cache.get_with("k".to_string(), load(2)); // expired — recompute
         assert_eq!(*v, 2);
         assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    /// Step 4: only TTL-expiry evictions (`RemovalCause::Expired`) bump the
+    /// watcher-miss counter; explicit invalidations do not.
+    #[test]
+    fn eviction_observability_counts_only_ttl_expiry() {
+        let counter = Arc::new(AtomicU64::new(0));
+        let cache: GitCache<u32> =
+            build_git_cache(Duration::from_millis(60), Arc::clone(&counter));
+
+        // Expired path: insert, let it age out, force maintenance.
+        cache.insert("expired".to_string(), Arc::new(1));
+        std::thread::sleep(Duration::from_millis(120));
+        cache.run_pending_tasks();
+        assert_eq!(
+            counter.load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "TTL expiry must increment the watcher-miss counter"
+        );
+
+        // Explicit path: insert then invalidate — must NOT increment.
+        cache.insert("explicit".to_string(), Arc::new(2));
+        cache.run_pending_tasks();
+        cache.invalidate("explicit");
+        cache.run_pending_tasks();
+        assert_eq!(
+            counter.load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "explicit invalidation must NOT increment the watcher-miss counter"
+        );
     }
 
     #[test]
