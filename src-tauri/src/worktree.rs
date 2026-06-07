@@ -1054,20 +1054,14 @@ pub(crate) fn get_worktree_paths_cached(
     state: &crate::state::AppState,
     repo_path: &str,
 ) -> HashMap<String, String> {
-    if let Some(cached) = crate::state::AppState::get_cached(
-        &state.git_cache.worktree_paths,
-        repo_path,
-        crate::state::GIT_CACHE_TTL,
-    ) {
-        return cached;
-    }
-    let paths = get_worktree_paths(repo_path.to_string()).unwrap_or_default();
-    crate::state::AppState::set_cached(
-        &state.git_cache.worktree_paths,
-        repo_path.to_string(),
-        paths.clone(),
-    );
-    paths
+    let p = repo_path.to_string();
+    (*state
+        .git_cache
+        .worktree_paths
+        .get_with(repo_path.to_string(), || {
+            std::sync::Arc::new(get_worktree_paths(p).unwrap_or_default())
+        }))
+    .clone()
 }
 
 /// Get worktree paths for a repo: maps branch name -> worktree directory

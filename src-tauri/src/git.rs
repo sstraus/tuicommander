@@ -8,7 +8,40 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::git_cli::git_cmd;
-use crate::state::{AppState, GIT_CACHE_TTL};
+use crate::state::{AppState, GitCache};
+
+// --- Coalesced git-cache load helpers (Step 1) ---
+//
+// `moka` collapses concurrent identical loads for one key to a single
+// computation (the headline fix for the `repo-changed` fan-out). Loaders are
+// blocking git work, so they run on the blocking pool; the cache TTL/bound is
+// configured on the cache itself. Values are `Arc`-wrapped in the cache and
+// cloned out at the boundary to preserve the existing by-value return shapes.
+
+/// Coalesced + cached blocking load for an infallible compute.
+async fn cached_get<T, F>(cache: GitCache<T>, key: String, f: F) -> Result<T, String>
+where
+    T: Clone + Send + Sync + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let v = tokio::task::spawn_blocking(move || cache.get_with(key, || Arc::new(f())))
+        .await
+        .map_err(|e| format!("spawn_blocking error: {e}"))?;
+    Ok((*v).clone())
+}
+
+/// Coalesced + cached blocking load for a fallible compute. Only `Ok` is cached.
+async fn cached_try<T, F>(cache: GitCache<T>, key: String, f: F) -> Result<T, String>
+where
+    T: Clone + Send + Sync + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    let v = tokio::task::spawn_blocking(move || cache.try_get_with(key, || f().map(Arc::new)))
+        .await
+        .map_err(|e| format!("spawn_blocking error: {e}"))?
+        .map_err(|e: Arc<String>| (*e).clone())?;
+    Ok((*v).clone())
+}
 
 // --- File-based git helpers (no subprocess) ---
 
@@ -166,12 +199,12 @@ pub(crate) fn get_repo_info_impl(path: &str) -> RepoInfo {
 
 /// Cached repo info for synchronous callers (MCP handlers, etc.).
 pub(crate) fn get_repo_info_cached(state: &AppState, path: &str) -> RepoInfo {
-    if let Some(cached) = AppState::get_cached(&state.git_cache.repo_info, path, GIT_CACHE_TTL) {
-        return cached;
-    }
-    let info = get_repo_info_impl(path);
-    AppState::set_cached(&state.git_cache.repo_info, path.to_string(), info.clone());
-    info
+    let p = path.to_string();
+    (*state
+        .git_cache
+        .repo_info
+        .get_with(path.to_string(), || Arc::new(get_repo_info_impl(&p))))
+    .clone()
 }
 
 /// Get git repository info for a path (cached, 5s TTL)
@@ -181,17 +214,11 @@ pub(crate) async fn get_repo_info(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<RepoInfo, String> {
-    if let Some(cached) = AppState::get_cached(&state.git_cache.repo_info, &path, GIT_CACHE_TTL) {
-        return Ok(cached);
-    }
-
-    let state_arc = state.inner().clone();
-    let path_clone = path.clone();
-    let info = tokio::task::spawn_blocking(move || get_repo_info_impl(&path_clone))
-        .await
-        .map_err(|e| format!("spawn_blocking join error: {e}"))?;
-    AppState::set_cached(&state_arc.git_cache.repo_info, path, info.clone());
-    Ok(info)
+    let p = path.clone();
+    cached_get(state.git_cache.repo_info.clone(), path, move || {
+        get_repo_info_impl(&p)
+    })
+    .await
 }
 
 /// Get the origin remote URL for a repository (returns None if not a git repo or no remote).
@@ -1082,20 +1109,11 @@ pub(crate) async fn get_merged_branches(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<Vec<String>, String> {
-    if let Some(cached) =
-        AppState::get_cached(&state.git_cache.merged_branches, &path, GIT_CACHE_TTL)
-    {
-        return Ok(cached);
-    }
-
-    let state_arc = state.inner().clone();
-    let path_clone = path.clone();
-    let result =
-        tokio::task::spawn_blocking(move || get_merged_branches_impl(Path::new(&path_clone)))
-            .await
-            .map_err(|e| format!("spawn_blocking join error: {e}"))??;
-    AppState::set_cached(&state_arc.git_cache.merged_branches, path, result.clone());
-    Ok(result)
+    let p = path.clone();
+    cached_try(state.git_cache.merged_branches.clone(), path, move || {
+        get_merged_branches_impl(Path::new(&p))
+    })
+    .await
 }
 
 /// Lightweight structural snapshot: worktree paths + merged branches.
@@ -1175,23 +1193,13 @@ pub(crate) async fn get_repo_summary_impl(
     let worktree_handle =
         tokio::task::spawn_blocking(move || crate::worktree::get_worktree_paths(wt_path));
 
-    let merged_branches = if let Some(cached) =
-        AppState::get_cached(&state.git_cache.merged_branches, &repo_path, GIT_CACHE_TTL)
-    {
-        cached
-    } else {
-        let mb_path = repo_path.clone();
-        let branches =
-            tokio::task::spawn_blocking(move || get_merged_branches_impl(Path::new(&mb_path)))
-                .await
-                .map_err(|e| format!("spawn_blocking error: {e}"))??;
-        AppState::set_cached(
-            &state.git_cache.merged_branches,
-            repo_path.clone(),
-            branches.clone(),
-        );
-        branches
-    };
+    let mb_path = repo_path.clone();
+    let merged_branches = cached_try(
+        state.git_cache.merged_branches.clone(),
+        repo_path.clone(),
+        move || get_merged_branches_impl(Path::new(&mb_path)),
+    )
+    .await?;
 
     let worktree_paths = worktree_handle
         .await
@@ -1260,23 +1268,13 @@ pub(crate) async fn get_repo_structure_impl(
     let worktree_handle =
         tokio::task::spawn_blocking(move || crate::worktree::get_worktree_paths(wt_path));
 
-    let merged_branches = if let Some(cached) =
-        AppState::get_cached(&state.git_cache.merged_branches, &repo_path, GIT_CACHE_TTL)
-    {
-        cached
-    } else {
-        let mb_path = repo_path.clone();
-        let branches =
-            tokio::task::spawn_blocking(move || get_merged_branches_impl(Path::new(&mb_path)))
-                .await
-                .map_err(|e| format!("spawn_blocking error: {e}"))??;
-        AppState::set_cached(
-            &state.git_cache.merged_branches,
-            repo_path.clone(),
-            branches.clone(),
-        );
-        branches
-    };
+    let mb_path = repo_path.clone();
+    let merged_branches = cached_try(
+        state.git_cache.merged_branches.clone(),
+        repo_path.clone(),
+        move || get_merged_branches_impl(Path::new(&mb_path)),
+    )
+    .await?;
 
     let worktree_paths = worktree_handle
         .await
@@ -1582,20 +1580,11 @@ pub(crate) async fn get_branches_detail(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<Vec<BranchDetail>, String> {
-    if let Some(cached) =
-        AppState::get_cached(&state.git_cache.branches_detail, &path, GIT_CACHE_TTL)
-    {
-        return Ok(cached);
-    }
-
-    let state_arc = state.inner().clone();
-    let path_clone = path.clone();
-    let result =
-        tokio::task::spawn_blocking(move || get_branches_detail_impl(Path::new(&path_clone)))
-            .await
-            .map_err(|e| format!("spawn_blocking join error: {e}"))??;
-    AppState::set_cached(&state_arc.git_cache.branches_detail, path, result.clone());
-    Ok(result)
+    let p = path.clone();
+    cached_try(state.git_cache.branches_detail.clone(), path, move || {
+        get_branches_detail_impl(Path::new(&p))
+    })
+    .await
 }
 
 /// Core logic for fetching recently checked-out branch names from the reflog.
@@ -1809,20 +1798,11 @@ pub(crate) async fn get_git_panel_context(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<GitPanelContext, String> {
-    if let Some(cached) =
-        AppState::get_cached(&state.git_cache.git_panel_context, &path, GIT_CACHE_TTL)
-    {
-        return Ok(cached);
-    }
-
-    let state_arc = state.inner().clone();
-    let path_clone = path.clone();
-    let ctx =
-        tokio::task::spawn_blocking(move || get_git_panel_context_impl(Path::new(&path_clone)))
-            .await
-            .map_err(|e| format!("spawn_blocking join error: {e}"))?;
-    AppState::set_cached(&state_arc.git_cache.git_panel_context, path, ctx.clone());
-    Ok(ctx)
+    let p = path.clone();
+    cached_get(state.git_cache.git_panel_context.clone(), path, move || {
+        get_git_panel_context_impl(Path::new(&p))
+    })
+    .await
 }
 
 /// Result of a background git command execution

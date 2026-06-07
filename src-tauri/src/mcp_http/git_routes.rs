@@ -168,30 +168,18 @@ pub(super) async fn repo_merged_branches(
         return e.into_response();
     }
     let path = q.path;
-    // Check cache first (same pattern as Tauri command)
-    if let Some(cached) = crate::AppState::get_cached(
-        &state.git_cache.merged_branches,
-        &path,
-        crate::state::GIT_CACHE_TTL,
-    ) {
-        return (StatusCode::OK, Json(serde_json::json!(cached))).into_response();
-    }
-    let state_clone = state.clone();
-    let path_clone = path.clone();
+    // Coalesced + cached load (same cache + TTL as the Tauri command).
+    let cache = state.git_cache.merged_branches.clone();
+    let p = path.clone();
     match tokio::task::spawn_blocking(move || {
-        crate::git::get_merged_branches_impl(std::path::Path::new(&path_clone))
+        cache.try_get_with(p.clone(), || {
+            crate::git::get_merged_branches_impl(std::path::Path::new(&p)).map(std::sync::Arc::new)
+        })
     })
     .await
     {
-        Ok(Ok(branches)) => {
-            crate::AppState::set_cached(
-                &state_clone.git_cache.merged_branches,
-                path,
-                branches.clone(),
-            );
-            (StatusCode::OK, Json(serde_json::json!(branches))).into_response()
-        }
-        Ok(Err(e)) => err_500(&e),
+        Ok(Ok(branches)) => (StatusCode::OK, Json(serde_json::json!(*branches))).into_response(),
+        Ok(Err(e)) => err_500(&e.to_string()),
         Err(e) => err_500(&format!("Task failed: {e}")),
     }
 }
@@ -238,28 +226,16 @@ pub(super) async fn git_panel_context(
         return e.into_response();
     }
     let path = q.path.clone();
-    if let Some(cached) = crate::AppState::get_cached(
-        &state.git_cache.git_panel_context,
-        &path,
-        crate::state::GIT_CACHE_TTL,
-    ) {
-        return Json(cached).into_response();
-    }
-    let state_clone = state.clone();
-    let path_clone = path.clone();
+    let cache = state.git_cache.git_panel_context.clone();
+    let p = path.clone();
     match tokio::task::spawn_blocking(move || {
-        crate::git::get_git_panel_context_impl(std::path::Path::new(&path_clone))
+        cache.get_with(p.clone(), || {
+            std::sync::Arc::new(crate::git::get_git_panel_context_impl(std::path::Path::new(&p)))
+        })
     })
     .await
     {
-        Ok(ctx) => {
-            crate::AppState::set_cached(
-                &state_clone.git_cache.git_panel_context,
-                path,
-                ctx.clone(),
-            );
-            Json(ctx).into_response()
-        }
+        Ok(ctx) => Json(&*ctx).into_response(),
         Err(e) => err_500(&format!("Task failed: {e}")),
     }
 }

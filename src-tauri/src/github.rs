@@ -9,7 +9,7 @@ use std::time::Instant;
 use tauri::State;
 
 use crate::error_classification::calculate_backoff_delay;
-use crate::state::{AppState, GIT_CACHE_TTL, GITHUB_CACHE_TTL};
+use crate::state::AppState;
 
 fn extract_graphql_name(query: &str) -> &str {
     // Extract name from "query FooBar {" or "mutation Baz(" patterns
@@ -1165,11 +1165,10 @@ pub(crate) async fn get_all_batch_impl(
                 });
             }
 
-            AppState::set_cached(
-                &state.git_cache.github_status,
-                path.clone(),
-                statuses.clone(),
-            );
+            state
+                .git_cache
+                .github_status
+                .insert(path.clone(), Arc::new(statuses.clone()));
             pr_results.insert(path.clone(), statuses);
         }
 
@@ -1465,20 +1464,20 @@ pub(crate) async fn get_repo_pr_statuses(
 ) -> Result<Vec<BranchPrStatus>, String> {
     let include_merged = include_merged.unwrap_or(false);
     let state = state.inner().clone();
-    // Skip cache when include_merged is true (startup poll only)
+    // Skip cache when include_merged is true (startup poll only). The loader is
+    // async (network GraphQL), so this cache uses plain get/insert (TTL + bound)
+    // rather than coalescing get_with.
     if !include_merged
-        && let Some(cached) =
-            AppState::get_cached(&state.git_cache.github_status, &path, GITHUB_CACHE_TTL)
+        && let Some(cached) = state.git_cache.github_status.get(&path)
     {
-        return Ok(cached);
+        return Ok((*cached).clone());
     }
 
     let statuses = get_repo_pr_statuses_impl(&path, include_merged, &state).await?;
-    AppState::set_cached(
-        &state.git_cache.github_status,
-        path.clone(),
-        statuses.clone(),
-    );
+    state
+        .git_cache
+        .github_status
+        .insert(path.clone(), Arc::new(statuses.clone()));
     Ok(statuses)
 }
 
@@ -1622,16 +1621,12 @@ pub(crate) fn get_github_status_impl(path: &str) -> GitHubStatus {
 
 /// Cached github status for synchronous callers (MCP handlers, etc.).
 pub(crate) fn get_github_status_cached(state: &AppState, path: &str) -> GitHubStatus {
-    if let Some(cached) = AppState::get_cached(&state.git_cache.git_status, path, GIT_CACHE_TTL) {
-        return cached;
-    }
-    let status = get_github_status_impl(path);
-    AppState::set_cached(
-        &state.git_cache.git_status,
-        path.to_string(),
-        status.clone(),
-    );
-    status
+    let p = path.to_string();
+    (*state
+        .git_cache
+        .git_status
+        .get_with(path.to_string(), || Arc::new(get_github_status_impl(&p))))
+    .clone()
 }
 
 /// Tauri command wrapper — cached with GIT_CACHE_TTL to avoid spawning git subprocesses every poll.
@@ -1643,14 +1638,12 @@ pub(crate) async fn get_github_status(
 ) -> Result<GitHubStatus, String> {
     let state = state.inner().clone();
     tokio::task::spawn_blocking(move || {
-        if let Some(cached) =
-            AppState::get_cached(&state.git_cache.git_status, &path, GIT_CACHE_TTL)
-        {
-            return cached;
-        }
-        let status = get_github_status_impl(&path);
-        AppState::set_cached(&state.git_cache.git_status, path, status.clone());
-        status
+        let p = path.clone();
+        (*state
+            .git_cache
+            .git_status
+            .get_with(path, || Arc::new(get_github_status_impl(&p))))
+        .clone()
     })
     .await
     .map_err(|e| format!("Task failed: {e}"))

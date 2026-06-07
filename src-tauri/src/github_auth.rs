@@ -328,8 +328,9 @@ pub(crate) async fn github_diagnostics(
         .map(|entry| entry.key().clone())
         .collect();
 
-    // Count repos with cached GitHub status (successfully queried)
-    let repos_monitored = state.git_cache.github_status.len() as u32;
+    // Count repos with cached GitHub status (successfully queried).
+    // `entry_count` is eventually consistent — fine for a diagnostic gauge.
+    let repos_monitored = state.git_cache.github_status.entry_count() as u32;
 
     Ok(GitHubDiagnostics {
         circuit_breaker_open,
