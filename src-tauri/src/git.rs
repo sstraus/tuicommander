@@ -72,6 +72,29 @@ pub(crate) fn resolve_git_dir(repo_path: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Resolve the **common** git directory for a (possibly per-worktree) git dir.
+///
+/// In a linked worktree, `resolve_git_dir` returns the per-worktree gitdir
+/// (`.../.git/worktrees/<id>`), which holds only worktree-local state (HEAD,
+/// index, logs). Shared state — `config`, `refs/heads`, `refs/remotes`,
+/// `packed-refs` — lives in the common dir, located via the `commondir` file.
+/// For a normal (non-worktree) repo there is no `commondir` file and this
+/// returns `git_dir` unchanged.
+pub(crate) fn common_git_dir(git_dir: &Path) -> PathBuf {
+    match fs::read_to_string(git_dir.join("commondir")) {
+        Ok(content) => {
+            let rel = content.trim();
+            let p = if Path::new(rel).is_absolute() {
+                PathBuf::from(rel)
+            } else {
+                git_dir.join(rel)
+            };
+            p.canonicalize().unwrap_or(p)
+        }
+        Err(_) => git_dir.to_path_buf(),
+    }
+}
+
 /// Read the current branch name from .git/HEAD (file I/O, no subprocess).
 /// Returns None for detached HEAD or if the file can't be read.
 pub(crate) fn read_branch_from_head(repo_path: &Path) -> Option<String> {
@@ -91,8 +114,9 @@ pub(crate) fn read_branch_from_head(repo_path: &Path) -> Option<String> {
 /// Read the origin remote URL from .git/config (file I/O, no subprocess).
 /// Parses the `[remote "origin"]` section for the `url` key.
 pub(crate) fn read_remote_url(repo_path: &Path) -> Option<String> {
-    let git_dir = resolve_git_dir(repo_path)?;
-    let config_content = fs::read_to_string(git_dir.join("config")).ok()?;
+    // `config` lives in the common dir, not the per-worktree gitdir.
+    let common = common_git_dir(&resolve_git_dir(repo_path)?);
+    let config_content = fs::read_to_string(common.join("config")).ok()?;
     parse_git_config_remote_url(&config_content, "origin")
 }
 
@@ -1001,6 +1025,10 @@ pub(crate) fn sort_branches(branches: &mut [serde_json::Value]) {
 /// 2. Read `refs/remotes/origin/HEAD` symref (set by `git clone` or `git remote set-head`)
 /// 3. Return `None` if no default branch can be determined
 fn detect_default_branch(git_dir: &Path) -> Option<String> {
+    // refs/heads, refs/remotes and packed-refs all live in the common dir,
+    // which differs from `git_dir` inside a linked worktree.
+    let git_dir = &common_git_dir(git_dir);
+
     // 1. Check well-known candidate names in local refs
     if let Some(name) = MAIN_BRANCH_CANDIDATES.iter().find(|name| {
         git_dir.join("refs/heads").join(name).exists()
