@@ -1441,13 +1441,7 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
         .map_err(|e| format!("git for-each-ref failed: {e}"))?;
 
     // Collect merged branch names once so we can do O(1) lookups.
-    let merged_set: std::collections::HashSet<String> = match get_merged_branches_impl(path) {
-        Ok(names) => names.into_iter().collect(),
-        Err(e) => {
-            eprintln!("[warn] Failed to determine merged branches: {e}");
-            std::collections::HashSet::new()
-        }
-    };
+    let merged_set = merged_branch_set(path);
 
     let mut branches: Vec<BranchDetail> = out
         .stdout
@@ -1526,10 +1520,29 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
         })
         .collect();
 
-    // Compute base ahead/behind for local branches with tuicommander-base set.
-    // Uses --left-right to get both counts in a single subprocess per branch.
+    apply_base_ahead_behind_and_sort(path, &mut branches);
+    Ok(branches)
+}
+
+/// Set of branch names merged into the main branch (CLI), used for `is_merged`.
+/// Empty (with a warning) if the merge check fails. Shared by both adapters.
+pub(crate) fn merged_branch_set(path: &Path) -> std::collections::HashSet<String> {
+    match get_merged_branches_impl(path) {
+        Ok(names) => names.into_iter().collect(),
+        Err(e) => {
+            eprintln!("[warn] Failed to determine merged branches: {e}");
+            std::collections::HashSet::new()
+        }
+    }
+}
+
+/// Backend-agnostic tail for `branches_detail`: fill base ahead/behind for local
+/// branches that have a `tuicommander-base` set, then sort (main first, then
+/// alphabetical). Routed through the GitReads port so it auto-upgrades with the
+/// ahead/behind backend. Shared by the CLI and gix adapters for byte parity.
+pub(crate) fn apply_base_ahead_behind_and_sort(path: &Path, branches: &mut [BranchDetail]) {
     let path_str = path.to_string_lossy();
-    for branch in &mut branches {
+    for branch in branches.iter_mut() {
         if branch.is_remote {
             continue;
         }
@@ -1544,14 +1557,11 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
         }
     }
 
-    // Sort: main/primary branches first, then alphabetical
     branches.sort_by(|a, b| match (a.is_main, b.is_main) {
         (true, false) => std::cmp::Ordering::Less,
         (false, true) => std::cmp::Ordering::Greater,
         _ => a.name.cmp(&b.name),
     });
-
-    Ok(branches)
 }
 
 /// Parse `ahead` or `behind` count from a `%(upstream:track)` string.

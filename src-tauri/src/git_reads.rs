@@ -123,8 +123,95 @@ impl GixGitReads {
 
 impl GitReads for GixGitReads {
     fn branches_detail(&self, repo: &Path) -> Result<Vec<BranchDetail>, String> {
-        let _repo = self.repo(repo)?;
-        unimplemented!("gix branches_detail — Step 7")
+        use gix::bstr::ByteSlice;
+        let grepo = self.repo(repo)?;
+
+        // Current branch short name (None when HEAD is detached).
+        let head_short: Option<String> = grepo
+            .head_ref()
+            .map_err(|e| e.to_string())?
+            .map(|r| r.name().shorten().to_str_lossy().into_owned());
+
+        let merged = crate::git::merged_branch_set(repo);
+
+        let refs = grepo.references().map_err(|e| e.to_string())?;
+        let mut branches: Vec<BranchDetail> = Vec::new();
+        for r in refs.all().map_err(|e| e.to_string())? {
+            let Ok(mut reference) = r else { continue };
+
+            let full = reference.name().as_bstr().to_str_lossy().into_owned();
+            if !(full.starts_with("refs/heads/") || full.starts_with("refs/remotes/")) {
+                continue;
+            }
+            let name = reference.name().shorten().to_str_lossy().into_owned();
+            // Skip the synthetic origin/HEAD (and any */HEAD) pointer.
+            if name == "origin/HEAD" || name.ends_with("/HEAD") {
+                continue;
+            }
+            let is_remote = full.starts_with("refs/remotes/");
+            let is_current = !is_remote && head_short.as_deref() == Some(name.as_str());
+
+            // %(upstream:short) — local branches only.
+            let upstream: Option<String> = if is_remote {
+                None
+            } else {
+                reference
+                    .remote_tracking_ref_name(gix::remote::Direction::Fetch)
+                    .and_then(|res| res.ok())
+                    .map(|full_ref| full_ref.shorten().to_str_lossy().into_owned())
+            };
+
+            // ahead/behind vs upstream. Deferred to the ahead_behind backend
+            // (CLI until Step 9). Replicate git's %(upstream:track) quirk: a
+            // count of 0 renders as no token, i.e. None.
+            let (ahead, behind) = match &upstream {
+                Some(u) => match git_reads().ahead_behind(repo, &name, u) {
+                    Ok((a, b)) => ((a > 0).then_some(a), (b > 0).then_some(b)),
+                    Err(_) => (None, None),
+                },
+                None => (None, None),
+            };
+
+            let commit = reference.peel_to_commit().map_err(|e| e.to_string())?;
+            let last_commit_date = Some(
+                commit
+                    .time()
+                    .map_err(|e| e.to_string())?
+                    .format(gix::date::time::format::ISO8601)
+                    .map_err(|e| e.to_string())?,
+            );
+            let last_commit_author = {
+                let a = commit.author().map_err(|e| e.to_string())?;
+                let s = a.name.to_str_lossy().trim().to_string();
+                (!s.is_empty()).then_some(s)
+            };
+            let last_commit_message = {
+                let msg = commit.message().map_err(|e| e.to_string())?;
+                let s = msg.summary().to_str_lossy().trim().to_string();
+                (!s.is_empty()).then_some(s)
+            };
+
+            let is_merged = merged.contains(&name);
+            branches.push(BranchDetail {
+                is_main: crate::git::is_main_branch(&name),
+                name,
+                is_current,
+                is_remote,
+                is_merged,
+                ahead,
+                behind,
+                upstream,
+                last_commit_date,
+                last_commit_message,
+                last_commit_author,
+                base_ahead: None,
+                base_behind: None,
+                base_branch: None,
+            });
+        }
+
+        crate::git::apply_base_ahead_behind_and_sort(repo, &mut branches);
+        Ok(branches)
     }
 
     fn commit_log(
@@ -172,9 +259,6 @@ impl GitReads for GixGitReads {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Backend {
     Cli,
-    // Constructed once the first op is flipped to gix (Step 7); the dispatch
-    // already matches on it. Remove the allow when a default below is `Gix`.
-    #[allow(dead_code)]
     Gix,
 }
 
@@ -195,7 +279,8 @@ struct PerOpBackend {
 impl Default for PerOpBackend {
     fn default() -> Self {
         Self {
-            branches_detail: Backend::Cli,
+            // Flipped to gix in Step 7 (parity test: shootout_branches).
+            branches_detail: Backend::Gix,
             commit_log: Backend::Cli,
             graph_commits: Backend::Cli,
             ahead_behind: Backend::Cli,
@@ -346,6 +431,7 @@ pub(crate) mod test_fixtures {
         std::fs::write(path.join("b.txt"), "b1\n").unwrap();
         git(&["add", "b.txt"]);
         git(&["commit", "-m", "feat: second", "--no-verify"]);
+        let second = git(&["rev-parse", "HEAD"]).trim().to_string();
 
         // Feature branch, 1 commit ahead of main.
         git(&["checkout", "-b", "feature"]);
@@ -359,9 +445,12 @@ pub(crate) mod test_fixtures {
         git(&["add", "d.txt"]);
         git(&["commit", "-m", "feat: third on main", "--no-verify"]);
 
-        // Simulate a remote branch pointing at main's tip.
-        let head = git(&["rev-parse", "HEAD"]);
-        git(&["update-ref", "refs/remotes/origin/main", head.trim()]);
+        // A real remote (url=self) gives a default fetch refspec so upstream
+        // tracking resolves. origin/main points at the older 2nd commit, so
+        // `main` is 1 ahead / 0 behind its upstream (exercises the track quirk).
+        git(&["remote", "add", "origin", "."]);
+        git(&["update-ref", "refs/remotes/origin/main", &second]);
+        git(&["branch", "--set-upstream-to=origin/main", "main"]);
 
         // Dirty working tree: staged edit, unstaged edit, untracked file.
         std::fs::write(path.join("a.txt"), "a1\na2-staged\na3\n").unwrap();
@@ -375,8 +464,66 @@ pub(crate) mod test_fixtures {
 
 #[cfg(test)]
 mod tests {
-    use super::test_fixtures::fixture_repo;
+    use super::test_fixtures::{fixture_repo, run_git};
     use super::*;
+
+    /// Run a port op through BOTH adapters and return `(cli_result, gix_result)`.
+    macro_rules! shootout {
+        ($repo:expr, $method:ident ( $($arg:expr),* )) => {{
+            let cli = CliGitReads;
+            let gix = GixGitReads::new();
+            let a = GitReads::$method(&cli, $repo $(, $arg)*);
+            let b = GitReads::$method(&gix, $repo $(, $arg)*);
+            (a, b)
+        }};
+    }
+
+    /// Assert two `Result<T: Serialize, String>` are byte-equal once serialized,
+    /// requiring both to be `Ok`.
+    fn assert_ok_json_eq<T: serde::Serialize>(
+        a: &Result<T, String>,
+        b: &Result<T, String>,
+        what: &str,
+    ) {
+        let ja = serde_json::to_value(a.as_ref().unwrap_or_else(|e| panic!("cli {what}: {e}")));
+        let jb = serde_json::to_value(b.as_ref().unwrap_or_else(|e| panic!("gix {what}: {e}")));
+        assert_eq!(ja.unwrap(), jb.unwrap(), "{what}: gix != cli");
+    }
+
+    /// Step 7: gix branches_detail == CLI on local+remote branches, an upstream
+    /// with non-zero ahead, packed refs, and detached HEAD.
+    #[test]
+    fn shootout_branches() {
+        let (_guard, repo) = fixture_repo();
+
+        // Sanity: the gix path actually produces the expected upstream/ahead.
+        let gix = GixGitReads::new();
+        let bs = gix.branches_detail(&repo).unwrap();
+        let main = bs.iter().find(|b| b.name == "main").expect("main present");
+        assert_eq!(main.upstream.as_deref(), Some("origin/main"));
+        assert_eq!(main.ahead, Some(1), "main is 1 ahead of origin/main");
+        assert_eq!(main.behind, None);
+        assert!(bs.iter().any(|b| b.is_remote && b.name == "origin/main"));
+
+        // Loose refs.
+        let (a, b) = shootout!(&repo, branches_detail());
+        assert_ok_json_eq(&a, &b, "branches_detail (loose refs)");
+
+        // Packed refs.
+        run_git(&repo, &["pack-refs", "--all"]);
+        let (a, b) = shootout!(&repo, branches_detail());
+        assert_ok_json_eq(&a, &b, "branches_detail (packed refs)");
+
+        // Detached HEAD: no branch is current.
+        let head = run_git(&repo, &["rev-parse", "HEAD"]).trim().to_string();
+        run_git(&repo, &["checkout", "--detach", &head]);
+        let (a, b) = shootout!(&repo, branches_detail());
+        assert_ok_json_eq(&a, &b, "branches_detail (detached HEAD)");
+        assert!(
+            !b.unwrap().iter().any(|br| br.is_current),
+            "no current branch when detached"
+        );
+    }
 
     /// Step 6: gix can open the fixture repo and the handle cache reuses the
     /// `ThreadSafeRepository` for the same path.
