@@ -209,6 +209,16 @@ pub(crate) fn open_in_app(
                 c.arg("-a").arg("Warp").arg(&path);
                 c
             }
+            "iterm2" => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg("iTerm").arg(&path);
+                c
+            }
+            "tower" => {
+                let mut c = Command::new("open");
+                c.arg("-a").arg("Tower").arg(&path);
+                c
+            }
             "terminal" => {
                 let mut c = Command::new("open");
                 c.arg("-a").arg("Terminal").arg(&path);
@@ -365,10 +375,12 @@ pub(crate) fn detect_installed_ides() -> Vec<String> {
             ("github-desktop", "/Applications/GitHub Desktop.app"),
             ("fork", "/Applications/Fork.app"),
             ("gitkraken", "/Applications/GitKraken.app"),
+            ("tower", "/Applications/Tower.app"),
             ("ghostty", "/Applications/Ghostty.app"),
             ("wezterm", "/Applications/WezTerm.app"),
             ("alacritty", "/Applications/Alacritty.app"),
             ("warp", "/Applications/Warp.app"),
+            ("iterm2", "/Applications/iTerm.app"),
             // JetBrains .app bundles (CLI symlinks may not be on PATH when
             // launched from Finder; best-effort — Toolbox naming can vary)
             ("intellij", "/Applications/IntelliJ IDEA.app"),

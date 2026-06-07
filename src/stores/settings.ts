@@ -82,11 +82,13 @@ export type IdeType =
 	| "alacritty"
 	| "kitty"
 	| "warp"
+	| "iterm2"
 	| "sourcetree"
 	| "github-desktop"
 	| "fork"
 	| "gitkraken"
 	| "smerge"
+	| "tower"
 	| "intellij"
 	| "pycharm"
 	| "webstorm"
@@ -130,11 +132,13 @@ export const IDE_NAMES: Record<IdeType, string> = {
 	alacritty: "Alacritty",
 	kitty: "Kitty",
 	warp: "Warp",
+	iterm2: "iTerm2",
 	sourcetree: "Sourcetree",
 	"github-desktop": "GitHub Desktop",
 	fork: "Fork",
 	gitkraken: "GitKraken",
 	smerge: "Sublime Merge",
+	tower: "Tower",
 	intellij: "IntelliJ IDEA",
 	pycharm: "PyCharm",
 	webstorm: "WebStorm",
@@ -183,6 +187,8 @@ import webstormSvg from "../assets/icons/webstorm.svg";
 import weztermSvg from "../assets/icons/wezterm.svg";
 import windsurfSvg from "../assets/icons/windsurf.svg";
 import xcodeSvg from "../assets/icons/xcode.svg";
+import iterm2Svg from "../assets/icons/iterm2.svg";
+import towerSvg from "../assets/icons/tower.svg";
 import zedSvg from "../assets/icons/zed.svg";
 
 /** IDE icon paths (SVG) */
@@ -198,11 +204,13 @@ export const IDE_ICON_PATHS: Record<IdeType, string> = {
 	alacritty: alacritySvg,
 	kitty: kittySvg,
 	warp: warpSvg,
+	iterm2: iterm2Svg,
 	sourcetree: sourcetreeSvg,
 	"github-desktop": githubDesktopSvg,
 	fork: forkSvg,
 	gitkraken: gitkrakenSvg,
 	smerge: smergeSvg,
+	tower: towerSvg,
 	intellij: intellijSvg,
 	pycharm: pycharmSvg,
 	webstorm: webstormSvg,
@@ -218,41 +226,6 @@ export const IDE_ICON_PATHS: Record<IdeType, string> = {
 	terminal: terminalSvg,
 	finder: finderSvg,
 	editor: editorSvg,
-};
-
-/** IDE icons (emoji fallbacks for text-only contexts) */
-export const IDE_ICONS: Record<IdeType, string> = {
-	vscode: "🔵",
-	cursor: "🟣",
-	zed: "⚡",
-	windsurf: "🌊",
-	neovim: "🟢",
-	xcode: "🔨",
-	ghostty: "👻",
-	wezterm: "🟪",
-	alacritty: "🔳",
-	kitty: "🐱",
-	warp: "🔷",
-	sourcetree: "🌳",
-	"github-desktop": "🐙",
-	fork: "🔱",
-	gitkraken: "🦑",
-	smerge: "🔀",
-	intellij: "IJ",
-	pycharm: "PC",
-	webstorm: "WS",
-	goland: "GO",
-	clion: "CL",
-	phpstorm: "PS",
-	rubymine: "RM",
-	rider: "RD",
-	datagrip: "DG",
-	rustrover: "RR",
-	"android-studio": "AS",
-	fleet: "FL",
-	terminal: ">_",
-	finder: "📁",
-	editor: "$_",
 };
 
 /** IDE categories */
@@ -272,8 +245,8 @@ export const IDE_CATEGORIES: Record<string, IdeType[]> = {
 		"android-studio",
 		"fleet",
 	],
-	terminals: ["ghostty", "wezterm", "alacritty", "kitty", "warp"],
-	git: ["sourcetree", "github-desktop", "fork", "gitkraken", "smerge"],
+	terminals: ["ghostty", "wezterm", "alacritty", "kitty", "warp", "iterm2"],
+	git: ["sourcetree", "github-desktop", "fork", "gitkraken", "smerge", "tower"],
 	utilities: ["terminal", "finder"],
 };
 

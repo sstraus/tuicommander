@@ -7,7 +7,7 @@ Open settings with `Cmd+,`. Settings are organized into tabs.
 | Setting | Description |
 |---------|-------------|
 | **Language** | UI language |
-| **Default IDE** | IDE for "Open in..." actions. Only installed apps are offered, grouped by category: Code Editors (VS Code, Cursor, Zed, Windsurf, Neovim, Xcode, `$EDITOR`), JetBrains (IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, PhpStorm, RubyMine, Rider, DataGrip, RustRover, Android Studio, Fleet), Terminals (Ghostty, WezTerm, Alacritty, Kitty, Warp), Git Tools (Sourcetree, GitHub Desktop, Fork, GitKraken, Sublime Merge), System (Terminal, Finder) |
+| **Default IDE** | IDE for "Open in..." actions. Only installed apps are offered, grouped by category: Code Editors (VS Code, Cursor, Zed, Windsurf, Neovim, Xcode, `$EDITOR`), JetBrains (IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, PhpStorm, RubyMine, Rider, DataGrip, RustRover, Android Studio, Fleet), Terminals (Ghostty, WezTerm, Alacritty, Kitty, Warp, iTerm2), Git Tools (Sourcetree, GitHub Desktop, Fork, GitKraken, Sublime Merge, Tower), System (Terminal, Finder) |
 | **Shell** | Custom shell path (e.g., `/bin/zsh`, `/usr/local/bin/fish`). Leave empty for system default. |
 | **Confirm before quitting** | Show dialog when closing app with active terminals |
 | **Confirm before closing tab** | Ask before closing terminal tab |
