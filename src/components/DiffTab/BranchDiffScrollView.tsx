@@ -26,6 +26,7 @@ export const BranchDiffScrollView: Component<BranchDiffScrollViewProps> = (props
 	const [error, setError] = createSignal<string | null>(null);
 
 	// Reactively reload when git state changes
+	let diffGen = 0;
 	createEffect(() => {
 		const repoPath = props.repoPath;
 		if (!repoPath) return;
@@ -34,15 +35,20 @@ export const BranchDiffScrollView: Component<BranchDiffScrollViewProps> = (props
 
 		if (!diff()) setLoading(true);
 		setError(null);
+		// A revision-bump burst can fire several loads; only the newest may settle
+		// state, so a slow earlier fetch can't overwrite a fresher diff.
+		const gen = ++diffGen;
 		// Fetch both unstaged and staged diffs, concatenate for a full picture
 		Promise.all([repo.getDiff(repoPath), repo.getDiff(repoPath, "staged")])
 			.then(([unstaged, staged]) => {
+				if (gen !== diffGen) return;
 				// Concatenate: staged first, then unstaged (avoids duplicate files
 				// since git diff and git diff --cached don't overlap)
 				setDiff([staged, unstaged].filter(Boolean).join("\n"));
 				setLoading(false);
 			})
 			.catch((err) => {
+				if (gen !== diffGen) return;
 				setError(String(err));
 				setLoading(false);
 			});

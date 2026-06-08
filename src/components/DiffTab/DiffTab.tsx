@@ -19,6 +19,7 @@ import { DiffViewer } from "../ui";
 import { BranchDiffScrollView } from "./BranchDiffScrollView";
 import s from "./DiffTab.module.css";
 import { buildPartialPatch, extractHunks, extractSelectedLines } from "./diffPatch";
+import { diffLineCount, isDiffTooLarge } from "./diffSize";
 
 export interface DiffTabProps {
 	tabId: string;
@@ -65,9 +66,8 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 	// Pathological single-file diffs (full-file rewrites) would render thousands
 	// of DOM rows — @git-diff-view has no virtualization. Guard above this line
 	// count and let the user opt in. (perf pass 2026-06-07)
-	const LARGE_DIFF_LINES = 3000;
-	const diffLineCount = createMemo(() => (diff() ? diff().split("\n").length : 0));
-	const tooLarge = createMemo(() => diffLineCount() > LARGE_DIFF_LINES);
+	const diffLines = createMemo(() => diffLineCount(diff()));
+	const tooLarge = createMemo(() => isDiffTooLarge(diff()));
 	const [forceRenderLarge, setForceRenderLarge] = createSignal(false);
 
 	// Clear selection when diff changes (and drop the DOM row-mapping cache —
@@ -124,6 +124,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 	});
 
 	// Load file diff when props change or the repo revision bumps (git index/HEAD changed)
+	let diffGen = 0;
 	createEffect(() => {
 		const repoPath = props.repoPath;
 		const filePath = props.filePath;
@@ -138,15 +139,20 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 		if (!diff()) setLoading(true);
 		setError(null);
 
+		// A revision-bump burst can fire several loads; only the newest may settle
+		// state, so stale awaits don't overwrite the current diff.
+		const gen = ++diffGen;
 		(async () => {
 			try {
 				const diffContent = await repo.getFileDiff(repoPath, filePath, scope, props.untracked);
+				if (gen !== diffGen) return;
 				setDiff(diffContent);
 			} catch (err) {
+				if (gen !== diffGen) return;
 				setError(String(err));
 				setDiff("");
 			} finally {
-				setLoading(false);
+				if (gen === diffGen) setLoading(false);
 			}
 		})();
 	});
@@ -156,7 +162,10 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 		diff();
 		uiStore.state.diffViewMode;
 		if (!searchVisible() || !lastSearchTerm) return;
-		requestAnimationFrame(() => rerunSearch());
+		// Cancel a still-pending RAF on re-run and on unmount (Solid runs this
+		// onCleanup before each re-execution and on disposal).
+		const raf = requestAnimationFrame(() => rerunSearch());
+		onCleanup(() => cancelAnimationFrame(raf));
 	});
 
 	function rerunSearch() {
@@ -370,7 +379,9 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 	createEffect(() => {
 		selectedLines();
 		selectedHunkIdx();
-		requestAnimationFrame(() => applyLineSelectionStyles());
+		// Cancel a still-pending RAF on re-run and on unmount.
+		const raf = requestAnimationFrame(() => applyLineSelectionStyles());
+		onCleanup(() => cancelAnimationFrame(raf));
 	});
 
 	function handleRestoreSelected() {
@@ -561,7 +572,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 						fallback={
 							<div class={s.largeDiffNotice}>
 								<div>
-									{t("diffTab.largeDiffTitle", "This diff is large")} ({diffLineCount().toLocaleString()}{" "}
+									{t("diffTab.largeDiffTitle", "This diff is large")} ({diffLines().toLocaleString()}{" "}
 									{t("diffTab.lines", "lines")})
 								</div>
 								<button class={s.largeDiffBtn} onClick={() => setForceRenderLarge(true)}>
