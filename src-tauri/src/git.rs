@@ -3251,6 +3251,54 @@ mod tests {
         );
     }
 
+    /// Story 001-92d0: in a LINKED worktree, `.git` is a file and shared data
+    /// (config, refs) lives in the common dir. A self-contained regression that
+    /// builds a real worktree and asserts `read_remote_url` + `detect_default_branch`
+    /// resolve via `common_git_dir` (would return None on pre-fix code).
+    #[test]
+    fn worktree_common_dir_resolves_remote_and_default_branch() {
+        use std::process::Command;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let main = dir.path().join("main");
+        std::fs::create_dir(&main).unwrap();
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            let out = Command::new("git")
+                .current_dir(cwd)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "T")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "T")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .unwrap_or_else(|e| panic!("git {args:?}: {e}"));
+            assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+        };
+        git(&main, &["init", "-b", "main"]);
+        git(&main, &["config", "core.hooksPath", "/dev/null"]);
+        git(&main, &["remote", "add", "origin", "git@github.com:acme/widget.git"]);
+        std::fs::write(main.join("a.txt"), "a\n").unwrap();
+        git(&main, &["add", "a.txt"]);
+        git(&main, &["commit", "-m", "init", "--no-verify"]);
+
+        // Linked worktree: its `.git` is a FILE pointing at the per-worktree gitdir.
+        let wt = dir.path().join("wt");
+        git(&main, &["worktree", "add", "-b", "feature", wt.to_str().unwrap()]);
+        assert!(wt.join(".git").is_file(), "linked worktree .git should be a file");
+
+        // Pre-fix these would read the per-worktree gitdir (no config/refs) → None.
+        assert_eq!(
+            read_remote_url(&wt).as_deref(),
+            Some("git@github.com:acme/widget.git"),
+            "origin URL must resolve from inside a worktree (common dir)"
+        );
+        let gitdir = resolve_git_dir(&wt).expect("worktree gitdir");
+        assert_eq!(
+            detect_default_branch(&gitdir).as_deref(),
+            Some("main"),
+            "default branch must resolve from inside a worktree (common dir)"
+        );
+    }
+
     #[test]
     fn test_detect_default_branch_returns_none_for_non_git() {
         let tmp = std::env::temp_dir();
