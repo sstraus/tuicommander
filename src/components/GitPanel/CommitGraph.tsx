@@ -1,4 +1,4 @@
-import { type Component, createEffect, createSignal, on, onCleanup } from "solid-js";
+import { type Component, createEffect, createMemo, createSignal, on, onCleanup } from "solid-js";
 import s from "./CommitGraph.module.css";
 
 // ---------------------------------------------------------------------------
@@ -35,6 +35,9 @@ const LANE_WIDTH = 16;
 
 /** Commit dot radius */
 const DOT_RADIUS = 4;
+
+/** Half-width of the horizontal crossbar marking where a lane starts */
+const LANE_CAP_HALF_WIDTH = 4;
 
 /** 8 lane colors matching the style guide palette */
 const COLORS = [
@@ -79,6 +82,24 @@ function drawConnection(ctx: Ctx2D, conn: Connection): void {
 	ctx.stroke();
 }
 
+/**
+ * Horizontal cap marking where a lane starts — its chronological foot, the
+ * point where the colored first-parent line bottoms out and bends into another
+ * lane below (a cell no commit occupies). A short crossbar perpendicular to the
+ * lane, visually distinct from the vertical line.
+ */
+function drawLaneStartCap(ctx: Ctx2D, col: number, row: number, colorIndex: number): void {
+	const x = col * LANE_WIDTH + LANE_WIDTH / 2;
+	const y = row * ROW_HEIGHT + ROW_HEIGHT / 2;
+
+	ctx.strokeStyle = COLORS[colorIndex % COLORS.length];
+	ctx.lineWidth = 2;
+	ctx.beginPath();
+	ctx.moveTo(x - LANE_CAP_HALF_WIDTH, y);
+	ctx.lineTo(x + LANE_CAP_HALF_WIDTH, y);
+	ctx.stroke();
+}
+
 function drawDot(ctx: Ctx2D, node: GraphNode): void {
 	const x = node.column * LANE_WIDTH + LANE_WIDTH / 2;
 	const y = node.row * ROW_HEIGHT + ROW_HEIGHT / 2;
@@ -107,9 +128,11 @@ export const CommitGraph: Component<CommitGraphProps> = (props) => {
 	// Offscreen canvas holding the full pre-rendered graph (signal so Effect 2 re-runs on rebuild)
 	const [offscreen, setOffscreen] = createSignal<OffscreenCanvas | null>(null);
 
-	const maxCol = () => (props.nodes.length === 0 ? 0 : props.nodes.reduce((max, n) => Math.max(max, n.column), 0));
+	const maxCol = createMemo(() =>
+		props.nodes.length === 0 ? 0 : props.nodes.reduce((max, n) => Math.max(max, n.column), 0),
+	);
 
-	const width = () => (maxCol() + 1) * LANE_WIDTH;
+	const width = createMemo(() => (maxCol() + 1) * LANE_WIDTH);
 
 	// --- Effect 1: rebuild offscreen canvas when nodes change ---
 	createEffect(
@@ -136,11 +159,36 @@ export const CommitGraph: Component<CommitGraphProps> = (props) => {
 
 				ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-				// Draw all connections first (lines behind dots)
+				// Draw all connections first (lines behind dots), and find where
+				// each lane starts — the chronological foot, where a first-parent
+				// line bottoms out at a cell no commit occupies (it bends into
+				// another lane below).
+				const occupied = new Set<string>();
+				for (const node of nodes) {
+					occupied.add(`${node.column}:${node.row}`);
+				}
+				const laneStarts = new Map<string, number>();
 				for (const node of nodes) {
 					for (const conn of node.connections) {
 						drawConnection(ctx, conn);
+						// A line's visual bottom is (to_col, to_row). When no commit
+						// occupies that cell, the line dangles there — that's a lane
+						// foot, where the lane starts. Holds for straight first-parent
+						// edges and merge curves alike (a curve ending on a real
+						// parent dot is occupied, so it's correctly skipped).
+						const foot = `${conn.to_col}:${conn.to_row}`;
+						if (!occupied.has(foot)) {
+							laneStarts.set(foot, conn.color_index);
+						}
 					}
+				}
+
+				// DEFERRED (2026-06-08) — root commits (no parents) are also lane
+				// starts, but their foot coincides with the dot; skipped until a
+				// visible case needs it.
+				for (const [foot, colorIndex] of laneStarts) {
+					const [col, row] = foot.split(":").map(Number);
+					drawLaneStartCap(ctx, col, row, colorIndex);
 				}
 
 				// Draw commit dots on top
@@ -169,9 +217,15 @@ export const CommitGraph: Component<CommitGraphProps> = (props) => {
 				const w = width();
 				const h = props.viewportHeight;
 
-				// Resize visible canvas backing store for retina
-				canvas.width = w * dpr;
-				canvas.height = h * dpr;
+				// Resize visible canvas backing store for retina — only when it
+				// actually changed, since assigning width/height reallocates and
+				// clears the buffer (this Effect runs on every scroll frame)
+				const bw = w * dpr;
+				const bh = h * dpr;
+				if (canvas.width !== bw || canvas.height !== bh) {
+					canvas.width = bw;
+					canvas.height = bh;
+				}
 				ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 				ctx.clearRect(0, 0, w, h);
 
