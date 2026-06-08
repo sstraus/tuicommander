@@ -116,6 +116,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let visibilityObserver: IntersectionObserver | undefined;
 	let lastResizeCols = 0;
 	let lastResizeRows = 0;
+	// Scrollbar track height (= canvas logical height), cached at remeasure so the
+	// per-frame scroll path never reads scrollbarRef.clientHeight (a layout-forcing
+	// read — same class as the documented getBoundingClientRect-per-frame P1).
+	let scrollbarTrackHeight = 0;
 	let transport: TerminalTransport | undefined;
 	let invokeRef: ((cmd: string, args: Record<string, unknown>) => Promise<unknown>) | undefined;
 	let rafId: number | undefined;
@@ -324,6 +328,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		if (cols <= 0 || rows <= 0) return;
 		const logicalW = cols * m.cellWidth + GUTTER_PX;
 		const logicalH = rows * m.cellHeight;
+		// Cache the scrollbar track height here (resize time) so the per-frame path
+		// uses this instead of reading scrollbarRef.clientHeight every frame.
+		scrollbarTrackHeight = logicalH;
 		canvasRef.width = logicalW * dpr;
 		canvasRef.height = logicalH * dpr;
 		ctx.scale(dpr, dpr);
@@ -728,8 +735,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	function updateScrollbar(frame: DecodedFrame) {
 		if (!scrollbarRef || !scrollThumbRef) return;
 		const total = frame.historySize + (frame.screenRows || lastResizeRows || 24);
-		const m = metrics();
-		const visible = m ? lastResizeRows || Math.floor(canvasRef.clientHeight / m.cellHeight) : lastResizeRows || 24;
+		// visible rows = the authoritative resize row count — no per-frame
+		// canvasRef.clientHeight read (layout-forcing).
+		const visible = lastResizeRows || 24;
 
 		if (frame.historySize === 0) {
 			scrollbarRef.style.display = "none";
@@ -737,9 +745,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		}
 		scrollbarRef.style.display = "block";
 
+		// Track height comes from the resize-time cache, not scrollbarRef.clientHeight.
+		const trackH = scrollbarTrackHeight;
 		const thumbRatio = Math.min(1, visible / total);
-		const thumbHeight = Math.max(20, scrollbarRef.clientHeight * thumbRatio);
-		const scrollRange = scrollbarRef.clientHeight - thumbHeight;
+		const thumbHeight = Math.max(20, trackH * thumbRatio);
+		const scrollRange = trackH - thumbHeight;
 		const scrollPos = frame.historySize > 0 ? (1 - frame.displayOffset / frame.historySize) * scrollRange : scrollRange;
 
 		scrollThumbRef.style.height = `${thumbHeight}px`;
@@ -768,7 +778,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		if (key === lastScrollbarMarksKey) return;
 		lastScrollbarMarksKey = key;
 
-		const trackH = scrollbarRef.clientHeight;
+		const trackH = scrollbarTrackHeight;
 		let html = "";
 		if (showBlocks) {
 			for (const block of blocks) {
@@ -973,7 +983,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 	function finishSettle() {
 		settleTimer = 0;
-		if (settlePending == null) return;
+		// A settle timer can fire after unmount; the row cache is released by then,
+		// so endSmoothScroll must not run.
+		if (!alive || settlePending == null) return;
 		settlePending = null;
 		scrollPosF = null;
 		endSmoothScroll();
@@ -1037,7 +1049,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	}
 
 	function renderSmooth() {
-		if (scrollPosF == null || !currentFrame) return;
+		// A queued smooth-render RAF can fire after unmount; the row cache it reads
+		// is released by then, so bail before touching it.
+		if (!alive || scrollPosF == null || !currentFrame) return;
 		const m = metrics();
 		if (!m) return;
 		const ch = m.cellHeight;
@@ -1082,7 +1096,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				start,
 				count: ROW_CACHE_CHUNK,
 			})) as number[] | undefined;
-			if (!res) return;
+			// Unmounted during the await: the row cache is released, so don't
+			// repopulate it or schedule a render against it.
+			if (!alive) return;
+			// Guard the shape, not just falsiness: a wrong-typed/object response
+			// would throw in the Uint8Array constructor if the command ever changes.
+			if (!Array.isArray(res)) return;
 			const decoded = decodeStyledRange(new Uint8Array(res).buffer);
 			if (!decoded) return;
 			for (const { abs, row } of decoded.rows) rowCache.set(abs, row);
@@ -1272,8 +1291,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// by absolute index). Absolute indices are stable as output grows, so we keep
 		// the cache through generation; it's reset at gesture start to drop any rows
 		// staled by scrollback eviction. Also pump a live render if a gesture is active.
-		for (const row of frame.rows) {
-			rowCache.set(frame.historySize - frame.displayOffset + row.index, row);
+		//
+		// During a fast gesture the backend frame trails the live scroll position by
+		// several lines, so its rows are keyed to a lagging displayOffset. Seeding them
+		// then would overwrite cache entries the smooth renderer is currently painting
+		// (brief flicker / wrong overscan). Only seed when at rest or when the backend
+		// has caught up to our integer offset.
+		if (scrollPosF == null || frame.displayOffset === Math.floor(scrollPosF)) {
+			for (const row of frame.rows) {
+				rowCache.set(frame.historySize - frame.displayOffset + row.index, row);
+			}
 		}
 		if (settlePending != null && frame.displayOffset === settlePending) {
 			// Backend reached the bottom (offset 0) — hand off to normal rendering
@@ -2646,6 +2673,13 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			cancelAnimationFrame(rafId);
 			rafId = undefined;
 		}
+		// Smooth-scroll RAF + settle timer also outlive unmount and run against the
+		// released row cache — cancel both.
+		if (smoothRafId) {
+			cancelAnimationFrame(smoothRafId);
+			smoothRafId = 0;
+		}
+		clearSettlePending();
 		clearTimeout(resizeDebounce);
 		resizeObserver?.disconnect();
 		visibilityObserver?.disconnect();
