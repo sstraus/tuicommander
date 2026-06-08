@@ -1495,11 +1495,15 @@ const GIT_CACHE_CAPACITY: u64 = 256;
 
 /// Build a git cache with the standard capacity and the given TTL.
 ///
-/// `ttl_fallbacks` is incremented whenever an entry is evicted because its TTL
-/// expired (`RemovalCause::Expired`) — i.e. the event-driven watcher did NOT
-/// invalidate it first and we fell back to the timeout. Explicit invalidations
-/// (the normal watcher path) do not count. A rising counter is a signal the
-/// watcher missed events for some repo.
+/// `ttl_fallbacks` counts entries evicted by TTL expiry (`RemovalCause::Expired`).
+/// This is NOT a reliable "watcher missed an event" signal: an idle repo with no
+/// file changes produces no watcher event, so its entry is never invalidated and
+/// always lives out the full TTL before expiring — the normal, correct end of a
+/// cached entry's life. Because expiry is keyed on write time, a single fan-out
+/// load of N repos makes all N entries expire together one TTL later. The counter
+/// is therefore dominated by benign idle expiry; it's surfaced in the watchdog
+/// snapshot only as a coarse aggregate eviction trend, never logged per entry
+/// (that produced one DEBUG line per repo every TTL — pure noise).
 pub(crate) fn build_git_cache<T: Send + Sync + 'static>(
     ttl: Duration,
     ttl_fallbacks: Arc<AtomicU64>,
@@ -1507,13 +1511,9 @@ pub(crate) fn build_git_cache<T: Send + Sync + 'static>(
     moka::sync::Cache::builder()
         .max_capacity(GIT_CACHE_CAPACITY)
         .time_to_live(ttl)
-        .eviction_listener(move |key, _v, cause| {
+        .eviction_listener(move |_key, _v, cause| {
             if cause == moka::notification::RemovalCause::Expired {
                 ttl_fallbacks.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                tracing::debug!(
-                    repo = %key,
-                    "git cache TTL fallback — watcher may have missed an event"
-                );
             }
         })
         .build()
