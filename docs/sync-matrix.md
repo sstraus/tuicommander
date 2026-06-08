@@ -268,7 +268,8 @@ When modifying git operations, worktree logic, or GitHub API:
 
 | File | What to update |
 |------|----------------|
-| `docs/backend/git.md` | Git command lifecycle, diff parsing |
+| `docs/backend/git.md` | Git command lifecycle, diff parsing, **GitReads port (gix vs CLI op split)**, moka cache |
+| `src-tauri/src/git_reads.rs` | **GitReads port**: flipping an op to gix requires a green byte-parity shootout test first |
 | `docs/backend/github.md` | PR fetching, CI checks, GraphQL |
 | `docs/user-guide/worktrees.md` | Worktree workflow, configuration |
 | `docs/user-guide/github-integration.md` | PR monitoring, CI rings |

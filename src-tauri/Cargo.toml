@@ -107,6 +107,16 @@ serde_json = "1"
 portable-pty = "0.9"
 tokio = { version = "1", features = ["full"] }
 dashmap = "6"
+moka = { version = "0.12", features = ["sync"] }
+gix = { version = "0.84", default-features = false, features = [
+    "sha1",
+    "revision",
+    "status",
+    "blame",
+    "blob-diff",
+    "dirwalk",
+    "parallel",
+] }
 parking_lot = "0.12"
 regex = "1"
 lazy_static = "1"

@@ -1475,33 +1475,76 @@ impl RelayState {
     }
 }
 
+/// A TTL + bounded + coalescing cache keyed by repo path.
+///
+/// `moka::sync::Cache` is used (not `future::Cache`) because every loader is
+/// blocking work (git subprocess / in-process gix). `get_with`/`try_get_with`
+/// coalesce concurrent identical loads to a single computation — this is what
+/// collapses the `repo-changed` fan-out. Values are wrapped in `Arc` so cache
+/// hits and the coalesced result are cheap to share.
+pub(crate) type GitCache<T> = moka::sync::Cache<String, Arc<T>>;
+
+/// Max entries per git cache. Repo count is small; this is a safety bound.
+const GIT_CACHE_CAPACITY: u64 = 256;
+
+/// Build a git cache with the standard capacity and the given TTL.
+///
+/// `ttl_fallbacks` is incremented whenever an entry is evicted because its TTL
+/// expired (`RemovalCause::Expired`) — i.e. the event-driven watcher did NOT
+/// invalidate it first and we fell back to the timeout. Explicit invalidations
+/// (the normal watcher path) do not count. A rising counter is a signal the
+/// watcher missed events for some repo.
+pub(crate) fn build_git_cache<T: Send + Sync + 'static>(
+    ttl: Duration,
+    ttl_fallbacks: Arc<AtomicU64>,
+) -> GitCache<T> {
+    moka::sync::Cache::builder()
+        .max_capacity(GIT_CACHE_CAPACITY)
+        .time_to_live(ttl)
+        .eviction_listener(move |key, _v, cause| {
+            if cause == moka::notification::RemovalCause::Expired {
+                ttl_fallbacks.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                tracing::debug!(
+                    repo = %key,
+                    "git cache TTL fallback — watcher may have missed an event"
+                );
+            }
+        })
+        .build()
+}
+
 /// TTL caches for git and GitHub query results, keyed by repo path.
 pub(crate) struct GitCacheState {
-    pub(crate) repo_info: DashMap<String, (crate::git::RepoInfo, Instant)>,
-    pub(crate) merged_branches: DashMap<String, (Vec<String>, Instant)>,
-    pub(crate) branches_detail: DashMap<String, (Vec<crate::git::BranchDetail>, Instant)>,
-    pub(crate) github_status: DashMap<String, (Vec<crate::github::BranchPrStatus>, Instant)>,
-    pub(crate) git_status: DashMap<String, (crate::github::GitHubStatus, Instant)>,
-    pub(crate) git_panel_context: DashMap<String, (crate::git::GitPanelContext, Instant)>,
-    pub(crate) worktree_paths:
-        DashMap<String, (std::collections::HashMap<String, String>, Instant)>,
+    pub(crate) repo_info: GitCache<crate::git::RepoInfo>,
+    pub(crate) merged_branches: GitCache<Vec<String>>,
+    pub(crate) branches_detail: GitCache<Vec<crate::git::BranchDetail>>,
+    pub(crate) github_status: GitCache<Vec<crate::github::BranchPrStatus>>,
+    pub(crate) git_status: GitCache<crate::github::GitHubStatus>,
+    pub(crate) git_panel_context: GitCache<crate::git::GitPanelContext>,
+    pub(crate) worktree_paths: GitCache<std::collections::HashMap<String, String>>,
     /// Repos that returned null from GitHub GraphQL (not found / no access).
     /// Keyed by "owner/name", value is the cooldown expiry time.
     /// Excluded from batch queries until the cooldown expires (1 hour).
+    /// NOT a TTL value cache — kept as a plain `DashMap` set with custom expiry.
     pub(crate) github_repo_cooldown: DashMap<String, Instant>,
+    /// Count of entries evicted by TTL expiry (watcher-miss observability).
+    /// Shared across all git caches; surfaced in the cpu_watchdog snapshot.
+    pub(crate) ttl_fallbacks: Arc<AtomicU64>,
 }
 
 impl GitCacheState {
     pub(crate) fn new() -> Self {
+        let ttl_fallbacks = Arc::new(AtomicU64::new(0));
         Self {
-            repo_info: DashMap::new(),
-            merged_branches: DashMap::new(),
-            branches_detail: DashMap::new(),
-            github_status: DashMap::new(),
-            git_status: DashMap::new(),
-            git_panel_context: DashMap::new(),
-            worktree_paths: DashMap::new(),
+            repo_info: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            merged_branches: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            branches_detail: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            github_status: build_git_cache(GITHUB_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            git_status: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            git_panel_context: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
+            worktree_paths: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
             github_repo_cooldown: DashMap::new(),
+            ttl_fallbacks,
         }
     }
 
@@ -1511,26 +1554,26 @@ impl GitCacheState {
     /// don't exist on GitHub.  Only explicit user actions (OAuth login, full reset)
     /// should clear cooldowns.
     pub(crate) fn clear_all(&self) {
-        self.repo_info.clear();
-        self.merged_branches.clear();
-        self.branches_detail.clear();
-        self.github_status.clear();
-        self.git_status.clear();
-        self.git_panel_context.clear();
-        self.worktree_paths.clear();
+        self.repo_info.invalidate_all();
+        self.merged_branches.invalidate_all();
+        self.branches_detail.invalidate_all();
+        self.github_status.invalidate_all();
+        self.git_status.invalidate_all();
+        self.git_panel_context.invalidate_all();
+        self.worktree_paths.invalidate_all();
     }
 
     /// Invalidate caches for a specific repo path.
     pub(crate) fn invalidate_repo(&self, path: &str) {
-        self.repo_info.remove(path);
-        self.merged_branches.remove(path);
-        self.branches_detail.remove(path);
+        self.repo_info.invalidate(path);
+        self.merged_branches.invalidate(path);
+        self.branches_detail.invalidate(path);
         // github_status (remote PR/CI data) is NOT invalidated here — local git
         // changes don't affect remote PRs. The poller and head-changed → pollRepo
         // handle remote refreshes on their own cadence.
-        self.git_status.remove(path);
-        self.git_panel_context.remove(path);
-        self.worktree_paths.remove(path);
+        self.git_status.invalidate(path);
+        self.git_panel_context.invalidate(path);
+        self.worktree_paths.invalidate(path);
     }
 }
 
@@ -1549,27 +1592,6 @@ pub(crate) fn purge_dead_ws_clients(
 }
 
 impl AppState {
-    /// Look up a cached value if it exists and hasn't expired.
-    pub(crate) fn get_cached<T: Clone>(
-        map: &DashMap<String, (T, Instant)>,
-        key: &str,
-        ttl: Duration,
-    ) -> Option<T> {
-        map.get(key).and_then(|entry| {
-            let (value, stored_at) = entry.value();
-            if stored_at.elapsed() < ttl {
-                Some(value.clone())
-            } else {
-                None
-            }
-        })
-    }
-
-    /// Store a value in a TTL cache.
-    pub(crate) fn set_cached<T>(map: &DashMap<String, (T, Instant)>, key: String, value: T) {
-        map.insert(key, (value, Instant::now()));
-    }
-
     /// Invalidate all operation caches (git + GitHub).
     pub(crate) fn clear_caches(&self) {
         self.git_cache.clear_all();
@@ -3264,54 +3286,107 @@ mod tests {
         assert_eq!(config.font_family, "Fira Code");
     }
 
-    // --- TTL cache tests ---
+    // --- moka git cache tests (Step 1) ---
 
-    #[test]
-    fn test_cache_hit_within_ttl() {
-        let map: DashMap<String, (String, Instant)> = DashMap::new();
-        AppState::set_cached(&map, "key1".to_string(), "value1".to_string());
-
-        let result = AppState::get_cached(&map, "key1", Duration::from_secs(60));
-        assert_eq!(result, Some("value1".to_string()));
+    fn sample_repo_info(path: &str, name: &str) -> crate::git::RepoInfo {
+        crate::git::RepoInfo {
+            path: path.to_string(),
+            name: name.to_string(),
+            initials: name[..1].to_uppercase(),
+            branch: "main".to_string(),
+            status: "clean".to_string(),
+            is_git_repo: true,
+        }
     }
 
+    /// MANDATORY Step 1 behavior: 50 concurrent `get_with` on one missing key
+    /// invoke the loader exactly once (coalescing collapses the fan-out).
     #[test]
-    fn test_cache_miss_nonexistent_key() {
-        let map: DashMap<String, (String, Instant)> = DashMap::new();
+    fn git_cache_get_with_coalesces_concurrent_loads() {
+        let cache: GitCache<String> = build_git_cache(GIT_CACHE_TTL, Arc::new(AtomicU64::new(0)));
+        let calls = Arc::new(AtomicUsize::new(0));
 
-        let result = AppState::get_cached(&map, "missing", Duration::from_secs(60));
-        assert_eq!(result, None);
+        let handles: Vec<_> = (0..50)
+            .map(|_| {
+                let cache = cache.clone();
+                let calls = Arc::clone(&calls);
+                std::thread::spawn(move || {
+                    cache.get_with("k".to_string(), || {
+                        calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        // Hold the load long enough that the other 49 threads pile
+                        // up on the same key and must wait for this single compute.
+                        std::thread::sleep(Duration::from_millis(50));
+                        Arc::new("value".to_string())
+                    })
+                })
+            })
+            .collect();
+
+        for h in handles {
+            assert_eq!(&*h.join().unwrap(), "value");
+        }
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "loader must run exactly once for 50 concurrent get_with on a cold key"
+        );
     }
 
+    /// After the TTL elapses the entry expires and the next `get_with` recomputes.
     #[test]
-    fn test_cache_miss_expired_ttl() {
-        let map: DashMap<String, (String, Instant)> = DashMap::new();
-        // Insert with a timestamp in the past
-        map.insert(
-            "expired".to_string(),
-            (
-                "old_value".to_string(),
-                Instant::now() - Duration::from_secs(10),
-            ),
+    fn git_cache_ttl_expiry_recomputes() {
+        let cache: moka::sync::Cache<String, Arc<u32>> = moka::sync::Cache::builder()
+            .max_capacity(8)
+            .time_to_live(Duration::from_millis(80))
+            .build();
+        let calls = Arc::new(AtomicUsize::new(0));
+
+        let load = |n: u32| {
+            let calls = Arc::clone(&calls);
+            move || {
+                calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Arc::new(n)
+            }
+        };
+
+        let _ = cache.get_with("k".to_string(), load(1));
+        let _ = cache.get_with("k".to_string(), load(1)); // hit — no recompute
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+
+        std::thread::sleep(Duration::from_millis(120));
+        cache.run_pending_tasks();
+        let v = cache.get_with("k".to_string(), load(2)); // expired — recompute
+        assert_eq!(*v, 2);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    /// Step 4: only TTL-expiry evictions (`RemovalCause::Expired`) bump the
+    /// watcher-miss counter; explicit invalidations do not.
+    #[test]
+    fn eviction_observability_counts_only_ttl_expiry() {
+        let counter = Arc::new(AtomicU64::new(0));
+        let cache: GitCache<u32> = build_git_cache(Duration::from_millis(60), Arc::clone(&counter));
+
+        // Expired path: insert, let it age out, force maintenance.
+        cache.insert("expired".to_string(), Arc::new(1));
+        std::thread::sleep(Duration::from_millis(120));
+        cache.run_pending_tasks();
+        assert_eq!(
+            counter.load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "TTL expiry must increment the watcher-miss counter"
         );
 
-        let result = AppState::get_cached(&map, "expired", Duration::from_secs(5));
-        assert_eq!(result, None);
-    }
-
-    #[test]
-    fn test_cache_overwrite_resets_ttl() {
-        let map: DashMap<String, (String, Instant)> = DashMap::new();
-        // Insert old entry
-        map.insert(
-            "key".to_string(),
-            ("old".to_string(), Instant::now() - Duration::from_secs(10)),
+        // Explicit path: insert then invalidate — must NOT increment.
+        cache.insert("explicit".to_string(), Arc::new(2));
+        cache.run_pending_tasks();
+        cache.invalidate("explicit");
+        cache.run_pending_tasks();
+        assert_eq!(
+            counter.load(std::sync::atomic::Ordering::Relaxed),
+            1,
+            "explicit invalidation must NOT increment the watcher-miss counter"
         );
-        // Overwrite with fresh value
-        AppState::set_cached(&map, "key".to_string(), "new".to_string());
-
-        let result = AppState::get_cached(&map, "key", Duration::from_secs(5));
-        assert_eq!(result, Some("new".to_string()));
     }
 
     #[test]
@@ -3319,30 +3394,20 @@ mod tests {
         let state = make_test_app_state();
         state.git_cache.repo_info.insert(
             "/some/path".to_string(),
-            (
-                crate::git::RepoInfo {
-                    path: "/some/path".to_string(),
-                    name: "test".to_string(),
-                    initials: "TE".to_string(),
-                    branch: "main".to_string(),
-                    status: "clean".to_string(),
-                    is_git_repo: true,
-                },
-                Instant::now(),
-            ),
+            Arc::new(sample_repo_info("/some/path", "test")),
         );
         state
             .git_cache
             .github_status
-            .insert("/some/path".to_string(), (vec![], Instant::now()));
+            .insert("/some/path".to_string(), Arc::new(vec![]));
 
-        assert!(!state.git_cache.repo_info.is_empty());
-        assert!(!state.git_cache.github_status.is_empty());
+        assert!(state.git_cache.repo_info.get("/some/path").is_some());
+        assert!(state.git_cache.github_status.get("/some/path").is_some());
 
         state.clear_caches();
 
-        assert!(state.git_cache.repo_info.is_empty());
-        assert!(state.git_cache.github_status.is_empty());
+        assert!(state.git_cache.repo_info.get("/some/path").is_none());
+        assert!(state.git_cache.github_status.get("/some/path").is_none());
     }
 
     #[test]
@@ -3350,31 +3415,11 @@ mod tests {
         let state = make_test_app_state();
         state.git_cache.repo_info.insert(
             "/repo/a".to_string(),
-            (
-                crate::git::RepoInfo {
-                    path: "/repo/a".to_string(),
-                    name: "a".to_string(),
-                    initials: "A".to_string(),
-                    branch: "main".to_string(),
-                    status: "clean".to_string(),
-                    is_git_repo: true,
-                },
-                Instant::now(),
-            ),
+            Arc::new(sample_repo_info("/repo/a", "a")),
         );
         state.git_cache.repo_info.insert(
             "/repo/b".to_string(),
-            (
-                crate::git::RepoInfo {
-                    path: "/repo/b".to_string(),
-                    name: "b".to_string(),
-                    initials: "B".to_string(),
-                    branch: "main".to_string(),
-                    status: "clean".to_string(),
-                    is_git_repo: true,
-                },
-                Instant::now(),
-            ),
+            Arc::new(sample_repo_info("/repo/b", "b")),
         );
 
         state.invalidate_repo_caches("/repo/a");
