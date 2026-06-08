@@ -124,6 +124,12 @@ export const DiffViewer: Component<DiffViewerProps> = (props) => {
 					hunks: [diff],
 				});
 				df.init();
+				// Build BOTH modes up front — do not "optimize" this to the active mode
+				// only. DiffView merely branches on `diffViewMode` and reads pre-built
+				// line data; an unbuilt mode renders blank when the user toggles
+				// split↔unified. Both builders are idempotent and the build pass is the
+				// cheap half (init() does the parse+highlight). See @git-diff-view
+				// solid/dist/...mjs InternalDiffView. (perf pass 2026-06-07)
 				df.buildSplitDiffLines();
 				df.buildUnifiedDiffLines();
 				setDiffFile(df);

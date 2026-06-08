@@ -27,6 +27,7 @@ pub(crate) mod generators;
 pub(crate) mod git;
 pub(crate) mod git_cli;
 pub(crate) mod git_graph;
+pub(crate) mod git_reads;
 pub(crate) mod github;
 pub(crate) mod github_auth;
 pub(crate) mod github_debug;
@@ -1401,6 +1402,7 @@ pub fn run() {
             mdkb_commands::uninstall_mdkb,
             hash_password,
             agent::open_in_app,
+            agent::open_in_custom,
             agent::detect_claude_binary,
             agent::detect_agent_binary,
             agent::detect_all_agent_binaries,

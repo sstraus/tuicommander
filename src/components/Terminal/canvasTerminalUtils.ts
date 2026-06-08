@@ -48,6 +48,42 @@ export interface DecodedFrame {
 	rows: DecodedRow[];
 }
 
+/** Previous frame geometry/scroll state needed to decide what a new frame implies. */
+export interface FrameGridPrev {
+	lastScreenRows: number;
+	lastScreenCols: number;
+	lastDisplayOffset: number;
+	lastHistorySize: number;
+}
+
+/** What a newly-decoded frame means for the rowMap. */
+export interface FrameGridDecision {
+	geomChanged: boolean;
+	scrollChanged: boolean;
+	/** The frame carries a full screen of rows → replace the rowMap wholesale. */
+	fullReplace: boolean;
+	/** Partial frame after a scroll → clear and wait for a full frame; do NOT merge. */
+	scrollWait: boolean;
+}
+
+/**
+ * Decide what a decoded frame implies for the rowMap (geom/scroll/full-replace/
+ * scroll-wait). Pure, so onFrame's grid bookkeeping is unit-testable away from the
+ * CanvasTerminal closure.
+ *
+ * `fallbackRows` is the screen-row count to assume when the frame omits its own
+ * (frame.screenRows === 0): onFrame passes lastResizeRows. The backend always sets
+ * frame.screenRows in practice, so the fallback only differs on degenerate frames.
+ */
+export function decideFrameGrid(prev: FrameGridPrev, frame: DecodedFrame, fallbackRows: number): FrameGridDecision {
+	const geomChanged = frame.screenRows !== prev.lastScreenRows || frame.screenCols !== prev.lastScreenCols;
+	const scrollChanged = frame.displayOffset !== prev.lastDisplayOffset || frame.historySize !== prev.lastHistorySize;
+	const screenRowCount = frame.screenRows || fallbackRows || 24;
+	const fullReplace = frame.rows.length >= screenRowCount;
+	const scrollWait = !fullReplace && scrollChanged && !geomChanged;
+	return { geomChanged, scrollChanged, fullReplace, scrollWait };
+}
+
 export interface CellMetrics {
 	cellWidth: number;
 	cellHeight: number;

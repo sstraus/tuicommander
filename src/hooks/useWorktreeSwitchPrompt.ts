@@ -27,6 +27,14 @@ export function useWorktreeSwitchPrompt(deps: WorktreeSwitchDeps): void {
 
 	listen<WorktreeCreatedPayload>("worktree-created", (event) => {
 		const { repo_path, branch, worktree_path } = event.payload;
+		// Register the branch in the store immediately so the sidebar shows the new
+		// worktree right away — independent of whether the user accepts the switch
+		// prompt below. Mirrors the in-app create path (setupNewWorktree → setBranch).
+		// Guarded on repo existence so we don't create a half-formed repo entry for a
+		// worktree on a repo that isn't open in the sidebar.
+		if (repositoriesStore.get(repo_path)) {
+			repositoriesStore.setBranch(repo_path, branch, { worktreePath: worktree_path });
+		}
 		activityStore.addItem({
 			id: `wt-${branch}-${Date.now()}`,
 			pluginId: "core",

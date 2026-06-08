@@ -569,10 +569,6 @@ pub(crate) struct AppConfig {
     /// affecting cursor-addressed TUIs on the visible screen.
     #[serde(default)]
     pub(crate) scrollback_reflow: bool,
-    /// Off-main-thread terminal rendering (Web Worker + OffscreenCanvas).
-    /// Default off: the main-thread canvas2d renderer stays the universal path.
-    #[serde(default)]
-    pub(crate) offscreen_renderer: bool,
     /// Terminal cursor style: "bar" (default), "block", "underline"
     #[serde(default = "default_cursor_style")]
     pub(crate) cursor_style: String,
@@ -594,6 +590,27 @@ pub(crate) struct AppConfig {
     /// Minutes of idle + unfocused before SIGSTOP on process group. 0 = disabled.
     #[serde(default = "default_standby_timeout")]
     pub(crate) standby_timeout_minutes: u16,
+    /// User-defined launchers shown in the "Open in" menu alongside built-ins.
+    #[serde(default)]
+    pub(crate) custom_launchers: Vec<CustomLauncher>,
+}
+
+/// A user-defined launcher for the "Open in" menu. The executable is spawned
+/// with `args`, each of which may contain `{path}`/`{file}`/`{line}`/`{column}`
+/// placeholders (expanded in `agent::open_in_custom`). No icon field — custom
+/// launchers share a single generic icon in the UI.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub(crate) struct CustomLauncher {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) executable: String,
+    #[serde(default)]
+    pub(crate) args: Vec<String>,
+    #[serde(default = "default_true")]
+    pub(crate) enabled: bool,
+    /// Optional platform filter: "macos" | "windows" | "linux". None = all.
+    #[serde(default)]
+    pub(crate) platform: Option<String>,
 }
 
 fn default_language() -> String {
@@ -699,12 +716,12 @@ impl Default for AppConfig {
             ai_triage_enabled: false,
             ai_watchers_enabled: false,
             scrollback_reflow: false,
-            offscreen_renderer: false,
             cursor_style: default_cursor_style(),
             terminal_renderer: default_terminal_renderer(),
             ai_terminal_mcp_enabled: false,
             index_strategy: default_index_strategy(),
             standby_timeout_minutes: default_standby_timeout(),
+            custom_launchers: Vec::new(),
         }
     }
 }
@@ -1808,13 +1825,13 @@ mod tests {
             ai_triage_enabled: false,
             ai_watchers_enabled: false,
             scrollback_reflow: false,
-            offscreen_renderer: false,
             ai_terminal_mcp_enabled: false,
             index_strategy: "active_and_switch".to_string(),
             cursor_style: "bar".to_string(),
             terminal_renderer: "webgl".to_string(),
             auto_update_plugins_enabled: false,
             standby_timeout_minutes: 5,
+            custom_launchers: Vec::new(),
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));

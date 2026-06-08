@@ -280,3 +280,31 @@
   font-size: var(--font-xs);
   padding: 0 2px;
 }
+
+/* Large-diff guard — shown instead of rendering thousands of rows */
+.largeDiffNotice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 48px 16px;
+  color: var(--fg-muted);
+  font-size: var(--font-sm);
+}
+
+.largeDiffBtn {
+  padding: 4px 12px;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.largeDiffBtn:hover {
+  background: var(--accent-hover);
+}

@@ -259,7 +259,7 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `toggle-task-queue` | `Cmd+J` | Task queue |
 | `toggle-help` | `Cmd+?` | Toggle help panel |
 | `toggle-git-ops` | `Cmd+Shift+D` | Git Panel |
-| `toggle-git-branches` | `Cmd+G` | Git Panel — Branches tab |
+| `toggle-branches-tab` | `Cmd+G` | Git Panel — Branches tab |
 | `worktree-manager` | `Cmd+Shift+W` | Worktree Manager panel |
 | `quick-branch-switch` | `Cmd+B` | Quick branch switch |
 | `find-in-terminal` | `Cmd+F` | Find in terminal |
@@ -278,3 +278,19 @@ Hold to record, release to transcribe and inject text into active terminal.
 | `toggle-diff-scroll` | `Cmd+Shift+G` | Diff scroll view |
 | `toggle-global-workspace` | `Cmd+Shift+X` | Toggle global workspace |
 | `toggle-ai-chat` | `Cmd+Alt+A` | Toggle AI Chat panel |
+| `clear-scrollback` | `Cmd+K` | Clear scrollback |
+| `open-folder` | `Cmd+Shift+O` | Open folder picker |
+| `open-path` | `Cmd+Alt+O` | Open path… |
+| `open-secondary-window` | — | Open secondary window |
+| `command-overview` | — | Command overview |
+| `ai-triage` | — | AI Triage |
+| `toggle-outline` | `Cmd+Alt+L` | Toggle outline panel |
+| `toggle-compose-panel` | `Cmd+I` | Toggle compose panel |
+| `detach-activity-dashboard` | — | Open Activity Dashboard in separate window |
+| `toggle-tunnels` | — | SSH Tunnels panel |
+| `process-manager` | — | Process Manager |
+| `open-generators` | — | Open generators |
+| `block-fold-toggle` | `Cmd+Shift+.` | Toggle block fold |
+| `block-prev` | `Cmd+Shift+Up` | Previous command block |
+| `block-next` | `Cmd+Shift+Down` | Next command block |
+| `block-search-toggle` | `Cmd+Shift+B` | Search in block |

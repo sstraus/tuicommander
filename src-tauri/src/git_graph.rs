@@ -40,10 +40,10 @@ pub struct Connection {
 
 /// A raw commit parsed from git log output.
 #[derive(Debug, Clone)]
-struct RawCommit {
-    hash: String,
-    parents: Vec<String>,
-    refs: Vec<String>,
+pub(crate) struct RawCommit {
+    pub(crate) hash: String,
+    pub(crate) parents: Vec<String>,
+    pub(crate) refs: Vec<String>,
 }
 
 /// Parse git log output where each line is `hash\0parents\0refs`.
@@ -88,7 +88,7 @@ fn parse_git_log(output: &str) -> Vec<RawCommit> {
 ///
 /// Each slot in `active_lanes` holds the hash that lane is "expecting"
 /// (i.e., a parent hash that hasn't appeared as a commit yet).
-fn assign_lanes(commits: &[RawCommit]) -> Vec<GraphNode> {
+pub(crate) fn assign_lanes(commits: &[RawCommit]) -> Vec<GraphNode> {
     // Build a lookup: hash → row index (for connection targets)
     let hash_to_row: std::collections::HashMap<&str, usize> = commits
         .iter()
@@ -213,6 +213,22 @@ fn assign_lanes(commits: &[RawCommit]) -> Vec<GraphNode> {
 // Tauri command
 // ---------------------------------------------------------------------------
 
+/// CLI implementation of the graph commit list: `git log --topo-order` →
+/// `RawCommit` rows. The lane layout (`assign_lanes`) is backend-agnostic and
+/// runs on the rows regardless of where they came from.
+pub(crate) fn raw_commits_cli(repo: &Path, count: u32) -> Result<Vec<RawCommit>, String> {
+    let output = git_cmd(repo)
+        .args([
+            "log",
+            "--topo-order",
+            &format!("-n{count}"),
+            "--pretty=format:%H%x00%P%x00%D",
+        ])
+        .run()
+        .map_err(|e| e.to_string())?;
+    Ok(parse_git_log(&output.stdout))
+}
+
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn get_commit_graph(
     path: String,
@@ -221,18 +237,8 @@ pub(crate) async fn get_commit_graph(
     tokio::task::spawn_blocking(move || {
         let count = count.unwrap_or(200).min(1000);
         let repo_path = Path::new(&path);
-
-        let output = git_cmd(repo_path)
-            .args([
-                "log",
-                "--topo-order",
-                &format!("-n{count}"),
-                "--pretty=format:%H%x00%P%x00%D",
-            ])
-            .run()
-            .map_err(|e| e.to_string())?;
-
-        let commits = parse_git_log(&output.stdout);
+        // Routed through the GitReads port; lane assignment is unchanged.
+        let commits = crate::git_reads::git_reads().graph_commits(repo_path, count)?;
         Ok(assign_lanes(&commits))
     })
     .await

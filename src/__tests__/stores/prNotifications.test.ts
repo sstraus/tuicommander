@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrNotificationType } from "../../stores/prNotifications";
-import { prNotificationsStore } from "../../stores/prNotifications";
+import { isNotificationType, PR_NOTIFICATION_TYPES, prNotificationsStore } from "../../stores/prNotifications";
 import { testInScope } from "../helpers/store";
 
 function makeNotification(
@@ -30,6 +30,26 @@ describe("prNotificationsStore", () => {
 
 	afterEach(() => {
 		prNotificationsStore.stopFocusTimer();
+	});
+
+	describe("isNotificationType()", () => {
+		it("accepts every renderable notification type", () => {
+			for (const type of PR_NOTIFICATION_TYPES) {
+				expect(isNotificationType(type)).toBe(true);
+			}
+		});
+
+		it("rejects watcher-only transitions (pushed/opened) that have no popover label", () => {
+			// Regression: the Rust poller emits these over `github-transition`; adding
+			// them as notifications crashed the popover render (undefined.cls).
+			expect(isNotificationType("pushed")).toBe(false);
+			expect(isNotificationType("opened")).toBe(false);
+		});
+
+		it("rejects unknown transition types", () => {
+			expect(isNotificationType("totally_new_type")).toBe(false);
+			expect(isNotificationType("")).toBe(false);
+		});
 	});
 
 	describe("add()", () => {

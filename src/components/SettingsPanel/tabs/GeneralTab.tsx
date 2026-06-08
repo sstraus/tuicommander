@@ -1,8 +1,8 @@
-import { type Component, createSignal, onMount, Show } from "solid-js";
+import { type Component, createSignal, For, onMount, Show } from "solid-js";
 import { t } from "../../../i18n";
 import { invoke } from "../../../invoke";
 import { appLogger } from "../../../stores/appLogger";
-import type { IdeType, UpdateChannel } from "../../../stores/settings";
+import type { CustomLauncher, IdeType, UpdateChannel } from "../../../stores/settings";
 import { IDE_NAMES, settingsStore } from "../../../stores/settings";
 import { updaterStore } from "../../../stores/updater";
 import { isTauri } from "../../../transport";
@@ -102,6 +102,17 @@ export const GeneralTab: Component = () => {
 	};
 
 	const ideOptions = Object.entries(IDE_NAMES).map(([value, label]) => ({ value, label }));
+
+	// --- Custom launchers (GH #71) ---
+	const launchers = (): CustomLauncher[] => settingsStore.state.customLaunchers;
+	const updateLauncher = (id: string, patch: Partial<CustomLauncher>) =>
+		settingsStore.setCustomLaunchers(launchers().map((l) => (l.id === id ? { ...l, ...patch } : l)));
+	const addLauncher = () =>
+		settingsStore.setCustomLaunchers([
+			...launchers(),
+			{ id: crypto.randomUUID(), name: "New tool", executable: "", args: [], enabled: true },
+		]);
+	const removeLauncher = (id: string) => settingsStore.setCustomLaunchers(launchers().filter((l) => l.id !== id));
 
 	const updateChannelOptions = [
 		{ value: "stable", label: t("general.channel.stable", "Stable") },
@@ -381,6 +392,67 @@ export const GeneralTab: Component = () => {
 				options={ideOptions}
 				hint={t("general.hint.defaultIde", "IDE used to open repositories")}
 			/>
+
+			<Show when={isTauri()}>
+				<h3>{t("general.heading.customLaunchers", "Custom Launchers")}</h3>
+				<div class={s.group}>
+					<p class={s.hint}>
+						{t(
+							"general.hint.customLaunchers",
+							'Define your own tools for the "Open in" menu. Each argument may use {path}, {file}, {line}, {column} placeholders. One argument per line.',
+						)}
+					</p>
+					<For each={launchers()}>
+						{(launcher) => (
+							<div
+								class={s.group}
+								style={{
+									border: "1px solid var(--border)",
+									"border-radius": "var(--radius-md)",
+									padding: "8px",
+									"margin-bottom": "8px",
+								}}
+							>
+								<div style={{ display: "flex", gap: "8px", "align-items": "center", "margin-bottom": "6px" }}>
+									<input
+										type="checkbox"
+										checked={launcher.enabled}
+										title={t("general.label.launcherEnabled", "Enabled")}
+										onChange={(e) => updateLauncher(launcher.id, { enabled: e.currentTarget.checked })}
+									/>
+									<input
+										type="text"
+										value={launcher.name}
+										placeholder={t("general.placeholder.launcherName", "Name")}
+										onInput={(e) => updateLauncher(launcher.id, { name: e.currentTarget.value })}
+										style={{ flex: "1" }}
+									/>
+									<button class={s.testBtn} onClick={() => removeLauncher(launcher.id)}>
+										{t("general.btn.remove", "Remove")}
+									</button>
+								</div>
+								<input
+									type="text"
+									value={launcher.executable}
+									placeholder={t("general.placeholder.launcherExec", "Executable (e.g. code, or /usr/local/bin/code)")}
+									onInput={(e) => updateLauncher(launcher.id, { executable: e.currentTarget.value })}
+									style={{ width: "100%", "margin-bottom": "6px" }}
+								/>
+								<textarea
+									value={launcher.args.join("\n")}
+									placeholder={"--goto\n{file}:{line}:{column}"}
+									rows={3}
+									onInput={(e) => updateLauncher(launcher.id, { args: e.currentTarget.value.split("\n") })}
+									style={{ width: "100%", "font-family": "var(--font-mono)", "font-size": "var(--font-sm)" }}
+								/>
+							</div>
+						)}
+					</For>
+					<button class={s.testBtn} onClick={addLauncher}>
+						{t("general.btn.addLauncher", "Add launcher")}
+					</button>
+				</div>
+			</Show>
 
 			<h3>{t("general.heading.experimental", "Experimental Features")}</h3>
 

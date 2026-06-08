@@ -354,63 +354,6 @@ describe("settingsStore", () => {
 		});
 	});
 
-	describe("offscreenRenderer", () => {
-		it("defaults to false", () => {
-			testInScope(() => {
-				expect(store.state.offscreenRenderer).toBe(false);
-			});
-		});
-
-		it("sets offscreenRenderer and persists via debounced save", async () => {
-			await testInScopeAsync(async () => {
-				store.setOffscreenRenderer(true);
-				expect(store.state.offscreenRenderer).toBe(true);
-				vi.advanceTimersByTime(600);
-				await vi.runAllTimersAsync();
-				expect(mockInvoke).toHaveBeenCalledWith("save_config", {
-					config: expect.objectContaining({ offscreen_renderer: true }),
-				});
-			});
-		});
-
-		it("hydrates offscreenRenderer from config", async () => {
-			mockInvoke.mockResolvedValueOnce({
-				shell: null,
-				font_family: "JetBrains Mono",
-				font_size: 14,
-				theme: "tokyo-night",
-				mcp_server_enabled: false,
-				ide: "vscode",
-				default_font_size: 12,
-				offscreen_renderer: true,
-			});
-			mockInvoke.mockResolvedValueOnce({ primary_agent: "claude" });
-
-			await testInScopeAsync(async () => {
-				await store.hydrate();
-				expect(store.state.offscreenRenderer).toBe(true);
-			});
-		});
-
-		it("defaults offscreenRenderer to false when missing from config", async () => {
-			mockInvoke.mockResolvedValueOnce({
-				shell: null,
-				font_family: "JetBrains Mono",
-				font_size: 14,
-				theme: "tokyo-night",
-				mcp_server_enabled: false,
-				ide: "vscode",
-				default_font_size: 12,
-			});
-			mockInvoke.mockResolvedValueOnce({ primary_agent: "claude" });
-
-			await testInScopeAsync(async () => {
-				await store.hydrate();
-				expect(store.state.offscreenRenderer).toBe(false);
-			});
-		});
-	});
-
 	describe("setIssueFilter()", () => {
 		it("updates issueFilter in state", () => {
 			testInScope(() => {
@@ -546,6 +489,52 @@ describe("settingsStore", () => {
 				expect(store.state.prHideDrafts).toBe(true);
 				expect(store.state.prHideConflicting).toBe(true);
 				expect(store.state.prHideCiFailing).toBe(false);
+			});
+		});
+	});
+
+	describe("custom launchers (#71)", () => {
+		const launcher = {
+			id: "abc",
+			name: "My Editor",
+			executable: "code",
+			args: ["--goto", "{file}:{line}:{column}"],
+			enabled: true,
+		};
+
+		it("defaults to an empty list", () => {
+			testInScope(() => {
+				expect(store.state.customLaunchers).toEqual([]);
+			});
+		});
+
+		it("stores launchers in state and persists them via save_config", async () => {
+			await testInScopeAsync(async () => {
+				store.setCustomLaunchers([launcher]);
+				expect(store.state.customLaunchers).toEqual([launcher]);
+
+				vi.advanceTimersByTime(600);
+				await vi.runAllTimersAsync();
+				expect(mockInvoke).toHaveBeenCalledWith("save_config", {
+					config: expect.objectContaining({ custom_launchers: [launcher] }),
+				});
+			});
+		});
+
+		it("hydrates custom_launchers from config", async () => {
+			mockInvoke.mockResolvedValueOnce({
+				font_family: "JetBrains Mono",
+				font_size: 14,
+				theme: "dark",
+				mcp_server_enabled: false,
+				ide: "vscode",
+				custom_launchers: [launcher],
+			});
+			mockInvoke.mockResolvedValueOnce({ primary_agent: "claude" });
+
+			await testInScopeAsync(async () => {
+				await store.hydrate();
+				expect(store.state.customLaunchers).toEqual([launcher]);
 			});
 		});
 	});

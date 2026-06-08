@@ -327,6 +327,52 @@ pub(crate) fn open_in_app(
     Ok(())
 }
 
+/// Expand `{path}`/`{file}`/`{line}`/`{column}` placeholders in a custom
+/// launcher's argument template. `{line}`/`{column}` default to 1 when not
+/// provided (e.g. opening a folder) so editor goto args still resolve.
+pub(crate) fn expand_placeholders(
+    args: &[String],
+    path: &str,
+    line: Option<u32>,
+    col: Option<u32>,
+) -> Vec<String> {
+    let line_s = line.unwrap_or(1).to_string();
+    let col_s = col.unwrap_or(1).to_string();
+    args.iter()
+        .map(|a| {
+            a.replace("{path}", path)
+                .replace("{file}", path)
+                .replace("{line}", &line_s)
+                .replace("{column}", &col_s)
+        })
+        .collect()
+}
+
+/// Launch a user-defined custom tool: spawn `executable` with the
+/// placeholder-expanded args. No shell parsing — args are passed verbatim, so
+/// paths with spaces are safe on every platform. `executable` may be a bare
+/// name (resolved on PATH) or an absolute path.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub(crate) fn open_in_custom(
+    path: String,
+    executable: String,
+    args: Vec<String>,
+    line: Option<u32>,
+    col: Option<u32>,
+) -> Result<(), String> {
+    if executable.trim().is_empty() {
+        return Err("Custom launcher has no executable".to_string());
+    }
+    // Drop blank lines from the args editor (textarea is one-arg-per-line).
+    let args: Vec<String> = args.into_iter().filter(|a| !a.trim().is_empty()).collect();
+    let expanded = expand_placeholders(&args, &path, line, col);
+    Command::new(resolve_cli(&executable))
+        .args(&expanded)
+        .spawn()
+        .map_err(|e| format!("Failed to launch {executable}: {e}"))?;
+    Ok(())
+}
+
 /// Detect installed IDE applications (cross-platform)
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) fn detect_installed_ides() -> Vec<String> {
@@ -890,5 +936,45 @@ mod tests {
                 assert!(msg.contains("not found") || msg.contains("Install"));
             }
         }
+    }
+
+    #[test]
+    fn expand_placeholders_substitutes_path_and_location() {
+        let args = vec!["--goto".to_string(), "{file}:{line}:{column}".to_string()];
+        let out = expand_placeholders(&args, "/repo/src/main.rs", Some(42), Some(7));
+        assert_eq!(out, vec!["--goto", "/repo/src/main.rs:42:7"]);
+    }
+
+    #[test]
+    fn expand_placeholders_path_and_file_are_aliases() {
+        let args = vec!["{path}".to_string(), "{file}".to_string()];
+        let out = expand_placeholders(&args, "/a/b", None, None);
+        assert_eq!(out, vec!["/a/b", "/a/b"]);
+    }
+
+    #[test]
+    fn expand_placeholders_defaults_line_col_to_one() {
+        // Opening a folder: no line/col → placeholders still resolve to 1.
+        let args = vec![
+            "{path}".to_string(),
+            "+{line}".to_string(),
+            "{column}".to_string(),
+        ];
+        let out = expand_placeholders(&args, "/proj", None, None);
+        assert_eq!(out, vec!["/proj", "+1", "1"]);
+    }
+
+    #[test]
+    fn expand_placeholders_leaves_literals_untouched() {
+        let args = vec!["--wait".to_string(), "--reuse-window".to_string()];
+        let out = expand_placeholders(&args, "/x", Some(3), Some(1));
+        assert_eq!(out, vec!["--wait", "--reuse-window"]);
+    }
+
+    #[test]
+    fn open_in_custom_rejects_empty_executable() {
+        let err = open_in_custom("/x".to_string(), "  ".to_string(), vec![], None, None);
+        assert!(err.is_err());
+        assert!(err.unwrap_err().contains("no executable"));
     }
 }

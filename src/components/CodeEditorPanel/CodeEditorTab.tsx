@@ -37,6 +37,7 @@ import { isAbsolutePath } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import e from "../shared/editor-header.module.css";
 import s from "./CodeEditorTab.module.css";
+import { gitChangeGutter, parseDiffToChanges, setChangesEffect } from "./gitGutter";
 import { detectLanguage } from "./languageDetection";
 import { codeEditorTheme } from "./theme";
 
@@ -59,6 +60,18 @@ function wordAtCursor(view: EditorView): string | null {
 
 /** Large file threshold — skip syntax highlighting above this size */
 const LARGE_FILE_BYTES = 500 * 1024;
+
+/**
+ * True when a file is unchanged on disk versus the last seen stat. Both mtime
+ * AND size must match — size guards against truncate-rewrite saves that can
+ * land within the same mtime tick.
+ */
+export function diskStatUnchanged(
+	last: { modifiedAt: number; size: number } | null,
+	next: { modified_at: number; size: number },
+): boolean {
+	return last !== null && next.modified_at === last.modifiedAt && next.size === last.size;
+}
 
 // --- Cmd+Hover underline (VS Code-style go-to-definition hint) ---
 
@@ -142,6 +155,8 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	const [code, setCode] = createSignal("");
 	/** Mutable ref tracking live editor value without triggering reactivity on every keystroke */
 	let currentCode = "";
+	/** Last seen on-disk (mtime, size) — lets checkDiskContent skip the full read when unchanged */
+	let lastStat: { modifiedAt: number; size: number } | null = null;
 	const [savedContent, setSavedContent] = createSignal("");
 	const [loading, setLoading] = createSignal(true);
 	const [error, setError] = createSignal<string | null>(null);
@@ -164,6 +179,9 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
 	/** Filesystem root for disk I/O — worktree when active, otherwise canonical repoPath. */
 	const fsRoot = () => props.fsRoot ?? props.repoPath;
+
+	/** Absolute path on disk — external files are already absolute, internal ones join fsRoot. */
+	const absPath = () => (isExternal() ? props.filePath : `${fsRoot()}/${props.filePath}`);
 
 	/** Guard: scroll to initialLine only once on first file load */
 	let didScrollToInitialLine = false;
@@ -188,6 +206,9 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 			async ([_fsRoot, filePath]) => {
 				if (!filePath) return;
 
+				// New file → drop the previous file's stat baseline so the first
+				// disk check re-establishes it instead of comparing against the old file.
+				lastStat = null;
 				setLoading(true);
 				setError(null);
 				setNotDisplayable(false);
@@ -256,6 +277,18 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	const checkDiskContent = async () => {
 		if (!savedContent()) return;
 		try {
+			// Cheap metadata probe first: if (mtime,size) is unchanged since the last
+			// check there's nothing to do — avoids re-reading the whole file over IPC
+			// on every 5s poll / git-revision bump. A null/missing stat (TCC-protected
+			// path, deleted file, network mount) falls through to a full read.
+			const stat = await invoke<{ exists: boolean; modified_at: number; size: number }>("stat_path", {
+				path: absPath(),
+			}).catch(() => null);
+			if (stat?.exists) {
+				if (diskStatUnchanged(lastStat, stat)) return;
+				lastStat = { modifiedAt: stat.modified_at, size: stat.size };
+			}
+
 			const diskContent = await readContent();
 			if (diskContent === savedContent()) return;
 
@@ -326,11 +359,42 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	// Read-only mode
 	createEditorReadonly(editorView, isReadOnly);
 
+	// Git change markers in the gutter (VS Code-style) vs the committed version
+	// (HEAD). Refreshes on save (savedContent change) and on repo revision bumps.
+	// Worktree-aware: the diff runs in fsRoot(), the on-disk working dir.
+	createEffect(() => {
+		const view = editorView();
+		const repoPath = props.repoPath;
+		const rev = repoPath ? repositoriesStore.getRevision(repoPath) : 0;
+		const saved = savedContent();
+		void rev;
+		if (!view) return;
+		if (!repoPath || isExternal() || !saved) {
+			view.dispatch({ effects: setChangesEffect([]) });
+			return;
+		}
+		void (async () => {
+			try {
+				const diff = await invoke<string>("get_file_diff", {
+					path: fsRoot(),
+					file: props.filePath,
+					scope: "head",
+				});
+				// The tab may have been swapped/closed during the await.
+				if (editorView() !== view) return;
+				view.dispatch({ effects: setChangesEffect(parseDiffToChanges(diff)) });
+			} catch (err) {
+				appLogger.debug("editor", "git gutter diff failed", { error: String(err) });
+			}
+		})();
+	});
+
 	// Base extensions
 	createExtension(codeEditorTheme);
 	createExtension(lineNumbers());
 	createExtension(history());
 	createExtension(foldGutter());
+	createExtension(gitChangeGutter());
 	createExtension(drawSelection());
 	createExtension(highlightActiveLine());
 	createExtension(highlightActiveLineGutter());

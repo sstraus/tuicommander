@@ -1241,12 +1241,8 @@ async fn handle_github(state: &Arc<AppState>, args: &serde_json::Value) -> serde
             if let Err(e) = validate_mcp_repo_path(&path) {
                 return e;
             }
-            let statuses = if let Some(cached) = crate::state::AppState::get_cached(
-                &state.git_cache.github_status,
-                &path,
-                crate::state::GITHUB_CACHE_TTL,
-            ) {
-                Ok(cached)
+            let statuses = if let Some(cached) = state.git_cache.github_status.get(&path) {
+                Ok((*cached).clone())
             } else {
                 crate::github::get_repo_pr_statuses_impl(&path, false, state).await
             };
@@ -1271,12 +1267,11 @@ async fn handle_github(state: &Arc<AppState>, args: &serde_json::Value) -> serde
                     continue;
                 }
                 let gh = crate::github::get_github_status_cached(state, path);
-                let cached_prs: Vec<crate::github::BranchPrStatus> =
-                    crate::state::AppState::get_cached(
-                        &state.git_cache.github_status,
-                        path,
-                        crate::state::GITHUB_CACHE_TTL,
-                    )
+                let cached_prs: Vec<crate::github::BranchPrStatus> = state
+                    .git_cache
+                    .github_status
+                    .get(path)
+                    .map(|a| (*a).clone())
                     .unwrap_or_default();
                 let open_prs = cached_prs.len();
                 let failing_ci = cached_prs.iter().filter(|p| p.checks.failed > 0).count();

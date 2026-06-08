@@ -253,6 +253,25 @@ pub(crate) fn get_ignored_paths(
 pub struct PathStat {
     pub exists: bool,
     pub is_dir: bool,
+    /// Last modification time, milliseconds since UNIX epoch (0 for dirs /
+    /// missing / unavailable). Lets callers (e.g. the editor disk-change poll)
+    /// detect changes without re-reading file content.
+    pub modified_at: u64,
+    /// File size in bytes (0 for dirs / missing). Paired with `modified_at` to
+    /// catch truncate-rewrite saves that may not bump mtime granularity.
+    pub size: u64,
+}
+
+impl PathStat {
+    /// Non-existent / inaccessible path — all-zero metadata.
+    fn missing() -> Self {
+        PathStat {
+            exists: false,
+            is_dir: false,
+            modified_at: 0,
+            size: 0,
+        }
+    }
 }
 
 pub(crate) fn stat_path_impl(path: String) -> PathStat {
@@ -262,20 +281,24 @@ pub(crate) fn stat_path_impl(path: String) -> PathStat {
     // untrusted callers (plugins, frontend bugs) probe arbitrary files outside
     // any repo scope. Mirrors resolve_terminal_path's guard.
     if is_tcc_protected_path(&p) {
-        return PathStat {
-            exists: false,
-            is_dir: false,
-        };
+        return PathStat::missing();
     }
     match std::fs::metadata(&p) {
-        Ok(meta) => PathStat {
-            exists: true,
-            is_dir: meta.is_dir(),
-        },
-        Err(_) => PathStat {
-            exists: false,
-            is_dir: false,
-        },
+        Ok(meta) => {
+            let is_dir = meta.is_dir();
+            let modified_at = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(0, |d| d.as_millis() as u64);
+            PathStat {
+                exists: true,
+                is_dir,
+                modified_at,
+                size: if is_dir { 0 } else { meta.len() },
+            }
+        }
+        Err(_) => PathStat::missing(),
     }
 }
 
@@ -1697,6 +1720,13 @@ mod tests {
         let stat = stat_path_impl(file.to_string_lossy().to_string());
         assert!(stat.exists);
         assert!(!stat.is_dir);
+        // mtime/size are populated for real files so the editor poll can detect
+        // on-disk changes without reading content.
+        assert!(
+            stat.modified_at > 0,
+            "expected a non-zero mtime for a real file"
+        );
+        assert!(stat.size > 0, "README.md should have non-zero size");
     }
 
     #[test]

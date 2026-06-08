@@ -8,7 +8,41 @@ use std::sync::Arc;
 use tauri::State;
 
 use crate::git_cli::git_cmd;
-use crate::state::{AppState, GIT_CACHE_TTL};
+use crate::git_reads::git_reads;
+use crate::state::{AppState, GitCache};
+
+// --- Coalesced git-cache load helpers (Step 1) ---
+//
+// `moka` collapses concurrent identical loads for one key to a single
+// computation (the headline fix for the `repo-changed` fan-out). Loaders are
+// blocking git work, so they run on the blocking pool; the cache TTL/bound is
+// configured on the cache itself. Values are `Arc`-wrapped in the cache and
+// cloned out at the boundary to preserve the existing by-value return shapes.
+
+/// Coalesced + cached blocking load for an infallible compute.
+async fn cached_get<T, F>(cache: GitCache<T>, key: String, f: F) -> Result<T, String>
+where
+    T: Clone + Send + Sync + 'static,
+    F: FnOnce() -> T + Send + 'static,
+{
+    let v = tokio::task::spawn_blocking(move || cache.get_with(key, || Arc::new(f())))
+        .await
+        .map_err(|e| format!("spawn_blocking error: {e}"))?;
+    Ok((*v).clone())
+}
+
+/// Coalesced + cached blocking load for a fallible compute. Only `Ok` is cached.
+async fn cached_try<T, F>(cache: GitCache<T>, key: String, f: F) -> Result<T, String>
+where
+    T: Clone + Send + Sync + 'static,
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+{
+    let v = tokio::task::spawn_blocking(move || cache.try_get_with(key, || f().map(Arc::new)))
+        .await
+        .map_err(|e| format!("spawn_blocking error: {e}"))?
+        .map_err(|e: Arc<String>| (*e).clone())?;
+    Ok((*v).clone())
+}
 
 // --- File-based git helpers (no subprocess) ---
 
@@ -38,6 +72,29 @@ pub(crate) fn resolve_git_dir(repo_path: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Resolve the **common** git directory for a (possibly per-worktree) git dir.
+///
+/// In a linked worktree, `resolve_git_dir` returns the per-worktree gitdir
+/// (`.../.git/worktrees/<id>`), which holds only worktree-local state (HEAD,
+/// index, logs). Shared state — `config`, `refs/heads`, `refs/remotes`,
+/// `packed-refs` — lives in the common dir, located via the `commondir` file.
+/// For a normal (non-worktree) repo there is no `commondir` file and this
+/// returns `git_dir` unchanged.
+pub(crate) fn common_git_dir(git_dir: &Path) -> PathBuf {
+    match fs::read_to_string(git_dir.join("commondir")) {
+        Ok(content) => {
+            let rel = content.trim();
+            let p = if Path::new(rel).is_absolute() {
+                PathBuf::from(rel)
+            } else {
+                git_dir.join(rel)
+            };
+            p.canonicalize().unwrap_or(p)
+        }
+        Err(_) => git_dir.to_path_buf(),
+    }
+}
+
 /// Read the current branch name from .git/HEAD (file I/O, no subprocess).
 /// Returns None for detached HEAD or if the file can't be read.
 pub(crate) fn read_branch_from_head(repo_path: &Path) -> Option<String> {
@@ -57,8 +114,9 @@ pub(crate) fn read_branch_from_head(repo_path: &Path) -> Option<String> {
 /// Read the origin remote URL from .git/config (file I/O, no subprocess).
 /// Parses the `[remote "origin"]` section for the `url` key.
 pub(crate) fn read_remote_url(repo_path: &Path) -> Option<String> {
-    let git_dir = resolve_git_dir(repo_path)?;
-    let config_content = fs::read_to_string(git_dir.join("config")).ok()?;
+    // `config` lives in the common dir, not the per-worktree gitdir.
+    let common = common_git_dir(&resolve_git_dir(repo_path)?);
+    let config_content = fs::read_to_string(common.join("config")).ok()?;
     parse_git_config_remote_url(&config_content, "origin")
 }
 
@@ -98,6 +156,16 @@ pub(crate) struct RepoInfo {
 pub(crate) struct DiffStats {
     additions: i32,
     deletions: i32,
+}
+
+impl DiffStats {
+    /// Construct from line counts (used by the gix diff-stats adapter).
+    pub(crate) fn from_counts(additions: i32, deletions: i32) -> Self {
+        Self {
+            additions,
+            deletions,
+        }
+    }
 }
 
 /// Changed file information (for diff browser)
@@ -166,12 +234,12 @@ pub(crate) fn get_repo_info_impl(path: &str) -> RepoInfo {
 
 /// Cached repo info for synchronous callers (MCP handlers, etc.).
 pub(crate) fn get_repo_info_cached(state: &AppState, path: &str) -> RepoInfo {
-    if let Some(cached) = AppState::get_cached(&state.git_cache.repo_info, path, GIT_CACHE_TTL) {
-        return cached;
-    }
-    let info = get_repo_info_impl(path);
-    AppState::set_cached(&state.git_cache.repo_info, path.to_string(), info.clone());
-    info
+    let p = path.to_string();
+    (*state
+        .git_cache
+        .repo_info
+        .get_with(path.to_string(), || Arc::new(get_repo_info_impl(&p))))
+    .clone()
 }
 
 /// Get git repository info for a path (cached, 5s TTL)
@@ -181,17 +249,11 @@ pub(crate) async fn get_repo_info(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<RepoInfo, String> {
-    if let Some(cached) = AppState::get_cached(&state.git_cache.repo_info, &path, GIT_CACHE_TTL) {
-        return Ok(cached);
-    }
-
-    let state_arc = state.inner().clone();
-    let path_clone = path.clone();
-    let info = tokio::task::spawn_blocking(move || get_repo_info_impl(&path_clone))
-        .await
-        .map_err(|e| format!("spawn_blocking join error: {e}"))?;
-    AppState::set_cached(&state_arc.git_cache.repo_info, path, info.clone());
-    Ok(info)
+    let p = path.clone();
+    cached_get(state.git_cache.repo_info.clone(), path, move || {
+        get_repo_info_impl(&p)
+    })
+    .await
 }
 
 /// Get the origin remote URL for a repository (returns None if not a git repo or no remote).
@@ -538,6 +600,9 @@ pub(crate) async fn get_recent_commits(
 fn diff_base_args(scope: &Option<String>) -> Result<Vec<String>, String> {
     match scope.as_deref() {
         Some("staged") => Ok(vec!["diff".into(), "--cached".into()]),
+        // "head" compares the working tree against the last commit (staged +
+        // unstaged), i.e. the editor gutter's "vs committed version" view.
+        Some("head") => Ok(vec!["diff".into(), "HEAD".into()]),
         Some(hash) if !hash.is_empty() => {
             validate_git_hash(hash)?;
             Ok(vec!["diff".into(), format!("{hash}^"), hash.into()])
@@ -690,7 +755,7 @@ pub(crate) async fn get_diff_stats(
     path: String,
     scope: Option<String>,
 ) -> Result<DiffStats, String> {
-    tokio::task::spawn_blocking(move || get_diff_stats_impl(&path, scope.as_deref()))
+    tokio::task::spawn_blocking(move || git_reads().diff_stats(Path::new(&path), scope.as_deref()))
         .await
         .map_err(|e| format!("spawn_blocking join error: {e}"))
 }
@@ -837,7 +902,11 @@ pub(crate) async fn get_file_diff(
         // For untracked files, use --no-index to generate a diff against the null device.
         // Deleted files don't exist on disk — skip this block entirely and fall
         // through to the regular `git diff` which reads from the index.
-        if scope.is_none() && repo_path.join(&file).exists() {
+        // Also handle the "head" scope (editor gutter): an untracked file has no
+        // HEAD entry, so `git diff HEAD` would be empty — fall back to the
+        // all-added --no-index diff so new files show every line as added.
+        let scope_uses_worktree = scope.is_none() || scope.as_deref() == Some("head");
+        if scope_uses_worktree && repo_path.join(&file).exists() {
             let full_path = repo_path.join(&file);
 
             // Security: prevent path traversal (e.g. "../../etc/passwd")
@@ -973,6 +1042,10 @@ pub(crate) fn sort_branches(branches: &mut [serde_json::Value]) {
 /// 2. Read `refs/remotes/origin/HEAD` symref (set by `git clone` or `git remote set-head`)
 /// 3. Return `None` if no default branch can be determined
 fn detect_default_branch(git_dir: &Path) -> Option<String> {
+    // refs/heads, refs/remotes and packed-refs all live in the common dir,
+    // which differs from `git_dir` inside a linked worktree.
+    let git_dir = &common_git_dir(git_dir);
+
     // 1. Check well-known candidate names in local refs
     if let Some(name) = MAIN_BRANCH_CANDIDATES.iter().find(|name| {
         git_dir.join("refs/heads").join(name).exists()
@@ -1082,20 +1155,11 @@ pub(crate) async fn get_merged_branches(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<Vec<String>, String> {
-    if let Some(cached) =
-        AppState::get_cached(&state.git_cache.merged_branches, &path, GIT_CACHE_TTL)
-    {
-        return Ok(cached);
-    }
-
-    let state_arc = state.inner().clone();
-    let path_clone = path.clone();
-    let result =
-        tokio::task::spawn_blocking(move || get_merged_branches_impl(Path::new(&path_clone)))
-            .await
-            .map_err(|e| format!("spawn_blocking join error: {e}"))??;
-    AppState::set_cached(&state_arc.git_cache.merged_branches, path, result.clone());
-    Ok(result)
+    let p = path.clone();
+    cached_try(state.git_cache.merged_branches.clone(), path, move || {
+        get_merged_branches_impl(Path::new(&p))
+    })
+    .await
 }
 
 /// Lightweight structural snapshot: worktree paths + merged branches.
@@ -1173,25 +1237,15 @@ pub(crate) async fn get_repo_summary_impl(
     // Spawn worktree_paths concurrently while we fetch/check merged_branches cache.
     let wt_path = repo_path.clone();
     let worktree_handle =
-        tokio::task::spawn_blocking(move || crate::worktree::get_worktree_paths(wt_path));
+        tokio::task::spawn_blocking(move || git_reads().worktree_paths(Path::new(&wt_path)));
 
-    let merged_branches = if let Some(cached) =
-        AppState::get_cached(&state.git_cache.merged_branches, &repo_path, GIT_CACHE_TTL)
-    {
-        cached
-    } else {
-        let mb_path = repo_path.clone();
-        let branches =
-            tokio::task::spawn_blocking(move || get_merged_branches_impl(Path::new(&mb_path)))
-                .await
-                .map_err(|e| format!("spawn_blocking error: {e}"))??;
-        AppState::set_cached(
-            &state.git_cache.merged_branches,
-            repo_path.clone(),
-            branches.clone(),
-        );
-        branches
-    };
+    let mb_path = repo_path.clone();
+    let merged_branches = cached_try(
+        state.git_cache.merged_branches.clone(),
+        repo_path.clone(),
+        move || get_merged_branches_impl(Path::new(&mb_path)),
+    )
+    .await?;
 
     let worktree_paths = worktree_handle
         .await
@@ -1207,7 +1261,7 @@ pub(crate) async fn get_repo_summary_impl(
     let mut diff_handles = Vec::with_capacity(paths.len());
     for path in paths {
         diff_handles.push(tokio::task::spawn_blocking(move || {
-            let stats = get_diff_stats_impl(&path, None);
+            let stats = git_reads().diff_stats(Path::new(&path), None);
             (path, stats)
         }));
     }
@@ -1258,25 +1312,15 @@ pub(crate) async fn get_repo_structure_impl(
     let _permit = state.monitoring_git_permit().await;
     let wt_path = repo_path.clone();
     let worktree_handle =
-        tokio::task::spawn_blocking(move || crate::worktree::get_worktree_paths(wt_path));
+        tokio::task::spawn_blocking(move || git_reads().worktree_paths(Path::new(&wt_path)));
 
-    let merged_branches = if let Some(cached) =
-        AppState::get_cached(&state.git_cache.merged_branches, &repo_path, GIT_CACHE_TTL)
-    {
-        cached
-    } else {
-        let mb_path = repo_path.clone();
-        let branches =
-            tokio::task::spawn_blocking(move || get_merged_branches_impl(Path::new(&mb_path)))
-                .await
-                .map_err(|e| format!("spawn_blocking error: {e}"))??;
-        AppState::set_cached(
-            &state.git_cache.merged_branches,
-            repo_path.clone(),
-            branches.clone(),
-        );
-        branches
-    };
+    let mb_path = repo_path.clone();
+    let merged_branches = cached_try(
+        state.git_cache.merged_branches.clone(),
+        repo_path.clone(),
+        move || get_merged_branches_impl(Path::new(&mb_path)),
+    )
+    .await?;
 
     let worktree_paths = worktree_handle
         .await
@@ -1309,7 +1353,7 @@ pub(crate) async fn get_repo_diff_stats_impl(
     // Need worktree paths to know which directories to diff
     let wt_path = repo_path.clone();
     let worktree_paths =
-        tokio::task::spawn_blocking(move || crate::worktree::get_worktree_paths(wt_path))
+        tokio::task::spawn_blocking(move || git_reads().worktree_paths(Path::new(&wt_path)))
             .await
             .map_err(|e| format!("spawn_blocking error: {e}"))?
             .map_err(|e| format!("get_worktree_paths failed: {e}"))?;
@@ -1318,7 +1362,7 @@ pub(crate) async fn get_repo_diff_stats_impl(
     let mut diff_handles = Vec::with_capacity(paths.len());
     for path in paths {
         diff_handles.push(tokio::task::spawn_blocking(move || {
-            let stats = get_diff_stats_impl(&path, None);
+            let stats = git_reads().diff_stats(Path::new(&path), None);
             (path, stats)
         }));
     }
@@ -1442,13 +1486,7 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
         .map_err(|e| format!("git for-each-ref failed: {e}"))?;
 
     // Collect merged branch names once so we can do O(1) lookups.
-    let merged_set: std::collections::HashSet<String> = match get_merged_branches_impl(path) {
-        Ok(names) => names.into_iter().collect(),
-        Err(e) => {
-            eprintln!("[warn] Failed to determine merged branches: {e}");
-            std::collections::HashSet::new()
-        }
-    };
+    let merged_set = merged_branch_set(path);
 
     let mut branches: Vec<BranchDetail> = out
         .stdout
@@ -1527,37 +1565,48 @@ pub(crate) fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>,
         })
         .collect();
 
-    // Compute base ahead/behind for local branches with tuicommander-base set.
-    // Uses --left-right to get both counts in a single subprocess per branch.
+    apply_base_ahead_behind_and_sort(path, &mut branches);
+    Ok(branches)
+}
+
+/// Set of branch names merged into the main branch (CLI), used for `is_merged`.
+/// Empty (with a warning) if the merge check fails. Shared by both adapters.
+pub(crate) fn merged_branch_set(path: &Path) -> std::collections::HashSet<String> {
+    match get_merged_branches_impl(path) {
+        Ok(names) => names.into_iter().collect(),
+        Err(e) => {
+            eprintln!("[warn] Failed to determine merged branches: {e}");
+            std::collections::HashSet::new()
+        }
+    }
+}
+
+/// Backend-agnostic tail for `branches_detail`: fill base ahead/behind for local
+/// branches that have a `tuicommander-base` set, then sort (main first, then
+/// alphabetical). Routed through the GitReads port so it auto-upgrades with the
+/// ahead/behind backend. Shared by the CLI and gix adapters for byte parity.
+pub(crate) fn apply_base_ahead_behind_and_sort(path: &Path, branches: &mut [BranchDetail]) {
     let path_str = path.to_string_lossy();
-    for branch in &mut branches {
+    for branch in branches.iter_mut() {
         if branch.is_remote {
             continue;
         }
         if let Some(base) = crate::worktree::get_branch_base(&path_str, &branch.name) {
-            let range = format!("{base}...{}", branch.name);
-            if let Ok(out) = git_cmd(path)
-                .args(["rev-list", "--count", "--left-right", &range])
-                .run()
-            {
-                let parts: Vec<&str> = out.stdout.trim().split('\t').collect();
-                if parts.len() == 2 {
-                    branch.base_behind = parts[0].trim().parse().ok();
-                    branch.base_ahead = parts[1].trim().parse().ok();
-                }
+            // left=base, right=branch, so (left-not-right, right-not-left) =
+            // (base_behind, base_ahead).
+            if let Ok((behind, ahead)) = git_reads().ahead_behind(path, &base, &branch.name) {
+                branch.base_behind = Some(behind);
+                branch.base_ahead = Some(ahead);
             }
             branch.base_branch = Some(base);
         }
     }
 
-    // Sort: main/primary branches first, then alphabetical
     branches.sort_by(|a, b| match (a.is_main, b.is_main) {
         (true, false) => std::cmp::Ordering::Less,
         (false, true) => std::cmp::Ordering::Greater,
         _ => a.name.cmp(&b.name),
     });
-
-    Ok(branches)
 }
 
 /// Parse `ahead` or `behind` count from a `%(upstream:track)` string.
@@ -1582,20 +1631,11 @@ pub(crate) async fn get_branches_detail(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<Vec<BranchDetail>, String> {
-    if let Some(cached) =
-        AppState::get_cached(&state.git_cache.branches_detail, &path, GIT_CACHE_TTL)
-    {
-        return Ok(cached);
-    }
-
-    let state_arc = state.inner().clone();
-    let path_clone = path.clone();
-    let result =
-        tokio::task::spawn_blocking(move || get_branches_detail_impl(Path::new(&path_clone)))
-            .await
-            .map_err(|e| format!("spawn_blocking join error: {e}"))??;
-    AppState::set_cached(&state_arc.git_cache.branches_detail, path, result.clone());
-    Ok(result)
+    let p = path.clone();
+    cached_try(state.git_cache.branches_detail.clone(), path, move || {
+        git_reads().branches_detail(Path::new(&p))
+    })
+    .await
 }
 
 /// Core logic for fetching recently checked-out branch names from the reflog.
@@ -1661,6 +1701,74 @@ pub(crate) struct GitPanelContext {
 }
 
 /// Core logic for fetching git panel context (no caching, no Tauri state).
+/// CLI status counts via `git status --porcelain=v2` (staged/changed/conflict).
+/// Untracked entries count toward `changed` (matches the panel's prior behavior).
+pub(crate) fn status_counts_cli(path: &Path) -> crate::git_reads::StatusCounts {
+    let porcelain = git_cmd(path)
+        .args(["status", "--porcelain=v2"])
+        .run_silent()
+        .map(|o| o.stdout)
+        .unwrap_or_default();
+
+    let mut staged = 0u32;
+    let mut changed = 0u32;
+    let mut has_conflict = false;
+
+    for line in porcelain.lines() {
+        if let Some(rest) = line.strip_prefix("1 ").or_else(|| line.strip_prefix("2 ")) {
+            // Ordinary ("1 XY ...") or rename/copy ("2 XY ...") entry.
+            let xy: Vec<char> = rest.chars().take(2).collect();
+            if xy.len() == 2 {
+                if xy[0] != '.' {
+                    staged += 1;
+                }
+                if xy[1] != '.' {
+                    changed += 1;
+                }
+            }
+        } else if line.starts_with("u ") {
+            // Unmerged entry
+            has_conflict = true;
+            changed += 1;
+        } else if line.starts_with("? ") {
+            // Untracked
+            changed += 1;
+        }
+    }
+
+    let status = if has_conflict {
+        "conflict"
+    } else if staged > 0 || changed > 0 {
+        "dirty"
+    } else {
+        "clean"
+    }
+    .to_string();
+
+    crate::git_reads::StatusCounts {
+        status,
+        staged,
+        changed,
+    }
+}
+
+/// CLI ahead/behind via `git rev-list --left-right --count <left>...<right>`.
+/// Returns `(ahead, behind)` = (commits in left not right, in right not left).
+pub(crate) fn ahead_behind_cli(repo: &Path, left: &str, right: &str) -> Result<(u32, u32), String> {
+    let range = format!("{left}...{right}");
+    let out = git_cmd(repo)
+        .args(["rev-list", "--left-right", "--count", &range])
+        .run()
+        .map_err(|e| e.to_string())?;
+    let parts: Vec<&str> = out.stdout.trim().split('\t').collect();
+    if parts.len() == 2
+        && let (Ok(a), Ok(b)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>())
+    {
+        return Ok((a, b));
+    }
+    Err(format!("unexpected rev-list output: {:?}", out.stdout))
+}
+
 pub(crate) fn get_git_panel_context_impl(path: &Path) -> GitPanelContext {
     let git_dir = resolve_git_dir(path);
 
@@ -1676,60 +1784,9 @@ pub(crate) fn get_git_panel_context_impl(path: &Path) -> GitPanelContext {
             .unwrap_or_default()
     });
 
-    // Status (porcelain v2 for staged vs unstaged)
-    let (status, staged_count, changed_count) = {
-        let porcelain = git_cmd(path)
-            .args(["status", "--porcelain=v2"])
-            .run_silent()
-            .map(|o| o.stdout)
-            .unwrap_or_default();
-
-        let mut staged = 0u32;
-        let mut changed = 0u32;
-        let mut has_conflict = false;
-
-        for line in porcelain.lines() {
-            if let Some(rest) = line.strip_prefix("1 ") {
-                // Ordinary entry: "1 XY ..."
-                let xy: Vec<char> = rest.chars().take(2).collect();
-                if xy.len() == 2 {
-                    if xy[0] != '.' {
-                        staged += 1;
-                    }
-                    if xy[1] != '.' {
-                        changed += 1;
-                    }
-                }
-            } else if let Some(rest) = line.strip_prefix("2 ") {
-                // Rename/copy entry: "2 XY ..."
-                let xy: Vec<char> = rest.chars().take(2).collect();
-                if xy.len() == 2 {
-                    if xy[0] != '.' {
-                        staged += 1;
-                    }
-                    if xy[1] != '.' {
-                        changed += 1;
-                    }
-                }
-            } else if line.starts_with("u ") {
-                // Unmerged entry
-                has_conflict = true;
-                changed += 1;
-            } else if line.starts_with("? ") {
-                // Untracked
-                changed += 1;
-            }
-        }
-
-        let status_str = if has_conflict {
-            "conflict"
-        } else if staged > 0 || changed > 0 {
-            "dirty"
-        } else {
-            "clean"
-        };
-        (status_str.to_string(), staged, changed)
-    };
+    // Status (porcelain v2 for staged vs unstaged), routed through the port.
+    let counts = git_reads().status_counts(path);
+    let (status, staged_count, changed_count) = (counts.status, counts.staged, counts.changed);
 
     // Ahead/behind (only when there's an upstream)
     let (ahead, behind) = if !is_detached {
@@ -1809,20 +1866,11 @@ pub(crate) async fn get_git_panel_context(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<GitPanelContext, String> {
-    if let Some(cached) =
-        AppState::get_cached(&state.git_cache.git_panel_context, &path, GIT_CACHE_TTL)
-    {
-        return Ok(cached);
-    }
-
-    let state_arc = state.inner().clone();
-    let path_clone = path.clone();
-    let ctx =
-        tokio::task::spawn_blocking(move || get_git_panel_context_impl(Path::new(&path_clone)))
-            .await
-            .map_err(|e| format!("spawn_blocking join error: {e}"))?;
-    AppState::set_cached(&state_arc.git_cache.git_panel_context, path, ctx.clone());
-    Ok(ctx)
+    let p = path.clone();
+    cached_get(state.git_cache.git_panel_context.clone(), path, move || {
+        get_git_panel_context_impl(Path::new(&p))
+    })
+    .await
 }
 
 /// Result of a background git command execution
@@ -2446,8 +2494,8 @@ fn parse_commit_log_line(line: &str) -> Option<CommitLogEntry> {
 }
 
 const COMMIT_LOG_FORMAT: &str = "%x1e%H%x00%P%x00%D%x00%an%x00%aI%x00%s%x00%b";
-const COMMIT_LOG_MAX_COUNT: u32 = 500;
-const COMMIT_LOG_DEFAULT_COUNT: u32 = 50;
+pub(crate) const COMMIT_LOG_MAX_COUNT: u32 = 500;
+pub(crate) const COMMIT_LOG_DEFAULT_COUNT: u32 = 50;
 
 /// Validate a git object hash (4-40 hex chars). Prevents injection via `after` parameters.
 fn validate_git_hash(hash: &str) -> Result<(), String> {
@@ -2504,7 +2552,7 @@ pub(crate) async fn get_commit_log(
     count: Option<u32>,
     after: Option<String>,
 ) -> Result<Vec<CommitLogEntry>, String> {
-    tokio::task::spawn_blocking(move || get_commit_log_impl(path, count, after))
+    tokio::task::spawn_blocking(move || git_reads().commit_log(Path::new(&path), count, after))
         .await
         .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
@@ -2768,29 +2816,60 @@ fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
 }
 
 /// Get per-line blame information for a file.
+/// True if `file`'s history contains a rename. `git blame` (and gix blame)
+/// without -C/-M stop at the rename boundary, but git follows the path's rename
+/// in history while gix does not — so a renamed file must use the CLI blame for
+/// matching per-line attribution. Detected via `git log --follow --diff-filter=R`.
+pub(crate) fn file_history_has_rename(repo: &Path, file: &str) -> bool {
+    git_cmd(repo)
+        .args([
+            "log",
+            "--follow",
+            "--diff-filter=R",
+            "--format=%H",
+            "--",
+            file,
+        ])
+        .run_silent()
+        .map(|o| !o.stdout.trim().is_empty())
+        .unwrap_or(false)
+}
+
+/// Verify `file` is tracked, returning a friendly error if not (instead of
+/// git's cryptic "no such path in HEAD"). Shared by both blame adapters.
+pub(crate) fn ensure_file_tracked(repo: &Path, file: &str) -> Result<(), String> {
+    if git_cmd(repo)
+        .args(["ls-files", "--error-unmatch", file])
+        .run()
+        .is_err()
+    {
+        return Err(format!(
+            "File is not tracked by git — blame unavailable: {file}"
+        ));
+    }
+    Ok(())
+}
+
+/// CLI blame via `git blame --porcelain`. Verifies the file is tracked first so
+/// callers get a clear error instead of git's cryptic "no such path in HEAD".
+pub(crate) fn blame_cli(repo: &Path, file: &str) -> Result<Vec<BlameLine>, String> {
+    ensure_file_tracked(repo, file)?;
+
+    let out = git_cmd(repo)
+        .args(["blame", "--porcelain", file])
+        .run()
+        .map_err(|e| format!("git blame failed: {e}"))?;
+
+    Ok(parse_blame_porcelain(&out.stdout))
+}
+
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub(crate) async fn get_file_blame(path: String, file: String) -> Result<Vec<BlameLine>, String> {
     tokio::task::spawn_blocking(move || {
         let repo_path = PathBuf::from(&path);
         validate_paths_within_repo(&repo_path, std::slice::from_ref(&file))?;
-
-        // Check if file is tracked before running blame — gives a clear error
-        // instead of the cryptic "fatal: no such path ... in HEAD" from git.
-        let tracked = git_cmd(&repo_path)
-            .args(["ls-files", "--error-unmatch", &file])
-            .run();
-        if tracked.is_err() {
-            return Err(format!(
-                "File is not tracked by git — blame unavailable: {file}"
-            ));
-        }
-
-        let out = git_cmd(&repo_path)
-            .args(["blame", "--porcelain", &file])
-            .run()
-            .map_err(|e| format!("git blame failed: {e}"))?;
-
-        Ok(parse_blame_porcelain(&out.stdout))
+        // Routed through the GitReads port (Step 13 may flip to gix).
+        git_reads().blame(&repo_path, &file)
     })
     .await
     .map_err(|e| format!("spawn_blocking join error: {e}"))?
@@ -3176,6 +3255,67 @@ mod tests {
         assert!(
             branch_name == "main" || branch_name == "origin/main",
             "expected 'main' or 'origin/main', got: {branch_name}"
+        );
+    }
+
+    /// Story 001-92d0: in a LINKED worktree, `.git` is a file and shared data
+    /// (config, refs) lives in the common dir. A self-contained regression that
+    /// builds a real worktree and asserts `read_remote_url` + `detect_default_branch`
+    /// resolve via `common_git_dir` (would return None on pre-fix code).
+    #[test]
+    fn worktree_common_dir_resolves_remote_and_default_branch() {
+        use std::process::Command;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let main = dir.path().join("main");
+        std::fs::create_dir(&main).unwrap();
+        let git = |cwd: &std::path::Path, args: &[&str]| {
+            let out = Command::new("git")
+                .current_dir(cwd)
+                .args(args)
+                .env("GIT_AUTHOR_NAME", "T")
+                .env("GIT_AUTHOR_EMAIL", "t@t")
+                .env("GIT_COMMITTER_NAME", "T")
+                .env("GIT_COMMITTER_EMAIL", "t@t")
+                .output()
+                .unwrap_or_else(|e| panic!("git {args:?}: {e}"));
+            assert!(
+                out.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        };
+        git(&main, &["init", "-b", "main"]);
+        git(&main, &["config", "core.hooksPath", "/dev/null"]);
+        git(
+            &main,
+            &["remote", "add", "origin", "git@github.com:acme/widget.git"],
+        );
+        std::fs::write(main.join("a.txt"), "a\n").unwrap();
+        git(&main, &["add", "a.txt"]);
+        git(&main, &["commit", "-m", "init", "--no-verify"]);
+
+        // Linked worktree: its `.git` is a FILE pointing at the per-worktree gitdir.
+        let wt = dir.path().join("wt");
+        git(
+            &main,
+            &["worktree", "add", "-b", "feature", wt.to_str().unwrap()],
+        );
+        assert!(
+            wt.join(".git").is_file(),
+            "linked worktree .git should be a file"
+        );
+
+        // Pre-fix these would read the per-worktree gitdir (no config/refs) → None.
+        assert_eq!(
+            read_remote_url(&wt).as_deref(),
+            Some("git@github.com:acme/widget.git"),
+            "origin URL must resolve from inside a worktree (common dir)"
+        );
+        let gitdir = resolve_git_dir(&wt).expect("worktree gitdir");
+        assert_eq!(
+            detect_default_branch(&gitdir).as_deref(),
+            Some("main"),
+            "default branch must resolve from inside a worktree (common dir)"
         );
     }
 

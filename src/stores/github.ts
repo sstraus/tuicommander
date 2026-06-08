@@ -2,7 +2,7 @@ import { createStore, produce } from "solid-js/store";
 import { invoke, listen } from "../invoke";
 import type { BranchPrStatus, CheckDetail, CheckSummary, GitHubIssue, GitHubStatus } from "../types";
 import { appLogger } from "./appLogger";
-import { type PrNotificationType, prNotificationsStore } from "./prNotifications";
+import { isNotificationType, prNotificationsStore } from "./prNotifications";
 import { repositoriesStore } from "./repositories";
 import { settingsStore } from "./settings";
 
@@ -250,14 +250,19 @@ function createGitHubStore() {
 		);
 	}
 
-	/** Handle transition events from Rust poller */
+	/** Handle transition events from Rust poller. `type` is the raw poller tag — a
+	 *  superset of the renderable notification types (it also carries watcher-only
+	 *  `pushed`/`opened`), so gate the notification add behind `isNotificationType`. */
 	function handleTransition(t: {
-		type: PrNotificationType;
+		type: string;
 		repo_path: string;
 		branch: string;
 		pr_number: number;
 		title: string;
 	}): void {
+		// Watcher-only transitions (pushed/opened) have no popover label — skip them.
+		if (!isNotificationType(t.type)) return;
+
 		prNotificationsStore.add({
 			repoPath: t.repo_path,
 			branch: t.branch,
@@ -299,7 +304,7 @@ function createGitHubStore() {
 			pollRemoteStatus(event.payload.repo_path);
 		}).then((unsub) => unlisteners.push(unsub));
 
-		listen<{ type: PrNotificationType; repo_path: string; branch: string; pr_number: number; title: string }>(
+		listen<{ type: string; repo_path: string; branch: string; pr_number: number; title: string }>(
 			"github-transition",
 			(event) => handleTransition(event.payload),
 		).then((unsub) => unlisteners.push(unsub));

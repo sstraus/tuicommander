@@ -66,7 +66,7 @@ interface ShortcutSection {
 	shortcuts: ShortcutEntry[];
 }
 
-function getShortcutSections(): ShortcutSection[] {
+export function getShortcutSections(): ShortcutSection[] {
 	const mod = getModifierSymbol();
 	const editKey = keyFor("edit-command");
 	return [
@@ -119,6 +119,15 @@ function getShortcutSections(): ShortcutSection[] {
 				{ action: "scroll-page-up", keys: keyFor("scroll-page-up"), description: "Scroll page up" },
 				{ action: "scroll-page-down", keys: keyFor("scroll-page-down"), description: "Scroll page down" },
 				{ action: "zoom-pane", keys: keyFor("zoom-pane"), description: "Toggle zoom pane" },
+				{
+					action: "refresh-terminal",
+					keys: keyFor("refresh-terminal"),
+					description: "Refresh terminal (fix glyphs)",
+				},
+				{ action: "block-prev", keys: keyFor("block-prev"), description: "Previous command block" },
+				{ action: "block-next", keys: keyFor("block-next"), description: "Next command block" },
+				{ action: "block-fold-toggle", keys: keyFor("block-fold-toggle"), description: "Toggle block fold" },
+				{ action: "block-search-toggle", keys: keyFor("block-search-toggle"), description: "Search in block" },
 			],
 		},
 		{
@@ -207,6 +216,9 @@ function getShortcutSections(): ShortcutSection[] {
 				},
 				{ action: "command-overview", keys: keyFor("command-overview"), description: "Command overview" },
 				{ action: "ai-triage", keys: keyFor("ai-triage"), description: "AI Triage" },
+				{ action: "toggle-outline", keys: keyFor("toggle-outline"), description: "Toggle outline panel" },
+				{ action: "toggle-compose-panel", keys: keyFor("toggle-compose-panel"), description: "Toggle compose panel" },
+				{ action: "toggle-tunnels", keys: keyFor("toggle-tunnels"), description: "SSH Tunnels" },
 				{
 					action: "open-secondary-window",
 					keys: keyFor("open-secondary-window"),
@@ -254,6 +266,22 @@ function getShortcutSections(): ShortcutSection[] {
 		{
 			title: t("helpPanel.sidebarNavigation", "Sidebar & Navigation"),
 			shortcuts: [
+				{
+					action: "focus-last-terminal",
+					keys: keyFor("focus-last-terminal"),
+					description: "Return to last terminal",
+				},
+				{
+					action: "jump-waiting-terminal",
+					keys: keyFor("jump-waiting-terminal"),
+					description: "Jump to waiting terminal",
+				},
+				{ action: "process-manager", keys: keyFor("process-manager"), description: "Process Manager" },
+				{
+					action: "detach-activity-dashboard",
+					keys: keyFor("detach-activity-dashboard"),
+					description: "Open Activity Dashboard in separate window",
+				},
 				{
 					action: "toggle-sidebar",
 					keys: keyFor("toggle-sidebar"),
@@ -310,6 +338,10 @@ function getShortcutSections(): ShortcutSection[] {
 					description: t("helpPanel.statusBarMic", "StatusBar mic button (hold to record)"),
 				},
 			],
+		},
+		{
+			title: t("helpPanel.generators", "Generators"),
+			shortcuts: [{ action: "open-generators", keys: keyFor("open-generators"), description: "Open generators" }],
 		},
 	];
 }

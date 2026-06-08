@@ -1,66 +1,16 @@
-import { type Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import { type Component, createEffect, createMemo, createSignal, Show } from "solid-js";
 import { useRepository } from "../../hooks/useRepository";
 import { t } from "../../i18n";
 import { repositoriesStore } from "../../stores/repositories";
 import { type DiffViewMode, uiStore } from "../../stores/ui";
-import { cx } from "../../utils";
 import { openFileAction } from "../../utils/filePreview";
 import s from "../PrDiffTab/PrDiffTab.module.css";
-import { type DiffFileSection, DiffViewer, parseDiffFiles } from "../ui/DiffViewer";
-
-/** Reconstruct the raw diff string for a single file section */
-function sectionToRawDiff(section: DiffFileSection): string {
-	return section.lines.map((l) => l.content).join("\n");
-}
-
-const FileSection: Component<{ file: DiffFileSection; baseMode: DiffViewMode; repoPath: string }> = (props) => {
-	const [collapsed, setCollapsed] = createSignal(false);
-
-	const openFile = () => {
-		openFileAction(props.file.path, props.repoPath);
-	};
-
-	return (
-		<div class={s.fileSection}>
-			<div class={s.fileHeader}>
-				<svg
-					class={cx(s.chevron, collapsed() && s.chevronCollapsed)}
-					width="12"
-					height="12"
-					viewBox="0 0 16 16"
-					fill="currentColor"
-					onClick={(e) => {
-						e.stopPropagation();
-						setCollapsed(!collapsed());
-					}}
-					style={{ cursor: "pointer" }}
-				>
-					<path d="M4 6l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-				</svg>
-				<span class={s.filePath} onClick={openFile} style={{ cursor: "pointer" }}>
-					{props.file.path}
-				</span>
-				<span class={s.fileStats}>
-					<Show when={props.file.additions > 0}>
-						<span class={s.statAdd}>+{props.file.additions}</span>
-					</Show>
-					<Show when={props.file.deletions > 0}>
-						<span class={s.statDel}>-{props.file.deletions}</span>
-					</Show>
-				</span>
-			</div>
-			<Show when={!collapsed()}>
-				<div class={s.fileDiff}>
-					<DiffViewer diff={sectionToRawDiff(props.file)} mode={props.baseMode} />
-				</div>
-			</Show>
-		</div>
-	);
-};
+import { DiffFileList } from "../shared/DiffFileList";
+import { parseDiffFiles } from "../ui/DiffViewer";
 
 export interface BranchDiffScrollViewProps {
 	repoPath: string;
-	/** Pass a ref callback to get the container element for Cmd+F search */
+	/** Pass a ref callback to get the scroll container for Cmd+F search */
 	contentRef?: (el: HTMLElement) => void;
 }
 
@@ -108,31 +58,43 @@ export const BranchDiffScrollView: Component<BranchDiffScrollViewProps> = (props
 		return m === "scroll" ? "unified" : m;
 	};
 
-	return (
-		<div class={s.container} ref={props.contentRef}>
-			<div class={s.header}>
-				<span class={s.headerTitle}>{t("diffScroll.title", "All Changes")}</span>
-				<span class={s.headerStats}>
-					{files().length} {t("diffScroll.files", "files")} <span class={s.statAdd}>+{totalAdd()}</span>{" "}
-					<span class={s.statDel}>-{totalDel()}</span>
-				</span>
-			</div>
-			<Show when={loading()}>
-				<div class={s.emptyState}>{t("diffTab.loading", "Loading diff...")}</div>
-			</Show>
-			<Show when={error()}>
-				<div class={s.emptyState}>
-					{t("diffTab.error", "Error:")} {error()}
-				</div>
-			</Show>
-			<Show when={!loading() && !error() && files().length === 0}>
-				<div class={s.emptyState}>{t("diffScroll.noChanges", "No uncommitted changes")}</div>
-			</Show>
-			<Show when={!loading() && !error() && files().length > 0}>
-				<For each={files()}>
-					{(file) => <FileSection file={file} baseMode={baseMode()} repoPath={props.repoPath} />}
-				</For>
-			</Show>
+	const summaryHeader = () => (
+		<div class={s.header}>
+			<span class={s.headerTitle}>{t("diffScroll.title", "All Changes")}</span>
+			<span class={s.headerStats}>
+				{files().length} {t("diffScroll.files", "files")} <span class={s.statAdd}>+{totalAdd()}</span>{" "}
+				<span class={s.statDel}>-{totalDel()}</span>
+			</span>
 		</div>
+	);
+
+	return (
+		<Show
+			when={!loading() && !error() && files().length > 0}
+			fallback={
+				<div class={s.container} ref={props.contentRef}>
+					{summaryHeader()}
+					<Show when={loading()}>
+						<div class={s.emptyState}>{t("diffTab.loading", "Loading diff...")}</div>
+					</Show>
+					<Show when={error()}>
+						<div class={s.emptyState}>
+							{t("diffTab.error", "Error:")} {error()}
+						</div>
+					</Show>
+					<Show when={!loading() && !error() && files().length === 0}>
+						<div class={s.emptyState}>{t("diffScroll.noChanges", "No uncommitted changes")}</div>
+					</Show>
+				</div>
+			}
+		>
+			<DiffFileList
+				files={files()}
+				mode={baseMode()}
+				onOpenFile={(path) => openFileAction(path, props.repoPath)}
+				scrollRef={props.contentRef}
+				header={summaryHeader()}
+			/>
+		</Show>
 	);
 };

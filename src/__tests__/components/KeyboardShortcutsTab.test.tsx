@@ -1,6 +1,8 @@
 import { fireEvent, render } from "@solidjs/testing-library";
-import { describe, expect, it } from "vitest";
-import { KeyboardShortcutsTab } from "../../components/SettingsPanel/tabs/KeyboardShortcutsTab";
+import { describe, expect, it, vi } from "vitest";
+import { getShortcutSections, KeyboardShortcutsTab } from "../../components/SettingsPanel/tabs/KeyboardShortcutsTab";
+import { ACTION_NAMES } from "../../keybindingDefaults";
+import { settingsStore } from "../../stores/settings";
 
 describe("KeyboardShortcutsTab", () => {
 	it("renders the heading", () => {
@@ -53,5 +55,36 @@ describe("KeyboardShortcutsTab", () => {
 		fireEvent.input(input, { target: { value: "xyznonexistent" } });
 
 		expect(container.textContent).toContain("No shortcuts match your search");
+	});
+});
+
+describe("KeyboardShortcutsTab completeness", () => {
+	// Actions intentionally NOT rendered as individual rebindable rows because the
+	// panel surfaces them another way:
+	//   - prev-tab / next-tab: shown as fixed Ctrl+Tab / Ctrl+Shift+Tab info rows
+	//     (the primary binding is intercepted natively, not rebindable here).
+	//   - switch-tab-N / switch-branch-N: collapsed into single "⌘1-9" / "⌘^1-9"
+	//     info rows rather than nine separate entries each.
+	const EXEMPT = new Set<string>([
+		"prev-tab",
+		"next-tab",
+		...Array.from({ length: 9 }, (_, i) => `switch-tab-${i + 1}`),
+		...Array.from({ length: 9 }, (_, i) => `switch-branch-${i + 1}`),
+	]);
+
+	it("renders a row for every canonical action (no silent drift from ACTION_NAMES)", () => {
+		// toggle-ai-chat is gated behind the AI-chat feature flag; force it on so
+		// the completeness check covers it too.
+		vi.spyOn(settingsStore, "isAiChatEnabled").mockReturnValue(true);
+
+		const displayed = new Set<string>();
+		for (const section of getShortcutSections()) {
+			for (const sc of section.shortcuts) {
+				if (sc.action) displayed.add(sc.action);
+			}
+		}
+
+		const missing = ACTION_NAMES.filter((a) => !EXEMPT.has(a) && !displayed.has(a));
+		expect(missing).toEqual([]);
 	});
 });

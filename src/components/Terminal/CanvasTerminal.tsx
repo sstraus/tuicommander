@@ -17,29 +17,20 @@ import {
 	computeCursorRect,
 	type DecodedFrame,
 	type DecodedRow,
+	decideFrameGrid,
 	decodeBinaryFrame,
 	decodeStyledRange,
 	GUTTER_PX,
 	SCROLLBAR_PX,
 	snapLineHeight,
 } from "./canvasTerminalUtils";
-import { fetchFontPayloads, resolveWorkerFontFaces } from "./fontAssets";
-import {
-	installFrameTimingDebugHook,
-	isFrameTimingEnabled,
-	onFrameTimingEnabledChange,
-	recordFrameTiming,
-	resetFrameTiming,
-} from "./frameTiming";
+import { installFrameTimingDebugHook, isFrameTimingEnabled, recordFrameTiming, resetFrameTiming } from "./frameTiming";
 import { acquireCache, getSharedMetrics, invalidateGlyphCache, releaseCache } from "./glyphCache";
 import { createGridRenderer, type GridRenderer } from "./gridRenderer";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { filePathRegex, fileUrlRegex } from "./linkProvider";
-import { nextScrollOffset } from "./scrollCoalesce";
 import { continuationRowsAfterSuggest, isSuggestBlock } from "./suggestOverlay";
 import { altSequenceFromCode, createCompositionState, keyToSequence } from "./terminalInput";
-import { decideFrameGrid } from "./workerGridState";
-import { chooseRenderer, receiveFrame, WorkerRenderer } from "./workerProtocol";
 
 // Re-export for external consumers
 export type { CellMetrics, CursorShape, DecodedFrame };
@@ -105,16 +96,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	const requestedChunks = new Set<number>();
 	const ROW_CACHE_CHUNK = 64;
 	const ROW_CACHE_MAX = 6000;
-	// Shared base-grid renderer (the single canvas2d paint implementation,
-	// also used by the render worker). Created in onMount once ctx exists.
+	// Base-grid renderer (the canvas2d paint implementation). Created in onMount
+	// once ctx exists.
 	let gridRenderer!: GridRenderer;
-	// Renderer mode is decided once at mount (chooseRenderer). "worker" transfers
-	// the base canvas to a Web Worker; "main" uses gridRenderer on this thread.
-	// Flipping the setting only affects terminals opened afterwards.
-	let rendererMode: "worker" | "main" = "main";
-	let renderWorker: Worker | null = null;
-	let workerRenderer: WorkerRenderer | null = null;
-	let unregisterTimingListener: (() => void) | null = null;
 
 	const [metrics, setMetrics] = createSignal<CellMetrics | null>(null);
 	const [focused, setFocused] = createSignal(false);
@@ -135,10 +119,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let transport: TerminalTransport | undefined;
 	let invokeRef: ((cmd: string, args: Record<string, unknown>) => Promise<unknown>) | undefined;
 	let rafId: number | undefined;
-	// Main-mode render-scheduling stamp: when a repaint is first requested, the gap
-	// to the rAF callback is the main-thread analog of the worker's "sched" metric
-	// (only meaningful in main mode; 0 = no pending request). Lets us compare main
-	// vs worker scheduling latency under CPU load. Gated by isFrameTimingEnabled().
+	// Render-scheduling stamp: when a repaint is first requested, the gap to the rAF
+	// callback is the "sched" metric — scheduling latency under CPU load (0 = no
+	// pending request). Gated by isFrameTimingEnabled().
 	let mainDirtySince = 0;
 	let resizeDebounce: ReturnType<typeof setTimeout> | undefined;
 	let dprMediaQuery: MediaQueryList | undefined;
@@ -200,9 +183,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let cachedBgDefault = "#1e1e1e";
 	let cachedFgDefault = "#d4d4d4";
 
-	// Pixel scroll accumulator: shared by wheel + touch handlers.
-	// Accumulates raw pixel delta; when it crosses cellHeight, emits a line scroll to backend.
-	let scrollAccumPx = 0;
+	// Tracks cumulative gesture distance (px) to ramp the scroll acceleration factor.
 	let scrollGestureDistPx = 0;
 
 	// Row index → row data lookup (persistent, updated incrementally)
@@ -237,8 +218,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// don't let backend-frame repaints fight it until the gesture settles.
 		if (scrollPosF != null) return;
 		if (rafId !== undefined || hidden || !alive) return;
-		// Stamp the first repaint request of this cycle (main-mode "sched" — see decl).
-		if (mainDirtySince === 0 && isFrameTimingEnabled() && rendererMode === "main") {
+		// Stamp the first repaint request of this cycle ("sched" — see decl).
+		if (mainDirtySince === 0 && isFrameTimingEnabled()) {
 			mainDirtySince = performance.now();
 		}
 		rafId = requestAnimationFrame(() => {
@@ -248,16 +229,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			if (currentFrame && m) {
 				const dirty = pendingDirtyRows.size > 0 ? new Set(pendingDirtyRows) : undefined;
 				pendingDirtyRows.clear();
-				// "paint" timing measures the BASE grid paint, which only happens on main.
-				// In worker mode the worker paints the base, so we don't record it here
-				// (paintFrame paints only the cheap overlay) — keeps paint.count a true
-				// signal that the base is NOT being painted on the main thread.
-				const timing = isFrameTimingEnabled() && rendererMode === "main";
-				// "sched": request->rAF-callback delay. Records the main-thread scheduling
-				// latency to mirror the worker's sched and expose vsync rAF priority.
+				const timing = isFrameTimingEnabled();
+				// "sched": request->rAF-callback delay — scheduling latency / vsync rAF priority.
 				if (timing && mainDirtySince) {
 					recordFrameTiming(props.sessionId, "sched", performance.now() - mainDirtySince);
 				}
+				// "paint": the base grid paint cost.
 				const paintT0 = timing ? performance.now() : 0;
 				paintFrame(currentFrame, m, dirty);
 				if (timing) recordFrameTiming(props.sessionId, "paint", performance.now() - paintT0);
@@ -326,9 +303,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	}
 
 	function remeasure() {
-		// Worker mode owns the base canvas (no main `ctx`); it only needs octx + worker.
-		if (rendererMode === "main" && !ctx) return;
-		if (rendererMode === "worker" && !workerRenderer) return;
+		if (!ctx) return;
 		const rect = containerRef.getBoundingClientRect();
 		if (rect.width <= 0 || rect.height <= 0) return;
 
@@ -342,35 +317,17 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		cachedBgDefault = getComputedStyle(canvasRef).getPropertyValue("--bg-secondary").trim() || "#1e1e1e";
 		cachedFgDefault = getComputedStyle(canvasRef).getPropertyValue("--text-primary").trim() || "#d4d4d4";
-		if (rendererMode === "main") gridRenderer.setTheme(cachedBgDefault, cachedFgDefault);
+		gridRenderer.setTheme(cachedBgDefault, cachedFgDefault);
 
 		const cols = Math.floor((rect.width - GUTTER_PX - SCROLLBAR_PX) / m.cellWidth);
 		const rows = Math.floor(rect.height / m.cellHeight);
 		if (cols <= 0 || rows <= 0) return;
 		const logicalW = cols * m.cellWidth + GUTTER_PX;
 		const logicalH = rows * m.cellHeight;
-		if (rendererMode === "main") {
-			// Base canvas lives on this thread.
-			canvasRef.width = logicalW * dpr;
-			canvasRef.height = logicalH * dpr;
-			ctx.scale(dpr, dpr);
-			ctx.translate(GUTTER_PX, 0);
-		} else {
-			// Worker owns the base canvas size/transform via postResize below; the
-			// element still needs its CSS box set on this thread.
-			workerRenderer?.postResize({
-				w: logicalW,
-				h: logicalH,
-				dpr,
-				cols,
-				rows,
-				metrics: m,
-				bgDefault: cachedBgDefault,
-				fgDefault: cachedFgDefault,
-				fontFamily,
-				fontWeight,
-			});
-		}
+		canvasRef.width = logicalW * dpr;
+		canvasRef.height = logicalH * dpr;
+		ctx.scale(dpr, dpr);
+		ctx.translate(GUTTER_PX, 0);
 		canvasRef.style.width = `${logicalW}px`;
 		canvasRef.style.height = `${logicalH}px`;
 		overlayCanvasRef.width = logicalW * dpr;
@@ -380,10 +337,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		octx.scale(dpr, dpr);
 		octx.translate(GUTTER_PX, 0);
 
-		// Overscan canvas (smooth scroll, main renderer only): one extra row above
-		// and below the viewport. Positioned -cellHeight so its drawing y=0 maps to
-		// the row just above the viewport; the row below is drawn at (rows+1)*cellHeight.
-		if (rendererMode === "main" && overscanCanvasRef) {
+		// Overscan canvas (smooth scroll): one extra row above and below the viewport.
+		// Positioned -cellHeight so its drawing y=0 maps to the row just above the
+		// viewport; the row below is drawn at (rows+1)*cellHeight.
+		if (overscanCanvasRef) {
 			const overscanH = logicalH + 2 * m.cellHeight;
 			overscanCanvasRef.width = logicalW * dpr;
 			overscanCanvasRef.height = overscanH * dpr;
@@ -433,14 +390,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	}
 
 	function paintFrame(frame: DecodedFrame, m: CellMetrics, dirtyIndices?: Set<number>) {
-		// Base grid: main thread only. In worker mode the base is painted off-thread
-		// (Option A: main decodes + overlays, worker paints the base), so the main
-		// thread paints just the overlay here — that's what makes the cursor/selection/
-		// search/links/scrollbar interactive in worker mode.
-		if (rendererMode === "main") {
-			// Base grid → shared renderer (same impl the worker uses).
-			gridRenderer.paintGrid(rowMap, m, { fullRepaint: fullRepaintNeeded, dirtyIndices });
-		}
+		gridRenderer.paintGrid(rowMap, m, { fullRepaint: fullRepaintNeeded, dirtyIndices });
 		fullRepaintNeeded = false;
 
 		// Overlay (cursor/selection/search/links/scrollbar/suggest) always stays on main.
@@ -1078,7 +1028,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	}
 
 	function renderSmooth() {
-		if (scrollPosF == null || !currentFrame || rendererMode !== "main") return;
+		if (scrollPosF == null || !currentFrame) return;
 		const m = metrics();
 		if (!m) return;
 		const ch = m.cellHeight;
@@ -1211,16 +1161,15 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	// keeps being cache-rendered; we just stop driving it. Backend stays at the floor.
 	function resetScrollGesture() {
 		isScrolling = false;
-		scrollAccumPx = 0;
 		scrollGestureDistPx = 0;
-		if (rendererMode === "main" && scrollPosF != null) {
+		if (scrollPosF != null) {
 			pendingScrollOffset = Math.floor(scrollPosF);
 			scheduleScrollFlush();
 		}
 	}
 
-	// Apply one wheel/touch delta (raw pixels) with gesture acceleration.
-	// Main renderer → smooth sub-line scroll; worker renderer → integer-line path.
+	// Apply one wheel/touch delta (raw pixels) with gesture acceleration → smooth
+	// sub-line scroll.
 	function handleScrollDelta(dy: number) {
 		const m = metrics();
 		const ch = m?.cellHeight ?? 20;
@@ -1228,52 +1177,28 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		scrollGestureDistPx += Math.abs(dy);
 		const excess = Math.max(0, scrollGestureDistPx - screenPx);
 		const factor = 0.5 + 0.5 * (excess / screenPx);
-		if (rendererMode === "main") {
-			applySmoothScroll((dy * factor) / ch);
-		} else {
-			scrollAccumPx += dy * factor;
-			const lines = Math.trunc(scrollAccumPx / ch);
-			if (lines !== 0) {
-				scrollAccumPx -= lines * ch;
-				const base = pendingScrollOffset ?? currentFrame?.displayOffset ?? 0;
-				pendingScrollOffset = nextScrollOffset(base, lines, currentFrame?.historySize ?? 0);
-				scheduleScrollFlush();
-			}
-		}
+		applySmoothScroll((dy * factor) / ch);
 	}
 
 	function onFrame(data: ArrayBuffer | number[]) {
-		// Freeze-investigation: main-thread frame work (ack+decode) runs here even
-		// in worker mode; a frame storm starving the rAF loop will breadcrumb here.
+		// Freeze-investigation: a frame storm starving the rAF loop breadcrumbs here.
 		markPerf("term.onFrame");
 		const buffer = data instanceof ArrayBuffer ? data : new Uint8Array(data).buffer;
 
-		// Frame receipt ordering (Option A — main decodes + overlays, worker paints):
-		// ack FIRST (the ticker must not starve), then ALWAYS decode on the MAIN thread
-		// — decode is cheap and keeps rowMap + currentFrame alive so the overlay
-		// (cursor/selection/links/search/scrollbar) and currentFrame-driven input work
-		// in worker mode too — then, in worker mode only, transfer the buffer to the
-		// worker for the expensive base-grid paint. Decode runs BEFORE the transfer
-		// neuters the buffer. See receiveFrame for the sacrosanct ordering.
+		// Frame receipt ordering: ack FIRST (the ack only clears the in-flight flag;
+		// the ticker sends the next frame on its own schedule, so ack must never wait
+		// on decode/paint), then decode (cheap) which keeps rowMap + currentFrame alive
+		// for the overlay (cursor/selection/links/search/scrollbar) and input semantics.
+		invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame"));
 		const timing = isFrameTimingEnabled();
-		const frame = receiveFrame(buffer, {
-			ack: () => invokeRef?.("ack_terminal_frame", { sessionId: props.sessionId }).catch(ipcErr("ack_terminal_frame")),
-			decode: (buf) => {
-				const decodeT0 = timing ? performance.now() : 0;
-				const f = decodeBinaryFrame(buf);
-				if (timing) recordFrameTiming(props.sessionId, "decode", performance.now() - decodeT0);
-				return f;
-			},
-			transferToWorker:
-				rendererMode === "worker" && workerRenderer ? (buf) => workerRenderer?.postFrame(buf) : undefined,
-		});
+		const decodeT0 = timing ? performance.now() : 0;
+		const frame = decodeBinaryFrame(buffer);
+		if (timing) recordFrameTiming(props.sessionId, "decode", performance.now() - decodeT0);
 		if (!frame) return;
 
 		if (frame.bell) props.onBell?.();
 
-		// Grid decision (geom/scroll/full-replace/scroll-wait) is shared with the
-		// worker's applyFrameToGrid via decideFrameGrid, so the main overlay's rowMap
-		// and the worker's paint rowMap never diverge on what to clear/merge.
+		// Grid decision: geom/scroll/full-replace/scroll-wait for the rowMap.
 		const decision = decideFrameGrid(
 			{ lastScreenRows, lastScreenCols, lastDisplayOffset, lastHistorySize },
 			frame,
@@ -1312,8 +1237,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			// Scroll changed but only partial rows arrived. Old rowMap entries are keyed
 			// to the previous viewportTop — rendering them with the new displayOffset maps
 			// them to wrong screen positions, producing ghost content.
-			// Clear immediately (brief blank < ~5ms) and request a full frame. The worker
-			// (if any) already got this buffer and clears+waits in lock-step.
+			// Clear immediately (brief blank < ~5ms) and request a full frame.
 			rowMap.clear();
 			detectedLinks.clear();
 			fullRepaintNeeded = true;
@@ -1333,24 +1257,22 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// by absolute index). Absolute indices are stable as output grows, so we keep
 		// the cache through generation; it's reset at gesture start to drop any rows
 		// staled by scrollback eviction. Also pump a live render if a gesture is active.
-		if (rendererMode === "main") {
-			for (const row of frame.rows) {
-				rowCache.set(frame.historySize - frame.displayOffset + row.index, row);
-			}
-			if (settlePending != null && frame.displayOffset === settlePending) {
-				// Backend reached the bottom (offset 0) — hand off to normal rendering
-				// seamlessly (the cache render already shows this exact frame).
-				clearSettlePending();
-				scrollPosF = null;
-				endSmoothScroll();
-			} else if (isScrolling) {
-				// Active gesture: re-render against the freshly seeded cache.
-				scheduleSmoothRender();
-			} else if (scrollPosF == null && stageRef?.style.transform) {
-				// Truly at rest on a line: clear any stray transform. (A fractional rest
-				// keeps its transform and stays static — output below doesn't move it.)
-				stageRef.style.transform = "";
-			}
+		for (const row of frame.rows) {
+			rowCache.set(frame.historySize - frame.displayOffset + row.index, row);
+		}
+		if (settlePending != null && frame.displayOffset === settlePending) {
+			// Backend reached the bottom (offset 0) — hand off to normal rendering
+			// seamlessly (the cache render already shows this exact frame).
+			clearSettlePending();
+			scrollPosF = null;
+			endSmoothScroll();
+		} else if (isScrolling) {
+			// Active gesture: re-render against the freshly seeded cache.
+			scheduleSmoothRender();
+		} else if (scrollPosF == null && stageRef?.style.transform) {
+			// Truly at rest on a line: clear any stray transform. (A fractional rest
+			// keeps its transform and stays static — output below doesn't move it.)
+			stageRef.style.transform = "";
 		}
 
 		// Only compare content when the selection is fully on-screen — off-screen rows return empty
@@ -1773,59 +1695,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		}
 		octx = overlayCtx;
 
-		// Worker mode is off by default (settings.ts). Measured trade-off (2026-06-07,
-		// frameTiming sched + live keyboard, see mdkb worker-firstchar-lag-load-dependent):
-		// under heavy CPU load the worker adds a perceptible first-character lag — the
-		// cursor (main-thread overlay) advances instantly while the glyph trails through
-		// the extra decode→postMessage→worker-paint hop. The main-thread renderer keeps up
-		// even during real builds (paint ~1ms/frame; backend in_flight backpressure already
-		// caps frame load), so the worker's benefit is marginal. Kept as experimental opt-in.
-		rendererMode = chooseRenderer(
-			settingsStore.state.offscreenRenderer,
-			"transferControlToOffscreen" in HTMLCanvasElement.prototype,
-		);
-
-		if (rendererMode === "worker") {
-			// Off-main-thread: transfer the base canvas to the worker (irreversible,
-			// once-per-node) and feed it fonts. Decode + base-grid paint run there.
-			renderWorker = new Worker(new URL("./renderer.worker.ts", import.meta.url), { type: "module" });
-			workerRenderer = new WorkerRenderer(renderWorker);
-			// Worker returns drained frame buffers → recycle; or timing samples (only
-			// when instrumentation is on) → record into this session's frameTiming rings
-			// so __terminalFrameTiming.stats() reports worker paint/sched latency too.
-			renderWorker.onmessage = (e: MessageEvent) => {
-				if (e.data instanceof ArrayBuffer) {
-					workerRenderer?.recycle(e.data);
-				} else if (e.data?.type === "frameTiming") {
-					recordFrameTiming(props.sessionId, e.data.kind, e.data.ms);
-				}
-			};
-			workerRenderer.init(canvasRef);
-			// Mirror the timing toggle into the worker (its own module instance), now
-			// and on every future change, until this terminal is torn down.
-			if (isFrameTimingEnabled()) workerRenderer.postTiming(true);
-			unregisterTimingListener = onFrameTimingEnabledChange((on) => workerRenderer?.postTiming(on));
-			void (async () => {
-				try {
-					const faces = resolveWorkerFontFaces(settingsStore.state.font);
-					const payloads = await fetchFontPayloads(faces);
-					workerRenderer?.postFonts(payloads);
-				} catch (err) {
-					appLogger.warn("terminal", "worker font prefetch failed", { error: err });
-				}
-			})();
-		} else {
-			const baseCtx = canvasRef.getContext("2d", { alpha: false });
-			if (!baseCtx) {
-				appLogger.error("terminal", "Failed to acquire canvas 2D context");
-				return;
-			}
-			ctx = baseCtx;
-			gridRenderer = createGridRenderer(ctx, {
-				fontWeight: () => settingsStore.state.fontWeight,
-				getFontFamily: () => settingsStore.getFontFamily(),
-			});
+		const baseCtx = canvasRef.getContext("2d", { alpha: false });
+		if (!baseCtx) {
+			appLogger.error("terminal", "Failed to acquire canvas 2D context");
+			return;
 		}
+		ctx = baseCtx;
+		gridRenderer = createGridRenderer(ctx, {
+			fontWeight: () => settingsStore.state.fontWeight,
+			getFontFamily: () => settingsStore.getFontFamily(),
+		});
 		installFrameTimingDebugHook();
 		acquireCache();
 		const fontFamily = settingsStore.getFontFamily();
@@ -1881,17 +1760,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				} else if (!isVisible && !hidden) {
 					hidden = true;
 					stopBlink();
-					// Shrink to free the backing store while hidden. In worker mode the
-					// base canvas was transferred via transferControlToOffscreen(), so
-					// touching canvasRef.width/height from this thread throws
-					// InvalidStateError — only the worker may resize it (see remeasure).
-					// DEFERRED (2026-06-05) — worker-mode offscreen isn't shrunk while
-					// hidden; would need a postResize the worker repaints on. Skipped:
-					// flow control stops frames when hidden, so it just sits idle.
-					if (rendererMode === "main") {
-						canvasRef.width = 1;
-						canvasRef.height = 1;
-					}
+					// Shrink to free the backing store while hidden.
+					canvasRef.width = 1;
+					canvasRef.height = 1;
 					overlayCanvasRef.width = 1;
 					overlayCanvasRef.height = 1;
 					rowMap.clear();
@@ -2720,8 +2591,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		if (!alive) return;
 		settingsStore.state.theme;
 		invalidateGlyphCache();
-		// Worker mode: caches live in the worker's gridRenderer; remeasure()'s
-		// postResize re-pushes theme/font and the worker invalidates on resize.
 		gridRenderer?.invalidateCaches();
 		fullRepaintNeeded = true;
 		remeasure();
@@ -2777,13 +2646,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		rowMap.clear();
 		detectedLinks.clear();
 		gridRenderer?.invalidateCaches();
-		// Tear down the render worker (no leak): terminate + null refs. The base
-		// canvas was transferred to it, so this node's worker is single-use.
-		unregisterTimingListener?.();
-		unregisterTimingListener = null;
-		renderWorker?.terminate();
-		renderWorker = null;
-		workerRenderer = null;
 		releaseCache();
 	});
 

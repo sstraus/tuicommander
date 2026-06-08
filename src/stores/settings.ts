@@ -11,6 +11,19 @@ const LEGACY_KEYS = {
 } as const;
 
 /** Rust AppConfig shape (subset needed for font/ide read/write) */
+/** A user-defined launcher for the "Open in" menu (GH #71). */
+export interface CustomLauncher {
+	id: string;
+	name: string;
+	/** Executable: bare name (resolved on PATH) or absolute path. */
+	executable: string;
+	/** Args; each may contain {path}/{file}/{line}/{column} placeholders. */
+	args: string[];
+	enabled: boolean;
+	/** Optional platform filter: "macos" | "windows" | "linux". undefined = all. */
+	platform?: "macos" | "windows" | "linux";
+}
+
 interface RustAppConfig {
 	shell: string | null;
 	font_family: string;
@@ -51,7 +64,6 @@ interface RustAppConfig {
 	ai_triage_enabled?: boolean;
 	ai_watchers_enabled?: boolean;
 	scrollback_reflow?: boolean;
-	offscreen_renderer?: boolean;
 	cursor_style?: string;
 	terminal_renderer?: string;
 	show_block_timestamps?: boolean;
@@ -59,6 +71,7 @@ interface RustAppConfig {
 	block_folding_enabled?: boolean;
 	index_strategy?: string;
 	standby_timeout_minutes?: number;
+	custom_launchers?: CustomLauncher[];
 }
 
 // Default values
@@ -356,7 +369,6 @@ interface SettingsStoreState {
 	aiTriageEnabled: boolean;
 	aiWatchersEnabled: boolean;
 	scrollbackReflow: boolean;
-	offscreenRenderer: boolean;
 	cursorStyle: "bar" | "block" | "underline";
 	terminalRenderer: TerminalRenderer;
 	showBlockTimestamps: boolean;
@@ -364,6 +376,7 @@ interface SettingsStoreState {
 	blockFoldingEnabled: boolean;
 	indexStrategy: "disabled" | "active_only" | "active_and_switch" | "all_sequential";
 	standbyTimeoutMinutes: number;
+	customLaunchers: CustomLauncher[];
 }
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -405,7 +418,6 @@ function createSettingsStore() {
 		aiTriageEnabled: false,
 		aiWatchersEnabled: false,
 		scrollbackReflow: false,
-		offscreenRenderer: false,
 		cursorStyle: "bar" as SettingsStoreState["cursorStyle"],
 		terminalRenderer: "webgl",
 		showBlockTimestamps: true,
@@ -413,6 +425,7 @@ function createSettingsStore() {
 		blockFoldingEnabled: true,
 		indexStrategy: "active_and_switch",
 		standbyTimeoutMinutes: 5,
+		customLaunchers: [],
 	});
 
 	// Shadow copy of the last loaded config — preserves fields not tracked in SolidJS store
@@ -459,7 +472,6 @@ function createSettingsStore() {
 			ai_triage_enabled: state.aiTriageEnabled,
 			ai_watchers_enabled: state.aiWatchersEnabled,
 			scrollback_reflow: state.scrollbackReflow,
-			offscreen_renderer: state.offscreenRenderer,
 			cursor_style: state.cursorStyle,
 			terminal_renderer: state.terminalRenderer,
 			show_block_timestamps: state.showBlockTimestamps,
@@ -467,6 +479,7 @@ function createSettingsStore() {
 			block_folding_enabled: state.blockFoldingEnabled,
 			index_strategy: state.indexStrategy,
 			standby_timeout_minutes: state.standbyTimeoutMinutes,
+			custom_launchers: [...state.customLaunchers],
 			services: baseConfig?.services ?? { auth: { session_token_duration_secs: 86400 } },
 			mcp_server_enabled: baseConfig?.mcp_server_enabled ?? true,
 		};
@@ -541,7 +554,6 @@ function createSettingsStore() {
 				setState("aiTriageEnabled", config.ai_triage_enabled ?? false);
 				setState("aiWatchersEnabled", config.ai_watchers_enabled ?? false);
 				setState("scrollbackReflow", config.scrollback_reflow ?? false);
-				setState("offscreenRenderer", config.offscreen_renderer ?? false);
 				const cs = config.cursor_style;
 				setState("cursorStyle", cs === "block" || cs === "underline" ? cs : "bar");
 				setState("terminalRenderer", validateTerminalRenderer(config.terminal_renderer || null));
@@ -553,6 +565,7 @@ function createSettingsStore() {
 					(config.index_strategy as SettingsStoreState["indexStrategy"]) ?? "active_and_switch",
 				);
 				setState("standbyTimeoutMinutes", config.standby_timeout_minutes ?? 5);
+				setState("customLaunchers", config.custom_launchers ?? []);
 			} catch (err) {
 				appLogger.error("config", "Failed to hydrate settings", err);
 			}
@@ -690,6 +703,12 @@ function createSettingsStore() {
 			return !state.disabledAgents.includes(agentType);
 		},
 
+		/** Replace the full list of custom launchers (add/edit/remove all go through here) */
+		setCustomLaunchers(launchers: CustomLauncher[]): void {
+			setState("customLaunchers", launchers);
+			save();
+		},
+
 		/** Set intent-as-tab-title preference */
 		setIntentTabTitle(enabled: boolean): void {
 			setState("intentTabTitle", enabled);
@@ -762,11 +781,6 @@ function createSettingsStore() {
 
 		setScrollbackReflow(enabled: boolean): void {
 			setState("scrollbackReflow", enabled);
-			save();
-		},
-
-		setOffscreenRenderer(enabled: boolean): void {
-			setState("offscreenRenderer", enabled);
 			save();
 		},
 
