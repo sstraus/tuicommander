@@ -16,6 +16,17 @@ Read [`docs/sync-matrix.md`](docs/sync-matrix.md) before any feature/API/config 
   5. **MCP invoke/JS** — call Tauri commands, inspect store state, trigger actions programmatically
   Only use `[HUMAN]` when the item genuinely requires real hardware (audio, IME, touch), multi-app interaction (drag to Finder, global hotkey from another app), or timing-sensitive observation that none of the above can capture. When code-verifying, change `[HUMAN]` to `[x]` with a `_(verified: file:line explanation)_` annotation. When code reveals the description is wrong, change to `[ ]` with a `_(NOTE: ...)_` correction.
 
+## Test instance vs orchestrator instance — READ BEFORE TESTING
+
+There are TWO running TUICommander instances; do not confuse them:
+
+- **Orchestrator instance** — the one this agent is embedded in. The `tuicommander` MCP tools and `debug invoke_js` target THIS instance (Mission Control on `:14319`, app logs on `:9876`). It does **NOT** run your worktree build, so testing it proves nothing about your changes.
+- **Test instance** — the worktree dev build you start with `make dev`. Test your changes against it **only via its HTTP API on `http://127.0.0.1:9877`**. MCP/`invoke_js` cannot reach it.
+
+9877 endpoints (see `src-tauri/src/mcp_http/mod.rs`): `GET/POST /sessions`, `DELETE /sessions/{id}`, `POST /sessions/{id}/write`, `GET /sessions/{id}/output`, and terminal grid ops `POST /terminal/scroll {delta}`, `POST /terminal/scroll-to {line}` (absolute; `line`=top row, 0=oldest), `GET /terminal/scroll-info`, `GET /terminal/lines?start&end`, `GET /terminal/row-text?row`, `POST /terminal/search-buffer {query}`. Create a throwaway session, exercise it, then `DELETE` it — never test against Boss's live sessions.
+
+Canvas rendering (selection highlight, smooth-scroll visuals, cursor) is **not observable over HTTP** — those still need a visual check with Boss.
+
 ## Visual
 
 - All UI work MUST follow [`docs/frontend/STYLE_GUIDE.md`](docs/frontend/STYLE_GUIDE.md).
