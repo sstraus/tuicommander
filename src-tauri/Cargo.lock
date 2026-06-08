@@ -8884,7 +8884,7 @@ checksum = "e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b"
 
 [[package]]
 name = "tuic-bridge"
-version = "1.3.1"
+version = "1.4.0"
 dependencies = [
  "dirs",
  "serde_json",
@@ -8904,7 +8904,7 @@ dependencies = [
 
 [[package]]
 name = "tuicommander"
-version = "1.3.1"
+version = "1.4.0"
 dependencies = [
  "aes-gcm",
  "alacritty_terminal",
