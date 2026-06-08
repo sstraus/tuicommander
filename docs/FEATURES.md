@@ -1298,6 +1298,8 @@ All data persisted to platform config directory via Rust:
 | `Cmd+Shift+W` | Worktree manager |
 | `Cmd+Shift+A` | Activity dashboard |
 | `Cmd+Shift+M` | MCP servers popup (per-repo) |
+| `Cmd+I` | Toggle compose panel |
+| `Cmd+Alt+L` | Toggle outline panel |
 
 ### Git
 | Shortcut | Action |
