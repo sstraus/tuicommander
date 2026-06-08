@@ -1,14 +1,16 @@
 /**
- * VS Code-style git change markers for the CodeMirror editor gutter.
+ * VS Code-style git change markers for the CodeMirror editor gutter, plus a
+ * scrollbar overview ruler showing the same changes as ticks down the right edge
+ * (so they're findable at a glance in long files).
  *
- * `parseDiffToChanges` is a pure function (unified diff text → per-line change
- * status) so it can be unit-tested without CodeMirror. The CodeMirror plumbing
- * (a StateField holding a RangeSet of gutter markers, fed by a StateEffect)
- * lives below it.
+ * The unified-diff → per-line-change parsing lives in Rust (`get_gutter_changes`,
+ * all business logic in Rust); this module only holds the shared `GutterChange`
+ * shape and the CodeMirror plumbing. A single `setChanges` StateEffect feeds both
+ * the gutter (a RangeSet of markers) and the overview ruler (the raw change list).
  */
 
 import { type Extension, RangeSet, StateEffect, StateField } from "@codemirror/state";
-import { EditorView, GutterMarker, gutter } from "@codemirror/view";
+import { EditorView, GutterMarker, gutter, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 
 export type ChangeType = "added" | "modified" | "deleted";
 
@@ -18,80 +20,30 @@ export interface GutterChange {
 	type: ChangeType;
 }
 
-/**
- * Parse a unified diff (e.g. `git diff HEAD -- file`) into per-line change
- * markers for the new file.
- *
- * Classification per contiguous change block (a run of `-`/`+` lines between
- * context lines), matching the gitgutter/VS Code convention:
- *   - only additions          → "added"   (each new line)
- *   - additions + deletions   → "modified" (the new lines that replaced old ones)
- *   - only deletions          → "deleted" (a single marker on the line that now
- *     occupies the position where content was removed)
- */
-export function parseDiffToChanges(diff: string): GutterChange[] {
-	const changes: GutterChange[] = [];
-	if (!diff) return changes;
-
-	let newLine = 0; // 1-based line in the new file at the current cursor
-	let inHunk = false;
-	let delCount = 0; // consecutive deletions in the current block
-	let addCount = 0; // consecutive additions in the current block
-	let addStart = 0; // newLine where the current addition run began
-
-	const flush = () => {
-		if (addCount > 0) {
-			const type: ChangeType = delCount > 0 ? "modified" : "added";
-			for (let i = 0; i < addCount; i++) changes.push({ line: addStart + i, type });
-		} else if (delCount > 0) {
-			// Pure deletion: mark the line now sitting where content was removed.
-			changes.push({ line: newLine, type: "deleted" });
-		}
-		delCount = 0;
-		addCount = 0;
-	};
-
-	for (const raw of diff.split("\n")) {
-		// A new file section resets hunk tracking (multi-file diffs).
-		if (raw.startsWith("diff --git")) {
-			flush();
-			inHunk = false;
-			continue;
-		}
-		if (raw.startsWith("@@")) {
-			flush();
-			const m = /@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(raw);
-			newLine = m ? Number.parseInt(m[1], 10) : 0;
-			inHunk = true;
-			continue;
-		}
-		if (!inHunk) continue;
-
-		const c = raw[0];
-		if (c === " ") {
-			flush();
-			newLine++;
-		} else if (c === "+") {
-			if (addCount === 0) addStart = newLine;
-			addCount++;
-			newLine++;
-		} else if (c === "-") {
-			// An addition run ending in a deletion means two separate blocks.
-			if (addCount > 0) flush();
-			delCount++;
-		} else if (c === "\\") {
-			// "\ No newline at end of file" — not a content line.
-		} else {
-			flush();
-		}
-	}
-	flush();
-	return changes;
-}
-
 // --- CodeMirror integration ---
 
 const setChanges = StateEffect.define<GutterChange[]>();
+
+/** Marker colors, shared by the gutter and the scrollbar overview ruler. */
+const CHANGE_COLORS: Record<ChangeType, string> = {
+	added: "rgba(158, 206, 106, 0.9)",
+	modified: "rgba(100, 149, 237, 0.9)",
+	deleted: "rgba(247, 118, 142, 0.95)",
+};
+
+/**
+ * Collapse changes to one entry per line, clamped to `[1, lineCount]`. A coincident
+ * "added"/"modified" wins over a "deleted" on the same line (matches the gutter).
+ */
+function collapseByLine(changes: GutterChange[], lineCount: number): Map<number, ChangeType> {
+	const byLine = new Map<number, ChangeType>();
+	for (const ch of changes) {
+		const line = Math.min(Math.max(ch.line, 1), lineCount);
+		const existing = byLine.get(line);
+		if (!existing || existing === "deleted") byLine.set(line, ch.type);
+	}
+	return byLine;
+}
 
 class ChangeGutterMarker extends GutterMarker {
 	constructor(readonly kind: ChangeType) {
@@ -105,15 +57,7 @@ class ChangeGutterMarker extends GutterMarker {
 
 /** Build a sorted RangeSet of gutter markers, clamped to the document. */
 function buildMarkers(state: EditorView["state"], changes: GutterChange[]): RangeSet<GutterMarker> {
-	const lineCount = state.doc.lines;
-	// Dedup per line; "added"/"modified" win over a coincident "deleted".
-	const byLine = new Map<number, ChangeType>();
-	for (const ch of changes) {
-		const line = Math.min(Math.max(ch.line, 1), lineCount);
-		const existing = byLine.get(line);
-		if (!existing || existing === "deleted") byLine.set(line, ch.type);
-	}
-	const markers = [...byLine.entries()]
+	const markers = [...collapseByLine(changes, state.doc.lines).entries()]
 		.sort((a, b) => a[0] - b[0])
 		.map(([line, kind]) => new ChangeGutterMarker(kind).range(state.doc.line(line).from));
 	return RangeSet.of(markers, true);
@@ -133,8 +77,8 @@ const changeField = StateField.define<RangeSet<GutterMarker>>({
 const gutterTheme = EditorView.baseTheme({
 	".cm-changeGutter": { width: "3px", paddingLeft: "1px" },
 	".cm-gitMarker": { display: "block", width: "3px", height: "100%" },
-	".cm-gitMarker-added": { background: "rgba(158, 206, 106, 0.9)" },
-	".cm-gitMarker-modified": { background: "rgba(100, 149, 237, 0.9)" },
+	".cm-gitMarker-added": { background: CHANGE_COLORS.added },
+	".cm-gitMarker-modified": { background: CHANGE_COLORS.modified },
 	// Deletion shows a small downward caret at the top of the line.
 	".cm-gitMarker-deleted": {
 		position: "relative",
@@ -147,7 +91,7 @@ const gutterTheme = EditorView.baseTheme({
 		top: "0",
 		borderLeft: "4px solid transparent",
 		borderRight: "4px solid transparent",
-		borderTop: "5px solid rgba(247, 118, 142, 0.95)",
+		borderTop: `5px solid ${CHANGE_COLORS.deleted}`,
 	},
 });
 
@@ -156,9 +100,87 @@ const changeGutter = gutter({
 	markers: (view) => view.state.field(changeField),
 });
 
-/** The editor extension that renders git change markers in the gutter. */
+// --- Scrollbar overview ruler ---
+
+/** Holds the raw change list (fed by the same `setChanges` effect as the gutter)
+ * so the overview ruler can render ticks without re-parsing. */
+const changesField = StateField.define<GutterChange[]>({
+	create: () => [],
+	update(value, tr) {
+		for (const e of tr.effects) {
+			if (e.is(setChanges)) return e.value;
+		}
+		return value;
+	},
+});
+
+/**
+ * Paints the change list as colored ticks down a thin strip at the editor's right
+ * edge — a VS Code-style overview ruler. Lives on `view.dom` (the non-scrolling
+ * editor root) so ticks map to absolute document position, not the scrolled view.
+ */
+class OverviewRuler {
+	private readonly dom: HTMLElement;
+
+	constructor(private readonly view: EditorView) {
+		this.dom = document.createElement("div");
+		this.dom.className = "cm-changeOverview";
+		view.dom.appendChild(this.dom);
+		this.render();
+	}
+
+	update(u: ViewUpdate) {
+		if (u.docChanged || u.startState.field(changesField) !== u.state.field(changesField)) {
+			this.render();
+		}
+	}
+
+	private render() {
+		const changes = this.view.state.field(changesField);
+		const total = this.view.state.doc.lines;
+		this.dom.textContent = "";
+		if (changes.length === 0 || total <= 0) return;
+		const frag = document.createDocumentFragment();
+		for (const [line, type] of collapseByLine(changes, total)) {
+			const tick = document.createElement("div");
+			tick.className = "cm-changeOverview-tick";
+			// Center the tick on the line's relative position down the document.
+			tick.style.top = `${((line - 0.5) / total) * 100}%`;
+			tick.style.background = CHANGE_COLORS[type];
+			frag.appendChild(tick);
+		}
+		this.dom.appendChild(frag);
+	}
+
+	destroy() {
+		this.dom.remove();
+	}
+}
+
+const overviewRuler = ViewPlugin.fromClass(OverviewRuler);
+
+const overviewTheme = EditorView.baseTheme({
+	".cm-changeOverview": {
+		position: "absolute",
+		top: "0",
+		right: "0",
+		bottom: "0",
+		width: "4px",
+		pointerEvents: "none",
+		zIndex: "200",
+	},
+	".cm-changeOverview-tick": {
+		position: "absolute",
+		right: "0",
+		width: "4px",
+		height: "2px",
+		borderRadius: "1px",
+	},
+});
+
+/** The editor extension: git change markers in the gutter + scrollbar overview. */
 export function gitChangeGutter(): Extension {
-	return [changeField, changeGutter, gutterTheme];
+	return [changeField, changesField, changeGutter, gutterTheme, overviewRuler, overviewTheme];
 }
 
 /** Build the StateEffect that updates the gutter markers. */

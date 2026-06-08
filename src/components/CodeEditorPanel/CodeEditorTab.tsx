@@ -37,7 +37,7 @@ import { isAbsolutePath } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import e from "../shared/editor-header.module.css";
 import s from "./CodeEditorTab.module.css";
-import { gitChangeGutter, parseDiffToChanges, setChangesEffect } from "./gitGutter";
+import { type GutterChange, gitChangeGutter, setChangesEffect } from "./gitGutter";
 import { detectLanguage } from "./languageDetection";
 import { codeEditorTheme } from "./theme";
 
@@ -375,14 +375,14 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 		}
 		void (async () => {
 			try {
-				const diff = await invoke<string>("get_file_diff", {
+				const changes = await invoke<GutterChange[]>("get_gutter_changes", {
 					path: fsRoot(),
 					file: props.filePath,
 					scope: "head",
 				});
 				// The tab may have been swapped/closed during the await.
 				if (editorView() !== view) return;
-				view.dispatch({ effects: setChangesEffect(parseDiffToChanges(diff)) });
+				view.dispatch({ effects: setChangesEffect(changes) });
 			} catch (err) {
 				appLogger.debug("editor", "git gutter diff failed", { error: String(err) });
 			}

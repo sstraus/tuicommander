@@ -977,6 +977,180 @@ pub(crate) async fn get_file_diff(
     .map_err(|e| format!("spawn_blocking join error: {e}"))?
 }
 
+/// Per-line git change status for the editor gutter / scrollbar overview ruler.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub(crate) enum GutterChangeType {
+    Added,
+    Modified,
+    Deleted,
+}
+
+/// A single gutter marker: a 1-based line in the *new* file and its status.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct GutterChange {
+    /// 1-based line number in the new (current) file.
+    pub line: u32,
+    #[serde(rename = "type")]
+    pub change_type: GutterChangeType,
+}
+
+/// Parse the `+NNN` new-file start line from a unified-diff hunk header
+/// (`@@ -a,b +c,d @@`). Returns `0` when the header is malformed (mirrors the
+/// frontend's prior regex, which left `newLine` at 0 on no match).
+fn hunk_new_start(header: &str) -> u32 {
+    let Some(plus) = header.find('+') else {
+        return 0;
+    };
+    let rest = &header[plus + 1..];
+    let digits: String = rest.chars().take_while(char::is_ascii_digit).collect();
+    digits.parse().unwrap_or(0)
+}
+
+/// Parse a unified diff (`git diff` output) into per-line gutter markers for the
+/// new file. Classification per contiguous change block (a run of `-`/`+` lines
+/// between context lines), matching the gitgutter / VS Code convention:
+///   - only additions        → Added    (each new line)
+///   - additions + deletions → Modified (the new lines that replaced old ones)
+///   - only deletions        → Deleted  (one marker on the line that now sits
+///     where the removed content was)
+///
+/// This is the Rust home of the parser that used to live in `gitGutter.ts`
+/// (all business logic in Rust); the frontend only renders the returned markers.
+pub(crate) fn parse_diff_to_changes(diff: &str) -> Vec<GutterChange> {
+    let mut changes = Vec::new();
+    if diff.is_empty() {
+        return changes;
+    }
+
+    let mut new_line: u32 = 0; // 1-based line in the new file at the cursor
+    let mut in_hunk = false;
+    let mut del_count: u32 = 0; // consecutive deletions in the current block
+    let mut add_count: u32 = 0; // consecutive additions in the current block
+    let mut add_start: u32 = 0; // new_line where the current addition run began
+
+    let flush = |changes: &mut Vec<GutterChange>,
+                 add_count: &mut u32,
+                 del_count: &mut u32,
+                 add_start: u32,
+                 new_line: u32| {
+        if *add_count > 0 {
+            let change_type = if *del_count > 0 {
+                GutterChangeType::Modified
+            } else {
+                GutterChangeType::Added
+            };
+            for i in 0..*add_count {
+                changes.push(GutterChange {
+                    line: add_start + i,
+                    change_type: change_type.clone(),
+                });
+            }
+        } else if *del_count > 0 {
+            // Pure deletion: mark the line now sitting where content was removed.
+            changes.push(GutterChange {
+                line: new_line,
+                change_type: GutterChangeType::Deleted,
+            });
+        }
+        *del_count = 0;
+        *add_count = 0;
+    };
+
+    for raw in diff.split('\n') {
+        // A new file section resets hunk tracking (multi-file diffs).
+        if raw.starts_with("diff --git") {
+            flush(
+                &mut changes,
+                &mut add_count,
+                &mut del_count,
+                add_start,
+                new_line,
+            );
+            in_hunk = false;
+            continue;
+        }
+        if raw.starts_with("@@") {
+            flush(
+                &mut changes,
+                &mut add_count,
+                &mut del_count,
+                add_start,
+                new_line,
+            );
+            new_line = hunk_new_start(raw);
+            in_hunk = true;
+            continue;
+        }
+        if !in_hunk {
+            continue;
+        }
+
+        match raw.as_bytes().first() {
+            Some(b' ') => {
+                flush(
+                    &mut changes,
+                    &mut add_count,
+                    &mut del_count,
+                    add_start,
+                    new_line,
+                );
+                new_line += 1;
+            }
+            Some(b'+') => {
+                if add_count == 0 {
+                    add_start = new_line;
+                }
+                add_count += 1;
+                new_line += 1;
+            }
+            Some(b'-') => {
+                // An addition run ending in a deletion means two separate blocks.
+                if add_count > 0 {
+                    flush(
+                        &mut changes,
+                        &mut add_count,
+                        &mut del_count,
+                        add_start,
+                        new_line,
+                    );
+                }
+                del_count += 1;
+            }
+            // "\ No newline at end of file" — not a content line.
+            Some(b'\\') => {}
+            _ => flush(
+                &mut changes,
+                &mut add_count,
+                &mut del_count,
+                add_start,
+                new_line,
+            ),
+        }
+    }
+    flush(
+        &mut changes,
+        &mut add_count,
+        &mut del_count,
+        add_start,
+        new_line,
+    );
+    changes
+}
+
+/// Editor gutter / scrollbar-overview change markers for a single file vs a git
+/// scope (default "head"). Returns structured per-line markers — the unified
+/// diff is produced and parsed entirely in Rust; the frontend only renders.
+#[cfg_attr(feature = "desktop", tauri::command)]
+pub(crate) async fn get_gutter_changes(
+    path: String,
+    file: String,
+    scope: Option<String>,
+) -> Result<Vec<GutterChange>, String> {
+    let diff = get_file_diff(path, file, scope, None).await?;
+    Ok(parse_diff_to_changes(&diff))
+}
+
 /// Generate 2-character initials from a repository name
 pub(crate) fn get_repo_initials(name: &str) -> String {
     // Strip control characters (including null bytes) before processing
@@ -3343,6 +3517,80 @@ mod tests {
             err.contains("outside repository") || err.contains("Failed to resolve"),
             "unexpected error: {err}"
         );
+    }
+
+    // --- parse_diff_to_changes unit tests (ported from gitGutter.test.ts) ---
+
+    /// Collect, sorted, the 1-based new-file lines of a given change type.
+    fn lines_of(changes: &[GutterChange], ty: GutterChangeType) -> Vec<u32> {
+        let mut v: Vec<u32> = changes
+            .iter()
+            .filter(|c| c.change_type == ty)
+            .map(|c| c.line)
+            .collect();
+        v.sort_unstable();
+        v
+    }
+
+    #[test]
+    fn gutter_empty_diff_is_empty() {
+        assert_eq!(parse_diff_to_changes(""), vec![]);
+    }
+
+    #[test]
+    fn gutter_pure_insertions_are_added() {
+        let diff = "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -2,1 +2,3 @@\n context\n+new one\n+new two";
+        let c = parse_diff_to_changes(diff);
+        assert_eq!(lines_of(&c, GutterChangeType::Added), vec![3, 4]);
+        assert_eq!(lines_of(&c, GutterChangeType::Modified), Vec::<u32>::new());
+        assert_eq!(lines_of(&c, GutterChangeType::Deleted), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn gutter_replaced_lines_are_modified() {
+        let diff = "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -5,1 +5,1 @@\n-old text\n+new text";
+        let c = parse_diff_to_changes(diff);
+        assert_eq!(lines_of(&c, GutterChangeType::Modified), vec![5]);
+        assert_eq!(lines_of(&c, GutterChangeType::Added), Vec::<u32>::new());
+        assert_eq!(lines_of(&c, GutterChangeType::Deleted), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn gutter_add_heavy_replacement_is_modified() {
+        let diff = "@@ -3,1 +3,3 @@\n-old\n+a\n+b\n+c";
+        let c = parse_diff_to_changes(diff);
+        assert_eq!(lines_of(&c, GutterChangeType::Modified), vec![3, 4, 5]);
+    }
+
+    #[test]
+    fn gutter_pure_deletion_marks_following_line() {
+        let diff = "@@ -3,3 +3,1 @@\n keep\n-gone one\n-gone two";
+        let c = parse_diff_to_changes(diff);
+        assert_eq!(lines_of(&c, GutterChangeType::Deleted), vec![4]);
+        assert_eq!(lines_of(&c, GutterChangeType::Added), Vec::<u32>::new());
+        assert_eq!(lines_of(&c, GutterChangeType::Modified), Vec::<u32>::new());
+    }
+
+    #[test]
+    fn gutter_new_untracked_file_all_added() {
+        let diff = "diff --git a/new.txt b/new.txt\nnew file mode 100644\n--- /dev/null\n+++ b/new.txt\n@@ -0,0 +1,3 @@\n+line1\n+line2\n+line3";
+        let c = parse_diff_to_changes(diff);
+        assert_eq!(lines_of(&c, GutterChangeType::Added), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn gutter_multiple_hunks_classified_independently() {
+        let diff = "diff --git a/f.txt b/f.txt\n--- a/f.txt\n+++ b/f.txt\n@@ -1,2 +1,2 @@\n-first old\n+first new\n second\n@@ -10,2 +10,3 @@\n ctx\n+inserted\n tail";
+        let c = parse_diff_to_changes(diff);
+        assert_eq!(lines_of(&c, GutterChangeType::Modified), vec![1]);
+        assert_eq!(lines_of(&c, GutterChangeType::Added), vec![11]);
+    }
+
+    #[test]
+    fn gutter_ignores_no_newline_marker() {
+        let diff = "@@ -1,1 +1,1 @@\n-a\n+b\n\\ No newline at end of file";
+        let c = parse_diff_to_changes(diff);
+        assert_eq!(lines_of(&c, GutterChangeType::Modified), vec![1]);
     }
 
     #[test]

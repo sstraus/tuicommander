@@ -44,6 +44,7 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `get_diff_stats` | `path` | `DiffStats` | Addition/deletion counts |
 | `get_changed_files` | `path` | `Vec<ChangedFile>` | Changed files with stats |
 | `get_file_diff` | `path, file` | `String` | Single file diff |
+| `get_gutter_changes` | `path, file, scope?` | `Vec<GutterChange>` | Per-line editor gutter/scrollbar change markers (diff parsed in Rust) |
 | `get_git_branches` | `path` | `Vec<JSON>` | All branches (sorted) |
 | `get_recent_commits` | `path` | `Vec<JSON>` | Recent git commits |
 | `rename_branch` | `path, old_name, new_name` | `()` | Rename branch |
@@ -185,6 +186,11 @@ All commands are invoked from the frontend via `invoke(command, args)`. In brows
 | `detect_installed_ides` | -- | `Vec<String>` | Detect installed IDEs |
 | `open_in_app` | `path, app` | `()` | Open path in application |
 | `spawn_agent` | `pty_config, agent_config` | `String` (session ID) | Spawn agent in PTY |
+
+## Agent Session Discovery (`agent_session.rs`)
+
+| Command | Args | Returns | Description |
+|---------|------|---------|-------------|
 | `discover_agent_session` | `session_id, agent_type, cwd` | `Option<String>` | Discover agent session UUID from filesystem for session-aware resume |
 | `verify_agent_session` | `agent_type, session_id, cwd` | `bool` | Verify if a specific agent session file exists on disk (for TUIC_SESSION resume) |
 
