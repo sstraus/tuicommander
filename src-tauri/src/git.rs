@@ -538,6 +538,9 @@ pub(crate) async fn get_recent_commits(
 fn diff_base_args(scope: &Option<String>) -> Result<Vec<String>, String> {
     match scope.as_deref() {
         Some("staged") => Ok(vec!["diff".into(), "--cached".into()]),
+        // "head" compares the working tree against the last commit (staged +
+        // unstaged), i.e. the editor gutter's "vs committed version" view.
+        Some("head") => Ok(vec!["diff".into(), "HEAD".into()]),
         Some(hash) if !hash.is_empty() => {
             validate_git_hash(hash)?;
             Ok(vec!["diff".into(), format!("{hash}^"), hash.into()])
@@ -837,7 +840,11 @@ pub(crate) async fn get_file_diff(
         // For untracked files, use --no-index to generate a diff against the null device.
         // Deleted files don't exist on disk — skip this block entirely and fall
         // through to the regular `git diff` which reads from the index.
-        if scope.is_none() && repo_path.join(&file).exists() {
+        // Also handle the "head" scope (editor gutter): an untracked file has no
+        // HEAD entry, so `git diff HEAD` would be empty — fall back to the
+        // all-added --no-index diff so new files show every line as added.
+        let scope_uses_worktree = scope.is_none() || scope.as_deref() == Some("head");
+        if scope_uses_worktree && repo_path.join(&file).exists() {
             let full_path = repo_path.join(&file);
 
             // Security: prevent path traversal (e.g. "../../etc/passwd")
