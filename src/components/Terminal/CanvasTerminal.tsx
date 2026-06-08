@@ -485,7 +485,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 	function absRowToViewport(absRow: number): number | null {
 		if (!currentFrame) return null;
-		const viewportTop = currentFrame.historySize - currentFrame.displayOffset;
+		// During a smooth-scroll gesture the base is cache-rendered at overlayScrollOffset
+		// (the backend frame lags), so map overlay rows against that same offset.
+		const offset = overlayScrollOffset ?? currentFrame.displayOffset;
+		const viewportTop = currentFrame.historySize - offset;
 		const viewportRow = absRow - viewportTop;
 		if (viewportRow < 0 || viewportRow >= (currentFrame.screenRows || lastResizeRows)) return null;
 		return viewportRow;
@@ -597,7 +600,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		for (let absRi = absStartRow; absRi <= absEndRow; absRi++) {
 			const vpRow = absRowToViewport(absRi);
 			if (vpRow === null) continue;
-			const row = rowMap.get(vpRow);
+			// During a gesture rows come from the cache (keyed by absolute index);
+			// at rest from the live rowMap (keyed by viewport row).
+			const row = overlayScrollOffset != null ? rowCache.get(absRi) : rowMap.get(vpRow);
 			if (!row) continue;
 			const y = vpRow * m.cellHeight;
 
@@ -954,6 +959,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let scrollPosF: number | null = null;
 	let smoothRafId = 0;
 	let overlaysHiddenForScroll = false;
+	// When non-null, the overlay (selection/cursor/search) is painted against this
+	// integer display offset + the row cache instead of the live backend frame, so
+	// it stays aligned with the cache-rendered base during a smooth-scroll gesture.
+	let overlayScrollOffset: number | null = null;
 	// True only while a gesture is actively producing deltas; false at rest (incl.
 	// a fractional rest where scrollPosF stays non-integer — we never snap to a line).
 	let isScrolling = false;
@@ -1037,6 +1046,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const intOffset = Math.floor(scrollPosF);
 		const frac = (scrollPosF - intOffset) * ch; // [0, ch): how far past the line
 		renderCachedBase(intOffset, m, rows, hist);
+		// Repaint the selection/cursor/search overlay aligned to the cached offset so the
+		// highlight tracks the content while scrolling (the overlay canvas is inside the
+		// stage, so the fractional translate below keeps it pixel-aligned with the base).
+		overlayScrollOffset = intOffset;
+		repaintOverlay(currentFrame, m);
+		overlayScrollOffset = null;
 		stageRef.style.transform = `translate3d(0, ${frac}px, 0)`;
 		// Track the scrollbar thumb live against the fractional position (paintFrame,
 		// which normally drives it, is suppressed during the gesture).
@@ -1132,11 +1147,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	function applySmoothScroll(deltaLines: number) {
 		if (scrollPosF == null) {
 			// Entering a gesture: rebuild the cache from the current era (drops rows
-			// staled by scrollback eviction) and hide the cursor/selection overlay.
+			// staled by scrollback eviction). The overlay is NOT hidden — renderSmooth
+			// repaints it from the cache so the selection highlight survives the scroll.
 			rowCache.clear();
 			requestedChunks.clear();
 			seedCacheFromCurrentFrame();
-			setScrollOverlaysHidden(true);
 		}
 		clearSettlePending();
 		isScrolling = true;
