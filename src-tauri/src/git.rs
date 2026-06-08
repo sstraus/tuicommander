@@ -158,6 +158,16 @@ pub(crate) struct DiffStats {
     deletions: i32,
 }
 
+impl DiffStats {
+    /// Construct from line counts (used by the gix diff-stats adapter).
+    pub(crate) fn from_counts(additions: i32, deletions: i32) -> Self {
+        Self {
+            additions,
+            deletions,
+        }
+    }
+}
+
 /// Changed file information (for diff browser)
 #[derive(Clone, Serialize)]
 pub(crate) struct ChangedFile {

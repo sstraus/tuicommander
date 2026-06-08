@@ -198,6 +198,89 @@ impl GixGitReads {
             changed,
         })
     }
+
+    /// Unstaged `git diff --shortstat` (worktree vs index) via gix: sum
+    /// per-file added/removed line counts. Returns `None` (→ CLI fallback) for
+    /// sparse-checkout / submodule repos or on any gix error. Binary files are
+    /// excluded from the line totals, matching git.
+    fn gix_diff_stats_worktree(&self, repo: &Path) -> Option<DiffStats> {
+        use gix::bstr::ByteSlice;
+        use gix::status::Item;
+        use gix::status::index_worktree::Item as IwItem;
+        use gix::status::plumbing::index_as_worktree::EntryStatus;
+
+        let grepo = self.repo(repo).ok()?;
+        if grepo
+            .config_snapshot()
+            .boolean("core.sparseCheckout")
+            .unwrap_or(false)
+        {
+            return None;
+        }
+        if grepo
+            .submodules()
+            .ok()
+            .flatten()
+            .is_some_and(|mut it| it.next().is_some())
+        {
+            return None;
+        }
+
+        let platform = grepo.status(gix::progress::Discard).ok()?;
+        let iter = platform
+            .into_iter(std::iter::empty::<gix::bstr::BString>())
+            .ok()?;
+
+        let mut added = 0i64;
+        let mut removed = 0i64;
+        for item in iter {
+            // Only unstaged changes to tracked files (git diff, no --cached);
+            // untracked entries and purely-staged files are not counted.
+            let Item::IndexWorktree(IwItem::Modification {
+                entry,
+                rela_path,
+                status,
+                ..
+            }) = item.ok()?
+            else {
+                continue;
+            };
+            if !matches!(status, EntryStatus::Change(_)) {
+                continue;
+            }
+            // old = the blob recorded in the index; new = the worktree file
+            // (empty when the tracked file was deleted from the worktree).
+            let old = grepo.find_object(entry.id).ok()?.data.clone();
+            let path = repo.join(rela_path.to_str_lossy().as_ref());
+            let new = std::fs::read(&path).unwrap_or_default();
+            if let Some((a, r)) = count_diff_lines(&old, &new) {
+                added += i64::from(a);
+                removed += i64::from(r);
+            }
+        }
+        Some(crate::git::DiffStats::from_counts(
+            added as i32,
+            removed as i32,
+        ))
+    }
+}
+
+/// Count added/removed lines between two blobs with git's slider heuristics.
+/// Returns `None` for binary content (which git excludes from `--shortstat`).
+fn count_diff_lines(old: &[u8], new: &[u8]) -> Option<(u32, u32)> {
+    if is_binary(old) || is_binary(new) {
+        return None;
+    }
+    use gix::diff::blob::{Algorithm, InternedInput, diff_with_slider_heuristics};
+    let input = InternedInput::new(old, new);
+    // git's default diff algorithm is Myers, with the indent (slider) heuristic on.
+    let diff = diff_with_slider_heuristics(Algorithm::Myers, &input);
+    Some((diff.count_additions(), diff.count_removals()))
+}
+
+/// git's binary heuristic: a NUL byte within the first 8000 bytes.
+fn is_binary(data: &[u8]) -> bool {
+    data.iter().take(8000).any(|&b| b == 0)
 }
 
 impl GitReads for GixGitReads {
@@ -395,16 +478,18 @@ impl GitReads for GixGitReads {
             .unwrap_or_else(|| crate::git::status_counts_cli(repo))
     }
 
-    // diff_stats stays on the CLI (Step 12 decision). Its hot mode (scope=None)
-    // is worktree-vs-index, which gix can't byte-match against `git diff
-    // --shortstat` without per-blob worktree diffing plus git-exact binary
-    // detection and rename line-count handling. The commit (tree-to-tree) mode
-    // is achievable via diff_tree_to_tree + imara-diff but is not the hot path,
-    // and the EMFILE fan-out that motivated this is already capped by the
-    // monitoring semaphore (Step 2). So the whole op stays on the CLI.
-    fn diff_stats(&self, repo: &Path, _scope: Option<&str>) -> DiffStats {
-        let _repo = self.repo(repo);
-        unimplemented!("diff_stats stays on CLI — worktree shortstat parity not feasible")
+    // diff_stats: the hot fan-out mode is the unstaged worktree-vs-index diff
+    // (scope=None) — served by gix (per-blob imara line counts). The staged
+    // (--cached) and commit (hash^..hash) modes are click-time, not hot, and
+    // reduce to tree↔tree diffs; they stay on the CLI. Any gix error (or
+    // sparse/submodule) falls back to the CLI.
+    fn diff_stats(&self, repo: &Path, scope: Option<&str>) -> DiffStats {
+        if scope.is_none()
+            && let Some(stats) = self.gix_diff_stats_worktree(repo)
+        {
+            return stats;
+        }
+        crate::git::get_diff_stats_impl(&repo.to_string_lossy(), scope)
     }
 
     fn blame(&self, repo: &Path, file: &str) -> Result<Vec<BlameLine>, String> {
@@ -492,7 +577,9 @@ impl Default for PerOpBackend {
             // Flipped to gix in Step 11 (parity test: shootout_status_counts);
             // sparse-checkout / submodule repos fall back to CLI inside the adapter.
             status_counts: Backend::Gix,
-            diff_stats: Backend::Cli,
+            // Flipped in Step 12 (parity test: shootout_diff_stats): the hot
+            // worktree mode is gix; staged/commit modes fall back to CLI.
+            diff_stats: Backend::Gix,
             // Flipped to gix in Step 13 (parity test: shootout_blame); renamed
             // files fall back to CLI inside the gix adapter.
             blame: Backend::Gix,
@@ -873,51 +960,68 @@ mod tests {
         eq("sparse-checkout", &sparse);
     }
 
-    /// Step 12: diff_stats stays on the CLI (worktree --shortstat parity isn't
-    /// feasible via gix; the fan-out is already capped by the Step-2 semaphore).
-    /// Guards the CLI path across all three scopes: worktree, staged, commit.
+    /// Step 12: gix diff_stats == CLI for the unstaged worktree mode (the hot
+    /// fan-out path) across add/remove/mixed/multiple-file/delete/binary cases;
+    /// staged and commit modes are served by the CLI and must still agree.
     #[test]
-    fn diff_stats_cli_all_scopes() {
+    fn shootout_diff_stats() {
+        let cli = CliGitReads;
+        let gix = GixGitReads::new();
+        let wt_eq = |label: &str, p: &std::path::Path| {
+            assert_eq!(
+                serde_json::to_value(cli.diff_stats(p, None)).unwrap(),
+                serde_json::to_value(gix.diff_stats(p, None)).unwrap(),
+                "diff_stats worktree {label}: gix != cli"
+            );
+        };
+
         let (_g, repo) = clean_repo();
-        // commit a second revision so a commit-scoped diff exists.
         std::fs::write(repo.join("a.txt"), "a\nb\nc\n").unwrap();
-        run_git(&repo, &["commit", "-am", "grow a.txt", "--no-verify"]);
+        std::fs::write(repo.join("bin.dat"), [0u8, 1, 2, 0, 3]).unwrap();
+        run_git(&repo, &["add", "."]);
+        run_git(&repo, &["commit", "-am", "seed", "--no-verify"]);
+
+        wt_eq("clean", &repo);
+
+        // add lines
+        std::fs::write(repo.join("a.txt"), "a\nb\nc\nd\ne\n").unwrap();
+        wt_eq("added-lines", &repo);
+
+        // remove lines
+        std::fs::write(repo.join("a.txt"), "a\n").unwrap();
+        wt_eq("removed-lines", &repo);
+
+        // mixed change across two files + a deleted tracked file
+        std::fs::write(repo.join("a.txt"), "A\nb\nc\nNEW\n").unwrap();
+        std::fs::write(repo.join("b.txt"), "x\ny\n").unwrap();
+        run_git(&repo, &["add", "b.txt"]);
+        run_git(&repo, &["commit", "-m", "add b", "--no-verify"]);
+        std::fs::write(repo.join("b.txt"), "x\ny\nz\n").unwrap();
+        wt_eq("mixed-two-files", &repo);
+
+        // binary file modified → excluded from line counts (both sides agree)
+        std::fs::write(repo.join("bin.dat"), [0u8, 9, 9, 9, 0, 9]).unwrap();
+        wt_eq("binary-modified", &repo);
+
+        // deleted tracked file (worktree)
+        std::fs::remove_file(repo.join("a.txt")).unwrap();
+        wt_eq("deleted-file", &repo);
+
+        // staged + commit modes (router → CLI) still agree.
+        run_git(&repo, &["add", "-A"]);
+        run_git(&repo, &["commit", "-m", "more", "--no-verify"]);
         let head = run_git(&repo, &["rev-parse", "HEAD"]).trim().to_string();
-
-        // commit scope: +2 lines over its parent.
-        let d = git_reads().diff_stats(&repo, Some(&head));
-        assert_eq!(
-            serde_json::to_value(d).unwrap(),
-            serde_json::to_value(crate::git::get_diff_stats_impl(
-                &repo.to_string_lossy(),
-                Some(&head)
-            ))
-            .unwrap()
-        );
-
-        // worktree (unstaged) scope.
-        std::fs::write(repo.join("a.txt"), "a\nb\nc\nd\n").unwrap();
-        let d = git_reads().diff_stats(&repo, None);
-        assert_eq!(
-            serde_json::to_value(d).unwrap(),
-            serde_json::to_value(crate::git::get_diff_stats_impl(
-                &repo.to_string_lossy(),
-                None
-            ))
-            .unwrap()
-        );
-
-        // staged scope.
-        run_git(&repo, &["add", "a.txt"]);
-        let d = git_reads().diff_stats(&repo, Some("staged"));
-        assert_eq!(
-            serde_json::to_value(d).unwrap(),
-            serde_json::to_value(crate::git::get_diff_stats_impl(
-                &repo.to_string_lossy(),
-                Some("staged")
-            ))
-            .unwrap()
-        );
+        for scope in [Some(head.as_str()), Some("staged")] {
+            assert_eq!(
+                serde_json::to_value(git_reads().diff_stats(&repo, scope)).unwrap(),
+                serde_json::to_value(crate::git::get_diff_stats_impl(
+                    &repo.to_string_lossy(),
+                    scope
+                ))
+                .unwrap(),
+                "diff_stats scope={scope:?}"
+            );
+        }
     }
 
     /// Step 13: gix blame == CLI on a non-renamed file (line→commit, author,
