@@ -590,6 +590,27 @@ pub(crate) struct AppConfig {
     /// Minutes of idle + unfocused before SIGSTOP on process group. 0 = disabled.
     #[serde(default = "default_standby_timeout")]
     pub(crate) standby_timeout_minutes: u16,
+    /// User-defined launchers shown in the "Open in" menu alongside built-ins.
+    #[serde(default)]
+    pub(crate) custom_launchers: Vec<CustomLauncher>,
+}
+
+/// A user-defined launcher for the "Open in" menu. The executable is spawned
+/// with `args`, each of which may contain `{path}`/`{file}`/`{line}`/`{column}`
+/// placeholders (expanded in `agent::open_in_custom`). No icon field — custom
+/// launchers share a single generic icon in the UI.
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub(crate) struct CustomLauncher {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) executable: String,
+    #[serde(default)]
+    pub(crate) args: Vec<String>,
+    #[serde(default = "default_true")]
+    pub(crate) enabled: bool,
+    /// Optional platform filter: "macos" | "windows" | "linux". None = all.
+    #[serde(default)]
+    pub(crate) platform: Option<String>,
 }
 
 fn default_language() -> String {
@@ -700,6 +721,7 @@ impl Default for AppConfig {
             ai_terminal_mcp_enabled: false,
             index_strategy: default_index_strategy(),
             standby_timeout_minutes: default_standby_timeout(),
+            custom_launchers: Vec::new(),
         }
     }
 }
@@ -1809,6 +1831,7 @@ mod tests {
             terminal_renderer: "webgl".to_string(),
             auto_update_plugins_enabled: false,
             standby_timeout_minutes: 5,
+            custom_launchers: Vec::new(),
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));

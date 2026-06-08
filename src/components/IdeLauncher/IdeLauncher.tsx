@@ -1,7 +1,8 @@
 import { type Component, createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { invoke } from "../../invoke";
+import { isMacOS } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
-import type { IdeType } from "../../stores/settings";
+import type { CustomLauncher, IdeType } from "../../stores/settings";
 import { IDE_CATEGORIES, IDE_ICON_PATHS, IDE_NAMES, settingsStore } from "../../stores/settings";
 import { isTauri } from "../../transport";
 
@@ -30,6 +31,24 @@ const IdeIcon: Component<{ ide: IdeType; size?: number }> = (props) => {
 		<img class={s.icon} src={IDE_ICON_PATHS[props.ide]} width={size()} height={size()} alt={IDE_NAMES[props.ide]} />
 	);
 };
+
+/** Generic monochrome icon shared by all user-defined custom launchers. */
+const CustomToolIcon: Component<{ size?: number }> = (props) => (
+	<svg
+		class={s.icon}
+		width={props.size ?? 14}
+		height={props.size ?? 14}
+		viewBox="0 0 16 16"
+		fill="currentColor"
+		aria-hidden="true"
+	>
+		<path d="M10.5 1a3.5 3.5 0 0 0-3.3 4.66L1.5 11.3a1.7 1.7 0 0 0 2.4 2.4l5.64-5.7A3.5 3.5 0 1 0 10.5 1zm0 1.5a2 2 0 0 1 .9 3.79l-.5.25.06.56a2 2 0 0 1-2.6 2.1l-.5-.16-4.7 4.74a.2.2 0 1 1-.28-.28l4.74-4.7-.16-.5a2 2 0 0 1 2.1-2.6l.56.06.25-.5A2 2 0 0 1 10.5 2.5z" />
+	</svg>
+);
+
+/** Current OS as a custom-launcher platform tag. */
+const osPlatform = (): NonNullable<CustomLauncher["platform"]> =>
+	isMacOS() ? "macos" : navigator.userAgent.includes("Win") ? "windows" : "linux";
 
 export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
 	const [isOpen, setIsOpen] = createSignal(false);
@@ -125,6 +144,27 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
 		}
 	};
 
+	/** Enabled custom launchers applicable to the current OS. */
+	const customLaunchers = (): CustomLauncher[] =>
+		settingsStore.state.customLaunchers.filter((l) => l.enabled && (!l.platform || l.platform === osPlatform()));
+
+	const handleOpenCustom = async (launcher: CustomLauncher) => {
+		const target = props.focusedFilePath ?? props.repoPath;
+		if (!target) return;
+		setIsOpen(false);
+		try {
+			await invoke("open_in_custom", {
+				path: target,
+				executable: launcher.executable,
+				args: launcher.args,
+				line: null,
+				col: null,
+			});
+		} catch (err) {
+			appLogger.error("app", "Failed to open in custom launcher", err);
+		}
+	};
+
 	const handleRun = (e: MouseEvent) => {
 		setIsOpen(false);
 		props.onRun?.(e.shiftKey);
@@ -197,6 +237,22 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
 							);
 						}}
 					</For>
+
+					{/* User-defined custom launchers */}
+					<Show when={customLaunchers().length > 0}>
+						<div class={s.divider} />
+						<div class={s.section}>
+							<div class={s.sectionTitle}>{t("ideLauncher.custom", "Custom")}</div>
+							<For each={customLaunchers()}>
+								{(launcher) => (
+									<button class={s.item} onClick={() => handleOpenCustom(launcher)} disabled={!props.repoPath}>
+										<CustomToolIcon />
+										<span class={s.itemName}>{launcher.name}</span>
+									</button>
+								)}
+							</For>
+						</div>
+					</Show>
 
 					{/* Actions */}
 					<div class={s.divider} />

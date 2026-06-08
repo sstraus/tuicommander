@@ -11,6 +11,19 @@ const LEGACY_KEYS = {
 } as const;
 
 /** Rust AppConfig shape (subset needed for font/ide read/write) */
+/** A user-defined launcher for the "Open in" menu (GH #71). */
+export interface CustomLauncher {
+	id: string;
+	name: string;
+	/** Executable: bare name (resolved on PATH) or absolute path. */
+	executable: string;
+	/** Args; each may contain {path}/{file}/{line}/{column} placeholders. */
+	args: string[];
+	enabled: boolean;
+	/** Optional platform filter: "macos" | "windows" | "linux". undefined = all. */
+	platform?: "macos" | "windows" | "linux";
+}
+
 interface RustAppConfig {
 	shell: string | null;
 	font_family: string;
@@ -58,6 +71,7 @@ interface RustAppConfig {
 	block_folding_enabled?: boolean;
 	index_strategy?: string;
 	standby_timeout_minutes?: number;
+	custom_launchers?: CustomLauncher[];
 }
 
 // Default values
@@ -169,6 +183,7 @@ import githubDesktopSvg from "../assets/icons/github-desktop.svg";
 import gitkrakenSvg from "../assets/icons/gitkraken.svg";
 import golandSvg from "../assets/icons/goland.svg";
 import intellijSvg from "../assets/icons/intellij.svg";
+import iterm2Svg from "../assets/icons/iterm2.svg";
 import kittySvg from "../assets/icons/kitty.svg";
 import neovimSvg from "../assets/icons/neovim.svg";
 import phpstormSvg from "../assets/icons/phpstorm.svg";
@@ -179,6 +194,7 @@ import rustroverSvg from "../assets/icons/rustrover.svg";
 import smergeSvg from "../assets/icons/smerge.svg";
 import sourcetreeSvg from "../assets/icons/sourcetree.svg";
 import terminalSvg from "../assets/icons/terminal.svg";
+import towerSvg from "../assets/icons/tower.svg";
 /** IDE icon SVG imports */
 import vscodeSvg from "../assets/icons/vscode.svg";
 import warpSvg from "../assets/icons/warp.svg";
@@ -186,8 +202,6 @@ import webstormSvg from "../assets/icons/webstorm.svg";
 import weztermSvg from "../assets/icons/wezterm.svg";
 import windsurfSvg from "../assets/icons/windsurf.svg";
 import xcodeSvg from "../assets/icons/xcode.svg";
-import iterm2Svg from "../assets/icons/iterm2.svg";
-import towerSvg from "../assets/icons/tower.svg";
 import zedSvg from "../assets/icons/zed.svg";
 
 /** IDE icon paths (SVG) */
@@ -362,6 +376,7 @@ interface SettingsStoreState {
 	blockFoldingEnabled: boolean;
 	indexStrategy: "disabled" | "active_only" | "active_and_switch" | "all_sequential";
 	standbyTimeoutMinutes: number;
+	customLaunchers: CustomLauncher[];
 }
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -410,6 +425,7 @@ function createSettingsStore() {
 		blockFoldingEnabled: true,
 		indexStrategy: "active_and_switch",
 		standbyTimeoutMinutes: 5,
+		customLaunchers: [],
 	});
 
 	// Shadow copy of the last loaded config — preserves fields not tracked in SolidJS store
@@ -463,6 +479,7 @@ function createSettingsStore() {
 			block_folding_enabled: state.blockFoldingEnabled,
 			index_strategy: state.indexStrategy,
 			standby_timeout_minutes: state.standbyTimeoutMinutes,
+			custom_launchers: [...state.customLaunchers],
 			services: baseConfig?.services ?? { auth: { session_token_duration_secs: 86400 } },
 			mcp_server_enabled: baseConfig?.mcp_server_enabled ?? true,
 		};
@@ -548,6 +565,7 @@ function createSettingsStore() {
 					(config.index_strategy as SettingsStoreState["indexStrategy"]) ?? "active_and_switch",
 				);
 				setState("standbyTimeoutMinutes", config.standby_timeout_minutes ?? 5);
+				setState("customLaunchers", config.custom_launchers ?? []);
 			} catch (err) {
 				appLogger.error("config", "Failed to hydrate settings", err);
 			}
@@ -683,6 +701,12 @@ function createSettingsStore() {
 		/** Check if an agent type is enabled */
 		isAgentEnabled(agentType: string): boolean {
 			return !state.disabledAgents.includes(agentType);
+		},
+
+		/** Replace the full list of custom launchers (add/edit/remove all go through here) */
+		setCustomLaunchers(launchers: CustomLauncher[]): void {
+			setState("customLaunchers", launchers);
+			save();
 		},
 
 		/** Set intent-as-tab-title preference */

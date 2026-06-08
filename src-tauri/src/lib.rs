@@ -1399,6 +1399,7 @@ pub fn run() {
             mdkb_commands::uninstall_mdkb,
             hash_password,
             agent::open_in_app,
+            agent::open_in_custom,
             agent::detect_claude_binary,
             agent::detect_agent_binary,
             agent::detect_all_agent_binaries,
