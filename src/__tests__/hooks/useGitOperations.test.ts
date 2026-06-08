@@ -100,6 +100,29 @@ describe("useGitOperations", () => {
 		repositoriesStore._testCancelPendingSave();
 	});
 
+	describe("handleNewTab (#81 — Cmd+T / palette / File>New Tab path)", () => {
+		it("registers the new terminal in the active branch.terminals", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+			await gitOps.handleBranchSelect("/repo", "main"); // auto-spawns the first terminal
+
+			const before = repositoriesStore.get("/repo")?.branches["main"]?.terminals.length ?? 0;
+			await gitOps.handleNewTab();
+
+			// The bug: Cmd+T routed to createNewTerminal, which never added the id to
+			// branch.terminals, so the tab only appeared after a worktree switch.
+			const branch = repositoriesStore.get("/repo")?.branches["main"];
+			expect(branch?.terminals.length).toBe(before + 1);
+			expect(branch?.terminals).toContain(terminalsStore.state.activeId);
+		});
+
+		it("falls back to createNewTerminal when no repo is active", async () => {
+			mockCreateNewTerminal.mockClear();
+			await gitOps.handleNewTab();
+			expect(mockCreateNewTerminal).toHaveBeenCalledTimes(1);
+		});
+	});
+
 	describe("handleBranchSelect", () => {
 		it("sets active repo and branch", async () => {
 			repositoriesStore.add({ path: "/repo", displayName: "Repo" });

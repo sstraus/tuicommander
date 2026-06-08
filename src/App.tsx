@@ -1643,7 +1643,11 @@ const App: Component = () => {
 		zoomInAll: terminalLifecycle.zoomInAll,
 		zoomOutAll: terminalLifecycle.zoomOutAll,
 		zoomResetAll: terminalLifecycle.zoomResetAll,
-		createNewTerminal: terminalLifecycle.createNewTerminal,
+		// Route Cmd+T / command palette through handleNewTab (the + button's path) so
+		// the new terminal is registered in the active branch.terminals and the tab
+		// appears immediately — not only after a worktree switch re-syncs orphans (#81).
+		// handleNewTab falls back to createNewTerminal for the no-repo case.
+		createNewTerminal: gitOps.handleNewTab,
 		closeTerminal: terminalLifecycle.closeTerminal,
 		reopenClosedTab: terminalLifecycle.reopenClosedTab,
 		navigateTab: terminalLifecycle.navigateTab,
@@ -2076,7 +2080,9 @@ const App: Component = () => {
 			switch (action) {
 				// File
 				case "new-tab":
-					terminalLifecycle.createNewTerminal();
+					// Same as Cmd+T / + button: register in active branch so the tab
+					// shows immediately (#81).
+					gitOps.handleNewTab();
 					break;
 				case "close-tab": {
 					if (paneLayoutStore.isSplit()) {
