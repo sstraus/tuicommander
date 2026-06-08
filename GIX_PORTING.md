@@ -15,10 +15,13 @@ Implement the gix git-reads migration **as specified in the plan**, Steps 1→13
 - [x] `cargo clippy --release -- -D warnings` clean; `cargo fmt --check` clean; gix `default-features=false` with minimal features `["sha1","revision","status","blame","blob-diff","dirwalk","parallel"]` (the plan omitted the mandatory `sha1` hash backend; added, still pure-Rust/no-C).
 - [x] Cold-build delta noted: the gix tree (~60 crates) adds ~91s wall to an incremental debug build on this machine (526s user, parallelized).
 
-### Ops kept on CLI (parity not achievable in gix 0.84 — documented, guarded by tests)
-- `commit_log`, `graph_commits`: gix `rev_walk` has no topological sort → can't match `git log --topo-order` on merge histories.
-- `status_counts`: gix status model (Rewrite renames, untracked-dir collapsing, conflict stages) ≠ `--porcelain=v2` staged/changed counts.
-- `diff_stats`: hot mode is worktree-vs-index `--shortstat`, not matchable without per-blob worktree diffing + binary/rename handling; EMFILE fan-out already capped by the Step-2 semaphore.
+### Update (per Boss): ALL 8 read ops now flipped to gix
+The initially-deferred ops were revisited and flipped, each behind a byte-for-byte shootout:
+- `status_counts`: `repo.status()` items → staged/changed counts (parity on the values the panel consumes). sparse/submodule → CLI fallback.
+- `diff_stats`: worktree mode (the hot fan-out path) via per-blob `imara` (Myers+slider, binary excluded); staged/commit modes → CLI.
+- `commit_log` + `graph_commits`: topo-order implemented ourselves (`gix_topo_order`, Kahn by commit-date) + `%D` decoration reproduced byte-for-byte (`gix_decorations`); `author_date` UTC normalized to git's `Z`.
+
+The gix adapters fall back to CLI internally for unsupported edges (sparse/submodule, renamed-history blame, staged/commit diff). `Backend::Cli` remains as a per-op rollback lever.
 
 ### `make check` note
 `tsc`/`biome`/`rustfmt`/`clippy --release -D warnings` all clean; `cargo test` = **3261 passed, 3 failed**. The 3 failures (`test_detect_default_branch_for_real_repo`, `test_read_remote_url_matches_git_remote`, `get_last_commit_timestamps_returns_timestamp_for_main`) are **pre-existing worktree-environment artifacts** — those functions are unchanged on this branch (`git diff main` shows no change) and fail only because the suite runs inside a *linked worktree* whose `.git` file points to a per-worktree dir lacking the shared `[remote "origin"]` / default-branch config. They pass in a normal (non-worktree) checkout.

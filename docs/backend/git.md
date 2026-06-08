@@ -28,9 +28,11 @@ Read operations go through a reversible `GitReads` port (`src-tauri/src/git_read
 | `ahead_behind` | **gix** | `rev_parse_single` + two `with_hidden` revwalks (counts are order-independent; handles no-common-ancestor). |
 | `worktree_paths` | **gix** | `worktrees()` + main worktree; paths canonicalized to match `git worktree list` real paths. |
 | `blame` | **gix** | `blame_file()`; **renamed-history files fall back to CLI** (gix blame lacks `-C`/`-M` rename following). |
-| `commit_log`, `graph_commits` | CLI | gix 0.84 `rev_walk` has no topological sort → cannot match `git log --topo-order` on merge histories. |
-| `status_counts` | CLI | gix status model (Rewrite renames, untracked-dir collapsing, conflict stages) does not match `--porcelain=v2` counts; also the mandated sparse/submodule fallback. |
-| `diff_stats` | CLI | hot mode is worktree-vs-index `--shortstat`, not matchable without per-blob worktree diffing + binary/rename handling; fan-out already capped by the semaphore. |
+| `commit_log`, `graph_commits` | **gix** | gix has no built-in topo sort, so `gix_topo_order` reproduces `git log --topo-order` (Kahn seeded by commit-date) and `gix_decorations` reproduces `%D` byte-for-byte (reverse-refname order, `tag:` prefix, `HEAD -> branch`). `author_date` UTC is normalized to git's `Z`. |
+| `status_counts` | **gix** | `repo.status()` items mapped to staged/changed counts (TreeIndex = staged; IndexWorktree Change/IntentToAdd/untracked/conflict = changed; `NeedsUpdate` skipped). **sparse-checkout / submodule → CLI fallback.** |
+| `diff_stats` | **gix** (worktree) | unstaged worktree-vs-index `--shortstat` via per-blob `imara` (Myers + slider), binary excluded. Staged (`--cached`) and commit (`hash^..hash`) modes → CLI; sparse/submodule/error → CLI. |
+
+**All 8 read ops are served by gix**, each gated by a byte-for-byte shootout test; the gix adapters fall back to the CLI internally for their unsupported edge cases (sparse/submodule, renamed-history blame, staged/commit diff). `Backend::Cli` is retained in `PerOpBackend` as a per-op rollback lever.
 
 The displayed unified diff/patch (`get_git_diff`), stash, reflog, and **all writes/auth stay on the CLI permanently** — they are not part of the port. The `gix` dependency uses `default-features = false` with only `["sha1","revision","status","blame","blob-diff","dirwalk","parallel"]` (pure Rust, no C toolchain).
 
