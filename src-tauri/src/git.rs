@@ -3271,19 +3271,32 @@ mod tests {
                 .env("GIT_COMMITTER_EMAIL", "t@t")
                 .output()
                 .unwrap_or_else(|e| panic!("git {args:?}: {e}"));
-            assert!(out.status.success(), "git {args:?}: {}", String::from_utf8_lossy(&out.stderr));
+            assert!(
+                out.status.success(),
+                "git {args:?}: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
         };
         git(&main, &["init", "-b", "main"]);
         git(&main, &["config", "core.hooksPath", "/dev/null"]);
-        git(&main, &["remote", "add", "origin", "git@github.com:acme/widget.git"]);
+        git(
+            &main,
+            &["remote", "add", "origin", "git@github.com:acme/widget.git"],
+        );
         std::fs::write(main.join("a.txt"), "a\n").unwrap();
         git(&main, &["add", "a.txt"]);
         git(&main, &["commit", "-m", "init", "--no-verify"]);
 
         // Linked worktree: its `.git` is a FILE pointing at the per-worktree gitdir.
         let wt = dir.path().join("wt");
-        git(&main, &["worktree", "add", "-b", "feature", wt.to_str().unwrap()]);
-        assert!(wt.join(".git").is_file(), "linked worktree .git should be a file");
+        git(
+            &main,
+            &["worktree", "add", "-b", "feature", wt.to_str().unwrap()],
+        );
+        assert!(
+            wt.join(".git").is_file(),
+            "linked worktree .git should be a file"
+        );
 
         // Pre-fix these would read the per-worktree gitdir (no config/refs) → None.
         assert_eq!(

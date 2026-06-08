@@ -322,7 +322,9 @@ impl GixGitReads {
             }
             Ok(None) => {
                 if let Ok(id) = grepo.head_id() {
-                    map.entry(id.detach()).or_default().insert(0, "HEAD".to_string());
+                    map.entry(id.detach())
+                        .or_default()
+                        .insert(0, "HEAD".to_string());
                 }
             }
             Err(_) => {}
@@ -529,8 +531,7 @@ impl GitReads for GixGitReads {
             None => grepo.head_id().map_err(|e| e.to_string())?.detach(),
         };
         let decos = Self::gix_decorations(&grepo);
-        let topo =
-            Self::gix_topo_order(&grepo, [tip], n).ok_or("gix topo walk failed")?;
+        let topo = Self::gix_topo_order(&grepo, [tip], n).ok_or("gix topo walk failed")?;
 
         let mut out = Vec::with_capacity(topo.len());
         for (oid, parents) in topo {
@@ -570,8 +571,8 @@ impl GitReads for GixGitReads {
         let grepo = self.repo(repo)?;
         let head = grepo.head_id().map_err(|e| e.to_string())?.detach();
         let decos = Self::gix_decorations(&grepo);
-        let topo = Self::gix_topo_order(&grepo, [head], count as usize)
-            .ok_or("gix topo walk failed")?;
+        let topo =
+            Self::gix_topo_order(&grepo, [head], count as usize).ok_or("gix topo walk failed")?;
         Ok(topo
             .into_iter()
             .map(|(oid, parents)| RawCommit {
@@ -1289,23 +1290,39 @@ mod tests {
 
         std::fs::write(p.join("a"), "a\n").unwrap();
         run_git(&p, &["add", "a"]);
-        run_git_at(&p, "2026-01-01T00:00:01Z", &["commit", "-m", "A", "--no-verify"]);
+        run_git_at(
+            &p,
+            "2026-01-01T00:00:01Z",
+            &["commit", "-m", "A", "--no-verify"],
+        );
         let a = run_git(&p, &["rev-parse", "HEAD"]).trim().to_string();
         run_git(&p, &["update-ref", "refs/tags/v1", &a]); // tag on A
 
         std::fs::write(p.join("b"), "b\n").unwrap();
         run_git(&p, &["add", "b"]);
-        run_git_at(&p, "2026-01-01T00:00:02Z", &["commit", "-m", "B", "--no-verify"]);
+        run_git_at(
+            &p,
+            "2026-01-01T00:00:02Z",
+            &["commit", "-m", "B", "--no-verify"],
+        );
         let b = run_git(&p, &["rev-parse", "HEAD"]).trim().to_string();
         run_git(&p, &["update-ref", "refs/remotes/origin/main", &b]); // remote on B
 
         run_git(&p, &["checkout", "-q", "-b", "feature", &a]);
         std::fs::write(p.join("c"), "c\n").unwrap();
         run_git(&p, &["add", "c"]);
-        run_git_at(&p, "2026-01-01T00:00:03Z", &["commit", "-m", "C", "--no-verify"]);
+        run_git_at(
+            &p,
+            "2026-01-01T00:00:03Z",
+            &["commit", "-m", "C", "--no-verify"],
+        );
         std::fs::write(p.join("d"), "d\n").unwrap();
         run_git(&p, &["add", "d"]);
-        run_git_at(&p, "2026-01-01T00:00:04Z", &["commit", "-m", "D", "--no-verify"]);
+        run_git_at(
+            &p,
+            "2026-01-01T00:00:04Z",
+            &["commit", "-m", "D", "--no-verify"],
+        );
 
         run_git(&p, &["checkout", "-q", "main"]);
         run_git_at(
@@ -1325,9 +1342,16 @@ mod tests {
         let gix = GixGitReads::new();
         let a = cli.graph_commits(&repo, 200).unwrap();
         let b = gix.graph_commits(&repo, 200).unwrap();
-        assert_eq!(format!("{a:?}"), format!("{b:?}"), "graph_commits gix != cli");
+        assert_eq!(
+            format!("{a:?}"),
+            format!("{b:?}"),
+            "graph_commits gix != cli"
+        );
         // sanity: the merge + decorations are present.
-        assert!(a.iter().any(|c| c.parents.len() == 2), "merge commit present");
+        assert!(
+            a.iter().any(|c| c.parents.len() == 2),
+            "merge commit present"
+        );
         assert!(
             a.iter().any(|c| c.refs.iter().any(|r| r == "HEAD -> main")),
             "HEAD -> main decoration present"
