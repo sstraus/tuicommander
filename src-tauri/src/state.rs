@@ -7,7 +7,7 @@ use std::collections::{HashMap, VecDeque};
 use std::io::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU64, AtomicUsize};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU16, AtomicU64, AtomicUsize};
 use std::time::{Duration, Instant};
 #[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter};
@@ -909,6 +909,11 @@ pub struct AppState {
     /// Dirty flag: set by PTY reader when new data is processed, cleared by frame ticker.
     /// Decouples read() from frame serialization to coalesce rapid writes (spinners).
     pub(crate) grid_frame_dirty: DashMap<String, Arc<AtomicBool>>,
+    /// Pending coalesced scroll target (absolute display offset, -1 = none).
+    /// Set by `terminal_scroll_to_offset` without taking the vt lock; applied by the
+    /// frame ticker under the lock it already holds, so scroll never blocks on the
+    /// PTY output processor.
+    pub(crate) pending_scroll: DashMap<String, Arc<AtomicI64>>,
     /// Per-session kitty keyboard protocol state (session_id → state).
     /// Separate DashMap (not inside PtySession) to avoid writer contention.
     pub(crate) kitty_states: DashMap<String, Mutex<KittyKeyboardState>>,
@@ -1163,6 +1168,7 @@ impl AppState {
             grid_watch: DashMap::new(),
             grid_frame_in_flight: DashMap::new(),
             grid_frame_dirty: DashMap::new(),
+            pending_scroll: DashMap::new(),
             kitty_states: DashMap::new(),
             input_buffers: DashMap::new(),
             last_prompts: DashMap::new(),
@@ -2358,8 +2364,16 @@ impl VtLogBuffer {
         self.grid.scroll_to_line(line);
     }
 
+    pub(crate) fn grid_scroll_to_offset(&mut self, offset: usize) {
+        self.grid.scroll_to_offset(offset);
+    }
+
     pub(crate) fn grid_display_offset(&self) -> usize {
         self.grid.display_offset()
+    }
+
+    pub(crate) fn grid_serialize_styled_range(&self, start_abs: usize, count: usize) -> Vec<u8> {
+        self.grid.serialize_styled_range(start_abs, count)
     }
 
     pub(crate) fn grid_total_lines(&self) -> usize {
@@ -3142,6 +3156,7 @@ mod tests {
             grid_watch: dashmap::DashMap::new(),
             grid_frame_in_flight: dashmap::DashMap::new(),
             grid_frame_dirty: dashmap::DashMap::new(),
+            pending_scroll: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),

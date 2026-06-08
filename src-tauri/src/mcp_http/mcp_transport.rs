@@ -3498,6 +3498,7 @@ mod tests {
             grid_channels: dashmap::DashMap::new(),
             grid_watch: dashmap::DashMap::new(),
             grid_frame_in_flight: dashmap::DashMap::new(),
+            pending_scroll: dashmap::DashMap::new(),
             kitty_states: dashmap::DashMap::new(),
             input_buffers: dashmap::DashMap::new(),
             last_prompts: dashmap::DashMap::new(),

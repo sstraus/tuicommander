@@ -147,6 +147,69 @@ export function decodeBinaryFrame(buffer: ArrayBuffer): DecodedFrame | null {
 	};
 }
 
+/** A styled row tagged with its absolute index (0 = oldest scrollback line). */
+export interface StyledRangeRow {
+	abs: number;
+	row: DecodedRow;
+}
+
+/** A decoded range of styled rows, feeding the client-side scroll row cache. */
+export interface StyledRange {
+	startAbs: number;
+	historySize: number;
+	cols: number;
+	rows: StyledRangeRow[];
+}
+
+/**
+ * Decode the styled-row-range payload from `terminal_styled_rows`.
+ * Layout mirrors the Rust `serialize_styled_range`: start_abs u32,
+ * history_size u32, cols u16, row_count u16, then per row abs u32 + colCount u16
+ * + cells (colCount × CELL_SIZE).
+ */
+export function decodeStyledRange(buffer: ArrayBuffer): StyledRange | null {
+	if (buffer.byteLength < 12) return null;
+	const view = new DataView(buffer);
+	let offset = 0;
+	const startAbs = view.getUint32(offset, true);
+	offset += 4;
+	const historySize = view.getUint32(offset, true);
+	offset += 4;
+	const cols = view.getUint16(offset, true);
+	offset += 2;
+	const rowCount = view.getUint16(offset, true);
+	offset += 2;
+
+	const rows: StyledRangeRow[] = [];
+	for (let r = 0; r < rowCount; r++) {
+		if (offset + 6 > buffer.byteLength) break;
+		const abs = view.getUint32(offset, true);
+		offset += 4;
+		const colCount = view.getUint16(offset, true);
+		offset += 2;
+		const codepoints = new Uint32Array(colCount);
+		const fg = new Uint32Array(colCount);
+		const bg = new Uint32Array(colCount);
+		const attrs = new Uint8Array(colCount);
+		for (let c = 0; c < colCount; c++) {
+			if (offset + CELL_SIZE > buffer.byteLength) break;
+			codepoints[c] = view.getUint32(offset, true);
+			offset += 4;
+			const fgR = view.getUint8(offset++);
+			const fgG = view.getUint8(offset++);
+			const fgB = view.getUint8(offset++);
+			const bgR = view.getUint8(offset++);
+			const bgG = view.getUint8(offset++);
+			const bgB = view.getUint8(offset++);
+			attrs[c] = view.getUint8(offset++);
+			fg[c] = (fgR << 16) | (fgG << 8) | fgB;
+			bg[c] = (bgR << 16) | (bgG << 8) | bgB;
+		}
+		rows.push({ abs, row: { index: 0, count: colCount, codepoints, fg, bg, attrs } });
+	}
+	return { startAbs, historySize, cols, rows };
+}
+
 /** Measure natural character height via DOM span — matches xterm.js CharSizeService. */
 export function measureCharHeightDOM(fontSize: number, fontFamily: string, fontWeight: number = 400): number {
 	const span = document.createElement("span");

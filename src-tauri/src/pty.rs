@@ -3,7 +3,7 @@ use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use serde::Serialize;
 use std::io::{Read, Write};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 #[cfg(feature = "desktop")]
 use tauri::{AppHandle, Emitter, State};
 use uuid::Uuid;
@@ -2507,6 +2507,7 @@ pub(crate) fn cleanup_session(session_id: &str, state: &AppState) {
     state.grid_channels.remove(session_id);
     state.grid_watch.remove(session_id);
     state.grid_frame_in_flight.remove(session_id);
+    state.pending_scroll.remove(session_id);
     state.ws_clients.remove(session_id);
     state.kitty_states.remove(session_id);
     state.input_buffers.remove(session_id);
@@ -2537,6 +2538,7 @@ fn tombstone_transient_cleanup(session_id: &str, state: &AppState) {
     state.grid_channels.remove(session_id);
     state.grid_watch.remove(session_id);
     state.grid_frame_in_flight.remove(session_id);
+    state.pending_scroll.remove(session_id);
     state.kitty_states.remove(session_id);
     state.input_buffers.remove(session_id);
     state.silence_states.remove(session_id);
@@ -3051,7 +3053,15 @@ pub(crate) fn spawn_reader_thread(
                 stuck_count = 0;
             }
             if let Some(vt) = ticker_state.vt_log_buffers.get(&ticker_sid) {
-                let frame = vt.lock().serialize_dirty_rows();
+                let mut g = vt.lock();
+                if let Some(p) = ticker_state.pending_scroll.get(&ticker_sid) {
+                    let target = p.swap(-1, Ordering::Relaxed);
+                    if target >= 0 {
+                        g.grid_scroll_to_offset(target as usize);
+                    }
+                }
+                let frame = g.serialize_dirty_rows();
+                drop(g);
                 send_grid_frame(&ticker_state, &ticker_sid, frame);
             }
         }
@@ -5129,6 +5139,9 @@ pub(crate) fn subscribe_terminal_grid(
     state
         .grid_frame_in_flight
         .insert(session_id.clone(), Arc::new(AtomicBool::new(false)));
+    state
+        .pending_scroll
+        .insert(session_id.clone(), Arc::new(AtomicI64::new(-1)));
     state.grid_channels.insert(session_id, channel);
 }
 
@@ -5165,6 +5178,7 @@ pub(crate) fn terminal_request_frame(state: State<'_, Arc<AppState>>, session_id
 pub(crate) fn unsubscribe_terminal_grid(state: State<'_, Arc<AppState>>, session_id: String) {
     state.grid_channels.remove(&session_id);
     state.grid_frame_in_flight.remove(&session_id);
+    state.pending_scroll.remove(&session_id);
 }
 
 /// Exit alternate screen via the terminal grid (display side only, never touches PTY stdin).
@@ -5207,6 +5221,42 @@ pub(crate) fn terminal_scroll(state: State<'_, Arc<AppState>>, session_id: Strin
         };
         send_grid_frame(&state, &session_id, frame);
     }
+}
+
+/// Coalesced scroll: record the target absolute display offset and mark the grid
+/// dirty so the frame ticker applies it under the lock it already holds. Crucially
+/// takes NO vt lock here, so scrolling never contends with the PTY output processor.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn terminal_scroll_to_offset(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    offset: usize,
+) {
+    if let Some(p) = state.pending_scroll.get(&session_id) {
+        p.store(offset as i64, std::sync::atomic::Ordering::Relaxed);
+    }
+    if let Some(d) = state.grid_frame_dirty.get(&session_id) {
+        d.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// Fetch a range of styled rows by absolute index, to fill the frontend's
+/// client-side row cache for smooth local scroll rendering. Read-only; called in
+/// background chunks as the viewport approaches uncached rows, not per frame.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn terminal_styled_rows(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    start: usize,
+    count: usize,
+) -> Vec<u8> {
+    state
+        .vt_log_buffers
+        .get(&session_id)
+        .map(|vt| vt.lock().grid_serialize_styled_range(start, count))
+        .unwrap_or_default()
 }
 
 #[cfg(feature = "desktop")]

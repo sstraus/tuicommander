@@ -1368,6 +1368,8 @@ pub fn run() {
             pty::ack_terminal_frame,
             pty::terminal_exit_alt_screen,
             pty::terminal_scroll,
+            pty::terminal_scroll_to_offset,
+            pty::terminal_styled_rows,
             pty::terminal_scroll_to,
             pty::terminal_get_block_rows,
             pty::terminal_scroll_info,

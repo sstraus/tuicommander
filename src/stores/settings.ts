@@ -170,6 +170,7 @@ import githubDesktopSvg from "../assets/icons/github-desktop.svg";
 import gitkrakenSvg from "../assets/icons/gitkraken.svg";
 import golandSvg from "../assets/icons/goland.svg";
 import intellijSvg from "../assets/icons/intellij.svg";
+import iterm2Svg from "../assets/icons/iterm2.svg";
 import kittySvg from "../assets/icons/kitty.svg";
 import neovimSvg from "../assets/icons/neovim.svg";
 import phpstormSvg from "../assets/icons/phpstorm.svg";
@@ -180,6 +181,7 @@ import rustroverSvg from "../assets/icons/rustrover.svg";
 import smergeSvg from "../assets/icons/smerge.svg";
 import sourcetreeSvg from "../assets/icons/sourcetree.svg";
 import terminalSvg from "../assets/icons/terminal.svg";
+import towerSvg from "../assets/icons/tower.svg";
 /** IDE icon SVG imports */
 import vscodeSvg from "../assets/icons/vscode.svg";
 import warpSvg from "../assets/icons/warp.svg";
@@ -187,8 +189,6 @@ import webstormSvg from "../assets/icons/webstorm.svg";
 import weztermSvg from "../assets/icons/wezterm.svg";
 import windsurfSvg from "../assets/icons/windsurf.svg";
 import xcodeSvg from "../assets/icons/xcode.svg";
-import iterm2Svg from "../assets/icons/iterm2.svg";
-import towerSvg from "../assets/icons/tower.svg";
 import zedSvg from "../assets/icons/zed.svg";
 
 /** IDE icon paths (SVG) */

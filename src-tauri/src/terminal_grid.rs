@@ -2,7 +2,7 @@ use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::Scroll;
 use alacritty_terminal::grid::{Dimensions, ReflowMode};
 use alacritty_terminal::index::{Column, Line, Point};
-use alacritty_terminal::term::cell::{Flags, Osc133CellType};
+use alacritty_terminal::term::cell::{Cell, Flags, Osc133CellType};
 use alacritty_terminal::term::color::{Colors, named_color_to_index};
 use alacritty_terminal::term::search::RegexSearch;
 use alacritty_terminal::term::{Config, Term, TermDamage, TermMode};
@@ -310,6 +310,67 @@ fn resolve_color(c: Color, colors: &Colors) -> Option<Rgb> {
             }
         }
     }
+}
+
+/// Encode one grid cell into the 11-byte wire format shared by the dirty-row and
+/// overscan serializers: codepoint (u32 LE), fg rgb (3 bytes), bg rgb (3 bytes),
+/// attrs (u8).
+fn encode_cell(buf: &mut Vec<u8>, cell: &Cell, colors: &Colors) {
+    let ch = if cell.flags.contains(Flags::WIDE_CHAR_SPACER) || cell.c == '\0' {
+        0u32
+    } else {
+        cell.c as u32
+    };
+    buf.extend_from_slice(&ch.to_le_bytes());
+
+    let (fg_rgb, fg_default) = match resolve_color(cell.fg, colors) {
+        Some(rgb) => (rgb, false),
+        None => (Rgb { r: 0, g: 0, b: 0 }, true),
+    };
+    let fg_rgb = if cell.flags.contains(Flags::DIM) {
+        dim_rgb(fg_rgb)
+    } else {
+        fg_rgb
+    };
+    buf.push(fg_rgb.r);
+    buf.push(fg_rgb.g);
+    buf.push(fg_rgb.b);
+
+    let (bg_rgb, bg_default) = match resolve_color(cell.bg, colors) {
+        Some(rgb) => (rgb, false),
+        None => (Rgb { r: 0, g: 0, b: 0 }, true),
+    };
+    buf.push(bg_rgb.r);
+    buf.push(bg_rgb.g);
+    buf.push(bg_rgb.b);
+
+    let flags = cell.flags;
+    let mut attrs: u8 = 0;
+    if flags.contains(Flags::BOLD) {
+        attrs |= ATTR_BOLD;
+    }
+    if flags.contains(Flags::ITALIC) {
+        attrs |= ATTR_ITALIC;
+    }
+    if flags.intersects(Flags::UNDERLINE | Flags::DOUBLE_UNDERLINE | Flags::UNDERCURL) {
+        attrs |= ATTR_UNDERLINE;
+    }
+    if flags.contains(Flags::STRIKEOUT) {
+        attrs |= ATTR_STRIKEOUT;
+    }
+    if flags.contains(Flags::DIM) {
+        attrs |= ATTR_DIM;
+    }
+    if flags.contains(Flags::INVERSE) {
+        attrs |= ATTR_INVERSE;
+    }
+    if fg_default {
+        attrs |= ATTR_DEFAULT_FG;
+    }
+    if bg_default {
+        attrs |= ATTR_DEFAULT_BG;
+    }
+    buf.push(attrs);
 }
 
 /// Wraps `alacritty_terminal::Term` with a TUICommander-specific API.
@@ -933,6 +994,18 @@ impl TerminalGrid {
         }
     }
 
+    /// Scroll to an absolute display offset (0 = bottom, history = top). Clamps.
+    pub fn scroll_to_offset(&mut self, offset: usize) {
+        let history = self.term.grid().history_size();
+        let target = offset.min(history);
+        let current = self.term.grid().display_offset();
+        let delta = target as i32 - current as i32;
+        if delta != 0 {
+            self.term.scroll_display(Scroll::Delta(delta));
+            self.term.mark_fully_damaged();
+        }
+    }
+
     /// Total number of lines (screen + scrollback history).
     pub fn total_lines(&self) -> usize {
         self.term.grid().history_size() + self.term.grid().screen_lines()
@@ -1311,62 +1384,7 @@ impl TerminalGrid {
             buf.extend_from_slice(&(num_cols as u16).to_le_bytes());
 
             for col in 0..num_cols {
-                let cell = &grid[line][Column(col)];
-                let ch = if cell.flags.contains(Flags::WIDE_CHAR_SPACER) || cell.c == '\0' {
-                    0u32
-                } else {
-                    cell.c as u32
-                };
-                buf.extend_from_slice(&ch.to_le_bytes());
-
-                let (fg_rgb, fg_default) = match resolve_color(cell.fg, colors) {
-                    Some(rgb) => (rgb, false),
-                    None => (Rgb { r: 0, g: 0, b: 0 }, true),
-                };
-                let fg_rgb = if cell.flags.contains(Flags::DIM) {
-                    dim_rgb(fg_rgb)
-                } else {
-                    fg_rgb
-                };
-                buf.push(fg_rgb.r);
-                buf.push(fg_rgb.g);
-                buf.push(fg_rgb.b);
-
-                let (bg_rgb, bg_default) = match resolve_color(cell.bg, colors) {
-                    Some(rgb) => (rgb, false),
-                    None => (Rgb { r: 0, g: 0, b: 0 }, true),
-                };
-                buf.push(bg_rgb.r);
-                buf.push(bg_rgb.g);
-                buf.push(bg_rgb.b);
-
-                let flags = cell.flags;
-                let mut attrs: u8 = 0;
-                if flags.contains(Flags::BOLD) {
-                    attrs |= ATTR_BOLD;
-                }
-                if flags.contains(Flags::ITALIC) {
-                    attrs |= ATTR_ITALIC;
-                }
-                if flags.intersects(Flags::UNDERLINE | Flags::DOUBLE_UNDERLINE | Flags::UNDERCURL) {
-                    attrs |= ATTR_UNDERLINE;
-                }
-                if flags.contains(Flags::STRIKEOUT) {
-                    attrs |= ATTR_STRIKEOUT;
-                }
-                if flags.contains(Flags::DIM) {
-                    attrs |= ATTR_DIM;
-                }
-                if flags.contains(Flags::INVERSE) {
-                    attrs |= ATTR_INVERSE;
-                }
-                if fg_default {
-                    attrs |= ATTR_DEFAULT_FG;
-                }
-                if bg_default {
-                    attrs |= ATTR_DEFAULT_BG;
-                }
-                buf.push(attrs);
+                encode_cell(&mut buf, &grid[line][Column(col)], colors);
             }
         }
 
@@ -1375,6 +1393,50 @@ impl TerminalGrid {
         self.last_frame_history_size = Some(history_size);
         self.last_frame_screen_lines = Some(num_lines);
         self.last_frame_columns = Some(num_cols);
+        buf
+    }
+
+    /// Serialize a range of styled rows by absolute index (0 = oldest scrollback
+    /// line, `history_size + screen_lines - 1` = newest). Feeds the frontend's
+    /// client-side row cache so it can paint the scroll viewport locally at any
+    /// offset/speed without a per-line round-trip. Read-only, on-demand —
+    /// deliberately NOT part of the hot grid-frame protocol.
+    ///
+    /// Absolute index maps to an alacritty `Line` as `abs - history_size`.
+    /// Requested rows outside `[0, history_size + screen_lines)` are skipped, so
+    /// the returned `row_count` may be smaller than `count`; each row carries its
+    /// own absolute index for correct placement.
+    ///
+    /// Layout (little-endian):
+    ///   start_abs: u32, history_size: u32, num_cols: u16, row_count: u16,
+    ///   then per row: abs: u32, col_count: u16, cells (col_count × 11; see
+    ///   `encode_cell`).
+    pub fn serialize_styled_range(&self, start_abs: usize, count: usize) -> Vec<u8> {
+        let grid = self.term.grid();
+        let colors = self.term.colors();
+        let num_cols = grid.columns();
+        let num_lines = grid.screen_lines();
+        let history_size = grid.history_size();
+        let total = history_size + num_lines;
+
+        let rows: Vec<usize> = (0..count)
+            .map(|i| start_abs + i)
+            .filter(|&abs| abs < total)
+            .collect();
+
+        let mut buf = Vec::with_capacity(12 + rows.len() * (6 + num_cols * 11));
+        buf.extend_from_slice(&(start_abs as u32).to_le_bytes());
+        buf.extend_from_slice(&(history_size as u32).to_le_bytes());
+        buf.extend_from_slice(&(num_cols as u16).to_le_bytes());
+        buf.extend_from_slice(&(rows.len() as u16).to_le_bytes());
+        for abs in rows {
+            let line = Line(abs as i32 - history_size as i32);
+            buf.extend_from_slice(&(abs as u32).to_le_bytes());
+            buf.extend_from_slice(&(num_cols as u16).to_le_bytes());
+            for col in 0..num_cols {
+                encode_cell(&mut buf, &grid[line][Column(col)], colors);
+            }
+        }
         buf
     }
 
@@ -1939,6 +2001,56 @@ mod tests {
         assert_eq!(grid.display_offset(), 2);
         grid.scroll_to_line(2);
         assert_eq!(grid.display_offset(), 0);
+    }
+
+    #[test]
+    fn scroll_to_offset_clamps_and_is_exact() {
+        let mut grid = TerminalGrid::new(3, 20, 100);
+        // 5 lines into a 3-row screen → 2 lines in history.
+        let _ = grid.process(b"line1\r\nline2\r\nline3\r\nline4\r\nline5");
+        assert_eq!(grid.display_offset(), 0);
+
+        // Clamps above history.
+        grid.scroll_to_offset(999);
+        assert_eq!(grid.display_offset(), 2);
+
+        // Sets an exact offset.
+        grid.scroll_to_offset(1);
+        assert_eq!(grid.display_offset(), 1);
+
+        // Idempotent: applying the same offset again is a no-op.
+        grid.scroll_to_offset(1);
+        assert_eq!(grid.display_offset(), 1);
+
+        // Back to the bottom.
+        grid.scroll_to_offset(0);
+        assert_eq!(grid.display_offset(), 0);
+    }
+
+    #[test]
+    fn styled_range_header_and_clamping() {
+        let mut grid = TerminalGrid::new(3, 20, 100);
+        // 5 lines into a 3-row screen → 2 lines history, total 5 absolute rows.
+        let _ = grid.process(b"line1\r\nline2\r\nline3\r\nline4\r\nline5");
+
+        // Request 4 rows from abs 1 — all in range.
+        let buf = grid.serialize_styled_range(1, 4);
+        let start_abs = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]);
+        let history = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
+        let num_cols = u16::from_le_bytes([buf[8], buf[9]]);
+        let row_count = u16::from_le_bytes([buf[10], buf[11]]);
+        assert_eq!(start_abs, 1);
+        assert_eq!(history, 2);
+        assert_eq!(num_cols, 20);
+        assert_eq!(row_count, 4, "abs 1..5 are all in range (total = 5)");
+        // First row's absolute index immediately follows the header.
+        let first_abs = u32::from_le_bytes([buf[12], buf[13], buf[14], buf[15]]);
+        assert_eq!(first_abs, 1);
+
+        // Request past the end — clamped to what exists (only abs 4 in [4,7)).
+        let buf = grid.serialize_styled_range(4, 3);
+        let row_count = u16::from_le_bytes([buf[10], buf[11]]);
+        assert_eq!(row_count, 1, "only abs 4 exists in [4,7)");
     }
 
     // --- Row text tests ---
