@@ -1,15 +1,31 @@
 import { createStore } from "solid-js/store";
 
+/** User-facing PR notification types — every one MUST have a label/icon/cls in
+ *  Toolbar's NOTIFICATION_LABELS. This list is the single source of truth: the
+ *  union below derives from it, and `isNotificationType` gates which incoming
+ *  transitions become notifications. */
+export const PR_NOTIFICATION_TYPES = [
+	"merged",
+	"closed",
+	"blocked",
+	"ci_failed",
+	"ci_recovered",
+	"changes_requested",
+	"ready",
+	"review_started",
+] as const;
+
 /** Notification types for PR state transitions */
-export type PrNotificationType =
-	| "merged"
-	| "closed"
-	| "blocked"
-	| "ci_failed"
-	| "ci_recovered"
-	| "changes_requested"
-	| "ready"
-	| "review_started";
+export type PrNotificationType = (typeof PR_NOTIFICATION_TYPES)[number];
+
+/** True when a transition type is a renderable notification. The Rust poller also
+ *  emits watcher-only transitions (`pushed`, `opened`) that have no label/icon and
+ *  must NOT be added as notifications — doing so crashes the popover render
+ *  (NOTIFICATION_LABELS[type] → undefined → undefined.cls). Allowlist, so any future
+ *  watcher-only transition is ignored by default rather than crashing. */
+export function isNotificationType(type: string): type is PrNotificationType {
+	return (PR_NOTIFICATION_TYPES as readonly string[]).includes(type);
+}
 
 export interface PrNotification {
 	id: string;
