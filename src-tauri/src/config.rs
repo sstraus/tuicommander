@@ -569,10 +569,6 @@ pub(crate) struct AppConfig {
     /// affecting cursor-addressed TUIs on the visible screen.
     #[serde(default)]
     pub(crate) scrollback_reflow: bool,
-    /// Off-main-thread terminal rendering (Web Worker + OffscreenCanvas).
-    /// Default off: the main-thread canvas2d renderer stays the universal path.
-    #[serde(default)]
-    pub(crate) offscreen_renderer: bool,
     /// Terminal cursor style: "bar" (default), "block", "underline"
     #[serde(default = "default_cursor_style")]
     pub(crate) cursor_style: String,
@@ -699,7 +695,6 @@ impl Default for AppConfig {
             ai_triage_enabled: false,
             ai_watchers_enabled: false,
             scrollback_reflow: false,
-            offscreen_renderer: false,
             cursor_style: default_cursor_style(),
             terminal_renderer: default_terminal_renderer(),
             ai_terminal_mcp_enabled: false,
@@ -1808,7 +1803,6 @@ mod tests {
             ai_triage_enabled: false,
             ai_watchers_enabled: false,
             scrollback_reflow: false,
-            offscreen_renderer: false,
             ai_terminal_mcp_enabled: false,
             index_strategy: "active_and_switch".to_string(),
             cursor_style: "bar".to_string(),
