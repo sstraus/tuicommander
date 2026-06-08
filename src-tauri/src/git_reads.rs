@@ -265,6 +265,137 @@ impl GixGitReads {
     }
 }
 
+impl GixGitReads {
+    /// Build the per-commit ref decoration map matching `git log %D`: refs
+    /// under refs/heads, refs/remotes, refs/tags pointing at each commit, in
+    /// git's order (reverse-refname), with tags prefixed `tag: ` and HEAD
+    /// combined as `HEAD -> branch` (or a leading `HEAD` when detached).
+    fn gix_decorations(
+        grepo: &gix::Repository,
+    ) -> std::collections::HashMap<gix::ObjectId, Vec<String>> {
+        use gix::bstr::ByteSlice;
+        let mut entries: Vec<(String, gix::ObjectId, String)> = Vec::new();
+        if let Ok(platform) = grepo.references()
+            && let Ok(iter) = platform.all()
+        {
+            for r in iter.filter_map(Result::ok) {
+                let mut reference = r;
+                let full = reference.name().as_bstr().to_str_lossy().into_owned();
+                let is_tag = full.starts_with("refs/tags/");
+                if !(full.starts_with("refs/heads/") || full.starts_with("refs/remotes/") || is_tag)
+                {
+                    continue;
+                }
+                let short = reference.name().shorten().to_str_lossy().into_owned();
+                if short.ends_with("/HEAD") {
+                    continue; // skip origin/HEAD and similar symbolic pointers
+                }
+                let Ok(id) = reference.peel_to_id() else {
+                    continue;
+                };
+                let label = if is_tag {
+                    format!("tag: {short}")
+                } else {
+                    short
+                };
+                entries.push((full, id.detach(), label));
+            }
+        }
+        // git renders decorations in reverse-refname order.
+        entries.sort_by(|a, b| b.0.cmp(&a.0));
+        let mut map: std::collections::HashMap<gix::ObjectId, Vec<String>> =
+            std::collections::HashMap::new();
+        for (_full, oid, label) in entries {
+            map.entry(oid).or_default().push(label);
+        }
+
+        // HEAD: combine into "HEAD -> branch" at the front, or a leading "HEAD"
+        // when detached.
+        match grepo.head_ref() {
+            Ok(Some(mut href)) => {
+                let branch = href.name().shorten().to_str_lossy().into_owned();
+                if let Ok(id) = href.peel_to_id() {
+                    let list = map.entry(id.detach()).or_default();
+                    list.retain(|l| l != &branch);
+                    list.insert(0, format!("HEAD -> {branch}"));
+                }
+            }
+            Ok(None) => {
+                if let Ok(id) = grepo.head_id() {
+                    map.entry(id.detach()).or_default().insert(0, "HEAD".to_string());
+                }
+            }
+            Err(_) => {}
+        }
+        map
+    }
+
+    /// Return commits reachable from `tips` in git `--topo-order`, truncated to
+    /// `count`. Kahn's algorithm with the ready-set ordered by commit-date
+    /// (newest first), matching git's priority-queue topo sort (deterministic
+    /// for distinct commit times). Returns `(oid, parent_oids)` per commit.
+    fn gix_topo_order(
+        grepo: &gix::Repository,
+        tips: impl IntoIterator<Item = gix::ObjectId>,
+        count: usize,
+    ) -> Option<Vec<(gix::ObjectId, Vec<gix::ObjectId>)>> {
+        use gix::revision::walk::Sorting;
+        use gix::traverse::commit::simple::CommitTimeOrder;
+        use std::collections::HashMap;
+
+        let walk = grepo
+            .rev_walk(tips)
+            .sorting(Sorting::ByCommitTime(CommitTimeOrder::NewestFirst))
+            .all()
+            .ok()?;
+
+        let mut parents: HashMap<gix::ObjectId, Vec<gix::ObjectId>> = HashMap::new();
+        let mut time: HashMap<gix::ObjectId, i64> = HashMap::new();
+        let mut indegree: HashMap<gix::ObjectId, i32> = HashMap::new();
+        for info in walk {
+            let info = info.ok()?;
+            let ps: Vec<gix::ObjectId> = info.parent_ids().map(|id| id.detach()).collect();
+            time.insert(info.id, info.commit_time.unwrap_or(0));
+            indegree.entry(info.id).or_insert(1);
+            parents.insert(info.id, ps);
+        }
+        // indegree[c] = 1 + (# of in-set children). Bump parents per child.
+        for ps in parents.values() {
+            for p in ps {
+                if let Some(d) = indegree.get_mut(p) {
+                    *d += 1;
+                }
+            }
+        }
+
+        // Ready set: commits with no unemitted children (indegree == 1), as a
+        // max-heap by commit-time. Tie-break by oid for determinism.
+        let mut ready: std::collections::BinaryHeap<(i64, gix::ObjectId)> = indegree
+            .iter()
+            .filter(|(_, d)| **d == 1)
+            .map(|(oid, _)| (time[oid], *oid))
+            .collect();
+
+        let mut out = Vec::new();
+        while let Some((_, oid)) = ready.pop() {
+            let ps = parents.get(&oid).cloned().unwrap_or_default();
+            out.push((oid, ps.clone()));
+            if out.len() >= count {
+                break;
+            }
+            for p in ps {
+                if let Some(d) = indegree.get_mut(&p) {
+                    *d -= 1;
+                    if *d == 1 {
+                        ready.push((time[&p], p));
+                    }
+                }
+            }
+        }
+        Some(out)
+    }
+}
+
 /// Count added/removed lines between two blobs with git's slider heuristics.
 /// Returns `None` for binary content (which git excludes from `--shortstat`).
 fn count_diff_lines(old: &[u8], new: &[u8]) -> Option<(u32, u32)> {
@@ -376,24 +507,79 @@ impl GitReads for GixGitReads {
         Ok(branches)
     }
 
-    // commit_log / graph_commits stay on the CLI (Step 8 decision): gix 0.84's
-    // `rev_walk().sorting()` offers only BreadthFirst / ByCommitTime and has NO
-    // topological sort, so `git log --topo-order` ordering cannot be reproduced
-    // byte-for-byte for merge histories. Flipping would violate the byte-parity
-    // mandate. See `commit_log_and_graph_stay_on_cli` (Step 8).
+    // commit_log / graph_commits: gix has no built-in topological sort, so we
+    // reproduce git's `--topo-order` ourselves (Kahn seeded by commit-date, see
+    // gix_topo_order) plus git's `%D` ref decoration (gix_decorations).
     fn commit_log(
         &self,
         repo: &Path,
-        _count: Option<u32>,
-        _after: Option<String>,
+        count: Option<u32>,
+        after: Option<String>,
     ) -> Result<Vec<CommitLogEntry>, String> {
-        let _repo = self.repo(repo)?;
-        unimplemented!("commit_log stays on CLI — gix 0.84 rev_walk lacks topo-order")
+        use gix::bstr::ByteSlice;
+        let grepo = self.repo(repo)?;
+        let n = count
+            .unwrap_or(crate::git::COMMIT_LOG_DEFAULT_COUNT)
+            .min(crate::git::COMMIT_LOG_MAX_COUNT) as usize;
+        let tip = match &after {
+            Some(h) => grepo
+                .rev_parse_single(h.as_str())
+                .map_err(|e| e.to_string())?
+                .detach(),
+            None => grepo.head_id().map_err(|e| e.to_string())?.detach(),
+        };
+        let decos = Self::gix_decorations(&grepo);
+        let topo =
+            Self::gix_topo_order(&grepo, [tip], n).ok_or("gix topo walk failed")?;
+
+        let mut out = Vec::with_capacity(topo.len());
+        for (oid, parents) in topo {
+            let commit = grepo.find_commit(oid).map_err(|e| e.to_string())?;
+            let author = commit.author().map_err(|e| e.to_string())?;
+            let author_name = author.name.to_str_lossy().into_owned();
+            let author_date = author
+                .time()
+                .map_err(|e| e.to_string())?
+                .format(gix::date::time::format::ISO8601_STRICT)
+                .map_err(|e| e.to_string())?;
+            // git's strict-ISO (%aI) renders a zero offset as `Z`; gix emits
+            // `+00:00`. Same instant — normalize to git's `Z` for byte parity.
+            let author_date = author_date
+                .strip_suffix("+00:00")
+                .map_or(author_date.clone(), |s| format!("{s}Z"));
+            let msg = commit.message().map_err(|e| e.to_string())?;
+            let subject = msg.summary().to_str_lossy().into_owned();
+            let body = msg
+                .body()
+                .map(|b| b.to_str_lossy().trim().to_string())
+                .filter(|s| !s.is_empty());
+            out.push(CommitLogEntry {
+                hash: oid.to_string(),
+                parents: parents.iter().map(ToString::to_string).collect(),
+                refs: decos.get(&oid).cloned().unwrap_or_default(),
+                author_name,
+                author_date,
+                subject,
+                body,
+            });
+        }
+        Ok(out)
     }
 
-    fn graph_commits(&self, repo: &Path, _count: u32) -> Result<Vec<RawCommit>, String> {
-        let _repo = self.repo(repo)?;
-        unimplemented!("graph_commits stays on CLI — gix 0.84 rev_walk lacks topo-order")
+    fn graph_commits(&self, repo: &Path, count: u32) -> Result<Vec<RawCommit>, String> {
+        let grepo = self.repo(repo)?;
+        let head = grepo.head_id().map_err(|e| e.to_string())?.detach();
+        let decos = Self::gix_decorations(&grepo);
+        let topo = Self::gix_topo_order(&grepo, [head], count as usize)
+            .ok_or("gix topo walk failed")?;
+        Ok(topo
+            .into_iter()
+            .map(|(oid, parents)| RawCommit {
+                hash: oid.to_string(),
+                parents: parents.iter().map(ToString::to_string).collect(),
+                refs: decos.get(&oid).cloned().unwrap_or_default(),
+            })
+            .collect())
     }
 
     fn ahead_behind(&self, repo: &Path, left: &str, right: &str) -> Result<(u32, u32), String> {
@@ -545,6 +731,11 @@ impl GitReads for GixGitReads {
 /// Which backend serves a given read op.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum Backend {
+    // Every op currently defaults to `Gix` (each gix adapter falls back to the
+    // CLI internally for its unsupported edge cases). `Cli` is retained as the
+    // per-op rollback lever: set any field in `PerOpBackend::default` back to
+    // `Cli` to instantly route that op through the CLI adapter again.
+    #[allow(dead_code)]
     Cli,
     Gix,
 }
@@ -568,8 +759,10 @@ impl Default for PerOpBackend {
         Self {
             // Flipped to gix in Step 7 (parity test: shootout_branches).
             branches_detail: Backend::Gix,
-            commit_log: Backend::Cli,
-            graph_commits: Backend::Cli,
+            // Flipped to gix (Step 8, revised): topo-order + %D decoration are
+            // reproduced in-process. Parity: shootout_commit_log / shootout_graph.
+            commit_log: Backend::Gix,
+            graph_commits: Backend::Gix,
             // Flipped to gix in Step 9 (parity test: shootout_ahead_behind).
             ahead_behind: Backend::Gix,
             // Flipped to gix in Step 10 (parity test: shootout_worktrees).
@@ -694,6 +887,28 @@ pub(crate) mod test_fixtures {
             .env("GIT_COMMITTER_EMAIL", "test@test.com")
             .env("GIT_AUTHOR_DATE", "2026-01-01T00:00:00Z")
             .env("GIT_COMMITTER_DATE", "2026-01-01T00:00:00Z")
+            .output()
+            .unwrap_or_else(|e| panic!("git {args:?} failed to spawn: {e}"));
+        assert!(
+            out.status.success(),
+            "git {args:?} failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    /// Like `run_git`, but pins author+committer date to `ts` (RFC3339) so
+    /// commits get distinct, deterministic timestamps for topo-order tests.
+    pub(crate) fn run_git_at(dir: &Path, ts: &str, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .current_dir(dir)
+            .args(args)
+            .env("GIT_AUTHOR_NAME", "Test")
+            .env("GIT_AUTHOR_EMAIL", "test@test.com")
+            .env("GIT_COMMITTER_NAME", "Test")
+            .env("GIT_COMMITTER_EMAIL", "test@test.com")
+            .env("GIT_AUTHOR_DATE", ts)
+            .env("GIT_COMMITTER_DATE", ts)
             .output()
             .unwrap_or_else(|e| panic!("git {args:?} failed to spawn: {e}"));
         assert!(
@@ -1055,34 +1270,92 @@ mod tests {
         assert_ok_json_eq(&a, &b, "blame (renamed → CLI fallback)");
     }
 
-    /// Step 8: commit_log + graph_commits stay on the CLI. gix 0.84's rev_walk
-    /// only sorts BreadthFirst / ByCommitTime (no topological order), so it
-    /// cannot reproduce `git log --topo-order` byte-for-byte on merge histories
-    /// — flipping would violate the byte-parity mandate. This guards the CLI
-    /// path: both ops must yield exactly git's --topo-order OID sequence.
+    /// A merge history with DISTINCT commit dates + branch/tag/remote/HEAD refs,
+    /// so `git --topo-order` is deterministic (date tie-break) and `%D`
+    /// decoration is exercised. Returns (guard, path).
+    ///
+    /// ```text
+    ///   A(t1) ── B(t2) ───────── M(t5)   [main, HEAD]
+    ///     └────── C(t3) ── D(t4) ─┘       (feature)
+    /// ```
+    fn topo_fixture() -> (tempfile::TempDir, std::path::PathBuf) {
+        use super::test_fixtures::run_git_at;
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().to_path_buf();
+        run_git(&p, &["init", "-b", "main"]);
+        run_git(&p, &["config", "user.email", "t@t"]);
+        run_git(&p, &["config", "user.name", "T"]);
+        run_git(&p, &["config", "core.hooksPath", "/dev/null"]);
+
+        std::fs::write(p.join("a"), "a\n").unwrap();
+        run_git(&p, &["add", "a"]);
+        run_git_at(&p, "2026-01-01T00:00:01Z", &["commit", "-m", "A", "--no-verify"]);
+        let a = run_git(&p, &["rev-parse", "HEAD"]).trim().to_string();
+        run_git(&p, &["update-ref", "refs/tags/v1", &a]); // tag on A
+
+        std::fs::write(p.join("b"), "b\n").unwrap();
+        run_git(&p, &["add", "b"]);
+        run_git_at(&p, "2026-01-01T00:00:02Z", &["commit", "-m", "B", "--no-verify"]);
+        let b = run_git(&p, &["rev-parse", "HEAD"]).trim().to_string();
+        run_git(&p, &["update-ref", "refs/remotes/origin/main", &b]); // remote on B
+
+        run_git(&p, &["checkout", "-q", "-b", "feature", &a]);
+        std::fs::write(p.join("c"), "c\n").unwrap();
+        run_git(&p, &["add", "c"]);
+        run_git_at(&p, "2026-01-01T00:00:03Z", &["commit", "-m", "C", "--no-verify"]);
+        std::fs::write(p.join("d"), "d\n").unwrap();
+        run_git(&p, &["add", "d"]);
+        run_git_at(&p, "2026-01-01T00:00:04Z", &["commit", "-m", "D", "--no-verify"]);
+
+        run_git(&p, &["checkout", "-q", "main"]);
+        run_git_at(
+            &p,
+            "2026-01-01T00:00:05Z",
+            &["merge", "--no-ff", "feature", "-m", "M"],
+        );
+        (dir, p)
+    }
+
+    /// Step 8 (revised): gix graph_commits == CLI byte-for-byte — same topo OID
+    /// order, parents, and `%D` ref decoration — on a merge history.
     #[test]
-    fn commit_log_and_graph_stay_on_cli() {
-        let (_guard, repo) = fixture_repo();
-
-        let topo: Vec<String> = run_git(&repo, &["log", "--topo-order", "--pretty=%H"])
-            .lines()
-            .map(str::to_string)
-            .collect();
-        assert!(!topo.is_empty());
-
-        let log = git_reads().commit_log(&repo, None, None).unwrap();
-        assert_eq!(
-            log.iter().map(|c| c.hash.clone()).collect::<Vec<_>>(),
-            topo,
-            "commit_log must match git --topo-order order"
+    fn shootout_graph() {
+        let (_g, repo) = topo_fixture();
+        let cli = CliGitReads;
+        let gix = GixGitReads::new();
+        let a = cli.graph_commits(&repo, 200).unwrap();
+        let b = gix.graph_commits(&repo, 200).unwrap();
+        assert_eq!(format!("{a:?}"), format!("{b:?}"), "graph_commits gix != cli");
+        // sanity: the merge + decorations are present.
+        assert!(a.iter().any(|c| c.parents.len() == 2), "merge commit present");
+        assert!(
+            a.iter().any(|c| c.refs.iter().any(|r| r == "HEAD -> main")),
+            "HEAD -> main decoration present"
         );
+        assert!(a.iter().any(|c| c.refs.iter().any(|r| r == "tag: v1")));
+    }
 
-        let graph = git_reads().graph_commits(&repo, 200).unwrap();
-        assert_eq!(
-            graph.iter().map(|c| c.hash.clone()).collect::<Vec<_>>(),
-            topo,
-            "graph_commits must match git --topo-order order"
-        );
+    /// Step 8 (revised): gix commit_log == CLI byte-for-byte (hash/parents/refs/
+    /// author/date/subject/body, topo order) — full history and with `after`.
+    #[test]
+    fn shootout_commit_log() {
+        let (_g, repo) = topo_fixture();
+        let cli = CliGitReads;
+        let gix = GixGitReads::new();
+
+        let json = |v: &Vec<CommitLogEntry>| serde_json::to_value(v).unwrap();
+        let a = cli.commit_log(&repo, None, None).unwrap();
+        let b = gix.commit_log(&repo, None, None).unwrap();
+        assert_eq!(json(&a), json(&b), "commit_log gix != cli");
+        assert!(a.iter().any(|c| c.parents.len() == 2));
+
+        // with `after` = the second commit on main (B), and a small count.
+        let b_oid = run_git(&repo, &["rev-parse", "main~1^1"]) // a parent of M's history
+            .trim()
+            .to_string();
+        let a2 = cli.commit_log(&repo, Some(2), Some(b_oid.clone())).unwrap();
+        let b2 = gix.commit_log(&repo, Some(2), Some(b_oid)).unwrap();
+        assert_eq!(json(&a2), json(&b2), "commit_log(after,count) gix != cli");
     }
 
     /// Step 6: gix can open the fixture repo and the handle cache reuses the

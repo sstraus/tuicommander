@@ -2487,8 +2487,8 @@ fn parse_commit_log_line(line: &str) -> Option<CommitLogEntry> {
 }
 
 const COMMIT_LOG_FORMAT: &str = "%x1e%H%x00%P%x00%D%x00%an%x00%aI%x00%s%x00%b";
-const COMMIT_LOG_MAX_COUNT: u32 = 500;
-const COMMIT_LOG_DEFAULT_COUNT: u32 = 50;
+pub(crate) const COMMIT_LOG_MAX_COUNT: u32 = 500;
+pub(crate) const COMMIT_LOG_DEFAULT_COUNT: u32 = 50;
 
 /// Validate a git object hash (4-40 hex chars). Prevents injection via `after` parameters.
 fn validate_git_hash(hash: &str) -> Result<(), String> {
