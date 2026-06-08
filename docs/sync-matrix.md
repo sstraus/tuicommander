@@ -45,7 +45,6 @@ When modifying PTY behavior, output parsing, shell state, or terminal UI:
 | `docs/user-guide/terminals.md` | User-facing terminal features |
 | `docs/api/tauri-commands.md` | PTY commands (create_pty, write_pty, resize_pty, etc.) |
 | `docs/backend/alacritty-integration.md` | Alacritty patch inventory, upstream API usage, update procedure |
-| `plans/terminal-worker-renderer.md` | Off-thread worker renderer (`offscreenRenderer`, default OFF). Keep the frame→grid decision shared via `decideFrameGrid` and the ack→decode→transfer order in `receiveFrame` in sync between the main `onFrame` and the worker (`renderer.worker.ts` / `workerGridState.ts` / `workerProtocol.ts`). Worker mode = main decodes+overlays, worker paints the base. |
 
 ### Keyboard Shortcuts & Actions
 When adding or changing shortcuts:
