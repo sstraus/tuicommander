@@ -119,6 +119,85 @@ impl GixGitReads {
             .map_err(|e: Arc<Box<gix::open::Error>>| e.to_string())?;
         Ok(tsr.to_thread_local())
     }
+
+    /// Compute staged / changed counts via gix `status`, mapped onto the same
+    /// porcelain-v2 semantics the CLI path uses (a path modified in both index
+    /// and worktree counts toward both, matching git's "1 MM"). Returns `None`
+    /// — signalling a CLI fallback — for sparse-checkout / submodule repos
+    /// (where gix status diverges) or on any gix error.
+    fn gix_status_counts(&self, repo: &Path) -> Option<StatusCounts> {
+        use gix::status::Item;
+        use gix::status::index_worktree::Item as IwItem;
+        use gix::status::plumbing::index_as_worktree::EntryStatus;
+
+        let grepo = self.repo(repo).ok()?;
+
+        // gix status is unsupported on sparse checkouts and diverges around
+        // submodules — defer those to the CLI.
+        if grepo
+            .config_snapshot()
+            .boolean("core.sparseCheckout")
+            .unwrap_or(false)
+        {
+            return None;
+        }
+        if grepo
+            .submodules()
+            .ok()
+            .flatten()
+            .is_some_and(|mut it| it.next().is_some())
+        {
+            return None;
+        }
+
+        let platform = grepo.status(gix::progress::Discard).ok()?;
+        let iter = platform
+            .into_iter(std::iter::empty::<gix::bstr::BString>())
+            .ok()?;
+
+        let mut staged = 0u32;
+        let mut changed = 0u32;
+        let mut conflict = false;
+        for item in iter {
+            match item.ok()? {
+                // HEAD ↔ index difference = a staged change (a tracked rename is
+                // a single Rewrite, matching porcelain's one "2 R." entry).
+                Item::TreeIndex(_) => staged += 1,
+                Item::IndexWorktree(iw) => match iw {
+                    IwItem::Modification { status, .. } => match status {
+                        EntryStatus::Conflict { .. } => {
+                            conflict = true;
+                            changed += 1;
+                        }
+                        EntryStatus::Change(_) | EntryStatus::IntentToAdd => changed += 1,
+                        // No real change — just a stat refresh; do not count.
+                        EntryStatus::NeedsUpdate(_) => {}
+                    },
+                    IwItem::DirectoryContents { entry, .. } => {
+                        if matches!(entry.status, gix::dir::entry::Status::Untracked) {
+                            changed += 1;
+                        }
+                    }
+                    // Worktree-side rewrite (off by default); treat as one change.
+                    IwItem::Rewrite { .. } => changed += 1,
+                },
+            }
+        }
+
+        let status = if conflict {
+            "conflict"
+        } else if staged > 0 || changed > 0 {
+            "dirty"
+        } else {
+            "clean"
+        }
+        .to_string();
+        Some(StatusCounts {
+            status,
+            staged,
+            changed,
+        })
+    }
 }
 
 impl GitReads for GixGitReads {
@@ -307,15 +386,13 @@ impl GitReads for GixGitReads {
         Ok(map)
     }
 
-    // status_counts stays on the CLI (Step 11 decision). gix 0.84's status model
-    // — separate tree/index and index/worktree passes, `Rewrite` rename items,
-    // untracked-directory collapsing, and multi-stage conflict entries — does not
-    // reach byte-for-byte parity with `git status --porcelain=v2` counts within
-    // scope. The plan also mandates a CLI fallback for sparse-checkout and
-    // submodule repos; keeping the whole op on the CLI satisfies that too.
+    // status_counts via gix: classify status items into the panel's staged /
+    // changed counts (the values the UI consumes — not the porcelain text).
+    // Sparse-checkout / submodule repos fall back to the CLI (gix status
+    // diverges there, per the plan), as does any gix error.
     fn status_counts(&self, repo: &Path) -> StatusCounts {
-        let _repo = self.repo(repo);
-        unimplemented!("status_counts stays on CLI — gix status != porcelain-v2 counts")
+        self.gix_status_counts(repo)
+            .unwrap_or_else(|| crate::git::status_counts_cli(repo))
     }
 
     // diff_stats stays on the CLI (Step 12 decision). Its hot mode (scope=None)
@@ -412,7 +489,9 @@ impl Default for PerOpBackend {
             ahead_behind: Backend::Gix,
             // Flipped to gix in Step 10 (parity test: shootout_worktrees).
             worktree_paths: Backend::Gix,
-            status_counts: Backend::Cli,
+            // Flipped to gix in Step 11 (parity test: shootout_status_counts);
+            // sparse-checkout / submodule repos fall back to CLI inside the adapter.
+            status_counts: Backend::Gix,
             diff_stats: Backend::Cli,
             // Flipped to gix in Step 13 (parity test: shootout_blame); renamed
             // files fall back to CLI inside the gix adapter.
@@ -739,47 +818,59 @@ mod tests {
         (dir, p)
     }
 
-    /// Step 11: status_counts stays on the CLI (gix 0.84 status can't match
-    /// porcelain-v2 counts byte-for-byte). This guards the CLI counting across
-    /// clean/staged/unstaged/untracked/renamed; and because the op is CLI for
-    /// ALL repos, sparse-checkout (and submodule) repos inherently use the CLI.
+    /// Step 11: gix status_counts == CLI on the values the panel consumes
+    /// (status string + staged/changed) across clean/staged/unstaged/untracked/
+    /// renamed; sparse-checkout repos fall back to CLI inside the gix adapter.
     #[test]
-    fn status_counts_cli_cases_and_fallback() {
+    fn shootout_status_counts() {
+        let cli = CliGitReads;
+        let gix = GixGitReads::new();
+        let eq = |label: &str, p: &std::path::Path| {
+            assert_eq!(
+                cli.status_counts(p),
+                gix.status_counts(p),
+                "status_counts {label}: gix != cli"
+            );
+        };
+
         // clean
         let (_g0, clean) = clean_repo();
-        let sc = git_reads().status_counts(&clean);
-        assert_eq!((sc.status.as_str(), sc.staged, sc.changed), ("clean", 0, 0));
+        eq("clean", &clean);
+        assert_eq!(gix.status_counts(&clean).status, "clean");
 
-        // staged modification
+        // staged modification, then an unstaged edit on top (porcelain "1 MM").
         let (_g1, staged) = clean_repo();
         std::fs::write(staged.join("a.txt"), "a2\n").unwrap();
         run_git(&staged, &["add", "a.txt"]);
-        let sc = git_reads().status_counts(&staged);
-        assert_eq!((sc.status.as_str(), sc.staged), ("dirty", 1));
-        // plus an unstaged edit on top → porcelain "1 MM": staged AND changed.
+        eq("staged", &staged);
+        assert_eq!(gix.status_counts(&staged).staged, 1);
         std::fs::write(staged.join("a.txt"), "a3\n").unwrap();
-        let sc = git_reads().status_counts(&staged);
+        eq("staged+unstaged", &staged);
+        let sc = gix.status_counts(&staged);
         assert_eq!(sc.staged, 1);
         assert!(sc.changed >= 1);
 
         // untracked only
         let (_g2, untracked) = clean_repo();
         std::fs::write(untracked.join("new.txt"), "n\n").unwrap();
-        let sc = git_reads().status_counts(&untracked);
-        assert_eq!(sc.status, "dirty");
-        assert_eq!(sc.changed, 1);
+        eq("untracked", &untracked);
+        assert_eq!(gix.status_counts(&untracked).changed, 1);
+
+        // unstaged-only modification (no staging)
+        let (_g2b, unstaged) = clean_repo();
+        std::fs::write(unstaged.join("a.txt"), "changed\n").unwrap();
+        eq("unstaged", &unstaged);
 
         // staged rename → porcelain "2 R.": one staged entry.
         let (_g3, renamed) = clean_repo();
         run_git(&renamed, &["mv", "a.txt", "b.txt"]);
-        let sc = git_reads().status_counts(&renamed);
-        assert_eq!(sc.staged, 1);
+        eq("staged-rename", &renamed);
+        assert_eq!(gix.status_counts(&renamed).staged, 1);
 
-        // sparse-checkout repo: must still be served (via CLI) without error.
+        // sparse-checkout repo: gix adapter falls back to CLI (must agree).
         let (_g4, sparse) = clean_repo();
         run_git(&sparse, &["sparse-checkout", "init"]);
-        let sc = git_reads().status_counts(&sparse);
-        assert_eq!(sc.status, "clean");
+        eq("sparse-checkout", &sparse);
     }
 
     /// Step 12: diff_stats stays on the CLI (worktree --shortstat parity isn't
