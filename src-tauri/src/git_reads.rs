@@ -125,6 +125,21 @@ impl GixGitReads {
     /// and worktree counts toward both, matching git's "1 MM"). Returns `None`
     /// — signalling a CLI fallback — for sparse-checkout / submodule repos
     /// (where gix status diverges) or on any gix error.
+    /// gix status/diff diverge from git on sparse-checkout and submodule repos
+    /// (per the porting plan), so those defer to the CLI. Shared by
+    /// `gix_status_counts` and `gix_diff_stats_worktree`.
+    fn gix_repo_unsupported(grepo: &gix::Repository) -> bool {
+        grepo
+            .config_snapshot()
+            .boolean("core.sparseCheckout")
+            .unwrap_or(false)
+            || grepo
+                .submodules()
+                .ok()
+                .flatten()
+                .is_some_and(|mut it| it.next().is_some())
+    }
+
     fn gix_status_counts(&self, repo: &Path) -> Option<StatusCounts> {
         use gix::status::Item;
         use gix::status::index_worktree::Item as IwItem;
@@ -134,19 +149,7 @@ impl GixGitReads {
 
         // gix status is unsupported on sparse checkouts and diverges around
         // submodules — defer those to the CLI.
-        if grepo
-            .config_snapshot()
-            .boolean("core.sparseCheckout")
-            .unwrap_or(false)
-        {
-            return None;
-        }
-        if grepo
-            .submodules()
-            .ok()
-            .flatten()
-            .is_some_and(|mut it| it.next().is_some())
-        {
+        if Self::gix_repo_unsupported(&grepo) {
             return None;
         }
 
@@ -159,7 +162,19 @@ impl GixGitReads {
         let mut changed = 0u32;
         let mut conflict = false;
         for item in iter {
-            match item.ok()? {
+            // One unreadable status entry must not discard the whole pass (and
+            // the counts already accumulated) into a silent CLI fallback — skip
+            // the bad entry and keep going, but make the failure observable.
+            let Ok(item) = item.inspect_err(|e| {
+                tracing::warn!(
+                    repo = %repo.display(),
+                    error = %e,
+                    "gix status_counts: skipping unreadable status entry"
+                );
+            }) else {
+                continue;
+            };
+            match item {
                 // HEAD ↔ index difference = a staged change (a tracked rename is
                 // a single Rewrite, matching porcelain's one "2 R." entry).
                 Item::TreeIndex(_) => staged += 1,
@@ -210,19 +225,7 @@ impl GixGitReads {
         use gix::status::plumbing::index_as_worktree::EntryStatus;
 
         let grepo = self.repo(repo).ok()?;
-        if grepo
-            .config_snapshot()
-            .boolean("core.sparseCheckout")
-            .unwrap_or(false)
-        {
-            return None;
-        }
-        if grepo
-            .submodules()
-            .ok()
-            .flatten()
-            .is_some_and(|mut it| it.next().is_some())
-        {
+        if Self::gix_repo_unsupported(&grepo) {
             return None;
         }
 
@@ -234,6 +237,17 @@ impl GixGitReads {
         let mut added = 0i64;
         let mut removed = 0i64;
         for item in iter {
+            // One unreadable status entry must not abort the whole diff pass —
+            // skip it (and warn) rather than discarding accumulated counts.
+            let Ok(item) = item.inspect_err(|e| {
+                tracing::warn!(
+                    repo = %repo.display(),
+                    error = %e,
+                    "gix diff_stats: skipping unreadable status entry"
+                );
+            }) else {
+                continue;
+            };
             // Only unstaged changes to tracked files (git diff, no --cached);
             // untracked entries and purely-staged files are not counted.
             let Item::IndexWorktree(IwItem::Modification {
@@ -241,7 +255,7 @@ impl GixGitReads {
                 rela_path,
                 status,
                 ..
-            }) = item.ok()?
+            }) = item
             else {
                 continue;
             };
@@ -250,17 +264,43 @@ impl GixGitReads {
             }
             // old = the blob recorded in the index; new = the worktree file
             // (empty when the tracked file was deleted from the worktree).
-            let old = grepo.find_object(entry.id).ok()?.data.clone();
+            let old = match grepo.find_object(entry.id) {
+                Ok(obj) => obj.data.clone(),
+                Err(e) => {
+                    tracing::warn!(
+                        repo = %repo.display(),
+                        error = %e,
+                        "gix diff_stats: skipping entry with unreadable index blob"
+                    );
+                    continue;
+                }
+            };
             let path = repo.join(rela_path.to_str_lossy().as_ref());
-            let new = std::fs::read(&path).unwrap_or_default();
+            let new = match std::fs::read(&path) {
+                Ok(bytes) => bytes,
+                // A tracked file deleted from the worktree reads as NotFound;
+                // empty is the correct "new" side (git counts the deletion).
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Vec::new(),
+                // A real I/O error (permissions, etc.) is NOT a deletion — count
+                // nothing for this entry rather than fabricating removed lines.
+                Err(e) => {
+                    tracing::warn!(
+                        repo = %repo.display(),
+                        path = %path.display(),
+                        error = %e,
+                        "gix diff_stats: skipping entry with unreadable worktree file"
+                    );
+                    continue;
+                }
+            };
             if let Some((a, r)) = count_diff_lines(&old, &new) {
                 added += i64::from(a);
                 removed += i64::from(r);
             }
         }
         Some(crate::git::DiffStats::from_counts(
-            added as i32,
-            removed as i32,
+            added.min(i64::from(i32::MAX)) as i32,
+            removed.min(i64::from(i32::MAX)) as i32,
         ))
     }
 }
@@ -327,7 +367,9 @@ impl GixGitReads {
                         .insert(0, "HEAD".to_string());
                 }
             }
-            Err(_) => {}
+            Err(e) => {
+                tracing::debug!(error = %e, "gix decorations: head_ref unreadable; HEAD decoration omitted");
+            }
         }
         map
     }
@@ -462,7 +504,18 @@ impl GitReads for GixGitReads {
             let (ahead, behind) = match &upstream {
                 Some(u) => match git_reads().ahead_behind(repo, &name, u) {
                     Ok((a, b)) => ((a > 0).then_some(a), (b > 0).then_some(b)),
-                    Err(_) => (None, None),
+                    Err(e) => {
+                        // Degrade to "no tracking token" like git, but don't do
+                        // it silently — an error here is invisible otherwise.
+                        tracing::warn!(
+                            repo = %repo.display(),
+                            branch = %name,
+                            upstream = %u,
+                            error = %e,
+                            "ahead_behind failed; upstream tracking shown as in-sync"
+                        );
+                        (None, None)
+                    }
                 },
                 None => (None, None),
             };
@@ -605,7 +658,9 @@ impl GitReads for GixGitReads {
                 .all()
                 .map_err(|e| e.to_string())?
                 .filter_map(Result::ok)
-                .count() as u32)
+                .count()
+                .try_into()
+                .unwrap_or(u32::MAX))
         };
         Ok((count_excl(l, r)?, count_excl(r, l)?))
     }
@@ -741,8 +796,8 @@ pub(crate) enum Backend {
     Gix,
 }
 
-/// Per-op backend selection. Every op defaults to `Cli`; flipping an op to gix
-/// (after its parity test is green) is a one-line change here.
+/// Per-op backend selection. Every op currently uses `Gix` (all 8 parity tests
+/// green); set a field to `Backend::Cli` to roll that op back — a one-line change.
 #[derive(Clone, Copy)]
 struct PerOpBackend {
     branches_detail: Backend,
@@ -999,6 +1054,43 @@ mod tests {
         let ja = serde_json::to_value(a.as_ref().unwrap_or_else(|e| panic!("cli {what}: {e}")));
         let jb = serde_json::to_value(b.as_ref().unwrap_or_else(|e| panic!("gix {what}: {e}")));
         assert_eq!(ja.unwrap(), jb.unwrap(), "{what}: gix != cli");
+    }
+
+    // --- is_binary / count_diff_lines unit tests (git's NUL-within-8000 rule) ---
+
+    #[test]
+    fn is_binary_nul_at_byte_7999_is_true() {
+        // git scans the first 8000 bytes; byte index 7999 is the last one scanned.
+        let mut data = vec![b'a'; 8000];
+        data[7999] = 0;
+        assert!(is_binary(&data), "NUL at byte 7999 must be detected");
+    }
+
+    #[test]
+    fn is_binary_nul_at_byte_8000_is_false() {
+        // Byte index 8000 is the first one NOT scanned, so it's treated as text.
+        let mut data = vec![b'a'; 8001];
+        data[8000] = 0;
+        assert!(
+            !is_binary(&data),
+            "NUL at byte 8000 is beyond the 8000-byte scan"
+        );
+    }
+
+    #[test]
+    fn count_diff_lines_returns_none_for_binary() {
+        let bin = [b'a', 0, b'b'];
+        assert_eq!(count_diff_lines(&bin, b"abc"), None, "binary old → None");
+        assert_eq!(count_diff_lines(b"abc", &bin), None, "binary new → None");
+    }
+
+    #[test]
+    fn count_diff_lines_counts_additions_and_removals() {
+        // old has 2 lines, new replaces line 2 and appends two → 1 removal, 3 additions.
+        let (add, rem) = count_diff_lines(b"a\nb\n", b"a\nB\nc\nd\n").expect("text diff");
+        assert_eq!((add, rem), (3, 1));
+        // identical content → no changes.
+        assert_eq!(count_diff_lines(b"x\ny\n", b"x\ny\n"), Some((0, 0)));
     }
 
     /// Step 7: gix branches_detail == CLI on local+remote branches, an upstream
