@@ -6,19 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-## [1.4.0] - 2026-06-08
-
-## [1.3.1] - 2026-06-06
+## [1.4.0] - 2026-06-09
 
 ### Added
-- **Inline review comments on markdown ("tweaks")** — Select any passage in a rendered markdown file and attach a review comment from a floating button + inline popover. Comments are highlighted in place (hover to read, click to edit/delete) and stored *inside* the `.md` source as HTML-comment markers that are invisible to standard renderers but readable by humans and LLMs — the first comment prepends a convention header so an AI agent can apply the feedback and remove the markers. Highlights are wrapped in the DOM after parsing, so selections that straddle inline formatting render intact. Shared by the Markdown panel and the PR detail popover.
-- **Cmd/Ctrl+hover link affordance in the code editor** — Holding Cmd (macOS) / Ctrl underlines the symbol under the cursor as a Cmd+Click go-to-definition affordance; the underline tracks document edits and clears on release.
-- **Cycle All Tab Types setting** (#58) — Optional setting (Appearance, default off) that lets next/prev-tab shortcuts cycle file/diff/markdown/editor tabs in addition to terminals, ordered like the tab bar.
-- **Right-click menu on terminal links** (#57) — Right-clicking a detected file path or URL in the terminal offers **Open** and **Copy link** (copy the resolved target without opening). Single left-click still opens instantly.
-- **JetBrains IDE family in the IDE launcher** (#70) — IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, PhpStorm, RubyMine, Rider, DataGrip, RustRover, Android Studio, and Fleet are now selectable as the default IDE and in the "Open in…" launcher (new "JetBrains" category). They launch via their CLI launcher with `--line`/`--column` goto and fall back to `open -a` on macOS when the Toolbox shell scripts aren't on PATH. Official brand icons.
+- **Off-main-thread terminal renderer** — An opt-in OffscreenCanvas renderer (Appearance ▸ toggle, default off) moves frame painting onto a Web Worker while the main thread keeps decoding and drawing overlays, so heavy output no longer blocks input.
+- **Native-feel smooth scrolling** — The terminal now scrolls with momentum and a draggable scrollbar, with selection highlight preserved across the animation.
+- **Editor change-overview ruler** — VS Code-style colored ticks on the editor's scrollbar mark added/modified/deleted lines, fed by the same git-gutter data (no second diff parse).
+- **Extended thinking in AI Chat** — Claude Opus 4.7+ reasoning is surfaced live in the chat panel.
+- **Custom "Open in…" launchers** (#71) — Define your own editor/tool launch commands; iTerm2 and Tower are added as built-in launchers.
+- **Event-driven smart prompts** — Repo watchers fire smart prompts on PR-pushed / PR-opened events behind an idle gate, instead of polling.
+- **Markdown panel** — A dedicated markdown panel with refreshed keyboard shortcuts.
+- **Sidebar "Create Branch"** — A Create Branch action with a condensed "Branch ›" submenu.
+- **Faster terminal navigation** — Keybindings to return to the last terminal and jump to the next terminal awaiting input; the shortcuts panel now lists every canonical action.
+- **Inline review comments on markdown ("tweaks")** — Attach review comments to any passage in a rendered markdown file; they're highlighted in place and stored inside the `.md` source as invisible HTML-comment markers that AI agents can read and apply.
+- **Cmd/Ctrl+hover go-to-definition affordance** — Holding Cmd (macOS) / Ctrl underlines the symbol under the cursor in the code editor as a Cmd+Click affordance.
+- **Cycle All Tab Types** (#58) — Optional setting (Appearance, default off) to let next/prev-tab cycle file/diff/markdown/editor tabs alongside terminals.
+- **Right-click menu on terminal links** (#57) — Right-clicking a detected file path or URL offers Open and Copy link; single left-click still opens instantly.
+- **JetBrains IDE family in the launcher** (#70) — IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, PhpStorm, RubyMine, Rider, DataGrip, RustRover, Android Studio and Fleet are selectable as the default IDE and in "Open in…", launched with `--line`/`--column` goto.
 
 ### Changed
-- **Error Log level filter is now a severity threshold** (#69) — Selecting a level shows that level and everything more severe (e.g. Warn shows Warn + Error), with a tooltip on each tab describing what it includes.
+- **In-process git reads (gix)** — Branch detail, blame, ahead/behind, worktree paths and status now use an in-process `gix` backend behind a GitReads port with a coalescing TTL cache, cutting git subprocesses and file-descriptor pressure. Operations where `gix` lacks parity (commit-log/graph topo-order, diff stats) intentionally stay on the git CLI.
+- **Diff & editor performance** (#020) — The diff parser moved to Rust; multi-file diffs and PR views are virtualized (only on-screen sections mount) and the editor's disk poll stat-gates before re-reading, keeping large diffs and long sessions responsive.
+- **Commit graph** — Lane starts are marked and per-frame canvas reallocation was removed.
+- **Error Log severity threshold** (#69) — Selecting a level shows that level and everything more severe (e.g. Warn shows Warn + Error), with a tooltip describing the range.
+
+### Fixed
+- **Readable terminal text on light themes** (#80) — The default foreground read an undefined CSS variable and fell back to gray; it now reads the theme's foreground color.
+- **Consistent New Tab** (#81) — Cmd+T, the command palette, and File ▸ New Tab now route through the same handler.
+- **macOS press-and-hold** (#79) — The accent-picker popup no longer hijacks key-repeat in the terminal.
+- **Terminal interaction** — Right-click link menu works under mouse reporting, Cmd/Ctrl+C copies, and menu-bar Copy/Paste route to the focused terminal.
+- **Responsiveness** — Worker-mode input lag was cut, and the freeze detector no longer reports paint jank or system sleep as UI freezes.
+- **File browser** — Cross-repo copy/paste and keyboard focus fixed.
+- **Shell & CLI** — The `tuic` sidecar resolves next to the executable (closes #52); zsh `compinit` runs correctly when the ZDOTDIR trick is skipped.
+- **Worktrees** — Worktree-add failures are classified and fail loudly instead of creating phantom entries.
+
+### Community
+- [@jajugoguma](https://github.com/jajugoguma) — fixed terminal text being unreadable on light themes (#80)
+- [@jklap](https://github.com/jklap) — added release-version checking to the macOS `install.sh` (#75)
 
 ## [1.2.11-nightly] - 2026-06-02
 

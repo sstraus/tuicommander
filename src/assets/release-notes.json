@@ -60,5 +60,28 @@
       "Dead terminal tabs now correctly show grey instead of a misleading green indicator"
     ],
     "date": "2026-05-30"
+  },
+  "1.4.0": {
+    "highlights": [
+      "Opt-in off-main-thread terminal renderer keeps input responsive under heavy output",
+      "Native-feel smooth scrolling with momentum and a draggable scrollbar",
+      "VS Code-style change-overview ruler marks add/modify/delete lines on the editor scrollbar",
+      "Extended thinking from Claude Opus 4.7+ now shows live in AI Chat",
+      "Define your own \"Open in…\" launchers; iTerm2 and Tower added as built-ins",
+      "Faster git: in-process gix reads with a coalescing cache cut subprocess and FD pressure",
+      "Virtualized multi-file diffs and a stat-gated editor poll keep large diffs responsive",
+      "Terminal text is now readable on light themes"
+    ],
+    "date": "2026-06-09",
+    "contributions": [
+      {
+        "text": "fixed terminal text being unreadable on light themes",
+        "author": "jajugoguma"
+      },
+      {
+        "text": "added release-version checking to the macOS install.sh",
+        "author": "jklap"
+      }
+    ]
   }
 }
