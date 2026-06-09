@@ -10,6 +10,29 @@
 
 Features to test when TUICommander is more usable.
 
+## Perf pass + light-theme fix — visual checks (2026-06-09)
+
+_Code-verified + `make check` green; these need Boss's eyes on the live dev app (canvas/editor not HTTP/MCP-observable)._
+
+### #80 — Terminal text color on light themes (`da16e711`, local only — not pushed)
+- [ ] On a light theme (e.g. `vscode-light`), terminal default text is clearly readable, not faint gray _(reads `--fg-primary`, was undefined `--text-primary`; CanvasTerminal.tsx:323)_
+- [ ] Scrollbar thumb is visible on light themes _(CanvasTerminal.tsx:2850)_
+- [ ] Dark themes unchanged (no regression)
+
+### 020-abfe — Editor + diff viewer performance pass
+- [ ] Multi-file diff (scroll + PR): only on-screen file sections mount — DOM-count or screenshot on a large diff _(DiffFileList.tsx, @tanstack/solid-virtual overscan=3)_
+- [ ] Sticky file headers render; drag-select stays smooth during scroll _(DiffTab.tsx)_
+- [ ] Large single-file diff (>3000 lines) shows the "render anyway" guard _(DiffTab.tsx:570-582)_
+
+### 022-dc94 — Scrollbar track-height cache
+- [ ] Smooth-scroll gesture: scrollbar thumb position/size stays visually correct (no jump/drift) _(CanvasTerminal.tsx:333,749)_
+
+### 027-deb3 — rowCache lagging-frame guard
+- [ ] Fast scroll gesture: no flicker or wrong overscan content _(lagging backend frame no longer poisons rowCache; CanvasTerminal.tsx:1300)_
+
+### 032-ce2d — Editor scrollbar overview ruler
+- [ ] Editor with git changes: colored ticks on the right-edge scrollbar strip at correct relative positions; tick colors match the gutter markers _(gitGutter.ts:122,148)_
+
 ## #79 — vim & repeating key (macOS press-and-hold) (2026-06-06)
 - [ ] [HUMAN] In a release `.app`, open vim and hold `j`/`l`/`i` → cursor repeats, NO accent picker popup _(needs release build: dev build lacks proper bundle domain; fix registers `ApplePressAndHoldEnabled=NO` in `press_and_hold.rs`, called from `lib.rs` setup)_
 - [ ] [HUMAN] Typing accented chars still works where intended (Option-key composition path unaffected — only the hold-for-accent picker is suppressed)
