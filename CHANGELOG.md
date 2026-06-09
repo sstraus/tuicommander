@@ -9,7 +9,6 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [1.4.0] - 2026-06-09
 
 ### Added
-- **Off-main-thread terminal renderer** — An opt-in OffscreenCanvas renderer (Appearance ▸ toggle, default off) moves frame painting onto a Web Worker while the main thread keeps decoding and drawing overlays, so heavy output no longer blocks input.
 - **Native-feel smooth scrolling** — The terminal now scrolls with momentum and a draggable scrollbar, with selection highlight preserved across the animation.
 - **Editor change-overview ruler** — VS Code-style colored ticks on the editor's scrollbar mark added/modified/deleted lines, fed by the same git-gutter data (no second diff parse).
 - **Extended thinking in AI Chat** — Claude Opus 4.7+ reasoning is surfaced live in the chat panel.
@@ -25,7 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **JetBrains IDE family in the launcher** (#70) — IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, PhpStorm, RubyMine, Rider, DataGrip, RustRover, Android Studio and Fleet are selectable as the default IDE and in "Open in…", launched with `--line`/`--column` goto.
 
 ### Changed
-- **In-process git reads (gix)** — Branch detail, blame, ahead/behind, worktree paths and status now use an in-process `gix` backend behind a GitReads port with a coalescing TTL cache, cutting git subprocesses and file-descriptor pressure. Operations where `gix` lacks parity (commit-log/graph topo-order, diff stats) intentionally stay on the git CLI.
+- **In-process git reads (gix)** — Branch detail, commit log/graph, ahead/behind, worktree paths, status counts, diff stats and blame now run through an in-process `gix` backend behind a GitReads port with a coalescing TTL cache, cutting git subprocesses and file-descriptor pressure. Narrow edge cases (sparse-checkout/submodule status, staged/commit diffs, renamed-file blame) fall back to the git CLI inside the adapter.
 - **Diff & editor performance** (#020) — The diff parser moved to Rust; multi-file diffs and PR views are virtualized (only on-screen sections mount) and the editor's disk poll stat-gates before re-reading, keeping large diffs and long sessions responsive.
 - **Commit graph** — Lane starts are marked and per-frame canvas reallocation was removed.
 - **Error Log severity threshold** (#69) — Selecting a level shows that level and everything more severe (e.g. Warn shows Warn + Error), with a tooltip describing the range.
@@ -35,7 +34,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Consistent New Tab** (#81) — Cmd+T, the command palette, and File ▸ New Tab now route through the same handler.
 - **macOS press-and-hold** (#79) — The accent-picker popup no longer hijacks key-repeat in the terminal.
 - **Terminal interaction** — Right-click link menu works under mouse reporting, Cmd/Ctrl+C copies, and menu-bar Copy/Paste route to the focused terminal.
-- **Responsiveness** — Worker-mode input lag was cut, and the freeze detector no longer reports paint jank or system sleep as UI freezes.
+- **Freeze detection** — The freeze detector no longer reports paint jank or system sleep as UI freezes.
 - **File browser** — Cross-repo copy/paste and keyboard focus fixed.
 - **Shell & CLI** — The `tuic` sidecar resolves next to the executable (closes #52); zsh `compinit` runs correctly when the ZDOTDIR trick is skipped.
 - **Worktrees** — Worktree-add failures are classified and fail loudly instead of creating phantom entries.

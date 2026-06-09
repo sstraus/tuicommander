@@ -63,7 +63,6 @@
   },
   "1.4.0": {
     "highlights": [
-      "Opt-in off-main-thread terminal renderer keeps input responsive under heavy output",
       "Native-feel smooth scrolling with momentum and a draggable scrollbar",
       "VS Code-style change-overview ruler marks add/modify/delete lines on the editor scrollbar",
       "Extended thinking from Claude Opus 4.7+ now shows live in AI Chat",
