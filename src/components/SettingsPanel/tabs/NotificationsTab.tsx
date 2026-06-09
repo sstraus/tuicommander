@@ -1,4 +1,4 @@
-import { type Component, createResource, For, Show } from "solid-js";
+import { type Component, createSignal, For, Show } from "solid-js";
 import { t } from "../../../i18n";
 import { invoke } from "../../../invoke";
 import type { NotificationSound } from "../../../notifications";
@@ -86,14 +86,23 @@ export const NotificationsTab: Component = () => {
 		{ key: "info", label: t("notifications.sound.info", "Info") },
 	];
 
-	const [devices, { refetch: refetchDevices }] = createResource(async () => {
-		if (!isTauri()) return [];
+	// Device enumeration is LAZY: on macOS, cpal's CoreAudio output-device scan
+	// triggers the microphone permission prompt. We must NOT run it on tab mount —
+	// only when the user explicitly clicks "Choose output device". `null` = not loaded yet.
+	const [devices, setDevices] = createSignal<AudioOutputDevice[] | null>(null);
+	const [loadingDevices, setLoadingDevices] = createSignal(false);
+
+	async function loadDevices(): Promise<void> {
+		if (!isTauri()) return;
+		setLoadingDevices(true);
 		try {
-			return await invoke<AudioOutputDevice[]>("list_audio_output_devices");
+			setDevices(await invoke<AudioOutputDevice[]>("list_audio_output_devices"));
 		} catch {
-			return [];
+			setDevices([]);
+		} finally {
+			setLoadingDevices(false);
 		}
-	});
+	}
 
 	return (
 		<div class={s.section}>
@@ -117,38 +126,73 @@ export const NotificationsTab: Component = () => {
 					label={t("notifications.label.masterVolume", "Master Volume")}
 					value={Math.round(notificationsStore.state.config.volume * 100)}
 					onChange={(v) => notificationsStore.setVolume(v / 100)}
+					onCommit={() => notificationsStore.testSound("info")}
 					min={0}
 					max={100}
 					suffix="%"
-					hint={t("notifications.hint.masterVolume", "Overall volume for all notification sounds")}
+					hint={t(
+						"notifications.hint.masterVolume",
+						"Overall volume for all notification sounds — release the slider to hear a preview",
+					)}
 				/>
 
-				<Show when={isTauri() && (devices()?.length ?? 0) > 1}>
+				<Show when={isTauri()}>
 					<div class={s.group}>
 						<label>{t("notifications.label.audioDevice", "Audio Output Device")}</label>
 						<p class={s.hint}>
 							{t("notifications.hint.audioDevice", "Choose which speaker or output to use for notification sounds")}
 						</p>
-						<select
-							value={notificationsStore.state.config.audio_device ?? ""}
-							onChange={(e) => {
-								const val = e.currentTarget.value;
-								notificationsStore.setAudioDevice(val || null);
-							}}
+						<Show
+							when={devices() !== null}
+							fallback={
+								<>
+									<p class={s.hint}>
+										{t("notifications.hint.audioDeviceCurrent", "Currently: {device}", {
+											device:
+												notificationsStore.state.config.audio_device ??
+												t("notifications.option.systemDefault", "System Default"),
+										})}
+									</p>
+									<button class={s.testBtn} disabled={loadingDevices()} onClick={loadDevices}>
+										{loadingDevices()
+											? t("notifications.btn.loadingDevices", "Loading…")
+											: t("notifications.btn.chooseDevice", "Choose output device…")}
+									</button>
+									<p class={s.hint} style={{ "margin-top": "6px" }}>
+										{t(
+											"notifications.hint.deviceMicPrompt",
+											"macOS may ask for microphone access — the audio system requires it to enumerate output devices. Notifications never record audio.",
+										)}
+									</p>
+								</>
+							}
 						>
-							<option value="">{t("notifications.option.systemDefault", "System Default")}</option>
-							<For each={devices()}>
-								{(device) => (
-									<option value={device.name}>
-										{device.name}
-										{device.is_default ? ` (${t("notifications.option.currentDefault", "current default")})` : ""}
-									</option>
-								)}
-							</For>
-						</select>
-						<button class={s.testBtn} style={{ "margin-top": "6px" }} onClick={refetchDevices}>
-							{t("notifications.btn.refreshDevices", "Refresh")}
-						</button>
+							<select
+								value={notificationsStore.state.config.audio_device ?? ""}
+								onChange={(e) => {
+									const val = e.currentTarget.value;
+									notificationsStore.setAudioDevice(val || null);
+								}}
+							>
+								<option value="">{t("notifications.option.systemDefault", "System Default")}</option>
+								<For each={devices()}>
+									{(device) => (
+										<option value={device.name}>
+											{device.name}
+											{device.is_default ? ` (${t("notifications.option.currentDefault", "current default")})` : ""}
+										</option>
+									)}
+								</For>
+							</select>
+							<button
+								class={s.testBtn}
+								style={{ "margin-top": "6px" }}
+								disabled={loadingDevices()}
+								onClick={loadDevices}
+							>
+								{t("notifications.btn.refreshDevices", "Refresh")}
+							</button>
+						</Show>
 					</div>
 				</Show>
 

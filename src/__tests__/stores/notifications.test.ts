@@ -390,33 +390,28 @@ describe("notificationsStore", () => {
 	});
 
 	describe("testSound()", () => {
-		it("temporarily enables everything, plays, then restores state", async () => {
+		it("plays with force, bypassing the rate-limit/enabled gates", async () => {
 			await testInScopeAsync(async () => {
-				// Disable notifications and question sound
-				store.setEnabled(false);
-				store.setSoundEnabled("question", false);
-
 				await store.testSound("question");
 
-				// Should have temporarily enabled, played, and restored
-				const calls = mockManager.setEnabled.mock.calls;
-				const soundCalls = mockManager.setSoundEnabled.mock.calls;
-
-				expect(calls).toContainEqual([true]); // Temporarily enable
-				expect(calls).toContainEqual([false]); // Restore
-				expect(soundCalls).toContainEqual(["question", true]); // Temporarily enable sound
-				expect(soundCalls).toContainEqual(["question", false]); // Restore sound
-
-				expect(mockManager.play).toHaveBeenCalledWith("question");
+				expect(mockManager.play).toHaveBeenCalledWith("question", { force: true });
 			});
 		});
 
-		it("restores original enabled state when it was already enabled", async () => {
+		it("does not mutate enabled/per-sound config (no temporary toggling)", async () => {
 			await testInScopeAsync(async () => {
+				// Disable notifications and question sound, then clear the setup calls
+				store.setEnabled(false);
+				store.setSoundEnabled("question", false);
+				mockManager.setEnabled.mockClear();
+				mockManager.setSoundEnabled.mockClear();
+
 				await store.testSound("question");
 
-				expect(mockManager.setEnabled).toHaveBeenCalledWith(true);
-				expect(mockManager.play).toHaveBeenCalledWith("question");
+				// testSound must not flip config flags — force handles the bypass
+				expect(mockManager.setEnabled).not.toHaveBeenCalled();
+				expect(mockManager.setSoundEnabled).not.toHaveBeenCalled();
+				expect(mockManager.play).toHaveBeenCalledWith("question", { force: true });
 			});
 		});
 	});

@@ -42,20 +42,25 @@ export class NotificationManager {
 		this.config = { ...DEFAULT_NOTIFICATION_CONFIG, ...config };
 	}
 
-	/** Play a notification sound */
-	async play(sound: NotificationSound): Promise<void> {
-		if (!this.config.enabled) return;
-		if (!this.config.sounds[sound]) return;
-
+	/** Play a notification sound.
+	 *  `force` bypasses the enabled / per-sound / backoff / rate-limit gates — used
+	 *  by the Settings "Test" buttons, where the user explicitly asked to hear the
+	 *  sound right now and throttling would silently swallow rapid A/B comparisons. */
+	async play(sound: NotificationSound, opts?: { force?: boolean }): Promise<void> {
 		const now = Date.now();
 
-		// Back off after repeated failures (exponential: 5s, 30s, 5min cap)
-		if (now < this.backoffUntil) return;
+		if (!opts?.force) {
+			if (!this.config.enabled) return;
+			if (!this.config.sounds[sound]) return;
 
-		// Rate limit: prevent spam
-		const lastPlay = this.lastPlayTime.get(sound) || 0;
-		if (now - lastPlay < this.minInterval) return;
-		this.lastPlayTime.set(sound, now);
+			// Back off after repeated failures (exponential: 5s, 30s, 5min cap)
+			if (now < this.backoffUntil) return;
+
+			// Rate limit: prevent spam
+			const lastPlay = this.lastPlayTime.get(sound) || 0;
+			if (now - lastPlay < this.minInterval) return;
+			this.lastPlayTime.set(sound, now);
+		}
 
 		try {
 			if (isTauri()) {

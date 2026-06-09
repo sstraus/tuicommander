@@ -158,11 +158,12 @@ User-specific settings (`promptOnCreate`, `autoFetchIntervalMinutes`) are intent
 ## Notification Settings
 
 - **Enable Audio Notifications** — Master toggle
-- **Volume** — 0-100%
+- **Volume** — 0-100% (applied natively by the Rust playback path). Releasing the slider plays a short preview at the new level.
+- **Audio Output Device** — defaults to the system output. Click **Choose output device…** to enumerate available outputs and pick a specific one. Enumeration is deferred until you click, because on macOS the audio device scan triggers the microphone-permission prompt — notifications never record audio.
 - **Per-event toggles:**
   - Agent asks question
   - Error occurred
   - Task completed
   - Warning
-- **Test buttons** — Test each sound individually
+- **Test buttons** — Test each sound individually. The Test button bypasses the anti-spam rate limit, so rapid A/B volume comparisons always play.
 - **Reset to Defaults** — Restore default notification settings

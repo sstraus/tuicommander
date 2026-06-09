@@ -80,6 +80,34 @@ describe("NotificationManager", () => {
 			expect(mockInvoke).toHaveBeenCalledTimes(2);
 		});
 
+		it("force bypasses the rate limit (rapid A/B test clicks all play)", async () => {
+			await manager.play("question", { force: true });
+			await manager.play("question", { force: true });
+			expect(mockInvoke).toHaveBeenCalledTimes(2);
+		});
+
+		it("force plays even when notifications are disabled", async () => {
+			manager.setEnabled(false);
+			await manager.play("question", { force: true });
+			expect(mockInvoke).toHaveBeenCalledTimes(1);
+		});
+
+		it("force plays even when the specific sound is disabled", async () => {
+			manager.setSoundEnabled("question", false);
+			await manager.play("question", { force: true });
+			expect(mockInvoke).toHaveBeenCalledTimes(1);
+		});
+
+		it("force uses the current volume", async () => {
+			manager.setVolume(0.8);
+			await manager.play("completion", { force: true });
+			expect(mockInvoke).toHaveBeenCalledWith("play_notification_sound", {
+				sound: "completion",
+				volume: 0.8,
+				device: null,
+			});
+		});
+
 		it("handles invoke error gracefully", async () => {
 			mockInvoke.mockRejectedValueOnce(new Error("audio error"));
 			// Should not throw

@@ -194,20 +194,10 @@ function createNotificationsStore() {
 			await actions.play("info", { terminalId });
 		},
 
-		/** Test a notification sound (bypasses enabled check) */
+		/** Test a notification sound — explicit user action, so it bypasses the
+		 *  enabled / per-sound / rate-limit gates and always plays at the current volume */
 		async testSound(sound: NotificationSound): Promise<void> {
-			const wasEnabled = state.config.enabled;
-			const wasSoundEnabled = state.config.sounds[sound];
-
-			// Temporarily enable
-			notificationManager.setEnabled(true);
-			notificationManager.setSoundEnabled(sound, true);
-
-			await notificationManager.play(sound);
-
-			// Restore
-			notificationManager.setEnabled(wasEnabled);
-			notificationManager.setSoundEnabled(sound, wasSoundEnabled);
+			await notificationManager.play(sound, { force: true });
 		},
 
 		/** Increment badge count on the app dock icon */
