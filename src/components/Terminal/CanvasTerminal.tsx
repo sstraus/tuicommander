@@ -320,7 +320,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		setMetrics(m);
 
 		cachedBgDefault = getComputedStyle(canvasRef).getPropertyValue("--bg-secondary").trim() || "#1e1e1e";
-		cachedFgDefault = getComputedStyle(canvasRef).getPropertyValue("--text-primary").trim() || "#d4d4d4";
+		cachedFgDefault = getComputedStyle(canvasRef).getPropertyValue("--fg-primary").trim() || "#d4d4d4";
 		gridRenderer.setTheme(cachedBgDefault, cachedFgDefault);
 
 		const cols = Math.floor((rect.width - GUTTER_PX - SCROLLBAR_PX) / m.cellWidth);
@@ -2847,7 +2847,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 						width: "10px",
 						"margin-left": "2px",
 						"border-radius": "5px",
-						background: "var(--text-primary, rgba(255,255,255,0.3))",
+						background: "var(--fg-primary, rgba(255,255,255,0.3))",
 						opacity: "var(--scrollbar-opacity, 0.3)",
 						"min-height": "20px",
 						position: "absolute",
