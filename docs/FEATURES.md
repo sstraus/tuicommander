@@ -490,6 +490,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - Categories: Code Editors, JetBrains, Terminals, Git Tools, System
 - JetBrains family: IntelliJ IDEA, PyCharm, WebStorm, GoLand, CLion, PhpStorm, RubyMine, Rider, DataGrip, RustRover, Android Studio, Fleet — launched via their CLI launcher (`idea`, `pycharm`, …) with `--line`/`--column` goto, falling back to `open -a` on macOS when the Toolbox shell scripts aren't on PATH
 - File-capable editors (including JetBrains IDEs) open the focused file (from editor or MD tab); others open the repo
+- Custom launchers (#71): user-defined entries configured at Settings → General → Custom Launchers (name, executable on `PATH` or absolute, args, per-OS platform, enable toggle), shown under a "Custom" section in the dropdown. Args support placeholder tokens resolved at launch: `{path}`/`{file}` (focused file, else repo), `{repo}`, `{fileDir}` (focused file's directory, else repo), `{cwd}` (focused terminal cwd, else repo), `{home}`, and `{line}`/`{column}` (editor cursor, default 1)
 - Run command button: `Cmd+R` (run), `Cmd+Shift+R` (edit & run)
 
 ---

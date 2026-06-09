@@ -91,7 +91,7 @@ The feedback loop happens in the same window:
 - **PR management** — Merge via GitHub API with auto-detected merge method. Post-merge cleanup.
 - **GitHub Issues** — Filter by assigned/created/mentioned, labels with colors, close/reopen.
 - **CI Auto-Heal** — When CI fails, TUICommander fetches failure logs and injects them into the agent for automatic fix.
-- **Built-in code editor** — CodeMirror 6 with syntax highlighting, find/replace, disk conflict detection.
+- **Built-in code editor** — Syntax highlighting, find/replace, disk conflict detection, a VS Code-style change-overview ruler, and a Cmd/Ctrl+hover go-to-definition affordance.
 - **File browser** — Directory tree, content search (grep), git status indicators.
 
 ### Built-in AI Chat & autonomous agent
@@ -155,6 +155,17 @@ On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, n
 
 [Plugin Authoring Guide →](docs/plugins.md)
 
+### Built to be scripted — CLI, HTTP, and MCP control surface
+
+TUICommander isn't a black box. Everything you click, you can also drive from a script, another tool, or an AI agent.
+
+- **`tuic` CLI companion** — Open files with cursor goto (`tuic src/main.rs:42:8`), manage sessions (`ls` / `new` / `kill` / `send`), orchestrate agents (`spawn` / `ls` / `send`), plus a tmux-compatibility alias mode. Installs from Settings, auto-updates on launch.
+- **HTTP API** — REST + WebSocket + SSE on a local port: list/create/close sessions, stream live output, spawn agents, read terminal grids and scrollback, query process CPU/RSS. Script TUIC from anything that can hit a socket.
+- **MCP control surface** — TUIC is itself an MCP server. Connected agents get `session`, `agent`, `repo`, and `ui` tools — including `drive_agent` (atomic send → wait-for-idle → read) and delta cursors that return only new output. *(Distinct from the MCP Proxy Hub above, which aggregates your upstream servers.)*
+- **Custom "Open in…" launchers** — Define your own editor/tool commands with placeholder tokens: `{file}`, `{repo}`, `{fileDir}`, `{cwd}`, `{home}`, `{line}`, `{column}`. iTerm2, Tower, and the full JetBrains family ship built in.
+
+[CLI guide →](docs/user-guide/cli.md) &bull; [HTTP API →](docs/api/http-api.md) &bull; [MCP server →](docs/backend/mcp-http.md)
+
 ---
 
 ## How it compares
@@ -162,7 +173,7 @@ On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, n
 | Capability | Ghostty / Kitty | Warp | Cursor IDE | Claude Desktop | TUICommander |
 |---|---|---|---|---|---|
 | Terminal sessions | Yes | Yes | Yes | No | Yes (50) |
-| AI coding agents | No | Partial | Built-in | Built-in | Any agent (10 detected) |
+| AI coding agents | No | Partial | Built-in | Built-in | Any agent (9 detected) |
 | Parallel agents | No | No | Limited | No | Unlimited |
 | Git worktree orchestration | No | No | No | No | Automatic |
 | Agent observability | No | No | No | No | Real-time |
@@ -217,10 +228,24 @@ On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, n
 - Configurable keybindings with chord support and conflict detection
 - Claude Usage Dashboard: rate limits, 7-day chart, 52-week heatmap, per-project breakdown
 - Prompt library (`Cmd+K`): saved prompts with variable substitution
-- IDE launchers: open in VS Code, Cursor, Zed, or any detected editor
+- IDE launchers: open in VS Code, Cursor, Zed, JetBrains, iTerm2, Tower, or any detected tool — plus user-defined custom launchers with `{file}`/`{repo}`/`{line}`/`{column}` tokens
 - Ideas panel (`Cmd+Alt+N`): quick notes with image paste and send-to-terminal
 - Voice dictation: streaming on-device Whisper with partial results
 - Focus mode (`Cmd+Alt+Enter`): maximize active tab, hide sidebar and panels
+</details>
+
+<details>
+<summary><strong>Developer & automation</strong> — CLI, HTTP/MCP control, command blocks, generators, process manager</summary>
+
+- `tuic` CLI: file open with cursor goto, session/agent orchestration, tmux-compat alias mode, auto-update
+- HTTP API (REST + WebSocket + SSE): sessions, live output stream, agent spawn, terminal grid/scrollback ops, process stats
+- MCP control surface: `session` / `agent` / `repo` / `ui` tools, `drive_agent` atomic send→wait→read, delta cursors for incremental reads
+- Custom launchers: user-defined exec + args with `{file}`/`{repo}`/`{fileDir}`/`{cwd}`/`{home}`/`{line}`/`{column}` placeholder tokens
+- Command blocks: terminal output segmented per prompt+output cycle — semantic scrollbar marks, fold (`Cmd+Shift+.`), block search (`Cmd+Shift+B`), navigate (`Cmd+Shift+Up/Down`)
+- Generators (command palette): Password, UUID v4/v7, ULID, CUID2, JWT secret, TOTP secret, Nano ID, Slug, Ed25519 keypair — generated natively in Rust
+- Process Manager: CPU% and RSS for TUIC and every child process tree, with a self-contained HTML monitor
+- Runtime diagnostics: CPU-spike watchdog, FD/thread-leak detection, health snapshots via the local logs endpoint
+- Auto-standby: SIGSTOP idle + unfocused PTY groups after N minutes, SIGCONT on focus or agent message
 </details>
 
 > **Full feature reference:** **[docs/FEATURES.md](docs/FEATURES.md)**
@@ -263,7 +288,7 @@ See [docs/guides/development-setup.md](docs/guides/development-setup.md) for pla
 
 ## Built with
 
-Rust + [Tauri v2](https://tauri.app) backend, [SolidJS](https://solidjs.com) UI, native terminal via [alacritty_terminal](https://crates.io/crates/alacritty_terminal) + canvas rendering, [CodeMirror 6](https://codemirror.net) editor, [whisper-rs](https://github.com/tazz4843/whisper-rs) dictation, [Vite](https://vite.dev) + LightningCSS build. ~80 MB RAM.
+Rust + [Tauri v2](https://tauri.app) backend, [SolidJS](https://solidjs.com) UI, native terminal via [alacritty_terminal](https://crates.io/crates/alacritty_terminal) + canvas rendering, [whisper-rs](https://github.com/tazz4843/whisper-rs) dictation, [Vite](https://vite.dev) + LightningCSS build. ~80 MB RAM.
 
 ## Documentation
 
