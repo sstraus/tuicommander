@@ -2835,6 +2835,15 @@ pub(super) async fn mcp_post(
             {
                 meta.last_activity = std::time::Instant::now();
             }
+            // On the first list after boot, wait (bounded) for upstream MCP
+            // servers to finish connecting so their proxied tools are included.
+            // CC fetches tools/list during the handshake — before async upstream
+            // init completes — and never refetches on tools/list_changed
+            // (anthropics/claude-code#4118), so a stale list would otherwise stick.
+            state
+                .mcp_upstream_registry
+                .await_initial_settle(std::time::Duration::from_secs(3))
+                .await;
             let tools = merged_tool_definitions(&state, list_session_id);
             let response = serde_json::json!({
                 "jsonrpc": "2.0",

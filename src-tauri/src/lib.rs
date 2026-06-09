@@ -1028,15 +1028,23 @@ pub fn run() {
                     None
                 };
 
-                // Bind the IPC socket BEFORE upstream auto-connect so the MCP
-                // bridge is reachable as soon as possible. Upstream connections
-                // can be slow (network timeouts, OAuth) and must not delay socket
-                // availability — that causes "MCP disconnected" in Claude Code.
+                // `start_server` binds the IPC socket and then parks on the
+                // shutdown signal — it only returns on save_config/restart, so
+                // it must be the call that owns this boot thread's runtime for
+                // the process lifetime. Auto-connect therefore CANNOT run after
+                // it (that line would be dead code, leaving every upstream
+                // unconnected until the user touches the UI). Spawn auto-connect
+                // to run concurrently: it registers upstreams + spawns their
+                // async init (it does not await slow network/OAuth), so it never
+                // delays socket binding — keeping the MCP bridge reachable for
+                // Claude Code while still connecting saved upstreams at boot.
+                let auto_state = server_state.clone();
+                tokio::spawn(async move {
+                    crate::mcp_upstream_config::auto_connect_saved_upstreams(&auto_state).await;
+                });
+
                 let srv_state = server_state.clone();
                 mcp_http::start_server(srv_state, true, remote_enabled, tls_config).await;
-
-                // Auto-connect saved upstream MCP servers (after socket is live)
-                crate::mcp_upstream_config::auto_connect_saved_upstreams(&server_state).await;
             });
         });
     }
@@ -1892,6 +1900,16 @@ pub async fn run_headless(port: u16) -> anyhow::Result<()> {
         tls = tls_config.is_some(),
         "Starting tuic-remote"
     );
+
+    // Auto-connect saved upstream MCP servers. Spawned (not awaited) for the
+    // same reason as the desktop boot path: `start_server` below parks on the
+    // shutdown signal and never returns, so any auto-connect after it would be
+    // dead code. Registration is fast (async init is spawned), so it does not
+    // delay socket binding.
+    let auto_state = state.clone();
+    tokio::spawn(async move {
+        crate::mcp_upstream_config::auto_connect_saved_upstreams(&auto_state).await;
+    });
 
     // Run server until SIGINT/SIGTERM, then shut down gracefully.
     tokio::select! {

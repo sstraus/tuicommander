@@ -230,6 +230,8 @@ pub(crate) fn is_self_referential(url: &str, self_port: u16) -> bool {
 pub(crate) async fn auto_connect_saved_upstreams(state: &crate::state::AppState) {
     let config: UpstreamMcpConfig = load_json_config(UPSTREAMS_FILE);
     if config.servers.is_empty() {
+        // No upstreams to wait for — let tools/list serve immediately.
+        state.mcp_upstream_registry.mark_initial_connect_complete();
         return;
     }
 
@@ -257,6 +259,11 @@ pub(crate) async fn auto_connect_saved_upstreams(state: &crate::state::AppState)
             tracing::warn!(source = "mcp_upstream", name = %server.name, "Boot-time connect failed: {e}");
         }
     }
+    // All upstreams registered (async initialize may still be in flight). This
+    // unblocks `await_initial_settle`, which then waits only for the in-flight
+    // initializations to settle before serving the first tools/list.
+    registry.mark_initial_connect_complete();
+
     tracing::info!(
         source = "mcp_upstream",
         "Boot-time upstream auto-connect complete"

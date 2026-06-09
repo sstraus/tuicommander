@@ -227,7 +227,7 @@ impl HttpMcpClient {
         let tm = self.token_manager_for(set).await;
         tm.refresh_if_needed(set)
             .await
-            .map_err(|e| UpstreamError::Other(format!("token refresh failed: {e}")))
+            .map_err(|e| classify_refresh_error(&e.to_string()))
     }
 
     /// Lazily build (or return) the per-client [`TokenManager`]. Sharing the
@@ -585,6 +585,27 @@ fn classify_401(resp: &reqwest::Response) -> UpstreamError {
             www_authenticate: h,
         },
         _ => UpstreamError::AuthFailed,
+    }
+}
+
+/// Classify a token-refresh failure (raw `anyhow` error message) as either a
+/// fatal auth error that needs re-authorization or a transient error.
+///
+/// A revoked/expired refresh token (AS replies `400 invalid_grant`, or there is
+/// no refresh token at all) cannot be recovered automatically — mapping it to
+/// [`UpstreamError::AuthFailed`] lets the registry re-enter `NeedsAuth` (shows
+/// "Authorize") instead of parking the upstream in a silent red failure.
+/// Transient/network refresh errors stay [`UpstreamError::Other`] so the circuit
+/// breaker + health checks keep retrying.
+fn classify_refresh_error(msg: &str) -> UpstreamError {
+    if msg.contains("invalid_grant")
+        || msg.contains("no refresh_token available")
+        || msg.contains("HTTP 400")
+        || msg.contains("HTTP 401")
+    {
+        UpstreamError::AuthFailed
+    } else {
+        UpstreamError::Other(format!("token refresh failed: {msg}"))
     }
 }
 
@@ -946,6 +967,40 @@ mod tests {
             .map(|s| s.to_string())
             .unwrap();
         assert!(value.to_ascii_lowercase().contains("bearer"));
+    }
+
+    // -- refresh-error classification --
+
+    #[test]
+    fn classify_refresh_error_maps_fatal_auth_failures_to_auth_failed() {
+        // A revoked refresh token (AS replies 400 invalid_grant) must become
+        // AuthFailed so the registry prompts re-authorization instead of going
+        // silently red.
+        for msg in [
+            "Token refresh failed (HTTP 400): {\"error\":\"invalid_grant\"}",
+            "Token expired and no refresh_token available",
+            "Token refresh failed (HTTP 401): unauthorized",
+        ] {
+            assert!(
+                matches!(classify_refresh_error(msg), UpstreamError::AuthFailed),
+                "expected AuthFailed for: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn classify_refresh_error_keeps_transient_failures_as_other() {
+        // Network/5xx refresh errors are retryable — they must stay Other so the
+        // circuit breaker keeps trying, not park the upstream in NeedsAuth.
+        for msg in [
+            "Token refresh request failed: connection refused",
+            "Token refresh failed (HTTP 503): service unavailable",
+        ] {
+            assert!(
+                matches!(classify_refresh_error(msg), UpstreamError::Other(_)),
+                "expected Other for: {msg}"
+            );
+        }
     }
 
     // -- error Display/From --
