@@ -214,6 +214,10 @@ export const PluginPanel: Component<PluginPanelProps> = (props) => {
 		if (!iframeRef || !props.tab.url || props.tab.url.startsWith("file://")) return;
 		try {
 			if (iframeRef.contentDocument) {
+				// about:blank is same-origin too — it's our OWN reset target, not an
+				// escape. Without this check the guard re-fires on the about:blank load
+				// it just triggered, looping (reset → load → guard → reset → …).
+				if (iframeRef.contentDocument.location?.href === "about:blank") return;
 				appLogger.error("plugin", `Panel '${props.tab.id}' navigated to app origin — blocked`);
 				iframeRef.src = "about:blank";
 			}
