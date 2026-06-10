@@ -18,6 +18,7 @@ import { getAwaitingInputSound } from "./awaitingInputSound";
 import CanvasTerminal, { type CanvasTerminalRef } from "./CanvasTerminal";
 import { snapLineHeight } from "./canvasTerminalUtils";
 import { getSharedMetrics } from "./glyphCache";
+import { shouldApplyIntentTitle } from "./intentTitle";
 import { LastPromptBar } from "./LastPromptBar";
 import s from "./Terminal.module.css";
 import { TerminalSearch } from "./TerminalSearch";
@@ -414,18 +415,25 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					);
 					break;
 				}
-				case "intent":
+				case "intent": {
 					retryCount = 0;
 					terminalsStore.setAgentIntent(props.id, parsed.text);
-					if (parsed.title && settingsStore.state.intentTabTitle) {
-						const agentType = terminalsStore.get(props.id)?.agentType;
-						const perAgentAllowed = agentType ? (agentConfigsStore.getIntentTabTitle(agentType) ?? true) : true;
-						if (perAgentAllowed) {
-							terminalsStore.update(props.id, { name: parsed.title });
-						}
+					const term = terminalsStore.get(props.id);
+					const agentType = term?.agentType;
+					const perAgentEnabled = agentType ? (agentConfigsStore.getIntentTabTitle(agentType) ?? true) : true;
+					if (
+						shouldApplyIntentTitle({
+							title: parsed.title,
+							globalEnabled: settingsStore.state.intentTabTitle,
+							perAgentEnabled,
+							nameIsCustom: term?.nameIsCustom ?? false,
+						})
+					) {
+						terminalsStore.update(props.id, { name: parsed.title });
 					}
 					// Intent/suggest row overlays handled by installRenderObserver
 					break;
+				}
 				case "suggest":
 					// Backend guarantees `suggest` events only arrive once the shell has
 					// transitioned to IDLE (see `drain_pending_suggest` in pty.rs, gated
