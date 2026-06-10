@@ -1630,6 +1630,8 @@ mod tests {
             git_cache: crate::state::GitCacheState::new(),
             repo_watchers: DashMap::new(),
             repo_git_fingerprints: DashMap::new(),
+            repo_head_targets: DashMap::new(),
+            repo_head_emits_suppressed: std::sync::atomic::AtomicU64::new(0),
             dir_watchers: DashMap::new(),
             theme_watcher: parking_lot::Mutex::new(None),
             mdkb_daemon: crate::mdkb_daemon::create_shared_daemon(),

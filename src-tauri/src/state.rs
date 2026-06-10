@@ -841,15 +841,27 @@ pub struct AppState {
     pub(crate) config: parking_lot::RwLock<crate::config::AppConfig>,
     /// TTL caches for git and GitHub query results
     pub(crate) git_cache: GitCacheState,
-    /// Raw file watchers per repo — one recursive watcher covering
-    /// .git/ and working tree, with per-category debounce (keyed by repo path).
-    /// Uses raw notify::RecommendedWatcher (no debouncer-full walkdir overhead).
-    pub(crate) repo_watchers: DashMap<String, crate::repo_watcher::WatchHandle>,
+    /// Raw file watchers per repo (keyed by repo path), with per-category
+    /// debounce. macOS/Windows: one recursive `notify::RecommendedWatcher` over
+    /// the repo root. Linux: pruned non-recursive working-tree watches + targeted
+    /// `.git` watches (issue #82). Stored behind `Arc` so the Linux event callback
+    /// can clone a stable handle and add watches for newly created dirs without
+    /// holding a `DashMap` ref across the blocking `watch()` call.
+    pub(crate) repo_watchers: DashMap<String, Arc<crate::repo_watcher::RepoWatchHandle>>,
     /// Last emitted git-state fingerprint per repo path. The repo watcher skips
     /// the `repo-changed` (git-state) emit when the fingerprint is unchanged, so a
     /// no-op `.git` touch (e.g. a `--no-optional-locks` status refreshing the index
     /// stat cache) doesn't trigger the full ~20-panel frontend re-render cascade.
     pub(crate) repo_git_fingerprints: DashMap<String, u64>,
+    /// Last emitted resolved-HEAD target per repo path (`resolve_head_target`
+    /// output). The repo watcher skips the `head-changed` emit when this is
+    /// unchanged, suppressing the Linux inotify storm where `.git/HEAD` events
+    /// recur without HEAD actually moving (issue #82).
+    pub(crate) repo_head_targets: DashMap<String, String>,
+    /// Count of `head-changed` emits suppressed by the `repo_head_targets`
+    /// guard — surfaced in diagnostic snapshots to quantify watcher storm
+    /// volume in production (issue #82).
+    pub(crate) repo_head_emits_suppressed: AtomicU64,
     /// File watchers for directory contents (keyed by absolute dir path)
     pub(crate) dir_watchers: DashMap<String, crate::repo_watcher::WatchHandle>,
     /// File watcher for the themes/ directory — kept alive for the app lifetime.
@@ -1144,6 +1156,8 @@ impl AppState {
             git_cache: GitCacheState::new(),
             repo_watchers: DashMap::new(),
             repo_git_fingerprints: DashMap::new(),
+            repo_head_targets: DashMap::new(),
+            repo_head_emits_suppressed: AtomicU64::new(0),
             dir_watchers: DashMap::new(),
             theme_watcher: parking_lot::Mutex::new(None),
             mdkb_daemon: crate::mdkb_daemon::create_shared_daemon(),
@@ -3154,6 +3168,8 @@ mod tests {
             git_cache: GitCacheState::new(),
             repo_watchers: dashmap::DashMap::new(),
             repo_git_fingerprints: dashmap::DashMap::new(),
+            repo_head_targets: dashmap::DashMap::new(),
+            repo_head_emits_suppressed: AtomicU64::new(0),
             dir_watchers: dashmap::DashMap::new(),
             theme_watcher: parking_lot::Mutex::new(None),
             mdkb_daemon: crate::mdkb_daemon::create_shared_daemon(),

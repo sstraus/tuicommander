@@ -10,7 +10,7 @@ use std::time::Duration;
 use tauri::{AppHandle, Emitter, Manager};
 
 /// Classification of a filesystem event path for per-category debounce.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub(crate) enum EventCategory {
     /// `.git/HEAD` — branch switches, 200ms debounce
     Head,
@@ -256,12 +256,87 @@ fn repo_git_fingerprint(repo_root: &Path, git_dir: &Path) -> u64 {
     compute_git_fingerprint(index_size, &head_target, &porcelain)
 }
 
+/// Decide whether a `head-changed` emit should fire for `repo_path` given the
+/// freshly resolved HEAD `target`, updating the per-repo cache as a side effect.
+///
+/// Returns `false` when the target is unchanged since the last emit — the guard
+/// that suppresses the Linux inotify storm where `.git/HEAD` events recur without
+/// the resolved HEAD actually moving (issue #82). Cold start (empty cache) returns
+/// `true`, mirroring the GitState fingerprint guard which also emits on first sight.
+fn head_target_changed(
+    cache: &dashmap::DashMap<String, String>,
+    repo_path: &str,
+    target: &str,
+) -> bool {
+    if cache.get(repo_path).is_some_and(|v| *v == target) {
+        return false;
+    }
+    cache.insert(repo_path.to_string(), target.to_string());
+    true
+}
+
+/// Collect every working-tree directory that should receive a watch, pruning
+/// the always-excluded dirs (`.git`, `node_modules`, `target`, …) and any
+/// gitignored paths via `ignore::WalkBuilder`. Used by the Linux watch path to
+/// register one non-recursive inotify watch per surviving directory instead of
+/// a single recursive watch that would also cover the pruned subtrees (issue
+/// #82). The repo root is always included.
+///
+/// Not cfg-gated so it can be unit-tested on any platform; only its caller in
+/// `start_watching` is Linux-specific (hence dead on non-Linux non-test builds).
+#[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
+fn collect_working_tree_dirs(repo_root: &Path) -> Vec<PathBuf> {
+    ignore::WalkBuilder::new(repo_root)
+        .hidden(false)
+        .git_ignore(true)
+        .git_global(false)
+        .parents(false)
+        .filter_entry(|e| !crate::fs::is_always_excluded_dir(e))
+        .build()
+        .flatten()
+        .filter(|e| e.file_type().is_some_and(|ft| ft.is_dir()))
+        .map(|e| e.path().to_path_buf())
+        .collect()
+}
+
 /// Thread-safe wrapper for `RecommendedWatcher`.
 ///
 /// `RecommendedWatcher` is `Send` but not `Sync`. Wrapping in `Mutex`
 /// provides `Sync` so it can live in DashMap. The mutex is only locked
 /// during `watch()`/`unwatch()` calls (not on the event hot path).
 pub(crate) struct WatchHandle(#[allow(dead_code)] pub(crate) Mutex<RecommendedWatcher>);
+
+/// Repo-watcher handle: the live `notify` watcher plus, on Linux, the set of
+/// working-tree directories we've already registered a non-recursive watch for.
+///
+/// Stored behind `Arc` in `AppState.repo_watchers`. The Linux event callback
+/// clones the `Arc` (dropping the `DashMap` ref immediately) before calling the
+/// blocking `watch()` on the watcher mutex — so `stop_watching`'s map removal
+/// never stalls behind an in-flight add-watch, and the watcher is never dropped
+/// while a `DashMap` shard lock is held. `watched_dirs` dedupes the add-watch
+/// requests that create-event bursts would otherwise fire repeatedly; it is
+/// dropped with the handle, so a stopped+restarted watcher starts cold.
+pub(crate) struct RepoWatchHandle {
+    // Read only on Linux (dynamic add-watch); elsewhere it's kept alive to keep
+    // the watcher running but never accessed.
+    #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+    pub(crate) watcher: Mutex<RecommendedWatcher>,
+    #[cfg(target_os = "linux")]
+    watched_dirs: Mutex<std::collections::HashSet<PathBuf>>,
+}
+
+/// Whether a filesystem event denotes a newly created working-tree directory
+/// that needs its own non-recursive watch on Linux (issue #82). Pure so it can
+/// be unit-tested without a live inotify backend: gates on the event kind
+/// (`Create(Folder)`, reliably set by inotify via `IN_ISDIR`) rather than a
+/// racy `path.is_dir()` stat that may lose to a rename/delete.
+#[cfg_attr(not(any(target_os = "linux", test)), allow(dead_code))]
+fn is_new_watchable_dir(kind: &notify::EventKind, category: EventCategory) -> bool {
+    matches!(
+        kind,
+        notify::EventKind::Create(notify::event::CreateKind::Folder)
+    ) && category == EventCategory::WorkingTree
+}
 
 /// Start a watcher for a repository using raw `notify::RecommendedWatcher`.
 ///
@@ -297,6 +372,11 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
             tokio::runtime::Handle::current()
         }
     };
+    // Linux dynamically adds non-recursive watches for new working-tree dirs
+    // from the event callback; it needs a runtime handle to offload the
+    // (blocking, must-not-run-on-event-loop-thread) `watch()` call.
+    #[cfg(target_os = "linux")]
+    let rt_for_cb = rt_handle.clone();
     let emitter = Arc::new(CategoryEmitter::new(rt_handle));
 
     let repo_for_cb = repo.clone();
@@ -328,11 +408,41 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
             let mut has_working_tree = false;
 
             for path in &event.paths {
-                match classify_path(path, &repo_for_cb, &git_dir_for_cb, &gi) {
+                let category = classify_path(path, &repo_for_cb, &git_dir_for_cb, &gi);
+                match category {
                     EventCategory::Head => has_head = true,
                     EventCategory::GitState => has_git_state = true,
                     EventCategory::WorkingTree => has_working_tree = true,
                     EventCategory::Noise => {}
+                }
+
+                // Linux watches each working-tree dir non-recursively (issue #82),
+                // so a newly created directory needs its own watch or its contents
+                // go unobserved. Offload the add to a blocking task: notify's
+                // inotify `watch()` must NOT run on this (event-loop) thread — it
+                // would block on a reply the same thread is supposed to deliver.
+                // The task clones the handle `Arc` and drops the `DashMap` ref
+                // before locking, so `stop_watching` never stalls behind it.
+                #[cfg(target_os = "linux")]
+                if is_new_watchable_dir(&event.kind, category) {
+                    let st = Arc::clone(&state_cb);
+                    let rp = repo_path_owned.clone();
+                    let new_dir = path.clone();
+                    rt_for_cb.spawn_blocking(move || {
+                        let Some(h) = st.repo_watchers.get(&rp).map(|r| r.value().clone()) else {
+                            return;
+                        };
+                        // Dedupe create-event bursts: only the first request for a
+                        // dir schedules the syscall.
+                        if !h.watched_dirs.lock().insert(new_dir.clone()) {
+                            return;
+                        }
+                        if let Err(e) = h.watcher.lock().watch(&new_dir, RecursiveMode::NonRecursive)
+                        {
+                            h.watched_dirs.lock().remove(&new_dir);
+                            tracing::warn!(source = "repo_watcher", path = %new_dir.display(), "Failed to watch new dir: {e}");
+                        }
+                    });
                 }
             }
             drop(gi);
@@ -341,12 +451,26 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
             if has_head {
                 let repo_path = repo_path_owned.clone();
                 let repo = repo_for_cb.clone();
+                let git_dir = git_dir_for_cb.clone();
                 let bus = event_bus.clone();
+                let st = Arc::clone(&state_cb);
                 #[cfg(feature = "desktop")]
                 let h = handle.clone();
                 emitter.trigger(&EventCategory::Head, move || {
-                    tracing::info!(source = "repo_watcher", path = %repo_path, "Emit head-changed");
+                    // Semantic dedupe: only emit when the resolved HEAD target
+                    // actually moved. On Linux, inotify re-fires `.git/HEAD`
+                    // events without the branch/SHA changing (issue #82);
+                    // suppressing those here stops the emit loop and the
+                    // downstream IPC cascade that pinned CPU and aborted.
+                    let target = resolve_head_target(&git_dir);
+                    if !head_target_changed(&st.repo_head_targets, &repo_path, &target) {
+                        st.repo_head_emits_suppressed
+                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                        tracing::debug!(source = "repo_watcher", path = %repo_path, "Skip head-changed (HEAD target unchanged)");
+                        return;
+                    }
                     if let Some(branch) = crate::git::read_branch_from_head(&repo) {
+                        tracing::debug!(source = "repo_watcher", path = %repo_path, "Emit head-changed");
                         let _ = bus.send(AppEvent::HeadChanged {
                             repo_path: repo_path.clone(),
                             branch: branch.clone(),
@@ -426,25 +550,70 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
     )
     .map_err(|e| format!("Failed to create repo watcher: {e}"))?;
 
-    // Watch repo root recursively. On macOS (FSEvents) and Windows
-    // (ReadDirectoryChangesW) this is a single OS-level registration
-    // with near-zero cost — no directory traversal.
+    // macOS (FSEvents) / Windows (ReadDirectoryChangesW): a single recursive
+    // registration is an OS-level operation with near-zero cost — no directory
+    // traversal — so we watch the whole repo root in one call.
+    #[cfg(not(target_os = "linux"))]
     watcher
         .watch(repo.as_path(), RecursiveMode::Recursive)
         .map_err(|e| format!("Failed to watch repo: {e}"))?;
 
+    // Linux (inotify): a recursive watch makes `notify` walk the entire tree and
+    // add a watch per directory — including `node_modules`, `target`, and
+    // `.git/objects` — so every churn in those subtrees floods our callback and
+    // pins CPU (issue #82). Split the watch instead:
+    //   1. working tree — one non-recursive watch per directory, pruning the
+    //      always-excluded dirs and gitignored paths up front; new dirs created
+    //      after launch are picked up dynamically in the callback;
+    //   2. `.git` — targeted watches (root non-recursive for HEAD/index/
+    //      sentinels/packed-refs, `refs` and `worktrees` recursive) so we never
+    //      watch `objects`/`logs`/`hooks`, the high-churn part of `.git`.
+    #[cfg(target_os = "linux")]
+    let watched_dirs = {
+        let mut set = std::collections::HashSet::new();
+        for dir in collect_working_tree_dirs(&repo) {
+            if let Err(e) = watcher.watch(&dir, RecursiveMode::NonRecursive) {
+                tracing::warn!(source = "repo_watcher", path = %dir.display(), "Failed to watch working-tree dir: {e}");
+            } else {
+                set.insert(dir);
+            }
+        }
+        watcher
+            .watch(&git_dir, RecursiveMode::NonRecursive)
+            .map_err(|e| format!("Failed to watch .git: {e}"))?;
+        let refs_dir = git_dir.join("refs");
+        if let Err(e) = watcher.watch(&refs_dir, RecursiveMode::Recursive) {
+            tracing::warn!(source = "repo_watcher", path = %refs_dir.display(), "Failed to watch .git/refs: {e}");
+        }
+        let worktrees_dir = git_dir.join("worktrees");
+        if worktrees_dir.is_dir()
+            && let Err(e) = watcher.watch(&worktrees_dir, RecursiveMode::Recursive)
+        {
+            tracing::warn!(source = "repo_watcher", path = %worktrees_dir.display(), "Failed to watch .git/worktrees: {e}");
+        }
+        Mutex::new(set)
+    };
+
+    let handle = RepoWatchHandle {
+        watcher: Mutex::new(watcher),
+        #[cfg(target_os = "linux")]
+        watched_dirs,
+    };
     state
         .repo_watchers
-        .insert(repo_path.to_string(), WatchHandle(Mutex::new(watcher)));
+        .insert(repo_path.to_string(), Arc::new(handle));
     Ok(())
 }
 
-/// Stop watching a repository.
+/// Stop watching a repository and retire its repo-local semantic caches, so a
+/// later restart starts cold instead of suppressing the first real change with
+/// stale state (issue #82).
 pub(crate) fn stop_watching(repo_path: &str, state: &Arc<AppState>) {
-    if state.repo_watchers.contains_key(repo_path) {
+    if state.repo_watchers.remove(repo_path).is_some() {
         tracing::info!(source = "repo_watcher", path = %repo_path, "Stopping watcher");
     }
-    state.repo_watchers.remove(repo_path);
+    state.repo_head_targets.remove(repo_path);
+    state.repo_git_fingerprints.remove(repo_path);
 }
 
 // --- Tauri commands ---
@@ -834,6 +1003,107 @@ mod tests {
         let git_dir = dir.path();
         std::fs::write(git_dir.join("HEAD"), "deadbeefcafe\n").unwrap();
         assert_eq!(resolve_head_target(git_dir), "deadbeefcafe");
+    }
+
+    // --- head-changed semantic dedupe (issue #82 storm guard) ---
+
+    #[test]
+    fn test_head_target_changed_suppresses_repeats() {
+        let cache: dashmap::DashMap<String, String> = dashmap::DashMap::new();
+        let repo = "/repo";
+        // Cold start (empty cache) emits once, mirroring the GitState guard.
+        assert!(head_target_changed(&cache, repo, "refs/heads/main=aaa"));
+        // Identical target burst → suppressed. This is the storm guard: the
+        // Linux inotify churn that re-fires `.git/HEAD` without HEAD moving.
+        assert!(!head_target_changed(&cache, repo, "refs/heads/main=aaa"));
+        assert!(!head_target_changed(&cache, repo, "refs/heads/main=aaa"));
+        // Real branch switch → emit again, then its repeat is suppressed.
+        assert!(head_target_changed(&cache, repo, "refs/heads/feature=bbb"));
+        assert!(!head_target_changed(&cache, repo, "refs/heads/feature=bbb"));
+    }
+
+    #[test]
+    fn test_head_target_changed_is_per_repo() {
+        let cache: dashmap::DashMap<String, String> = dashmap::DashMap::new();
+        assert!(head_target_changed(&cache, "/a", "t1"));
+        // Different repo, same target string → still emits (per-repo keying).
+        assert!(head_target_changed(&cache, "/b", "t1"));
+        // Repeats now suppressed independently per repo.
+        assert!(!head_target_changed(&cache, "/a", "t1"));
+        assert!(!head_target_changed(&cache, "/b", "t1"));
+    }
+
+    #[test]
+    fn test_collect_working_tree_dirs_prunes_excluded_and_gitignored() {
+        // Build a repo tree: src/sub kept; node_modules, .git, target pruned;
+        // a gitignored dir (build/) pruned via .gitignore.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for p in [
+            "src/sub",
+            "node_modules/pkg",
+            ".git/objects",
+            "target/debug",
+            "build/out",
+        ] {
+            std::fs::create_dir_all(root.join(p)).unwrap();
+        }
+        std::fs::write(root.join(".gitignore"), "build/\n").unwrap();
+
+        let dirs = collect_working_tree_dirs(root);
+        let has = |rel: &str| dirs.iter().any(|d| d == &root.join(rel));
+
+        // Kept: repo root + real source dirs.
+        assert!(has(""), "repo root should be watched");
+        assert!(has("src"));
+        assert!(has("src/sub"));
+        // Pruned: always-excluded dirs and their children.
+        assert!(!has("node_modules"));
+        assert!(!has("node_modules/pkg"));
+        assert!(!has(".git"));
+        assert!(!has(".git/objects"));
+        assert!(!has("target"));
+        assert!(!has("target/debug"));
+        // Pruned: gitignored dir.
+        assert!(!has("build"));
+        assert!(!has("build/out"));
+    }
+
+    #[test]
+    fn test_is_new_watchable_dir() {
+        use notify::EventKind;
+        use notify::event::{CreateKind, ModifyKind};
+        // A folder created in the working tree needs its own watch.
+        assert!(is_new_watchable_dir(
+            &EventKind::Create(CreateKind::Folder),
+            EventCategory::WorkingTree
+        ));
+        // A file create is not a directory to watch.
+        assert!(!is_new_watchable_dir(
+            &EventKind::Create(CreateKind::File),
+            EventCategory::WorkingTree
+        ));
+        // A folder under an excluded/gitignored path (classified Noise) is skipped.
+        assert!(!is_new_watchable_dir(
+            &EventKind::Create(CreateKind::Folder),
+            EventCategory::Noise
+        ));
+        // Non-create events never schedule a watch, even for working-tree dirs.
+        assert!(!is_new_watchable_dir(
+            &EventKind::Modify(ModifyKind::Any),
+            EventCategory::WorkingTree
+        ));
+    }
+
+    #[test]
+    fn test_head_target_changed_detached_sha_transition() {
+        // Detached HEAD: target is the raw SHA. A different SHA is a real move
+        // (emits); the same SHA repeating is suppressed.
+        let cache: dashmap::DashMap<String, String> = dashmap::DashMap::new();
+        let repo = "/repo";
+        assert!(head_target_changed(&cache, repo, "deadbeef"));
+        assert!(!head_target_changed(&cache, repo, "deadbeef"));
+        assert!(head_target_changed(&cache, repo, "cafef00d"));
     }
 
     #[tokio::test]

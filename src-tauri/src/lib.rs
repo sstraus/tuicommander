@@ -1251,7 +1251,9 @@ pub fn run() {
 
             // Auto-start repo watchers for known repositories.
             // Uses raw notify::RecommendedWatcher — registration is instant on
-            // macOS (FSEvents) and Windows (ReadDirectoryChangesW), no walkdir scan.
+            // macOS (FSEvents) and Windows (ReadDirectoryChangesW). On Linux
+            // (inotify) notify emulates recursion with a per-directory walk, so
+            // registration is not free there (see issue #82 / repo_watcher.rs).
             let repos_json = config::load_repositories();
             let mut known_repo_paths: Vec<String> = Vec::new();
             if let Some(repos) = repos_json.get("repos").and_then(|r| r.as_object()) {

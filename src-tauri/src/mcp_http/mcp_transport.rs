@@ -3203,7 +3203,7 @@ async fn handle_screenshot(
     #[cfg(not(feature = "desktop"))]
     {
         let _ = (state, addr, args);
-        return serde_json::json!({"error": "Action 'screenshot' requires desktop feature"});
+        serde_json::json!({"error": "Action 'screenshot' requires desktop feature"})
     }
     #[cfg(feature = "desktop")]
     {
@@ -3479,6 +3479,8 @@ mod tests {
             git_cache: crate::state::GitCacheState::new(),
             repo_watchers: dashmap::DashMap::new(),
             repo_git_fingerprints: dashmap::DashMap::new(),
+            repo_head_targets: dashmap::DashMap::new(),
+            repo_head_emits_suppressed: std::sync::atomic::AtomicU64::new(0),
             dir_watchers: dashmap::DashMap::new(),
             theme_watcher: parking_lot::Mutex::new(None),
             mdkb_daemon: crate::mdkb_daemon::create_shared_daemon(),
