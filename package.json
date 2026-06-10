@@ -1,7 +1,7 @@
 {
   "name": "tuicommander",
   "private": true,
-  "version": "1.4.0",
+  "version": "1.4.1",
   "description": "Multi-agent terminal orchestrator with native terminal and Tauri",
   "type": "module",
   "packageManager": "pnpm@11.5.1",
