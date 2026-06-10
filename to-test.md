@@ -1288,6 +1288,16 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [x] Preview on Master Volume: `SettingSlider` gained optional `onCommit` (DOM `change`/release); Master Volume wires it to `testSound("info")` so releasing the slider plays a short preview at the committed volume _(verified: SettingFields.tsx onChange→onCommit; NotificationsTab.tsx:129; tsc + biome clean)_
 - [HUMAN] Live (needs rebuild): set Master Volume low, click a Test button repeatedly while changing volume → each click plays at the current volume (no dropped/identical-sounding plays). Drag the Master Volume slider and release → hear a short "info" preview at the new level each time.
 
+## Help menu links + What's New star CTA (2026-06-11)
+- [x] Help menu (`menu.rs:223`) gained **Online Guide** + **Changelog** items; `menu-action` handler routes them via `handleOpenUrl` to `https://tuicommander.com/docs/` and the CHANGELOG on GitHub _(verified: tsc + cargo check clean; App.tsx:2289 cases, menu.rs items)_
+- [x] `WhatsNewDialog` gained a discreet star CTA (inline star SVG per STYLE_GUIDE, links to repo) below "View full changelog" — one-shot since the dialog is already per-version _(verified: tsc clean)_
+- [VISUAL] Live (needs rebuild): native Help menu shows Online Guide + Changelog → each opens the right URL in the browser. After an update, the What's New dialog shows the "Star us on GitHub" row with a star icon, rendering cleanly per STYLE_GUIDE.
+
+## Fix: PluginPanel same-origin guard no longer loops on its own about:blank reset (2026-06-11)
+- [x] Root cause: `guardSameOriginNav` reset an app-origin iframe to `about:blank`, which is itself same-origin → the guard re-fired on the reset's own load event → infinite log spam ("navigated to app origin — blocked" every 1-2s) _(verified: code inspection PluginPanel.tsx:213; observed live spam from md-21 panel)_
+- [x] Fix: early-return when `contentDocument.location.href === "about:blank"` (our own reset target, not an escape) _(verified: tsc clean)_
+- [HUMAN] Live (needs rebuild): open a plugin panel whose URL reaches the app origin → exactly ONE "blocked" log, no repeating spam; the panel resets to blank and stays quiet.
+
 ## OAuth upstream re-auth prompt on expired token (2026-06-09)
 - [x] `classify_refresh_error` maps fatal refresh failures (`invalid_grant` / no refresh token / HTTP 400 / HTTP 401) to `UpstreamError::AuthFailed`; transient/5xx/network errors stay `Other` (retryable) _(verified: 2 unit tests in http_client.rs green; `refresh_token_if_needed` now routes through it)_
 - [x] `initialize_entry_with_oauth` adds an `AuthFailed` + OAuth-config arm → deletes the dead keyring token + `mark_entry_needs_auth` (→ `NeedsAuth`, "Authorize") instead of red `Failed`/`CircuitOpen`; non-OAuth upstreams with a bad static token still go red (guard `matches! OAuth2`). Health-check skips `NeedsAuth` (registry.rs:1150) so no delete/init loop _(verified: code inspection; 146 mcp_proxy+mcp_oauth tests green)_
@@ -1297,3 +1307,12 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 - [x] `await_initial_settle(timeout)` + `mark_initial_connect_complete()` on the registry: the first `tools/list` blocks (≤3s) until boot auto-connect registered every upstream AND none is still `Connecting`, then serves; a global latch makes later calls no-ops; timeout serves a partial list rather than hanging _(verified: 2 unit tests — fast-path + timeout-then-latch — green; 402 mcp_http+mcp_proxy tests green)_
 - [x] Wired: `auto_connect_saved_upstreams` marks complete at both exits (incl. empty-config); `tools/list` handler awaits before `merged_tool_definitions` _(verified: code inspection mcp_transport.rs tools/list arm; mcp_upstream_config.rs)_
 - [HUMAN] Live (needs rebuild): cold-start the app with quill enabled → quill's proxied tools (`quill__*`) are present in Claude Code's tool list WITHOUT a manual refresh/reconnect (root cause was CC fetching tools/list before async upstream init finished + ignoring tools/list_changed).
+
+## Smart Prompts: inject Target (Compose vs Terminal) + idle gate fix (2026-06-10)
+- [x] New per-prompt `injectTarget: "terminal" | "compose"` (defaults to "compose"); `canExecuteInject` only applies the idle gate when target=="terminal" (so a busy agent no longer disables compose-bound prompts like Review Issue) _(verified: useSmartPrompts.ts:148-156; 5 new vitest cases in useSmartPrompts.test.ts green — compose-not-gated, terminal-busy-blocked, terminal-idle-allowed, requiresIdle=false, no-active-terminal)_
+- [x] `executeInject` routes by target on ALL platforms (removed the 2026-04-23 desktop-always-compose hack + isTauri gate): compose→`openComposeWithText` (fallback write-without-Enter when no compose panel), terminal→`sendCommand` (autoExecute) or write-without-Enter for review _(verified: useSmartPrompts.ts executeInject; tsc + biome clean)_
+- [x] User's per-prompt target survives relaunch (added `injectTarget` to the built-in merge preserve list) + invalid values reset on hydrate _(verified: promptLibrary.ts merge + validation)_
+- [x] PromptDrawer.doInject honors injectTarget for consistency _(verified: PromptDrawer.tsx doInject)_
+- [VISUAL] Live (needs rebuild): expand an issue while the active terminal's agent is BUSY → the "Review Issue" button is ENABLED (not greyed) and clicking it fills the Compose box (does not send).
+- [VISUAL] Live (needs rebuild): Settings → Smart Prompts → edit an inject prompt → a "Target" dropdown shows (Compose box / Terminal). Selecting "Terminal" reveals the "Auto-execute" checkbox; "Compose box" hides it.
+- [HUMAN] Live (needs rebuild): set a prompt's Target=Terminal, make the agent busy → its SmartButtonStrip button is disabled ("Agent is busy"); when idle it sends straight to the agent (Auto-execute on = immediate Enter, off = text awaiting review).
