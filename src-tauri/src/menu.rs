@@ -221,6 +221,8 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
     let mut help = SubmenuBuilder::new(app, "&Help");
     help = help
         .item(&item!("help-panel", "Help Panel", "CmdOrCtrl+Shift+/"))
+        .item(&item!("online-guide", "Online Guide"))
+        .item(&item!("changelog", "Changelog"))
         .separator();
     if !is_macos {
         help = help.item(&item!("check-for-updates", "Check for Updates…"));

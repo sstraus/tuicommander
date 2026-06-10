@@ -154,6 +154,7 @@ import { openFileAction } from "./utils/filePreview";
 import { keyFor } from "./utils/hotkey";
 import { navigateToTerminal } from "./utils/navigateToTerminal";
 import { nextWaitingTerminal } from "./utils/nextWaitingTerminal";
+import { handleOpenUrl } from "./utils/openUrl";
 import { createPanelSyncProvider, type PanelAction } from "./utils/panelSync";
 import { initPaneTabAssignment } from "./utils/paneTabAssign";
 import { pathBasename, pathStartsWith, pathStripPrefix } from "./utils/pathUtils";
@@ -2285,6 +2286,12 @@ const App: Component = () => {
 					break;
 				case "check-for-updates":
 					updaterStore.checkForUpdate().catch((err) => appLogger.warn("app", "Updater manual check failed", err));
+					break;
+				case "online-guide":
+					handleOpenUrl("https://tuicommander.com/docs/");
+					break;
+				case "changelog":
+					handleOpenUrl("https://github.com/sstraus/tuicommander/blob/main/CHANGELOG.md");
 					break;
 				case "about":
 					setHelpPanelVisible(true);
