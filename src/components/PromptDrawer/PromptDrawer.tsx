@@ -11,7 +11,6 @@ import {
 	type SmartPlacement,
 } from "../../stores/promptLibrary";
 import { terminalsStore } from "../../stores/terminals";
-import { isTauri } from "../../transport";
 import { cx } from "../../utils";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { KeyComboCapture } from "../shared/KeyComboCapture";
@@ -167,8 +166,10 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 		const content = await promptLibraryStore.processContent(prompt, variables);
 
 		try {
-			// Desktop: route through compose panel for review
-			if (isTauri() && activeTerminal.ref?.openComposeWithText) {
+			// "compose" target routes through the compose panel for review;
+			// "terminal" writes straight to the PTY (defaults to compose).
+			const target = prompt.injectTarget ?? "compose";
+			if (target === "compose" && activeTerminal.ref?.openComposeWithText) {
 				activeTerminal.ref.openComposeWithText(content);
 			} else {
 				const toWrite = executeImmediately ? content + "\n" : content;

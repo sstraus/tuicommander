@@ -48,6 +48,10 @@ export interface SavedPrompt {
 	builtInVersion?: number;
 	icon?: string;
 	executionMode?: "inject" | "headless" | "api" | "shell";
+	/** Where inject-mode prompts write: "compose" fills the input box for the user
+	 *  to review (no idle gate); "terminal" sends straight to the agent (idle-gated).
+	 *  Defaults to "compose" when unset. */
+	injectTarget?: "terminal" | "compose";
 	preferredAgent?: import("../agents").AgentType;
 	outputTarget?: "clipboard" | "commit-message" | "toast" | "panel";
 	systemPrompt?: string;
@@ -144,6 +148,13 @@ function createPromptLibraryStore() {
 								);
 								full.executionMode = "inject";
 							}
+							if (full.injectTarget && full.injectTarget !== "terminal" && full.injectTarget !== "compose") {
+								appLogger.warn(
+									"store",
+									`Prompt "${entry.id}" has invalid injectTarget "${full.injectTarget}", removing`,
+								);
+								full.injectTarget = undefined;
+							}
 							if (full.preferredAgent) {
 								if (!AGENT_TYPES.includes(full.preferredAgent)) {
 									appLogger.warn(
@@ -201,6 +212,7 @@ function createPromptLibraryStore() {
 							placement: existing.placement,
 							autoExecute: existing.autoExecute,
 							executionMode: existing.executionMode,
+							injectTarget: existing.injectTarget,
 							preferredAgent: existing.preferredAgent ?? builtin.preferredAgent,
 							isFavorite: existing.isFavorite,
 							lastUsed: existing.lastUsed,

@@ -7,7 +7,6 @@ import { promptLibraryStore, type SavedPrompt } from "../stores/promptLibrary";
 import { providerRegistryStore } from "../stores/providerRegistry";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
-import { isTauri } from "../transport";
 import { prContextVariables } from "../utils/promptContext";
 import { usePty } from "./usePty";
 
@@ -145,7 +144,11 @@ export function useSmartPrompts() {
 		const active = terminalsStore.getActive();
 		if (!active?.sessionId) return { ok: false, reason: "No active terminal" };
 		if (!active.agentType) return { ok: false, reason: "No agent detected in terminal" };
-		if (prompt.requiresIdle !== false) {
+		// Idle only matters when we send straight to the agent. The "compose" target
+		// just fills the input box for the user to review, so a busy agent must not
+		// block it.
+		const target = prompt.injectTarget ?? "compose";
+		if (target === "terminal" && prompt.requiresIdle !== false) {
 			const busy = terminalsStore.isBusy(active.id);
 			if (busy) return { ok: false, reason: "Agent is busy" };
 		}
@@ -229,16 +232,19 @@ export function useSmartPrompts() {
 		if (!active?.sessionId) return { ok: false, reason: "No active terminal" };
 
 		try {
-			// DEFERRED (2026-04-23) — Desktop compose routing bypasses autoExecute=false.
-			// All prompts go to ComposePanel where the user decides to send or not.
-			// This is intentional: ComposePanel replaces the "inject without execute" behavior.
-			if (isTauri() && active.ref?.openComposeWithText) {
+			const target = prompt.injectTarget ?? "compose";
+			if (target === "compose" && active.ref?.openComposeWithText) {
+				// Fill the compose box; the user reviews and sends.
 				active.ref.openComposeWithText(content);
-			} else if (prompt.autoExecute === false) {
+			} else if (target === "terminal" && prompt.autoExecute !== false) {
+				// Send straight to the agent via agent-aware Enter semantics.
+				await pty.sendCommand(active.sessionId, content, active.agentType);
+			} else {
+				// Terminal target awaiting review, or compose with no panel available
+				// (e.g. web/PWA): write the text without Enter so the user can edit
+				// before sending.
 				const prefix = isWindows() && !active.agentType ? "" : "\x15";
 				await pty.write(active.sessionId, prefix + content);
-			} else {
-				await pty.sendCommand(active.sessionId, content, active.agentType);
 			}
 			promptLibraryStore.markAsUsed(prompt.id);
 			return { ok: true };

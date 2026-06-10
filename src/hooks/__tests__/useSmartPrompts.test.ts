@@ -70,12 +70,15 @@ import { agentConfigsStore } from "../../stores/agentConfigs";
 import { appLogger } from "../../stores/appLogger";
 import type { SavedPrompt } from "../../stores/promptLibrary";
 import { providerRegistryStore } from "../../stores/providerRegistry";
+import { terminalsStore } from "../../stores/terminals";
 import { useSmartPrompts } from "../useSmartPrompts";
 
 const mockedGetHeadlessAgent = vi.mocked(agentConfigsStore.getHeadlessAgent);
 const mockedGetHeadlessTemplate = vi.mocked(agentConfigsStore.getHeadlessTemplate);
 const mockedResolveSlot = vi.mocked(providerRegistryStore.resolveSlot);
 const mockedWarn = vi.mocked(appLogger.warn);
+const mockedGetActive = vi.mocked(terminalsStore.getActive);
+const mockedIsBusy = vi.mocked(terminalsStore.isBusy);
 
 /** Build a minimal SavedPrompt fixture with headless executionMode */
 function makePrompt(overrides: Partial<SavedPrompt> = {}): SavedPrompt {
@@ -199,5 +202,55 @@ describe("resolveHeadlessAgent — no preferred agent", () => {
 		const result = canExecute(makePrompt({ preferredAgent: undefined }));
 		expect(result.ok).toBe(false);
 		expect(result.reason).toMatch(/Headless provider not configured/);
+	});
+});
+
+describe("canExecuteInject — idle gate by inject target", () => {
+	const ACTIVE = { id: "t1", sessionId: "s1", agentType: "claude" } as unknown as ReturnType<
+		typeof terminalsStore.getActive
+	>;
+
+	beforeEach(() => {
+		mockedGetActive.mockReturnValue(ACTIVE);
+	});
+
+	it("compose target (default) is not gated by a busy agent", () => {
+		mockedIsBusy.mockReturnValue(true);
+		const { canExecute } = useSmartPrompts();
+		// injectTarget unset → defaults to "compose"
+		const result = canExecute(makePrompt({ executionMode: "inject", injectTarget: undefined }));
+		expect(result.ok).toBe(true);
+		// Idle was never consulted for compose
+		expect(mockedIsBusy).not.toHaveBeenCalled();
+	});
+
+	it("terminal target is blocked while the agent is busy", () => {
+		mockedIsBusy.mockReturnValue(true);
+		const { canExecute } = useSmartPrompts();
+		const result = canExecute(makePrompt({ executionMode: "inject", injectTarget: "terminal" }));
+		expect(result.ok).toBe(false);
+		expect(result.reason).toBe("Agent is busy");
+	});
+
+	it("terminal target is allowed when the agent is idle", () => {
+		mockedIsBusy.mockReturnValue(false);
+		const { canExecute } = useSmartPrompts();
+		const result = canExecute(makePrompt({ executionMode: "inject", injectTarget: "terminal" }));
+		expect(result.ok).toBe(true);
+	});
+
+	it("terminal target with requiresIdle=false is allowed even while busy", () => {
+		mockedIsBusy.mockReturnValue(true);
+		const { canExecute } = useSmartPrompts();
+		const result = canExecute(makePrompt({ executionMode: "inject", injectTarget: "terminal", requiresIdle: false }));
+		expect(result.ok).toBe(true);
+	});
+
+	it("requires an active terminal with a detected agent regardless of target", () => {
+		mockedGetActive.mockReturnValue(undefined);
+		const { canExecute } = useSmartPrompts();
+		const result = canExecute(makePrompt({ executionMode: "inject", injectTarget: "compose" }));
+		expect(result.ok).toBe(false);
+		expect(result.reason).toBe("No active terminal");
 	});
 });

@@ -387,6 +387,32 @@ const PromptEditor: Component<{
 
 				<Show when={(props.prompt.executionMode ?? "inject") === "inject"}>
 					<div class={sp.editorSection} style={{ flex: "1" }}>
+						<label class={sp.editorLabel}>Target</label>
+						<select
+							class={sp.editorInput}
+							value={props.prompt.injectTarget ?? "compose"}
+							onChange={(e) => {
+								promptLibraryStore.updatePrompt(props.prompt.id, {
+									injectTarget: e.currentTarget.value as "terminal" | "compose",
+								});
+							}}
+						>
+							<option value="compose">Compose box (review)</option>
+							<option value="terminal">Terminal (send to agent)</option>
+						</select>
+						<p class={sp.fieldHint}>
+							Compose fills the input for review; Terminal sends to the agent and waits for idle
+						</p>
+					</div>
+				</Show>
+
+				<Show
+					when={
+						(props.prompt.executionMode ?? "inject") === "inject" &&
+						(props.prompt.injectTarget ?? "compose") === "terminal"
+					}
+				>
+					<div class={sp.editorSection} style={{ flex: "1" }}>
 						<label class={sp.editorLabel}>Auto-execute</label>
 						<label class={sp.autoExecLabel}>
 							<input type="checkbox" checked={props.prompt.autoExecute ?? false} onChange={handleAutoExecuteToggle} />
