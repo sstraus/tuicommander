@@ -542,7 +542,6 @@ export const BranchItem: Component<{
 				<Show when={props.branch.terminals.length > 0}>
 					<button
 						class={cx(s.branchTabsChevron, props.branch.tabsExpanded && s.expanded)}
-						title={props.branch.tabsExpanded ? "Hide tabs" : "Show tabs"}
 						aria-label={props.branch.tabsExpanded ? "Collapse terminal tabs" : "Expand terminal tabs"}
 						aria-expanded={props.branch.tabsExpanded ?? false}
 						onClick={(e) => {

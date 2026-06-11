@@ -533,8 +533,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 10px 5px 28px;
-  margin: 1px 4px;
+  padding: 6px 10px 6px 28px;
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--font-sm);
@@ -547,22 +546,22 @@
   border: none;
   font-family: inherit;
   text-align: left;
-  width: calc(100% - 8px);
+  width: 100%;
 }
 
 .branchTabItem.active {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--fg-primary);
 }
 
 @media (hover: hover) {
   .branchTabItem:hover {
-    background: rgba(255, 255, 255, 0.07);
+    background: rgba(255, 255, 255, 0.08);
     color: var(--fg-primary);
   }
 
   .branchTabItem.active:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: rgba(255, 255, 255, 0.11);
   }
 }
 
