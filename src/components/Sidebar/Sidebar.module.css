@@ -544,7 +544,11 @@
 }
 
 .branchTabList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   padding: 2px 0 4px 0;
+  margin: 0 2px 0 8px;
 }
 
 .branchTabItem {

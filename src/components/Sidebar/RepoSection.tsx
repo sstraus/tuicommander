@@ -287,6 +287,16 @@ export const BranchItem: Component<{
 		}
 	};
 
+	// Clicking the row selects the branch and toggles its tab list. Child controls
+	// that own an action (PR badge, diff stats, add-terminal, remove) stopPropagation,
+	// so they never reach here.
+	const handleRowClick = () => {
+		props.onSelect();
+		if (props.branch.terminals.length > 0) {
+			repositoriesStore.toggleBranchTabsExpanded(props.repoPath, props.branch.name);
+		}
+	};
+
 	const handleCopyPath = async () => {
 		const path = props.branch.worktreePath;
 		if (path) {
@@ -432,7 +442,12 @@ export const BranchItem: Component<{
 				</div>
 			}
 		>
-			<div class={cx(s.branchItem, props.isActive && s.active)} onClick={props.onSelect} onContextMenu={ctxMenu.open}>
+			<div
+				class={cx(s.branchItem, props.isActive && s.active)}
+				onClick={handleRowClick}
+				onContextMenu={ctxMenu.open}
+				aria-expanded={props.branch.terminals.length > 0 ? (props.branch.tabsExpanded ?? false) : undefined}
+			>
 				<BranchIcon
 					isMainBranch={props.branch.isMain}
 					isMainWorktree={props.branch.worktreePath === props.repoPath}
@@ -540,17 +555,9 @@ export const BranchItem: Component<{
 					onClose={ctxMenu.close}
 				/>
 				<Show when={props.branch.terminals.length > 0}>
-					<button
-						class={cx(s.branchTabsChevron, props.branch.tabsExpanded && s.expanded)}
-						aria-label={props.branch.tabsExpanded ? "Collapse terminal tabs" : "Expand terminal tabs"}
-						aria-expanded={props.branch.tabsExpanded ?? false}
-						onClick={(e) => {
-							e.stopPropagation();
-							repositoriesStore.toggleBranchTabsExpanded(props.repoPath, props.branch.name);
-						}}
-					>
+					<span class={cx(s.branchTabsChevron, props.branch.tabsExpanded && s.expanded)} aria-hidden="true">
 						›
-					</button>
+					</span>
 				</Show>
 			</div>
 		</Show>
