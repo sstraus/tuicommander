@@ -197,7 +197,7 @@ export { _resetMergedActivityAccum };
 /** Collapsible list of terminal tabs under a branch row */
 const BranchTabList: Component<{ terminalIds: string[] }> = (props) => {
 	return (
-		<div class={s.branchTabList} role="list">
+		<div class={s.branchTabList} role="list" aria-label="Terminal tabs">
 			<For each={props.terminalIds}>
 				{(id) => {
 					const term = () => terminalsStore.get(id);
@@ -214,15 +214,17 @@ const BranchTabList: Component<{ terminalIds: string[] }> = (props) => {
 
 					return (
 						<Show when={term()}>
-							<div
-								class={s.branchTabItem}
-								role="listitem"
-								onClick={() => navigateToTerminal(id)}
-								title={term()?.name}
-							>
-								<span class={dotClass()} aria-hidden="true" />
-								<span class={s.branchTabName}>{term()?.name}</span>
-							</div>
+							{(t) => (
+								<button
+									class={s.branchTabItem}
+									role="listitem"
+									onClick={() => navigateToTerminal(id)}
+									title={t().name}
+								>
+									<span class={dotClass()} aria-hidden="true" />
+									<span class={s.branchTabName}>{t().name}</span>
+								</button>
+							)}
 						</Show>
 					);
 				}}
