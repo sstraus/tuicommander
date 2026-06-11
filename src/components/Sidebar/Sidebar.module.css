@@ -540,6 +540,11 @@
   overflow: hidden;
   text-overflow: ellipsis;
   transition: background 0.1s;
+  background: none;
+  border: none;
+  font-family: inherit;
+  text-align: left;
+  width: 100%;
 }
 
 @media (hover: hover) {
