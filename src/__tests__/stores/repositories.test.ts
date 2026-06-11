@@ -554,6 +554,34 @@ describe("repositoriesStore", () => {
 		});
 	});
 
+	describe("toggleBranchTabsExpanded()", () => {
+		it("toggles tabsExpanded from undefined to true", () => {
+			testInScope(() => {
+				store.add({ path: "/repo", displayName: "My Repo" });
+				store.setBranch("/repo", "feat/foo");
+				expect(store.state.repositories["/repo"].branches["feat/foo"].tabsExpanded).toBeUndefined();
+				store.toggleBranchTabsExpanded("/repo", "feat/foo");
+				expect(store.state.repositories["/repo"].branches["feat/foo"].tabsExpanded).toBe(true);
+			});
+		});
+
+		it("toggles tabsExpanded from true to false", () => {
+			testInScope(() => {
+				store.add({ path: "/repo", displayName: "My Repo" });
+				store.setBranch("/repo", "feat/foo");
+				store.toggleBranchTabsExpanded("/repo", "feat/foo");
+				store.toggleBranchTabsExpanded("/repo", "feat/foo");
+				expect(store.state.repositories["/repo"].branches["feat/foo"].tabsExpanded).toBe(false);
+			});
+		});
+
+		it("no-ops on unknown repo/branch", () => {
+			testInScope(() => {
+				expect(() => store.toggleBranchTabsExpanded("/nonexistent", "main")).not.toThrow();
+			});
+		});
+	});
+
 	describe("isEmpty()", () => {
 		it("returns true when empty", () => {
 			testInScope(() => {

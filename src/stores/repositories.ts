@@ -40,6 +40,8 @@ export interface BranchState {
 	savedTerminals?: SavedTerminal[]; // Persisted terminal metadata for session restore
 	/** CI auto-heal: when enabled, CI failures trigger automatic agent fix cycles */
 	ciAutoHeal?: { enabled: boolean; attempts: number; lastRunId?: number; healing?: boolean };
+	/** Whether the terminal tab list is expanded under this branch row */
+	tabsExpanded?: boolean;
 }
 
 /** Repository with branches */
@@ -343,6 +345,13 @@ function createRepositoriesStore() {
 		/** Toggle repository collapsed state */
 		toggleCollapsed(path: string): void {
 			setState("repositories", path, "collapsed", (c) => !c);
+			save();
+		},
+
+		/** Toggle branch terminal tab list expanded state */
+		toggleBranchTabsExpanded(repoPath: string, branchName: string): void {
+			if (!state.repositories[repoPath]?.branches[branchName]) return;
+			setState("repositories", repoPath, "branches", branchName, "tabsExpanded", (e) => !e);
 			save();
 		},
 
