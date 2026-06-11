@@ -376,6 +376,7 @@ function createRepositoriesStore() {
 					worktreePath: null,
 					terminals: [],
 					hadTerminals: false,
+					tabsExpanded: false,
 					lastActiveTerminal: null,
 					additions: 0,
 					deletions: 0,
