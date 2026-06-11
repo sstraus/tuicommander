@@ -287,12 +287,14 @@ export const BranchItem: Component<{
 		}
 	};
 
-	// Clicking the row selects the branch and toggles its tab list. Child controls
-	// that own an action (PR badge, diff stats, add-terminal, remove) stopPropagation,
-	// so they never reach here.
+	// Clicking the row always selects the branch. The tab-list toggle only fires
+	// when the branch is already active — so clicking an unfocused branch just
+	// focuses it, and a second click on the now-active branch toggles its tabs.
+	// Child controls that own an action (PR badge, diff stats, add-terminal,
+	// remove) stopPropagation, so they never reach here.
 	const handleRowClick = () => {
 		props.onSelect();
-		if (props.branch.terminals.length > 0) {
+		if (props.isActive && props.branch.terminals.length > 0) {
 			repositoriesStore.toggleBranchTabsExpanded(props.repoPath, props.branch.name);
 		}
 	};
