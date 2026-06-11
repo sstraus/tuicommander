@@ -557,7 +557,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 10px 6px 8px;
+  padding: 6px 10px;
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--font-sm);
