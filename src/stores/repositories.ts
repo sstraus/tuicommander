@@ -355,6 +355,13 @@ function createRepositoriesStore() {
 			save();
 		},
 
+		/** Set branch terminal tab list expanded state explicitly */
+		setBranchTabsExpanded(repoPath: string, branchName: string, expanded: boolean): void {
+			if (!state.repositories[repoPath]?.branches[branchName]) return;
+			setState("repositories", repoPath, "branches", branchName, "tabsExpanded", expanded);
+			save();
+		},
+
 		/** Update git repo status (used when a directory gains or loses .git) */
 		setIsGitRepo(path: string, isGitRepo: boolean): void {
 			setState("repositories", path, "isGitRepo", isGitRepo);
