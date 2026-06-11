@@ -115,6 +115,14 @@ jobs:
         shell: bash
         run: echo "CARGO_TARGET_DIR=C:/t" >> $GITHUB_ENV
 
+      # The windows-latest image (mid windows-2025/2026 migration) ships VS 18
+      # 2026, but the preinstalled CMake is too old to know that generator —
+      # whisper-rs-sys's build fails with "CMake Error: generator: Visual
+      # Studio 18 2026". Install the latest CMake, which recognises it.
+      - name: Upgrade CMake (Windows)
+        if: matrix.platform == 'windows-latest'
+        uses: lukka/get-cmake@latest
+
       - uses: pnpm/action-setup@v4
 
       - name: Setup Node.js
