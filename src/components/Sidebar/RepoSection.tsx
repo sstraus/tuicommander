@@ -201,6 +201,7 @@ const BranchTabList: Component<{ terminalIds: string[] }> = (props) => {
 			<For each={props.terminalIds}>
 				{(id) => {
 					const term = () => terminalsStore.get(id);
+					const isActive = () => terminalsStore.state.activeId === id;
 					const dotClass = () => {
 						const t = term();
 						if (!t) return s.branchTabDot;
@@ -216,7 +217,7 @@ const BranchTabList: Component<{ terminalIds: string[] }> = (props) => {
 						<Show when={term()}>
 							{(t) => (
 								<button
-									class={s.branchTabItem}
+									class={cx(s.branchTabItem, isActive() && s.active)}
 									role="listitem"
 									onClick={() => navigateToTerminal(id)}
 									title={t().name}
@@ -540,7 +541,7 @@ export const BranchItem: Component<{
 				/>
 				<Show when={props.branch.terminals.length > 0}>
 					<button
-						class={cx(s.branchTabsCountBadge, props.branch.tabsExpanded && s.expanded)}
+						class={cx(s.branchTabsChevron, props.branch.tabsExpanded && s.expanded)}
 						title={props.branch.tabsExpanded ? "Hide tabs" : "Show tabs"}
 						aria-label={props.branch.tabsExpanded ? "Collapse terminal tabs" : "Expand terminal tabs"}
 						aria-expanded={props.branch.tabsExpanded ?? false}
@@ -549,7 +550,7 @@ export const BranchItem: Component<{
 							repositoriesStore.toggleBranchTabsExpanded(props.repoPath, props.branch.name);
 						}}
 					>
-						{props.branch.terminals.length}
+						›
 					</button>
 				</Show>
 			</div>

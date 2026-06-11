@@ -500,45 +500,40 @@
 }
 
 /* Branch tab list — collapsible terminal tab list under branch row */
-.branchTabsCountBadge {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 5px;
-  font-size: var(--font-2xs);
-  font-weight: 600;
-  font-family: var(--font-ui);
-  border-radius: var(--radius-pill);
-  white-space: nowrap;
-  flex-shrink: 0;
-  cursor: pointer;
+.branchTabsChevron {
+  background: none;
   border: none;
-  background: var(--bg-tertiary);
-  color: var(--fg-muted);
-  opacity: 0.7;
-  transition: background 0.1s, color 0.1s, opacity 0.1s;
-}
-
-.branchTabsCountBadge:hover {
-  opacity: 1;
-  background: var(--bg-highlight);
   color: var(--fg-secondary);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: transform 150ms ease, color 0.1s;
+  transform: rotate(0deg);
+  opacity: 0.75;
 }
 
-.branchTabsCountBadge.expanded {
-  background: var(--accent);
-  color: var(--text-on-accent);
+.branchTabsChevron:hover {
+  color: var(--fg-primary);
+  opacity: 1;
+}
+
+.branchTabsChevron.expanded {
+  transform: rotate(90deg);
+  color: var(--fg-primary);
   opacity: 1;
 }
 
 .branchTabList {
-  padding: 2px 0 2px 28px;
+  padding: 2px 0 4px 0;
 }
 
 .branchTabItem {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 8px 3px 4px;
+  gap: 7px;
+  padding: 5px 8px 5px 30px;
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--font-sm);
@@ -546,12 +541,17 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: background 0.1s;
+  transition: background 0.1s, color 0.1s;
   background: none;
   border: none;
   font-family: inherit;
   text-align: left;
   width: 100%;
+}
+
+.branchTabItem.active {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
 }
 
 @media (hover: hover) {
