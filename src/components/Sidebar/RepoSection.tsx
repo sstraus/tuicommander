@@ -802,7 +802,12 @@ export const RepoSection: Component<{
 				<div class={s.repoBranches}>
 					<For each={sortedBranches()}>
 						{(branch, index) => (
-							<>
+							<div
+								class={cx(
+									s.branchGroup,
+									branch.tabsExpanded && branch.terminals.length > 0 && s.branchGroupExpanded,
+								)}
+							>
 								<BranchItem
 									branch={branch}
 									repoPath={props.repo.path}
@@ -841,7 +846,7 @@ export const RepoSection: Component<{
 								<Show when={branch.tabsExpanded && branch.terminals.length > 0}>
 									<BranchTabList terminalIds={branch.terminals} />
 								</Show>
-							</>
+							</div>
 						)}
 					</For>
 					<Show when={sortedBranches().length === 0}>

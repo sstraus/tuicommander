@@ -499,6 +499,24 @@
   white-space: nowrap;
 }
 
+/* Branch group — wraps a branch row + its collapsible terminal tab list.
+   When expanded, hovering anywhere over the block lifts the whole group as a
+   unified card (DIA-style), while individual items keep their own stronger hover. */
+.branchGroup {
+  border-radius: var(--radius-lg);
+  transition: background 0.15s ease;
+}
+
+.branchGroupExpanded {
+  padding-bottom: 3px;
+}
+
+@media (hover: hover) {
+  .branchGroupExpanded:hover {
+    background: rgba(255, 255, 255, 0.035);
+  }
+}
+
 /* Branch tab list — collapsible terminal tab list under branch row */
 .branchTabsChevron {
   background: none;
