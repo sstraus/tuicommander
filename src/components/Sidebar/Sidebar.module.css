@@ -548,14 +548,16 @@
   flex-direction: column;
   gap: 3px;
   padding: 2px 0 4px 0;
-  margin: 0 2px 0 4px;
+  /* Left margin = branch row padding (8px) + branch icon width (18px), so the
+     subitem background starts exactly where the parent branch icon ends. */
+  margin: 0 2px 0 26px;
 }
 
 .branchTabItem {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 6px 10px 6px 28px;
+  padding: 6px 10px 6px 8px;
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--font-sm);
