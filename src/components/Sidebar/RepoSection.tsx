@@ -26,6 +26,7 @@ import { PromptDialog } from "../PromptDialog";
 import b from "../shared/branch.module.css";
 import s from "./Sidebar.module.css";
 import { SidebarPluginSection } from "./SidebarPluginSection";
+import { navigateToTerminal } from "../../utils/navigateToTerminal";
 
 const BRANCH_ICON_CLASSES: Record<string, string> = {
 	main: s.branchIconMain,
@@ -192,6 +193,43 @@ export const PrStateBadge: Component<{
 };
 
 export { _resetMergedActivityAccum };
+
+/** Collapsible list of terminal tabs under a branch row */
+const BranchTabList: Component<{ terminalIds: string[] }> = (props) => {
+	return (
+		<div class={s.branchTabList} role="list">
+			<For each={props.terminalIds}>
+				{(id) => {
+					const term = () => terminalsStore.get(id);
+					const dotClass = () => {
+						const t = term();
+						if (!t) return s.branchTabDot;
+						if (t.awaitingInput === "error") return cx(s.branchTabDot, s.branchTabDotError);
+						if (t.awaitingInput === "question") return cx(s.branchTabDot, s.branchTabDotQuestion);
+						if (terminalsStore.isBusy(id)) return cx(s.branchTabDot, s.branchTabDotBusy);
+						if (t.unseen) return cx(s.branchTabDot, s.branchTabDotUnseen);
+						if (t.shellState === "idle") return cx(s.branchTabDot, s.branchTabDotIdle);
+						return s.branchTabDot;
+					};
+
+					return (
+						<Show when={term()}>
+							<div
+								class={s.branchTabItem}
+								role="listitem"
+								onClick={() => navigateToTerminal(id)}
+								title={term()?.name}
+							>
+								<span class={dotClass()} aria-hidden="true" />
+								<span class={s.branchTabName}>{term()?.name}</span>
+							</div>
+						</Show>
+					);
+				}}
+			</For>
+		</div>
+	);
+};
 
 /** Branch item component */
 export const BranchItem: Component<{
@@ -498,6 +536,20 @@ export const BranchItem: Component<{
 					visible={ctxMenu.visible()}
 					onClose={ctxMenu.close}
 				/>
+				<Show when={props.branch.terminals.length > 0}>
+					<button
+						class={cx(s.branchTabsChevron, props.branch.tabsExpanded && s.expanded)}
+						title={props.branch.tabsExpanded ? "Hide tabs" : "Show tabs"}
+						aria-label={props.branch.tabsExpanded ? "Collapse terminal tabs" : "Expand terminal tabs"}
+						aria-expanded={props.branch.tabsExpanded ?? false}
+						onClick={(e) => {
+							e.stopPropagation();
+							repositoriesStore.toggleBranchTabsExpanded(props.repoPath, props.branch.name);
+						}}
+					>
+						›
+					</button>
+				</Show>
 			</div>
 		</Show>
 	);
@@ -748,36 +800,46 @@ export const RepoSection: Component<{
 				<div class={s.repoBranches}>
 					<For each={sortedBranches()}>
 						{(branch, index) => (
-							<BranchItem
-								branch={branch}
-								repoPath={props.repo.path}
-								isActive={
-									repositoriesStore.state.activeRepoPath === props.repo.path && props.repo.activeBranch === branch.name
-								}
-								canRemove={canRemoveAny()}
-								shortcutIndex={props.quickSwitcherActive ? props.branchShortcutStart + index() : undefined}
-								agentMenuItems={props.buildAgentMenuItems ? () => props.buildAgentMenuItems!(branch.name) : undefined}
-								onSelect={() => props.onBranchSelect(branch.name)}
-								onAddTerminal={() => props.onAddTerminal(branch.name)}
-								isRemoving={props.removingBranches?.has(`${props.repo.path}::${branch.name}`)}
-								onRemove={() => props.onRemoveBranch(branch.name)}
-								onRename={() => props.onRenameBranch(branch.name)}
-								onCreateBranch={props.onCreateBranch ? () => props.onCreateBranch!(branch.name) : undefined}
-								onSetLabel={(current) => setLabelDialogBranch({ name: branch.name, current })}
-								onShowPrDetail={() => props.onShowPrDetail(branch.name)}
-								onShowChanges={props.onShowChanges}
-								onCreateWorktreeFromBranch={
-									props.onCreateWorktreeFromBranch ? () => props.onCreateWorktreeFromBranch!(branch.name) : undefined
-								}
-								onMergeAndArchive={props.onMergeAndArchive ? () => props.onMergeAndArchive!(branch.name) : undefined}
-								onSwitchBranch={
-									branch.worktreePath === props.repo.path ? (name) => props.onSwitchBranch(name) : undefined
-								}
-								switchBranchList={branch.worktreePath === props.repo.path ? props.switchBranchList : undefined}
-								currentBranch={branch.worktreePath === props.repo.path ? props.currentBranch : undefined}
-								githubBaseUrl={githubBaseUrl()}
-								repoHasTerminals={repoHasTerminals()}
-							/>
+							<>
+								<BranchItem
+									branch={branch}
+									repoPath={props.repo.path}
+									isActive={
+										repositoriesStore.state.activeRepoPath === props.repo.path &&
+										props.repo.activeBranch === branch.name
+									}
+									canRemove={canRemoveAny()}
+									shortcutIndex={props.quickSwitcherActive ? props.branchShortcutStart + index() : undefined}
+									agentMenuItems={props.buildAgentMenuItems ? () => props.buildAgentMenuItems!(branch.name) : undefined}
+									onSelect={() => props.onBranchSelect(branch.name)}
+									onAddTerminal={() => props.onAddTerminal(branch.name)}
+									isRemoving={props.removingBranches?.has(`${props.repo.path}::${branch.name}`)}
+									onRemove={() => props.onRemoveBranch(branch.name)}
+									onRename={() => props.onRenameBranch(branch.name)}
+									onCreateBranch={props.onCreateBranch ? () => props.onCreateBranch!(branch.name) : undefined}
+									onSetLabel={(current) => setLabelDialogBranch({ name: branch.name, current })}
+									onShowPrDetail={() => props.onShowPrDetail(branch.name)}
+									onShowChanges={props.onShowChanges}
+									onCreateWorktreeFromBranch={
+										props.onCreateWorktreeFromBranch
+											? () => props.onCreateWorktreeFromBranch!(branch.name)
+											: undefined
+									}
+									onMergeAndArchive={
+										props.onMergeAndArchive ? () => props.onMergeAndArchive!(branch.name) : undefined
+									}
+									onSwitchBranch={
+										branch.worktreePath === props.repo.path ? (name) => props.onSwitchBranch(name) : undefined
+									}
+									switchBranchList={branch.worktreePath === props.repo.path ? props.switchBranchList : undefined}
+									currentBranch={branch.worktreePath === props.repo.path ? props.currentBranch : undefined}
+									githubBaseUrl={githubBaseUrl()}
+									repoHasTerminals={repoHasTerminals()}
+								/>
+								<Show when={branch.tabsExpanded && branch.terminals.length > 0}>
+									<BranchTabList terminalIds={branch.terminals} />
+								</Show>
+							</>
 						)}
 					</For>
 					<Show when={sortedBranches().length === 0}>
