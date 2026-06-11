@@ -499,6 +499,97 @@
   white-space: nowrap;
 }
 
+/* Branch tab list — collapsible terminal tab list under branch row */
+.branchTabsChevron {
+  background: none;
+  border: none;
+  color: var(--fg-muted);
+  font-size: 10px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  flex-shrink: 0;
+  transition: transform 150ms ease, color 0.1s;
+  transform: rotate(0deg);
+  opacity: 0.6;
+}
+
+.branchTabsChevron:hover {
+  color: var(--fg-secondary);
+  opacity: 1;
+}
+
+.branchTabsChevron.expanded {
+  transform: rotate(90deg);
+}
+
+.branchTabList {
+  padding: 2px 0 2px 28px;
+}
+
+.branchTabItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 4px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: var(--font-sm);
+  color: var(--fg-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: background 0.1s;
+}
+
+@media (hover: hover) {
+  .branchTabItem:hover {
+    background: var(--bg-highlight);
+    color: var(--fg-primary);
+  }
+}
+
+.branchTabDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--fg-muted);
+  opacity: 0.4;
+}
+
+.branchTabDotBusy {
+  background: var(--activity);
+  opacity: 1;
+  animation: pulse-opacity 1.5s ease-in-out infinite;
+}
+
+.branchTabDotIdle {
+  background: var(--success);
+  opacity: 1;
+}
+
+.branchTabDotUnseen {
+  background: var(--unseen);
+  opacity: 1;
+}
+
+.branchTabDotError {
+  background: var(--error);
+  opacity: 1;
+}
+
+.branchTabDotQuestion {
+  background: var(--attention);
+  opacity: 1;
+}
+
+.branchTabName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mergedBadge {
   display: inline-flex;
   align-items: center;
