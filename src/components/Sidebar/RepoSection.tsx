@@ -287,13 +287,21 @@ export const BranchItem: Component<{
 		}
 	};
 
-	// Clicking the row selects the branch and always expands its tab list (never
-	// collapses) — an already-open list stays open. Tabs only exist when a branch
-	// has more than one terminal. Child controls that own an action (PR badge,
-	// diff stats, add-terminal, remove) stopPropagation, so they never reach here.
+	// Clicking the row selects the branch and manages its tab list:
+	//  - Returning focus from elsewhere (branch was NOT active) → expand (open
+	//    stays open, never collapses on a focus-switch).
+	//  - Re-clicking the already-focused branch → toggle (so it can be closed).
+	// We read isActive BEFORE onSelect(), since onSelect synchronously flips the
+	// branch to active. Tabs only exist when a branch has more than one terminal.
+	// Child controls that own an action (PR badge, diff stats, add-terminal,
+	// remove) stopPropagation, so they never reach here.
 	const handleRowClick = () => {
+		const wasActive = props.isActive;
 		props.onSelect();
-		if (props.branch.terminals.length > 1 && !props.branch.tabsExpanded) {
+		if (props.branch.terminals.length <= 1) return;
+		if (wasActive) {
+			repositoriesStore.toggleBranchTabsExpanded(props.repoPath, props.branch.name);
+		} else if (!props.branch.tabsExpanded) {
 			repositoriesStore.setBranchTabsExpanded(props.repoPath, props.branch.name, true);
 		}
 	};
