@@ -500,27 +500,34 @@
 }
 
 /* Branch tab list — collapsible terminal tab list under branch row */
-.branchTabsChevron {
-  background: none;
-  border: none;
-  color: var(--fg-muted);
-  font-size: 10px;
-  cursor: pointer;
-  padding: 0 2px;
-  line-height: 1;
+.branchTabsCountBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  font-size: var(--font-2xs);
+  font-weight: 600;
+  font-family: var(--font-ui);
+  border-radius: var(--radius-pill);
+  white-space: nowrap;
   flex-shrink: 0;
-  transition: transform 150ms ease, color 0.1s;
-  transform: rotate(0deg);
-  opacity: 0.6;
+  cursor: pointer;
+  border: none;
+  background: var(--bg-tertiary);
+  color: var(--fg-muted);
+  opacity: 0.7;
+  transition: background 0.1s, color 0.1s, opacity 0.1s;
 }
 
-.branchTabsChevron:hover {
-  color: var(--fg-secondary);
+.branchTabsCountBadge:hover {
   opacity: 1;
+  background: var(--bg-highlight);
+  color: var(--fg-secondary);
 }
 
-.branchTabsChevron.expanded {
-  transform: rotate(90deg);
+.branchTabsCountBadge.expanded {
+  background: var(--accent);
+  color: var(--text-on-accent);
+  opacity: 1;
 }
 
 .branchTabList {
