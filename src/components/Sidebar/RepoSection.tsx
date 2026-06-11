@@ -288,13 +288,17 @@ export const BranchItem: Component<{
 	};
 
 	// Clicking the row always selects the branch. The tab-list toggle only fires
-	// when the branch is already active — so clicking an unfocused branch just
-	// focuses it, and a second click on the now-active branch toggles its tabs.
-	// Child controls that own an action (PR badge, diff stats, add-terminal,
-	// remove) stopPropagation, so they never reach here.
+	// when the branch was ALREADY active before this click — so clicking an
+	// unfocused branch just focuses it, and a second click on the now-active
+	// branch toggles its tabs. We must read isActive BEFORE onSelect(), since
+	// onSelect synchronously flips the branch to active. Tabs only exist when a
+	// branch has more than one terminal. Child controls that own an action (PR
+	// badge, diff stats, add-terminal, remove) stopPropagation, so they never
+	// reach here.
 	const handleRowClick = () => {
+		const wasActive = props.isActive;
 		props.onSelect();
-		if (props.isActive && props.branch.terminals.length > 0) {
+		if (wasActive && props.branch.terminals.length > 1) {
 			repositoriesStore.toggleBranchTabsExpanded(props.repoPath, props.branch.name);
 		}
 	};
@@ -448,7 +452,7 @@ export const BranchItem: Component<{
 				class={cx(s.branchItem, props.isActive && s.active)}
 				onClick={handleRowClick}
 				onContextMenu={ctxMenu.open}
-				aria-expanded={props.branch.terminals.length > 0 ? (props.branch.tabsExpanded ?? false) : undefined}
+				aria-expanded={props.branch.terminals.length > 1 ? (props.branch.tabsExpanded ?? false) : undefined}
 			>
 				<BranchIcon
 					isMainBranch={props.branch.isMain}
@@ -556,7 +560,7 @@ export const BranchItem: Component<{
 					visible={ctxMenu.visible()}
 					onClose={ctxMenu.close}
 				/>
-				<Show when={props.branch.terminals.length > 0}>
+				<Show when={props.branch.terminals.length > 1}>
 					<span class={cx(s.branchTabsChevron, props.branch.tabsExpanded && s.expanded)} aria-hidden="true">
 						›
 					</span>
@@ -814,7 +818,7 @@ export const RepoSection: Component<{
 							<div
 								class={cx(
 									s.branchGroup,
-									branch.tabsExpanded && branch.terminals.length > 0 && s.branchGroupExpanded,
+									branch.tabsExpanded && branch.terminals.length > 1 && s.branchGroupExpanded,
 								)}
 							>
 								<BranchItem
@@ -852,7 +856,7 @@ export const RepoSection: Component<{
 									githubBaseUrl={githubBaseUrl()}
 									repoHasTerminals={repoHasTerminals()}
 								/>
-								<Show when={branch.tabsExpanded && branch.terminals.length > 0}>
+								<Show when={branch.tabsExpanded && branch.terminals.length > 1}>
 									<BranchTabList terminalIds={branch.terminals} />
 								</Show>
 							</div>
