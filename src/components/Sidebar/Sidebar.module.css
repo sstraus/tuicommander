@@ -195,7 +195,7 @@
 }
 
 .repoChevron {
-  font-size: var(--font-lg);
+  font-size: var(--font-2xl);
   color: var(--fg-secondary);
   transition: transform 150ms ease;
   transform: rotate(0deg);
@@ -504,14 +504,14 @@
   background: none;
   border: none;
   color: var(--fg-secondary);
-  font-size: 14px;
+  font-size: var(--font-xl);
   cursor: pointer;
   padding: 0 2px;
   line-height: 1;
   flex-shrink: 0;
   transition: transform 150ms ease, color 0.1s;
   transform: rotate(0deg);
-  opacity: 0.75;
+  opacity: 0.8;
 }
 
 .branchTabsChevron:hover {
@@ -533,7 +533,8 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 8px 5px 30px;
+  padding: 5px 10px 5px 28px;
+  margin: 1px 4px;
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--font-sm);
@@ -541,23 +542,27 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  transition: background 0.1s, color 0.1s;
+  transition: background 0.15s, color 0.15s;
   background: none;
   border: none;
   font-family: inherit;
   text-align: left;
-  width: 100%;
+  width: calc(100% - 8px);
 }
 
 .branchTabItem.active {
-  background: var(--bg-highlight);
+  background: rgba(255, 255, 255, 0.07);
   color: var(--fg-primary);
 }
 
 @media (hover: hover) {
   .branchTabItem:hover {
-    background: var(--bg-highlight);
+    background: rgba(255, 255, 255, 0.07);
     color: var(--fg-primary);
+  }
+
+  .branchTabItem.active:hover {
+    background: rgba(255, 255, 255, 0.1);
   }
 }
 
