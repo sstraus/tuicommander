@@ -7,6 +7,7 @@
  */
 
 import { invoke, listen } from "../invoke";
+import { isWindows } from "../platform";
 import { appLogger } from "../stores/appLogger";
 import { pluginStore } from "../stores/pluginStore";
 import { terminalsStore } from "../stores/terminals";
@@ -196,6 +197,19 @@ export async function setPluginEnabled(id: string, enabled: boolean): Promise<vo
 /** Track loaded plugin IDs for hot-reload unregister/re-register */
 const loadedPluginIds = new Set<string>();
 
+/**
+ * Build the base import URL for a plugin module.
+ *
+ * Tauri/wry exposes custom URI schemes differently per platform: macOS/Linux
+ * serve them under the raw `plugin://` scheme, but WebView2 on Windows only
+ * serves them as `http://plugin.localhost/...`. `register_plugin_protocol()`
+ * in plugins.rs already parses both forms — this just emits the right one.
+ */
+export function pluginModuleBaseUrl(id: string, main: string, windows: boolean): string {
+	const relPath = `${id}/${main}`;
+	return windows ? `http://plugin.localhost/${relPath}` : `plugin://${relPath}`;
+}
+
 async function loadPlugin(manifest: PluginManifest): Promise<void> {
 	const logger = pluginStore.getLogger(manifest.id);
 
@@ -207,8 +221,8 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
 		loaded: false,
 	});
 
-	// Cache-bust for hot reload
-	const url = `plugin://${manifest.id}/${manifest.main}?t=${Date.now()}`;
+	// `?t=` cache-busts for hot reload.
+	const url = `${pluginModuleBaseUrl(manifest.id, manifest.main, isWindows())}?t=${Date.now()}`;
 	let mod: unknown;
 	try {
 		mod = await import(/* @vite-ignore */ url);

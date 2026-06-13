@@ -87,7 +87,7 @@ Tauri OutputParser --> pluginRegistry.dispatchStructuredEvent(type, payload, ses
 
 1. **Discovery** — Rust `list_user_plugins` scans `~/.config/com.tuic.commander/plugins/` for `manifest.json` files
 2. **Validation** — Frontend validates manifest fields and `minAppVersion`
-3. **Import** — `import("plugin://my-plugin/main.js")` loads the module via the custom URI protocol
+3. **Import** — `import("plugin://my-plugin/main.js")` loads the module via the custom URI protocol (on Windows the loader rewrites this to `http://plugin.localhost/my-plugin/main.js`, since WebView2 only serves custom schemes under `http://{scheme}.localhost/...`)
 4. **Module check** — Default export must have `id`, `onload`, `onunload`
 5. **Register** — `pluginRegistry.register(plugin, capabilities)` calls `plugin.onload(host)`
 6. **Active** — Plugin receives PTY lines, structured events, and can use the PluginHost API

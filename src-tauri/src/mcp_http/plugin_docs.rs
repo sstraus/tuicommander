@@ -518,7 +518,7 @@ esbuild src/main.ts --bundle --format=esm --outfile=main.js --external:nothing
 
 1. Discovery: Rust scans plugins dir for manifest.json
 2. Validation: manifest fields + minAppVersion check
-3. Import: `import("plugin://{id}/main.js")` (custom URI protocol)
+3. Import: `import("plugin://{id}/main.js")` (custom URI protocol; on Windows rewritten to `http://plugin.localhost/{id}/main.js` for WebView2)
 4. Module check: default export must have id, onload, onunload
 5. Register: pluginRegistry.register() calls plugin.onload(host)
 6. Active: plugin receives PTY lines, structured events, uses PluginHost API
