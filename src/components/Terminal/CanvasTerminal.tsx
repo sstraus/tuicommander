@@ -2843,16 +2843,25 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			>
 				<div
 					ref={scrollThumbRef!}
+					onMouseEnter={(e) => {
+						// Darker, subtle hover like the old terminal scrollbar (#cccccc @0.3),
+						// not the bright --fg-muted.
+						e.currentTarget.style.background = "rgba(204, 204, 204, 0.3)";
+					}}
+					onMouseLeave={(e) => {
+						e.currentTarget.style.background = "var(--bg-highlight)";
+					}}
 					style={{
 						width: "10px",
 						"margin-left": "2px",
 						"border-radius": "5px",
-						background: "var(--fg-primary, rgba(255,255,255,0.3))",
-						opacity: "var(--scrollbar-opacity, 0.3)",
+						// Harmonized with the editor scrollbar: same --bg-highlight resting
+						// color, --fg-muted on hover, and a hand pointer cursor.
+						background: "var(--bg-highlight)",
 						"min-height": "20px",
 						position: "absolute",
 						top: "0",
-						cursor: "grab",
+						cursor: "pointer",
 					}}
 				/>
 			</div>

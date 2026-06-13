@@ -6,7 +6,9 @@ import { t } from "../../i18n";
 import { invoke, listen } from "../../invoke";
 import { getModifierSymbol, shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
+import { diffTabsStore } from "../../stores/diffTabs";
 import { markInternalDragEnd, markInternalDragStart, startNativeDrag } from "../../stores/dragDrop";
+import { editorTabsStore } from "../../stores/editorTabs";
 import { repositoriesStore } from "../../stores/repositories";
 import { toastsStore } from "../../stores/toasts";
 import { uiStore } from "../../stores/ui";
@@ -90,6 +92,20 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 	 * best-effort — list_directory still works because it canonicalizes repo_path.
 	 */
 	const root = () => uiStore.state.fileBrowserExternalRoot || props.fsRoot || props.repoPath;
+
+	/** Relative path of the file shown in the active editor OR diff tab, when it
+	 * lives under the root this browser shows — for highlighting it in the tree
+	 * like VS Code. Editor-first: opening a diff clears the editor's active id, so
+	 * editor-first precedence resolves the visible tab correctly. Null otherwise. */
+	const activeFilePath = createMemo(() => {
+		const tab = editorTabsStore.getActive() ?? diffTabsStore.getActive();
+		if (!tab) return null;
+		const r = root();
+		const tabFsRoot = "fsRoot" in tab ? tab.fsRoot : tab.repoPath;
+		if (tabFsRoot !== r && tab.repoPath !== r) return null;
+		return tab.filePath;
+	});
+
 	const contextMenu = createContextMenu();
 	const smartPrompts = useSmartPrompts();
 
@@ -199,6 +215,45 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 			return next;
 		});
 	};
+
+	/**
+	 * Reveal the active editor file: in tree view, expand its ancestor dirs (loading
+	 * children as needed) so the highlighted row is mounted; then scroll it into
+	 * view. Flat view only scrolls when the file is in the current listing.
+	 * `mode`/`searching` are passed in (already tracked by the effect); tree-state
+	 * reads here are untracked to avoid re-triggering on our own expand/load.
+	 */
+	const revealActiveFile = async (rel: string, mode: string, searching: boolean) => {
+		const fsRoot = root();
+		if (fsRoot && mode === "tree" && !searching) {
+			const parts = rel.split("/");
+			let acc = "";
+			for (let i = 0; i < parts.length - 1; i++) {
+				acc = acc ? `${acc}/${parts[i]}` : parts[i];
+				if (!treeCache().has(acc)) {
+					try {
+						onChildrenLoaded(acc, await fb.listDirectory(fsRoot, acc));
+					} catch (err) {
+						appLogger.debug("app", "reveal: listDirectory failed", { path: acc, error: String(err) });
+						return;
+					}
+				}
+				setExpandedDirs((prev) => (prev.has(acc) ? prev : new Set(prev).add(acc)));
+			}
+		}
+		// Let the newly-expanded rows render, then scroll the active row into view.
+		requestAnimationFrame(() => {
+			contentRef?.querySelector(`.${s.entryActive}`)?.scrollIntoView({ block: "nearest" });
+		});
+	};
+
+	createEffect(() => {
+		const rel = activeFilePath();
+		const mode = viewMode();
+		const searching = !!searchQuery().trim();
+		if (!rel || !props.visible) return;
+		untrack(() => void revealActiveFile(rel, mode, searching));
+	});
 
 	// Directory watcher revision — bumped when dir-changed event arrives
 	const [dirRevision, setDirRevision] = createSignal(0);
@@ -1299,6 +1354,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 										depth={0}
 										repoPath={root() ?? ""}
 										fsRoot={root() ?? ""}
+										activePath={activeFilePath()}
 										expandedDirs={expandedDirs()}
 										onToggleExpand={toggleExpand}
 										onFileOpen={props.onFileOpen}
@@ -1347,6 +1403,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 												s.entry,
 												entry.is_dir && s.entryDir,
 												selectedIndex() === index() && s.entrySelected,
+												!entry.is_dir && entry.path === activeFilePath() && s.entryActive,
 												entry.is_ignored && s.entryIgnored,
 												clipboard()?.mode === "cut" &&
 													clipboard()?.sourceRoot === root() &&

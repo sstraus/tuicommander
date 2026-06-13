@@ -14,6 +14,8 @@ export interface TreeNodeProps {
 	depth: number;
 	repoPath: string;
 	fsRoot: string;
+	/** Relative path of the file open in the active editor, for highlighting. */
+	activePath: string | null;
 	expandedDirs: Set<string>;
 	onToggleExpand: (path: string) => void;
 	onFileOpen: (repoPath: string, filePath: string) => void;
@@ -59,7 +61,12 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
 	return (
 		<>
 			<div
-				class={cx(s.entry, props.entry.is_dir && s.entryDir, props.entry.is_ignored && s.entryIgnored)}
+				class={cx(
+					s.entry,
+					props.entry.is_dir && s.entryDir,
+					!props.entry.is_dir && props.entry.path === props.activePath && s.entryActive,
+					props.entry.is_ignored && s.entryIgnored,
+				)}
 				style={{ "padding-left": `${8 + props.depth * 16}px` }}
 				onClick={handleClick}
 				onContextMenu={(e) => props.onContextMenu(e, props.entry)}
@@ -104,6 +111,7 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
 							depth={props.depth + 1}
 							repoPath={props.repoPath}
 							fsRoot={props.fsRoot}
+							activePath={props.activePath}
 							expandedDirs={props.expandedDirs}
 							onToggleExpand={props.onToggleExpand}
 							onFileOpen={props.onFileOpen}

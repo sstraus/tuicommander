@@ -277,6 +277,31 @@ export class DomSearchEngine implements SearchEngine {
 		return Array.from(this.container.querySelectorAll(`mark.${MATCH_CLASS}`));
 	}
 
+	/**
+	 * Vertical center of each highlighted match as a fraction (0..1) of the scroll
+	 * container's total content height — for painting scrollbar overview ticks,
+	 * consistent with the terminal and CodeMirror editor. Deduped per ~permille so
+	 * many matches on one line collapse to a single tick. `scrollEl` is the actual
+	 * overflow container (which may be an ancestor of the highlighted content).
+	 */
+	matchFractions(scrollEl: HTMLElement): number[] {
+		const total = scrollEl.scrollHeight;
+		if (total <= 0) return [];
+		const top = scrollEl.getBoundingClientRect().top;
+		const seen = new Set<number>();
+		const out: number[] = [];
+		for (const mark of this.getOrderedMarks()) {
+			const rect = mark.getBoundingClientRect();
+			const y = rect.top - top + scrollEl.scrollTop + rect.height / 2;
+			const frac = Math.min(Math.max(y / total, 0), 1);
+			const key = Math.round(frac * 1000);
+			if (seen.has(key)) continue;
+			seen.add(key);
+			out.push(frac);
+		}
+		return out;
+	}
+
 	private setActive(index: number, active: boolean): void {
 		const marks = this.getOrderedMarks();
 		if (index >= 0 && index < marks.length) {

@@ -8,6 +8,16 @@
   background: var(--bg-primary);
 }
 
+/* Relative wrapper so the absolutely-positioned <SearchBar> overlay anchors to
+   the editor area (not the whole tab, which includes the header). */
+.editorArea {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+}
+
 .editorContent {
   flex: 1;
   min-width: 0;

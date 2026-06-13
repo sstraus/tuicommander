@@ -25,6 +25,12 @@ export interface SearchBarProps {
 	matchLabel?: string;
 	/** Additional toggle buttons after the built-in ones */
 	extraToggles?: ExtraToggle[];
+	/** Replace the current match. Providing this (or onReplaceAll) enables the
+	 * VS Code-style expandable replace row — omit it for search-only consumers
+	 * (terminal, read-only panels). */
+	onReplace?: (replacement: string) => void;
+	/** Replace every match at once. */
+	onReplaceAll?: (replacement: string) => void;
 }
 
 /** SVG icons for toggle buttons and navigation (VS Code style) */
@@ -65,11 +71,37 @@ const CloseIcon = () => (
 	</svg>
 );
 
+/** Chevron that points right when collapsed, down when expanded (rotated via CSS). */
+const ChevronIcon = () => (
+	<svg viewBox="0 0 16 16" fill="currentColor">
+		<path d="M5.7 13.7l-.7-.7L9.3 8 5 3.7l.7-.7L10.7 8z" />
+	</svg>
+);
+
+const ReplaceIcon = () => (
+	<svg viewBox="0 0 16 16" fill="currentColor">
+		<path d="M3.221 3.739l2.261 2.269L7.7 3.784l-.7-.7-1.012 1.007-.008-1.6a.523.523 0 01.5-.526H8V1H6.48A1.482 1.482 0 005 2.489V4.1L3.927 3.033zM10 8a2 2 0 11.732 1.547l-.733.733A3 3 0 1010 8z" />
+		<path d="M1 9h6v5H1z" />
+	</svg>
+);
+
+const ReplaceAllIcon = () => (
+	<svg viewBox="0 0 16 16" fill="currentColor">
+		<path d="M3.221 3.739l2.261 2.269L7.7 3.784l-.7-.7-1.012 1.007-.008-1.6a.523.523 0 01.5-.526H8V1H6.48A1.482 1.482 0 005 2.489V4.1L3.927 3.033zM10 8a2 2 0 11.732 1.547l-.733.733A3 3 0 1010 8z" />
+		<path d="M1 6h4v1H1zm0 3h4v1H1zm0 3h6v1H1z" />
+	</svg>
+);
+
 export const SearchBar: Component<SearchBarProps> = (props) => {
 	const [searchTerm, setSearchTerm] = createSignal("");
+	const [replaceTerm, setReplaceTerm] = createSignal("");
 	const [caseSensitive, setCaseSensitive] = createSignal(false);
 	const [useRegex, setUseRegex] = createSignal(false);
 	const [wholeWord, setWholeWord] = createSignal(false);
+	const [expanded, setExpanded] = createSignal(false);
+
+	/** Whether this consumer wired up replace ("dove serve"). */
+	const hasReplace = () => Boolean(props.onReplace || props.onReplaceAll);
 
 	let inputRef: HTMLInputElement | undefined;
 
@@ -120,6 +152,21 @@ export const SearchBar: Component<SearchBarProps> = (props) => {
 		}
 	};
 
+	const handleReplaceKeyDown = (e: KeyboardEvent) => {
+		if (e.key === "Escape") {
+			e.preventDefault();
+			e.stopPropagation();
+			props.onClose();
+		} else if (e.key === "Enter") {
+			e.preventDefault();
+			if (e.metaKey || e.ctrlKey) {
+				props.onReplaceAll?.(replaceTerm());
+			} else {
+				props.onReplace?.(replaceTerm());
+			}
+		}
+	};
+
 	const toggleCaseSensitive = () => {
 		setCaseSensitive((v) => !v);
 		requestAnimationFrame(fireSearch);
@@ -144,74 +191,123 @@ export const SearchBar: Component<SearchBarProps> = (props) => {
 	return (
 		<Show when={props.visible}>
 			<div class={s.overlay}>
-				<input
-					ref={inputRef}
-					class={s.input}
-					type="text"
-					placeholder="Find…"
-					value={searchTerm()}
-					onInput={(e) => handleInput(e.currentTarget.value)}
-					onKeyDown={handleKeyDown}
-					autocomplete="off"
-					autocorrect="off"
-					spellcheck={false}
-				/>
+				<Show when={hasReplace()}>
+					<button
+						class={cx(s.expandBtn, expanded() && s.expandBtnOpen)}
+						onClick={() => setExpanded((v) => !v)}
+						title="Toggle Replace"
+					>
+						<ChevronIcon />
+					</button>
+				</Show>
 
-				<span class={s.counter}>{counterText()}</span>
+				<div class={s.rows}>
+					<div class={s.row}>
+						<div class={s.inputWrap}>
+							<input
+								ref={inputRef}
+								class={s.input}
+								type="text"
+								placeholder="Find…"
+								value={searchTerm()}
+								onInput={(e) => handleInput(e.currentTarget.value)}
+								onKeyDown={handleKeyDown}
+								autocomplete="off"
+								autocorrect="off"
+								spellcheck={false}
+							/>
+							<Show when={counterText()}>
+								<span class={s.counter}>{counterText()}</span>
+							</Show>
+						</div>
 
-				<div class={s.separator} />
+						<div class={s.separator} />
 
-				<button
-					class={cx(s.toggleBtn, caseSensitive() && s.toggleActive)}
-					onClick={toggleCaseSensitive}
-					title="Match Case"
-				>
-					<CaseSensitiveIcon />
-				</button>
-
-				<button
-					class={cx(s.toggleBtn, wholeWord() && s.toggleActive)}
-					onClick={toggleWholeWord}
-					title="Match Whole Word"
-				>
-					<WholeWordIcon />
-				</button>
-
-				<button
-					class={cx(s.toggleBtn, useRegex() && s.toggleActive)}
-					onClick={toggleRegex}
-					title="Use Regular Expression"
-				>
-					<RegexIcon />
-				</button>
-
-				<For each={props.extraToggles}>
-					{(toggle) => (
 						<button
-							class={cx(s.toggleBtn, toggle.active && s.toggleActive)}
-							onClick={toggle.onToggle}
-							title={toggle.title}
+							class={cx(s.toggleBtn, caseSensitive() && s.toggleActive)}
+							onClick={toggleCaseSensitive}
+							title="Match Case"
 						>
-							{toggle.icon()}
+							<CaseSensitiveIcon />
 						</button>
-					)}
-				</For>
 
-				<div class={s.separator} />
+						<button
+							class={cx(s.toggleBtn, wholeWord() && s.toggleActive)}
+							onClick={toggleWholeWord}
+							title="Match Whole Word"
+						>
+							<WholeWordIcon />
+						</button>
 
-				<button class={s.btn} onClick={() => props.onPrev()} title="Previous Match (Shift+Enter)">
-					<PrevIcon />
-				</button>
+						<button
+							class={cx(s.toggleBtn, useRegex() && s.toggleActive)}
+							onClick={toggleRegex}
+							title="Use Regular Expression"
+						>
+							<RegexIcon />
+						</button>
 
-				<button class={s.btn} onClick={() => props.onNext()} title="Next Match (Enter)">
-					<NextIcon />
-				</button>
+						<For each={props.extraToggles}>
+							{(toggle) => (
+								<button
+									class={cx(s.toggleBtn, toggle.active && s.toggleActive)}
+									onClick={toggle.onToggle}
+									title={toggle.title}
+								>
+									{toggle.icon()}
+								</button>
+							)}
+						</For>
 
-				<div class={s.separator} />
+						<div class={s.separator} />
 
-				<button class={s.btn} onClick={() => props.onClose()} title="Close (Escape)">
-					<CloseIcon />
-				</button>
+						<button class={s.btn} onClick={() => props.onPrev()} title="Previous Match (Shift+Enter)">
+							<PrevIcon />
+						</button>
+
+						<button class={s.btn} onClick={() => props.onNext()} title="Next Match (Enter)">
+							<NextIcon />
+						</button>
+
+						<div class={s.separator} />
+
+						<button class={s.btn} onClick={() => props.onClose()} title="Close (Escape)">
+							<CloseIcon />
+						</button>
+					</div>
+
+					<Show when={hasReplace() && expanded()}>
+						<div class={s.row}>
+							<input
+								class={s.input}
+								type="text"
+								placeholder="Replace…"
+								value={replaceTerm()}
+								onInput={(e) => setReplaceTerm(e.currentTarget.value)}
+								onKeyDown={handleReplaceKeyDown}
+								autocomplete="off"
+								autocorrect="off"
+								spellcheck={false}
+							/>
+
+							<button
+								class={s.btn}
+								onClick={() => props.onReplace?.(replaceTerm())}
+								title="Replace (Enter)"
+							>
+								<ReplaceIcon />
+							</button>
+
+							<button
+								class={s.btn}
+								onClick={() => props.onReplaceAll?.(replaceTerm())}
+								title="Replace All (Cmd/Ctrl+Enter)"
+							>
+								<ReplaceAllIcon />
+							</button>
+						</div>
+					</Show>
+				</div>
 			</div>
 		</Show>
 	);

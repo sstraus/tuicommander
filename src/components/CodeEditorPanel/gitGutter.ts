@@ -45,6 +45,32 @@ function collapseByLine(changes: GutterChange[], lineCount: number): Map<number,
 	return byLine;
 }
 
+/**
+ * Collapse contiguous same-type changed lines into one entry per run, anchored at
+ * the run's first line — so the overview ruler shows a single tick for a whole-new
+ * file (every line "added") instead of a solid bar. A line gap OR a type change
+ * starts a new run. Exported for testing.
+ */
+export function coalesceChangeRuns(
+	changes: GutterChange[],
+	lineCount: number,
+): Array<{ line: number; type: ChangeType }> {
+	const sorted = [...collapseByLine(changes, lineCount).entries()].sort((a, b) => a[0] - b[0]);
+	const runs: Array<{ line: number; type: ChangeType }> = [];
+	let prevLine = Number.NEGATIVE_INFINITY;
+	let prevType: ChangeType | null = null;
+	for (const [line, type] of sorted) {
+		if (line === prevLine + 1 && type === prevType) {
+			prevLine = line;
+			continue;
+		}
+		runs.push({ line, type });
+		prevLine = line;
+		prevType = type;
+	}
+	return runs;
+}
+
 class ChangeGutterMarker extends GutterMarker {
 	constructor(readonly kind: ChangeType) {
 		super();
@@ -136,15 +162,15 @@ class OverviewRuler {
 	}
 
 	private render() {
-		const changes = this.view.state.field(changesField);
 		const total = this.view.state.doc.lines;
 		this.dom.textContent = "";
-		if (changes.length === 0 || total <= 0) return;
+		const runs = coalesceChangeRuns(this.view.state.field(changesField), total);
+		if (runs.length === 0) return;
 		const frag = document.createDocumentFragment();
-		for (const [line, type] of collapseByLine(changes, total)) {
+		for (const { line, type } of runs) {
 			const tick = document.createElement("div");
 			tick.className = "cm-changeOverview-tick";
-			// Center the tick on the line's relative position down the document.
+			// Center the tick on the run's first line, relative to the document.
 			tick.style.top = `${((line - 0.5) / total) * 100}%`;
 			tick.style.background = CHANGE_COLORS[type];
 			frag.appendChild(tick);
@@ -165,16 +191,17 @@ const overviewTheme = EditorView.baseTheme({
 		top: "0",
 		right: "0",
 		bottom: "0",
-		width: "4px",
+		// 14px to match the terminal's scrollbar marks (sibling of .cm-scroller, high
+		// z-index → painted ON the scrollbar at the right edge), not a 4px stub beside it.
+		width: "14px",
 		pointerEvents: "none",
 		zIndex: "200",
 	},
 	".cm-changeOverview-tick": {
 		position: "absolute",
 		right: "0",
-		width: "4px",
+		width: "100%",
 		height: "2px",
-		borderRadius: "1px",
 	},
 });
 

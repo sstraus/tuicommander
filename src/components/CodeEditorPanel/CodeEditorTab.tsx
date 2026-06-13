@@ -3,7 +3,7 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import type { LanguageSupport } from "@codemirror/language";
 import { bracketMatching, foldGutter, foldKeymap, indentOnInput } from "@codemirror/language";
 import { highlightSelectionMatches, search, searchKeymap } from "@codemirror/search";
-import { type Extension, StateEffect, StateField } from "@codemirror/state";
+import { type Extension, Prec, StateEffect, StateField } from "@codemirror/state";
 import {
 	crosshairCursor,
 	Decoration,
@@ -37,8 +37,10 @@ import { isAbsolutePath } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import e from "../shared/editor-header.module.css";
 import s from "./CodeEditorTab.module.css";
+import { EditorSearch } from "./EditorSearch";
 import { type GutterChange, gitChangeGutter, setChangesEffect } from "./gitGutter";
 import { detectLanguage } from "./languageDetection";
+import { searchOverview } from "./searchOverview";
 import { codeEditorTheme } from "./theme";
 
 export interface CodeEditorTabProps {
@@ -167,6 +169,8 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	const [diskConflict, setDiskConflict] = createSignal(false);
 	/** Reactive dirty flag — only transitions on save/load, not every keystroke */
 	const [dirty, setDirty] = createSignal(false);
+	/** Shared <SearchBar> overlay visibility (replaces CodeMirror's built-in panel) */
+	const [searchVisible, setSearchVisible] = createSignal(false);
 	/** Current symbol under cursor (for breadcrumb) */
 	const [currentSymbol, setCurrentSymbol] = createSignal<string | null>(null);
 	let outlineSymbols: { name: string; lineStart: number; lineEnd: number | null }[] = [];
@@ -359,6 +363,19 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	// Read-only mode
 	createEditorReadonly(editorView, isReadOnly);
 
+	// Focus the editor when this tab becomes the active one, so keyboard shortcuts
+	// (Cmd+F, etc.) work immediately after clicking the tab — without the extra
+	// click into the editor body that focusing the tab bar alone would require.
+	createEffect(() => {
+		if (editorTabsStore.state.activeId !== props.id) return;
+		const view = editorView();
+		if (!view) return;
+		// Defer so the pane's `.active` class is applied (can't focus a hidden node).
+		requestAnimationFrame(() => {
+			if (editorTabsStore.state.activeId === props.id && !view.hasFocus) view.focus();
+		});
+	});
+
 	// Git change markers in the gutter (VS Code-style) vs the committed version
 	// (HEAD). Refreshes on save (savedContent change) and on repo revision bumps.
 	// Worktree-aware: the diff runs in fsRoot(), the on-disk working dir.
@@ -419,6 +436,38 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	);
 	createExtension(search());
 	createExtension(highlightSelectionMatches());
+	createExtension(searchOverview());
+	// Open the shared <SearchBar> overlay instead of CodeMirror's built-in panel.
+	// High precedence so these win over searchKeymap's Mod-f (openSearchPanel).
+	createExtension(
+		Prec.high(
+			keymap.of([
+				{
+					key: "Mod-f",
+					run: () => {
+						setSearchVisible(true);
+						return true;
+					},
+				},
+				{
+					key: "Mod-Alt-f",
+					run: () => {
+						setSearchVisible(true);
+						return true;
+					},
+				},
+				{
+					key: "Escape",
+					run: () => {
+						if (!searchVisible()) return false;
+						setSearchVisible(false);
+						editorView()?.focus();
+						return true;
+					},
+				},
+			]),
+		),
+	);
 
 	// Cmd+Hover underline (VS Code-style link hint)
 	createExtension(hoverLinkField);
@@ -683,15 +732,28 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 			{/* Always mount the editor div so solid-codemirror's ref callback fires during
           initial component mount. Wrapping in <Show> defers the ref, causing onMount
           inside createCodeMirror to never fire in production builds — the editorView
-          signal stays undefined and content/extensions are never applied. */}
-			<div
-				class={s.editorContent}
-				ref={(el) => {
-					editorDiv = el;
-					ref(el);
-				}}
-				style={{ display: loading() || error() ? "none" : undefined }}
-			/>
+          signal stays undefined and content/extensions are never applied.
+          The relative wrapper anchors the shared <SearchBar> overlay to the editor
+          area (below the header). */}
+			<div class={s.editorArea}>
+				<div
+					class={s.editorContent}
+					ref={(el) => {
+						editorDiv = el;
+						ref(el);
+					}}
+					style={{ display: loading() || error() ? "none" : undefined }}
+				/>
+				<EditorSearch
+					visible={searchVisible()}
+					view={editorView()}
+					editable={!isReadOnly()}
+					onClose={() => {
+						setSearchVisible(false);
+						editorView()?.focus();
+					}}
+				/>
+			</div>
 
 			<ContextMenu
 				items={[

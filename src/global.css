@@ -297,10 +297,14 @@ html, body {
   min-height: 0;
 }
 
-/* Scrollbar styling — thin, unobtrusive, unified across all panels */
+/* Scrollbar styling — single source of truth, unified across the whole app
+   (sidebar, editors, markdown preview, panels, lists). The terminal's custom DOM
+   scrollbar and the HTML-preview iframe replicate these values (separate render
+   contexts that can't inherit this rule). 14px track, 10px thumb via a 2px
+   transparent border + padding-box clip; darker, subtle hover. */
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 14px;
+  height: 14px;
 }
 
 ::-webkit-scrollbar-track {
@@ -309,11 +313,18 @@ html, body {
 
 ::-webkit-scrollbar-thumb {
   background: var(--bg-highlight);
-  border-radius: var(--radius-md);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--fg-muted);
+  background: rgba(204, 204, 204, 0.3);
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Touch device: eliminate double-tap-to-activate caused by sticky :hover.

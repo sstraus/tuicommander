@@ -14,7 +14,13 @@ const editorTheme = EditorView.theme(
 		".cm-scroller": {
 			fontFamily: "var(--font-mono)",
 			overflow: "auto",
+			// Kill the macOS elastic rubber-band on horizontal overscroll — without this,
+			// hitting the left edge bounces the whole scroller and drags the sticky
+			// line-number gutter along with it.
+			overscrollBehaviorX: "none",
 		},
+		// Scrollbar inherits the global ::-webkit-scrollbar rule (global.css) — single
+		// source of truth shared with the sidebar, markdown preview and panels.
 		".cm-content": {
 			caretColor: "var(--accent)",
 			padding: "8px 0",
@@ -51,6 +57,12 @@ const editorTheme = EditorView.theme(
 		},
 		".cm-searchMatch.cm-searchMatch-selected": {
 			backgroundColor: "rgba(224, 175, 104, 0.5)",
+		},
+		// CodeMirror's default selection-match highlight is a bright yellow-green that
+		// clashes with the orange search marks (it lights up every occurrence of the
+		// selected word). Tone it down to a subtle accent tint.
+		".cm-selectionMatch": {
+			backgroundColor: "rgba(122, 162, 247, 0.15)",
 		},
 		".cm-tooltip": {
 			backgroundColor: "var(--bg-secondary)",

@@ -165,3 +165,17 @@ export const IFRAME_SEARCH_SCRIPT = `<script id="tuic-search">
   });
 })();
 </script>`;
+
+/**
+ * Scrollbar styling injected into same-origin iframes (HtmlPreviewTab srcdoc) so
+ * their scrollbars match the rest of the app. Mirrors the global `::-webkit-scrollbar`
+ * rule in global.css — the iframe is a separate document and can't inherit it.
+ * Literal colors (no CSS vars) since the iframe has no access to the TUIC theme.
+ */
+export const IFRAME_SCROLLBAR_STYLE = `<style id="tuic-scrollbar">
+*::-webkit-scrollbar{width:14px;height:14px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-thumb{background:#37373d;border-radius:5px;border:2px solid transparent;background-clip:padding-box}
+*::-webkit-scrollbar-thumb:hover{background:rgba(204,204,204,0.3);background-clip:padding-box}
+*::-webkit-scrollbar-corner{background:transparent}
+</style>`;

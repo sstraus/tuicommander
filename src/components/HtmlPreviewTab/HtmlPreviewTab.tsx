@@ -9,7 +9,7 @@ import { editorTabsStore } from "../../stores/editorTabs";
 import { type HtmlPreviewTab as HtmlPreviewTabData, mdTabsStore } from "../../stores/mdTabs";
 import { repositoriesStore } from "../../stores/repositories";
 import { attachIframeKeyForwarder } from "../../utils/iframeKeyForwarder";
-import { IFRAME_SEARCH_SCRIPT } from "../../utils/iframeSearch";
+import { IFRAME_SCROLLBAR_STYLE, IFRAME_SEARCH_SCRIPT } from "../../utils/iframeSearch";
 import { isAbsolutePath, joinPath } from "../../utils/pathUtils";
 import e from "../shared/editor-header.module.css";
 import s from "./HtmlPreviewTab.module.css";
@@ -135,9 +135,9 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 						: `${baseTag}${fileContent}`;
 					const headClose = fileContent.indexOf("</head>");
 					if (headClose >= 0) {
-						fileContent = fileContent.slice(0, headClose) + IFRAME_SEARCH_SCRIPT + fileContent.slice(headClose);
+						fileContent = fileContent.slice(0, headClose) + IFRAME_SEARCH_SCRIPT + IFRAME_SCROLLBAR_STYLE + fileContent.slice(headClose);
 					} else {
-						fileContent = IFRAME_SEARCH_SCRIPT + fileContent;
+						fileContent = IFRAME_SEARCH_SCRIPT + IFRAME_SCROLLBAR_STYLE + fileContent;
 					}
 				}
 				setContent(fileContent);

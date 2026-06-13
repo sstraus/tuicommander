@@ -5,8 +5,8 @@
   right: 16px;
   z-index: 10;
   display: flex;
-  align-items: center;
-  gap: 4px;
+  align-items: flex-start;
+  gap: 2px;
   padding: 4px 6px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
@@ -14,6 +14,58 @@
   box-shadow: var(--shadow-dropdown);
   font-family: var(--font-ui);
   font-size: var(--font-md);
+}
+
+/* Stacks the find row and (when expanded) the replace row. A search-only
+   consumer renders just the find row, so the layout matches the old single row. */
+.rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* VS Code-style expand toggle on the far left, spanning both rows. */
+.expandBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: stretch;
+  width: 16px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--fg-secondary);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+}
+
+.expandBtn:hover {
+  background: var(--bg-highlight);
+  color: var(--fg-primary);
+}
+
+.expandBtn svg {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.1s;
+}
+
+.expandBtnOpen svg {
+  transform: rotate(90deg);
+}
+
+/* Relative wrapper so the match counter floats inside the input (VS Code style)
+   instead of reserving a fixed-width slot that leaves dead space / shifts layout. */
+.inputWrap {
+  position: relative;
+  display: inline-flex;
 }
 
 .input {
@@ -33,12 +85,19 @@
   border-color: var(--accent);
 }
 
+/* Floats over the right end of the input; the matching background masks any
+   long search text scrolling underneath. Only rendered when there's a count. */
 .counter {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding-left: 6px;
+  background: var(--bg-tertiary);
   color: var(--fg-secondary);
   font-size: var(--font-xs);
   font-family: var(--font-mono);
-  min-width: 50px;
-  text-align: center;
+  pointer-events: none;
   user-select: none;
   white-space: nowrap;
 }

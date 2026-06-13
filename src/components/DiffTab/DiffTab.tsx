@@ -14,6 +14,7 @@ import { cx } from "../../utils";
 import { ConfirmDialog } from "../ConfirmDialog";
 import type { SearchOptions } from "../shared/DomSearchEngine";
 import { DomSearchEngine } from "../shared/DomSearchEngine";
+import { DomSearchOverview } from "../shared/DomSearchOverview";
 import { SearchBar } from "../shared/SearchBar";
 import { DiffViewer } from "../ui";
 import { BranchDiffScrollView } from "./BranchDiffScrollView";
@@ -50,6 +51,10 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 	const [searchVisible, setSearchVisible] = createSignal(false);
 	const [matchIndex, setMatchIndex] = createSignal(-1);
 	const [matchCount, setMatchCount] = createSignal(0);
+	/** Match-center fractions for the scrollbar overview ticks. */
+	const [overviewFractions, setOverviewFractions] = createSignal<number[]>([]);
+	/** The overflow scroll container (the diff wrapper) the matches live in. */
+	const [scrollEl, setScrollEl] = createSignal<HTMLElement>();
 
 	// Hunk restore state
 	const [confirmVisible, setConfirmVisible] = createSignal(false);
@@ -174,6 +179,8 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 		const count = engine.search(lastSearchTerm, lastSearchOpts);
 		setMatchCount(count);
 		setMatchIndex(count > 0 ? 0 : -1);
+		const el = scrollEl();
+		setOverviewFractions(el && count > 0 ? engine.matchFractions(el) : []);
 	}
 
 	const handleSearch = (term: string, opts: SearchOptions) => {
@@ -185,6 +192,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 			engine?.clear();
 			setMatchCount(0);
 			setMatchIndex(-1);
+			setOverviewFractions([]);
 			return;
 		}
 
@@ -208,6 +216,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 		setSearchVisible(false);
 		setMatchCount(0);
 		setMatchIndex(-1);
+		setOverviewFractions([]);
 	};
 
 	/** One-sided diffs (new/deleted files) only support unified view */
@@ -550,6 +559,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 			<Show when={mode() !== "scroll"}>
 				<div
 					class={s.diffWrapper}
+					ref={(el) => setScrollEl(el)}
 					onMouseOver={(e) => {
 						if (!canRestore(props.scope, props.untracked)) return;
 						const idx = findHunkIndex(e.target as HTMLElement);
@@ -658,6 +668,9 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 								</button>
 							</div>
 						</div>
+					</Show>
+					<Show when={searchVisible()}>
+						<DomSearchOverview scrollEl={scrollEl} fractions={overviewFractions} />
 					</Show>
 				</div>
 				<ConfirmDialog
