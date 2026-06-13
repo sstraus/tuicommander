@@ -17,3 +17,6 @@ overrides:
   "vite-plugin-purgecss>vite": ">=6.4.3"
   # happy-dom (test-only) pulls in ws < 8.20.1 (uninitialized memory disclosure).
   ws: ">=8.20.1"
+  # esbuild < 0.28.1 (build/test-only, via vite + vitest) — GHSA-gv7w-rqvm-qjhr.
+  # vite 8 is already latest and still resolves 0.27.7; pin to the patched line.
+  esbuild: ">=0.28.1"
