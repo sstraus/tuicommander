@@ -2,6 +2,7 @@ import { type Component, createSignal, For, Show } from "solid-js";
 import { t } from "../../../i18n";
 import { invoke } from "../../../invoke";
 import type { NotificationSound } from "../../../notifications";
+import { appLogger } from "../../../stores/appLogger";
 import { notificationsStore } from "../../../stores/notifications";
 import { isTauri } from "../../../transport";
 import { SettingSlider, SettingToggle } from "../SettingFields";
@@ -97,7 +98,10 @@ export const NotificationsTab: Component = () => {
 		setLoadingDevices(true);
 		try {
 			setDevices(await invoke<AudioOutputDevice[]>("list_audio_output_devices"));
-		} catch {
+		} catch (err) {
+			// Don't conflate a real failure (CoreAudio error, mic-permission
+			// denial) with "zero devices installed" — log so it's diagnosable.
+			appLogger.warn("settings", "Failed to enumerate audio output devices", err);
 			setDevices([]);
 		} finally {
 			setLoadingDevices(false);

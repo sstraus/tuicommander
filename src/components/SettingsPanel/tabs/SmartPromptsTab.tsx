@@ -392,9 +392,10 @@ const PromptEditor: Component<{
 							class={sp.editorInput}
 							value={props.prompt.injectTarget ?? "compose"}
 							onChange={(e) => {
-								promptLibraryStore.updatePrompt(props.prompt.id, {
-									injectTarget: e.currentTarget.value as "terminal" | "compose",
-								});
+								const val = e.currentTarget.value;
+								if (val === "terminal" || val === "compose") {
+									promptLibraryStore.updatePrompt(props.prompt.id, { injectTarget: val });
+								}
 							}}
 						>
 							<option value="compose">Compose box (review)</option>

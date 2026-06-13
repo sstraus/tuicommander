@@ -14,7 +14,7 @@
 //! | goose  | SQLite `~/Library/Application Support/Block/goose/sessions/sessions.db` | name field (TUIC_SESSION) |
 
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
 /// Scan a directory for agent session files and return the ID of the newest
@@ -493,6 +493,11 @@ fn grok_path_encode(path: &str) -> String {
 /// `grok --resume <id>`); the newest such directory is the active session.
 fn discover_grok_session(cwd: &str, claimed_ids: &[String]) -> Option<String> {
     let dir = grok_sessions_dir()?.join(grok_path_encode(cwd));
+    // DEFERRED (2026-06-13) — extractor accepts any UUID-named entry, not only
+    // directories. grok only ever creates session *directories*, and
+    // verify_grok_session() rejects non-dirs before resume, so a phantom
+    // UUID-named file would at worst yield a no-op resume. A real is_dir guard
+    // needs the entry kind threaded through newest_unclaimed_file (8 call sites).
     newest_unclaimed_file(
         &dir,
         |name| is_uuid(name).then(|| name.to_string()),
@@ -533,6 +538,28 @@ fn is_uuid(s: &str) -> bool {
     })
 }
 
+/// Recency of a session entry. For a *file* (Claude/Gemini/Codex `.jsonl`),
+/// its own mtime. For a session *directory* (grok stores each session as a dir),
+/// the newest of the directory's own mtime and its immediate children's — a
+/// directory's own mtime only tracks entry creation/removal, not writes into
+/// existing files, so an actively-written grok session would otherwise be aged
+/// out of discovery by the `max_age` cap once it's 5 min old.
+fn entry_recency(path: &Path, meta: &std::fs::Metadata) -> SystemTime {
+    let own = meta.modified().ok();
+    if !meta.is_dir() {
+        return own.unwrap_or(SystemTime::UNIX_EPOCH);
+    }
+    let newest_child = std::fs::read_dir(path)
+        .into_iter()
+        .flatten()
+        .filter_map(|c| c.ok()?.metadata().ok()?.modified().ok())
+        .max();
+    own.into_iter()
+        .chain(newest_child)
+        .max()
+        .unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
 /// Scan `dir` for files matching `extract_id`, returning the newest unclaimed ID.
 ///
 /// When `max_age` is set, files older than this duration are ignored. This
@@ -560,7 +587,7 @@ where
             let name = e.file_name().to_string_lossy().to_string();
             let id = extract_id(&name)?;
             let meta = e.metadata().ok()?;
-            let mtime = meta.modified().ok()?;
+            let mtime = entry_recency(&e.path(), &meta);
             if max_age.is_some_and(|max| now.duration_since(mtime).unwrap_or_default() > max) {
                 return None;
             }

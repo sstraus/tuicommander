@@ -1428,7 +1428,9 @@ fn spawn_silence_timer(
 fn clean_action_required_title(title: &str) -> String {
     let after = title.split("Action Required").nth(1).unwrap_or(title);
     let cleaned = after
-        .trim_start_matches(|c: char| c == '-' || c == ' ' || ('\u{2800}'..='\u{28FF}').contains(&c))
+        .trim_start_matches(|c: char| {
+            c == '-' || c == ' ' || ('\u{2800}'..='\u{28FF}').contains(&c)
+        })
         .trim();
     if cleaned.is_empty() {
         "grok is awaiting approval".to_string()
@@ -1934,8 +1936,7 @@ impl ChunkProcessor {
                             }
                         }
                     }
-                    TermEvent::Title(title) =>
-                    {
+                    TermEvent::Title(title) => {
                         #[cfg(feature = "desktop")]
                         if let Some(a) = state.app_handle.read().as_ref() {
                             let _ = a.emit(&format!("pty-title-{session_id}"), &title);
@@ -1960,8 +1961,7 @@ impl ChunkProcessor {
                         }
                         self.grok_title_awaiting = title_awaiting;
                     }
-                    TermEvent::ResetTitle =>
-                    {
+                    TermEvent::ResetTitle => {
                         #[cfg(feature = "desktop")]
                         if let Some(a) = state.app_handle.read().as_ref() {
                             let _ = a.emit(&format!("pty-title-{session_id}"), "");

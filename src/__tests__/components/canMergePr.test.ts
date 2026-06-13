@@ -162,8 +162,12 @@ describe("canApprovePr", () => {
 		expect(canApprovePr(reviewable({ state: "MERGED" }), "bob")).toBe(false);
 	});
 
-	it("shows Approve when viewerLogin is unknown but viewer is clearly not author", () => {
-		// viewerLogin null => author !== null is true; gate still respects approve state.
-		expect(canApprovePr(reviewable(), null)).toBe(true);
+	it("hides Approve while viewerLogin is unknown (avoids leaking the button onto the viewer's own PR)", () => {
+		// null identity can't be compared to author, so we suppress until it loads.
+		expect(canApprovePr(reviewable(), null)).toBe(false);
+	});
+
+	it("hides Approve when pr.author is null and viewerLogin is unknown", () => {
+		expect(canApprovePr(reviewable({ author: null as unknown as string }), null)).toBe(false);
 	});
 });

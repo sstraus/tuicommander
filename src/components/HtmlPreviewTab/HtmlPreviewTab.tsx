@@ -110,6 +110,12 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 
 	onCleanup(() => cleanupKeyForwarder?.());
 
+	// Register the iframe→parent message bridge in the component owner scope
+	// (not a JSX IIFE, which the renderer may hoist as static and skip) so the
+	// listener and its teardown are reliably paired with mount/unmount.
+	window.addEventListener("message", handleMessage);
+	onCleanup(() => window.removeEventListener("message", handleMessage));
+
 	const focusWrapper = () => requestAnimationFrame(() => wrapperRef?.focus({ preventScroll: true }));
 
 	createEffect(() => {
@@ -227,11 +233,6 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 
 	return (
 		<div class={s.wrapper} ref={wrapperRef} tabIndex={-1}>
-			{(() => {
-				window.addEventListener("message", handleMessage);
-				onCleanup(() => window.removeEventListener("message", handleMessage));
-				return null;
-			})()}
 			<div class={e.header}>
 				<span class={e.filename} title={displayPath()}>
 					{props.tab.fileName}

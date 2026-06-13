@@ -27,6 +27,10 @@ export function effectiveMergeMethod(pr: BranchPrStatus, preferred: MergeStrateg
  *  author (GitHub rejects self-approval with 422), or the viewer already approved
  *  (overall review_decision may still be REVIEW_REQUIRED for other reviewers). */
 export function canApprovePr(pr: BranchPrStatus, viewerLogin: string | null): boolean {
+	// Identity not yet resolved: hide the button rather than risk offering it on
+	// the viewer's own PR (which GitHub rejects with a 422). `author !== null`
+	// would otherwise be true and leak the button until viewerLogin loads.
+	if (viewerLogin === null) return false;
 	return (
 		pr.state?.toUpperCase() === "OPEN" &&
 		!pr.is_draft &&

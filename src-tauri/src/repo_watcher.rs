@@ -224,18 +224,20 @@ pub(crate) fn compute_git_fingerprint(
 ///   if the ref is packed/unreadable (still distinguishes branches);
 /// - detached HEAD → the raw commit SHA.
 ///
-/// Empty string if HEAD can't be read.
-fn resolve_head_target(git_dir: &Path) -> String {
-    let head = std::fs::read_to_string(git_dir.join("HEAD")).unwrap_or_default();
+/// `None` if `.git/HEAD` itself can't be read — callers must NOT treat that as a
+/// stable target (caching an empty sentinel poisons the dedup cache and would
+/// suppress the next real HEAD move; see `head_target_changed`).
+fn resolve_head_target(git_dir: &Path) -> Option<String> {
+    let head = std::fs::read_to_string(git_dir.join("HEAD")).ok()?;
     let trimmed = head.trim();
-    if let Some(refpath) = trimmed.strip_prefix("ref: ") {
+    Some(if let Some(refpath) = trimmed.strip_prefix("ref: ") {
         match std::fs::read_to_string(git_dir.join(refpath)) {
             Ok(sha) if !sha.trim().is_empty() => format!("{refpath}={}", sha.trim()),
             _ => format!("ref: {refpath}"),
         }
     } else {
         trimmed.to_string()
-    }
+    })
 }
 
 /// Compute the current git-state fingerprint for a repo. Gathers the cheap inputs
@@ -247,7 +249,7 @@ fn repo_git_fingerprint(repo_root: &Path, git_dir: &Path) -> u64 {
     let index_size = std::fs::metadata(git_dir.join("index"))
         .map(|m| m.len())
         .unwrap_or(0);
-    let head_target = resolve_head_target(git_dir);
+    let head_target = resolve_head_target(git_dir).unwrap_or_default();
     let porcelain = crate::git_cli::git_cmd(repo_root)
         .args(["status", "--porcelain"])
         .run_silent()
@@ -493,12 +495,24 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
                     // events without the branch/SHA changing (issue #82);
                     // suppressing those here stops the emit loop and the
                     // downstream IPC cascade that pinned CPU and aborted.
-                    let target = resolve_head_target(&git_dir);
-                    if !head_target_changed(&st.repo_head_targets, &repo_path, &target) {
-                        st.repo_head_emits_suppressed
-                            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                        tracing::debug!(source = "repo_watcher", path = %repo_path, "Skip head-changed (HEAD target unchanged)");
-                        return;
+                    match resolve_head_target(&git_dir) {
+                        Some(target)
+                            if !head_target_changed(
+                                &st.repo_head_targets,
+                                &repo_path,
+                                &target,
+                            ) =>
+                        {
+                            st.repo_head_emits_suppressed
+                                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                            tracing::debug!(source = "repo_watcher", path = %repo_path, "Skip head-changed (HEAD target unchanged)");
+                            return;
+                        }
+                        // HEAD momentarily unreadable (rebase/gc/fetch in flight):
+                        // don't dedupe — fall through and let the emit attempt
+                        // proceed rather than caching an empty sentinel.
+                        None => tracing::debug!(source = "repo_watcher", path = %repo_path, "HEAD unreadable; emitting head-changed without dedupe"),
+                        Some(_) => {}
                     }
                     if let Some(branch) = crate::git::read_branch_from_head(&repo) {
                         tracing::debug!(source = "repo_watcher", path = %repo_path, "Emit head-changed");
@@ -602,12 +616,26 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
     #[cfg(target_os = "linux")]
     let watched_dirs = {
         let mut set = std::collections::HashSet::new();
+        let mut watch_failures = 0usize;
         for dir in collect_working_tree_dirs(&repo) {
             if let Err(e) = watcher.watch(&dir, RecursiveMode::NonRecursive) {
-                tracing::warn!(source = "repo_watcher", path = %dir.display(), "Failed to watch working-tree dir: {e}");
+                watch_failures += 1;
+                tracing::debug!(source = "repo_watcher", path = %dir.display(), "Failed to watch working-tree dir: {e}");
             } else {
                 set.insert(dir);
             }
+        }
+        // Surface partial watching instead of degrading silently: on Linux this
+        // is almost always inotify watch exhaustion (one watch per dir), which
+        // leaves those subtrees unmonitored with no user-visible signal.
+        if watch_failures > 0 {
+            tracing::warn!(
+                source = "repo_watcher",
+                repo = %repo.display(),
+                failures = watch_failures,
+                "Could not register {watch_failures} inotify watch(es) — changes in those dirs won't refresh panels. \
+                 The kernel inotify limit may be exhausted; raise /proc/sys/fs/inotify/max_user_watches."
+            );
         }
         watcher
             .watch(&git_dir, RecursiveMode::NonRecursive)
@@ -1000,7 +1028,10 @@ mod tests {
         std::fs::create_dir_all(git_dir.join("refs/heads")).unwrap();
         std::fs::write(git_dir.join("refs/heads/main"), "abc123def456\n").unwrap();
 
-        assert_eq!(resolve_head_target(git_dir), "refs/heads/main=abc123def456");
+        assert_eq!(
+            resolve_head_target(git_dir).as_deref(),
+            Some("refs/heads/main=abc123def456")
+        );
     }
 
     #[test]
@@ -1025,7 +1056,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let git_dir = dir.path();
         std::fs::write(git_dir.join("HEAD"), "ref: refs/heads/main\n").unwrap();
-        assert_eq!(resolve_head_target(git_dir), "ref: refs/heads/main");
+        assert_eq!(
+            resolve_head_target(git_dir).as_deref(),
+            Some("ref: refs/heads/main")
+        );
     }
 
     #[test]
@@ -1033,7 +1067,17 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let git_dir = dir.path();
         std::fs::write(git_dir.join("HEAD"), "deadbeefcafe\n").unwrap();
-        assert_eq!(resolve_head_target(git_dir), "deadbeefcafe");
+        assert_eq!(
+            resolve_head_target(git_dir).as_deref(),
+            Some("deadbeefcafe")
+        );
+    }
+
+    #[test]
+    fn test_resolve_head_target_unreadable_is_none() {
+        // No HEAD file → None, so the caller skips dedupe instead of caching "".
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(resolve_head_target(dir.path()), None);
     }
 
     // --- head-changed semantic dedupe (issue #82 storm guard) ---
@@ -1128,8 +1172,8 @@ mod tests {
 
     #[test]
     fn test_is_ignorable_access() {
-        use notify::event::{AccessKind, AccessMode, CreateKind, ModifyKind, RemoveKind};
         use notify::EventKind;
+        use notify::event::{AccessKind, AccessMode, CreateKind, ModifyKind, RemoveKind};
         // Read-only access noise — git status / editors / LSPs reading files.
         assert!(is_ignorable_access(&EventKind::Access(AccessKind::Read)));
         assert!(is_ignorable_access(&EventKind::Access(AccessKind::Open(

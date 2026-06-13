@@ -19,6 +19,7 @@ import { sidebarPluginStore } from "../../stores/sidebarPluginStore";
 import { cx } from "../../utils";
 import { compareBranches } from "../../utils/branchSort";
 import { keyFor } from "../../utils/hotkey";
+import { navigateToTerminal } from "../../utils/navigateToTerminal";
 import { handleOpenUrl } from "../../utils/openUrl";
 import type { ContextMenuItem } from "../ContextMenu";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
@@ -27,7 +28,6 @@ import { PromptDialog } from "../PromptDialog";
 import b from "../shared/branch.module.css";
 import s from "./Sidebar.module.css";
 import { SidebarPluginSection } from "./SidebarPluginSection";
-import { navigateToTerminal } from "../../utils/navigateToTerminal";
 
 const BRANCH_ICON_CLASSES: Record<string, string> = {
 	main: s.branchIconMain,
@@ -201,14 +201,14 @@ export { _resetMergedActivityAccum };
  * more than one terminal. When off, the chevron, aria state, row-click toggle and
  * the list itself are all inert.
  */
-function branchTabsAvailable(branch: BranchState): boolean {
+function getBranchTabsAvailable(branch: BranchState): boolean {
 	return settingsStore.state.tabTreeEnabled && branch.terminals.length > 1;
 }
 
 /** Collapsible list of terminal tabs under a branch row */
 const BranchTabList: Component<{ terminalIds: string[] }> = (props) => {
 	return (
-		<div class={s.branchTabList} role="list" aria-label="Terminal tabs">
+		<div class={s.branchTabList} role="group" aria-label="Terminal tabs">
 			<For each={props.terminalIds}>
 				{(id) => {
 					const term = () => terminalsStore.get(id);
@@ -229,7 +229,6 @@ const BranchTabList: Component<{ terminalIds: string[] }> = (props) => {
 							{(t) => (
 								<button
 									class={cx(s.branchTabItem, isActive() && s.active)}
-									role="listitem"
 									onClick={() => navigateToTerminal(id)}
 									title={t().name}
 								>
@@ -309,7 +308,7 @@ export const BranchItem: Component<{
 	const handleRowClick = () => {
 		const wasActive = props.isActive;
 		props.onSelect();
-		if (!branchTabsAvailable(props.branch)) return;
+		if (!getBranchTabsAvailable(props.branch)) return;
 		if (wasActive) {
 			repositoriesStore.toggleBranchTabsExpanded(props.repoPath, props.branch.name);
 		} else if (!props.branch.tabsExpanded) {
@@ -466,7 +465,7 @@ export const BranchItem: Component<{
 				class={cx(s.branchItem, props.isActive && s.active)}
 				onClick={handleRowClick}
 				onContextMenu={ctxMenu.open}
-				aria-expanded={branchTabsAvailable(props.branch) ? (props.branch.tabsExpanded ?? false) : undefined}
+				aria-expanded={getBranchTabsAvailable(props.branch) ? (props.branch.tabsExpanded ?? false) : undefined}
 			>
 				<BranchIcon
 					isMainBranch={props.branch.isMain}
@@ -574,7 +573,7 @@ export const BranchItem: Component<{
 					visible={ctxMenu.visible()}
 					onClose={ctxMenu.close}
 				/>
-				<Show when={branchTabsAvailable(props.branch)}>
+				<Show when={getBranchTabsAvailable(props.branch)}>
 					<span class={cx(s.branchTabsChevron, props.branch.tabsExpanded && s.expanded)} aria-hidden="true">
 						›
 					</span>
@@ -832,7 +831,7 @@ export const RepoSection: Component<{
 							<div
 								class={cx(
 									s.branchGroup,
-									branch.tabsExpanded && branchTabsAvailable(branch) && s.branchGroupExpanded,
+									branch.tabsExpanded && getBranchTabsAvailable(branch) && s.branchGroupExpanded,
 								)}
 							>
 								<BranchItem
@@ -855,13 +854,9 @@ export const RepoSection: Component<{
 									onShowPrDetail={() => props.onShowPrDetail(branch.name)}
 									onShowChanges={props.onShowChanges}
 									onCreateWorktreeFromBranch={
-										props.onCreateWorktreeFromBranch
-											? () => props.onCreateWorktreeFromBranch!(branch.name)
-											: undefined
+										props.onCreateWorktreeFromBranch ? () => props.onCreateWorktreeFromBranch!(branch.name) : undefined
 									}
-									onMergeAndArchive={
-										props.onMergeAndArchive ? () => props.onMergeAndArchive!(branch.name) : undefined
-									}
+									onMergeAndArchive={props.onMergeAndArchive ? () => props.onMergeAndArchive!(branch.name) : undefined}
 									onSwitchBranch={
 										branch.worktreePath === props.repo.path ? (name) => props.onSwitchBranch(name) : undefined
 									}
@@ -870,7 +865,7 @@ export const RepoSection: Component<{
 									githubBaseUrl={githubBaseUrl()}
 									repoHasTerminals={repoHasTerminals()}
 								/>
-								<Show when={branch.tabsExpanded && branchTabsAvailable(branch)}>
+								<Show when={branch.tabsExpanded && getBranchTabsAvailable(branch)}>
 									<BranchTabList terminalIds={branch.terminals} />
 								</Show>
 							</div>

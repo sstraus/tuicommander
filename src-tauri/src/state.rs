@@ -3911,8 +3911,7 @@ mod tests {
         // grok keeps its spinner animating (emitting status-line) WHILE awaiting
         // approval. A confident question must survive the busy tick — otherwise
         // awaiting_input flickers and the approval notification is lost.
-        let status =
-            make_parsed("status-line", serde_json::json!({ "task_name": "Running" }));
+        let status = make_parsed("status-line", serde_json::json!({ "task_name": "Running" }));
         let s = apply(&state, &status);
         assert!(
             s.awaiting_input,
@@ -3949,7 +3948,10 @@ mod tests {
                 serde_json::json!({ "prompt_text": "Run echo x 12s", "confident": false }),
             ),
         );
-        assert!(s.question_confident, "confident flag must not be downgraded");
+        assert!(
+            s.question_confident,
+            "confident flag must not be downgraded"
+        );
         assert_eq!(
             s.question_text.as_deref(),
             Some("Run echo x"),

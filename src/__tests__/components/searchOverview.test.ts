@@ -17,9 +17,7 @@ describe("collectMatchLines", () => {
 	it("ignores case-sensitivity per the query flag", () => {
 		const doc = docOf("Foo", "foo", "FOO");
 		expect(collectMatchLines(new SearchQuery({ search: "foo" }), doc).size).toBe(3);
-		expect(collectMatchLines(new SearchQuery({ search: "foo", caseSensitive: true }), doc)).toEqual(
-			new Set([2]),
-		);
+		expect(collectMatchLines(new SearchQuery({ search: "foo", caseSensitive: true }), doc)).toEqual(new Set([2]));
 	});
 
 	it("supports regexp queries", () => {

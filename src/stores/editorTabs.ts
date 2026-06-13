@@ -72,12 +72,15 @@ function createEditorTabsStore() {
 			}
 		},
 
-		/** Record the editor cursor position (1-based) for custom-launcher placeholders. */
+		/** Record the editor cursor position (1-based) for custom-launcher placeholders.
+		 *  This fires on every CodeMirror selection change (i.e. every keystroke); skip
+		 *  the reactive writes when the position is unchanged so idle re-selections and
+		 *  no-op transactions don't churn the store and its Toolbar subscribers. */
 		setCursor(id: string, line: number, col: number): void {
-			if (base.state.tabs[id]) {
-				base._setState("tabs", id, "cursorLine", line);
-				base._setState("tabs", id, "cursorCol", col);
-			}
+			const tab = base.state.tabs[id];
+			if (!tab || (tab.cursorLine === line && tab.cursorCol === col)) return;
+			base._setState("tabs", id, "cursorLine", line);
+			base._setState("tabs", id, "cursorCol", col);
 		},
 
 		/** Clear all editor tabs for a repository */

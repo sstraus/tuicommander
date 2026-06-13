@@ -28,16 +28,18 @@ export const EditorSearch: Component<EditorSearchProps> = (props) => {
 	let lastTerm = "";
 	let lastOpts: SearchOptions = EMPTY_OPTS;
 
-	/** Push a query into the view and refresh the counter from the new state. */
-	const applyQuery = (term: string, opts: SearchOptions, replace = "") => {
-		const view = props.view;
-		if (!view) return;
-		const query = buildQuery(term, opts, replace);
-		view.dispatch({ effects: setSearchQuery.of(query) });
-		const stats = matchStats(view.state, query);
-		setMatchCount(stats.count);
-		setMatchIndex(stats.index);
-		setTruncated(stats.truncated);
+	/** Push a query into the view (highlights + scrollbar ticks). Stats are read
+	 *  separately via refreshStats *after* the cursor-moving command runs — the
+	 *  active-match index is only correct once findNext/replace has moved the
+	 *  selection, so computing stats here too would just be a wasted full scan. */
+	const setQuery = (term: string, opts: SearchOptions, replace = "") => {
+		props.view?.dispatch({ effects: setSearchQuery.of(buildQuery(term, opts, replace)) });
+	};
+
+	const resetStats = () => {
+		setMatchCount(0);
+		setMatchIndex(-1);
+		setTruncated(false);
 	};
 
 	const refreshStats = () => {
@@ -63,11 +65,13 @@ export const EditorSearch: Component<EditorSearchProps> = (props) => {
 	const handleSearch = (term: string, opts: SearchOptions) => {
 		lastTerm = term;
 		lastOpts = opts;
-		applyQuery(term, opts);
+		setQuery(term, opts);
 		// Jump to the first match from the cursor so search-as-you-type tracks it.
 		if (term && props.view) {
 			findNext(props.view);
 			refreshStats();
+		} else {
+			resetStats();
 		}
 	};
 
@@ -85,14 +89,14 @@ export const EditorSearch: Component<EditorSearchProps> = (props) => {
 
 	const handleReplace = (replacement: string) => {
 		if (!lastTerm || !props.view) return;
-		applyQuery(lastTerm, lastOpts, replacement);
+		setQuery(lastTerm, lastOpts, replacement);
 		replaceNext(props.view);
 		refreshStats();
 	};
 
 	const handleReplaceAll = (replacement: string) => {
 		if (!lastTerm || !props.view) return;
-		applyQuery(lastTerm, lastOpts, replacement);
+		setQuery(lastTerm, lastOpts, replacement);
 		replaceAll(props.view);
 		refreshStats();
 	};

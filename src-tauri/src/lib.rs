@@ -1039,8 +1039,24 @@ pub fn run() {
                 // delays socket binding — keeping the MCP bridge reachable for
                 // Claude Code while still connecting saved upstreams at boot.
                 let auto_state = server_state.clone();
-                tokio::spawn(async move {
+                let settle_guard = auto_state.clone();
+                let auto_handle = tokio::spawn(async move {
                     crate::mcp_upstream_config::auto_connect_saved_upstreams(&auto_state).await;
+                });
+                // If the auto-connect task panics it would never call
+                // mark_initial_connect_complete(), leaving every tools/list to
+                // block for the full settle timeout with no log. Watch the handle
+                // and recover the latch on failure.
+                tokio::spawn(async move {
+                    if let Err(e) = auto_handle.await {
+                        tracing::error!(
+                            source = "mcp_upstream",
+                            "auto_connect_saved_upstreams task failed: {e}"
+                        );
+                        settle_guard
+                            .mcp_upstream_registry
+                            .mark_initial_connect_complete();
+                    }
                 });
 
                 let srv_state = server_state.clone();
@@ -1909,8 +1925,21 @@ pub async fn run_headless(port: u16) -> anyhow::Result<()> {
     // dead code. Registration is fast (async init is spawned), so it does not
     // delay socket binding.
     let auto_state = state.clone();
-    tokio::spawn(async move {
+    let settle_guard = auto_state.clone();
+    let auto_handle = tokio::spawn(async move {
         crate::mcp_upstream_config::auto_connect_saved_upstreams(&auto_state).await;
+    });
+    // Recover the settle latch if the auto-connect task panics (see desktop path).
+    tokio::spawn(async move {
+        if let Err(e) = auto_handle.await {
+            tracing::error!(
+                source = "mcp_upstream",
+                "auto_connect_saved_upstreams task failed: {e}"
+            );
+            settle_guard
+                .mcp_upstream_registry
+                .mark_initial_connect_complete();
+        }
     });
 
     // Run server until SIGINT/SIGTERM, then shut down gracefully.

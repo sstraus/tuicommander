@@ -38,11 +38,14 @@ vi.mock("../../stores/github", () => ({
 }));
 
 vi.mock("../../stores/repositories", () => ({
-	repositoriesStore: { getActive: vi.fn(), getRevision: vi.fn() },
+	repositoriesStore: { getActive: vi.fn(), getRevision: vi.fn(), get: vi.fn() },
 }));
 
 vi.mock("../../stores/promptLibrary", () => ({
-	promptLibraryStore: {},
+	promptLibraryStore: {
+		processContent: vi.fn(),
+		markAsUsed: vi.fn(),
+	},
 }));
 
 vi.mock("../../utils/promptContext", () => ({
@@ -55,7 +58,12 @@ vi.mock("../../transport", () => ({
 }));
 
 vi.mock("../../platform", () => ({
-	isWindows: false,
+	isWindows: () => false,
+}));
+
+const ptyMocks = vi.hoisted(() => ({
+	sendCommand: vi.fn(),
+	write: vi.fn(),
 }));
 
 vi.mock("../usePty", () => ({
@@ -63,12 +71,15 @@ vi.mock("../usePty", () => ({
 		createSession: vi.fn(),
 		closeSession: vi.fn(),
 		sendInput: vi.fn(),
+		sendCommand: ptyMocks.sendCommand,
+		write: ptyMocks.write,
 	})),
 }));
 
+import { invoke } from "../../invoke";
 import { agentConfigsStore } from "../../stores/agentConfigs";
 import { appLogger } from "../../stores/appLogger";
-import type { SavedPrompt } from "../../stores/promptLibrary";
+import { promptLibraryStore, type SavedPrompt } from "../../stores/promptLibrary";
 import { providerRegistryStore } from "../../stores/providerRegistry";
 import { terminalsStore } from "../../stores/terminals";
 import { useSmartPrompts } from "../useSmartPrompts";
@@ -252,5 +263,76 @@ describe("canExecuteInject — idle gate by inject target", () => {
 		const result = canExecute(makePrompt({ executionMode: "inject", injectTarget: "compose" }));
 		expect(result.ok).toBe(false);
 		expect(result.reason).toBe("No active terminal");
+	});
+});
+
+describe("executeInject — routing by inject target", () => {
+	const mockedInvoke = vi.mocked(invoke);
+	const mockedProcess = vi.mocked(promptLibraryStore.processContent);
+	const PROCESSED = "PROCESSED CONTENT";
+
+	/** Active terminal with an optional compose-box ref. */
+	const activeWith = (openComposeWithText?: (t: string) => void) =>
+		({
+			id: "t1",
+			sessionId: "s1",
+			agentType: "claude",
+			ref: openComposeWithText ? { openComposeWithText } : undefined,
+		}) as unknown as ReturnType<typeof terminalsStore.getActive>;
+
+	beforeEach(() => {
+		mockedIsBusy.mockReturnValue(false);
+		// resolve_prompt_variables → no variables needed.
+		mockedInvoke.mockResolvedValue({ vars: {}, needed: [] });
+		mockedProcess.mockResolvedValue(PROCESSED);
+	});
+
+	it("compose target fills the compose box and never touches the PTY", async () => {
+		const openCompose = vi.fn();
+		mockedGetActive.mockReturnValue(activeWith(openCompose));
+		const { executeSmartPrompt } = useSmartPrompts();
+
+		const res = await executeSmartPrompt(makePrompt({ executionMode: "inject", injectTarget: "compose" }));
+
+		expect(res.ok).toBe(true);
+		expect(openCompose).toHaveBeenCalledWith(PROCESSED);
+		expect(ptyMocks.sendCommand).not.toHaveBeenCalled();
+		expect(ptyMocks.write).not.toHaveBeenCalled();
+	});
+
+	it("terminal target sends straight to the agent via sendCommand", async () => {
+		mockedGetActive.mockReturnValue(activeWith());
+		const { executeSmartPrompt } = useSmartPrompts();
+
+		const res = await executeSmartPrompt(makePrompt({ executionMode: "inject", injectTarget: "terminal" }));
+
+		expect(res.ok).toBe(true);
+		expect(ptyMocks.sendCommand).toHaveBeenCalledWith("s1", PROCESSED, "claude");
+		expect(ptyMocks.write).not.toHaveBeenCalled();
+	});
+
+	it("terminal target with autoExecute=false writes for review (no Enter), not sendCommand", async () => {
+		mockedGetActive.mockReturnValue(activeWith());
+		const { executeSmartPrompt } = useSmartPrompts();
+
+		const res = await executeSmartPrompt(
+			makePrompt({ executionMode: "inject", injectTarget: "terminal", autoExecute: false }),
+		);
+
+		expect(res.ok).toBe(true);
+		expect(ptyMocks.sendCommand).not.toHaveBeenCalled();
+		// \x15 (NAK) clears the line before writing the reviewable text.
+		expect(ptyMocks.write).toHaveBeenCalledWith("s1", `\x15${PROCESSED}`);
+	});
+
+	it("compose target with no compose panel (web/PWA) falls back to a reviewable write", async () => {
+		mockedGetActive.mockReturnValue(activeWith()); // no openComposeWithText
+		const { executeSmartPrompt } = useSmartPrompts();
+
+		const res = await executeSmartPrompt(makePrompt({ executionMode: "inject", injectTarget: "compose" }));
+
+		expect(res.ok).toBe(true);
+		expect(ptyMocks.sendCommand).not.toHaveBeenCalled();
+		expect(ptyMocks.write).toHaveBeenCalledWith("s1", `\x15${PROCESSED}`);
 	});
 });

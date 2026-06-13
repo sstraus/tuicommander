@@ -22,6 +22,7 @@ import {
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import type { SearchOptions } from "../shared/DomSearchEngine";
 import { DomSearchEngine } from "../shared/DomSearchEngine";
+import { DomSearchOverview } from "../shared/DomSearchOverview";
 import e from "../shared/editor-header.module.css";
 import { SearchBar } from "../shared/SearchBar";
 import { ContentRenderer } from "../ui";
@@ -45,6 +46,8 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 	const [searchVisible, setSearchVisible] = createSignal(false);
 	const [matchIndex, setMatchIndex] = createSignal(-1);
 	const [matchCount, setMatchCount] = createSignal(0);
+	const [overviewFractions, setOverviewFractions] = createSignal<number[]>([]);
+	const [scrollEl, setScrollEl] = createSignal<HTMLElement>();
 	const repo = useRepository();
 	const contextMenu = createContextMenu();
 	let wrapperRef: HTMLDivElement | undefined;
@@ -212,6 +215,8 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 		const count = engine.search(lastSearchTerm, lastSearchOpts);
 		setMatchCount(count);
 		setMatchIndex(count > 0 ? 0 : -1);
+		const el = scrollEl();
+		setOverviewFractions(el && count > 0 ? engine.matchFractions(el) : []);
 	}
 
 	const handleSearch = (term: string, opts: SearchOptions) => {
@@ -223,6 +228,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 			engine?.clear();
 			setMatchCount(0);
 			setMatchIndex(-1);
+			setOverviewFractions([]);
 			return;
 		}
 
@@ -248,6 +254,7 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 		setSearchVisible(false);
 		setMatchCount(0);
 		setMatchIndex(-1);
+		setOverviewFractions([]);
 		focusWrapper();
 	};
 
@@ -414,7 +421,10 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 				matchCount={matchCount()}
 			/>
 
-			<div class={s.content}>
+			<div class={s.content} ref={(el) => setScrollEl(el)}>
+				<Show when={searchVisible()}>
+					<DomSearchOverview scrollEl={scrollEl} fractions={overviewFractions} />
+				</Show>
 				<ContentRenderer
 					content={content()}
 					baseDir={baseDir()}

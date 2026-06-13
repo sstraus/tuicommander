@@ -133,12 +133,17 @@ function attachSseEventType(eventType: string) {
 	_sseSource.addEventListener(eventType, ((sseEvent: MessageEvent) => {
 		const listeners = _sseListeners.get(eventType);
 		if (!listeners) return;
+		let payload: unknown;
 		try {
-			const payload = JSON.parse(sseEvent.data);
-			for (const handler of listeners) handler(payload);
-		} catch {
-			// Ignore parse errors
+			payload = JSON.parse(sseEvent.data);
+		} catch (err) {
+			appLogger.warn("network", `SSE event '${eventType}' parse failed`, {
+				data: typeof sseEvent.data === "string" ? sseEvent.data.slice(0, 200) : sseEvent.data,
+				error: String(err),
+			});
+			return;
 		}
+		for (const handler of listeners) handler(payload);
 	}) as EventListener);
 }
 

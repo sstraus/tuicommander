@@ -49,14 +49,18 @@ export const DomSearchOverview: Component<DomSearchOverviewProps> = (props) => {
 			for (const f of fr) {
 				const tick = document.createElement("div");
 				// Full-width marks spanning the strip — matches the terminal scrollbar.
-				tick.style.cssText =
-					"position:absolute;right:0;width:100%;height:2px;background:var(--attention,#e8984c)";
+				// Same look as .cm-searchOverview-tick (searchOverview.ts) and the
+				// iframe scrollbar (IFRAME_SCROLLBAR_STYLE) — keep the three in sync.
+				tick.style.cssText = "position:absolute;right:0;width:100%;height:2px;background:var(--attention,#e8984c)";
 				tick.style.top = `${f * 100}%`;
 				frag.appendChild(tick);
 			}
 			strip.appendChild(frag);
 		}
-		reposition();
+		// Defer to after paint: on first mount the scroll container may not be
+		// laid out yet (clientHeight 0), which would size the strip to 0 and hide
+		// the ticks until the next scroll/resize.
+		requestAnimationFrame(reposition);
 	});
 
 	return (

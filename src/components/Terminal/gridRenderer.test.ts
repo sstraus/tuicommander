@@ -1,5 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
-import { ATTR_DEFAULT_BG, ATTR_DEFAULT_FG, type CellMetrics, type DecodedRow } from "./canvasTerminalUtils";
+import {
+	ATTR_DEFAULT_BG,
+	ATTR_DEFAULT_FG,
+	ATTR_INVERSE,
+	type CellMetrics,
+	type DecodedRow,
+} from "./canvasTerminalUtils";
 import { createGridRenderer, type GridContext2D } from "./gridRenderer";
 
 function mockCtx() {
@@ -85,5 +91,33 @@ describe("gridRenderer paintRow — background of trailing cells (story 036)", (
 
 		// No background fill should happen anywhere — every cell is default bg.
 		expect(fillRect).not.toHaveBeenCalled();
+	});
+
+	it("fills trailing cells that have ATTR_DEFAULT_BG set but ATTR_INVERSE active", () => {
+		const { ctx, fillRect } = mockCtx();
+		const r = createGridRenderer(ctx, { fontWeight: () => "normal", getFontFamily: () => "monospace" });
+		// "ABC" then 7 trailing spaces whose bg is *default* but rendered inverse —
+		// the swap makes the (explicit) fg the visible background, so the cell must
+		// fill despite ATTR_DEFAULT_BG being set. Guards the `|| ATTR_INVERSE` term.
+		const count = 10;
+		const codepoints = new Uint32Array(count);
+		const fg = new Uint32Array(count);
+		const bg = new Uint32Array(count);
+		const attrs = new Uint8Array(count);
+		codepoints[0] = 0x41;
+		codepoints[1] = 0x42;
+		codepoints[2] = 0x43;
+		for (let c = 0; c < 3; c++) attrs[c] = ATTR_DEFAULT_FG | ATTR_DEFAULT_BG;
+		for (let c = 3; c < count; c++) {
+			codepoints[c] = 0x20;
+			fg[c] = 0xff0000; // explicit fg — becomes the visible bg under inverse
+			attrs[c] = ATTR_DEFAULT_BG | ATTR_INVERSE; // default-bg flag SET, inverse active
+		}
+		r.paintRow({ index: 0, count, codepoints, fg, bg, attrs }, 0, METRICS);
+
+		const filledXs = fillRect.mock.calls.map((c) => c[0] as number);
+		for (let c = 3; c < count; c++) {
+			expect(filledXs).toContain(c * METRICS.cellWidth);
+		}
 	});
 });

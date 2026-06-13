@@ -359,7 +359,13 @@ pub(crate) fn expand_placeholders(args: &[String], ctx: &LaunchContext) -> Vec<S
     let cwd = ctx.cwd.as_deref().unwrap_or(&ctx.repo);
     let home = dirs::home_dir()
         .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_default();
+        .unwrap_or_else(|| {
+            tracing::warn!(
+                source = "agent",
+                "Home directory unresolvable; {{home}} placeholder expands to empty"
+            );
+            String::new()
+        });
     let line_s = ctx.line.unwrap_or(1).to_string();
     let col_s = ctx.col.unwrap_or(1).to_string();
     args.iter()

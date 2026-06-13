@@ -1904,9 +1904,10 @@ fn friendly_approve_error(status: u16, raw: &str) -> String {
         422 => {
             // 422 on a review POST is almost always "can't approve your own PR".
             // GitHub doesn't give a machine-readable code, so match on the message.
-            if raw.to_lowercase().contains("can not approve")
-                || raw.to_lowercase().contains("cannot approve")
-                || raw.to_lowercase().contains("own pull request")
+            let lower = raw.to_lowercase();
+            if lower.contains("can not approve")
+                || lower.contains("cannot approve")
+                || lower.contains("own pull request")
             {
                 "You can't approve your own pull request.".to_string()
             } else {
@@ -1915,7 +1916,16 @@ fn friendly_approve_error(status: u16, raw: &str) -> String {
         }
         401 | 403 => "You don't have permission to approve this pull request.".to_string(),
         404 => "Pull request not found.".to_string(),
-        _ => format!("Approve failed: {raw}"),
+        // Cap the raw GitHub body so a verbose 5xx error blob doesn't spill
+        // into the UI toast verbatim.
+        _ => {
+            let snippet: String = raw.trim().chars().take(120).collect();
+            if snippet.is_empty() {
+                format!("Approve failed (HTTP {status}).")
+            } else {
+                format!("Approve failed (HTTP {status}): {snippet}")
+            }
+        }
     }
 }
 
@@ -2534,8 +2544,7 @@ mod tests {
             &[],
             "main",
         );
-        let result =
-            parse_graphql_prs(&graphql_response(vec![approved, not_reviewed, commented]));
+        let result = parse_graphql_prs(&graphql_response(vec![approved, not_reviewed, commented]));
         assert_eq!(result.len(), 3);
         assert!(result[0].viewer_did_approve);
         assert!(!result[1].viewer_did_approve);

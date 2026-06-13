@@ -398,7 +398,7 @@ impl UpstreamRegistry {
     /// been registered (async `initialize` may still be running).
     pub(crate) fn mark_initial_connect_complete(&self) {
         self.initial_connect_complete
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+            .store(true, std::sync::atomic::Ordering::Release);
     }
 
     /// Block (bounded) until first-boot upstream initialization has settled,
@@ -412,16 +412,22 @@ impl UpstreamRegistry {
     /// auto-connect has registered every upstream AND none is still `Connecting`
     /// (i.e. all reached `Ready`/`Failed`/`NeedsAuth`/…), bounded by `timeout`.
     ///
-    /// Only the first call blocks: once the boot window has passed, the
-    /// `initial_settle_done` latch makes every subsequent call a no-op.
+    /// The `initial_settle_done` latch makes subsequent calls a no-op once a
+    /// settle has been observed; `connect_upstream` re-arms it when an upstream
+    /// is added after boot so its tools aren't missed on the next `tools/list`.
+    //
+    // DEFERRED (2026-06-13) — concurrent callers during the boot window each spin
+    // their own 50ms poll loop instead of sharing one wake signal. Harmless in
+    // practice (CC sends a single tools/list at handshake) but a tokio::sync::Notify
+    // would collapse them. Revisit if multi-client boot latency shows up.
     pub(crate) async fn await_initial_settle(&self, timeout: std::time::Duration) {
         use std::sync::atomic::Ordering;
-        if self.initial_settle_done.load(Ordering::SeqCst) {
+        if self.initial_settle_done.load(Ordering::Acquire) {
             return;
         }
         let deadline = tokio::time::Instant::now() + timeout;
         loop {
-            let settled = self.initial_connect_complete.load(Ordering::SeqCst)
+            let settled = self.initial_connect_complete.load(Ordering::Acquire)
                 && !self
                     .entries
                     .iter()
@@ -438,7 +444,7 @@ impl UpstreamRegistry {
             }
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
-        self.initial_settle_done.store(true, Ordering::SeqCst);
+        self.initial_settle_done.store(true, Ordering::Release);
     }
 
     // -----------------------------------------------------------------------
@@ -640,27 +646,35 @@ impl UpstreamRegistry {
     /// loaded from disk and connected first.
     #[allow(dead_code)] // invoked from Tauri command layer (#1198)
     pub(crate) async fn on_oauth_complete(&self, upstream_name: &str) -> Result<(), String> {
-        if !self.entries.contains_key(upstream_name) {
-            tracing::warn!(
-                source = "mcp_registry",
-                name = upstream_name,
-                "on_oauth_complete: entry not in registry, loading from config"
-            );
-            let config: crate::mcp_upstream_config::UpstreamMcpConfig =
-                crate::config::load_json_config(crate::mcp_upstream_config::UPSTREAMS_FILE);
-            let server = config
-                .servers
-                .into_iter()
-                .find(|s| s.name == upstream_name)
-                .ok_or_else(|| {
-                    format!("Upstream '{upstream_name}' not found in config or registry")
-                })?;
-            self.connect_upstream(server, None).await?;
-            // connect_upstream spawns initialize which will pick up the OAuth token
-            return Ok(());
-        }
-
-        let entry = Arc::clone(self.entries.get(upstream_name).unwrap().value());
+        // Snapshot the entry in a single lookup. A `contains_key` + later
+        // `.get().unwrap()` would panic if a concurrent `disconnect_upstream`
+        // removed the entry in the gap (OAuth-complete and user disconnect race).
+        let entry = match self
+            .entries
+            .get(upstream_name)
+            .map(|e| Arc::clone(e.value()))
+        {
+            Some(entry) => entry,
+            None => {
+                tracing::warn!(
+                    source = "mcp_registry",
+                    name = upstream_name,
+                    "on_oauth_complete: entry not in registry, loading from config"
+                );
+                let config: crate::mcp_upstream_config::UpstreamMcpConfig =
+                    crate::config::load_json_config(crate::mcp_upstream_config::UPSTREAMS_FILE);
+                let server = config
+                    .servers
+                    .into_iter()
+                    .find(|s| s.name == upstream_name)
+                    .ok_or_else(|| {
+                        format!("Upstream '{upstream_name}' not found in config or registry")
+                    })?;
+                self.connect_upstream(server, None).await?;
+                // connect_upstream spawns initialize which will pick up the OAuth token
+                return Ok(());
+            }
+        };
 
         *entry.status.write() = UpstreamStatus::Connecting;
         self.emit_status_change(upstream_name, "connecting");
@@ -718,6 +732,18 @@ impl UpstreamRegistry {
 
         if !config.enabled {
             return Ok(());
+        }
+
+        // Re-arm the settle gate when an upstream is connected after boot-time
+        // auto-connect already settled. The gate is otherwise one-shot, so a
+        // runtime-added upstream's `initialize` would race the next `tools/list`
+        // and its tools would be missing until a manual refresh.
+        if self
+            .initial_connect_complete
+            .load(std::sync::atomic::Ordering::Acquire)
+        {
+            self.initial_settle_done
+                .store(false, std::sync::atomic::Ordering::Release);
         }
 
         // Run initialize in background (don't block the caller).

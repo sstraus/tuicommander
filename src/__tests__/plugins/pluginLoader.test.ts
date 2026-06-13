@@ -1,11 +1,6 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import type { PluginManifest } from "../../plugins/pluginLoader";
-import {
-	loadUserPlugins,
-	pluginModuleBaseUrl,
-	validateManifest,
-	validateModule,
-} from "../../plugins/pluginLoader";
+import { loadUserPlugins, pluginModuleBaseUrl, validateManifest, validateModule } from "../../plugins/pluginLoader";
 
 // Mock invoke
 vi.mock("../../invoke", () => ({
@@ -136,9 +131,7 @@ describe("validateModule", () => {
 describe("pluginModuleBaseUrl", () => {
 	it("uses the raw plugin:// scheme off Windows (macOS/Linux)", () => {
 		// wry serves custom schemes under their raw scheme on macOS/Linux.
-		expect(pluginModuleBaseUrl("mdkb-dashboard", "main.js", false)).toBe(
-			"plugin://mdkb-dashboard/main.js",
-		);
+		expect(pluginModuleBaseUrl("mdkb-dashboard", "main.js", false)).toBe("plugin://mdkb-dashboard/main.js");
 	});
 
 	it("uses http://plugin.localhost on Windows (WebView2)", () => {

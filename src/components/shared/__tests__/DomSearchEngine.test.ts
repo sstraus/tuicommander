@@ -56,6 +56,56 @@ describe("DomSearchEngine", () => {
 		});
 	});
 
+	describe("matchFractions()", () => {
+		const asRect = (top: number, height: number): DOMRect =>
+			({ top, height, left: 0, right: 0, bottom: top + height, width: 0, x: 0, y: top, toJSON() {} }) as DOMRect;
+
+		/** Build a scroll container with a given scrollHeight and top offset 0. */
+		const makeScrollEl = (scrollHeight: number, scrollTop = 0): HTMLElement => {
+			const el = document.createElement("div");
+			Object.defineProperty(el, "scrollHeight", { value: scrollHeight, configurable: true });
+			Object.defineProperty(el, "scrollTop", { value: scrollTop, configurable: true });
+			el.getBoundingClientRect = () => asRect(0, 0);
+			return el;
+		};
+
+		/** Override each rendered <mark>'s rect (in DOM order). */
+		const stubMarkRects = (...rects: DOMRect[]) => {
+			const marks = container.querySelectorAll<HTMLElement>("mark.search-match");
+			marks.forEach((m, i) => {
+				m.getBoundingClientRect = () => rects[i];
+			});
+		};
+
+		it("returns [] when the scroll container has no height", () => {
+			engine.search("hello", DEFAULT_OPTS);
+			expect(engine.matchFractions(makeScrollEl(0))).toEqual([]);
+		});
+
+		it("maps each match to the fraction of its center down the scroll height", () => {
+			engine.search("hello", DEFAULT_OPTS); // two marks
+			stubMarkRects(asRect(100, 10), asRect(600, 10));
+			const fr = engine.matchFractions(makeScrollEl(1000));
+			expect(fr).toHaveLength(2);
+			expect(fr[0]).toBeCloseTo(0.105); // (100 + 5) / 1000
+			expect(fr[1]).toBeCloseTo(0.605); // (600 + 5) / 1000
+		});
+
+		it("deduplicates matches that land in the same permille bucket", () => {
+			engine.search("hello", DEFAULT_OPTS);
+			stubMarkRects(asRect(300, 10), asRect(300, 10));
+			expect(engine.matchFractions(makeScrollEl(1000))).toHaveLength(1);
+		});
+
+		it("clamps fractions to [0, 1]", () => {
+			engine.search("hello", DEFAULT_OPTS);
+			stubMarkRects(asRect(-50, 10), asRect(5000, 10));
+			const fr = engine.matchFractions(makeScrollEl(1000));
+			expect(fr[0]).toBe(0);
+			expect(fr[1]).toBe(1);
+		});
+	});
+
 	describe("case sensitivity", () => {
 		it("matches case-insensitively by default", () => {
 			expect(engine.search("HELLO", DEFAULT_OPTS)).toBe(2);

@@ -216,8 +216,8 @@ export const SearchBar: Component<SearchBarProps> = (props) => {
 								autocorrect="off"
 								spellcheck={false}
 							/>
-							<Show when={counterText()}>
-								<span class={s.counter}>{counterText()}</span>
+							<Show when={counterText()} keyed>
+								{(text) => <span class={s.counter}>{text}</span>}
 							</Show>
 						</div>
 
@@ -290,11 +290,7 @@ export const SearchBar: Component<SearchBarProps> = (props) => {
 								spellcheck={false}
 							/>
 
-							<button
-								class={s.btn}
-								onClick={() => props.onReplace?.(replaceTerm())}
-								title="Replace (Enter)"
-							>
+							<button class={s.btn} onClick={() => props.onReplace?.(replaceTerm())} title="Replace (Enter)">
 								<ReplaceIcon />
 							</button>
 
