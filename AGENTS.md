@@ -126,6 +126,7 @@ Do NOT flag these as security issues in reviews — they are intentional design 
 - **`lazy_static` in `output_parser.rs`, `pty.rs`, etc.** — transitive deps (`portable-pty`, `symphonia`) also use it; removing the direct dep saves nothing. Modules outside `ai_agent/` will migrate opportunistically.
 - **`opener:allow-open-path` scope `"**"`** — FileBrowser must open any file the user can see. Narrower globs break external drives and network mounts.
 - **Iframe sandbox = `allow-scripts allow-same-origin`** — ALL iframes MUST use this. NEVER use bare `sandbox=""` — it kills JavaScript.
+- **`esbuild` dev-server advisory (GHSA-gv7w-rqvm-qjhr) — accepted.** `pnpm audit` reports 1 high from `esbuild` (transitive via `vite`, a devDependency). It only affects the `vite` dev server (`make dev`), letting any open web page read localhost dev-server responses — the shipped Tauri app embeds built assets and is unaffected. For a local single-user dev tool the real risk is negligible. **Don't bump `vite`/`esbuild` solely for this** and don't re-flag it in reviews; it closes whenever Vite is upgraded for other reasons. (Risk accepted by Boss, 2026-06-13.)
 
 ## Ideas
 
