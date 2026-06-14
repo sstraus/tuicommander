@@ -920,11 +920,37 @@ const App: Component = () => {
 	// Deferred when the agent has active sub-tasks or is an agent process (sub-agents may still be running).
 	const BUSY_COMPLETION_THRESHOLD_MS = 5000;
 	const DEFERRED_COMPLETION_MS = 10_000;
+	// Grace window after a system wake during which busy→idle transitions are
+	// treated as false-busy (sleep/wake nudges idle shells/agents busy→idle in a
+	// synchronized cascade) and never fire a completion. Covers the post-wake
+	// settling of all terminals; real long-running work transitions far outside it.
+	const WAKE_GRACE_MS = 15_000;
+	let lastWakeAt = 0;
 	const deferredCompletionTimers = new Map<string, ReturnType<typeof setTimeout>>();
+	// OSC 133 "C" timestamp captured at idle→busy, used to tell whether a real
+	// command ran during the busy window (vs prompt-redraw / sleep-wake false-busy).
+	const busyStartExecAt = new Map<string, number | null | undefined>();
+
+	{
+		let unlistenWake: (() => void) | undefined;
+		listen<number>("system-wake", () => {
+			lastWakeAt = Date.now();
+			appLogger.debug("terminal", "[Notify] system-wake — suppressing completions for grace window");
+		}).then((fn) => {
+			unlistenWake = fn;
+		});
+		onCleanup(() => unlistenWake?.());
+	}
 
 	const unsubBusyToIdle = terminalsStore.onBusyToIdle((id, durationMs) => {
 		if (durationMs < BUSY_COMPLETION_THRESHOLD_MS) return;
 		if (terminalsStore.state.activeId === id) return;
+		// Sleep/wake false-busy cascade: the busy→idle transition landed within the
+		// grace window after a system wake — not real completed work. Suppress.
+		if (Date.now() - lastWakeAt < WAKE_GRACE_MS) {
+			appLogger.debug("terminal", `[Notify] ${id} completion SUPPRESSED — within wake grace window`);
+			return;
+		}
 
 		const fireCompletion = () => {
 			deferredCompletionTimers.delete(id);
@@ -932,6 +958,7 @@ const App: Component = () => {
 			const terminal = terminalsStore.get(id);
 			if (!terminal) return;
 
+			const startExec = busyStartExecAt.get(id);
 			const reason = getCompletionSuppression({
 				isActiveTerminal: terminalsStore.state.activeId === id,
 				isDebouncedBusy: !!terminalsStore.state.debouncedBusy[id],
@@ -939,6 +966,13 @@ const App: Component = () => {
 				awaitingInput: terminal.awaitingInput,
 				durationMs,
 				thresholdMs: BUSY_COMPLETION_THRESHOLD_MS,
+				// Gate ONLY plain shells: agent TUIs (claude, …) don't run shell commands
+				// during their lifetime, so their OSC 133 "C" never advances — gating them
+				// would suppress every legitimate agent completion. Agents keep legacy behaviour.
+				usesShellIntegration: !terminal.agentType && terminal.lastCommandExecAt != null,
+				// Unknown busy-start (snapshot missing) → don't gate; otherwise a real
+				// command ran iff the OSC 133 "C" timestamp advanced during the window.
+				ranCommandDuringBusy: startExec === undefined || terminal.lastCommandExecAt !== startExec,
 			});
 			if (reason) {
 				appLogger.debug("terminal", `[Notify] ${id} completion SUPPRESSED — ${reason}`);
@@ -990,6 +1024,9 @@ const App: Component = () => {
 		}
 	});
 	const unsubIdleToBusy = terminalsStore.onIdleToBusy((id) => {
+		// Snapshot the last-command-exec timestamp at busy-start so onBusyToIdle can
+		// detect whether a real command ran during this busy window.
+		busyStartExecAt.set(id, terminalsStore.get(id)?.lastCommandExecAt ?? null);
 		const timer = deferredCompletionTimers.get(id);
 		if (timer) {
 			clearTimeout(timer);
@@ -1402,12 +1439,20 @@ const App: Component = () => {
 	];
 
 	/** Fall back to running a git command in the active terminal */
-	const fallbackToTerminal = (repoPath: string, args: string[]) => {
+	const fallbackToTerminal = async (repoPath: string, args: string[]) => {
 		const active = terminalsStore.getActive();
-		if (active?.ref) {
-			const cmd = `cd ${JSON.stringify(repoPath)} && git ${args.join(" ")}`;
-			active.ref.write(`${cmd}\r`);
+		const sessionId = active?.sessionId;
+		if (!sessionId) return;
+		const cmd = `cd ${JSON.stringify(repoPath)} && git ${args.join(" ")}`;
+		// Route through sendCommand (never raw text+\r) so the Enter registers
+		// even when the active terminal is an Ink-based agent in raw mode.
+		const agentType = terminalsStore.getAgentTypeForSession(sessionId);
+		const shellFamily = await getShellFamily(sessionId);
+		try {
+			await sendCommand((data) => invoke("write_pty", { sessionId, data }), cmd, agentType, shellFamily);
 			setStatusInfo(`git ${args[0]} requires auth — running in terminal`);
+		} catch (err) {
+			appLogger.error("network", `git fallback to terminal failed: ${err instanceof Error ? err.message : String(err)}`);
 		}
 	};
 
@@ -1457,7 +1502,7 @@ const App: Component = () => {
 			} else if (NEEDS_TERMINAL_PATTERNS.some((p) => p.test(stderr))) {
 				// Auth or interactive prompt needed — cancel background task, run in terminal
 				tasksStore.cancel(taskId);
-				fallbackToTerminal(repoPath, args);
+				void fallbackToTerminal(repoPath, args);
 			} else {
 				const errMsg = stderr.trim() || `git ${op} failed`;
 				tasksStore.fail(taskId, errMsg);
@@ -1679,8 +1724,21 @@ const App: Component = () => {
 		terminalIds: terminalLifecycle.terminalIds,
 		handleTerminalSelect: terminalLifecycle.handleTerminalSelect,
 		handleSplit: splitPanes.handleSplit,
-		handleRunCommand: (forceDialog: boolean) =>
-			gitOps.handleRunCommand(forceDialog, () => setRunCommandDialogVisible(true)),
+		handleRunCommand: (forceDialog: boolean) => {
+			// Context-aware Cmd+R: when a web/preview tab is active, reload it instead
+			// of opening the Run Command dialog (a terminal/worktree operation). Cross-
+			// origin URL iframes can't receive the in-iframe reload-request, so the
+			// parent triggers reload via the tab's imperative handle.
+			const mdActiveId = mdTabsStore.state.activeId;
+			if (mdActiveId) {
+				const handle = mdTabsStore.getHandle<{ reload?: () => void }>(mdActiveId);
+				if (handle?.reload) {
+					handle.reload();
+					return;
+				}
+			}
+			gitOps.handleRunCommand(forceDialog, () => setRunCommandDialogVisible(true));
+		},
 		switchToBranchByIndex: quickSwitcher.switchToBranchByIndex,
 		isQuickSwitcherOpen: quickSwitcherVisible,
 		toggleMarkdownPanel: uiStore.toggleMarkdownPanel,

@@ -2462,7 +2462,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			if (!scrollDragging || !currentFrame) return;
 			const historySize = currentFrame.historySize;
 			if (historySize === 0) return;
-			const trackHeight = scrollbarRef.clientHeight;
+			// Use the cached track height (set in remeasure) instead of reading
+			// scrollbarRef.clientHeight — a layout-forcing read on every mousemove.
+			const trackHeight = scrollbarTrackHeight;
 			const thumbHeight = parseFloat(scrollThumbRef.style.height) || 20;
 			const scrollRange = trackHeight - thumbHeight;
 			if (scrollRange <= 0) return;
@@ -2482,6 +2484,21 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		document.addEventListener("mousemove", onScrollDragMove);
 		document.addEventListener("mouseup", onScrollDragUp);
+
+		// Assign the DOM-listener cleanup NOW, before the transport.subscribe() await
+		// below. If the component unmounts mid-await, onCleanup runs while `unsubscribe`
+		// would otherwise still be undefined — leaking all four document listeners for
+		// the page lifetime. The success path augments this with transport.unsubscribe().
+		const detachDomListeners = () => {
+			document.removeEventListener("mousemove", onMouseMove);
+			document.removeEventListener("mouseup", onMouseUp);
+			document.removeEventListener("mousemove", onScrollDragMove);
+			document.removeEventListener("mouseup", onScrollDragUp);
+			if (scrollRafId) cancelAnimationFrame(scrollRafId);
+			resetSmoothScroll();
+			stopSelectionScroll();
+		};
+		unsubscribe = detachDomListeners;
 
 		// Touch input (mobile/tablet)
 		cleanupTouch = installTouchHandlers(canvasRef, touchTextareaRef, {
@@ -2510,14 +2527,15 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			transport = createTransport(props.sessionId);
 			invokeRef = (cmd, args) => transport!.invoke(cmd, args);
 			await transport.subscribe((data) => onFrame(data));
+			if (!alive) {
+				// Unmounted while subscribe() was in flight. onCleanup already ran and
+				// invoked the DOM-only unsubscribe assigned before the await — but the
+				// transport subscription is now live and would leak. Tear it down here.
+				transport.unsubscribe();
+				return;
+			}
 			unsubscribe = () => {
-				document.removeEventListener("mousemove", onMouseMove);
-				document.removeEventListener("mouseup", onMouseUp);
-				document.removeEventListener("mousemove", onScrollDragMove);
-				document.removeEventListener("mouseup", onScrollDragUp);
-				if (scrollRafId) cancelAnimationFrame(scrollRafId);
-				resetSmoothScroll();
-				stopSelectionScroll();
+				detachDomListeners();
 				transport?.unsubscribe();
 			};
 		} catch (e) {
@@ -2525,15 +2543,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				sessionId: props.sessionId,
 				error: e,
 			});
-			unsubscribe = () => {
-				document.removeEventListener("mousemove", onMouseMove);
-				document.removeEventListener("mouseup", onMouseUp);
-				document.removeEventListener("mousemove", onScrollDragMove);
-				document.removeEventListener("mouseup", onScrollDragUp);
-				if (scrollRafId) cancelAnimationFrame(scrollRafId);
-				resetSmoothScroll();
-				stopSelectionScroll();
-			};
+			// `unsubscribe` is already detachDomListeners (assigned before the await).
 		}
 
 		// Listen for session events via transport

@@ -10,6 +10,8 @@ function baseCtx(overrides: Partial<CompletionContext> = {}): CompletionContext 
 		awaitingInput: null,
 		durationMs: 10_000,
 		thresholdMs: 5_000,
+		usesShellIntegration: false,
+		ranCommandDuringBusy: false,
 		...overrides,
 	};
 }
@@ -92,6 +94,37 @@ describe("getCompletionSuppression", () => {
 
 		it("suppresses when sub-tasks are active", () => {
 			expect(getCompletionSuppression(baseCtx({ activeSubTasks: 1 }))).toBe("active-sub-tasks");
+		});
+	});
+
+	describe("OSC 133 command gate (sleep/wake & prompt-redraw false-busy)", () => {
+		it("suppresses a shell-integrated terminal that went busy without running a command", () => {
+			// The mdkb/sleep-wake case: terminal has shell integration but no command
+			// executed during this busy window → false-busy, must not fire.
+			expect(
+				getCompletionSuppression(baseCtx({ usesShellIntegration: true, ranCommandDuringBusy: false })),
+			).toBe("no-command-ran");
+		});
+
+		it("fires when a shell-integrated terminal actually ran a command", () => {
+			expect(
+				getCompletionSuppression(baseCtx({ usesShellIntegration: true, ranCommandDuringBusy: true })),
+			).toBeNull();
+		});
+
+		it("does NOT gate terminals without shell integration (fallback to legacy behaviour)", () => {
+			// No OSC 133 → cannot tell real work from redraw → keep firing as before.
+			expect(
+				getCompletionSuppression(baseCtx({ usesShellIntegration: false, ranCommandDuringBusy: false })),
+			).toBeNull();
+		});
+
+		it("earlier suppression reasons take priority over the command gate", () => {
+			expect(
+				getCompletionSuppression(
+					baseCtx({ isActiveTerminal: true, usesShellIntegration: true, ranCommandDuringBusy: false }),
+				),
+			).toBe("active-terminal");
 		});
 	});
 });

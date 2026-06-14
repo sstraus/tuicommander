@@ -312,6 +312,17 @@ fn run(state: Arc<AppState>) {
                 gap_secs = wall_gap.as_secs(),
                 "Sleep/wake detected — skipping tick"
             );
+            // Tell the frontend a wake just happened so it can suppress the
+            // false-busy completion cascade: on wake, idle shells/agents get
+            // nudged busy→idle and would otherwise fire spurious completion
+            // notifications (purple "unseen" dot + sound) for work that never ran.
+            #[cfg(feature = "desktop")]
+            {
+                use tauri::Emitter;
+                if let Some(ref app) = *state.app_handle.read() {
+                    let _ = app.emit("system-wake", wall_gap.as_secs());
+                }
+            }
             prev = CpuSample::now().unwrap_or(prev);
             consecutive_high = 0;
             continue;

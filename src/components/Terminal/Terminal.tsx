@@ -380,8 +380,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
 							const current = terminalsStore.get(props.id);
 							if (sessionId && current?.shellState !== "busy") {
 								appLogger.info("terminal", `[AutoRetry] ${label}: injecting "continue" (attempt ${attempt})`);
+								// Route through sendCommand (never raw text+\r): Ink-based agents in
+								// raw mode drop the Enter when bundled with text, defeating the retry.
 								pty
-									.write(sessionId, "continue\r")
+									.sendCommand(sessionId, "continue", current?.agentType)
 									.catch((err) => appLogger.error("terminal", "[AutoRetry] Failed to write", { error: String(err) }));
 							}
 						}, delay);
@@ -1105,10 +1107,20 @@ export const Terminal: Component<TerminalProps> = (props) => {
 				</div>
 			</Show>
 			<div ref={containerRef} class={s.content}>
-				<Show when={_currentSessionId()}>
+				{/* keyed: pass sessionId as a stable string value, NOT the Show's reactive
+				    accessor. CanvasTerminal's onFrame (and ~35 other async IPC handlers) re-read
+				    props.sessionId on every backend frame. With a non-keyed Show, props.sessionId
+				    is the Show children-accessor sid(); when a PTY auto-closes, pty-exit sets
+				    _currentSessionId(null) → this Show collapses → CanvasTerminal unmounts, but a
+				    frame event already queued in the WebView loop fires onFrame post-dispose,
+				    reading sid() on the disposed <Show> → "Stale read from <Show>" → kills the
+				    SolidJS root (whole UI frozen, hover-only, backend alive). keyed makes sid a
+				    plain string captured at mount, immune to stale reads. Transitions are always
+				    null↔id so CanvasTerminal already remounts on session change — no behavior change. */}
+				<Show keyed when={_currentSessionId()}>
 					{(sid) => (
 						<CanvasTerminal
-							sessionId={sid()}
+							sessionId={sid}
 							terminalId={props.id}
 							onOpenFilePath={props.onOpenFilePath}
 							onSearchOpen={() => setSearchVisible(true)}

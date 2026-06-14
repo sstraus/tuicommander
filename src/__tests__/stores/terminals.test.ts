@@ -59,6 +59,45 @@ describe("terminalsStore", () => {
 				expect(store.state.activeId).toBeNull();
 			});
 		});
+
+		it("cancels a pending OSC 133 rAF flush so it can't resurrect a ghost entry", () => {
+			const rafCallbacks = new Map<number, FrameRequestCallback>();
+			let nextHandle = 0;
+			const raf = vi.fn((cb: FrameRequestCallback) => {
+				nextHandle += 1;
+				rafCallbacks.set(nextHandle, cb);
+				return nextHandle;
+			});
+			const caf = vi.fn((handle: number) => {
+				rafCallbacks.delete(handle);
+			});
+			vi.stubGlobal("requestAnimationFrame", raf);
+			vi.stubGlobal("cancelAnimationFrame", caf);
+
+			try {
+				testInScope(() => {
+					const id = store.add(makeTerminal());
+					// Enqueue a completed command block → schedules an OSC 133 flush rAF.
+					store.handleOsc133(id, "A", 1);
+					store.handleOsc133(id, "D", 5, 0);
+					expect(raf).toHaveBeenCalledTimes(1);
+					const pendingFlush = rafCallbacks.get(1);
+					expect(pendingFlush).toBeDefined();
+
+					// Remove the terminal while the flush is still pending.
+					store.remove(id);
+					expect(store.get(id)).toBeUndefined();
+					expect(caf).toHaveBeenCalledWith(1);
+
+					// Even if a stale callback fires, the has(id) guard must keep the
+					// terminal dead — a setState on a missing key would create a ghost.
+					pendingFlush?.(0);
+					expect(store.get(id)).toBeUndefined();
+				});
+			} finally {
+				vi.unstubAllGlobals();
+			}
+		});
 	});
 
 	describe("setActive()", () => {

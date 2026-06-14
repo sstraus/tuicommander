@@ -68,6 +68,7 @@ export interface TerminalData {
 	suggestDismissed: boolean; // true after user dismissed/selected/typed — resets on shell-state:idle
 	commandBlocks: CommandBlock[]; // Completed command blocks from OSC 133
 	activeBlock: CommandBlock | null; // Current in-progress block (A received, D not yet)
+	lastCommandExecAt: number | null; // Timestamp of last OSC 133 "C" (real command execution); monotonic, never evicted — used to gate completion against prompt-redraw/wake false-busy
 	foldedBlocks: Set<number>; // promptLine values of folded blocks
 	alias: string | null; // Human-friendly alias from Rust (e.g. "tc-1")
 	standby: boolean; // Session is SIGSTOP'd (auto-standby)
@@ -101,6 +102,7 @@ type TerminalCreateData = Omit<
 	| "awaitingInputConfident"
 	| "commandBlocks"
 	| "activeBlock"
+	| "lastCommandExecAt"
 	| "foldedBlocks"
 	| "alias"
 	| "standby"
@@ -207,6 +209,9 @@ function createTerminalsStore() {
 				const pending = _osc133Pending.get(id);
 				if (!pending?.length) return;
 				_osc133Pending.delete(id);
+				// Defence-in-depth: never write to a removed terminal — setState on a
+				// missing key would resurrect it as a ghost entry.
+				if (!(id in state.terminals)) return;
 				batch(() => {
 					setState("terminals", id, "commandBlocks", (prev) => {
 						const next = [...prev, ...pending];
@@ -367,6 +372,7 @@ function createTerminalsStore() {
 				awaitingInputConfident: false,
 				commandBlocks: [],
 				activeBlock: null,
+				lastCommandExecAt: null,
 				foldedBlocks: new Set<number>(),
 				alias: null,
 				standby: false,
@@ -404,6 +410,7 @@ function createTerminalsStore() {
 				awaitingInputConfident: false,
 				commandBlocks: [],
 				activeBlock: null,
+				lastCommandExecAt: null,
 				foldedBlocks: new Set<number>(),
 				alias: null,
 				standby: false,
@@ -422,6 +429,12 @@ function createTerminalsStore() {
 			if (sessionId) sessionToTerminal.delete(sessionId);
 			cleanupBusyState(id);
 			lastDataAtMap.delete(id);
+			// Cancel any pending OSC 133 flush so its rAF callback can't fire after
+			// removal and resurrect a ghost terminal entry via setState("terminals", id, ...).
+			const osc133Raf = _osc133FlushTimers.get(id);
+			if (osc133Raf != null) cancelAnimationFrame(osc133Raf);
+			_osc133FlushTimers.delete(id);
+			_osc133Pending.delete(id);
 			for (const cb of onRemoveCallbacks) cb(id);
 			setState(
 				produce((s) => {
@@ -568,6 +581,10 @@ function createTerminalsStore() {
 					if (term.activeBlock) {
 						setState("terminals", id, "activeBlock", { ...term.activeBlock, executionLine: line });
 					}
+					// Record that a real command executed (not a bare prompt redraw).
+					// Monotonic and never evicted, so onBusyToIdle can tell genuine work
+					// apart from sleep/wake / prompt-redraw false-busy.
+					setState("terminals", id, "lastCommandExecAt", now);
 					break;
 				}
 				case "D": {
