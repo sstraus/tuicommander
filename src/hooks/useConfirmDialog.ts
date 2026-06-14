@@ -29,39 +29,53 @@ export interface ConfirmDialogState {
  */
 export function useConfirmDialog() {
 	const [dialogState, setDialogState] = createSignal<ConfirmDialogState | null>(null);
-	let pendingResolve: ((value: boolean) => void) | null = null;
+	// FIFO queue of pending confirm requests. The head is the dialog currently
+	// shown. Concurrent confirm() calls enqueue instead of overwriting a single
+	// resolver — the previous single-slot design orphaned every promise but the
+	// last (its await never settled) and silently dropped earlier dialogs.
+	const queue: Array<{ options: ConfirmOptions; resolve: (value: boolean) => void }> = [];
 
-	/** Show a confirmation dialog — resolves true on confirm, false on cancel */
+	/** Render the dialog at the head of the queue, or hide it when empty. */
+	function showHead() {
+		const head = queue[0];
+		if (!head) {
+			setDialogState(null);
+			return;
+		}
+		setDialogState({
+			title: head.options.title,
+			message: head.options.message,
+			confirmLabel: head.options.okLabel || "OK",
+			cancelLabel: head.options.cancelLabel || "Cancel",
+			kind: head.options.kind || "warning",
+			autoCancelMs: head.options.autoCancelMs,
+		});
+	}
+
+	/** Show a confirmation dialog — resolves true on confirm, false on cancel.
+	 *  When a dialog is already visible, this one queues and shows after it. */
 	function confirm(options: ConfirmOptions): Promise<boolean> {
 		return new Promise<boolean>((resolve) => {
-			pendingResolve = resolve;
-			setDialogState({
-				title: options.title,
-				message: options.message,
-				confirmLabel: options.okLabel || "OK",
-				cancelLabel: options.cancelLabel || "Cancel",
-				kind: options.kind || "warning",
-				autoCancelMs: options.autoCancelMs,
-			});
+			queue.push({ options, resolve });
+			if (queue.length === 1) showHead();
 		});
+	}
+
+	/** Resolve the current dialog with `value` and advance to the next queued one. */
+	function settle(value: boolean) {
+		const head = queue.shift();
+		head?.resolve(value);
+		showHead();
 	}
 
 	/** Called when user confirms */
 	function handleConfirm() {
-		setDialogState(null);
-		if (pendingResolve) {
-			pendingResolve(true);
-			pendingResolve = null;
-		}
+		settle(true);
 	}
 
 	/** Called when user cancels (button, Escape, or overlay click) */
 	function handleClose() {
-		setDialogState(null);
-		if (pendingResolve) {
-			pendingResolve(false);
-			pendingResolve = null;
-		}
+		settle(false);
 	}
 
 	/** Confirm removing a worktree/branch */
@@ -127,6 +141,20 @@ export function useConfirmDialog() {
 		});
 	}
 
+	/** Report a git operation failure in a dialog, showing the full git output
+	 *  (not a truncated status-line message). When `offerRetry` is true the
+	 *  primary button reads "Retry" and the promise resolves true if the user
+	 *  chose it; otherwise it's a plain acknowledge dialog. */
+	async function reportGitError(title: string, detail: string, offerRetry = false): Promise<boolean> {
+		return await confirm({
+			title,
+			message: detail,
+			okLabel: offerRetry ? "Retry" : "OK",
+			cancelLabel: offerRetry ? "Cancel" : "Dismiss",
+			kind: "error",
+		});
+	}
+
 	/** Confirm removing orphaned worktrees (detached-HEAD, branch deleted) */
 	async function confirmOrphanCleanup(paths: string[]): Promise<boolean> {
 		const list = paths.map((p) => `  • ${p}`).join("\n");
@@ -147,6 +175,7 @@ export function useConfirmDialog() {
 		confirmRemoveRepo,
 		confirmStashAndSwitch,
 		confirmOrphanCleanup,
+		reportGitError,
 		/** Reactive state for rendering the dialog — null when hidden */
 		dialogState,
 		/** Handler for confirm button / Enter key */

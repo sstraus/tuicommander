@@ -94,6 +94,8 @@ export interface GitOperationsDeps {
 		confirmRemoveLockedWorktree?: (branchName: string, deleteBranch?: boolean) => Promise<boolean>;
 		confirmStashAndSwitch?: (branchName: string) => Promise<boolean>;
 		confirmOrphanCleanup?: (paths: string[]) => Promise<boolean>;
+		/** Surface a git failure in a dialog with the full output; returns true if the user chose Retry. */
+		reportGitError?: (title: string, detail: string, offerRetry?: boolean) => Promise<boolean>;
 		/** Browser mode only: show an in-app text-input dialog to enter a repo path */
 		promptRepoPath?: () => Promise<string | null>;
 	};
@@ -151,9 +153,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
 		hasDirtyFiles: boolean;
 	} | null>(null);
 
-	/** Reentrancy guard: prevents concurrent handleBranchSelect calls from
-	 *  duplicating terminals (e.g. rapid sidebar clicks, quick-switcher). */
-	let branchSelectInFlight: Promise<void> | null = null;
+	/** Serialization queue: forces concurrent handleBranchSelect calls to run
+	 *  strictly one-at-a-time (e.g. rapid sidebar clicks, quick-switcher), so they
+	 *  can't duplicate terminals or race the pane layout. A FIFO promise chain —
+	 *  NOT a single "await the in-flight promise" guard, which lets 3+ callers all
+	 *  wake from the same promise and run concurrently. */
+	let branchSelectQueue: Promise<void> = Promise.resolve();
 
 	/** Transition a repo from git to shell mode (e.g. .git was removed) */
 	const transitionToShell = (repoPath: string, currentRepo: RepositoryState) => {
@@ -637,23 +642,17 @@ export function useGitOperations(deps: GitOperationsDeps) {
 		return id;
 	};
 
-	const handleBranchSelect = async (repoPath: string, branchName: string) => {
-		// Serialize: wait for any in-flight branch select to finish before starting ours.
-		// Without this, rapid sidebar clicks or quick-switcher can run two selects
-		// concurrently, causing duplicate terminal creation from savedTerminals.
-		if (branchSelectInFlight) {
-			await branchSelectInFlight;
-		}
-		let resolve!: () => void;
-		branchSelectInFlight = new Promise<void>((r) => {
-			resolve = r;
-		});
-		try {
-			await handleBranchSelectInner(repoPath, branchName);
-		} finally {
-			branchSelectInFlight = null;
-			resolve();
-		}
+	const handleBranchSelect = (repoPath: string, branchName: string): Promise<void> => {
+		// Append to the FIFO queue: this select runs only after every previously
+		// queued select has settled. Each caller awaits the returned promise and sees
+		// its own result/rejection; the queue tail swallows rejections so one failed
+		// select doesn't break serialization for the calls behind it.
+		const run = branchSelectQueue.then(() => handleBranchSelectInner(repoPath, branchName));
+		branchSelectQueue = run.then(
+			() => {},
+			() => {},
+		);
+		return run;
 	};
 
 	const handleBranchSelectInner = async (repoPath: string, branchName: string) => {
@@ -1744,6 +1743,18 @@ export function useGitOperations(deps: GitOperationsDeps) {
 			}
 		}
 
+		// git stderr that means a stale/contended index.lock — these are recoverable
+		// (the lock is auto-cleared once stale), so the error dialog offers a retry.
+		const isLockError = (msg: string) => /index\.lock|could not write index|another git process/i.test(msg);
+
+		// Stash + switch, then migrate branch entries and refresh. Throws on failure.
+		const stashAndSwitch = async () => {
+			const result = await deps.repo.switchBranch(repoPath, branchName, { stash: true });
+			deps.setStatusInfo(`Switched to ${result.new_branch} (changes stashed)`);
+			migrateMainWorktreeBranches(repoPath, result.new_branch);
+			await refreshAllBranchStatsAndLists();
+		};
+
 		try {
 			const result = await deps.repo.switchBranch(repoPath, branchName);
 			if (result.stashed) {
@@ -1760,18 +1771,29 @@ export function useGitOperations(deps: GitOperationsDeps) {
 			if (errMsg === "dirty" || errMsg.includes("dirty")) {
 				// Dirty working tree — ask user to stash
 				const confirmed = await deps.dialogs.confirmStashAndSwitch?.(branchName);
-				if (confirmed) {
+				if (!confirmed) return;
+				try {
+					await stashAndSwitch();
+				} catch (stashErr) {
+					const msg = String(stashErr);
+					appLogger.error("git", "Stash & switch failed", { repoPath, branchName, error: msg });
+					const lock = isLockError(msg);
+					const detail = lock
+						? `A stale git lock is blocking the index:\n\n${msg}\n\nStale locks clear automatically after a short while. Retry?`
+						: msg;
+					const retry = await deps.dialogs.reportGitError?.("Stash & switch failed", detail, lock);
+					if (!retry) return;
 					try {
-						const result = await deps.repo.switchBranch(repoPath, branchName, { stash: true });
-						deps.setStatusInfo(`Switched to ${result.new_branch} (changes stashed)`);
-						migrateMainWorktreeBranches(repoPath, result.new_branch);
-						await refreshAllBranchStatsAndLists();
-					} catch (stashErr) {
-						deps.setStatusInfo(`Stash & switch failed: ${stashErr}`);
+						await stashAndSwitch();
+					} catch (retryErr) {
+						const retryMsg = String(retryErr);
+						appLogger.error("git", "Stash & switch retry failed", { repoPath, branchName, error: retryMsg });
+						await deps.dialogs.reportGitError?.("Stash & switch failed again", retryMsg, false);
 					}
 				}
 			} else {
-				deps.setStatusInfo(`Branch switch failed: ${errMsg}`);
+				appLogger.error("git", "Branch switch failed", { repoPath, branchName, error: errMsg });
+				await deps.dialogs.reportGitError?.("Branch switch failed", errMsg, false);
 			}
 		}
 	};

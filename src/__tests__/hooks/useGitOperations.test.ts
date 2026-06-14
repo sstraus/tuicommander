@@ -63,6 +63,8 @@ describe("useGitOperations", () => {
 		confirmRemoveRepo: vi.fn().mockResolvedValue(true),
 		confirmRemoveWorktree: vi.fn().mockResolvedValue(true),
 		confirmRemoveLockedWorktree: vi.fn().mockResolvedValue(true),
+		confirmStashAndSwitch: vi.fn().mockResolvedValue(true),
+		reportGitError: vi.fn().mockResolvedValue(false),
 	};
 
 	const mockCloseTerminal = vi.fn().mockResolvedValue(undefined);
@@ -81,6 +83,14 @@ describe("useGitOperations", () => {
 		mockDialogs.confirmRemoveRepo.mockResolvedValue(true);
 		mockDialogs.confirmRemoveWorktree.mockResolvedValue(true);
 		mockDialogs.confirmRemoveLockedWorktree.mockResolvedValue(true);
+		mockDialogs.confirmStashAndSwitch.mockResolvedValue(true);
+		mockDialogs.reportGitError.mockResolvedValue(false);
+		mockRepo.switchBranch.mockResolvedValue({
+			success: true,
+			stashed: false,
+			previous_branch: "main",
+			new_branch: "feature",
+		});
 
 		gitOps = useGitOperations({
 			repo: mockRepo,
@@ -134,6 +144,47 @@ describe("useGitOperations", () => {
 			expect(repositoriesStore.get("/repo")?.activeBranch).toBe("main");
 			expect(gitOps.currentRepoPath()).toBe("/repo");
 			expect(gitOps.currentBranch()).toBe("main");
+		});
+
+		it("serializes 3+ concurrent selects (no overlapping inner runs)", async () => {
+			// Regression: the old single-in-flight-promise guard let 3+ concurrent
+			// callers all wake from the SAME promise and run handleBranchSelectInner
+			// simultaneously (duplicate terminals, pane-layout races). The FIFO queue
+			// must run them strictly one at a time.
+			//
+			// Each fresh-branch select awaits handleAddTerminalToBranch → pty.canSpawn(),
+			// so canSpawn is the inner's yield point. Instrument it to detect overlap:
+			// with the bug, the three inner runs interleave here and maxActive reaches >1.
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			for (const b of ["b1", "b2", "b3"]) {
+				repositoriesStore.setBranch("/repo", b, { worktreePath: `/repo/wt-${b}` });
+			}
+
+			let active = 0;
+			let maxActive = 0;
+			mockPty.canSpawn.mockImplementation(async () => {
+				active++;
+				maxActive = Math.max(maxActive, active);
+				await Promise.resolve();
+				await Promise.resolve();
+				active--;
+				return true;
+			});
+
+			// Fire three WITHOUT awaiting in between → they pile up concurrently.
+			const all = Promise.all([
+				gitOps.handleBranchSelect("/repo", "b1"),
+				gitOps.handleBranchSelect("/repo", "b2"),
+				gitOps.handleBranchSelect("/repo", "b3"),
+			]);
+			await vi.runAllTimersAsync();
+			await all;
+
+			expect(maxActive).toBe(1); // never ran two inner selects at once
+			// All three selects completed and each spawned exactly one terminal.
+			for (const b of ["b1", "b2", "b3"]) {
+				expect(repositoriesStore.get("/repo")?.branches[b]?.terminals.length).toBe(1);
+			}
 		});
 
 		it("auto-spawns terminal on first branch select", async () => {
@@ -2179,6 +2230,98 @@ describe("useGitOperations", () => {
 			await gitOps.handleCheckoutRemoteBranch("/repo", "feat-remote");
 
 			expect(mockSetStatusInfo).toHaveBeenCalledWith(expect.stringContaining("Checkout failed"));
+		});
+	});
+
+	describe("handleSwitchBranch (dirty + stash recovery)", () => {
+		const seedRepo = () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setBranch("/repo", "main", { worktreePath: "/repo" });
+		};
+
+		it("declining the stash prompt aborts without a second switch attempt", async () => {
+			seedRepo();
+			mockDialogs.confirmStashAndSwitch.mockResolvedValueOnce(false);
+			mockRepo.switchBranch.mockRejectedValueOnce("dirty");
+
+			await gitOps.handleSwitchBranch("/repo", "feature");
+
+			expect(mockRepo.switchBranch).toHaveBeenCalledTimes(1);
+			expect(mockDialogs.reportGitError).not.toHaveBeenCalled();
+		});
+
+		it("stashes and switches when the user confirms", async () => {
+			seedRepo();
+			mockRepo.switchBranch
+				.mockRejectedValueOnce("dirty")
+				.mockResolvedValueOnce({ success: true, stashed: true, previous_branch: "main", new_branch: "feature" });
+
+			await gitOps.handleSwitchBranch("/repo", "feature");
+
+			expect(mockDialogs.confirmStashAndSwitch).toHaveBeenCalledWith("feature");
+			expect(mockSetStatusInfo).toHaveBeenCalledWith("Switched to feature (changes stashed)");
+			expect(mockDialogs.reportGitError).not.toHaveBeenCalled();
+		});
+
+		it("offers a retry on a stale-lock stash failure and shows the full git output", async () => {
+			seedRepo();
+			const lockErr = "Stash failed: git exited with code 1: error: could not write index";
+			mockRepo.switchBranch.mockRejectedValueOnce("dirty").mockRejectedValueOnce(lockErr);
+
+			await gitOps.handleSwitchBranch("/repo", "feature");
+
+			expect(mockDialogs.reportGitError).toHaveBeenCalledWith(
+				"Stash & switch failed",
+				expect.stringContaining("could not write index"),
+				true,
+			);
+			// The full stderr is surfaced, not a truncated one-liner.
+			expect(mockDialogs.reportGitError).toHaveBeenCalledWith(
+				"Stash & switch failed",
+				expect.stringContaining("stale git lock"),
+				true,
+			);
+		});
+
+		it("retries the stash+switch when the user clicks Retry and it then succeeds", async () => {
+			seedRepo();
+			mockDialogs.reportGitError.mockResolvedValueOnce(true);
+			mockRepo.switchBranch
+				.mockRejectedValueOnce("dirty")
+				.mockRejectedValueOnce("error: could not write index")
+				.mockResolvedValueOnce({ success: true, stashed: true, previous_branch: "main", new_branch: "feature" });
+
+			await gitOps.handleSwitchBranch("/repo", "feature");
+
+			expect(mockRepo.switchBranch).toHaveBeenCalledTimes(3);
+			expect(mockSetStatusInfo).toHaveBeenCalledWith("Switched to feature (changes stashed)");
+		});
+
+		it("does not offer a retry for a non-lock stash failure", async () => {
+			seedRepo();
+			mockRepo.switchBranch.mockRejectedValueOnce("dirty").mockRejectedValueOnce("Stash failed: No space left on device");
+
+			await gitOps.handleSwitchBranch("/repo", "feature");
+
+			expect(mockDialogs.reportGitError).toHaveBeenCalledWith(
+				"Stash & switch failed",
+				expect.stringContaining("No space left on device"),
+				false,
+			);
+		});
+
+		it("surfaces a non-dirty switch failure in the error dialog", async () => {
+			seedRepo();
+			mockRepo.switchBranch.mockRejectedValueOnce("Checkout failed: local changes would be overwritten");
+
+			await gitOps.handleSwitchBranch("/repo", "feature");
+
+			expect(mockDialogs.confirmStashAndSwitch).not.toHaveBeenCalled();
+			expect(mockDialogs.reportGitError).toHaveBeenCalledWith(
+				"Branch switch failed",
+				expect.stringContaining("local changes would be overwritten"),
+				false,
+			);
 		});
 	});
 

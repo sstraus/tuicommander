@@ -91,6 +91,61 @@ describe("useConfirmDialog", () => {
 		});
 	});
 
+	describe("concurrent confirm() calls", () => {
+		it("queues a second confirm and shows dialogs sequentially (FIFO)", async () => {
+			const first = dialog.confirm({ title: "First", message: "1?" });
+			const second = dialog.confirm({ title: "Second", message: "2?" });
+
+			// Only the first is shown; the second waits in the queue.
+			expect(dialog.dialogState()?.title).toBe("First");
+
+			dialog.handleConfirm();
+			expect(await first).toBe(true);
+
+			// Resolving the first advances to the queued second.
+			expect(dialog.dialogState()?.title).toBe("Second");
+
+			dialog.handleClose();
+			expect(await second).toBe(false);
+			expect(dialog.dialogState()).toBe(null);
+		});
+
+		it("does not orphan the first promise when a second confirm arrives", async () => {
+			// Regression: the old single-slot pendingResolve was overwritten by the
+			// second confirm(), so the first promise never settled. If that bug
+			// returns, `await first` below hangs and the test fails via timeout.
+			const first = dialog.confirm({ title: "First", message: "1?" });
+			const second = dialog.confirm({ title: "Second", message: "2?" });
+
+			dialog.handleConfirm(); // settle the head (first)
+			expect(await first).toBe(true);
+
+			// Drain the queued second so the test leaves no pending promise.
+			dialog.handleClose();
+			expect(await second).toBe(false);
+		});
+
+		it("resolves all three queued confirms in order", async () => {
+			const results: boolean[] = [];
+			const a = dialog.confirm({ title: "A", message: "?" }).then((v) => results.push(v));
+			const b = dialog.confirm({ title: "B", message: "?" }).then((v) => results.push(v));
+			const c = dialog.confirm({ title: "C", message: "?" }).then((v) => results.push(v));
+
+			expect(dialog.dialogState()?.title).toBe("A");
+			dialog.handleConfirm(); // A -> true
+			await a;
+			expect(dialog.dialogState()?.title).toBe("B");
+			dialog.handleClose(); // B -> false
+			await b;
+			expect(dialog.dialogState()?.title).toBe("C");
+			dialog.handleConfirm(); // C -> true
+			await c;
+
+			expect(results).toEqual([true, false, true]);
+			expect(dialog.dialogState()).toBe(null);
+		});
+	});
+
 	describe("confirmRemoveWorktree()", () => {
 		it("shows dialog with correct message and resolves true on confirm", async () => {
 			const promise = dialog.confirmRemoveWorktree("feature-x");

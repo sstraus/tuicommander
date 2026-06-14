@@ -147,42 +147,76 @@ impl GitCmd {
 // Entry point
 // ---------------------------------------------------------------------------
 
-/// Remove stale `.git/index.lock` left behind by crashed external processes
-/// (e.g. Claude Code killed mid-`git status`). A lock is stale when the file
-/// is empty AND older than 5 seconds — real in-progress locks contain the
-/// serialised index, and the age guard avoids racing with a live git process
-/// that just created the file.
+/// Remove a stale `.git/index.lock` left behind by a crashed process so the
+/// next git invocation isn't blocked with `Unable to create '.git/index.lock':
+/// File exists` / `could not write index`.
+///
+/// Staleness is age-based, with two thresholds because the two crash modes
+/// produce locks of different sizes and we want a wide margin over any live
+/// git process:
+///
+/// - **Empty lock** (0 bytes): git created the lock but crashed before writing
+///   the new index. A real in-progress write fills the lock almost immediately,
+///   so a 0-byte lock older than [`EMPTY_LOCK_STALE_SECS`] is certainly orphaned.
+/// - **Non-empty lock**: git wrote the new index into the lock but died before
+///   renaming it over `.git/index` (e.g. Claude Code killed mid-`git stash`).
+///   A legitimate index write finishes in well under a second; we wait
+///   [`NONEMPTY_LOCK_STALE_SECS`] to stay safely clear of even large
+///   `stash`/`add` operations before reclaiming.
+/// A 0-byte lock is reclaimed after this many seconds (early crash, no index written yet).
+const EMPTY_LOCK_STALE_SECS: u64 = 5;
+/// A non-empty lock (index written, rename never happened) is reclaimed after this
+/// many seconds — wide margin over even large `stash`/`add` index writes.
+const NONEMPTY_LOCK_STALE_SECS: u64 = 30;
+
+/// Pure staleness rule for an `index.lock` of the given byte size and age.
+/// Split out from [`remove_stale_index_lock`] so the thresholds are unit-testable
+/// without touching the filesystem clock.
+fn is_index_lock_stale(len: u64, age_secs: u64) -> bool {
+    let threshold = if len == 0 {
+        EMPTY_LOCK_STALE_SECS
+    } else {
+        NONEMPTY_LOCK_STALE_SECS
+    };
+    age_secs >= threshold
+}
+
 fn remove_stale_index_lock(cwd: &Path) {
     let lock = cwd.join(".git/index.lock");
-    match std::fs::metadata(&lock) {
-        Ok(meta) if meta.len() == 0 => {
-            let is_old = meta
-                .modified()
-                .ok()
-                .and_then(|t| t.elapsed().ok())
-                .map(|d| d.as_secs() >= 5)
-                .unwrap_or(false);
-            if !is_old {
-                return;
-            }
-            match std::fs::remove_file(&lock) {
-                Ok(()) => {
-                    tracing::info!(
-                        source = "git_cli",
-                        "Removed stale 0-byte index.lock in {}",
-                        cwd.display()
-                    );
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        source = "git_cli",
-                        "Failed to remove stale index.lock in {}: {e}",
-                        cwd.display()
-                    );
-                }
-            }
+    let Ok(meta) = std::fs::metadata(&lock) else {
+        return;
+    };
+
+    // Without a reliable age we can't tell a stale lock from a live one — leave it.
+    let Some(age_secs) = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .map(|d| d.as_secs())
+    else {
+        return;
+    };
+
+    if !is_index_lock_stale(meta.len(), age_secs) {
+        return;
+    }
+
+    match std::fs::remove_file(&lock) {
+        Ok(()) => {
+            tracing::info!(
+                source = "git_cli",
+                "Removed stale index.lock ({} bytes, {age_secs}s old) in {}",
+                meta.len(),
+                cwd.display()
+            );
         }
-        _ => {}
+        Err(e) => {
+            tracing::warn!(
+                source = "git_cli",
+                "Failed to remove stale index.lock in {}: {e}",
+                cwd.display()
+            );
+        }
     }
 }
 
@@ -230,6 +264,25 @@ mod tests {
             .output()
             .expect("git config name");
         (dir, path)
+    }
+
+    #[test]
+    fn test_empty_lock_kept_while_fresh_removed_when_old() {
+        // 0-byte lock: kept under 5s, reclaimed at/after 5s.
+        assert!(!is_index_lock_stale(0, 0));
+        assert!(!is_index_lock_stale(0, 4));
+        assert!(is_index_lock_stale(0, 5));
+        assert!(is_index_lock_stale(0, 60));
+    }
+
+    #[test]
+    fn test_nonempty_lock_kept_until_30s() {
+        // Non-empty lock (index written, rename never happened): kept under 30s
+        // so we never nuke a live large stash/add, reclaimed at/after 30s.
+        assert!(!is_index_lock_stale(4096, 0));
+        assert!(!is_index_lock_stale(4096, 29));
+        assert!(is_index_lock_stale(4096, 30));
+        assert!(is_index_lock_stale(4096, 120));
     }
 
     #[test]
