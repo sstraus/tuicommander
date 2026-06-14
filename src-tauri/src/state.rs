@@ -257,40 +257,39 @@ impl Utf8ReadBuffer {
         combined.extend_from_slice(new_bytes);
         self.remainder.clear();
 
-        // Find the last valid UTF-8 boundary
-        let valid_up_to = match std::str::from_utf8(&combined) {
-            Ok(_) => combined.len(),
-            Err(e) => {
-                let valid = e.valid_up_to();
-                // Check if the error is due to incomplete sequence at the end
-                if e.error_len().is_none() {
-                    // Incomplete sequence — save trailing bytes for next read
-                    valid
-                } else {
-                    // Invalid byte sequence — skip the bad byte(s) and keep going
-                    // Replace the invalid portion with U+FFFD and continue
-                    let error_len = e.error_len().unwrap();
-                    let mut result =
-                        String::from_utf8_lossy(&combined[..valid + error_len]).to_string();
-                    // Process any remaining bytes after the error
-                    if valid + error_len < combined.len() {
-                        let rest = self.push(&combined[valid + error_len..]);
-                        result.push_str(&rest);
+        // Walk the buffer iteratively, emitting valid runs and one U+FFFD per invalid
+        // sequence. Iterative (not recursive) on purpose: a fully-binary chunk is one
+        // invalid run per byte, and the old recursive version blew the reader thread's
+        // stack on ~thousands of consecutive invalid bytes (4 KB binary read).
+        let mut result = String::with_capacity(combined.len());
+        let mut pos = 0;
+        loop {
+            let slice = &combined[pos..];
+            match std::str::from_utf8(slice) {
+                Ok(s) => {
+                    result.push_str(s);
+                    break;
+                }
+                Err(e) => {
+                    let valid = e.valid_up_to();
+                    // SAFETY: slice[..valid] verified valid UTF-8 by valid_up_to().
+                    result.push_str(unsafe { std::str::from_utf8_unchecked(&slice[..valid]) });
+                    match e.error_len() {
+                        // Incomplete trailing sequence — save for the next read and stop.
+                        None => {
+                            self.remainder.extend_from_slice(&slice[valid..]);
+                            break;
+                        }
+                        // Invalid byte(s) — emit one replacement char, skip them, continue.
+                        Some(error_len) => {
+                            result.push('\u{FFFD}');
+                            pos += valid + error_len;
+                        }
                     }
-                    return result;
                 }
             }
-        };
-
-        // Save incomplete trailing bytes
-        if valid_up_to < combined.len() {
-            self.remainder.extend_from_slice(&combined[valid_up_to..]);
         }
-
-        // SAFETY: `combined[..valid_up_to]` was verified as valid UTF-8 above via
-        // `std::str::from_utf8` / `Utf8Error::valid_up_to`, so `from_utf8_unchecked` is sound.
-        combined.truncate(valid_up_to);
-        unsafe { String::from_utf8_unchecked(combined) }
+        result
     }
 
     /// Flush any remaining bytes (at EOF). Incomplete sequences are dropped.
@@ -2499,11 +2498,16 @@ impl VtLogBuffer {
     }
 
     pub(crate) fn grid_get_lines(&self, start: usize, end: usize) -> Vec<String> {
+        // `start`/`end` are ABSOLUTE row indices (0 = oldest scrollback line),
+        // end-exclusive. get_row_text() treats its arg as a viewport-relative
+        // screen row, so it returned the wrong lines whenever scrollback existed.
+        // read_rows_in_range does the correct absolute→grid conversion (inclusive end).
         let total = self.grid.total_lines();
         let clamped_end = end.min(total);
-        (start..clamped_end)
-            .map(|i| self.grid.get_row_text(i))
-            .collect()
+        if start >= clamped_end {
+            return Vec::new();
+        }
+        self.grid.read_rows_in_range(start, clamped_end - 1)
     }
 
     pub(crate) fn grid_hyperlink_at(&self, row: usize, col: usize) -> Option<String> {
@@ -2885,6 +2889,30 @@ mod tests {
         assert_eq!(result1, "漢");
         let result2 = buf.push(&bytes[split..]);
         assert_eq!(result2, "字");
+    }
+
+    #[test]
+    fn test_utf8_buffer_invalid_bytes_replaced() {
+        let mut buf = Utf8ReadBuffer::new();
+        // Single invalid byte between valid ASCII → one U+FFFD, surrounding text kept.
+        assert_eq!(buf.push(b"a\xffb"), "a\u{FFFD}b");
+        // Consecutive invalid bytes → one U+FFFD each (matches from_utf8_lossy).
+        assert_eq!(buf.push(b"x\xff\xffy"), "x\u{FFFD}\u{FFFD}y");
+        // Invalid byte immediately before a valid multibyte char.
+        assert_eq!(buf.push("\u{FF}".as_bytes()), "\u{FF}"); // 0xC3 0xBF is valid UTF-8 (ÿ)
+    }
+
+    #[test]
+    fn test_utf8_buffer_large_binary_no_stack_overflow() {
+        // Regression: the old recursive push() recursed once per invalid byte, so a
+        // large all-invalid (binary) chunk overflowed the reader thread's stack. The
+        // iterative version must process it flat. 64 KB of 0xFF → 64 K replacement chars.
+        let mut buf = Utf8ReadBuffer::new();
+        let binary = vec![0xffu8; 64 * 1024];
+        let out = buf.push(&binary);
+        assert_eq!(out.chars().count(), 64 * 1024);
+        assert!(out.chars().all(|c| c == '\u{FFFD}'));
+        assert!(buf.remainder.is_empty());
     }
 
     #[test]
@@ -4218,6 +4246,38 @@ mod tests {
         let (batch2, off2) = buf.lines_since_owned(off1, usize::MAX);
         assert!(batch2.is_empty());
         assert_eq!(off2, total);
+    }
+
+    /// grid_get_lines uses ABSOLUTE row coords (0 = oldest scrollback line), not
+    /// viewport-relative. Regression: it previously called get_row_text, which
+    /// returned visible screen rows whenever scrollback was non-empty — so reading
+    /// abs 0 gave the top of the screen instead of the oldest history line.
+    #[test]
+    fn test_grid_get_lines_absolute_coords_with_scrollback() {
+        let mut buf = VtLogBuffer::new(3, 80, 1000); // 3 visible rows → forces scrollback
+        for i in 0..9 {
+            buf.process(format!("line {i}\r\n").as_bytes());
+        }
+        buf.process(b"line 9"); // no trailing newline → bottom visible row is "line 9"
+
+        // NOTE: pass a large `end` so grid_get_lines clamps to the GRID's total
+        // (history + visible screen). Do NOT use buf.total_lines() here — that is
+        // VtLogBuffer::total_pushed (finalized log lines only, excludes the live
+        // visible screen) and is a different quantity than grid.total_lines().
+        let lines = buf.grid_get_lines(0, usize::MAX);
+        // Absolute row 0 is the OLDEST line; the bottom of the visible screen is the
+        // NEWEST. The old viewport-relative get_row_text path returned the top VISIBLE
+        // row (≈ "line 7") for index 0 and dropped the real history entirely.
+        assert_eq!(lines.first().map(String::as_str), Some("line 0"));
+        assert_eq!(lines.last().map(String::as_str), Some("line 9"));
+        assert_eq!(buf.grid_get_lines(0, 1), vec!["line 0".to_string()]);
+        // Rows come back contiguous oldest→newest — history AND visible screen,
+        // no gaps and no out-of-range empties.
+        for w in lines.windows(2) {
+            let a: usize = w[0].trim_start_matches("line ").parse().expect("line N");
+            let b: usize = w[1].trim_start_matches("line ").parse().expect("line N");
+            assert_eq!(b, a + 1, "rows must be contiguous ascending: {a} -> {b}");
+        }
     }
 
     /// lines_since_owned returns correct results after buffer rotation
