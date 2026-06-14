@@ -91,8 +91,15 @@ pub(crate) async fn start_conversation(
                             let _ = on_event.send(other);
                             if done { break; }
                         }
-                        Err(_) => {
-                            // Flush remaining batches on channel close
+                        Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
+                            // Consumer fell behind on a high-throughput stream. Some
+                            // chunks were dropped, but the conversation is NOT over —
+                            // continue so Completed/Error still reach the frontend.
+                            // Breaking here would wedge the UI spinner forever.
+                            tracing::warn!("conversation bridge lagged {n} events — text chunks lost");
+                        }
+                        Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                            // Flush remaining batches on channel close, then stop.
                             flush(&on_event, &mut text_batch, &mut reasoning_batch);
                             break;
                         }
