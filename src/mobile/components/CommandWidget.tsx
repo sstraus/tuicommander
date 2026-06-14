@@ -1,6 +1,7 @@
 import { For, Show } from "solid-js";
 import { appLogger } from "../../stores/appLogger";
 import { rpc } from "../../transport";
+import { sendCommand } from "../../utils/sendCommand";
 import type { AgentCommand } from "../config/agentCommands";
 import { getAgentCommands } from "../config/agentCommands";
 import { retryWrite } from "../utils/retryWrite";
@@ -15,13 +16,18 @@ interface CommandWidgetProps {
 export function CommandWidget(props: CommandWidgetProps) {
 	const commandSet = () => getAgentCommands(props.agentType);
 
-	async function sendCommand(text: string) {
+	async function send(text: string) {
 		props.onDismiss();
 		try {
-			// Ctrl-U clears current input, send command text, then Enter separately.
-			// Ink-based TUIs treat \r as newline when combined with text in one write.
-			await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + text }));
-			await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\r" }));
+			// Route through the canonical sendCommand helper: it handles the
+			// agent-specific Ctrl-U prefix, the split Enter (Ink raw mode), and
+			// bracketed-paste for multi-line input — and skips Ctrl-U on native
+			// Windows shells where it would echo literally.
+			await sendCommand(
+				(data) => retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data })),
+				text,
+				props.agentType,
+			);
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : String(err);
 			appLogger.error("network", `Command send failed after retries: ${msg}`);
@@ -31,7 +37,7 @@ export function CommandWidget(props: CommandWidgetProps) {
 	async function sendModel(model: string) {
 		const cmd = commandSet().modelCommand;
 		if (!cmd) return;
-		await sendCommand(`${cmd} ${model}`);
+		await send(`${cmd} ${model}`);
 	}
 
 	async function sendPermissionToggle() {
@@ -66,7 +72,7 @@ export function CommandWidget(props: CommandWidgetProps) {
 						<div class={styles.commandRow}>
 							<For each={commandSet().commands}>
 								{(cmd: AgentCommand) => (
-									<button class={styles.chip} onClick={() => sendCommand(cmd.command)}>
+									<button class={styles.chip} onClick={() => send(cmd.command)}>
 										{cmd.label}
 									</button>
 								)}

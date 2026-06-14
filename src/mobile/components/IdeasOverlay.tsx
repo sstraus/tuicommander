@@ -2,6 +2,7 @@ import { createSignal, For, Show } from "solid-js";
 import { appLogger } from "../../stores/appLogger";
 import { notesStore } from "../../stores/notes";
 import { rpc } from "../../transport";
+import { sendCommand } from "../../utils/sendCommand";
 import { formatRelativeTime } from "../../utils/time";
 import { retryWrite } from "../utils/retryWrite";
 import styles from "./IdeasOverlay.module.css";
@@ -42,8 +43,12 @@ export function IdeasOverlay(props: IdeasOverlayProps) {
 		props.onDismiss();
 		notesStore.markUsed(note.id);
 		try {
-			await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\x15" + note.text }));
-			await retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data: "\r" }));
+			// Route through the canonical sendCommand helper (split Enter for Ink
+			// raw mode, bracketed-paste for multi-line, Windows-native Ctrl-U skip).
+			await sendCommand(
+				(data) => retryWrite(() => rpc("write_pty", { sessionId: props.sessionId, data })),
+				note.text,
+			);
 		} catch (err) {
 			appLogger.error("network", `Ideas send failed: ${err instanceof Error ? err.message : String(err)}`);
 		}

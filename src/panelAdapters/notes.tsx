@@ -4,9 +4,9 @@ import { initPanelWindow } from "../hooks/initPanelWindow";
 import { invoke } from "../invoke";
 import type { PanelAdapter } from "../panelRouter";
 import { repositoriesStore } from "../stores/repositories";
-import { terminalsStore } from "../stores/terminals";
 import { uiStore } from "../stores/ui";
 import { createPanelSyncReceiver } from "../utils/panelSync";
+import { sendTextToActiveTerminal } from "../utils/sendToActiveTerminal";
 
 const DetachedNotesPanel: Component<{ params: URLSearchParams }> = (props) => {
 	const repoPath = props.params.get("repoPath");
@@ -40,15 +40,10 @@ export const notesPanelAdapter: PanelAdapter = {
 		const repoPath = repositoriesStore.state.activeRepoPath;
 		return repoPath ? { repoPath } : {};
 	},
-	handleAction(action: string, data: unknown) {
+	async handleAction(action: string, data: unknown) {
 		if (action === "sendToTerminal" && data) {
 			const d = data as Record<string, unknown>;
-			const text = d.text as string;
-			const active = terminalsStore.getActive();
-			if (active?.ref) {
-				active.ref.write(`${text}\r`);
-				requestAnimationFrame(() => active.ref?.focus());
-			}
+			await sendTextToActiveTerminal(d.text as string);
 			void invoke("focus_main_window");
 		}
 	},

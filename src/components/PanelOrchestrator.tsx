@@ -2,8 +2,8 @@ import { type Component, Show } from "solid-js";
 import { diffTabsStore } from "../stores/diffTabs";
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
 import { settingsStore } from "../stores/settings";
-import { terminalsStore } from "../stores/terminals";
 import { uiStore } from "../stores/ui";
+import { sendTextToActiveTerminal } from "../utils/sendToActiveTerminal";
 import { AIChatPanel } from "./AIChatPanel";
 import { AiTriagePanel } from "./AiTriagePanel";
 import { FileBrowserPanel } from "./FileBrowserPanel";
@@ -47,13 +47,7 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
 					visible={uiStore.state.notesPanelVisible}
 					repoPath={props.repoPath}
 					onClose={() => uiStore.toggleNotesPanel()}
-					onSendToTerminal={(text) => {
-						const active = terminalsStore.getActive();
-						if (active?.ref) {
-							active.ref.write(`${text}\r`);
-							requestAnimationFrame(() => active.ref?.focus());
-						}
-					}}
+					onSendToTerminal={(text) => void sendTextToActiveTerminal(text)}
 				/>
 			</Show>
 
