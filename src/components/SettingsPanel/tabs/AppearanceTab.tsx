@@ -92,6 +92,35 @@ function getThemeColor(name: string): string {
 	return map[name] ?? theme.foreground ?? "#c0c0c0";
 }
 
+/** WCAG relative luminance of a #rrggbb color (0 = black, 1 = white). */
+function luminance(hex: string): number {
+	const h = hex.replace("#", "");
+	const ch = (i: number) => {
+		const s = parseInt(h.slice(i, i + 2), 16) / 255;
+		return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+	};
+	return 0.2126 * ch(0) + 0.7152 * ch(2) + 0.0722 * ch(4);
+}
+
+/**
+ * Pick a readable text color (near-white or near-black) for a powerline segment
+ * fill — whichever yields the higher WCAG contrast. Real prompts (agnoster) do
+ * this implicitly; the ANSI `white`/`black` tokens alone fail against saturated
+ * fills — worst on light themes where ANSI `white` is a dark gray, and on
+ * mid-luminance fills where a fixed threshold guesses wrong.
+ */
+function readableOn(fillHex: string): string {
+	const dark = "#1a1a1a";
+	const light = "#ffffff";
+	const l = luminance(fillHex);
+	const contrast = (a: number, b: number) => {
+		const hi = Math.max(a, b);
+		const lo = Math.min(a, b);
+		return (hi + 0.05) / (lo + 0.05);
+	};
+	return contrast(luminance(dark), l) >= contrast(luminance(light), l) ? dark : light;
+}
+
 const TerminalPreview: Component = () => {
 	const fontFamily = createMemo(() => FONT_FAMILIES[settingsStore.state.font] ?? "monospace");
 	const fontSize = () => settingsStore.state.defaultFontSize;
@@ -153,7 +182,15 @@ const TerminalPreview: Component = () => {
 					ctx.fillRect(padLeft + col * cellW, y, text.length * cellW, cellH);
 				}
 
-				ctx.fillStyle = span.color ? getThemeColor(span.color) : fgDefault;
+				// Powerline segment text: pick a readable color for the fill instead
+				// of the literal ANSI token (which fails against saturated fills).
+				// Arrow glyphs (U+E0B0) keep their span color — they tint the bg.
+				const isArrowGlyph = [...text].some((ch) => (ch.codePointAt(0) ?? 0) >= 0xe000);
+				if (span.bg && !isArrowGlyph) {
+					ctx.fillStyle = readableOn(getThemeColor(span.bg));
+				} else {
+					ctx.fillStyle = span.color ? getThemeColor(span.color) : fgDefault;
+				}
 				const fontStr = span.bold ? `700 ${size}px ${font}` : `${weight} ${size}px ${font}`;
 				ctx.font = fontStr;
 

@@ -328,6 +328,11 @@ const BUILTIN_THEMES: &[(&str, &str)] = &[
         "delicate-one.json",
         include_str!("themes/delicate-one.json"),
     ),
+    ("deep-black.json", include_str!("themes/deep-black.json")),
+    (
+        "minimal-kiwi.json",
+        include_str!("themes/minimal-kiwi.json"),
+    ),
 ];
 
 /// Seed the themes directory with built-in themes (only when the dir doesn't exist).
