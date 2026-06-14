@@ -122,10 +122,16 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 		if (mdTabsStore.state.activeId === props.tab.id) focusWrapper();
 	});
 
-	// Expose openSearch so the global find shortcut (App.findInTerminal) can open
-	// the SearchBar when the wrapper — not the iframe — holds focus.
+	// Expose openSearch (global find shortcut) and reload (Cmd+R) so the global
+	// handlers can drive this tab when the wrapper — not the iframe — holds focus.
+	// reload is what lets Cmd+R refresh a web/preview tab instead of opening the
+	// Run Command dialog (cross-origin URL iframes can't receive the in-iframe
+	// reload-request, so the parent must trigger it).
 	createEffect(() => {
-		mdTabsStore.setHandle(props.tab.id, { openSearch: () => setSearchVisible(true) });
+		mdTabsStore.setHandle(props.tab.id, {
+			openSearch: () => setSearchVisible(true),
+			reload: reloadIframe,
+		});
 		onCleanup(() => mdTabsStore.clearHandle(props.tab.id));
 	});
 
