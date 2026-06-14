@@ -910,16 +910,16 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 ### 9.1 Whisper Inference
 - Local processing via `whisper-rs` (no cloud)
 - macOS: GPU-accelerated via Metal
-- Linux/Windows: CPU-only
+- Windows: GPU-accelerated via Vulkan
+- Linux: CPU (optional CUDA/Vulkan build feature)
 
 ### 9.2 Models
 | Model | Size | Quality |
 |-------|------|---------|
-| tiny | ~75 MB | Low |
-| base | ~140 MB | Fair |
-| small | ~460 MB | Good |
-| medium | ~1.5 GB | Very good |
-| large-v3-turbo | ~1.6 GB | Best (recommended) |
+| small | ~488 MB | Good |
+| small.en | ~488 MB | Good (English-only) |
+| large-v2 | ~3.0 GB | Highest accuracy (slow) |
+| large-v3-turbo | ~1.6 GB | Best (recommended, default) |
 
 ### 9.3 Push-to-Talk
 - Default hotkey: `F5` (configurable, registered globally)

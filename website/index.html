@@ -431,7 +431,7 @@
           <ul class="feature-points">
             <li>Global Workspace — every repo, branch, and terminal in a single app</li>
             <li>Detachable tabs — float any terminal into its own OS window</li>
-            <li>N-way split panes — up to 6 panes per tab, drag-resize, per-branch layout memory</li>
+            <li>Split panes — up to 4 panes per tab, drag-resize, per-branch layout memory</li>
             <li>Multi-monitor — drag detached windows to any display</li>
             <li>Native drag and drop — drop files and folders into the terminal</li>
           </ul>
@@ -508,7 +508,7 @@
             <li>Add or remove MCP servers without restarting anything</li>
             <li>Circuit breakers, health checks, credential management, hot-reload</li>
             <li>TUIC SDK v1.0 — <code>tuic.activeRepo</code>, <code>tuic.toast</code>, <code>tuic.onRepoChange</code> and more</li>
-            <li>Plugin system with 4 capability tiers, terminal watchers, and regex triggers</li>
+            <li>Plugin system with 5 capability tiers, terminal watchers, and regex triggers</li>
             <li>Community registry — browse and install with one click</li>
           </ul>
         </div>
@@ -543,11 +543,11 @@
           <svg class="feature-icon" viewBox="0 0 16 16" fill="currentColor"><path d="M9.504.43a1.516 1.516 0 0 1 2.437 1.713L10.415 5.5h2.123c1.57 0 2.346 1.909 1.22 3.004l-7.34 7.142a1.249 1.249 0 0 1-1.847-.041 1.249 1.249 0 0 1-.137-1.363L5.96 10.5H3.462c-1.57 0-2.346-1.909-1.22-3.004L9.504.43z"/></svg>
           <h3>Automate repetitive workflows</h3>
           <p class="feature-solution">
-            24 built-in Smart Prompts turn common tasks into one-click operations. Context variables like branch, diff, and PR data are resolved automatically &mdash; just click and go.
+            29 built-in Smart Prompts turn common tasks into one-click operations. Context variables like branch, diff, and PR data are resolved automatically &mdash; just click and go.
           </p>
           <ul class="feature-points">
             <li>Smart Commit, Review Changes, Create PR, Fix CI &mdash; all one click</li>
-            <li>31 context variables auto-resolved from git, GitHub, and terminal state</li>
+            <li>35 context variables auto-resolved from git, GitHub, terminal, and file context</li>
             <li>Inject mode (PTY write), headless mode (one-shot subprocess), or shell script mode (direct execution, no AI needed, 60s timeout)</li>
             <li>Shell scripts get the same context variables &mdash; automate git, deployment, and CI without an agent</li>
             <li>Variable Input Dialog for any values that need manual input</li>
@@ -601,9 +601,9 @@ Use <span class="str">`gh pr create`</span>.
             On-device speech-to-text powered by Whisper. No cloud, no API keys, no data leaving your machine.
           </p>
           <ul class="feature-points">
-            <li>GPU-accelerated on macOS (Metal), CPU fallback elsewhere</li>
+            <li>GPU-accelerated on macOS (Metal) and Windows (Vulkan), CPU on Linux</li>
             <li>Push-to-talk hotkey — text injected into active terminal</li>
-            <li>5 model sizes from tiny (75 MB) to large-v3-turbo (1.6 GB)</li>
+            <li>4 model sizes from Small (488 MB) to Large V2 (3 GB), incl. large-v3-turbo (1.6 GB)</li>
           </ul>
         </div>
       </div>
@@ -749,10 +749,10 @@ Use <span class="str">`gh pr create`</span>.
         <div class="terminal-item"><strong>IDE launchers</strong> — VS Code, Cursor, Zed, Xcode</div>
         <div class="terminal-item"><strong>Command palette</strong> — fuzzy search all actions</div>
         <div class="terminal-item"><strong>Detachable tabs</strong> — float any terminal into its own window</div>
-        <div class="terminal-item"><strong>N-way split panes</strong> — up to 6 panes, drag-resize, per-branch layout</div>
-        <div class="terminal-item"><strong>13 bundled fonts</strong> — JetBrains Mono, Fira Code, and more</div>
+        <div class="terminal-item"><strong>Split panes</strong> — up to 4 panes, drag-resize, per-branch layout</div>
+        <div class="terminal-item"><strong>11 bundled fonts</strong> — JetBrains Mono, Fira Code, and more</div>
         <div class="terminal-item"><strong>Claude usage dashboard</strong> — weekly limits, heatmaps</div>
-        <div class="terminal-item"><strong>Smart Prompts Library</strong> — 24 built-in AI automation prompts + custom templates with auto-resolved context variables</div>
+        <div class="terminal-item"><strong>Smart Prompts Library</strong> — 29 built-in AI automation prompts + custom templates with auto-resolved context variables</div>
         <div class="terminal-item"><strong>Custom keybindings</strong> — rebind shortcuts, chord support, conflict detection</div>
         <div class="terminal-item"><strong>Tab status dots</strong> — 6 visual states: idle, running, unseen, awaiting, error</div>
         <div class="terminal-item"><strong>Post-merge cleanup</strong> — one-click branch delete, worktree archive</div>

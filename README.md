@@ -63,7 +63,7 @@ Launch Claude Code on five branches at once — or mix agents. Each session runs
 
 ### Agent observability — not just terminals
 
-TUICommander auto-detects **9 AI coding agents** (Claude Code, Codex CLI, Aider, Gemini CLI, Amp, Cursor Agent, OpenCode, Droid, Goose) and understands what they're doing:
+TUICommander auto-detects **10 AI coding agents** (Claude Code, Codex CLI, Aider, Gemini CLI, Amp, Cursor Agent, OpenCode, Droid, Goose, Grok) and understands what they're doing:
 
 - **Rate limit detection** — Provider-specific patterns with countdown timers per session.
 - **Question detection** — Y/N prompts, numbered options, inquirer-style menus. Tab indicator, notification sound, keyboard overlay.
@@ -132,16 +132,16 @@ A **mobile companion PWA** lets you monitor agents from your phone, answer quest
 **29 built-in Smart Prompts** turn common tasks into one-click operations: Smart Commit, Review Changes, Create PR, Fix CI, and more. Context variables like branch, diff, and PR data are resolved automatically.
 
 - Inject mode (PTY write), headless mode (subprocess), or shell script mode (direct execution)
-- 31 context variables auto-resolved from git, GitHub, and terminal state
+- 35 context variables auto-resolved from git, GitHub, terminal, and file context
 - Create your own prompts with the same variable system
 
 ### Talk to your agents
 
 On-device speech-to-text powered by whisper-rs. No cloud service, no API keys, no data leaving your machine.
 
-- GPU-accelerated on macOS (Metal), CPU fallback on Windows/Linux
+- GPU-accelerated on macOS (Metal) and Windows (Vulkan), CPU on Linux (optional CUDA/Vulkan)
 - Push-to-talk hotkey — text injected into the active terminal
-- 5 model sizes from tiny (75 MB) to large-v3-turbo (1.6 GB)
+- 4 model sizes from Small (488 MB) to Large V2 (3 GB), incl. large-v3-turbo (1.6 GB)
 
 ### Extend everything
 
@@ -173,7 +173,7 @@ TUICommander isn't a black box. Everything you click, you can also drive from a 
 | Capability | Ghostty / Kitty | Warp | Cursor IDE | Claude Desktop | TUICommander |
 |---|---|---|---|---|---|
 | Terminal sessions | Yes | Yes | Yes | No | Yes (50) |
-| AI coding agents | No | Partial | Built-in | Built-in | Any agent (9 detected) |
+| AI coding agents | No | Partial | Built-in | Built-in | Any agent (10 detected) |
 | Parallel agents | No | No | Limited | No | Unlimited |
 | Git worktree orchestration | No | No | No | No | Automatic |
 | Agent observability | No | No | No | No | Real-time |
@@ -193,7 +193,7 @@ TUICommander isn't a black box. Everything you click, you can also drive from a 
 <summary><strong>Terminal features</strong> — 50 sessions, splits, detach, find, persistence</summary>
 
 - Up to 50 concurrent PTY sessions, each with independent zoom (8–32px)
-- Split panes: vertical (`Cmd+\`) or horizontal (`Cmd+Alt+\`), up to 6 panes, drag-resize
+- Split panes: vertical (`Cmd+\`) or horizontal (`Cmd+Alt+\`), up to 4 panes, drag-resize
 - Detachable tabs: float any terminal into its own OS window, re-attaches on close
 - Find in terminal (`Cmd+F`): regex, case-sensitive, whole word, match navigation
 - Cross-terminal search: type `~` in command palette to search all open terminal buffers

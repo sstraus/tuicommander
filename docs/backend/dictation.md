@@ -185,11 +185,10 @@ Available models (GGML format):
 
 | Model | Size | Quality |
 |-------|------|---------|
-| `tiny` | ~75 MB | Low |
-| `base` | ~140 MB | Fair |
-| `small` | ~460 MB | Good |
-| `medium` | ~1.5 GB | Very good |
-| `large-v3-turbo` | ~1.6 GB | Best (recommended) |
+| `small` | ~488 MB | Good |
+| `small.en` | ~488 MB | Good (English-only) |
+| `large-v2` | ~3.0 GB | Highest accuracy (slow) |
+| `large-v3-turbo` | ~1.6 GB | Best (recommended, default) |
 
 ## Text Corrections
 
@@ -208,8 +207,9 @@ Stored in dictation config. Applied after transcription, before injecting into t
 
 ## Platform Notes
 
-- **macOS:** Metal acceleration via whisper-rs (GPU-accelerated)
-- **Linux/Windows:** CPU-only (Metal feature conditionally compiled)
+- **macOS:** Metal acceleration via whisper-rs (GPU-accelerated, always)
+- **Windows:** Vulkan acceleration via whisper-rs (GPU-accelerated, always — target-specific dep)
+- **Linux:** CPU-only (optional `cuda`/`vulkan` build feature)
 - Microphone permissions deferred until first use (avoids startup permission popup)
 
 ## Microphone Permission Detection

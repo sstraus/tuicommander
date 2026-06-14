@@ -25,11 +25,10 @@ The hotkey works globally — even when TUICommander is not focused.
 
 | Model | Size | Quality |
 |-------|------|---------|
-| tiny | ~75 MB | Low (fast, inaccurate) |
-| base | ~140 MB | Fair |
-| small | ~460 MB | Good |
-| medium | ~1.5 GB | Very good |
-| **large-v3-turbo** | **~1.6 GB** | **Best (recommended)** |
+| small | ~488 MB | Good |
+| small.en | ~488 MB | Good (English-only) |
+| large-v2 | ~3.0 GB | Highest accuracy (slow) |
+| **large-v3-turbo** | **~1.6 GB** | **Best (recommended, default)** |
 
 Models are downloaded to `<config_dir>/models/` and cached between sessions.
 
@@ -57,7 +56,8 @@ Select which microphone to use from the dropdown in dictation settings. Lists al
 ## Platform Notes
 
 - **macOS:** GPU-accelerated transcription via Metal
-- **Linux/Windows:** CPU-only transcription
+- **Windows:** GPU-accelerated transcription via Vulkan
+- **Linux:** CPU-only (optional CUDA/Vulkan build feature)
 - Microphone permission is requested on first use (not at app startup)
 
 ## Status Indicators
