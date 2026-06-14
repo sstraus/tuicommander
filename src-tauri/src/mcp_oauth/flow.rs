@@ -189,6 +189,8 @@ impl OAuthFlowManager {
         } else {
             scopes
         };
+        // Always request a refresh token (see `with_offline_access`).
+        let scopes = with_offline_access(scopes);
 
         // Generate PKCE + state nonce.
         let pkce = TokenManager::generate_pkce();
@@ -354,6 +356,21 @@ impl OAuthFlowManager {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// Ensure the requested scope set includes `offline_access`.
+///
+/// Most OIDC/OAuth2 authorization servers only issue a refresh token when
+/// `offline_access` is part of the authorization request. Without it the
+/// upstream's access token expires (often within ~48h) and the connection
+/// silently drops to `NeedsAuth` — `refresh_if_needed` then fails with
+/// "no refresh_token available", forcing the user to re-authorize by hand.
+/// Idempotent: a scope set that already contains `offline_access` is unchanged.
+fn with_offline_access(mut scopes: Vec<String>) -> Vec<String> {
+    if !scopes.iter().any(|s| s == "offline_access") {
+        scopes.push("offline_access".to_string());
+    }
+    scopes
+}
+
 /// Build the full authorization request URL with query parameters.
 fn build_authorization_url(
     authorization_endpoint: &str,
@@ -459,6 +476,36 @@ fn generate_state_nonce() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn with_offline_access_appends_when_absent() {
+        assert_eq!(
+            with_offline_access(vec!["read".into(), "write".into()]),
+            vec![
+                "read".to_string(),
+                "write".to_string(),
+                "offline_access".to_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn with_offline_access_is_idempotent() {
+        let out = with_offline_access(vec!["offline_access".into(), "read".into()]);
+        assert_eq!(
+            out.iter().filter(|s| *s == "offline_access").count(),
+            1,
+            "must not duplicate offline_access"
+        );
+    }
+
+    #[test]
+    fn with_offline_access_adds_to_empty_scope_set() {
+        assert_eq!(
+            with_offline_access(vec![]),
+            vec!["offline_access".to_string()]
+        );
+    }
 
     fn oauth2_config() -> UpstreamAuth {
         UpstreamAuth::OAuth2 {
