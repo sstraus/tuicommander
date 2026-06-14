@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type {
+	terminalStatusLabel as LabelFn,
+	reconcileActivityOrder as ReconcileFn,
+} from "../../utils/activitySnapshot";
 
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
 
@@ -90,5 +94,88 @@ describe("activitySnapshot", () => {
 
 		const snap = buildActivitySnapshot();
 		expect(snap.terminals[0].isPromoted).toBe(true);
+	});
+});
+
+describe("terminalStatusLabel", () => {
+	let terminalStatusLabel: typeof LabelFn;
+	beforeEach(async () => {
+		vi.resetModules();
+		vi.doMock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
+		terminalStatusLabel = (await import("../../utils/activitySnapshot")).terminalStatusLabel;
+	});
+
+	const cls = { rateLimited: "RL", error: "ERR", waiting: "WAIT", working: "WORK", idle: "IDLE" };
+
+	it("rate-limited wins over everything", () => {
+		expect(terminalStatusLabel("busy", "error", true, cls)).toEqual({ label: "Rate limited", className: "RL" });
+	});
+
+	it("labels an API error as Error, NOT Waiting for input", () => {
+		// Regression: an errored agent must not be collapsed into "Waiting for input".
+		expect(terminalStatusLabel("idle", "error", false, cls)).toEqual({ label: "Error", className: "ERR" });
+	});
+
+	it("labels a question as Waiting for input", () => {
+		expect(terminalStatusLabel("idle", "question", false, cls)).toEqual({
+			label: "Waiting for input",
+			className: "WAIT",
+		});
+	});
+
+	it("maps shellState busy/idle when no awaiting input", () => {
+		expect(terminalStatusLabel("busy", null, false, cls)).toEqual({ label: "Working", className: "WORK" });
+		expect(terminalStatusLabel("idle", null, false, cls)).toEqual({ label: "Idle", className: "IDLE" });
+		expect(terminalStatusLabel(null, null, false, cls)).toEqual({ label: "—", className: "IDLE" });
+	});
+});
+
+describe("reconcileActivityOrder", () => {
+	let reconcileActivityOrder: typeof ReconcileFn;
+	beforeEach(async () => {
+		vi.resetModules();
+		vi.doMock("@tauri-apps/api/core", () => ({ invoke: mockInvoke }));
+		reconcileActivityOrder = (await import("../../utils/activitySnapshot")).reconcileActivityOrder;
+	});
+
+	const working = (set: Set<string>) => (id: string) => set.has(id);
+
+	it("partitions working-first, idle-second, each in first-seen order", () => {
+		const spine: string[] = [];
+		const order = reconcileActivityOrder(spine, ["a", "b", "c", "d"], working(new Set(["b", "d"])));
+		expect(order).toEqual(["b", "d", "a", "c"]);
+	});
+
+	it("keeps a terminal in place while its working state is unchanged", () => {
+		const spine: string[] = [];
+		const w = new Set(["a", "b"]);
+		const first = reconcileActivityOrder(spine, ["a", "b", "c"], working(w));
+		// Recompute with the SAME states — order must be identical (no avanti-e-indietro).
+		const second = reconcileActivityOrder(spine, ["a", "b", "c"], working(w));
+		expect(second).toEqual(first);
+	});
+
+	it("moves a terminal only when it crosses the working/idle boundary", () => {
+		const spine: string[] = [];
+		reconcileActivityOrder(spine, ["a", "b", "c"], working(new Set(["a"])));
+		// b flips to working — it joins the working group at its spine position.
+		const after = reconcileActivityOrder(spine, ["a", "b", "c"], working(new Set(["a", "b"])));
+		expect(after).toEqual(["a", "b", "c"]);
+	});
+
+	it("appends newly-seen terminals at the end of their group", () => {
+		const spine: string[] = [];
+		reconcileActivityOrder(spine, ["a", "b"], working(new Set(["a"])));
+		const after = reconcileActivityOrder(spine, ["a", "b", "c"], working(new Set(["a", "c"])));
+		// c is new + working → after existing working 'a'; idle 'b' stays last.
+		expect(after).toEqual(["a", "c", "b"]);
+	});
+
+	it("drops removed terminals while preserving relative order", () => {
+		const spine: string[] = [];
+		reconcileActivityOrder(spine, ["a", "b", "c"], working(new Set()));
+		const after = reconcileActivityOrder(spine, ["a", "c"], working(new Set()));
+		expect(after).toEqual(["a", "c"]);
+		expect(spine).toEqual(["a", "c"]);
 	});
 });

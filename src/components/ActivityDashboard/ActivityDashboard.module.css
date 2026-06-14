@@ -153,6 +153,12 @@
   color: var(--error);
 }
 
+.statusError {
+  background: rgba(244, 135, 113, 0.28);
+  color: var(--error);
+  font-weight: 600;
+}
+
 .statusIdle {
   background: var(--bg-tertiary);
   color: var(--fg-muted);

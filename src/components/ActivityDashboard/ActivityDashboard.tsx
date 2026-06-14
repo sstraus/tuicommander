@@ -4,7 +4,7 @@ import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { rateLimitStore } from "../../stores/ratelimit";
 import { repositoriesStore } from "../../stores/repositories";
 import { terminalsStore } from "../../stores/terminals";
-import { projectName, terminalStatusLabel } from "../../utils/activitySnapshot";
+import { projectName, reconcileActivityOrder, terminalStatusLabel } from "../../utils/activitySnapshot";
 import { navigateToTerminal } from "../../utils/navigateToTerminal";
 import { getRepoColor } from "../../utils/repoColor";
 import { formatRelativeTime } from "../../utils/time";
@@ -14,6 +14,7 @@ import s from "./ActivityDashboard.module.css";
 
 export const statusClasses = {
 	rateLimited: s.statusRateLimited,
+	error: s.statusError,
 	waiting: s.statusWaiting,
 	working: s.statusWorking,
 	idle: s.statusIdle,
@@ -146,39 +147,18 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 		};
 	};
 
-	/** Order-only snapshot: working terminals first, idle second.
-	 *  Working group keeps store insertion order (stable); idle group sorts by most recent activity. */
-	const liveOrder = createMemo(() => {
-		const ids = terminalsStore.getAttachedIds();
-		const items = ids.map((id, idx) => {
+	// Persistent display spine: each terminal keeps its slot so rows never
+	// reshuffle while their working/idle state is unchanged. A terminal moves ONLY
+	// when it crosses the working/idle boundary (a real state change). No timers,
+	// no recency re-sort — position is a pure function of (working, spine index).
+	const spine: string[] = [];
+	const orderedIds = createMemo(() => {
+		const isWorking = (id: string): boolean => {
 			const term = terminalsStore.get(id);
 			const isRL = !!(term?.sessionId && rateLimitStore.isRateLimited(term.sessionId));
-			const working = isRL || !!term?.awaitingInput || terminalsStore.isBusy(id);
-			return { id, working, idx, t: term?.idleSince ?? terminalsStore.getLastDataAt(id) ?? 0 };
-		});
-		const workingItems = items.filter((x) => x.working).sort((a, b) => a.idx - b.idx);
-		const idleItems = items.filter((x) => !x.working).sort((a, b) => b.t - a.t);
-		return [...workingItems, ...idleItems].map((x) => x.id);
-	});
-
-	// Snapshot sort order every 10s so rows don't reshuffle on every mutation.
-	// New items/removals trigger an immediate snapshot via count change.
-	const [orderSnapshot, setOrderSnapshot] = createSignal<string[]>(liveOrder());
-	createEffect(() => {
-		if (!isOpen()) return;
-		setOrderSnapshot(liveOrder());
-		const interval = setInterval(() => setOrderSnapshot(liveOrder()), 10_000);
-		onCleanup(() => clearInterval(interval));
-	});
-
-	let prevCount = liveOrder().length;
-	const orderedIds = createMemo(() => {
-		const current = liveOrder();
-		if (current.length !== prevCount) {
-			prevCount = current.length;
-			setOrderSnapshot(current);
-		}
-		return orderSnapshot();
+			return isRL || !!term?.awaitingInput || terminalsStore.isBusy(id);
+		};
+		return reconcileActivityOrder(spine, terminalsStore.getAttachedIds(), isWorking);
 	});
 
 	const storeTerminals = createMemo(() => orderedIds().map(buildRow).filter(Boolean) as TerminalRow[]);
