@@ -4,7 +4,7 @@ resolver = "2"
 
 [package]
 name = "tuicommander"
-version = "1.4.2"
+version = "1.4.3"
 description = "TUICommander - Native platform for AI coding agents"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"

@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [1.4.3] - 2026-06-14
+
+### Added
+- **Two new built-in themes** — deep-black and minimal-kiwi.
+- **Cmd/Ctrl+R reloads a web/preview tab** — When a web or HTML-preview tab is active, the Run shortcut reloads it instead of opening the Run Command dialog.
+
+### Changed
+- **Readable theme contrast** — Raised muted / bright-black tones across catppuccin-mocha, darksun, delicate-one, nord, solarized-dark, tokyo-night and vscode-light so muted text clears a readable floor. The Appearance terminal preview now picks powerline segment text color by WCAG contrast against the fill instead of the literal ANSI token.
+- **Unified PTY command injection** — The Notes "Send to Terminal" action (attached and detached), the mobile command/ideas widgets, agent auto-retry, and the git terminal fallback all route through the canonical `sendCommand` helper, so the Enter keypress registers correctly even for Ink-based agents in raw mode.
+
+### Fixed
+- **No false completion sounds on sleep/wake** — Busy→idle transitions in the grace window after a system wake, and shell-integrated terminals that went busy without a command actually running (OSC 133), no longer fire spurious completion notifications.
+- **Terminal stability** — Fixed a stale-read crash when a PTY auto-closes mid-frame, a document-listener leak when a terminal unmounts while subscribing, a layout-forcing read on every scrollbar drag, and a ghost-terminal resurrection from a late OSC 133 flush after removal.
+- **Resilient git operations** — Stale `.git/index.lock` files left by crashed processes are reclaimed on size+age thresholds; branch-switch failures show the full git output and offer Retry on recoverable lock contention; concurrent confirmation dialogs queue instead of being silently dropped; rapid branch selection is serialized so it can't duplicate terminals.
+- **MCP agent grid streaming** — Agent sessions spawned over MCP now register their grid watch channel and a terminal alias, so `format=grid` WebSocket streaming works.
+- **MCP OAuth refresh tokens** — Authorization requests now include `offline_access`, so upstreams issue a refresh token instead of silently dropping to a re-auth prompt after the access token expires.
+- **Binary terminal output** — The UTF-8 read buffer decodes iteratively (no reader-thread stack overflow on large binary reads), and absolute scrollback line reads return the correct rows.
+- **AI Chat** — A lagging event stream no longer wedges the chat spinner; completion and error events still arrive.
+
 ## [1.4.2] - 2026-06-13
 
 ### Added
