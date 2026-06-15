@@ -3181,6 +3181,15 @@ pub(crate) fn spawn_reader_thread(
                 .get(&session_id)
                 .and_then(|s| s.lock().cwd.clone());
             let mut processor = ChunkProcessor::new(session_cwd, tuic_session);
+            // pty-output is emitted only for frontend activity detection (the canvas
+            // renders from grid frames and discards the text). Emitting it per-chunk
+            // flooded the WebView main thread under output storms (`yes`), starving
+            // keydown so Ctrl+C never reached write_pty. Throttle to ~10/s — enough for
+            // the activity dot / lastDataAt, no flood.
+            // DEFERRED (2026-06-16) — cleaner: compute activity fully in Rust and drop
+            // pty-output in desktop entirely (frontend-only-renders rule). Needs moving
+            // Terminal.tsx activity/lastDataAt onto an existing throttled signal.
+            let mut last_pty_output_emit: Option<std::time::Instant> = None;
             loop {
                 while paused.load(Ordering::Relaxed) {
                     std::thread::sleep(std::time::Duration::from_millis(10));
@@ -3225,15 +3234,32 @@ pub(crate) fn spawn_reader_thread(
                                 }
                             }
 
+                            // Emit pty-output for frontend activity detection, THROTTLED.
+                            // Root cause of the `yes`-flood Ctrl+C wedge (2026-06-16):
+                            // this event fired per read() chunk (thousands/s under a flood).
+                            // Each one is a Tauri event the WebView main thread must
+                            // deserialize+dispatch; the storm of short tasks starved the
+                            // event loop so keydown never ran → Ctrl+C never reached
+                            // write_pty (verified: 0 write_pty calls during flood, normal
+                            // when throttled). The canvas renders from grid frames and
+                            // discards this text (handlePtyData ignores `data`), so dropping
+                            // intermediate chunks is safe — we only need a periodic "output
+                            // happened" pulse for the activity dot / lastDataAt.
                             #[cfg(feature = "desktop")]
-                            if let Some(app) = state.app_handle.read().as_ref() {
-                                let _ = app.emit(
-                                    &format!("pty-output-{session_id}"),
-                                    PtyOutput {
-                                        session_id: session_id.clone(),
-                                        data: clamped_data,
-                                    },
-                                );
+                            {
+                                let should_emit = last_pty_output_emit
+                                    .map(|t| t.elapsed() >= std::time::Duration::from_millis(100))
+                                    .unwrap_or(true);
+                                if should_emit && let Some(app) = state.app_handle.read().as_ref() {
+                                    let _ = app.emit(
+                                        &format!("pty-output-{session_id}"),
+                                        PtyOutput {
+                                            session_id: session_id.clone(),
+                                            data: clamped_data,
+                                        },
+                                    );
+                                    last_pty_output_emit = Some(std::time::Instant::now());
+                                }
                             }
                         }
 
@@ -3795,11 +3821,16 @@ pub(crate) async fn write_pty(
     tokio::task::spawn_blocking(move || {
     // Restore cursor if hidden — Ink-based agents send DECTCEM hide for
     // spinners but may not send CNORM when returning to the prompt.
-    if let Some(vt) = state.vt_log_buffers.get(&session_id) {
-        let mut vt = vt.lock();
-        if !vt.is_cursor_visible() {
-            vt.process(b"\x1b[?25h");
-        }
+    // Best-effort try_lock: this is cosmetic (touches the local grid, not the PTY)
+    // and MUST NOT block input delivery. Under an output flood the ticker
+    // (serialize_dirty_rows) and reader thrash this same vt lock; a blocking lock
+    // here would starve input. If contended, skip — the next frame restores the
+    // cursor anyway.
+    if let Some(vt) = state.vt_log_buffers.get(&session_id)
+        && let Some(mut vt) = vt.try_lock()
+        && !vt.is_cursor_visible()
+    {
+        vt.process(b"\x1b[?25h");
     }
 
     if let Some(entry) = state.sessions.get(&session_id) {
