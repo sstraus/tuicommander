@@ -297,14 +297,12 @@ html, body {
   min-height: 0;
 }
 
-/* Scrollbar styling — single source of truth, unified across the whole app
-   (sidebar, editors, markdown preview, panels, lists). The terminal's custom DOM
-   scrollbar and the HTML-preview iframe replicate these values (separate render
-   contexts that can't inherit this rule). 14px track, 10px thumb via a 2px
-   transparent border + padding-box clip; darker, subtle hover. */
+/* Scrollbar styling — base look for the whole app chrome (sidebar, side panels
+   like Git/Notes/Outline, lists, toolbars). Thin 8px. The wide 14px "terminal"
+   look is scoped to central pane content (.pane-content) below — see that rule. */
 ::-webkit-scrollbar {
-  width: 14px;
-  height: 14px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -313,18 +311,32 @@ html, body {
 
 ::-webkit-scrollbar-thumb {
   background: var(--bg-highlight);
+  border-radius: var(--radius-md);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--fg-muted);
+}
+
+/* Central pane content (terminal area, code editor, diff, markdown preview) —
+   the wide 14px scrollbar that matches the terminal's custom DOM scrollbar
+   (SCROLLBAR_PX). Scoped to .pane-content so the sidebar and docked side panels
+   (Git, Notes, …) keep the thin 8px base above. 10px thumb via a 2px transparent
+   border + padding-box clip; darker, subtle hover. */
+.pane-content ::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+
+.pane-content ::-webkit-scrollbar-thumb {
   border-radius: 5px;
   border: 2px solid transparent;
   background-clip: padding-box;
 }
 
-::-webkit-scrollbar-thumb:hover {
+.pane-content ::-webkit-scrollbar-thumb:hover {
   background: rgba(204, 204, 204, 0.3);
   background-clip: padding-box;
-}
-
-::-webkit-scrollbar-corner {
-  background: transparent;
 }
 
 /* Touch device: eliminate double-tap-to-activate caused by sticky :hover.
