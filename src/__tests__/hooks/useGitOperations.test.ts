@@ -2299,7 +2299,9 @@ describe("useGitOperations", () => {
 
 		it("does not offer a retry for a non-lock stash failure", async () => {
 			seedRepo();
-			mockRepo.switchBranch.mockRejectedValueOnce("dirty").mockRejectedValueOnce("Stash failed: No space left on device");
+			mockRepo.switchBranch
+				.mockRejectedValueOnce("dirty")
+				.mockRejectedValueOnce("Stash failed: No space left on device");
 
 			await gitOps.handleSwitchBranch("/repo", "feature");
 

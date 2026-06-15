@@ -101,15 +101,13 @@ describe("getCompletionSuppression", () => {
 		it("suppresses a shell-integrated terminal that went busy without running a command", () => {
 			// The mdkb/sleep-wake case: terminal has shell integration but no command
 			// executed during this busy window → false-busy, must not fire.
-			expect(
-				getCompletionSuppression(baseCtx({ usesShellIntegration: true, ranCommandDuringBusy: false })),
-			).toBe("no-command-ran");
+			expect(getCompletionSuppression(baseCtx({ usesShellIntegration: true, ranCommandDuringBusy: false }))).toBe(
+				"no-command-ran",
+			);
 		});
 
 		it("fires when a shell-integrated terminal actually ran a command", () => {
-			expect(
-				getCompletionSuppression(baseCtx({ usesShellIntegration: true, ranCommandDuringBusy: true })),
-			).toBeNull();
+			expect(getCompletionSuppression(baseCtx({ usesShellIntegration: true, ranCommandDuringBusy: true }))).toBeNull();
 		});
 
 		it("does NOT gate terminals without shell integration (fallback to legacy behaviour)", () => {

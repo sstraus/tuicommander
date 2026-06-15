@@ -1889,7 +1889,9 @@ impl ChunkProcessor {
         // repaint existing rows (SIGWINCH reflow, cursor blink, statusline)?
         // Captured BEFORE `last_vt_log_total` is updated below. A pure reflow
         // never grows the buffer; real agent work scrolls in new lines.
-        let vt_log_grew = vt_log_total.map(|t| t > self.last_vt_log_total).unwrap_or(false);
+        let vt_log_grew = vt_log_total
+            .map(|t| t > self.last_vt_log_total)
+            .unwrap_or(false);
 
         // Emit scrollback-overlay growth/rotation event (throttled to 100ms).
         // Frontend listens to `pty-vt-log-total-{session_id}` and updates

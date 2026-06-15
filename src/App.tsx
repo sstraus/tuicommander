@@ -1452,7 +1452,10 @@ const App: Component = () => {
 			await sendCommand((data) => invoke("write_pty", { sessionId, data }), cmd, agentType, shellFamily);
 			setStatusInfo(`git ${args[0]} requires auth — running in terminal`);
 		} catch (err) {
-			appLogger.error("network", `git fallback to terminal failed: ${err instanceof Error ? err.message : String(err)}`);
+			appLogger.error(
+				"network",
+				`git fallback to terminal failed: ${err instanceof Error ? err.message : String(err)}`,
+			);
 		}
 	};
 

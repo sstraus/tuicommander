@@ -163,6 +163,7 @@ impl GitCmd {
 ///   A legitimate index write finishes in well under a second; we wait
 ///   [`NONEMPTY_LOCK_STALE_SECS`] to stay safely clear of even large
 ///   `stash`/`add` operations before reclaiming.
+///
 /// A 0-byte lock is reclaimed after this many seconds (early crash, no index written yet).
 const EMPTY_LOCK_STALE_SECS: u64 = 5;
 /// A non-empty lock (index written, rename never happened) is reclaimed after this
