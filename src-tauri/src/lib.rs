@@ -6,6 +6,8 @@
 pub(crate) mod agent;
 #[allow(dead_code)] // Incremental build: hook_command/maps consumed by the installer (story 045)
 pub(crate) mod agent_hook;
+#[allow(dead_code)] // Incremental build: install/uninstall/install_state wired by Tauri commands (story 046)
+pub(crate) mod agent_hook_installer;
 pub(crate) mod agent_mcp;
 pub(crate) mod agent_session;
 pub(crate) mod ai_agent;
