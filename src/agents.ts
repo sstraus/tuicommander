@@ -377,6 +377,25 @@ export const MCP_SUPPORT: Record<AgentType, boolean> = {
 	api: false,
 };
 
+/**
+ * Which agents support native-hook state instrumentation (settings-hook shape).
+ * Codex/Grok/OpenCode land in later adapter stories and flip on then.
+ */
+export const HOOK_SUPPORT: Record<AgentType, boolean> = {
+	claude: true,
+	gemini: true,
+	opencode: false,
+	aider: false,
+	codex: false,
+	amp: false,
+	cursor: false,
+	goose: false,
+	grok: false,
+	droid: false,
+	git: false,
+	api: false,
+};
+
 /** Agent display info for UI */
 export const AGENT_DISPLAY: Record<AgentType, { icon: string; color: string }> = {
 	claude: { icon: "C", color: "#d97706" },

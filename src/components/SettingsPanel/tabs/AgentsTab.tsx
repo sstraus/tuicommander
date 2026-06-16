@@ -1,5 +1,14 @@
 import { type Component, createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
-import { AGENT_DISPLAY, AGENT_TYPES, AGENTS, type AgentRunConfig, type AgentType, MCP_SUPPORT } from "../../../agents";
+import {
+	AGENT_DISPLAY,
+	AGENT_TYPES,
+	AGENTS,
+	type AgentHookState,
+	type AgentRunConfig,
+	type AgentType,
+	HOOK_SUPPORT,
+	MCP_SUPPORT,
+} from "../../../agents";
 import {
 	CATEGORY_ORDER,
 	CC_ENV_FLAGS,
@@ -600,11 +609,14 @@ const AgentRow: Component<{
 	const [addingConfig, setAddingConfig] = createSignal(false);
 	const [mcpStatus, setMcpStatus] = createSignal<McpStatus | null>(null);
 	const [mcpLoading, setMcpLoading] = createSignal(false);
+	const [hookState, setHookState] = createSignal<AgentHookState | null>(null);
+	const [hookLoading, setHookLoading] = createSignal(false);
 
 	const agent = () => AGENTS[props.agentType];
 	const display = () => AGENT_DISPLAY[props.agentType];
 	const configs = () => configStore.getRunConfigs(props.agentType);
 	const supportsMcp = () => MCP_SUPPORT[props.agentType];
+	const supportsHooks = () => HOOK_SUPPORT[props.agentType];
 
 	const loadMcpStatus = async () => {
 		if (!supportsMcp() || !isTauri()) return;
@@ -616,11 +628,38 @@ const AgentRow: Component<{
 		}
 	};
 
+	const loadHookState = async () => {
+		if (!supportsHooks() || !isTauri()) return;
+		try {
+			const st = await invoke<AgentHookState>("get_agent_hook_state", { agentType: props.agentType });
+			setHookState(st);
+		} catch (err) {
+			appLogger.error("config", `Failed to get hook state for ${props.agentType}`, err);
+		}
+	};
+
+	const handleHookToggle = async () => {
+		if (hookLoading()) return;
+		setHookLoading(true);
+		try {
+			const next = !(configStore.getHookInstrumentation(props.agentType) ?? false);
+			// The command persists the flag AND installs/removes the hooks.
+			await invoke("set_agent_hook_instrumentation", { agentType: props.agentType, enabled: next });
+			configStore.syncHookInstrumentation(props.agentType, next);
+			await loadHookState();
+		} catch (err) {
+			appLogger.error("config", `Hook instrumentation toggle failed for ${props.agentType}`, err);
+		} finally {
+			setHookLoading(false);
+		}
+	};
+
 	const handleExpand = () => {
 		const newVal = !expanded();
 		setExpanded(newVal);
 		if (newVal) {
 			loadMcpStatus();
+			loadHookState();
 			props.onExpand?.(props.agentType);
 		}
 	};
@@ -732,6 +771,30 @@ const AgentRow: Component<{
 						</label>
 						<p class={s.hint}>Inject "continue" on 5xx errors with backoff (5s, 15s, 30s)</p>
 					</div>
+
+					{/* Native-hook state instrumentation (Claude/Gemini) */}
+					<Show when={supportsHooks()}>
+						<div class={a.expandedSection}>
+							<label class={a.toggleRow} onClick={(e) => e.stopPropagation()}>
+								<input
+									type="checkbox"
+									checked={configStore.getHookInstrumentation(props.agentType) ?? false}
+									disabled={hookLoading()}
+									onChange={handleHookToggle}
+								/>
+								<span>Use native agent hooks for status</span>
+								<Show when={hookState() === "installed" || hookState() === "outdated"}>
+									<span class={a.badge} data-type={hookState() === "outdated" ? "notfound" : "mcp"}>
+										{hookState() === "outdated" ? "Hooks: re-enable" : "Hooks installed"}
+									</span>
+								</Show>
+							</label>
+							<p class={s.hint}>
+								Drive busy/idle/waiting from {agent().name}'s own hooks instead of output heuristics. TUIC installs
+								and removes the hooks cleanly and never touches your own. Applies on next launch.
+							</p>
+						</div>
+					</Show>
 
 					{/* Per-agent TUIC protocol markers — visible when MCP bridge is installed */}
 					<Show when={mcpStatus()?.installed}>

@@ -24,6 +24,7 @@ interface AgentConfigsState {
 			env_flags?: Record<string, string>;
 			intent_tab_title?: boolean;
 			suggest_followups?: boolean;
+			hook_instrumentation?: boolean;
 		}
 	>;
 	/** Which agent CLI to use for headless prompt execution (user-chosen in Settings) */
@@ -286,6 +287,27 @@ export function createAgentConfigsStore(io: AgentConfigIO = defaultIO) {
 			} catch (_err) {
 				// saveToDisk already logged the error
 			}
+		},
+
+		/** Get per-agent hook_instrumentation flag (undefined/false = off). */
+		getHookInstrumentation(type: AgentType): boolean | undefined {
+			return state.agents[type]?.hook_instrumentation;
+		},
+
+		/**
+		 * Mirror the hook_instrumentation flag in memory after the
+		 * `set_agent_hook_instrumentation` command has persisted it (and installed/
+		 * removed the hooks). Does NOT save to disk — the command owns persistence.
+		 */
+		syncHookInstrumentation(type: AgentType, value: boolean): void {
+			setState(
+				produce((s) => {
+					if (!s.agents[type]) {
+						s.agents[type] = { run_configs: [] };
+					}
+					s.agents[type].hook_instrumentation = value;
+				}),
+			);
 		},
 
 		/** Get all env flags for an agent */
