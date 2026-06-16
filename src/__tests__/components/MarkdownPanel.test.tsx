@@ -62,14 +62,16 @@ describe("MarkdownPanel", () => {
 
 	it("renders close button", () => {
 		const { container } = render(() => <MarkdownPanel visible={true} repoPath="/test/repo" onClose={() => {}} />);
-		const closeBtn = container.querySelector(".close");
+		// Located by accessible title, not a styling class — the close control is an
+		// SVG button in PanelWindowControls (no `.close` styling hook).
+		const closeBtn = container.querySelector('[title="Close"]');
 		expect(closeBtn).not.toBeNull();
 	});
 
 	it("calls onClose when close button is clicked", () => {
 		const handleClose = vi.fn();
 		const { container } = render(() => <MarkdownPanel visible={true} repoPath="/test/repo" onClose={handleClose} />);
-		const closeBtn = container.querySelector(".close")!;
+		const closeBtn = container.querySelector('[title="Close"]')!;
 		fireEvent.click(closeBtn);
 		expect(handleClose).toHaveBeenCalledOnce();
 	});

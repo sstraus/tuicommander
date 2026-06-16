@@ -74,7 +74,19 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
 				<PanelResizeHandle panelId="git-panel" />
 			</Show>
 			<div class={p.header}>
-				<div class={s.tabs}>
+				<div
+					class={s.tabs}
+					// The strip hides its scrollbar (see GitPanel.module.css); map vertical
+					// wheel/trackpad to horizontal scroll so the overflowing tabs stay reachable.
+					onWheel={(e) => {
+						const el = e.currentTarget;
+						if (el.scrollWidth <= el.clientWidth) return;
+						const delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+						if (delta === 0) return;
+						el.scrollLeft += delta;
+						e.preventDefault();
+					}}
+				>
 					{TABS.map((tab) => (
 						<button class={cx(s.tab, activeTab() === tab.id && s.tabActive)} onClick={() => setActiveTab(tab.id)}>
 							{tab.label}

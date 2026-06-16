@@ -28,6 +28,19 @@
   overflow-x: auto;
   flex: 1;
   min-width: 0;
+  /* Breathing room so the last tab never butts against the window controls. */
+  margin-right: 6px;
+  /* Hide the overflow scrollbar entirely — the GitPanel.tsx onWheel handler maps
+     vertical wheel/trackpad to horizontal scroll instead. The app's global
+     ::-webkit-scrollbar forces *reserved* (space-taking) scrollbars, so a visible
+     bar here would reserve height: inflating this row above the window controls
+     (misaligned icons) and leaving dead space below. VSCode/Zed tab strips scroll
+     without a visible bar for the same reason. */
+  scrollbar-width: none;
+}
+
+.tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .tab {
@@ -37,7 +50,8 @@
   color: var(--fg-secondary);
   font-size: var(--font-sm);
   font-family: var(--font-ui);
-  padding: 6px 12px;
+  /* Tighter horizontal padding so all four labels fit before scrolling kicks in. */
+  padding: 6px 8px;
   cursor: pointer;
   white-space: nowrap;
   transition: color 0.1s ease, border-color 0.15s ease;

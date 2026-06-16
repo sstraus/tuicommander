@@ -23,6 +23,15 @@ export const IconReattach = () => (
 	</svg>
 );
 
+// SVG close (not the `&times;` glyph) so it shares the exact 14×14 geometry and
+// optical center of the detach/reattach icons — a text glyph sits a hair higher
+// and looks misaligned next to them.
+export const IconClose = () => (
+	<svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3">
+		<path d="M3.5 3.5l7 7M10.5 3.5l-7 7" stroke-linecap="round" />
+	</svg>
+);
+
 interface PanelWindowControlsProps {
 	panelId: string;
 	mode: "inline" | "detached";
@@ -43,11 +52,11 @@ export const PanelWindowControls: Component<PanelWindowControlsProps> = (props) 
 				</button>
 			</Show>
 			<button
-				class={`${s.btn} ${s.close}`}
+				class={s.btn}
 				onClick={() => (props.mode === "detached" ? closePanel(props.panelId) : props.onInlineClose?.())}
 				title="Close"
 			>
-				&times;
+				<IconClose />
 			</button>
 		</div>
 	);
