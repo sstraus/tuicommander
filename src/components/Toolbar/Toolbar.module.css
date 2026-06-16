@@ -27,7 +27,7 @@
   position: relative;
   justify-content: flex-end;
   padding-right: 10px;
-  gap: 8px;
+  gap: 2px;
   -webkit-app-region: drag;
 }
 
@@ -64,7 +64,8 @@
 }
 
 /* Sidebar toggle */
-.sidebarToggle {
+.sidebarToggle,
+.filterToggle {
   width: 26px;
   height: 26px;
   display: flex;
@@ -80,9 +81,18 @@
   -webkit-app-region: no-drag;
 }
 
-.sidebarToggle:hover {
+.sidebarToggle:hover,
+.filterToggle:hover {
   background: var(--bg-tertiary);
   color: var(--fg-primary);
+}
+
+/* Repo filter icon — loud accent state when "active only" is engaged so it is
+   obvious repos are being filtered. */
+.filterToggleActive,
+.filterToggleActive:hover {
+  background: var(--accent);
+  color: var(--text-on-accent);
 }
 
 /* Branch button */

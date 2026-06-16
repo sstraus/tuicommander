@@ -32,6 +32,11 @@ interface UIStoreState {
 	 *  (not persisted) — toggled via Cmd+Alt+Enter. */
 	focusMode: boolean;
 
+	/** Repo filter: when true the sidebar shows only repositories that have at
+	 *  least one open terminal. Session-only (not persisted) — toggled from the
+	 *  toolbar filter icon next to the sidebar collapse button. */
+	repoFilterActiveOnly: boolean;
+
 	// Sidebar width
 	sidebarWidth: number;
 
@@ -93,6 +98,7 @@ function createUIStore() {
 	const [state, setState] = createStore<UIStoreState>({
 		sidebarVisible: true,
 		focusMode: false,
+		repoFilterActiveOnly: false,
 		sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
 		markdownPanelVisible: false,
 		notesPanelVisible: false,
@@ -430,6 +436,15 @@ function createUIStore() {
 		// Focus mode (session-only, not persisted)
 		toggleFocusMode(): void {
 			setState("focusMode", (v) => !v);
+		},
+
+		// Repo filter (session-only, not persisted)
+		toggleRepoFilter(): void {
+			setState("repoFilterActiveOnly", (v) => !v);
+		},
+
+		setRepoFilterActiveOnly(active: boolean): void {
+			setState("repoFilterActiveOnly", active);
 		},
 
 		setSidebarVisible(visible: boolean): void {

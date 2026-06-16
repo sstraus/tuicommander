@@ -44,6 +44,35 @@
   /* container for repo sections */
 }
 
+/* ── Repo filter status banner (shown only while "active only" is engaged) ── */
+.filterStatus {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: calc(100% - 16px);
+  margin: 0 8px 6px;
+  padding: 4px 8px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border: none;
+  border-left: 2px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: var(--font-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.filterStatus:hover {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+
+.filterStatusClear {
+  margin-left: auto;
+  text-decoration: underline;
+  opacity: 0.85;
+}
+
 .footer {
   height: var(--status-height);
   min-height: var(--status-height);

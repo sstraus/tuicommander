@@ -260,6 +260,27 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 						TUICommander
 					</text>
 				</svg>
+				<Show when={uiStore.state.sidebarVisible}>
+					<button
+						class={s.filterToggle}
+						classList={{ [s.filterToggleActive]: uiStore.state.repoFilterActiveOnly }}
+						onClick={() => uiStore.toggleRepoFilter()}
+						title={
+							uiStore.state.repoFilterActiveOnly
+								? t("toolbar.filterActiveOn", "Showing active repos only — click to show all")
+								: t("toolbar.filterActiveOff", "Show only repos with open terminals")
+						}
+					>
+						<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+							<path
+								d="M1.5 2.5h13l-5 6v5l-3 1.5v-6.5l-5-6Z"
+								stroke="currentColor"
+								stroke-width="1.3"
+								stroke-linejoin="round"
+							/>
+						</svg>
+					</button>
+				</Show>
 				<button
 					class={s.sidebarToggle}
 					onClick={() => uiStore.toggleSidebar()}

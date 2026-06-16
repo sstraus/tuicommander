@@ -67,6 +67,35 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 		return layout.ungrouped.length > 0 || layout.groups.some((g) => g.repos.length > 0);
 	});
 
+	// Repo filter lives in uiStore (session-only). When active, only repos with at
+	// least one open terminal are shown. The toggle is the toolbar filter icon next
+	// to the sidebar collapse button; here we only read + render the filtered list.
+	const repoIsActive = (repo: RepositoryState) => Object.values(repo.branches).some((b) => b.terminals.length > 0);
+
+	// Layout after applying the repo filter. In "active" mode, empty groups are
+	// dropped entirely so no orphaned group header is left behind.
+	const filteredLayout = createMemo(() => {
+		const layout = groupedLayout();
+		if (!uiStore.state.repoFilterActiveOnly) return layout;
+		const groups = layout.groups
+			.map((entry) => ({ ...entry, repos: entry.repos.filter(repoIsActive) }))
+			.filter((entry) => entry.repos.length > 0);
+		const ungrouped = layout.ungrouped.filter(repoIsActive);
+		return { groups, ungrouped };
+	});
+
+	// True when the filtered layout has at least one visible repo. Distinguishes
+	// "no repos at all" from "filter hides everything" for the empty state.
+	const hasFilteredRepos = createMemo(() => {
+		const layout = filteredLayout();
+		return layout.ungrouped.length > 0 || layout.groups.some((g) => g.repos.length > 0);
+	});
+
+	const countRepos = (layout: { groups: Array<{ repos: unknown[] }>; ungrouped: unknown[] }) =>
+		layout.ungrouped.length + layout.groups.reduce((n, g) => n + g.repos.length, 0);
+	const totalRepoCount = createMemo(() => countRepos(groupedLayout()));
+	const shownRepoCount = createMemo(() => countRepos(filteredLayout()));
+
 	const drag = useSidebarDragDrop();
 
 	// Add-repo context menu for local vs remote
@@ -196,7 +225,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 	const repoShortcutStarts = createMemo(() => {
 		const starts: Record<string, number> = {};
 		let counter = 1;
-		const layout = groupedLayout();
+		const layout = filteredLayout();
 		// Groups first — skip collapsed groups and collapsed/non-expanded repos
 		for (const entry of layout.groups) {
 			if (entry.group.collapsed) continue;
@@ -287,11 +316,35 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 		<aside id="sidebar" class={s.sidebar} data-testid="sidebar">
 			{/* Content */}
 			<div class={s.content}>
+				{/* Repo filter status — only rendered while the "active only" filter is
+				    engaged (toggled from the toolbar icon). Keeps it unmistakable that
+				    repos are hidden, so nobody panics, while taking zero space at rest. */}
+				<Show when={hasVisibleRepos() && uiStore.state.repoFilterActiveOnly}>
+					<button
+						class={s.filterStatus}
+						onClick={() => uiStore.setRepoFilterActiveOnly(false)}
+						title={t("sidebar.filterShowAll", "Show all")}
+					>
+						<svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+							<path
+								d="M1.5 2.5h13l-5 6v5l-3 1.5v-6.5l-5-6Z"
+								stroke="currentColor"
+								stroke-width="1.3"
+								stroke-linejoin="round"
+							/>
+						</svg>
+						<span>
+							{t("sidebar.filterActiveOnly", "Active only")} · {shownRepoCount()}/{totalRepoCount()}
+						</span>
+						<span class={s.filterStatusClear}>{t("sidebar.filterShowAll", "Show all")}</span>
+					</button>
+				</Show>
+
 				{/* Repository Section */}
 				<div>
 					<div class={s.repoList} data-sidebar-list>
 						{/* Grouped repos */}
-						<For each={groupedLayout().groups}>
+						<For each={filteredLayout().groups}>
 							{(entry) => (
 								<GroupSection
 									group={entry.group}
@@ -312,11 +365,20 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 							)}
 						</For>
 						{/* Ungrouped repos */}
-						<For each={groupedLayout().ungrouped}>{(repo) => renderRepoSection(repo)}</For>
+						<For each={filteredLayout().ungrouped}>{(repo) => renderRepoSection(repo)}</For>
 						<Show when={!hasVisibleRepos()}>
 							<div class={s.empty}>
 								<p>{t("sidebar.noRepositories", "No repositories")}</p>
 								<button onClick={handleAddRepoClick}>{t("sidebar.addRepository", "Add Repository")}</button>
+							</div>
+						</Show>
+						{/* Filter hides every repo — offer a way back to "all" */}
+						<Show when={hasVisibleRepos() && !hasFilteredRepos()}>
+							<div class={s.empty}>
+								<p>{t("sidebar.noActiveRepos", "No repositories with open terminals")}</p>
+								<button onClick={() => uiStore.setRepoFilterActiveOnly(false)}>
+									{t("sidebar.filterShowAll", "Show all")}
+								</button>
 							</div>
 						</Show>
 					</div>
