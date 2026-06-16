@@ -31,6 +31,7 @@ import { diffTabsStore } from "../../stores/diffTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { referencesStore } from "../../stores/references";
 import { repositoriesStore } from "../../stores/repositories";
+import { settingsStore } from "../../stores/settings";
 import { uiStore } from "../../stores/ui";
 import { openFileAction } from "../../utils/filePreview";
 import { isAbsolutePath } from "../../utils/pathUtils";
@@ -39,6 +40,7 @@ import e from "../shared/editor-header.module.css";
 import s from "./CodeEditorTab.module.css";
 import { EditorSearch } from "./EditorSearch";
 import { type GutterChange, gitChangeGutter, setChangesEffect } from "./gitGutter";
+import { type BlameLine, inlineBlame, setBlameEffect, setBlameEnabledEffect } from "./inlineBlame";
 import { detectLanguage } from "./languageDetection";
 import { searchOverview } from "./searchOverview";
 import { codeEditorTheme } from "./theme";
@@ -406,12 +408,51 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 		})();
 	});
 
+	// Inline git blame: toggle reactively from settings (off → no annotation).
+	createEffect(() => {
+		const view = editorView();
+		if (!view) return;
+		view.dispatch({ effects: setBlameEnabledEffect(settingsStore.state.inlineBlameEnabled) });
+	});
+
+	// Inline git blame: fetch HEAD blame on load/save/revision bump — the same
+	// triggers as the gutter diff above, NEVER on cursor movement (the ViewPlugin
+	// follows the cursor over already-loaded data). Skipped for external files,
+	// when there's no repo, or when the feature is disabled.
+	createEffect(() => {
+		const view = editorView();
+		const repoPath = props.repoPath;
+		const rev = repoPath ? repositoriesStore.getRevision(repoPath) : 0;
+		const saved = savedContent();
+		const enabled = settingsStore.state.inlineBlameEnabled;
+		void rev;
+		if (!view) return;
+		if (!enabled || !repoPath || isExternal() || !saved) {
+			view.dispatch({ effects: setBlameEffect([]) });
+			return;
+		}
+		void (async () => {
+			try {
+				const lines = await invoke<BlameLine[]>("get_file_blame", {
+					path: fsRoot(),
+					file: props.filePath,
+				});
+				// The tab may have been swapped/closed during the await.
+				if (editorView() !== view) return;
+				view.dispatch({ effects: setBlameEffect(lines) });
+			} catch (err) {
+				appLogger.debug("editor", "inline blame fetch failed", { error: String(err) });
+			}
+		})();
+	});
+
 	// Base extensions
 	createExtension(codeEditorTheme);
 	createExtension(lineNumbers());
 	createExtension(history());
 	createExtension(foldGutter());
 	createExtension(gitChangeGutter());
+	createExtension(inlineBlame());
 	createExtension(drawSelection());
 	createExtension(highlightActiveLine());
 	createExtension(highlightActiveLineGutter());

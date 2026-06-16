@@ -597,6 +597,9 @@ pub(crate) struct AppConfig {
     /// User-defined launchers shown in the "Open in" menu alongside built-ins.
     #[serde(default)]
     pub(crate) custom_launchers: Vec<CustomLauncher>,
+    /// Show GitLens-style inline git blame on the active line in the code editor.
+    #[serde(default = "default_true")]
+    pub(crate) inline_blame_enabled: bool,
 }
 
 /// A user-defined launcher for the "Open in" menu. The executable is spawned
@@ -727,6 +730,7 @@ impl Default for AppConfig {
             index_strategy: default_index_strategy(),
             standby_timeout_minutes: default_standby_timeout(),
             custom_launchers: Vec::new(),
+            inline_blame_enabled: true,
         }
     }
 }
@@ -1838,6 +1842,7 @@ mod tests {
             auto_update_plugins_enabled: false,
             standby_timeout_minutes: 5,
             custom_launchers: Vec::new(),
+            inline_blame_enabled: true,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));

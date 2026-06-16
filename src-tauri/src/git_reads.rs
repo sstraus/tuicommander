@@ -761,6 +761,13 @@ impl GitReads for GixGitReads {
             let sig = commit.author().map_err(|e| e.to_string())?;
             let author = sig.name.to_str_lossy().trim().to_string();
             let author_time = sig.time().map_err(|e| e.to_string())?.seconds;
+            let summary = commit
+                .message()
+                .map_err(|e| e.to_string())?
+                .summary()
+                .to_str_lossy()
+                .trim()
+                .to_string();
             let hash = entry.commit_id.to_string();
             for (i, line) in lines.iter().enumerate() {
                 // gix keeps the line terminator in the token; `git blame
@@ -775,6 +782,7 @@ impl GitReads for GixGitReads {
                     hash: hash.clone(),
                     author: author.clone(),
                     author_time,
+                    summary: summary.clone(),
                     line_number: entry.start_in_blamed_file + i as u32 + 1,
                     content,
                 });

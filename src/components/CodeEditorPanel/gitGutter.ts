@@ -129,8 +129,9 @@ const changeGutter = gutter({
 // --- Scrollbar overview ruler ---
 
 /** Holds the raw change list (fed by the same `setChanges` effect as the gutter)
- * so the overview ruler can render ticks without re-parsing. */
-const changesField = StateField.define<GutterChange[]>({
+ * so the overview ruler can render ticks without re-parsing. Exported so the
+ * inline-blame widget can reuse it to mark uncommitted (added/modified) lines. */
+export const changesField = StateField.define<GutterChange[]>({
 	create: () => [],
 	update(value, tr) {
 		for (const e of tr.effects) {

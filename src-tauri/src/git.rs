@@ -2921,6 +2921,9 @@ pub(crate) struct BlameLine {
     pub hash: String,
     pub author: String,
     pub author_time: i64,
+    /// First line of the commit message (the subject). Shown in the editor's
+    /// inline-blame annotation; empty for commits with no message.
+    pub summary: String,
     pub line_number: u32,
     pub content: String,
 }
@@ -2931,24 +2934,27 @@ fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
     let mut current_hash = String::new();
     let mut current_line_number: u32 = 0;
 
-    // Cache commit metadata to avoid re-parsing for consecutive lines from same commit
-    let mut commit_cache: HashMap<String, (String, i64)> = HashMap::new();
+    // Cache commit metadata (author, author-time, summary) to avoid re-parsing for
+    // consecutive lines from the same commit.
+    let mut commit_cache: HashMap<String, (String, i64, String)> = HashMap::new();
 
     let mut author = String::new();
     let mut author_time: i64 = 0;
+    let mut summary = String::new();
     let mut expecting_hash = true; // true when the next non-header line should be a commit hash
 
     for line in output.lines() {
         if let Some(content) = line.strip_prefix('\t') {
             // Content line — finalize this blame entry
-            let (cached_author, cached_time) = commit_cache
+            let (cached_author, cached_time, cached_summary) = commit_cache
                 .entry(current_hash.clone())
-                .or_insert_with(|| (author.clone(), author_time));
+                .or_insert_with(|| (author.clone(), author_time, summary.clone()));
 
             lines.push(BlameLine {
                 hash: current_hash.clone(),
                 author: cached_author.clone(),
                 author_time: *cached_time,
+                summary: cached_summary.clone(),
                 line_number: current_line_number,
                 content: content.to_string(),
             });
@@ -2977,12 +2983,15 @@ fn parse_blame_porcelain(output: &str) -> Vec<BlameLine> {
                 // Need to parse headers
                 author.clear();
                 author_time = 0;
+                summary.clear();
                 expecting_hash = false;
             }
         } else if let Some(rest) = line.strip_prefix("author ") {
             author = rest.to_string();
         } else if let Some(rest) = line.strip_prefix("author-time ") {
             author_time = rest.parse().unwrap_or(0);
+        } else if let Some(rest) = line.strip_prefix("summary ") {
+            summary = rest.to_string();
         }
     }
 
@@ -4301,6 +4310,7 @@ filename test.txt
         assert_eq!(lines[0].hash, "abc1234567890123456789012345678901234abcd");
         assert_eq!(lines[0].author, "Alice");
         assert_eq!(lines[0].author_time, 1700000000);
+        assert_eq!(lines[0].summary, "Initial commit");
         assert_eq!(lines[0].line_number, 1);
         assert_eq!(lines[0].content, "Hello, world!");
     }
@@ -4396,8 +4406,30 @@ filename test.txt
         assert_eq!(lines.len(), 2);
         assert_eq!(lines[0].author, "Alice");
         assert_eq!(lines[0].hash, "aaaa234567890123456789012345678901234aaaa");
+        assert_eq!(lines[0].summary, "First");
         assert_eq!(lines[1].author, "Bob");
         assert_eq!(lines[1].hash, "bbbb234567890123456789012345678901234bbbb");
+        assert_eq!(lines[1].summary, "Second");
+    }
+
+    #[test]
+    fn parse_blame_porcelain_summary_cached_across_group_lines() {
+        // The `summary` header appears only on the first line of a commit group;
+        // subsequent lines of the same commit must inherit it from the cache.
+        let output = "\
+aaaa234567890123456789012345678901234aaaa 1 1 2
+author Bob
+author-time 1700000001
+summary Add two lines
+filename test.txt
+\tLine one
+aaaa234567890123456789012345678901234aaaa 2 2
+\tLine two
+";
+        let lines = parse_blame_porcelain(output);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0].summary, "Add two lines");
+        assert_eq!(lines[1].summary, "Add two lines");
     }
 
     #[test]
@@ -4430,11 +4462,15 @@ filename test.txt
         .await;
         let lines = result.expect("should succeed for a file in the repo");
         assert!(!lines.is_empty(), "git.rs should have blame lines");
-        // Every line should have a 40-char hex hash
+        // Every line should have a 40-char hex hash. This test exercises the gix
+        // blame path (get_file_blame → git_reads().blame()), so the non-empty
+        // `summary` assertion covers gix's commit-summary population — every real
+        // commit in this repo's history has a non-empty subject line.
         for bl in &lines {
             assert_eq!(bl.hash.len(), 40, "hash should be 40 chars: {}", bl.hash);
             assert!(!bl.author.is_empty(), "author should not be empty");
             assert!(bl.author_time > 0, "author_time should be positive");
+            assert!(!bl.summary.is_empty(), "summary should not be empty");
             assert!(bl.line_number > 0, "line_number should be positive");
         }
         // Line numbers should be sequential

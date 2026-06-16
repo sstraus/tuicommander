@@ -12,6 +12,8 @@ interface BlameLine {
 	author: string;
 	/** Unix timestamp in seconds */
 	author_time: number;
+	/** Commit subject (first line of the message) */
+	summary: string;
 	line_number: number;
 	content: string;
 }

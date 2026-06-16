@@ -73,6 +73,7 @@ interface RustAppConfig {
 	index_strategy?: string;
 	standby_timeout_minutes?: number;
 	custom_launchers?: CustomLauncher[];
+	inline_blame_enabled?: boolean;
 }
 
 // Default values
@@ -379,6 +380,7 @@ interface SettingsStoreState {
 	indexStrategy: "disabled" | "active_only" | "active_and_switch" | "all_sequential";
 	standbyTimeoutMinutes: number;
 	customLaunchers: CustomLauncher[];
+	inlineBlameEnabled: boolean;
 }
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -429,6 +431,7 @@ function createSettingsStore() {
 		indexStrategy: "active_and_switch",
 		standbyTimeoutMinutes: 5,
 		customLaunchers: [],
+		inlineBlameEnabled: true,
 	});
 
 	// Shadow copy of the last loaded config — preserves fields not tracked in SolidJS store
@@ -484,6 +487,7 @@ function createSettingsStore() {
 			index_strategy: state.indexStrategy,
 			standby_timeout_minutes: state.standbyTimeoutMinutes,
 			custom_launchers: [...state.customLaunchers],
+			inline_blame_enabled: state.inlineBlameEnabled,
 			services: baseConfig?.services ?? { auth: { session_token_duration_secs: 86400 } },
 			mcp_server_enabled: baseConfig?.mcp_server_enabled ?? true,
 		};
@@ -571,6 +575,7 @@ function createSettingsStore() {
 				);
 				setState("standbyTimeoutMinutes", config.standby_timeout_minutes ?? 5);
 				setState("customLaunchers", config.custom_launchers ?? []);
+				setState("inlineBlameEnabled", config.inline_blame_enabled ?? true);
 			} catch (err) {
 				appLogger.error("config", "Failed to hydrate settings", err);
 			}
@@ -791,6 +796,12 @@ function createSettingsStore() {
 
 		setScrollbackReflow(enabled: boolean): void {
 			setState("scrollbackReflow", enabled);
+			save();
+		},
+
+		/** Toggle GitLens-style inline git blame on the editor's active line */
+		setInlineBlameEnabled(enabled: boolean): void {
+			setState("inlineBlameEnabled", enabled);
 			save();
 		},
 
