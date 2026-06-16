@@ -8,6 +8,7 @@ pub(crate) mod agent_hook;
 pub(crate) mod agent_hook_codex;
 pub(crate) mod agent_hook_commands;
 pub(crate) mod agent_hook_installer;
+pub(crate) mod agent_hook_opencode;
 pub(crate) mod agent_mcp;
 pub(crate) mod agent_session;
 pub(crate) mod ai_agent;

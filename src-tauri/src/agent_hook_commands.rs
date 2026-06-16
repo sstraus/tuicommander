@@ -31,6 +31,7 @@ fn hook_settings_path(agent_type: &str) -> Option<PathBuf> {
         "gemini" => Some(home.join(".gemini/settings.json")),
         "grok" => Some(home.join(".grok/hooks/tuic.json")),
         "codex" => Some(home.join(".codex/hooks.json")),
+        "opencode" => Some(home.join(".config/opencode/plugin/tuic.ts")),
         _ => None,
     }
 }
@@ -83,6 +84,13 @@ pub(crate) fn apply_at(
             }
             Ok(())
         }
+        "opencode" => {
+            if enabled {
+                crate::agent_hook_opencode::install_opencode_plugin(settings_path)
+            } else {
+                crate::agent_hook_opencode::uninstall_opencode_plugin(settings_path)
+            }
+        }
         _ => Ok(()), // unsupported agent: flag persists, nothing to install
     }
 }
@@ -103,6 +111,9 @@ pub(crate) fn state_at(agent_type: &str, settings_path: &Path) -> InstallState {
             (InstallState::NotInstalled, false) => InstallState::NotInstalled,
             _ => InstallState::Outdated,
         };
+    }
+    if agent_type == "opencode" {
+        return crate::agent_hook_opencode::opencode_plugin_state(settings_path);
     }
     let map = match agent_type {
         "claude" | "gemini" => hook_map_for(agent_type),

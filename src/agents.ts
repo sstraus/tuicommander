@@ -380,7 +380,7 @@ export const MCP_SUPPORT: Record<AgentType, boolean> = {
 export const HOOK_SUPPORT: Record<AgentType, boolean> = {
 	claude: true,
 	gemini: true,
-	opencode: false,
+	opencode: true,
 	aider: false,
 	codex: true,
 	amp: false,
