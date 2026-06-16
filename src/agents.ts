@@ -386,7 +386,7 @@ export const HOOK_SUPPORT: Record<AgentType, boolean> = {
 	amp: false,
 	cursor: false,
 	goose: false,
-	grok: false,
+	grok: true,
 	droid: false,
 	git: false,
 	api: false,

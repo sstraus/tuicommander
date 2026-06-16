@@ -199,6 +199,48 @@ pub(crate) fn install_state(settings: &Path, map: &[HookEntry]) -> InstallState 
     }
 }
 
+// ---------------------------------------------------------------------------
+// Own-file strategy: TUIC owns the ENTIRE settings file (e.g. Grok's
+// `~/.grok/hooks/tuic.json`). No merge needed — install writes the whole file,
+// uninstall deletes it. Sibling files in the same directory are never touched.
+// ---------------------------------------------------------------------------
+
+/// Build a `{ "hooks": { event: [ { matcher?, hooks: [{type,command}] } ] } }`
+/// document from the map. The `matcher` field is omitted when empty (lifecycle
+/// events in Grok reject a matcher; an omitted matcher matches everything).
+fn build_hooks_document(map: &[HookEntry]) -> Map<String, Value> {
+    let mut hooks: Map<String, Value> = Map::new();
+    for (event, matcher, cmd) in map {
+        let group = if matcher.is_empty() {
+            serde_json::json!({ "hooks": [ { "type": "command", "command": cmd } ] })
+        } else {
+            serde_json::json!({ "matcher": matcher, "hooks": [ { "type": "command", "command": cmd } ] })
+        };
+        hooks
+            .entry(event.to_string())
+            .or_insert_with(|| Value::Array(Vec::new()))
+            .as_array_mut()
+            .expect("event value is always an array")
+            .push(group);
+    }
+    let mut root = Map::new();
+    root.insert("hooks".to_string(), Value::Object(hooks));
+    root
+}
+
+/// Own-file install: write the whole file (atomic, 0600). Creates parent dirs.
+pub(crate) fn install_own_file(path: &Path, map: &[HookEntry]) -> Result<(), String> {
+    write_root(path, &build_hooks_document(map))
+}
+
+/// Own-file uninstall: delete the file. Missing file is a no-op.
+pub(crate) fn uninstall_own_file(path: &Path) -> Result<(), String> {
+    if path.exists() {
+        std::fs::remove_file(path).map_err(|e| format!("remove {}: {e}", path.display()))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

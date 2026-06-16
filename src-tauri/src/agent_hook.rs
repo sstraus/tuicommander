@@ -71,6 +71,36 @@ pub(crate) fn gemini_hook_map() -> Vec<HookEntry> {
     ]
 }
 
+/// Grok hooks (Claude-compatible JSON schema, written to our OWN file
+/// `~/.grok/hooks/tuic.json`). Event names verified against the in-app hooks doc
+/// (`~/.grok/docs/user-guide/10-hooks.md`). Lifecycle events (UserPromptSubmit,
+/// Stop, SessionEnd) reject a matcher, so all entries use an empty matcher (the
+/// own-file writer omits it). Grok has no clean "awaiting" event — approval
+/// prompts are covered by the existing OSC-0 title heuristic, which is not
+/// suppressed under instrumentation.
+pub(crate) fn grok_hook_map() -> Vec<HookEntry> {
+    vec![
+        ("UserPromptSubmit", "", hook_command("busy")),
+        ("PreToolUse", "", hook_command("busy")),
+        ("Stop", "", hook_command("idle")),
+        ("SessionEnd", "", hook_command("idle")),
+    ]
+}
+
+/// Codex hooks (Claude-compatible JSON schema, merged into `~/.codex/hooks.json`,
+/// gated by a `[features] hooks = true` flag in `config.toml`). Turn-level only:
+/// Codex doesn't expose PreToolUse/PostToolUse usefully (Bash-only) and has no
+/// SessionEnd — the badge clears via the idle/Stop event. SessionStart fires on
+/// the first turn (not session open), so busy appears once the user submits.
+#[allow(dead_code)] // Incremental build: consumed by the Codex adapter (story 050)
+pub(crate) fn codex_hook_map() -> Vec<HookEntry> {
+    vec![
+        ("SessionStart", "", hook_command("busy")),
+        ("UserPromptSubmit", "", hook_command("busy")),
+        ("Stop", "", hook_command("idle")),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

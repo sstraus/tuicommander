@@ -22,36 +22,56 @@ fn hook_map_for(agent_type: &str) -> Option<Vec<HookEntry>> {
     }
 }
 
-/// The settings file an agent reads its hooks from. Claude/Gemini use a JSON
-/// `settings.json` under the user-global config dir.
+/// The settings file an agent reads its hooks from. Claude/Gemini merge into a
+/// shared `settings.json`; Grok owns its own `~/.grok/hooks/tuic.json`.
 fn hook_settings_path(agent_type: &str) -> Option<PathBuf> {
     let home = dirs::home_dir()?;
     match agent_type {
         "claude" => Some(home.join(".claude/settings.json")),
         "gemini" => Some(home.join(".gemini/settings.json")),
+        "grok" => Some(home.join(".grok/hooks/tuic.json")),
         _ => None,
     }
 }
 
 /// Install/uninstall the hooks at an explicit path. Path-injected for testing.
+/// Dispatches by the agent's strategy: Claude/Gemini merge into a shared file;
+/// Grok owns its whole file.
 pub(crate) fn apply_at(
     agent_type: &str,
     settings_path: &Path,
     enabled: bool,
 ) -> Result<(), String> {
-    let Some(map) = hook_map_for(agent_type) else {
-        return Ok(()); // unsupported agent: flag persists, nothing to install
-    };
-    if enabled {
-        agent_hook_installer::install(settings_path, &map)
-    } else {
-        agent_hook_installer::uninstall(settings_path)
+    match agent_type {
+        "claude" | "gemini" => {
+            let map = hook_map_for(agent_type).expect("merge agent has a hook map");
+            if enabled {
+                agent_hook_installer::install(settings_path, &map)
+            } else {
+                agent_hook_installer::uninstall(settings_path)
+            }
+        }
+        "grok" => {
+            if enabled {
+                agent_hook_installer::install_own_file(settings_path, &crate::agent_hook::grok_hook_map())
+            } else {
+                agent_hook_installer::uninstall_own_file(settings_path)
+            }
+        }
+        _ => Ok(()), // unsupported agent: flag persists, nothing to install
     }
 }
 
 /// Install state for an agent at an explicit path. Path-injected for testing.
+/// `install_state` works for both merge and own-file files — it scans hook
+/// commands for the sentinel regardless of how they were written.
 pub(crate) fn state_at(agent_type: &str, settings_path: &Path) -> InstallState {
-    match hook_map_for(agent_type) {
+    let map = match agent_type {
+        "claude" | "gemini" => hook_map_for(agent_type),
+        "grok" => Some(crate::agent_hook::grok_hook_map()),
+        _ => None,
+    };
+    match map {
         Some(map) => agent_hook_installer::install_state(settings_path, &map),
         None => InstallState::NotInstalled,
     }
@@ -136,5 +156,51 @@ mod tests {
         let json = serde_json::to_string(&s).unwrap();
         let back: crate::config::AgentSettings = serde_json::from_str(&json).unwrap();
         assert_eq!(back.hook_instrumentation, Some(true));
+    }
+
+    #[test]
+    fn agent_hook_grok_installs_own_file_leaving_siblings() {
+        let dir = TempDir::new().unwrap();
+        let sibling = dir.path().join("user-hook.json");
+        std::fs::write(&sibling, b"{\"keep\":true}").unwrap();
+        let ours = dir.path().join("tuic.json");
+        apply_at("grok", &ours, true).unwrap();
+        assert!(ours.exists());
+        assert_eq!(state_at("grok", &ours), InstallState::Installed);
+        assert_eq!(
+            std::fs::read(&sibling).unwrap(),
+            b"{\"keep\":true}",
+            "sibling hook files in the grok hooks dir are never touched"
+        );
+    }
+
+    #[test]
+    fn agent_hook_grok_uninstall_deletes_only_our_file() {
+        let dir = TempDir::new().unwrap();
+        let sibling = dir.path().join("user-hook.json");
+        std::fs::write(&sibling, b"x").unwrap();
+        let ours = dir.path().join("tuic.json");
+        apply_at("grok", &ours, true).unwrap();
+        apply_at("grok", &ours, false).unwrap();
+        assert!(!ours.exists(), "our file is deleted on uninstall");
+        assert!(sibling.exists(), "sibling preserved");
+        assert_eq!(state_at("grok", &ours), InstallState::NotInstalled);
+    }
+
+    #[test]
+    fn agent_hook_grok_commands_carry_osc_guard_and_omit_lifecycle_matcher() {
+        let dir = TempDir::new().unwrap();
+        let ours = dir.path().join("tuic.json");
+        apply_at("grok", &ours, true).unwrap();
+        let content = std::fs::read_to_string(&ours).unwrap();
+        assert!(content.contains(r"7770;state=busy"));
+        assert!(content.contains(r"7770;state=idle"));
+        assert!(content.contains("TUIC_SESSION"));
+        assert!(content.contains("tuic-managed-hook"));
+        let v: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert!(
+            v["hooks"]["Stop"][0].get("matcher").is_none(),
+            "lifecycle events must omit the matcher field (Grok rejects it)"
+        );
     }
 }
