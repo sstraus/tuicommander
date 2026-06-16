@@ -415,6 +415,25 @@
   color: var(--accent);
 }
 
+/* Count badge on the "delete merged" cleanup button */
+.mergedBadge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  border-radius: var(--radius-pill);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
 /* Prefix group header row */
 .groupHeader {
   display: flex;

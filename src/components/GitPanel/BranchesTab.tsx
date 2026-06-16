@@ -3,6 +3,7 @@ import type { BaseRefOption } from "../../hooks/useRepository";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { repositoriesStore } from "../../stores/repositories";
+import { toastsStore } from "../../stores/toasts";
 import { cx } from "../../utils";
 import { branchListsEqual } from "../../utils/branchListsEqual";
 import { handleOpenUrl } from "../../utils/openUrl";
@@ -11,6 +12,20 @@ import { ContextMenu, type ContextMenuItem, createContextMenu } from "../Context
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
 import s from "./BranchesTab.module.css";
 import type { BranchDetail } from "./types";
+
+/** Mirrors Rust `GitCommandResult` — run_git_command never throws; it returns
+ *  success=false with stderr populated on git failure (e.g. merge conflict). */
+interface GitCommandResult {
+	success: boolean;
+	stdout: string;
+	stderr: string;
+	exit_code: number;
+}
+
+/** Detects git's "Already up to date." no-op message across merge/pull/push. */
+function isAlreadyUpToDate(output: string): boolean {
+	return /already up.to.date/i.test(output);
+}
 
 /** Convert a git remote URL (SSH or HTTPS) to a GitHub web URL, or null if not GitHub. */
 export function remoteUrlToGitHub(remoteUrl: string): string | null {
@@ -128,7 +143,8 @@ function groupBranchesByPrefix(branchList: BranchDetail[]): { ungrouped: BranchD
 type DialogKind =
 	| { type: "delete"; branch: BranchDetail }
 	| { type: "merge"; branch: BranchDetail; currentBranch: string }
-	| { type: "rebase"; branch: BranchDetail; currentBranch: string };
+	| { type: "rebase"; branch: BranchDetail; currentBranch: string }
+	| { type: "deleteMerged"; branches: BranchDetail[] };
 
 /** Checkout dirty-worktree state: need to choose stash/force/cancel */
 interface DirtyCheckoutState {
@@ -238,6 +254,9 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 	);
 
 	const localBranches = createMemo(() => branches().filter((b) => !b.is_remote));
+
+	/** Local branches merged into main and safe to delete (not current, not main). */
+	const mergedBranches = createMemo(() => localBranches().filter((b) => b.is_merged && !b.is_current && !b.is_main));
 
 	/** Recent branches resolved to BranchDetail objects (only local, matching recent reflog names) */
 	const recentBranches = createMemo(() => {
@@ -390,18 +409,66 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 		setDialog({ type: "delete", branch });
 	}
 
+	/** Delete a local branch by name. Returns true on success. force=false → `git
+	 *  branch -d` (refuses unmerged); force=true → `-D`. Toasts on failure. */
+	async function deleteBranchByName(name: string, force: boolean): Promise<boolean> {
+		if (!props.repoPath) return false;
+		try {
+			await invoke("delete_branch", { path: props.repoPath, name, force });
+			repositoriesStore.bumpRevision(props.repoPath);
+			return true;
+		} catch (err) {
+			appLogger.error("git", `Failed to delete branch ${name}`, err);
+			toastsStore.add("Delete failed", `Could not delete "${name}": ${String(err)}`, "error", true);
+			return false;
+		}
+	}
+
 	async function doDeleteBranch(force: boolean) {
 		const d = dialog();
 		if (!d || d.type !== "delete" || !props.repoPath) return;
 		const { branch } = d;
 		setDialog(null);
-		try {
-			await invoke("delete_branch", { path: props.repoPath, name: branch.name, force });
-			repositoriesStore.bumpRevision(props.repoPath);
+		if (await deleteBranchByName(branch.name, force)) {
 			appLogger.info("git", `Deleted branch: ${branch.name}`);
+			toastsStore.add("Branch deleted", `Removed "${branch.name}"`, "info");
 			setSelectedIndex(-1);
-		} catch (err) {
-			appLogger.error("git", `Failed to delete branch ${branch.name}`, err);
+		}
+	}
+
+	function startDeleteMerged() {
+		const merged = mergedBranches();
+		if (merged.length === 0) return;
+		setDialog({ type: "deleteMerged", branches: merged });
+	}
+
+	async function doDeleteMerged() {
+		const d = dialog();
+		if (!d || d.type !== "deleteMerged") return;
+		const targets = d.branches;
+		setDialog(null);
+		let deleted = 0;
+		for (const branch of targets) {
+			// -d (safe): refuses any branch that isn't actually merged, so a stale
+			// is_merged flag can never cause data loss.
+			if (await deleteBranchByName(branch.name, false)) deleted++;
+		}
+		setSelectedIndex(-1);
+		appLogger.info("git", `Deleted ${deleted}/${targets.length} merged branches`);
+		if (deleted > 0) {
+			toastsStore.add(
+				"Merged branches deleted",
+				`Removed ${deleted} merged branch${deleted === 1 ? "" : "es"}`,
+				"info",
+			);
+		}
+		if (deleted < targets.length) {
+			toastsStore.add(
+				"Some branches kept",
+				`${targets.length - deleted} could not be deleted (not fully merged?)`,
+				"warn",
+				true,
+			);
 		}
 	}
 
@@ -451,15 +518,53 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 		const d = dialog();
 		if (!d || d.type !== "merge" || !props.repoPath) return;
 		const { branch } = d;
+		const target = currentBranch()?.name ?? "current";
 		setDialog(null);
+
+		let res: GitCommandResult;
 		try {
-			await invoke("run_git_command", { path: props.repoPath, args: ["merge", branch.name] });
-			repositoriesStore.bumpRevision(props.repoPath);
-			appLogger.info("git", `Merged ${branch.name} into ${currentBranch()?.name ?? "current"}`);
+			res = await invoke<GitCommandResult>("run_git_command", { path: props.repoPath, args: ["merge", branch.name] });
 		} catch (err) {
-			appLogger.error("git", `Merge of ${branch.name} failed (possible conflict)`, err);
-			repositoriesStore.bumpRevision(props.repoPath!);
+			appLogger.error("git", `Merge of ${branch.name} failed`, err);
+			toastsStore.add("Merge failed", `Could not run merge for "${branch.name}"`, "error", true);
+			return;
 		}
+		repositoriesStore.bumpRevision(props.repoPath);
+
+		// run_git_command never throws on git failure — inspect success explicitly.
+		if (!res.success) {
+			const detail = (res.stderr || res.stdout).trim();
+			appLogger.error("git", `Merge of ${branch.name} failed`, detail);
+			toastsStore.add("Merge failed", detail || `"${branch.name}" could not be merged (conflict?)`, "error", true);
+			return;
+		}
+
+		if (isAlreadyUpToDate(res.stdout)) {
+			appLogger.info("git", `${branch.name} already merged into ${target}`);
+			toastsStore.add("Already up to date", `"${branch.name}" is already merged into "${target}".`, "info");
+			return;
+		}
+
+		appLogger.info("git", `Merged ${branch.name} into ${target}`);
+		// Offer one-click cleanup of the now-merged branch (auto-delete after local
+		// merge). Never for main/current — delete_branch refuses those anyway.
+		const canDelete = !branch.is_main && !branch.is_current;
+		toastsStore.add(
+			"Merged",
+			`"${branch.name}" → "${target}"`,
+			"info",
+			false,
+			canDelete
+				? {
+						label: `Delete "${branch.name}"`,
+						onClick: () => {
+							void deleteBranchByName(branch.name, false).then((ok) => {
+								if (ok) toastsStore.add("Branch deleted", `Removed merged branch "${branch.name}"`, "info");
+							});
+						},
+					}
+				: undefined,
+		);
 	}
 
 	// --- Rebase ---
@@ -784,6 +889,16 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 				branch,
 			};
 		}
+		if (d.type === "deleteMerged") {
+			const names = d.branches.map((b) => b.name);
+			const preview = names.slice(0, 8).join(", ");
+			const more = names.length > 8 ? `, +${names.length - 8} more` : "";
+			return {
+				title: `Delete ${names.length} merged branch${names.length === 1 ? "" : "es"}?`,
+				message: `These branches are merged into main and will be removed (git branch -d): ${preview}${more}`,
+				branch: d.branches[0],
+			};
+		}
 		return null;
 	});
 
@@ -941,6 +1056,26 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 				>
 					<FolderIcon />
 				</button>
+				<Show when={mergedBranches().length > 0}>
+					<button
+						class={s.foldToggle}
+						style={{ position: "relative" }}
+						title={`Delete ${mergedBranches().length} merged branch${mergedBranches().length === 1 ? "" : "es"}`}
+						onClick={() => startDeleteMerged()}
+					>
+						{/* broom / cleanup */}
+						<svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+							<path
+								d="M9.5 1.5 6 5M2 14l3.2-3.2M5.2 10.8 8 8M5.2 10.8 8.5 14M8 8l3-3 2 2-3 3M8 8l2.5 2.5"
+								stroke="currentColor"
+								stroke-width="1.3"
+								stroke-linecap="round"
+								stroke-linejoin="round"
+							/>
+						</svg>
+						<span class={s.mergedBadge}>{mergedBranches().length}</span>
+					</button>
+				</Show>
 			</div>
 
 			{/* Create branch inline form */}
@@ -1115,6 +1250,17 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 				kind="warning"
 				onClose={() => setDialog(null)}
 				onConfirm={doRebase}
+			/>
+
+			{/* Delete merged branches confirm dialog */}
+			<ConfirmDialog
+				visible={dialog()?.type === "deleteMerged"}
+				title={dialogData()?.title ?? ""}
+				message={dialogData()?.message ?? ""}
+				confirmLabel="Delete merged"
+				kind="warning"
+				onClose={() => setDialog(null)}
+				onConfirm={doDeleteMerged}
 			/>
 
 			{/* Branch context menu */}
