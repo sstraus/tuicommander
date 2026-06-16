@@ -99,6 +99,9 @@ pub(super) async fn write_to_session(
     if let Err(e) = session.writer.flush() {
         tracing::warn!(session_id = %session_id, "PTY flush failed: {e}");
     }
+    // Stamp last-input time (same as desktop write_pty) so the grid ticker
+    // throttles frames for remote/PWA typing under CPU saturation too.
+    crate::pty::stamp_input_ms(&state, &session_id);
 
     // Feed input through InputLineBuffer FSM to track slash_mode accurately.
     // The old substring heuristic false-positived on pastes starting with '/'.

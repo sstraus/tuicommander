@@ -3541,6 +3541,7 @@ mod tests {
             indexer_throttle: std::sync::Arc::new(crate::content_index::IndexerThrottle::default()),
             slash_mode: dashmap::DashMap::new(),
             last_output_ms: dashmap::DashMap::new(),
+            last_input_ms: dashmap::DashMap::new(),
             shell_states: dashmap::DashMap::new(),
             terminal_rows: dashmap::DashMap::new(),
             exit_codes: dashmap::DashMap::new(),

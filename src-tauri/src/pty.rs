@@ -3089,6 +3089,68 @@ fn clamp_cursor_up(data: &str, max_rows: u16) -> String {
 
 /// Spawn a reader thread that reads from a PTY, processes output, and emits events.
 /// Unified for both desktop (Tauri IPC) and headless (event_bus only) modes.
+/// 1-minute system load average divided by the online CPU count — a measure of
+/// machine-wide CPU oversubscription (NOT this process's own usage, which the
+/// cpu_watchdog covers via getrusage). >= 1.0 means the run queue is as long as
+/// there are cores: things are queueing and the WebView main thread gets starved.
+/// Used to gate the typing frame-throttle so it only kicks in under real load.
+/// Returns 0.0 where unavailable (Windows) — throttle stays off, behaviour unchanged.
+#[cfg(unix)]
+fn system_load_per_core() -> f64 {
+    let mut avg = [0f64; 3];
+    let n = unsafe { libc::getloadavg(avg.as_mut_ptr(), 3) };
+    if n < 1 {
+        return 0.0;
+    }
+    let ncpu = unsafe { libc::sysconf(libc::_SC_NPROCESSORS_ONLN) };
+    let ncpu = if ncpu < 1 { 1.0 } else { ncpu as f64 };
+    avg[0] / ncpu
+}
+
+#[cfg(not(unix))]
+fn system_load_per_core() -> f64 {
+    0.0
+}
+
+/// Minimum interval (ms) the grid ticker must wait between frame sends.
+/// `0` = no floor (send at the full 16 ms tick / ~60 fps), for short bursts so
+/// latency stays low. The two floors give the WebView main thread breathing room:
+///  - `input_recent` (user typing under CPU saturation) → ~20 fps, the most
+///    aggressive floor, so keystroke dispatch + echo aren't stuck behind output.
+///  - sustained animation (grid dirty ≥ 6 consecutive ticks, e.g. a spinner TUI)
+///    → ~30 fps.
+///
+/// Typing wins over sustained because it's the latency-critical case.
+fn grid_send_min_interval_ms(input_recent: bool, dirty_run: u32) -> u64 {
+    const SUSTAINED_DIRTY_TICKS: u32 = 6;
+    const SUSTAINED_MIN_INTERVAL_MS: u64 = 33; // ~30 fps while animating
+    const INPUT_MIN_INTERVAL_MS: u64 = 50; // ~20 fps while typing under load
+    if input_recent {
+        INPUT_MIN_INTERVAL_MS
+    } else if dirty_run >= SUSTAINED_DIRTY_TICKS {
+        SUSTAINED_MIN_INTERVAL_MS
+    } else {
+        0
+    }
+}
+
+/// Stamp the per-session last-input timestamp (epoch ms). Read by the grid
+/// ticker to throttle frame sends while the user types under CPU saturation,
+/// keeping the WebView/browser main thread free for keystroke dispatch + echo.
+/// Called from every interactive input entry point (desktop `write_pty` +
+/// HTTP/PWA `write_to_session`).
+pub(crate) fn stamp_input_ms(state: &AppState, session_id: &str) {
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    state
+        .last_input_ms
+        .entry(session_id.to_string())
+        .or_insert_with(|| std::sync::atomic::AtomicU64::new(0))
+        .store(now_ms, std::sync::atomic::Ordering::Relaxed);
+}
+
 pub(crate) fn spawn_reader_thread(
     mut reader: Box<dyn Read + Send>,
     paused: Arc<AtomicBool>,
@@ -3140,15 +3202,17 @@ pub(crate) fn spawn_reader_thread(
         // behind, so persistent saturation still gets cumulative backpressure.
         const MAX_STUCK_BEFORE_PAUSE: u32 = 3;
         const STUCK_PAUSE_MS: u64 = 1_000;
-        // Adaptive frame-rate floor (see throttle check below). A TUI that
-        // animates continuously keeps the grid dirty for this many consecutive
-        // ticks (~96 ms); once we're past that, cap sends to SUSTAINED_MIN_INTERVAL.
-        const SUSTAINED_DIRTY_TICKS: u32 = 6;
-        const SUSTAINED_MIN_INTERVAL_MS: u64 = 33; // ~30 fps while animating
+        // Send-rate floors live in grid_send_min_interval_ms() (unit-tested).
+        // How long after a keystroke the typing-throttle stays armed.
+        const INPUT_THROTTLE_WINDOW_MS: u64 = 150;
+        const LOAD_SATURATION_RATIO: f64 = 1.0; // 1-min load >= cores
+        const LOAD_SAMPLE_INTERVAL: std::time::Duration = std::time::Duration::from_secs(1);
         let mut stuck_since: Option<std::time::Instant> = None;
         let mut stuck_count: u32 = 0;
         let mut dirty_run: u32 = 0;
         let mut last_sent: Option<std::time::Instant> = None;
+        let mut last_load_check: Option<std::time::Instant> = None;
+        let mut system_saturated = false;
         while ticker_running.load(Ordering::Relaxed) {
             std::thread::sleep(TICK);
             if !ticker_dirty.swap(false, Ordering::Relaxed) {
@@ -3210,9 +3274,32 @@ pub(crate) fn spawn_reader_thread(
             // Once dirtiness is sustained, cap the send rate to ~30 fps to give the
             // JS thread breathing room. Short bursts stay at the full 60 fps tick.
             let now = std::time::Instant::now();
-            if dirty_run >= SUSTAINED_DIRTY_TICKS
+            // Refresh the machine-saturation gate ~once/sec (cheap getloadavg).
+            if last_load_check.is_none_or(|t| now.duration_since(t) >= LOAD_SAMPLE_INTERVAL) {
+                system_saturated = system_load_per_core() >= LOAD_SATURATION_RATIO;
+                last_load_check = Some(now);
+            }
+            // Typing-under-load throttle: only when saturated AND the user typed
+            // recently. now_epoch_ms() is computed only on the saturated path.
+            let input_recent = system_saturated && {
+                let now_ms = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+                ticker_state
+                    .last_input_ms
+                    .get(&ticker_sid)
+                    .map(|ts| {
+                        now_ms.saturating_sub(ts.load(Ordering::Relaxed)) < INPUT_THROTTLE_WINDOW_MS
+                    })
+                    .unwrap_or(false)
+            };
+            // Pick the send-rate floor: typing-under-load (~20 fps) wins, else the
+            // sustained-animation floor (~30 fps), else full 60 fps for short bursts.
+            let min_interval = grid_send_min_interval_ms(input_recent, dirty_run);
+            if min_interval > 0
                 && let Some(last) = last_sent
-                && (now.duration_since(last).as_millis() as u64) < SUSTAINED_MIN_INTERVAL_MS
+                && (now.duration_since(last).as_millis() as u64) < min_interval
             {
                 ticker_dirty.store(true, Ordering::Relaxed); // keep pending for a later tick
                 continue;
@@ -3936,6 +4023,11 @@ pub(crate) async fn write_pty(
                     data_len = %data.len(), "write_pty SLOW — lock or write blocked");
             }
         }
+
+        // Stamp last-input time so the grid ticker can throttle frame sends while
+        // the user types under CPU saturation (keeps the WebView thread free for
+        // keystroke dispatch + echo).
+        stamp_input_ms(&state, &session_id);
 
         // Feed input through the line buffer to reconstruct user-typed lines
         let input_entry = state
@@ -5687,6 +5779,31 @@ pub(crate) async fn set_session_visible(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn grid_send_min_interval_policy() {
+        // Short burst, no typing → no floor: full-speed for low latency.
+        assert_eq!(grid_send_min_interval_ms(false, 0), 0);
+        assert_eq!(grid_send_min_interval_ms(false, 5), 0);
+        // Sustained animation (dirty ≥ 6 ticks), no typing → ~30 fps floor.
+        assert_eq!(grid_send_min_interval_ms(false, 6), 33);
+        assert_eq!(grid_send_min_interval_ms(false, 1000), 33);
+        // Typing under load → ~20 fps floor, regardless of dirty_run (even a
+        // short burst), because keystroke latency is what we protect.
+        assert_eq!(grid_send_min_interval_ms(true, 0), 50);
+        assert_eq!(grid_send_min_interval_ms(true, 1000), 50);
+        // Typing floor must be the more aggressive (larger interval) of the two.
+        assert!(grid_send_min_interval_ms(true, 1000) > grid_send_min_interval_ms(false, 1000));
+    }
+
+    #[test]
+    fn system_load_per_core_is_non_negative_and_finite() {
+        // Links libc getloadavg/sysconf on Unix; returns 0.0 elsewhere. Either
+        // way it must be a sane, non-negative, finite ratio.
+        let v = system_load_per_core();
+        assert!(v.is_finite());
+        assert!(v >= 0.0);
+    }
 
     #[test]
     fn clean_action_required_title_strips_marker_spinner_and_separators() {

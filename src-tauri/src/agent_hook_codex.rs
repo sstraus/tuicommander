@@ -173,7 +173,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let p = write(&dir, "[features]\nhooks = true\n");
         set_features_hooks_flag(&p, true).unwrap();
-        let count = std::fs::read_to_string(&p).unwrap().matches("hooks = true").count();
+        let count = std::fs::read_to_string(&p)
+            .unwrap()
+            .matches("hooks = true")
+            .count();
         assert_eq!(count, 1, "no duplicate flag");
     }
 
@@ -203,6 +206,9 @@ mod tests {
     fn agent_hook_codex_commented_flag_not_detected() {
         let dir = TempDir::new().unwrap();
         let p = write(&dir, "[features]\n# hooks = true\n");
-        assert!(!features_hooks_present(&p), "a commented flag is not active");
+        assert!(
+            !features_hooks_present(&p),
+            "a commented flag is not active"
+        );
     }
 }

@@ -60,7 +60,10 @@ pub(crate) fn apply_at(
         }
         "grok" => {
             if enabled {
-                agent_hook_installer::install_own_file(settings_path, &crate::agent_hook::grok_hook_map())
+                agent_hook_installer::install_own_file(
+                    settings_path,
+                    &crate::agent_hook::grok_hook_map(),
+                )
             } else {
                 agent_hook_installer::uninstall_own_file(settings_path)
             }
@@ -102,7 +105,10 @@ pub(crate) fn state_at(agent_type: &str, settings_path: &Path) -> InstallState {
     // Codex state combines the hooks file AND the config.toml enable flag — both
     // present = installed, both absent = notInstalled, a mismatch = outdated.
     if agent_type == "codex" {
-        let hooks = agent_hook_installer::install_state(settings_path, &crate::agent_hook::codex_hook_map());
+        let hooks = agent_hook_installer::install_state(
+            settings_path,
+            &crate::agent_hook::codex_hook_map(),
+        );
         let flag = codex_config_toml(settings_path)
             .map(|c| crate::agent_hook_codex::features_hooks_present(&c))
             .unwrap_or(false);
@@ -273,7 +279,9 @@ mod tests {
         assert!(h.contains(r"7770;state=busy"));
         assert!(crate::agent_hook_codex::features_hooks_present(&cfg));
         assert!(
-            std::fs::read_to_string(&cfg).unwrap().contains("web_search = true"),
+            std::fs::read_to_string(&cfg)
+                .unwrap()
+                .contains("web_search = true"),
             "sibling feature flag preserved"
         );
     }

@@ -1001,6 +1001,12 @@ pub struct AppState {
     /// Updated by PTY reader on every non-empty chunk. Used to derive shell_state:
     /// "busy" when now - last < 500ms, "idle" otherwise (matches desktop model).
     pub(crate) last_output_ms: DashMap<String, AtomicU64>,
+    /// Per-session timestamp of last user input written to the PTY (epoch ms).
+    /// Stamped by `write_pty`. The grid ticker reads it to throttle frame sends
+    /// while the user is actively typing AND the system CPU is saturated, so the
+    /// WebView main thread stays free to dispatch keystrokes instead of churning
+    /// through agent output. Absent until the first keystroke.
+    pub(crate) last_input_ms: DashMap<String, AtomicU64>,
     /// Per-session shell activity state (AtomicU8: 0=null, 1=busy, 2=idle).
     /// Updated by the reader thread and silence timer via compare_exchange.
     /// The single source of truth for busy/idle — the frontend consumes events,
@@ -1212,6 +1218,7 @@ impl AppState {
             monitoring_git_sem: Arc::new(tokio::sync::Semaphore::new(MONITORING_GIT_CONCURRENCY)),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
+            last_input_ms: DashMap::new(),
             shell_states: DashMap::new(),
             terminal_rows: DashMap::new(),
             exit_codes: DashMap::new(),
@@ -3278,6 +3285,7 @@ mod tests {
             monitoring_git_sem: Arc::new(tokio::sync::Semaphore::new(MONITORING_GIT_CONCURRENCY)),
             slash_mode: DashMap::new(),
             last_output_ms: DashMap::new(),
+            last_input_ms: DashMap::new(),
             shell_states: DashMap::new(),
             terminal_rows: DashMap::new(),
             exit_codes: DashMap::new(),
