@@ -1397,6 +1397,18 @@ fn spawn_silence_timer(
                 }
             };
 
+            // Hook-instrumented sessions report awaiting via OSC 7770; suppress the
+            // silence-based question heuristic (the silence-idle backstop is untouched).
+            if state
+                .session_states
+                .get(&session_id)
+                .map(|s| s.hook_instrumented)
+                .unwrap_or(false)
+            {
+                silence.lock().clear_stale_question();
+                continue;
+            }
+
             // Emit question event.
             silence.lock().mark_emitted(&prompt_text);
             let parsed = ParsedEvent::Question {
@@ -1460,6 +1472,27 @@ fn tuic_state_awaiting_event(payload: &str) -> Option<ParsedEvent> {
         }),
         _ => None,
     }
+}
+
+/// Whether `agent_type`'s config enables native-hook instrumentation. Resolved
+/// once when the session's agent type becomes known (config changes apply on the
+/// next agent launch, matching when the hooks themselves take effect).
+fn hook_instrumented_for(
+    agents: &crate::config::AgentsConfig,
+    agent_type: Option<&str>,
+) -> bool {
+    agent_type
+        .and_then(|at| agents.agents.get(at))
+        .and_then(|s| s.hook_instrumentation)
+        .unwrap_or(false)
+}
+
+/// Whether a heuristic `Question` event should be suppressed for this session.
+/// Hook-instrumented agents report awaiting via OSC 7770 (`state=awaiting`), so
+/// the silence/regex question heuristics would only double-fire. Only `Question`
+/// is suppressed — idle/busy transitions and every other event pass through.
+fn suppress_heuristic_question(hook_instrumented: bool, event: &ParsedEvent) -> bool {
+    hook_instrumented && matches!(event, ParsedEvent::Question { .. })
 }
 
 /// Per-session mutable state for processing PTY output chunks.
@@ -2128,6 +2161,13 @@ impl ChunkProcessor {
         };
         let suppress_notifications = in_resize_grace || in_startup_grace;
         let mut events = tuic_events;
+        // Hook-instrumented sessions get awaiting from OSC 7770; drop heuristic
+        // (regex) Question events from the parser so they don't double-fire.
+        let hook_instrumented = state
+            .session_states
+            .get(session_id)
+            .map(|s| s.hook_instrumented)
+            .unwrap_or(false);
         if let Some(evt) = crate::output_parser::parse_osc94(data) {
             events.push(evt);
         }
@@ -2159,12 +2199,16 @@ impl ChunkProcessor {
                 .collect();
             events.extend(
                 self.parser
-                    .parse_clean_lines(&filtered, agent_active_for_parse),
+                    .parse_clean_lines(&filtered, agent_active_for_parse)
+                    .into_iter()
+                    .filter(|e| !suppress_heuristic_question(hook_instrumented, e)),
             );
         } else {
             events.extend(
                 self.parser
-                    .parse_clean_lines(&changed_rows, agent_active_for_parse),
+                    .parse_clean_lines(&changed_rows, agent_active_for_parse)
+                    .into_iter()
+                    .filter(|e| !suppress_heuristic_question(hook_instrumented, e)),
             );
         }
 
@@ -3528,6 +3572,8 @@ pub(crate) async fn create_pty(
     let mut ss = crate::state::SessionState::default();
     if config.agent_type.is_some() {
         ss.agent_type = config.agent_type;
+        ss.hook_instrumented =
+            hook_instrumented_for(&crate::config::load_agents_config(), ss.agent_type.as_deref());
     }
     state.session_states.insert(session_id.clone(), ss);
 
@@ -3796,6 +3842,8 @@ pub(crate) async fn create_pty_with_worktree(
     let mut ss = crate::state::SessionState::default();
     if pty_config.agent_type.is_some() {
         ss.agent_type = pty_config.agent_type;
+        ss.hook_instrumented =
+            hook_instrumented_for(&crate::config::load_agents_config(), ss.agent_type.as_deref());
     }
     state.session_states.insert(session_id.clone(), ss);
 
@@ -4768,6 +4816,8 @@ pub(crate) fn get_session_foreground_process(
         && entry.agent_type != effective
     {
         entry.agent_type = effective.clone();
+        entry.hook_instrumented =
+            hook_instrumented_for(&crate::config::load_agents_config(), entry.agent_type.as_deref());
     }
 
     effective
@@ -9456,6 +9506,45 @@ mod tests {
             tuic_state_awaiting_event("thinking").is_none(),
             "unknown verb must push no awaiting event"
         );
+    }
+
+    #[test]
+    fn question_suppress_filters_only_questions_when_instrumented() {
+        let q_low = ParsedEvent::Question {
+            prompt_text: "?".into(),
+            confident: false,
+        };
+        let q_high = ParsedEvent::Question {
+            prompt_text: "Proceed?".into(),
+            confident: true,
+        };
+        let other = ParsedEvent::UserInput {
+            content: "hi".into(),
+        };
+        // Instrumented: every Question (silence + regex) is suppressed.
+        assert!(suppress_heuristic_question(true, &q_low));
+        assert!(suppress_heuristic_question(true, &q_high));
+        // Non-questions are never suppressed (idle/busy/etc. pass through).
+        assert!(!suppress_heuristic_question(true, &other));
+        // Not instrumented: nothing is suppressed.
+        assert!(!suppress_heuristic_question(false, &q_low));
+    }
+
+    #[test]
+    fn question_suppress_resolves_from_agent_config() {
+        use crate::config::{AgentSettings, AgentsConfig};
+        let mut agents = AgentsConfig::default();
+        let mut enabled = AgentSettings::default();
+        enabled.hook_instrumentation = Some(true);
+        agents.agents.insert("claude".into(), enabled);
+        let mut disabled = AgentSettings::default();
+        disabled.hook_instrumentation = Some(false);
+        agents.agents.insert("codex".into(), disabled);
+
+        assert!(hook_instrumented_for(&agents, Some("claude")));
+        assert!(!hook_instrumented_for(&agents, Some("codex")), "explicit false");
+        assert!(!hook_instrumented_for(&agents, Some("gemini")), "no override");
+        assert!(!hook_instrumented_for(&agents, None), "no agent type");
     }
 
     #[test]

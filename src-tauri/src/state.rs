@@ -166,6 +166,11 @@ pub(crate) struct SessionState {
     /// Detected agent type, if known
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent_type: Option<String>,
+    /// True when this agent has native-hook instrumentation enabled, so heuristic
+    /// question-detection is suppressed (awaiting comes from OSC 7770 instead).
+    /// Resolved from config when `agent_type` is set; internal, not serialized.
+    #[serde(skip)]
+    pub hook_instrumented: bool,
     /// Last API error, if any
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
