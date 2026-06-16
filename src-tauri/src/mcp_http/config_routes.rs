@@ -383,6 +383,35 @@ pub(super) async fn put_agents_config(
     }
 }
 
+// --- Agent hook instrumentation (browser-mode parity for the toggle) ---
+
+pub(super) async fn get_agent_hook_state(Path(agent): Path<String>) -> impl IntoResponse {
+    Json(serde_json::json!({
+        "state": crate::agent_hook_commands::get_agent_hook_state(agent),
+    }))
+}
+
+pub(super) async fn put_agent_hook_instrumentation(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    Path(agent): Path<String>,
+    Json(body): Json<serde_json::Value>,
+) -> impl IntoResponse {
+    if let Err(resp) = localhost_only(&addr) {
+        return resp;
+    }
+    let enabled = body
+        .get("enabled")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false);
+    match crate::agent_hook_commands::set_agent_hook_instrumentation(agent, enabled) {
+        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e})),
+        ),
+    }
+}
+
 // --- Provider Registry ---
 
 pub(super) async fn get_provider_registry() -> impl IntoResponse {

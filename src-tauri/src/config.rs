@@ -1168,6 +1168,11 @@ pub(crate) struct AgentSettings {
     /// Per-agent override for suggested follow-ups. None = use global default.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) suggest_followups: Option<bool>,
+    /// Opt-in: drive busy/idle/awaiting from the agent's native hooks instead of
+    /// output heuristics. Enabling installs hooks into the agent's settings file;
+    /// disabling removes only TUIC's entries. None/false = heuristics (default).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) hook_instrumentation: Option<bool>,
 }
 
 #[derive(Clone, Serialize, Deserialize, Default)]
@@ -2390,6 +2395,7 @@ mod tests {
                 env_flags: HashMap::new(),
                 intent_tab_title: Some(false),
                 suggest_followups: None,
+                hook_instrumentation: None,
             },
         );
         let loaded: AgentsConfig = round_trip_in_dir(dir.path(), "agents.json", &agents);

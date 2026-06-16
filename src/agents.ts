@@ -339,7 +339,20 @@ export interface AgentSettingsConfig {
 	intent_tab_title?: boolean;
 	/** Per-agent override: show suggested follow-ups. Undefined = use global default. */
 	suggest_followups?: boolean;
+	/**
+	 * Opt-in: drive busy/idle/awaiting from the agent's native hooks instead of
+	 * output heuristics. Enabling installs hooks into the agent's settings file;
+	 * disabling removes only TUIC's entries. Undefined/false = heuristics (default).
+	 */
+	hook_instrumentation?: boolean;
 }
+
+/** Install state of an agent's TUIC hooks (mirrors Rust `InstallState::as_str`). */
+export type AgentHookState =
+	| "installed"
+	| "outdated"
+	| "notInstalled"
+	| "unsupported";
 
 /** Full agents config (matches Rust AgentsConfig) */
 export interface AgentsConfig {

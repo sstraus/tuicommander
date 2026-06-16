@@ -722,6 +722,11 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             get(config_routes::get_agents_config).put(config_routes::put_agents_config),
         )
         .route(
+            "/config/agents/{agent}/hook-instrumentation",
+            get(config_routes::get_agent_hook_state)
+                .put(config_routes::put_agent_hook_instrumentation),
+        )
+        .route(
             "/config/provider-registry",
             get(config_routes::get_provider_registry).put(config_routes::put_provider_registry),
         )

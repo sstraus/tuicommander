@@ -30,6 +30,17 @@ pub(crate) enum InstallState {
     Outdated,
 }
 
+impl InstallState {
+    /// Stable wire string for the frontend/HTTP (camelCase, matches the TS union).
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            InstallState::NotInstalled => "notInstalled",
+            InstallState::Installed => "installed",
+            InstallState::Outdated => "outdated",
+        }
+    }
+}
+
 fn is_tuic_managed(cmd: &str) -> bool {
     cmd.contains(SENTINEL)
 }

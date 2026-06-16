@@ -4,9 +4,8 @@
 )]
 
 pub(crate) mod agent;
-#[allow(dead_code)] // Incremental build: hook_command/maps consumed by the installer (story 045)
 pub(crate) mod agent_hook;
-#[allow(dead_code)] // Incremental build: install/uninstall/install_state wired by Tauri commands (story 046)
+pub(crate) mod agent_hook_commands;
 pub(crate) mod agent_hook_installer;
 pub(crate) mod agent_mcp;
 pub(crate) mod agent_session;
@@ -1584,6 +1583,8 @@ pub fn run() {
             config::save_keybindings,
             config::load_agents_config,
             config::save_agents_config,
+            agent_hook_commands::set_agent_hook_instrumentation,
+            agent_hook_commands::get_agent_hook_state,
             agent_mcp::get_agent_mcp_status,
             agent_mcp::install_agent_mcp,
             agent_mcp::remove_agent_mcp,
