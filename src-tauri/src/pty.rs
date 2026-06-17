@@ -135,6 +135,97 @@ pub(crate) fn build_shell_command(shell: &str) -> CommandBuilder {
     cmd
 }
 
+/// Niceness applied to every PTY child process. A child inherits the parent's
+/// nice value at fork time, so deprioritizing the shell deprioritizes every
+/// process it later spawns — compilers, bundlers, test runners. The intent is
+/// that a heavy `cargo build` yields CPU to TUIC's own render thread and the
+/// rest of the system *under contention*, while still running at full speed on
+/// an idle machine (`nice` only bites when something else wants the core).
+///
+/// +10 was chosen over macOS QoS-background (`taskpolicy -b`), which pins the
+/// workload to the E-cores on Apple Silicon and makes builds crawl even when
+/// the P-cores are idle.
+///
+/// Overridable at launch via `TUIC_PTY_NICE` so the right value can be tuned on
+/// the real app without recompiling (nice 0..19; values outside that range are
+/// clamped by the kernel).
+#[cfg(unix)]
+const PTY_CHILD_NICE_DEFAULT: i32 = 10;
+
+/// Resolve the nice value to apply to PTY children: `TUIC_PTY_NICE` env override
+/// if set and parseable, else [`PTY_CHILD_NICE_DEFAULT`].
+#[cfg(unix)]
+fn pty_child_nice() -> i32 {
+    std::env::var("TUIC_PTY_NICE")
+        .ok()
+        .and_then(|v| v.trim().parse().ok())
+        .unwrap_or(PTY_CHILD_NICE_DEFAULT)
+}
+
+/// Lower the scheduling priority of a freshly-spawned PTY child so the workloads
+/// it spawns don't starve TUIC and the system.
+///
+/// Failure is logged and ignored: a build at the default priority is a degraded
+/// experience, not a broken one. Lowering priority on a process owned by the
+/// same user is always permitted, so a non-zero return here is unexpected.
+///
+/// Unix (macOS, Linux): `setpriority` to nice +10.
+#[cfg(unix)]
+fn lower_pty_child_priority(pid: Option<u32>) {
+    let Some(pid) = pid else { return };
+    let nice = pty_child_nice();
+    // SAFETY: setpriority takes scalar args and is async-signal-safe; `pid` is
+    // the id of the child we just spawned.
+    let rc = unsafe { libc::setpriority(libc::PRIO_PROCESS, pid as libc::id_t, nice) };
+    if rc != 0 {
+        tracing::warn!(
+            pid,
+            nice,
+            error = %std::io::Error::last_os_error(),
+            "failed to lower PTY child priority"
+        );
+    }
+}
+
+/// Windows: `BELOW_NORMAL_PRIORITY_CLASS` — the priority-class analog of nice
+/// +10. NOT `IDLE_PRIORITY_CLASS`, which only runs the process when the system
+/// is otherwise idle (the Windows equivalent of macOS QoS-background) and would
+/// make builds crawl. macOS/Windows lack hard CPU affinity that works on the
+/// primary target, so priority lowering is the one strategy portable to all
+/// three platforms.
+#[cfg(windows)]
+fn lower_pty_child_priority(pid: Option<u32>) {
+    use windows_sys::Win32::Foundation::CloseHandle;
+    use windows_sys::Win32::System::Threading::{
+        BELOW_NORMAL_PRIORITY_CLASS, OpenProcess, PROCESS_SET_INFORMATION, SetPriorityClass,
+    };
+    let Some(pid) = pid else { return };
+    // SAFETY: Win32 calls with scalar/handle args; `pid` is the id of the child
+    // we just spawned. The handle is closed on every path once obtained.
+    unsafe {
+        let handle = OpenProcess(PROCESS_SET_INFORMATION, 0, pid);
+        if handle.is_null() {
+            tracing::warn!(
+                pid,
+                error = %std::io::Error::last_os_error(),
+                "failed to open PTY child to lower priority"
+            );
+            return;
+        }
+        if SetPriorityClass(handle, BELOW_NORMAL_PRIORITY_CLASS) == 0 {
+            tracing::warn!(
+                pid,
+                error = %std::io::Error::last_os_error(),
+                "failed to lower PTY child priority"
+            );
+        }
+        CloseHandle(handle);
+    }
+}
+
+#[cfg(not(any(unix, windows)))]
+fn lower_pty_child_priority(_pid: Option<u32>) {}
+
 /// Resolve the shell to use: explicit override > env default > platform default.
 pub(crate) fn resolve_shell(override_shell: Option<String>) -> String {
     let shell = override_shell.unwrap_or_else(default_shell);
@@ -3598,6 +3689,7 @@ pub(crate) async fn create_pty(
     }
 
     let (pair, child) = pair_and_child.ok_or(last_err)?;
+    lower_pty_child_priority(child.process_id());
 
     let tuic_session = config.tuic_session.clone();
 
@@ -3709,6 +3801,7 @@ pub(crate) async fn spawn_session_for_agent(
         .slave
         .spawn_command(cmd)
         .map_err(|e| format!("Failed to spawn shell: {e}"))?;
+    lower_pty_child_priority(child.process_id());
 
     let writer = pair
         .master
@@ -3854,6 +3947,7 @@ pub(crate) async fn create_pty_with_worktree(
             .slave
             .spawn_command(cmd)
             .map_err(|e| format!("Failed to spawn shell: {e}"))?;
+        lower_pty_child_priority(child.process_id());
 
         let writer = pair
             .master

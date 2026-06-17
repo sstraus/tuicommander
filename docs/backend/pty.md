@@ -221,6 +221,25 @@ Shells that emit OSC 7 (`\x1b]7;file://hostname/path\x07`) report the current wo
 
 Additionally, `CLAUDECODE` is removed from the environment (`env_remove`) to prevent nested-session detection when TUICommander itself runs inside a Claude Code session.
 
+## Child Process Priority
+
+Each spawned shell is given a lower scheduling priority right after spawn
+(`lower_pty_child_priority()`), so heavy workloads run inside a pane (`cargo
+build`, bundlers, test runners) yield CPU to TUIC's own render loop and the rest
+of the system. A child inherits the parent's priority **at fork time**, so every
+process the shell later spawns is deprioritized too. The effect only bites under
+contention — an idle machine still runs the build at full speed.
+
+| Platform | Mechanism | Default |
+|----------|-----------|---------|
+| macOS / Linux | `setpriority(PRIO_PROCESS, …)` | nice **+10**, override via `TUIC_PTY_NICE` |
+| Windows | `SetPriorityClass(BELOW_NORMAL_PRIORITY_CLASS)` | fixed |
+
+Validated on an M4 Max under 14-core saturation: TUIC's UI goes from frozen
+(nice 0) to responsive (nice +10). `BELOW_NORMAL` (not `IDLE_PRIORITY_CLASS`) is
+the Windows analog — `IDLE` only runs when the whole system is idle, the
+equivalent of macOS QoS-background, which would make builds crawl.
+
 ## Session Conflict Flag File
 
 When an agent reports a session conflict (session already in use or not found), TUICommander handles it via a flag-file mechanism instead of writing directly to the PTY.
