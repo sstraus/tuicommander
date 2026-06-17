@@ -438,7 +438,8 @@ impl OutputParser {
             && !text.contains("RateLimit") && !text.contains("429")
             && !text.contains("RESOURCE_EXHAUSTED") && !text.contains("etry") // Retry/retry
             && !text.contains("Rate Limit") && !text.contains("per minute")
-            && !text.contains("limiting requests") // Claude Code friendly overload message
+            // Claude Code friendly overload message ("temporarily limiting requests")
+            && !text.contains("limiting requests")
         {
             return None;
         }
@@ -3173,9 +3174,9 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert!(!has_rate_limit(&parser.parse(
             r#"        rl("claude-overloaded-friendly", r"temporarily limiting requests", Some(30000), false),"#
         )));
-        assert!(!has_rate_limit(
-            &parser.parse("// handles \"temporarily limiting requests\" from Claude")
-        ));
+        assert!(!has_rate_limit(&parser.parse(
+            "// handles \"temporarily limiting requests\" from Claude"
+        )));
     }
 
     // --- Source code false-positive guard tests ---
