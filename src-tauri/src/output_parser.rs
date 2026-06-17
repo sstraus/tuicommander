@@ -438,6 +438,7 @@ impl OutputParser {
             && !text.contains("RateLimit") && !text.contains("429")
             && !text.contains("RESOURCE_EXHAUSTED") && !text.contains("etry") // Retry/retry
             && !text.contains("Rate Limit") && !text.contains("per minute")
+            && !text.contains("limiting requests") // Claude Code friendly overload message
         {
             return None;
         }
@@ -586,6 +587,16 @@ fn build_rate_limit_patterns() -> Vec<RateLimitPattern> {
         rl(
             "claude-overloaded",
             r"(?i)overloaded_error",
+            Some(30000),
+            false,
+        ),
+        // Claude Code: user-facing friendly overload message (Claude auto-retries
+        // internally; we only record the rate-limit, never inject — see AGENTS.md).
+        // Full UI string: "API Error: Server is temporarily limiting requests
+        // (not your usage limit) · Rate limited".
+        rl(
+            "claude-overloaded-friendly",
+            r"temporarily limiting requests",
             Some(30000),
             false,
         ),
@@ -3142,6 +3153,29 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         ));
         assert!(has_rate_limit(&parser.parse("RESOURCE_EXHAUSTED")));
         assert!(has_rate_limit(&parser.parse("Retry-After: 60")));
+    }
+
+    #[test]
+    fn test_claude_friendly_overload_message_detected() {
+        let mut parser = OutputParser::new();
+        // Claude Code's user-facing transient-overload message (Claude auto-retries
+        // internally). Must be classified as rate-limit so TUIC records it without
+        // injecting a competing retry.
+        assert!(has_rate_limit(&parser.parse(
+            "API Error: Server is temporarily limiting requests (not your usage limit) · Rate limited"
+        )));
+    }
+
+    #[test]
+    fn test_no_false_positive_friendly_overload_in_code() {
+        let mut parser = OutputParser::new();
+        // Same phrase inside source/markdown context must NOT fire.
+        assert!(!has_rate_limit(&parser.parse(
+            r#"        rl("claude-overloaded-friendly", r"temporarily limiting requests", Some(30000), false),"#
+        )));
+        assert!(!has_rate_limit(
+            &parser.parse("// handles \"temporarily limiting requests\" from Claude")
+        ));
     }
 
     // --- Source code false-positive guard tests ---
