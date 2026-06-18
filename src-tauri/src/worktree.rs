@@ -211,7 +211,21 @@ pub(crate) fn create_worktree_internal(
     // Build git worktree add command
     let base_repo_path = PathBuf::from(&config.base_repo);
     let wt_path_str = worktree_path.to_string_lossy().to_string();
-    let mut args: Vec<String> = vec!["worktree".into(), "add".into()];
+    // Skip post-checkout hooks: they run pnpm install / build-deps which can take
+    // minutes and flood the terminal with output. TUICommander handles post-setup
+    // via setupScript / runScript instead.
+    // NUL on Windows, /dev/null on Unix — both resolve to a directory with no executables.
+    #[cfg(windows)]
+    let null_path = "NUL";
+    #[cfg(not(windows))]
+    let null_path = "/dev/null";
+    let hooks_arg = format!("core.hooksPath={null_path}");
+    let mut args: Vec<String> = vec![
+        "-c".into(),
+        hooks_arg.clone(),
+        "worktree".into(),
+        "add".into(),
+    ];
 
     if config.create_branch
         && let Some(ref branch) = config.branch
@@ -254,6 +268,8 @@ pub(crate) fn create_worktree_internal(
                         .as_ref()
                         .expect("BranchExists implies -b was passed, so branch is Some");
                     let retry_args = [
+                        "-c",
+                        &hooks_arg,
                         "worktree",
                         "add",
                         &worktree_path.to_string_lossy(),
@@ -3024,6 +3040,76 @@ branch refs/heads/feat
 
         let base = get_branch_base(&repo.path().to_string_lossy(), "persist-base-test");
         assert_eq!(base, Some(default_branch));
+    }
+
+    // Verify that `git worktree add` skips post-checkout hooks. Repos with husky/lefthook
+    // hooks that run `pnpm install` or `nx build-deps` would otherwise flood the terminal
+    // with output and block the UI for minutes on every worktree creation.
+    #[test]
+    #[cfg(unix)]
+    fn test_create_worktree_skips_post_checkout_hook() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        // Hook writes a marker file inside the new worktree. If hooks are suppressed,
+        // the file must not exist after `create_worktree_internal` returns.
+        let hooks_dir = repo.path().join(".git/hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        let hook_path = hooks_dir.join("post-checkout");
+        fs::write(&hook_path, "#!/bin/sh\ntouch .hook-ran\n").unwrap();
+        fs::set_permissions(&hook_path, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = WorktreeConfig {
+            task_name: "hook-skip-test".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: Some("hook-skip-test".to_string()),
+            create_branch: true,
+        };
+        create_worktree_internal(&worktrees_dir, &config, None).unwrap();
+
+        let worktree_path = worktrees_dir.join("hook-skip-test");
+        assert!(
+            !worktree_path.join(".hook-ran").exists(),
+            "post-checkout hook ran during `git worktree add` — core.hooksPath suppression is broken"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn test_create_worktree_branch_exists_retry_skips_hook() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let repo = setup_test_repo();
+        let worktrees_dir = repo.path().join("worktrees");
+
+        // Pre-create the branch so the initial `-b` attempt hits BranchExists and falls
+        // through to the retry path (git worktree add without -b).
+        git_cmd(repo.path())
+            .args(["branch", "pre-existing"])
+            .run()
+            .unwrap();
+
+        let hooks_dir = repo.path().join(".git/hooks");
+        fs::create_dir_all(&hooks_dir).unwrap();
+        let hook_path = hooks_dir.join("post-checkout");
+        fs::write(&hook_path, "#!/bin/sh\ntouch .hook-ran\n").unwrap();
+        fs::set_permissions(&hook_path, fs::Permissions::from_mode(0o755)).unwrap();
+
+        let config = WorktreeConfig {
+            task_name: "pre-existing".to_string(),
+            base_repo: repo.path().to_string_lossy().to_string(),
+            branch: Some("pre-existing".to_string()),
+            create_branch: true,
+        };
+        create_worktree_internal(&worktrees_dir, &config, None).unwrap();
+
+        let worktree_path = worktrees_dir.join("pre-existing");
+        assert!(
+            !worktree_path.join(".hook-ran").exists(),
+            "post-checkout hook ran on BranchExists retry path — core.hooksPath suppression is broken"
+        );
     }
 
     #[test]
