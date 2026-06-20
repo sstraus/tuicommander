@@ -34,6 +34,18 @@ function record(kind: "main" | "paint", gapMs: number, at: number) {
 	if (freezes.length < MAX_ENTRIES) freezes.push({ at, gapMs, kind });
 }
 
+/** A timer gap is a background/suspend artefact — NOT a real main-thread block —
+ *  when any of these hold:
+ *   - gap > SLEEP_GAP_MS: the JS thread can't block that long; it's sleep/suspend.
+ *   - document.hidden: the page is hidden, timers clamped to ~1Hz.
+ *   - !hasFocus: macOS App Nap clamps timers to ~1Hz on a *visible but unfocused*
+ *     window without ever setting document.hidden — the source of the metronomic
+ *     1000ms phantom-freeze flood. A block only matters to the user when TUIC is
+ *     the focused window, so unfocused gaps are never reported. */
+export function isBackgroundTimerGap(gapMs: number, hidden: boolean, hasFocus: boolean): boolean {
+	return gapMs > SLEEP_GAP_MS || hidden || !hasFocus;
+}
+
 /** Main-thread freeze detector: setTimeout-driven, so a gap is a genuine
  *  main-thread stall (the historic rAF detector conflated this with paint jank,
  *  which sent every prior freeze investigation down the wrong path). */
@@ -42,17 +54,14 @@ function timerTick() {
 	const now = performance.now();
 	const gap = now - lastTimerTick;
 	lastTimerTick = now;
-	if (gap > SLEEP_GAP_MS) return; // sleep/suspend — re-baseline silently
-	// When the window is hidden/occluded the OS clamps setInterval to ~1Hz and
-	// pauses rAF — every clamped tick looks like a ~1000ms "freeze". Skip: a
-	// throttled background timer says nothing about main-thread responsiveness.
-	if (document.hidden) return;
+	// Skip sleep/suspend re-baselines and background timer-clamp artefacts.
+	if (isBackgroundTimerGap(gap, document.hidden, document.hasFocus())) return;
 	if (gap > THRESHOLD_MS) {
 		record("main", Math.round(gap), now);
 		if (now - lastMainLogAt > LOG_COOLDOWN_MS) {
 			lastMainLogAt = now;
 			const crumb = getLastCrumb();
-			appLogger.warn("app", `UI freeze: ${Math.round(gap)}ms main-thread block`, crumb ?? undefined);
+			appLogger.diag.warn("app", `UI freeze: ${Math.round(gap)}ms main-thread block`, crumb ?? undefined);
 		}
 	}
 }

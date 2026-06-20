@@ -15,7 +15,13 @@ import { SettingInput, SettingSelect, SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
 
 /** Pure helper: should the Authorize button be shown for this server+status? */
-export function shouldShowAuthorize(authType: string | undefined, status: string | undefined): boolean {
+export function shouldShowAuthorize(
+	authType: string | undefined,
+	status: string | undefined,
+	enabled: boolean,
+): boolean {
+	// A disabled upstream is never connected, so authorizing it is meaningless.
+	if (!enabled) return false;
 	return authType === "oauth2" || status === "needs_auth" || status === "authenticating";
 }
 
@@ -1404,7 +1410,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
 														}}
 														title={statusLabel(entry().status)}
 													/>
-													<Show when={entry().status === "authenticating" || entry().status === "needs_auth"}>
+													<Show when={server.enabled && entry().status !== "disabled"}>
 														<span style={{ "font-size": "11px", color: statusColor(entry().status) }}>
 															{statusLabel(entry().status)}
 														</span>
@@ -1456,7 +1462,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
 								{/* Authorize — show for explicit OAuth2 config OR when server auto-detected needs_auth (DCR case) */}
 								<Show
 									when={
-										server.auth?.type === "oauth2" || st()?.status === "needs_auth" || st()?.status === "authenticating"
+										shouldShowAuthorize(server.auth?.type, st()?.status, server.enabled)
 									}
 								>
 									<Show
@@ -1474,13 +1480,15 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
 												title={
 													st()?.status === "needs_auth"
 														? "Upstream requires authorization — click to open the provider's consent page"
-														: "Authorize via OAuth 2.1"
+														: st()?.status === "ready"
+															? "Re-authorize — sign in again to switch account"
+															: "Authorize via OAuth 2.1"
 												}
 												onClick={() => {
 													startAuthorizeFlow(server.name).catch((e) => appLogger.warn("network", String(e)));
 												}}
 											>
-												Authorize
+												{st()?.status === "ready" ? "Re-authorize" : "Authorize"}
 											</button>
 										}
 									>

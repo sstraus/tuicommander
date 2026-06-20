@@ -61,6 +61,9 @@ export interface ActivityItem {
 	icon: string;
 	/** CSS color for the icon (e.g. "var(--fg-muted)", "#3fb950") */
 	iconColor?: string;
+	/** Outcome severity, drives notification coloring (e.g. the toolbar pill:
+	 *  red for "error", green for "success"). Defaults to neutral "info". */
+	severity?: "error" | "success" | "warn" | "info";
 	/** Absolute path of the repository this item belongs to (for repo-scoped filtering) */
 	repoPath?: string;
 	/** Whether the user can dismiss this item individually */

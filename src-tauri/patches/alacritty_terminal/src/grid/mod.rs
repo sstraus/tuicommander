@@ -136,6 +136,18 @@ pub struct Grid<T> {
 
     /// Maximum number of lines in history.
     max_scroll_limit: usize,
+
+    /// Total number of lines that have ever scrolled off the top of the active
+    /// region into history, counted across the grid's whole lifetime. Unlike
+    /// `history_size()` it never plateaus or shrinks on eviction, so callers can
+    /// derive an eviction-stable absolute row coordinate (`total_scrolled() -
+    /// history_size()` = lines evicted from the history top so far).
+    ///
+    /// Defaulted on deserialize so pre-existing `grid.json` ref fixtures (recorded
+    /// before this field existed) still load; it is excluded from `PartialEq`, so the
+    /// recording-based ref comparisons are unaffected by its runtime value.
+    #[cfg_attr(feature = "serde", serde(default))]
+    lines_scrolled: usize,
 }
 
 impl<T: GridCell + Default + PartialEq> Grid<T> {
@@ -148,7 +160,18 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
             cursor: Cursor::default(),
             lines,
             columns,
+            lines_scrolled: 0,
         }
+    }
+
+    /// Total lines that have ever scrolled into history over the grid's lifetime.
+    /// Monotonic: unlike `history_size()` it does not plateau or shrink when the
+    /// scrollback cap evicts old lines, so `total_scrolled() - history_size()`
+    /// yields the number of lines evicted from the history top — the base for an
+    /// eviction-stable absolute row coordinate.
+    #[inline]
+    pub fn total_scrolled(&self) -> usize {
+        self.lines_scrolled
     }
 
     /// Update the size of the scrollback history.
@@ -272,6 +295,12 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
 
         // Only rotate the entire history if the active region starts at the top.
         if region.start == 0 {
+            // These lines scroll off the top of the active region into history.
+            // Count them before `increase_scroll_limit` clamps to the cap, so the
+            // total keeps climbing even once history is full and the oldest lines
+            // are being evicted.
+            self.lines_scrolled += positions;
+
             // Create scrollback for the new lines.
             self.increase_scroll_limit(positions);
 

@@ -27,6 +27,7 @@ function makeFrame(opts: {
 		cursorShape: "block",
 		displayOffset: opts.displayOffset ?? 0,
 		historySize: opts.historySize ?? 0,
+		historyBase: 0,
 		hasSelection: false,
 		keyboardFlags: 0,
 		bell: false,

@@ -1275,6 +1275,14 @@ impl TerminalGrid {
         let cursor_visible = self.term.mode().contains(TermMode::SHOW_CURSOR);
         let display_offset = self.term.grid().display_offset();
         let history_size = self.term.grid().history_size();
+        // Lines evicted from the history top so far. Monotonic within a resize era,
+        // so `history_base + grid_relative_abs` is an eviction-stable absolute row
+        // coordinate the frontend can key its scroll cache by (see serialize_styled_range).
+        let history_base = self
+            .term
+            .grid()
+            .total_scrolled()
+            .saturating_sub(history_size);
         let has_selection = self.term.selection.is_some();
         let mode = *self.term.mode();
         let mut keyboard_flags: u8 = 0;
@@ -1321,9 +1329,9 @@ impl TerminalGrid {
             return Vec::new();
         }
 
-        // Header: 22 bytes
+        // Header: 26 bytes
         let row_count = dirty_lines.len();
-        let estimated = 22 + row_count * (4 + num_cols * 11);
+        let estimated = 26 + row_count * (4 + num_cols * 11);
         let mut buf = Vec::with_capacity(estimated);
 
         let bell = self.drain_bell();
@@ -1375,6 +1383,7 @@ impl TerminalGrid {
         buf.push(frame_flags);
         buf.extend_from_slice(&(num_lines as u16).to_le_bytes());
         buf.extend_from_slice(&(num_cols as u16).to_le_bytes());
+        buf.extend_from_slice(&(history_base as u32).to_le_bytes());
 
         let grid = self.term.grid();
         let colors = self.term.colors();
@@ -1396,16 +1405,22 @@ impl TerminalGrid {
         buf
     }
 
-    /// Serialize a range of styled rows by absolute index (0 = oldest scrollback
-    /// line, `history_size + screen_lines - 1` = newest). Feeds the frontend's
-    /// client-side row cache so it can paint the scroll viewport locally at any
-    /// offset/speed without a per-line round-trip. Read-only, on-demand —
-    /// deliberately NOT part of the hot grid-frame protocol.
+    /// Serialize a range of styled rows by *eviction-stable absolute index*. Feeds
+    /// the frontend's client-side row cache so it can paint the scroll viewport
+    /// locally at any offset/speed without a per-line round-trip. Read-only,
+    /// on-demand — deliberately NOT part of the hot grid-frame protocol.
     ///
-    /// Absolute index maps to an alacritty `Line` as `abs - history_size`.
-    /// Requested rows outside `[0, history_size + screen_lines)` are skipped, so
-    /// the returned `row_count` may be smaller than `count`; each row carries its
-    /// own absolute index for correct placement.
+    /// The absolute index is `history_base + grid_relative`, where `history_base`
+    /// (= `total_scrolled() - history_size()`) is the count of lines already evicted
+    /// from the history top. Because `history_base` climbs by exactly as much as the
+    /// grid-relative coordinate drops on eviction, a given physical line keeps the
+    /// same absolute index for life — so the frontend cache never aliases a stale row
+    /// onto a new one after the scrollback cap rotates.
+    ///
+    /// `start_abs` is interpreted in this absolute space; rows that map outside the
+    /// live grid `[0, history_size + screen_lines)` are skipped, so the returned
+    /// `row_count` may be smaller than `count`. Each row carries its own absolute
+    /// index for correct placement.
     ///
     /// Layout (little-endian):
     ///   start_abs: u32, history_size: u32, num_cols: u16, row_count: u16,
@@ -1418,10 +1433,14 @@ impl TerminalGrid {
         let num_lines = grid.screen_lines();
         let history_size = grid.history_size();
         let total = history_size + num_lines;
+        // Convert the requested absolute start into the grid's current relative space
+        // to read cells, then re-tag each row with its absolute index on the way out.
+        let history_base = grid.total_scrolled().saturating_sub(history_size);
+        let start_rel = start_abs.saturating_sub(history_base);
 
         let rows: Vec<usize> = (0..count)
-            .map(|i| start_abs + i)
-            .filter(|&abs| abs < total)
+            .map(|i| start_rel + i)
+            .filter(|&rel| rel < total)
             .collect();
 
         let mut buf = Vec::with_capacity(12 + rows.len() * (6 + num_cols * 11));
@@ -1429,9 +1448,9 @@ impl TerminalGrid {
         buf.extend_from_slice(&(history_size as u32).to_le_bytes());
         buf.extend_from_slice(&(num_cols as u16).to_le_bytes());
         buf.extend_from_slice(&(rows.len() as u16).to_le_bytes());
-        for abs in rows {
-            let line = Line(abs as i32 - history_size as i32);
-            buf.extend_from_slice(&(abs as u32).to_le_bytes());
+        for rel in rows {
+            let line = Line(rel as i32 - history_size as i32);
+            buf.extend_from_slice(&((rel + history_base) as u32).to_le_bytes());
             buf.extend_from_slice(&(num_cols as u16).to_le_bytes());
             for col in 0..num_cols {
                 encode_cell(&mut buf, &grid[line][Column(col)], colors);
@@ -1640,7 +1659,7 @@ mod tests {
 
     // --- Binary serialization tests ---
 
-    const TEST_HEADER_SIZE: usize = 22;
+    const TEST_HEADER_SIZE: usize = 26;
     const TEST_FRAME_FLAGS_OFFSET: usize = 17;
 
     /// Helper: decode the header from a serialized frame.
@@ -2051,6 +2070,79 @@ mod tests {
         let buf = grid.serialize_styled_range(4, 3);
         let row_count = u16::from_le_bytes([buf[10], buf[11]]);
         assert_eq!(row_count, 1, "only abs 4 exists in [4,7)");
+    }
+
+    /// Decode a styled-range payload into (absolute_index, trimmed_text) pairs.
+    fn dump_styled(grid: &TerminalGrid) -> Vec<(u32, String)> {
+        let buf = grid.serialize_styled_range(0, 100_000);
+        let mut out = Vec::new();
+        if buf.len() < 12 {
+            return out;
+        }
+        let count = u16::from_le_bytes([buf[10], buf[11]]) as usize;
+        let mut off = 12;
+        for _ in 0..count {
+            let abs = u32::from_le_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
+            off += 4;
+            let col_count = u16::from_le_bytes([buf[off], buf[off + 1]]) as usize;
+            off += 2;
+            let mut text = String::new();
+            for _ in 0..col_count {
+                let ch = u32::from_le_bytes([buf[off], buf[off + 1], buf[off + 2], buf[off + 3]]);
+                text.push(char::from_u32(ch).unwrap_or(' '));
+                off += 11; // 4-byte codepoint + 7 bytes of style
+            }
+            out.push((abs, text.trim_end().to_string()));
+        }
+        out
+    }
+
+    /// The bug behind scroll duplication: with a grid-relative coordinate, a row's
+    /// absolute index shifts (and gets reused for a *different* line) once the
+    /// scrollback cap evicts from the top, so the client cache aliases a stale row
+    /// onto a new one. The absolute index must instead be globally stable: a physical
+    /// line keeps its index for life, and no index is ever reused for another line.
+    #[test]
+    fn styled_abs_is_eviction_stable_and_never_aliases() {
+        use std::collections::HashMap;
+
+        // 2 visible rows, history capped at 2 → eviction kicks in after a few lines.
+        let mut grid = TerminalGrid::new(2, 20, 2);
+        let mut abs_of_text: HashMap<String, u32> = HashMap::new();
+        let mut text_of_abs: HashMap<u32, String> = HashMap::new();
+        let mut max_abs = 0u32;
+
+        for i in 0..40 {
+            let _ = grid.process(format!("row{i:02}\r\n").as_bytes());
+            for (abs, text) in dump_styled(&grid) {
+                if text.is_empty() {
+                    continue;
+                }
+                // A given line keeps the same absolute index every time we observe it.
+                if let Some(&prev) = abs_of_text.get(&text) {
+                    assert_eq!(
+                        prev, abs,
+                        "line {text:?} moved abs {prev} -> {abs} after eviction"
+                    );
+                } else {
+                    abs_of_text.insert(text.clone(), abs);
+                }
+                // No absolute index is ever reused for a different line.
+                if let Some(prev) = text_of_abs.get(&abs) {
+                    assert_eq!(prev, &text, "abs {abs} aliased {prev:?} onto {text:?}");
+                } else {
+                    text_of_abs.insert(abs, text.clone());
+                }
+                max_abs = max_abs.max(abs);
+            }
+        }
+
+        // The coordinate kept climbing well past the 2-line cap — i.e. it is all-time
+        // absolute, not bounded by the retained history window.
+        assert!(
+            max_abs >= 30,
+            "abs should grow with total output, got {max_abs}"
+        );
     }
 
     // --- Row text tests ---

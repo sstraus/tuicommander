@@ -33,6 +33,12 @@ pub(crate) struct LogEntry {
     pub message: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub data_json: Option<String>,
+    /// Who the entry is for: `"user"` (actionable by the person using TUIC) or
+    /// `"diagnostic"` (app-internal telemetry useful only when debugging TUIC
+    /// itself). The ErrorLogPanel defaults to the user view so diagnostic spam
+    /// never buries user-relevant signal. Defaults to `"user"`.
+    #[serde(default = "default_audience")]
+    pub audience: String,
     /// How many consecutive duplicate messages were coalesced into this entry.
     /// 0 = first occurrence (no repeats), 1 = seen twice, etc.
     #[serde(default, skip_serializing_if = "is_zero")]
@@ -41,6 +47,27 @@ pub(crate) struct LogEntry {
 
 fn is_zero(v: &u32) -> bool {
     *v == 0
+}
+
+fn default_audience() -> String {
+    "user".to_string()
+}
+
+/// Sources whose every entry is app-internal telemetry, classified as
+/// `"diagnostic"` automatically so the emitters don't each have to opt in.
+const DIAGNOSTIC_SOURCES: &[&str] = &["diagnostics", "perf"];
+
+/// Resolve the audience for an entry: an explicit value wins; otherwise the
+/// source decides (known diagnostic sources → `"diagnostic"`, else `"user"`).
+fn resolve_audience(explicit: Option<String>, source: &str) -> String {
+    if let Some(a) = explicit {
+        return a;
+    }
+    if DIAGNOSTIC_SOURCES.contains(&source) {
+        "diagnostic".to_string()
+    } else {
+        default_audience()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +114,21 @@ impl LogRingBuffer {
         message: String,
         data_json: Option<String>,
     ) -> u64 {
-        // Dedup: coalesce with the most recent entry if level+source+message match
+        self.push_with_audience(level, source, message, data_json, None)
+    }
+
+    /// Push with an explicit audience. `audience = None` derives it from the
+    /// source (see [`resolve_audience`]); existing callers keep using [`push`].
+    pub(crate) fn push_with_audience(
+        &mut self,
+        level: String,
+        source: String,
+        message: String,
+        data_json: Option<String>,
+        audience: Option<String>,
+    ) -> u64 {
+        let audience = resolve_audience(audience, &source);
+        // Dedup: coalesce with the most recent entry if level+source+message+audience match
         if self.count > 0 {
             let last_idx = if self.write_pos == 0 {
                 self.capacity - 1
@@ -98,6 +139,7 @@ impl LogRingBuffer {
                 && last.level == level
                 && last.source == source
                 && last.message == message
+                && last.audience == audience
             {
                 last.repeat_count += 1;
                 last.timestamp_ms = chrono::Utc::now().timestamp_millis();
@@ -117,6 +159,7 @@ impl LogRingBuffer {
             source,
             message,
             data_json,
+            audience,
             repeat_count: 0,
         };
 
@@ -220,8 +263,9 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for RingBufferLayer {
         }
 
         let data_json = visitor.data_json();
+        let audience = visitor.audience.take();
         let mut buf = self.buffer.lock();
-        buf.push(level.to_string(), source, message, data_json);
+        buf.push_with_audience(level.to_string(), source, message, data_json, audience);
     }
 }
 
@@ -230,6 +274,7 @@ impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for RingBufferLayer {
 struct LogVisitor {
     message: Option<String>,
     source: Option<String>,
+    audience: Option<String>,
     extra: Option<std::collections::BTreeMap<String, String>>,
 }
 
@@ -253,6 +298,7 @@ impl tracing::field::Visit for LogVisitor {
         match field.name() {
             "message" => self.message = Some(value.to_string()),
             "source" => self.source = Some(value.to_string()),
+            "audience" => self.audience = Some(value.to_string()),
             _ => {
                 self.extra_mut()
                     .insert(field.name().to_string(), value.to_string());
@@ -264,6 +310,7 @@ impl tracing::field::Visit for LogVisitor {
         match field.name() {
             "message" => self.message = Some(format!("{value:?}")),
             "source" => self.source = Some(format!("{value:?}")),
+            "audience" => self.audience = Some(format!("{value:?}")),
             _ => {
                 self.extra_mut()
                     .insert(field.name().to_string(), format!("{value:?}"));
@@ -375,9 +422,10 @@ pub(crate) fn push_log(
     source: String,
     message: String,
     data_json: Option<String>,
+    audience: Option<String>,
 ) {
     let mut buf = state.log_buffer.lock();
-    buf.push(level, source, message, data_json);
+    buf.push_with_audience(level, source, message, data_json, audience);
 }
 
 /// Retrieve log entries. Returns up to `limit` most recent entries (0 = all).
@@ -635,6 +683,62 @@ mod tests {
         assert_eq!(id1, id2);
         let entries = buf.get_entries(0);
         assert_eq!(entries[0].id, id1);
+    }
+
+    // ---- Audience classification ----
+
+    #[test]
+    fn audience_defaults_to_user() {
+        let mut buf = LogRingBuffer::new(10);
+        buf.push("warn".into(), "app".into(), "ui freeze".into(), None);
+        assert_eq!(buf.get_entries(0)[0].audience, "user");
+    }
+
+    #[test]
+    fn audience_derived_from_diagnostic_source() {
+        let mut buf = LogRingBuffer::new(10);
+        buf.push(
+            "info".into(),
+            "diagnostics".into(),
+            "health snapshot".into(),
+            None,
+        );
+        assert_eq!(buf.get_entries(0)[0].audience, "diagnostic");
+    }
+
+    #[test]
+    fn explicit_audience_overrides_source_derivation() {
+        let mut buf = LogRingBuffer::new(10);
+        // App-sourced but explicitly diagnostic (e.g. the freeze detector).
+        buf.push_with_audience(
+            "warn".into(),
+            "app".into(),
+            "UI freeze: 1000ms".into(),
+            None,
+            Some("diagnostic".into()),
+        );
+        assert_eq!(buf.get_entries(0)[0].audience, "diagnostic");
+    }
+
+    #[test]
+    fn dedup_does_not_coalesce_across_audiences() {
+        let mut buf = LogRingBuffer::new(10);
+        buf.push_with_audience(
+            "warn".into(),
+            "app".into(),
+            "x".into(),
+            None,
+            Some("user".into()),
+        );
+        buf.push_with_audience(
+            "warn".into(),
+            "app".into(),
+            "x".into(),
+            None,
+            Some("diagnostic".into()),
+        );
+        // Same level+source+message but different audience → two distinct entries.
+        assert_eq!(buf.len(), 2);
     }
 
     #[test]

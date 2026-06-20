@@ -7,7 +7,7 @@ import { isAbsolutePath, joinPath } from "../../utils/pathUtils";
 import g from "../shared/git-status.module.css";
 import s from "./FileBrowserPanel.module.css";
 import { FileIcon } from "./FileIcon";
-import { formatSize, getStatusClass } from "./fileUtils";
+import { fileTooltip, formatSize, getStatusClass } from "./fileUtils";
 
 export interface TreeNodeProps {
 	entry: DirEntry;
@@ -89,7 +89,9 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
 					<span class={s.treeLeafSpacer} />
 				</Show>
 				<FileIcon name={props.entry.name} isDir={props.entry.is_dir} class={s.entryIcon} />
-				<span class={s.entryName}>{props.entry.name}</span>
+				<span class={s.entryName} title={fileTooltip(props.entry)}>
+					{props.entry.name}
+				</span>
 				<Show when={props.entry.git_status}>
 					<span class={cx(g.dot, getStatusClass(props.entry.git_status))} title={props.entry.git_status} />
 				</Show>

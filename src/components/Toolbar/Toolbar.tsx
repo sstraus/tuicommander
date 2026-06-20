@@ -74,6 +74,50 @@ function getLastItemAcrossStores(activeRepoPath: string | null): LastItemSource 
 		: { kind: "pr", notif: prLast };
 }
 
+export type LastItemSeverity = "error" | "success" | "warn" | "info";
+
+/** Map a PR notification type to a pill severity (red/green/amber/neutral). */
+export function prTypeSeverity(type: PrNotificationType): LastItemSeverity {
+	switch (type) {
+		case "ci_failed":
+			return "error";
+		case "blocked":
+		case "changes_requested":
+			return "warn";
+		case "merged":
+		case "ci_recovered":
+		case "ready":
+			return "success";
+		default:
+			return "info";
+	}
+}
+
+/** Severity that colors the last-item pill, by source kind. */
+export function lastItemSeverity(src: LastItemSource): LastItemSeverity {
+	switch (src.kind) {
+		case "update":
+			return "info";
+		case "pr":
+			return prTypeSeverity(src.notif.type);
+		default:
+			return src.item.severity ?? "info";
+	}
+}
+
+/** Stable identity for a last-item source, used to remember it was "seen" (so
+ *  clicking the pill clears it without dismissing the underlying notification). */
+export function lastItemKey(src: LastItemSource): string {
+	switch (src.kind) {
+		case "update":
+			return `update:${src.version}`;
+		case "pr":
+			return `pr:${src.notif.id}`;
+		default:
+			return `activity:${src.item.id}`;
+	}
+}
+
 export interface ToolbarProps {
 	repoPath?: string;
 	runCommand?: string;
@@ -126,7 +170,15 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 		);
 	});
 	const totalBadgeCount = () => activeNotifs().length + visibleActivityCount() + (hasUpdate() ? 1 : 0);
-	const lastItem = createMemo(() => getLastItemAcrossStores(repositoriesStore.state.activeRepoPath));
+	// Keys of last-items the user already "saw" by clicking the pill. Ephemeral
+	// (per session): hides the pill without dismissing the underlying notification,
+	// which stays in the bell dropdown until dismissed there.
+	const [seenKeys, setSeenKeys] = createSignal<Set<string>>(new Set());
+	const lastItem = createMemo(() => {
+		const src = getLastItemAcrossStores(repositoriesStore.state.activeRepoPath);
+		if (!src) return null;
+		return seenKeys().has(lastItemKey(src)) ? null : src;
+	});
 
 	const activeBranch = () => {
 		const activeRepoPath = repositoriesStore.state.activeRepoPath;
@@ -187,20 +239,15 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 		}
 	};
 
-	/** Execute the last-item shortcut action */
+	/** The pill is a preview of the newest bell notification — clicking it opens the
+	 *  bell dropdown (with full context + per-item actions) and marks this item seen,
+	 *  so the pill clears. Unifies pill and bell instead of being a second action. */
 	const handleLastItemClick = () => {
 		const src = lastItem();
 		if (!src) return;
-		if (src.kind === "update") {
-			updaterStore.downloadAndInstall();
-		} else if (src.kind === "activity") {
-			openActivityItem(src.item);
-		} else {
-			// PR notification: open detail popover
-			requestAnimationFrame(() => {
-				setPrDetailTarget({ repoPath: src.notif.repoPath, branch: src.notif.branch });
-			});
-		}
+		setSeenKeys((prev) => new Set(prev).add(lastItemKey(src)));
+		setShowNotifPopover(true);
+		if (showWatcherPopover()) setShowWatcherPopover(false);
 	};
 
 	return (
@@ -290,7 +337,19 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 							: `${t("toolbar.showSidebar", "Show Sidebar")} (${keyFor("toggle-sidebar")})`
 					}
 				>
-					◧
+					{/* Panel-toggle icon: rounded panel + left-sidebar divider + chevron.
+					    Chevron points left to collapse (sidebar visible) or right to expand. */}
+					<svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+						<rect x="2" y="3" width="12" height="10" rx="1.6" stroke="currentColor" stroke-width="1.3" />
+						<path d="M6.5 3v10" stroke="currentColor" stroke-width="1.3" />
+						<path
+							d={uiStore.state.sidebarVisible ? "M11 6 9 8l2 2" : "M9 6l2 2-2 2"}
+							stroke="currentColor"
+							stroke-width="1.3"
+							stroke-linecap="round"
+							stroke-linejoin="round"
+						/>
+					</svg>
 				</button>
 			</div>
 
@@ -320,9 +379,33 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 			</div>
 
 			<div class={s.right}>
-				{/* Notification group: smart prompts + last-item + watcher + bell */}
+				{/* Notification group: smart prompts + watcher (eye) + last-item pill + bell.
+				    The eye sits left of the pill so the pill and bell stay adjacent —
+				    the pill is a preview of the bell's newest notification. */}
 				<div class={s.notifGroup} ref={notifRef}>
 					<SmartPromptsDropdown repoPath={props.repoPath} onOpenSettings={props.onOpenSettings} />
+
+					{/* Watcher manager (eye) */}
+					<Show when={settingsStore.isAiWatchersEnabled()}>
+						<div ref={watcherRef} style={{ position: "relative", display: "inline-flex", height: "100%" }}>
+							<button
+								class={s.watcherBtn}
+								onClick={() => {
+									setShowWatcherPopover(!showWatcherPopover());
+									if (showNotifPopover()) setShowNotifPopover(false);
+								}}
+								title="Watchers"
+							>
+								<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+									<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
+								</svg>
+							</button>
+							<Show when={showWatcherPopover()}>
+								<WatcherManager />
+							</Show>
+						</div>
+					</Show>
+
 					{/* Last-item shortcut — only when there are items */}
 					<Show when={lastItem()}>
 						{(src) => {
@@ -330,9 +413,15 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 								src().kind === "activity" ? (src() as { kind: "activity"; item: ActivityItem }) : null;
 							const prSrc = () => (src().kind === "pr" ? (src() as { kind: "pr"; notif: PrNotification }) : null);
 							const updateSrc = () => (src().kind === "update" ? (src() as { kind: "update"; version: string }) : null);
+							const sevClass = {
+								error: s.lastItemError,
+								success: s.lastItemSuccess,
+								warn: s.lastItemWarn,
+								info: undefined,
+							}[lastItemSeverity(src())];
 							return (
 								<button
-									class={s.lastItemBtn}
+									class={cx(s.lastItemBtn, sevClass)}
 									onClick={handleLastItemClick}
 									title={(() => {
 										const v = src();
@@ -372,27 +461,6 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 								</button>
 							);
 						}}
-					</Show>
-
-					{/* Watcher manager */}
-					<Show when={settingsStore.isAiWatchersEnabled()}>
-						<div ref={watcherRef} style={{ position: "relative", display: "inline-flex", height: "100%" }}>
-							<button
-								class={s.watcherBtn}
-								onClick={() => {
-									setShowWatcherPopover(!showWatcherPopover());
-									if (showNotifPopover()) setShowNotifPopover(false);
-								}}
-								title="Watchers"
-							>
-								<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
-									<path d="M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z" />
-								</svg>
-							</button>
-							<Show when={showWatcherPopover()}>
-								<WatcherManager />
-							</Show>
-						</div>
 					</Show>
 
 					{/* Bell — always visible */}

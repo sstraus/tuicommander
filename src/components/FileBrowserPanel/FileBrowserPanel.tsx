@@ -26,7 +26,7 @@ import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { PanelWindowControls } from "../ui/PanelWindowControls";
 import s from "./FileBrowserPanel.module.css";
 import { FileIcon } from "./FileIcon";
-import { formatSize, getStatusClass } from "./fileUtils";
+import { fileTooltip, formatSize, getStatusClass } from "./fileUtils";
 import { TreeNode } from "./TreeNode";
 
 export interface FileBrowserPanelProps {
@@ -1421,7 +1421,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 											onContextMenu={(e) => handleContextMenu(e, entry)}
 										>
 											<FileIcon name={entry.name} isDir={entry.is_dir} class={s.entryIcon} />
-											<span class={s.entryName} title={entry.path}>
+											<span class={s.entryName} title={fileTooltip(entry)}>
 												{isSearch ? entry.path : entry.name}
 											</span>
 											<Show when={entry.git_status}>

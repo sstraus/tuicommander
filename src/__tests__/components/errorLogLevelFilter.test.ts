@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { levelPassesThreshold } from "../../components/ErrorLogPanel/ErrorLogPanel";
+import { audiencePasses, levelPassesThreshold } from "../../components/ErrorLogPanel/ErrorLogPanel";
 import type { AppLogLevel } from "../../stores/appLogger";
 
 const ALL_LEVELS: AppLogLevel[] = ["debug", "info", "warn", "error"];
@@ -30,5 +30,28 @@ describe("levelPassesThreshold", () => {
 		for (const level of ALL_LEVELS) {
 			expect(levelPassesThreshold(level, "debug")).toBe(true);
 		}
+	});
+});
+
+describe("audiencePasses", () => {
+	it("default 'user' tab shows user entries and untagged (undefined) entries", () => {
+		expect(audiencePasses("user", "user")).toBe(true);
+		expect(audiencePasses(undefined, "user")).toBe(true); // legacy entries default to user
+	});
+
+	it("default 'user' tab hides diagnostic telemetry", () => {
+		expect(audiencePasses("diagnostic", "user")).toBe(false);
+	});
+
+	it("'diagnostic' tab shows only telemetry", () => {
+		expect(audiencePasses("diagnostic", "diagnostic")).toBe(true);
+		expect(audiencePasses("user", "diagnostic")).toBe(false);
+		expect(audiencePasses(undefined, "diagnostic")).toBe(false);
+	});
+
+	it("'all' tab shows everything", () => {
+		expect(audiencePasses("user", "all")).toBe(true);
+		expect(audiencePasses("diagnostic", "all")).toBe(true);
+		expect(audiencePasses(undefined, "all")).toBe(true);
 	});
 });

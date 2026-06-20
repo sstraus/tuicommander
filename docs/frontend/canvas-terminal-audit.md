@@ -36,7 +36,7 @@ Key insight: Terminal.tsx handles parsed events, session lifecycle, banners, and
 
 ## Binary Frame Format
 
-Each frame: 22-byte header + variable row data. Per cell: 4 bytes codepoint + 3 bytes fg RGB + 3 bytes bg RGB + 1 byte attrs bitmask = 11 bytes. Decoded in `decodeBinaryFrame` using struct-of-arrays (SoA) typed arrays — zero per-cell object allocation.
+Each frame: 26-byte header + variable row data. The header ends with a `historyBase: u32` (lines evicted from the history top so far); `historyBase + (historySize - displayOffset + screenRow)` is the eviction-stable absolute index the smooth-scroll row cache keys by, so a cached row never aliases onto a different line after the scrollback cap rotates. Per cell: 4 bytes codepoint + 3 bytes fg RGB + 3 bytes bg RGB + 1 byte attrs bitmask = 11 bytes. Decoded in `decodeBinaryFrame` using struct-of-arrays (SoA) typed arrays — zero per-cell object allocation.
 
 ## Performance Notes
 

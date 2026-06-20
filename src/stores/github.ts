@@ -49,6 +49,8 @@ function createGitHubStore() {
 	let ciFailedCallback: ((repoPath: string, branch: string, prNumber: number) => void) | null = null;
 	/** Callback fired when CI checks recover (failed → all passing) for a PR */
 	let ciRecoveredCallback: ((repoPath: string, branch: string, prNumber: number) => void) | null = null;
+	/** Callback fired when a PR becomes blocked by merge conflicts (mergeable → CONFLICTING) */
+	let conflictCallback: ((repoPath: string, branch: string, prNumber: number) => void) | null = null;
 
 	/** Update repo data from Rust poller event (transitions handled by separate event) */
 	function updateRepoData(repoPath: string, prStatuses: BranchPrStatus[]): void {
@@ -280,6 +282,9 @@ function createGitHubStore() {
 		if (t.type === "ci_recovered" && ciRecoveredCallback) {
 			ciRecoveredCallback(t.repo_path, t.branch, t.pr_number);
 		}
+		if (t.type === "blocked" && conflictCallback) {
+			conflictCallback(t.repo_path, t.branch, t.pr_number);
+		}
 	}
 
 	function fetchViewerLogin(): void {
@@ -375,10 +380,19 @@ function createGitHubStore() {
 		setOnCiRecovered(cb: ((repoPath: string, branch: string, prNumber: number) => void) | null): void {
 			ciRecoveredCallback = cb;
 		},
+		/** Register a callback for merge-conflict blocks (mergeable → CONFLICTING) */
+		setOnConflict(cb: ((repoPath: string, branch: string, prNumber: number) => void) | null): void {
+			conflictCallback = cb;
+		},
 		/** Fire the CI-failed handler on demand (e.g. when auto-heal is enabled while CI
 		 *  is already red) — the transition event only fires once on green→red. */
 		triggerCiHeal(repoPath: string, branch: string, prNumber: number): void {
 			ciFailedCallback?.(repoPath, branch, prNumber);
+		},
+		/** Fire the conflict handler on demand (e.g. when auto-heal is enabled while the
+		 *  PR is already conflicting) — the transition event only fires once on the edge. */
+		triggerConflictHeal(repoPath: string, branch: string, prNumber: number): void {
+			conflictCallback?.(repoPath, branch, prNumber);
 		},
 	};
 }

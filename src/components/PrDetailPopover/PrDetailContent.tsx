@@ -45,13 +45,18 @@ const CiAutoHealToggle: Component<{ repoPath: string; branch: string }> = (props
 			enabled: turningOn,
 			attempts: turningOn ? (current?.attempts ?? 0) : 0,
 		});
-		// Enabling while CI is already red: the green→red transition event has already
-		// passed, so kick off a heal attempt now instead of waiting for the next failure.
+		// Enabling while the PR is already blocked: the green→red / →conflict transition
+		// event has already passed, so kick off a heal attempt now instead of waiting for
+		// the next one. Prefer CI failures over conflicts when both are present.
 		if (turningOn) {
 			const pr = githubStore.getBranchPrData(props.repoPath, props.branch);
-			const failed = githubStore.getCheckSummary(props.repoPath, props.branch)?.failed ?? 0;
-			if (pr && failed > 0) {
-				githubStore.triggerCiHeal(props.repoPath, props.branch, pr.number);
+			if (pr) {
+				const failed = githubStore.getCheckSummary(props.repoPath, props.branch)?.failed ?? 0;
+				if (failed > 0) {
+					githubStore.triggerCiHeal(props.repoPath, props.branch, pr.number);
+				} else if (pr.mergeable === "CONFLICTING") {
+					githubStore.triggerConflictHeal(props.repoPath, props.branch, pr.number);
+				}
 			}
 		}
 	};
@@ -62,7 +67,7 @@ const CiAutoHealToggle: Component<{ repoPath: string; branch: string }> = (props
 				<input type="checkbox" checked={enabled()} onChange={toggle} />
 				<span class={s.autoHealSlider} />
 			</label>
-			<span class={s.autoHealLabel}>{t("prDetail.autoHeal", "Auto-heal CI")}</span>
+			<span class={s.autoHealLabel}>{t("prDetail.autoHeal", "Auto-heal")}</span>
 			<Show when={healing()}>
 				<span class={s.autoHealStatus}>
 					{t("prDetail.healing", "Healing")} ({attempts()}/3)
@@ -236,8 +241,8 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
 						)}
 					</Show>
 
-					{/* Auto-heal CI toggle */}
-					<Show when={checkSummary()?.failed}>
+					{/* Auto-heal toggle — shown when CI is failing or the PR is conflicting */}
+					<Show when={checkSummary()?.failed || pr().mergeable === "CONFLICTING"}>
 						<CiAutoHealToggle repoPath={props.repoPath} branch={props.branch} />
 					</Show>
 

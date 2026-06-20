@@ -904,7 +904,13 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 		map: (args) => ({
 			method: "POST",
 			path: "/logs",
-			body: { level: args.level, source: args.source, message: args.message, data_json: args.dataJson },
+			body: {
+				level: args.level,
+				source: args.source,
+				message: args.message,
+				data_json: args.dataJson,
+				audience: args.audience,
+			},
 		}),
 	},
 	get_logs: {

@@ -1499,6 +1499,7 @@ const App: Component = () => {
 					title: `git ${op}`,
 					subtitle: output || "completed",
 					icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm3.78 5.97l-4.5 4.5a.75.75 0 0 1-1.06 0l-2-2a.75.75 0 1 1 1.06-1.06L6.75 8.88l3.97-3.97a.75.75 0 1 1 1.06 1.06z"/></svg>',
+					severity: "success",
 					repoPath,
 					dismissible: true,
 				});
@@ -1519,6 +1520,7 @@ const App: Component = () => {
 					title: `git ${op} failed`,
 					subtitle: errMsg,
 					icon: '<svg viewBox="0 0 16 16" width="14" height="14" fill="#f85149"><path d="M8 0a8 8 0 1 0 0 16A8 8 0 0 0 8 0zm3.36 10.3a.75.75 0 0 1-1.06 1.06L8 9.06l-2.3 2.3a.75.75 0 0 1-1.06-1.06L6.94 8 4.64 5.7a.75.75 0 0 1 1.06-1.06L8 6.94l2.3-2.3a.75.75 0 0 1 1.06 1.06L9.06 8l2.3 2.3z"/></svg>',
+					severity: "error",
 					repoPath,
 					dismissible: true,
 				});

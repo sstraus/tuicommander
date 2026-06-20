@@ -375,7 +375,7 @@ export const MCP_SUPPORT: Record<AgentType, boolean> = {
 
 /**
  * Which agents support native-hook state instrumentation (settings-hook shape).
- * Codex/Grok/OpenCode land in later adapter stories and flip on then.
+ * Claude/Gemini/Grok/Codex use settings-hooks; OpenCode uses a code-extension plugin.
  */
 export const HOOK_SUPPORT: Record<AgentType, boolean> = {
 	claude: true,

@@ -21,6 +21,9 @@ pub(crate) struct GetLogsQuery {
     /// Optional source filter: "app", "plugin", "git", "terminal", etc.
     #[serde(default)]
     source: Option<String>,
+    /// Optional audience filter: "user" or "diagnostic".
+    #[serde(default)]
+    audience: Option<String>,
 }
 
 /// GET /logs — retrieve log entries from the ring buffer.
@@ -38,6 +41,9 @@ pub(crate) async fn get_logs(
     if let Some(ref source) = q.source {
         entries.retain(|e| e.source == *source);
     }
+    if let Some(ref audience) = q.audience {
+        entries.retain(|e| e.audience == *audience);
+    }
 
     Json(entries)
 }
@@ -48,6 +54,8 @@ pub(crate) struct PushLogBody {
     source: String,
     message: String,
     data_json: Option<String>,
+    #[serde(default)]
+    audience: Option<String>,
 }
 
 /// POST /logs — push a log entry into the ring buffer.
@@ -56,7 +64,13 @@ pub(crate) async fn push_log(
     Json(body): Json<PushLogBody>,
 ) -> StatusCode {
     let mut buf = state.log_buffer.lock();
-    buf.push(body.level, body.source, body.message, body.data_json);
+    buf.push_with_audience(
+        body.level,
+        body.source,
+        body.message,
+        body.data_json,
+        body.audience,
+    );
     StatusCode::NO_CONTENT
 }
 

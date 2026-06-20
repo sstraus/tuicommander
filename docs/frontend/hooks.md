@@ -316,7 +316,11 @@ Handles post-merge cleanup: switches to main branch, removes worktree, optionall
 
 **File:** `src/hooks/useCiHeal.ts`
 
-CI auto-heal loop: monitors PR CI failures, fetches failure logs, and injects them into the agent terminal for automatic fix cycles (up to 3 attempts).
+Auto-heal loop: when enabled on a branch, monitors two PR block transitions and hands the problem to the branch's agent terminal for automatic fix cycles (up to 3 attempts):
+- **CI failure** (`ci_failed`): fetches failure logs and injects them with a fix prompt.
+- **Merge conflict** (`blocked`, i.e. `mergeable === "CONFLICTING"`): injects a resolve-conflicts prompt.
+
+Both transitions are edge-triggered by the Rust poller. Enabling the toggle while the PR is already blocked kicks off a heal immediately via `githubStore.triggerCiHeal` / `triggerConflictHeal`.
 
 ---
 

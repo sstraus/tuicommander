@@ -843,12 +843,15 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - Resolution chain: per-repo override → global setting
 - TriStateToggle component: 3-position pill switch (left=hide, center=default, right=show) matching existing toggle style
 
-### 8.5 CI Auto-Heal
-- When CI checks fail on a branch with an active agent terminal, auto-heal can fetch failure logs and inject them into the agent
-- Toggle per-branch via pill-switch toggle in PR detail popover (visible when CI checks are failing), styled consistently with CI check item rows
+### 8.5 Auto-Heal
+- When a PR on a branch with an active agent terminal becomes blocked, auto-heal hands the problem to the agent:
+  - **CI failure** — fetches failure logs and injects them with a fix prompt
+  - **Merge conflict** (`mergeable === "CONFLICTING"`) — injects a resolve-conflicts prompt
+- Toggle per-branch via pill-switch toggle in PR detail popover (visible when CI is failing or the PR is conflicting), styled consistently with CI check item rows
 - Fetches logs via `gh run view --log-failed`, truncated to ~4000 chars
 - Waits for agent to be idle/awaiting input before injecting
-- Max 3 attempts per failure cycle, then stops and logs a warning
+- Max 3 attempts per block cycle, then stops and logs a warning
+- Enabling while already blocked kicks off a heal immediately
 - Attempt counter visible in PR detail popover
 - Status tracked per-branch in `BranchState.ciAutoHeal`
 

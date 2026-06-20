@@ -27,7 +27,9 @@
 }
 
 .repo {
-  padding: 6px 14px 2px;
+  /* top padding clears the popover's radius-xl (8px) rounded corner so the
+     owner/repo line isn't clipped against the top edge */
+  padding: 10px 14px 2px;
   font-size: var(--font-xs);
   font-weight: 600;
   color: var(--accent);

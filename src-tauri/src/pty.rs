@@ -401,9 +401,13 @@ pub(crate) fn extract_question_line(changed_rows: &[ChangedRow]) -> Option<Strin
 }
 
 /// Returns false for lines that are clearly not questions: code comments, diff context,
-/// markdown headers, and lines containing code-specific syntax.
+/// markdown headers, prompt-echoed user input, and lines containing code-specific syntax.
 fn is_plausible_question(line: &str) -> bool {
     let trimmed = line.trim_start();
+    // Prompt-prefixed lines are user input echoed in the conversation, not agent questions.
+    if is_prompt_line(trimmed) {
+        return false;
+    }
     // Comment/diff/markdown prefixes
     if trimmed.starts_with("//")
         || trimmed.starts_with('#')
@@ -1972,7 +1976,6 @@ impl ChunkProcessor {
             term_events,
             screen_cache,
             cursor_row,
-            pre_filter_has_spinner,
             history_size,
         ) = if let Some(vt_log) = state.vt_log_buffers.get(session_id) {
             let mut vt = vt_log.lock();
@@ -1990,9 +1993,6 @@ impl ChunkProcessor {
             // Use screen_rows_ref() to avoid cloning prev_rows for the chrome cutoff
             // check. The owned snapshot is captured once below for slash-menu/choice-prompt
             // parsing that happens after the lock is released.
-            let pre_filter_has_spinner = changed
-                .iter()
-                .any(|r| crate::chrome::is_spinner_row(&r.text));
             let changed = if !changed.is_empty() {
                 if let Some(screen) = vt.screen_rows_ref() {
                     let refs: Vec<&str> = screen.iter().map(|s| s.as_str()).collect();
@@ -2022,11 +2022,10 @@ impl ChunkProcessor {
                 tevts,
                 Some(screen),
                 cursor_row,
-                pre_filter_has_spinner,
                 hist,
             )
         } else {
-            (Vec::new(), None, None, Vec::new(), None, 0, false, 0)
+            (Vec::new(), None, None, Vec::new(), None, 0, 0)
         };
 
         // Did this chunk grow the scrollback (genuine new output) or merely
@@ -2582,11 +2581,18 @@ impl ChunkProcessor {
         // Spinner rows (dingbats ✻, braille ⠋, Aider ░█) prove the agent is
         // alive even though they are chrome-only — keeping the timestamp fresh
         // prevents should_transition_idle from firing mid-think.
+        //
+        // Spinner detection runs on the SAME post-cutoff `changed_rows` as
+        // everything else. Real spinners (Gemini braille, Aider Knight Rider,
+        // Claude `✻ Thinking…`) all render ABOVE the input separator, so they
+        // survive the chrome cutoff and still keep the agent alive here. Footer
+        // chrome below the separator (the periodic statusline repaint whose
+        // `█░·` glyphs look like spinner runs) sits past the cutoff and is
+        // dropped — agnostic to whatever the user puts in their status bar.
         let has_spinner = chrome_only
-            && (pre_filter_has_spinner
-                || changed_rows
-                    .iter()
-                    .any(|r| crate::chrome::is_spinner_row(&r.text)));
+            && changed_rows
+                .iter()
+                .any(|r| crate::chrome::is_spinner_row(&r.text));
         if (!chrome_only || has_spinner)
             && let Some(ts) = state.last_output_ms.get(session_id)
         {
@@ -4295,11 +4301,17 @@ pub(crate) fn resize_pty(
         .get(&session_id)
         .map(|a| a.load(std::sync::atomic::Ordering::Relaxed))
         .unwrap_or(SHELL_NULL);
-    if let Some(vt_log) = state.vt_log_buffers.get(&session_id) {
-        vt_log
-            .lock()
-            .resize_with_shell_state(rows, cols, shell_state);
-    }
+    // Resize the grid and capture a fresh full frame. `resize_with_mode` marks the
+    // grid fully damaged, so `serialize_dirty_rows` yields the whole viewport. We must
+    // flush it ourselves: the reader thread only sends frames on PTY data or the ticker,
+    // so a resize/zoom over idle or static content (e.g. an agent's printed output)
+    // would otherwise leave the viewport blank until a scroll forces
+    // `terminal_request_frame`. Emitting here makes zoom repaint immediately.
+    let resize_frame = state.vt_log_buffers.get(&session_id).map(|vt_log| {
+        let mut vt = vt_log.lock();
+        vt.resize_with_shell_state(rows, cols, shell_state);
+        vt.serialize_dirty_rows()
+    });
     // Update terminal rows for cursor-up clamping in the reader thread.
     if let Some(r) = state.terminal_rows.get(&session_id) {
         r.store(rows, Ordering::Relaxed);
@@ -4308,6 +4320,11 @@ pub(crate) fn resize_pty(
     // from the shell's prompt redraw triggered by SIGWINCH.
     if let Some(ss) = state.silence_states.get(&session_id) {
         ss.lock().on_resize();
+    }
+    // Flush the post-resize frame so the viewport repaints without waiting for the
+    // next PTY data event (fixes blank screen after zoom on static content).
+    if let Some(frame) = resize_frame {
+        send_grid_frame(&state, &session_id, frame);
     }
     Ok(())
 }
@@ -6992,6 +7009,178 @@ mod tests {
         );
     }
 
+    /// Build ChangedRows for a subset of a full screen, mirroring how the VT
+    /// reader reports only the rows a chunk actually repainted (`row_index`
+    /// preserved against the full screen).
+    fn changed_at(screen: &[&str], indices: &[usize]) -> Vec<ChangedRow> {
+        indices
+            .iter()
+            .map(|&i| ChangedRow {
+                row_index: i,
+                text: screen[i].to_string(),
+            })
+            .collect()
+    }
+
+    /// Mirror process_chunk's chrome-cutoff filter (pty.rs ~1996): drop changed
+    /// rows at or below the footer cutoff, keeping only the content zone.
+    fn filter_below_cutoff(screen: &[&str], changed: Vec<ChangedRow>) -> Vec<ChangedRow> {
+        if changed.is_empty() {
+            return changed;
+        }
+        match crate::chrome::find_chrome_cutoff(screen) {
+            Some(cutoff) => changed
+                .into_iter()
+                .filter(|r| r.row_index < cutoff)
+                .collect(),
+            None => changed,
+        }
+    }
+
+    /// Regression for the false-busy "flap" (root cause + agnostic fix,
+    /// 2026-06-17). Claude Code repaints its whole input area periodically.
+    /// Positionally, EVERYTHING below the second separator of the input box is
+    /// chrome — status bar, mode line, usage gauge — regardless of its glyphs.
+    /// The user's custom HUD renders a context gauge (`█░`) and a mode line
+    /// (`·`) there; `is_spinner_row` reads those glyphs as a live spinner.
+    ///
+    /// The fix is positional, not glyph-based: spinner keepalive runs on the
+    /// SAME post-cutoff `changed_rows` as everything else. A repaint that only
+    /// touches footer rows below the cutoff yields an EMPTY post-filter set →
+    /// chrome_only with no spinner → no busy transition. Agnostic to whatever
+    /// the user puts in their status bar. These are the exact rows captured
+    /// from the live flapping instance.
+    #[test]
+    fn test_statusbar_repaint_below_cutoff_does_not_flap_busy() {
+        let sep = "────────────────────────────────────────────────────────────────────────";
+        let screen: Vec<&str> = vec![
+            "Here is the answer to your question.",
+            "",
+            sep,
+            "❯",
+            sep,
+            "[Opus 4.8 (1M) | Team] █░░░░░░░░░ 6% | gh-metrics git:(master)",
+            "5h: 21% (50m) | 7d: 23% | $31.00 | 📅 $199.70 | 13h",
+            "⏵⏵ bypass permissions on (shift+tab to cycle) · ← for agents",
+        ];
+        // The periodic repaint re-emits only the footer rows (indices 5-7).
+        let changed = changed_at(&screen, &[5, 6, 7]);
+        let filtered = filter_below_cutoff(&screen, changed);
+        assert!(
+            filtered.is_empty(),
+            "all-footer repaint must yield an empty post-cutoff set"
+        );
+        let chrome_only = compute_chrome_only(&filtered, true, false, false);
+        let has_spinner = chrome_only
+            && filtered
+                .iter()
+                .any(|r| crate::chrome::is_spinner_row(&r.text));
+        assert!(chrome_only, "empty post-cutoff set is chrome_only");
+        assert!(
+            !(!chrome_only || has_spinner),
+            "statusbar repaint must NOT pass the busy transition gate (no flap)"
+        );
+    }
+
+    /// Companion to the flap regression: a REAL working spinner renders ABOVE
+    /// the input separator (in the content zone), so it survives the chrome
+    /// cutoff and the post-filter spinner check fires — keeping the agent alive.
+    /// Otherwise the agent false-idles mid-think (the dangerous direction the
+    /// single-path design prevents). This is what makes the positional fix safe:
+    /// no supported agent renders a genuine working spinner below the separator.
+    #[test]
+    fn test_content_zone_spinner_still_keeps_alive() {
+        let cc_sep = "────────────────────────────────────────────────────────────────────────";
+        let gem_sep =
+            "─────────────────────────────────────────────────────────────────────────────────";
+        let gem_top =
+            "▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀";
+        let gem_bot =
+            "▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▀▀";
+        // (full screen, index of the working spinner row). Spinner is ABOVE the
+        // input separator in every case — verified against the cutoff tests.
+        let cases: Vec<(Vec<&str>, usize)> = vec![
+            // Claude Code: dingbat thinking spinner in the transcript zone.
+            (
+                vec![
+                    "✻ Cogitating… (3m 47s · ↓ 2.2k tokens)",
+                    "",
+                    cc_sep,
+                    "❯",
+                    cc_sep,
+                    "[Opus 4.8 (1M) | Team] █░░░░░░░░░ 6% | gh-metrics git:(master)",
+                ],
+                0,
+            ),
+            // Gemini CLI: braille spinner above the separator (live layout).
+            (
+                vec![
+                    "✦ I will read the package.json file.",
+                    " ⠴ Check tool-specific usage stats… (esc to cancel, 14s)",
+                    gem_sep,
+                    " Shift+Tab to accept edits",
+                    gem_top,
+                    " >   Type your message or @path/to/file",
+                    gem_bot,
+                    " workspace (/directory)          branch          sandbox",
+                ],
+                1,
+            ),
+        ];
+        for (screen, spinner_idx) in &cases {
+            let changed = changed_at(screen, &[*spinner_idx]);
+            let filtered = filter_below_cutoff(screen, changed);
+            assert!(
+                filtered.iter().any(|r| r.row_index == *spinner_idx),
+                "content-zone spinner at row {spinner_idx} must survive the cutoff: {:?}",
+                screen[*spinner_idx]
+            );
+            let chrome_only = compute_chrome_only(&filtered, false, false, false);
+            let has_spinner = chrome_only
+                && filtered
+                    .iter()
+                    .any(|r| crate::chrome::is_spinner_row(&r.text));
+            assert!(
+                !chrome_only || has_spinner,
+                "content-zone spinner {:?} must pass the busy transition gate",
+                screen[*spinner_idx]
+            );
+        }
+    }
+
+    /// Aider during generation has NO bottom input box (prompt_toolkit has
+    /// returned), so `find_chrome_cutoff` finds no separator/prompt and returns
+    /// None → nothing is filtered → the Knight Rider spinner survives and keeps
+    /// the agent alive. This is why the positional fix does not false-idle Aider
+    /// even though its spinner is a bare block run.
+    #[test]
+    fn test_aider_generation_spinner_keeps_alive() {
+        let screen: Vec<&str> = vec![
+            "Applied edit to src/main.rs",
+            "█░  Waiting for openrouter/anthropic/claude-sonnet-4.5",
+        ];
+        assert_eq!(
+            crate::chrome::find_chrome_cutoff(&screen),
+            None,
+            "Aider generation view has no input box → no cutoff"
+        );
+        let changed = changed_at(&screen, &[1]);
+        let filtered = filter_below_cutoff(&screen, changed);
+        assert!(
+            filtered.iter().any(|r| r.row_index == 1),
+            "Knight Rider spinner must survive (no cutoff to drop it)"
+        );
+        let chrome_only = !filtered.is_empty() && filtered.iter().all(|r| is_chrome_row(&r.text));
+        let has_spinner = chrome_only
+            && filtered
+                .iter()
+                .any(|r| crate::chrome::is_spinner_row(&r.text));
+        assert!(
+            !chrome_only || has_spinner,
+            "Aider Knight Rider spinner must pass the busy transition gate"
+        );
+    }
+
     // --- Staleness counter tests ---
 
     #[test]
@@ -7581,6 +7770,55 @@ mod tests {
         assert_eq!(
             extract_question_line(&make_rows(&["iter().map(|x| x)?"])),
             None
+        );
+    }
+
+    // --- Prompt-prefixed user input rejection ---
+
+    #[test]
+    fn test_extract_question_line_rejects_claude_prompt() {
+        assert_eq!(extract_question_line(&make_rows(&["❯ tutto ok?"])), None);
+    }
+
+    #[test]
+    fn test_extract_question_line_rejects_codex_prompt() {
+        assert_eq!(
+            extract_question_line(&make_rows(&["› is this done?"])),
+            None
+        );
+    }
+
+    #[test]
+    fn test_extract_question_line_rejects_gemini_prompt() {
+        assert_eq!(
+            extract_question_line(&make_rows(&["> are you sure?"])),
+            None
+        );
+    }
+
+    #[test]
+    fn test_find_last_chat_question_rejects_user_prompt_line() {
+        let rows: Vec<String> = vec![
+            "❯ hai cambiato qualcosa?".into(),
+            "────────────────────────────────────────────────".into(),
+            "❯".into(),
+            "────────────────────────────────────────────────".into(),
+        ];
+        assert_eq!(find_last_chat_question(&rows), None);
+    }
+
+    #[test]
+    fn test_find_last_chat_question_agent_question_after_user_input() {
+        let rows: Vec<String> = vec![
+            "❯ tell me about this".into(),
+            "Would you like me to continue?".into(),
+            "────────────────────────────────────────────────".into(),
+            "❯".into(),
+            "────────────────────────────────────────────────".into(),
+        ];
+        assert_eq!(
+            find_last_chat_question(&rows),
+            Some("Would you like me to continue?".to_string())
         );
     }
 

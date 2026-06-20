@@ -15,6 +15,7 @@ TUICommander uses `alacritty_terminal` 0.26.0 as its terminal emulation backend.
 | `src/term/mod.rs` | `fn osc7770(&mut self, verb, payload)` | OSC 7770 TUIC protocol handler. Fires `Event::Tuic { verb, payload }` for in-band state/suggest/intent signalling. |
 | `src/term/color.rs` | `pub fn named_color_to_index(NamedColor) -> Option<u8>` | Maps named colors to xterm-256 indices. Eliminates 30-line match duplication in our serializer. |
 | `src/event.rs` | `Event::Tuic { verb, payload }` variant | Carries parsed OSC 7770 events from VTE to the application layer. |
+| `src/grid/mod.rs` | `lines_scrolled` field + `pub fn total_scrolled()` | Monotonic count of lines ever scrolled into history (incremented in `scroll_up`). `total_scrolled() - history_size()` gives lines evicted from the top, the base for an eviction-stable absolute row coordinate. Excluded from `PartialEq`; `serde(default)` so old ref fixtures still load. |
 
 ## VTE patch (`src-tauri/patches/vte/`)
 

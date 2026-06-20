@@ -19,6 +19,14 @@ import { rpc } from "../transport";
 
 export type AppLogLevel = "debug" | "info" | "warn" | "error";
 
+/** Who a log entry is for:
+ *  - `"user"`: actionable by the person using TUIC (a git op failed, an MCP can't
+ *    connect, a file won't open). Shown in the ErrorLogPanel by default.
+ *  - `"diagnostic"`: app-internal telemetry useful only when debugging TUIC itself
+ *    (freeze detector, perf traces, circuit-breaker mechanics). Hidden by default
+ *    so it can't bury user-relevant signal in the bounded ring buffer. */
+export type AppLogAudience = "user" | "diagnostic";
+
 export type AppLogSource =
 	| "app"
 	| "plugin"
@@ -54,6 +62,8 @@ export interface AppLogEntry {
 	source: AppLogSource;
 	message: string;
 	data?: unknown;
+	/** Audience for this entry; defaults to "user" when omitted. */
+	audience?: AppLogAudience;
 	/** How many consecutive duplicate messages were coalesced (0 = first, 1 = seen twice, etc.) */
 	repeatCount?: number;
 }
@@ -66,6 +76,7 @@ interface RustLogEntry {
 	source: string;
 	message: string;
 	data_json?: string | null;
+	audience?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -92,19 +103,31 @@ function createAppLogger() {
 	// Entries pushed before backend is ready are queued and drained on first success.
 	let backendReady = false;
 	let drainInFlight = false;
-	const pendingQueue: Array<{ level: string; source: string; message: string; dataJson?: string }> = [];
+	const pendingQueue: Array<{
+		level: string;
+		source: string;
+		message: string;
+		dataJson?: string;
+		audience: AppLogAudience;
+	}> = [];
 	const MAX_PENDING = 200;
 
 	/** Fire-and-forget push to Rust backend. Queues if not ready yet. */
-	function pushToRust(level: string, source: string, message: string, dataJson?: string): void {
+	function pushToRust(
+		level: string,
+		source: string,
+		message: string,
+		dataJson: string | undefined,
+		audience: AppLogAudience,
+	): void {
 		if (!backendReady) {
 			if (pendingQueue.length < MAX_PENDING) {
-				pendingQueue.push({ level, source, message, dataJson });
+				pendingQueue.push({ level, source, message, dataJson, audience });
 			}
 			if (!drainInFlight) drainQueue();
 			return;
 		}
-		rpc("push_log", { level, source, message, dataJson: dataJson ?? null }).catch(() => {
+		rpc("push_log", { level, source, message, dataJson: dataJson ?? null, audience }).catch(() => {
 			// Silently ignore — the local buffer already has the entry
 		});
 	}
@@ -119,6 +142,7 @@ function createAppLogger() {
 			source: entry.source,
 			message: entry.message,
 			dataJson: entry.dataJson ?? null,
+			audience: entry.audience,
 		})
 			.then(() => {
 				backendReady = true;
@@ -131,6 +155,7 @@ function createAppLogger() {
 						source: queued.source,
 						message: queued.message,
 						dataJson: queued.dataJson ?? null,
+						audience: queued.audience,
 					}).catch(() => {
 						// Best-effort mirror — local buffer already has the entry
 					});
@@ -144,12 +169,24 @@ function createAppLogger() {
 			});
 	}
 
-	function push(level: AppLogLevel, source: AppLogSource, message: string, data?: unknown): void {
-		// Dedup: coalesce with the most recent entry if level+source+message match
+	function push(
+		level: AppLogLevel,
+		source: AppLogSource,
+		message: string,
+		data?: unknown,
+		audience: AppLogAudience = "user",
+	): void {
+		// Dedup: coalesce with the most recent entry if level+source+message+audience match
 		if (count > 0) {
 			const lastIdx = count < MAX_ENTRIES ? count - 1 : (head + count - 1) % MAX_ENTRIES;
 			const last = buffer[lastIdx];
-			if (last && last.level === level && last.source === source && last.message === message) {
+			if (
+				last &&
+				last.level === level &&
+				last.source === source &&
+				last.message === message &&
+				(last.audience ?? "user") === audience
+			) {
 				last.repeatCount = (last.repeatCount ?? 0) + 1;
 				last.timestamp = Date.now();
 				// Bump revision so UI sees updated repeat count
@@ -165,6 +202,7 @@ function createAppLogger() {
 			source,
 			message,
 			data,
+			audience,
 		};
 
 		if (count < MAX_ENTRIES) {
@@ -177,7 +215,9 @@ function createAppLogger() {
 
 		if (level === "error") {
 			batch(() => {
-				setUnseenErrorCount((c) => c + 1);
+				// Only user-facing errors drive the bell's unseen badge; diagnostic
+				// telemetry must never alert the user.
+				if (audience === "user") setUnseenErrorCount((c) => c + 1);
 				setRevision((r) => r + 1);
 			});
 		} else if (level === "warn") {
@@ -207,7 +247,7 @@ function createAppLogger() {
 		// Skip debug — too high-frequency for the ring buffer.
 		if (level !== "debug") {
 			const dataJson = data !== undefined ? JSON.stringify(data) : undefined;
-			pushToRust(level, source, message, dataJson);
+			pushToRust(level, source, message, dataJson, audience);
 		}
 	}
 
@@ -276,6 +316,7 @@ function createAppLogger() {
 					source: re.source as AppLogSource,
 					message: re.message,
 					data,
+					audience: (re.audience as AppLogAudience) ?? "user",
 				};
 
 				if (count < MAX_ENTRIES) {
@@ -286,7 +327,7 @@ function createAppLogger() {
 					head = (head + 1) % MAX_ENTRIES;
 				}
 
-				if (re.level === "error") {
+				if (re.level === "error" && (entry.audience ?? "user") === "user") {
 					setUnseenErrorCount((c) => c + 1);
 				}
 				added++;
@@ -306,7 +347,7 @@ function createAppLogger() {
 	}
 
 	return {
-		// Convenience loggers by level
+		// Convenience loggers by level (user audience)
 		error(source: AppLogSource, message: string, data?: unknown): void {
 			push("error", source, message, data);
 		},
@@ -318,6 +359,23 @@ function createAppLogger() {
 		},
 		debug(source: AppLogSource, message: string, data?: unknown): void {
 			push("debug", source, message, data);
+		},
+
+		/** Diagnostic loggers — app-internal telemetry, hidden from the default
+		 *  user view of the ErrorLogPanel. Use for freeze/perf/circuit internals. */
+		diag: {
+			error(source: AppLogSource, message: string, data?: unknown): void {
+				push("error", source, message, data, "diagnostic");
+			},
+			warn(source: AppLogSource, message: string, data?: unknown): void {
+				push("warn", source, message, data, "diagnostic");
+			},
+			info(source: AppLogSource, message: string, data?: unknown): void {
+				push("info", source, message, data, "diagnostic");
+			},
+			debug(source: AppLogSource, message: string, data?: unknown): void {
+				push("debug", source, message, data, "diagnostic");
+			},
 		},
 
 		/** Raw push for programmatic use */

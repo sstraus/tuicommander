@@ -3,10 +3,14 @@ import { type AgentType, HOOK_SUPPORT } from "../agents";
 import { createAgentConfigsStore } from "../stores/agentConfigs";
 
 describe("agent hook instrumentation toggle", () => {
-	it("HOOK_SUPPORT gates only Claude and Gemini (A1)", () => {
-		expect(HOOK_SUPPORT.claude).toBe(true);
-		expect(HOOK_SUPPORT.gemini).toBe(true);
-		const off: AgentType[] = ["codex", "grok", "opencode", "aider", "cursor", "amp", "goose", "droid", "git", "api"];
+	it("HOOK_SUPPORT gates the hook-instrumented agents (A1)", () => {
+		// Adapters landed incrementally: Claude/Gemini (#048), then Grok (#051),
+		// Codex (#050), OpenCode (#052) flipped on. Keep this in sync with agents.ts.
+		const on: AgentType[] = ["claude", "gemini", "grok", "codex", "opencode"];
+		for (const a of on) {
+			expect(HOOK_SUPPORT[a]).toBe(true);
+		}
+		const off: AgentType[] = ["aider", "cursor", "amp", "goose", "droid", "git", "api"];
 		for (const a of off) {
 			expect(HOOK_SUPPORT[a]).toBe(false);
 		}

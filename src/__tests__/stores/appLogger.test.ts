@@ -239,6 +239,41 @@ describe("appLogger", () => {
 		});
 	});
 
+	// ---- Audience ----
+
+	it("user-level loggers mirror with audience 'user'", async () => {
+		testInScope(() => {
+			appLogger.warn("git", "pull failed");
+		});
+		await vi.waitFor(() => {
+			expect(mockRpc).toHaveBeenCalledWith(
+				"push_log",
+				expect.objectContaining({ source: "git", message: "pull failed", audience: "user" }),
+			);
+		});
+	});
+
+	it("diag loggers mirror with audience 'diagnostic'", async () => {
+		testInScope(() => {
+			appLogger.diag.warn("app", "UI freeze: 1000ms");
+		});
+		await vi.waitFor(() => {
+			expect(mockRpc).toHaveBeenCalledWith(
+				"push_log",
+				expect.objectContaining({ source: "app", message: "UI freeze: 1000ms", audience: "diagnostic" }),
+			);
+		});
+	});
+
+	it("diagnostic errors do NOT bump the user-facing unseen-error badge", () => {
+		testInScope(() => {
+			appLogger.diag.error("app", "internal telemetry error");
+			expect(appLogger.unseenErrorCount()).toBe(0);
+			appLogger.error("git", "real user error");
+			expect(appLogger.unseenErrorCount()).toBe(1);
+		});
+	});
+
 	// ---- Hydration from Rust ----
 
 	it("hydrateFromRust merges Rust entries into local buffer", async () => {

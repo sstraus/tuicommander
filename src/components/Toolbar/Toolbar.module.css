@@ -493,6 +493,38 @@
   background: var(--bg-tertiary);
 }
 
+/* Severity tints — the pill is a notification, not a neutral button: make the
+   outcome readable at a glance (red = failure, green = success, amber = attention). */
+.lastItemError {
+  border-color: var(--error);
+  color: var(--error);
+  background: color-mix(in srgb, var(--error) 12%, transparent);
+}
+
+.lastItemError:hover {
+  background: color-mix(in srgb, var(--error) 22%, transparent);
+}
+
+.lastItemSuccess {
+  border-color: var(--success);
+  color: var(--success);
+  background: color-mix(in srgb, var(--success) 12%, transparent);
+}
+
+.lastItemSuccess:hover {
+  background: color-mix(in srgb, var(--success) 22%, transparent);
+}
+
+.lastItemWarn {
+  border-color: #d29922;
+  color: #d29922;
+  background: color-mix(in srgb, #d29922 12%, transparent);
+}
+
+.lastItemWarn:hover {
+  background: color-mix(in srgb, #d29922 22%, transparent);
+}
+
 .lastItemIcon {
   display: flex;
   align-items: center;

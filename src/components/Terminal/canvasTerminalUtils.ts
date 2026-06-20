@@ -5,7 +5,7 @@ export const GUTTER_PX = 6;
 export const SCROLLBAR_PX = 14;
 
 // Wire format constants (must match terminal_grid.rs)
-const HEADER_SIZE = 22;
+const HEADER_SIZE = 26;
 const CELL_SIZE = 11; // 4 (char u32) + 3 (fg) + 3 (bg) + 1 (attrs)
 export const ATTR_BOLD = 0x01;
 export const ATTR_ITALIC = 0x02;
@@ -36,6 +36,10 @@ export interface DecodedFrame {
 	cursorShape: "block" | "underline" | "beam";
 	displayOffset: number;
 	historySize: number;
+	/** Lines evicted from the history top so far (monotonic within a resize era).
+	 *  `historyBase + (historySize - displayOffset + screenRow)` is an
+	 *  eviction-stable absolute row index — the key space for the scroll row cache. */
+	historyBase: number;
 	hasSelection: boolean;
 	keyboardFlags: number;
 	bell: boolean;
@@ -123,6 +127,8 @@ export function decodeBinaryFrame(buffer: ArrayBuffer): DecodedFrame | null {
 	offset += 2;
 	const screenCols = view.getUint16(offset, true);
 	offset += 2;
+	const historyBase = view.getUint32(offset, true);
+	offset += 4;
 	const bell = (frameFlags & 0x01) !== 0;
 	const cursorShapeRaw = (frameFlags >> 1) & 0x03;
 	const cursorShape: "block" | "underline" | "beam" =
@@ -170,6 +176,7 @@ export function decodeBinaryFrame(buffer: ArrayBuffer): DecodedFrame | null {
 		cursorShape,
 		displayOffset,
 		historySize,
+		historyBase,
 		hasSelection,
 		keyboardFlags,
 		bell,

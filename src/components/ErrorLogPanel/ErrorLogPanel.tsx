@@ -1,7 +1,26 @@
 import { type Component, createEffect, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
-import { type AppLogEntry, type AppLogLevel, type AppLogSource, appLogger } from "../../stores/appLogger";
+import {
+	type AppLogAudience,
+	type AppLogEntry,
+	type AppLogLevel,
+	type AppLogSource,
+	appLogger,
+} from "../../stores/appLogger";
 import { errorLogStore } from "../../stores/errorLog";
 import s from "./ErrorLogPanel.module.css";
+
+/** Audience tabs. "User" (default) hides app-internal telemetry so it can't bury
+ *  user-relevant signal; "Diagnostics" shows only telemetry; "All" shows both. */
+const AUDIENCE_OPTIONS: Array<{ value: AppLogAudience | "all"; label: string }> = [
+	{ value: "user", label: "User" },
+	{ value: "diagnostic", label: "Diagnostics" },
+	{ value: "all", label: "All" },
+];
+
+/** True if an entry's audience (defaulting to "user") passes the selected tab. */
+export function audiencePasses(audience: AppLogAudience | undefined, filter: AppLogAudience | "all"): boolean {
+	return filter === "all" || (audience ?? "user") === filter;
+}
 
 const LEVEL_OPTIONS: Array<{ value: AppLogLevel | "all"; label: string }> = [
 	{ value: "all", label: "All" },
@@ -71,6 +90,7 @@ function formatEntryForClipboard(entry: AppLogEntry): string {
 }
 
 export const ErrorLogPanel: Component = () => {
+	const [audienceFilter, setAudienceFilter] = createSignal<AppLogAudience | "all">("user");
 	const [levelFilter, setLevelFilter] = createSignal<AppLogLevel | "all">("all");
 	const [sourceFilter, setSourceFilter] = createSignal<AppLogSource | "all">("all");
 	const [searchText, setSearchText] = createSignal("");
@@ -124,16 +144,25 @@ export const ErrorLogPanel: Component = () => {
 
 	const filteredEntries = createMemo(() => {
 		const entries = appLogger.getEntries();
+		const audience = audienceFilter();
 		const level = levelFilter();
 		const source = sourceFilter();
 		const search = searchText().toLowerCase();
 
 		return entries.filter((entry) => {
+			if (!audiencePasses(entry.audience, audience)) return false;
 			if (!levelPassesThreshold(entry.level, level)) return false;
 			if (source !== "all" && entry.source !== source) return false;
 			if (search && !entry.message.toLowerCase().includes(search)) return false;
 			return true;
 		});
+	});
+
+	/** Count of diagnostic entries — surfaced on the Diagnostics tab so the user
+	 *  knows telemetry exists even while the default view hides it. */
+	const diagnosticCount = createMemo(() => {
+		appLogger.entryCount(); // subscribe
+		return appLogger.getEntries().filter((e) => (e.audience ?? "user") === "diagnostic").length;
 	});
 
 	const handleCopy = (entry: AppLogEntry) => {
@@ -159,6 +188,27 @@ export const ErrorLogPanel: Component = () => {
 
 					{/* Filters */}
 					<div class={s.filters}>
+						<div class={s.levelFilters}>
+							<For each={AUDIENCE_OPTIONS}>
+								{(opt) => (
+									<button
+										class={`${s.levelBtn} ${audienceFilter() === opt.value ? s.levelBtnActive : ""}`}
+										onClick={() => setAudienceFilter(opt.value)}
+										title={
+											opt.value === "user"
+												? "Issues relevant to you (default)"
+												: opt.value === "diagnostic"
+													? "App-internal telemetry (TUIC debugging)"
+													: "Show every entry"
+										}
+									>
+										{opt.label}
+										{opt.value === "diagnostic" && diagnosticCount() > 0 ? ` (${diagnosticCount()})` : ""}
+									</button>
+								)}
+							</For>
+						</div>
+
 						<div class={s.levelFilters}>
 							<For each={LEVEL_OPTIONS}>
 								{(opt) => (

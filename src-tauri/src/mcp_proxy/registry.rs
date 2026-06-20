@@ -1190,7 +1190,7 @@ async fn initialize_entry_with_oauth(
                 *entry.status.write() = UpstreamStatus::Failed;
                 "failed"
             } else if entry.cb.is_open() {
-                tracing::warn!(source = "mcp_registry", %name, "Initialization failed (circuit open): {e_str}");
+                tracing::warn!(source = "mcp_registry", audience = "diagnostic", %name, "Initialization failed (circuit open): {e_str}");
                 *entry.status.write() = UpstreamStatus::CircuitOpen;
                 "circuit_open"
             } else {
@@ -1296,7 +1296,7 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                         // while already open are coalesced by the ring buffer but we want
                         // to avoid generating the warn at all once the circuit is open.
                         if status != UpstreamStatus::CircuitOpen {
-                            tracing::warn!(source = "mcp_registry", %name, "Health check failed — circuit opening");
+                            tracing::warn!(source = "mcp_registry", audience = "diagnostic", %name, "Health check failed — circuit opening");
                         }
                         UpstreamStatus::CircuitOpen
                     };

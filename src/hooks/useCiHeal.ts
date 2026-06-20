@@ -10,21 +10,33 @@ import { rpc } from "../transport";
 
 const MAX_ATTEMPTS = 3;
 
+/** What blocked the PR — drives which fix prompt the agent receives. */
+type HealKind = "ci" | "conflict";
+
 /**
- * Auto-heal CI failures by injecting failure logs into an agent terminal.
+ * Auto-heal a blocked PR by handing the problem to an agent terminal.
  *
- * When CI checks fail on a branch that has auto-heal enabled and an active
- * agent terminal, this hook:
- * 1. Fetches the failure logs via `gh run view --log-failed`
- * 2. Waits for the agent to be idle/awaiting input
- * 3. Writes the logs + fix prompt into the terminal
- * 4. Repeats up to MAX_ATTEMPTS times, then stops and notifies
+ * Triggers on two transitions when auto-heal is enabled on the branch:
+ * - CI failure (`ci`): fetches `gh run view --log-failed` and asks the agent to fix.
+ * - Merge conflict (`conflict`): asks the agent to resolve conflicts with the base branch.
+ *
+ * In both cases it waits for the agent to be idle/awaiting input, writes the fix
+ * prompt into the terminal, and repeats up to MAX_ATTEMPTS times before stopping.
  */
 export function useCiHeal(): void {
 	/** Track in-flight heals to prevent re-entry */
 	const healing = new Set<string>();
 
 	function handleCiFailed(repoPath: string, branch: string, _prNumber: number): void {
+		startHeal(repoPath, branch, "ci");
+	}
+
+	function handleConflict(repoPath: string, branch: string, _prNumber: number): void {
+		startHeal(repoPath, branch, "conflict");
+	}
+
+	/** Shared gate: enabled check, attempt budget, agent-terminal lookup, re-entry guard. */
+	function startHeal(repoPath: string, branch: string, kind: HealKind): void {
 		const key = `${repoPath}:${branch}`;
 		if (healing.has(key)) return;
 
@@ -51,23 +63,37 @@ export function useCiHeal(): void {
 			// Surface why nothing happened — auto-heal injects the fix request into an
 			// agent terminal, which doesn't exist on this branch.
 			toastsStore.add(
-				t("ciHeal.noAgentTitle", "Auto-heal CI: no agent"),
-				`Open an AI agent on "${branch}" so auto-heal can hand it the CI failures.`,
+				t("ciHeal.noAgentTitle", "Auto-heal: no agent"),
+				`Open an AI agent on "${branch}" so auto-heal can hand it the ${
+					kind === "conflict" ? "merge conflicts" : "CI failures"
+				}.`,
 				"warn",
 			);
 			return;
 		}
 
 		healing.add(key);
-		triggerHeal(repoPath, branch, agentTerminal).finally(() => healing.delete(key));
+		triggerHeal(repoPath, branch, agentTerminal, kind).finally(() => healing.delete(key));
 	}
 
-	async function triggerHeal(repoPath: string, branch: string, terminalId: string): Promise<void> {
+	/** Build the fix prompt for a heal kind. CI fetches failure logs; conflict is self-describing. */
+	async function buildHealPrompt(repoPath: string, branch: string, kind: HealKind): Promise<string> {
+		const body =
+			kind === "conflict"
+				? "This PR is blocked by merge conflicts with its base branch.\n\nPlease resolve the merge conflicts: integrate the latest base branch, resolve each conflicting file preserving the intent from both sides, then commit and push."
+				: `CI checks failed. Here are the failure logs:\n\n${await invoke<string>("fetch_ci_failure_logs", {
+						repoPath,
+						branch,
+					})}\n\nPlease fix the issues and push again.`;
+		return `\n\n${body}\n\n`;
+	}
+
+	async function triggerHeal(repoPath: string, branch: string, terminalId: string, kind: HealKind): Promise<void> {
 		const branchState = repositoriesStore.state.repositories[repoPath]?.branches[branch];
 		if (!branchState?.ciAutoHeal) return;
 
 		const attempt = (branchState.ciAutoHeal.attempts ?? 0) + 1;
-		appLogger.info("ci-heal", `Auto-heal attempt ${attempt}/${MAX_ATTEMPTS} for ${branch}`);
+		appLogger.info("ci-heal", `Auto-heal (${kind}) attempt ${attempt}/${MAX_ATTEMPTS} for ${branch}`);
 
 		// Mark as healing and increment attempts
 		repositoriesStore.setCiAutoHeal(repoPath, branch, {
@@ -77,11 +103,7 @@ export function useCiHeal(): void {
 		});
 
 		try {
-			// Fetch failure logs
-			const logs = await invoke<string>("fetch_ci_failure_logs", {
-				repoPath,
-				branch,
-			});
+			const prompt = await buildHealPrompt(repoPath, branch, kind);
 
 			// Wait for agent to be ready for input
 			const terminal = terminalsStore.get(terminalId);
@@ -91,18 +113,6 @@ export function useCiHeal(): void {
 			}
 
 			await waitForAgentIdle(terminalId, 30_000);
-
-			// Inject the failure logs and fix prompt into the terminal
-			const prompt = [
-				"",
-				"",
-				"CI checks failed. Here are the failure logs:",
-				"",
-				logs,
-				"",
-				"Please fix the issues and push again.",
-				"",
-			].join("\n");
 
 			await rpc("write_pty", { sessionId: terminal.sessionId, data: prompt });
 		} catch (err) {
@@ -137,9 +147,11 @@ export function useCiHeal(): void {
 
 	githubStore.setOnCiFailed(handleCiFailed);
 	githubStore.setOnCiRecovered(handleCiRecovered);
+	githubStore.setOnConflict(handleConflict);
 	onCleanup(() => {
 		githubStore.setOnCiFailed(null);
 		githubStore.setOnCiRecovered(null);
+		githubStore.setOnConflict(null);
 	});
 }
 

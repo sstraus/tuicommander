@@ -87,11 +87,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	let octx!: CanvasRenderingContext2D;
 	let octxOverscan: CanvasRenderingContext2D | null = null;
 	let overscanRenderer: GridRenderer | null = null;
-	// Client-side styled-row cache for smooth scroll, keyed by absolute row index
-	// (0 = oldest scrollback line). Absolute indices are stable while output grows
-	// (a new line takes the next-highest index; existing rows keep theirs), so the
-	// cache survives generation. They only shift on scrollback *eviction* (buffer at
-	// cap) — to stay correct we rebuild the cache fresh at the start of each gesture.
+	// Client-side styled-row cache for smooth scroll, keyed by the backend's
+	// eviction-stable absolute row index (`historyBase + grid-relative`, where
+	// historyBase counts lines already dropped from the history top). A physical line
+	// keeps its key for life — even once the scrollback cap rotates — so a cached row
+	// can never alias onto a different line and ghost/duplicate during a scroll.
 	// `requestedChunks` dedupes background range prefetches.
 	const rowCache = new Map<number, DecodedRow>();
 	const requestedChunks = new Set<number>();
@@ -327,6 +327,13 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const cols = Math.floor((rect.width - GUTTER_PX - SCROLLBAR_PX) / m.cellWidth);
 		const rows = Math.floor(rect.height / m.cellHeight);
 		if (cols <= 0 || rows <= 0) return;
+		// A resize invalidates the smooth-scroll geometry. Crucially, if the terminal is
+		// at a "fractional rest" (scrollPosF non-null, not actively scrolling), every
+		// scheduleRepaint() bails on the `scrollPosF != null` guard — so after we blank
+		// the canvas below, incoming frames refill rowMap but never repaint, leaving the
+		// viewport stuck black until a click (which exits the fractional rest). Reset the
+		// scroll state here so repaints resume. Cheap no-op when scrollPosF is already null.
+		resetSmoothScroll();
 		const logicalW = cols * m.cellWidth + GUTTER_PX;
 		const logicalH = rows * m.cellHeight;
 		// Cache the scrollbar track height here (resize time) so the per-frame path
@@ -608,9 +615,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		for (let absRi = absStartRow; absRi <= absEndRow; absRi++) {
 			const vpRow = absRowToViewport(absRi);
 			if (vpRow === null) continue;
-			// During a gesture rows come from the cache (keyed by absolute index);
-			// at rest from the live rowMap (keyed by viewport row).
-			const row = overlayScrollOffset != null ? rowCache.get(absRi) : rowMap.get(vpRow);
+			// During a gesture rows come from the cache (keyed by the eviction-stable
+			// all-time index = historyBase + grid-relative abs); at rest from the live
+			// rowMap (keyed by viewport row). `absRi` is the grid-relative selection
+			// coordinate, so bridge it into the cache's space with historyBase.
+			const row =
+				overlayScrollOffset != null ? rowCache.get((currentFrame?.historyBase ?? 0) + absRi) : rowMap.get(vpRow);
 			if (!row) continue;
 			const y = vpRow * m.cellHeight;
 
@@ -1057,7 +1067,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		if (!m) return;
 		const ch = m.cellHeight;
 		const rows = lastResizeRows || 24;
-		const hist = currentFrame.historySize;
+		// All-time top-of-history index: cache keys live in this eviction-stable space.
+		const hist = currentFrame.historyBase + currentFrame.historySize;
 		const intOffset = Math.floor(scrollPosF);
 		const frac = (scrollPosF - intOffset) * ch; // [0, ch): how far past the line
 		renderCachedBase(intOffset, m, rows, hist);
@@ -1127,11 +1138,23 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		if (overlayCanvasRef) overlayCanvasRef.style.visibility = hidden ? "hidden" : "";
 	}
 
+	// Wipe the overscan canvas. The above/below rows are only meaningful mid-gesture
+	// while the stage slides; at rest the (opaque) base canvas covers the viewport but
+	// the overscan's below-row strip peeks out beneath it. Leaving the last gesture's
+	// row there shows it as a ghost line below the viewport, so clear on every return
+	// to rest.
+	function clearOverscan() {
+		if (!octxOverscan || !overscanCanvasRef) return;
+		const dpr = metrics()?.dpr ?? window.devicePixelRatio ?? 1;
+		octxOverscan.clearRect(-GUTTER_PX, 0, overscanCanvasRef.width / dpr, overscanCanvasRef.height / dpr);
+	}
+
 	// Leave smooth-scroll mode: restore the overlays and repaint the base from the
 	// real backend frame at its committed offset.
 	function endSmoothScroll() {
 		setScrollOverlaysHidden(false);
 		if (stageRef) stageRef.style.transform = "";
+		clearOverscan();
 		const m = metrics();
 		if (currentFrame && m) {
 			fullRepaintNeeded = true;
@@ -1160,7 +1183,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	// has content to paint immediately (the band prefetch fills the rest).
 	function seedCacheFromCurrentFrame() {
 		if (!currentFrame) return;
-		const base = currentFrame.historySize - currentFrame.displayOffset;
+		const base = currentFrame.historyBase + currentFrame.historySize - currentFrame.displayOffset;
 		for (const [r, row] of rowMap) rowCache.set(base + r, row);
 	}
 
@@ -1288,10 +1311,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		currentFrame = frame;
 
-		// Smooth scroll: seed the client-side row cache from each frame's rows (keyed
-		// by absolute index). Absolute indices are stable as output grows, so we keep
-		// the cache through generation; it's reset at gesture start to drop any rows
-		// staled by scrollback eviction. Also pump a live render if a gesture is active.
+		// Smooth scroll: seed the client-side row cache from each frame's rows, keyed
+		// by the eviction-stable absolute index `historyBase + historySize -
+		// displayOffset + index`. `historyBase` (lines evicted from the history top)
+		// climbs by exactly what the grid-relative coordinate loses on eviction, so a
+		// physical line keeps its key for life — no stale row aliases onto a new one
+		// after the scrollback cap rotates. Also pump a live render if a gesture is active.
 		//
 		// During a fast gesture the backend frame trails the live scroll position by
 		// several lines, so its rows are keyed to a lagging displayOffset. Seeding them
@@ -1300,7 +1325,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// has caught up to our integer offset.
 		if (scrollPosF == null || frame.displayOffset === Math.floor(scrollPosF)) {
 			for (const row of frame.rows) {
-				rowCache.set(frame.historySize - frame.displayOffset + row.index, row);
+				rowCache.set(frame.historyBase + frame.historySize - frame.displayOffset + row.index, row);
 			}
 		}
 		if (settlePending != null && frame.displayOffset === settlePending) {
@@ -1316,6 +1341,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			// Truly at rest on a line: clear any stray transform. (A fractional rest
 			// keeps its transform and stays static — output below doesn't move it.)
 			stageRef.style.transform = "";
+			clearOverscan();
 		}
 
 		// Only compare content when the selection is fully on-screen — off-screen rows return empty
