@@ -87,6 +87,19 @@ const MAX_ENTRIES = 1000;
 
 let nextId = 1;
 
+/**
+ * JSON.stringify replacer that unpacks Error objects. Plain JSON.stringify emits
+ * `{}` for an Error because name/message/stack are non-enumerable — which is why
+ * mirrored logs showed `"error":{}`. Extract them so the Rust ring buffer (and the
+ * /logs HTTP endpoint) carry the actual failure.
+ */
+function logDataReplacer(_key: string, value: unknown): unknown {
+	if (value instanceof Error) {
+		return { name: value.name, message: value.message, stack: value.stack };
+	}
+	return value;
+}
+
 function createAppLogger() {
 	const buffer: AppLogEntry[] = [];
 	let head = 0;
@@ -246,7 +259,7 @@ function createAppLogger() {
 		// Mirror info/warn/error to Rust backend for MCP and cross-reload durability.
 		// Skip debug — too high-frequency for the ring buffer.
 		if (level !== "debug") {
-			const dataJson = data !== undefined ? JSON.stringify(data) : undefined;
+			const dataJson = data !== undefined ? JSON.stringify(data, logDataReplacer) : undefined;
 			pushToRust(level, source, message, dataJson, audience);
 		}
 	}

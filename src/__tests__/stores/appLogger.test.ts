@@ -198,6 +198,27 @@ describe("appLogger", () => {
 		});
 	});
 
+	it("serializes Error objects in data with message and stack", async () => {
+		const err = new Error("boom");
+		testInScope(() => {
+			appLogger.error("terminal", "onFrame threw in channel callback", { sessionId: "s1", error: err });
+		});
+
+		await vi.waitFor(() => {
+			expect(mockRpc).toHaveBeenCalledWith(
+				"push_log",
+				expect.objectContaining({ level: "error", source: "terminal" }),
+			);
+		});
+		const call = mockRpc.mock.calls.find((c) => c[0] === "push_log");
+		const parsed = JSON.parse((call?.[1] as { dataJson: string }).dataJson);
+		expect(parsed.sessionId).toBe("s1");
+		// Plain JSON.stringify would emit {} here — the replacer must surface the failure.
+		expect(parsed.error.message).toBe("boom");
+		expect(parsed.error.name).toBe("Error");
+		expect(typeof parsed.error.stack).toBe("string");
+	});
+
 	it("push sends null dataJson when no data provided", async () => {
 		testInScope(() => {
 			appLogger.warn("app", "plain message");
