@@ -1,4 +1,5 @@
 import { type Component, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { lastMenuActionTime } from "../../menuDedup";
 import { isMacOS, isWindows } from "../../platform";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
 import { appLogger } from "../../stores/appLogger";
@@ -2024,6 +2025,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			if (copyModifier && e.key.toLowerCase() === "c" && ((selectionStart && selectionEnd) || cachedSelectionText)) {
 				e.preventDefault();
 				e.stopPropagation();
+				// Skip if the native Edit > Copy accelerator (menu.rs CmdOrCtrl+C) already fired for
+				// this same keypress — otherwise we writeText() twice in <200ms, which macOS DeepL
+				// reads as a double-Cmd+C and pops up its translation overlay. Same guard as
+				// useKeyboardShortcuts.ts. The menu path (copyFromTerminal) handles the copy.
+				if (Date.now() - lastMenuActionTime < 200) return;
 				copySelection();
 				return;
 			}
@@ -2663,7 +2669,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			| undefined;
 		try {
 			let text: string;
-			if (selectionSpansOffscreen() && invokeRef && selectionStart && selectionEnd) {
+			// Always prefer the Rust path: it unwraps soft-wrapped logical lines via the
+			// WRAPLINE flag (grid_get_selection_text), so copying a line the terminal merely
+			// wrapped for width doesn't insert a spurious newline. The JS fallback below has
+			// no wrap info (see getLocalSelectionText DEFERRED) and only runs when invoke or
+			// the selection coords are unavailable.
+			if (invokeRef && selectionStart && selectionEnd) {
 				text = (await invokeRef("terminal_get_selection_text", {
 					sessionId: props.sessionId,
 					startRow: selectionStart.row,
@@ -2671,6 +2682,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					endRow: selectionEnd.row,
 					endCol: selectionEnd.col,
 				})) as string;
+				// Fall back to the local read if the IPC path yields nothing (transient error,
+				// grid not ready). Loses wrap-unwrapping, but a wrapped copy beats a silent
+				// no-op — the onscreen path could always satisfy a copy before this routing.
+				if (!text) text = getLocalSelectionText();
 			} else {
 				text = getLocalSelectionText();
 			}
