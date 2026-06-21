@@ -1043,9 +1043,12 @@ const App: Component = () => {
 	});
 
 	// Auto-trigger AI diff triage when an agent terminal goes idle after meaningful work.
+	// Only while the triage panel is open — otherwise it burns LLM credits in the background
+	// with no UI to surface the result.
 	const TRIAGE_BUSY_THRESHOLD_MS = 5000;
 	const unsubTriageOnIdle = terminalsStore.onBusyToIdle((id, durationMs) => {
 		if (!settingsStore.isAiTriageEnabled()) return;
+		if (!uiStore.state.aiTriagePanelVisible) return;
 		if (durationMs < TRIAGE_BUSY_THRESHOLD_MS) return;
 		const t = terminalsStore.get(id);
 		if (!t?.agentType) return;
