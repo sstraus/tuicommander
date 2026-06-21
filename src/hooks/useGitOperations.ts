@@ -273,6 +273,13 @@ export function useGitOperations(deps: GitOperationsDeps) {
 								repositoriesStore.setBranch(repoPath, info.branch, { worktreePath: repoPath });
 								repositoriesStore.setActiveBranch(repoPath, info.branch);
 							});
+							// Restart the repo watcher so it registers the now-present .git
+							// sub-watches (HEAD/refs/worktrees). On macOS/Windows the recursive
+							// root watch already covers .git, but Linux uses targeted watches
+							// that were skipped while the directory was non-git.
+							invoke("stop_repo_watcher", { repoPath })
+								.then(() => invoke("start_repo_watcher", { repoPath }))
+								.catch((e) => appLogger.debug("git", "Watcher restart after git-init failed", { repoPath, error: String(e) }));
 						}
 					} catch (e) {
 						appLogger.debug("git", "Repo probe failed — staying in shell mode", { repoPath, error: String(e) });
@@ -1182,12 +1189,12 @@ export function useGitOperations(deps: GitOperationsDeps) {
 			setCurrentBranch(info.branch || (!info.is_git_repo ? "shell" : ""));
 			setRepoStatus(info.status === "not-git" ? "unknown" : info.status);
 
-			// Start unified repo watcher (covers HEAD, git state, working tree)
-			if (info.is_git_repo) {
-				invoke("start_repo_watcher", { repoPath: info.path }).catch((err) =>
-					appLogger.warn("app", `RepoWatcher failed to start for ${info.path}`, err),
-				);
-			}
+			// Start unified repo watcher (covers HEAD, git state, working tree).
+			// Also started for non-git directories so a later `git init` is detected
+			// (the .git-creation event triggers the non-git→git transition probe).
+			invoke("start_repo_watcher", { repoPath: info.path }).catch((err) =>
+				appLogger.warn("app", `RepoWatcher failed to start for ${info.path}`, err),
+			);
 
 			await refreshAllBranchStats();
 		} catch (err) {

@@ -36,6 +36,14 @@ pub(crate) fn classify_path(
     if let Ok(rel) = path.strip_prefix(git_dir) {
         let rel_str = rel.to_string_lossy();
 
+        // The `.git` entry itself was created or removed (runtime `git init` /
+        // deinit) — a meaningful state change that flips the repo's git-ness.
+        // On Linux this is the only signal, since `.git`'s contents aren't
+        // sub-watched until the watcher restarts post-transition.
+        if rel_str.is_empty() {
+            return EventCategory::GitState;
+        }
+
         // .git/HEAD (exactly, not .git/logs/HEAD or similar)
         if rel_str == "HEAD" {
             return EventCategory::Head;
@@ -379,8 +387,13 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
     tracing::info!(source = "repo_watcher", path = %repo_path, "Starting watcher");
 
     let repo = PathBuf::from(repo_path);
-    let git_dir = crate::git::resolve_git_dir(&repo)
-        .ok_or_else(|| format!("Cannot find .git for {repo_path}"))?;
+    // A registered directory may not (yet) be a git repo — watch it anyway so a
+    // runtime `git init` is detected: the `.git` creation event classifies as
+    // GitState and triggers the frontend's non-git→git transition probe, which
+    // restarts this watcher with the real `.git` present. Fall back to the
+    // conventional `.git` location for path classification; the Linux `.git`
+    // sub-watches below are skipped until it actually exists.
+    let git_dir = crate::git::resolve_git_dir(&repo).unwrap_or_else(|| repo.join(".git"));
     let gitignore = Arc::new(parking_lot::RwLock::new(build_gitignore(&repo)));
 
     let repo_path_owned = repo_path.to_string();
@@ -637,18 +650,25 @@ pub(crate) fn start_watching(repo_path: &str, state: &Arc<AppState>) -> Result<(
                  The kernel inotify limit may be exhausted; raise /proc/sys/fs/inotify/max_user_watches."
             );
         }
-        watcher
-            .watch(&git_dir, RecursiveMode::NonRecursive)
-            .map_err(|e| format!("Failed to watch .git: {e}"))?;
-        let refs_dir = git_dir.join("refs");
-        if let Err(e) = watcher.watch(&refs_dir, RecursiveMode::Recursive) {
-            tracing::warn!(source = "repo_watcher", path = %refs_dir.display(), "Failed to watch .git/refs: {e}");
-        }
-        let worktrees_dir = git_dir.join("worktrees");
-        if worktrees_dir.is_dir()
-            && let Err(e) = watcher.watch(&worktrees_dir, RecursiveMode::Recursive)
-        {
-            tracing::warn!(source = "repo_watcher", path = %worktrees_dir.display(), "Failed to watch .git/worktrees: {e}");
+        // Non-git directories have no `.git` to sub-watch yet. The working-tree
+        // watches above include the repo root (WalkBuilder yields it first), so
+        // the `.git` *creation* event is still caught and classified as GitState;
+        // the frontend then restarts this watcher, re-entering here with `.git`
+        // present to register the targeted sub-watches.
+        if git_dir.is_dir() {
+            watcher
+                .watch(&git_dir, RecursiveMode::NonRecursive)
+                .map_err(|e| format!("Failed to watch .git: {e}"))?;
+            let refs_dir = git_dir.join("refs");
+            if let Err(e) = watcher.watch(&refs_dir, RecursiveMode::Recursive) {
+                tracing::warn!(source = "repo_watcher", path = %refs_dir.display(), "Failed to watch .git/refs: {e}");
+            }
+            let worktrees_dir = git_dir.join("worktrees");
+            if worktrees_dir.is_dir()
+                && let Err(e) = watcher.watch(&worktrees_dir, RecursiveMode::Recursive)
+            {
+                tracing::warn!(source = "repo_watcher", path = %worktrees_dir.display(), "Failed to watch .git/worktrees: {e}");
+            }
         }
         Mutex::new(set)
     };
@@ -728,6 +748,21 @@ mod tests {
         assert_eq!(
             classify_path(Path::new("/repo/.git/HEAD"), root, git, &gi),
             EventCategory::Head
+        );
+    }
+
+    #[test]
+    fn test_classify_git_dir_itself() {
+        // The `.git` entry itself being created/removed (runtime `git init` /
+        // deinit) is a GitState change — the only signal Linux gets, since
+        // `.git`'s contents aren't sub-watched on a non-git directory.
+        let root = Path::new("/repo");
+        let git = Path::new("/repo/.git");
+        let gi = empty_gitignore();
+
+        assert_eq!(
+            classify_path(Path::new("/repo/.git"), root, git, &gi),
+            EventCategory::GitState
         );
     }
 
