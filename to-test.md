@@ -10,6 +10,15 @@
 
 Features to test when TUICommander is more usable.
 
+## Inter-agent messaging hardening — remote rejection (2026-06-24)
+
+_Unit-tested at the handler level (`messaging_actions_require_loopback`, hijack/takeover tests); the real over-the-network rejection needs a live remote client._
+
+- [ ] [HUMAN] With Remote Access enabled, point a remote MCP client (non-loopback IP — even Basic-Auth authenticated or via `lan_auth_bypass`) at the server and confirm `agent action=register|send|inbox|list_peers` is rejected with "restricted to localhost connections" _(mcp_transport.rs `handle_agent_unified`)_
+- [ ] Local agents (loopback / Unix socket) still register/send/inbox normally — multi-agent swarm coordination unaffected
+- [ ] `register` from a second **live** MCP session under an existing peer's `tuic_session` is rejected (anti-hijack); same-session reconnect/rename and dead-session takeover still work
+- [ ] Audit trail: `agent register`/`send` emit `source="agent_msg"` lines (check `GET :9876/logs` or tracing) with identities + message size, never message content
+
 ## Perf pass + light-theme fix — visual checks (2026-06-09)
 
 _Code-verified + `make check` green; these need Boss's eyes on the live dev app (canvas/editor not HTTP/MCP-observable)._

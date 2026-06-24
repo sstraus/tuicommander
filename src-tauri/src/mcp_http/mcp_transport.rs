@@ -1907,6 +1907,22 @@ fn handle_messaging(
                     return serde_json::json!({"error": "No MCP session — send an initialize request first"});
                 }
             };
+            // SECURITY: refuse to hijack a peer whose tuic_session is still bound to a
+            // *different, live* MCP session. Re-registration from the same session
+            // (reconnect / rename) and takeover of a dead/stale binding remain allowed —
+            // only the case where another live session claims an existing identity (which
+            // would steal its inbox routing) is rejected.
+            if let Some(existing) = state.peer_agents.get(tuic_session) {
+                let prior_mcp = existing.mcp_session_id.clone();
+                if prior_mcp != mcp_sid
+                    && !prior_mcp.is_empty()
+                    && state.mcp_sessions.contains_key(&prior_mcp)
+                {
+                    return serde_json::json!({
+                        "error": "tuic_session is already registered to another active MCP session"
+                    });
+                }
+            }
             let name = args["name"].as_str().unwrap_or("agent").to_string();
             let project = args["project"].as_str().map(|s| s.to_string());
             let now_ms = std::time::SystemTime::now()
@@ -1931,7 +1947,16 @@ fn handle_messaging(
                 .session_to_mcp
                 .entry(tuic_session.to_string())
                 .or_default()
-                .push(mcp_sid);
+                .push(mcp_sid.clone());
+            // Audit trail: peer registrations are security-relevant (identity binding).
+            tracing::info!(
+                source = "agent_msg",
+                event = "register",
+                tuic_session = %tuic_session,
+                mcp_session = %mcp_sid,
+                name = %name,
+                "Peer registered"
+            );
             let _ = state
                 .event_bus
                 .send(crate::state::AppEvent::PeerRegistered {
@@ -2078,6 +2103,19 @@ fn handle_messaging(
             if let Err(e) = crate::pty::wake_session(state, to) {
                 tracing::debug!(session = %to, error = %e, "Wake on message delivery failed");
             }
+            // Audit trail: who messaged whom, how big, and whether it was pushed live.
+            // Content is intentionally not logged (may be sensitive / up to 64 KB).
+            tracing::info!(
+                source = "agent_msg",
+                event = "send",
+                from = %sender_tuic,
+                from_name = %sender_name,
+                to = %to,
+                bytes = message.len(),
+                delivered_via_channel = pushed,
+                message_id = %msg_id,
+                "Peer message delivered"
+            );
             serde_json::json!({"ok": true, "message_id": msg_id, "delivered_via_channel": pushed})
         }
         "inbox" => {
@@ -3163,6 +3201,15 @@ fn handle_agent_unified(
             handle_agent(state, addr, &remap_action(args, action), mcp_session_id)
         }
         "register" | "list_peers" | "send" | "inbox" => {
+            // SECURITY: inter-agent messaging is local-only, matching `spawn`. A remote/LAN
+            // MCP client (even authenticated, or reaching the server via lan_auth_bypass)
+            // must not be able to register, enumerate, message, or read peer inboxes —
+            // otherwise it could inject into a peer's inbox or hijack a peer identity.
+            if !addr.ip().is_loopback() {
+                return serde_json::json!({
+                    "error": "Inter-agent messaging is restricted to localhost connections"
+                });
+            }
             handle_messaging(state, &remap_action(args, action), mcp_session_id)
         }
         other => serde_json::json!({"error": format!(
@@ -3772,6 +3819,128 @@ mod tests {
             Some("mcp-1"),
         );
         assert_eq!(r["name"], "agent");
+    }
+
+    #[test]
+    fn messaging_actions_require_loopback() {
+        // SECURITY: register/send/inbox/list_peers must be loopback-only, like `spawn`,
+        // so a remote/LAN MCP client (even authenticated or via lan_auth_bypass) cannot
+        // drive inter-agent messaging or inject into a peer's inbox.
+        let state = test_state();
+        let lan: std::net::SocketAddr = "192.168.1.50:4000".parse().unwrap();
+        let loop_addr: std::net::SocketAddr = "127.0.0.1:1".parse().unwrap();
+        let args = serde_json::json!({
+            "action": "register", "tuic_session": "550e8400-e29b-41d4-a716-446655440a01"
+        });
+
+        // LAN caller is rejected and registers nothing.
+        let rejected = handle_agent_unified(&state, lan, &args, Some("mcp-lan"));
+        assert!(
+            rejected["error"]
+                .as_str()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains("local"),
+            "expected localhost-only rejection, got {rejected}"
+        );
+        assert_eq!(
+            state.peer_agents.len(),
+            0,
+            "LAN register must not create a peer"
+        );
+
+        // Loopback caller passes the guard and registers.
+        let ok = handle_agent_unified(&state, loop_addr, &args, Some("mcp-local"));
+        assert_eq!(ok["ok"], true);
+        assert_eq!(state.peer_agents.len(), 1);
+    }
+
+    fn live_mcp_session(state: &Arc<AppState>, sid: &str) {
+        state.mcp_sessions.insert(
+            sid.to_string(),
+            crate::state::McpSessionMeta {
+                last_activity: std::time::Instant::now(),
+                is_claude_code: true,
+                has_sse_stream: false,
+                repo_path: None,
+            },
+        );
+    }
+
+    #[test]
+    fn messaging_register_rejects_hijack_of_live_session() {
+        // SECURITY: a second MCP session must NOT overwrite (hijack) a peer whose
+        // tuic_session is still bound to a different, *live* MCP session.
+        let state = test_state();
+        let tuic = "550e8400-e29b-41d4-a716-446655440a01";
+
+        let r1 = handle_messaging(
+            &state,
+            &serde_json::json!({"action": "register", "tuic_session": tuic, "name": "victim"}),
+            Some("mcp-1"),
+        );
+        assert_eq!(r1["ok"], true);
+        live_mcp_session(&state, "mcp-1");
+
+        let hijack = handle_messaging(
+            &state,
+            &serde_json::json!({"action": "register", "tuic_session": tuic, "name": "attacker"}),
+            Some("mcp-2"),
+        );
+        assert!(
+            hijack["error"]
+                .as_str()
+                .unwrap_or("")
+                .to_lowercase()
+                .contains("another"),
+            "expected hijack rejection, got {hijack}"
+        );
+        // Binding unchanged: still victim / mcp-1.
+        let peer = state.peer_agents.get(tuic).unwrap();
+        assert_eq!(peer.name, "victim");
+        assert_eq!(peer.mcp_session_id, "mcp-1");
+    }
+
+    #[test]
+    fn messaging_register_same_session_updates_even_when_live() {
+        // Legit reconnect/rename: the SAME mcp session re-registering its own
+        // tuic_session must still succeed even while marked live.
+        let state = test_state();
+        let tuic = "550e8400-e29b-41d4-a716-446655440a01";
+        handle_messaging(
+            &state,
+            &serde_json::json!({"action": "register", "tuic_session": tuic, "name": "old"}),
+            Some("mcp-1"),
+        );
+        live_mcp_session(&state, "mcp-1");
+        let r = handle_messaging(
+            &state,
+            &serde_json::json!({"action": "register", "tuic_session": tuic, "name": "new"}),
+            Some("mcp-1"),
+        );
+        assert_eq!(r["ok"], true);
+        assert_eq!(state.peer_agents.get(tuic).unwrap().name, "new");
+    }
+
+    #[test]
+    fn messaging_register_takeover_of_dead_session_allowed() {
+        // A stale binding (prior MCP session no longer live) may be taken over — this is
+        // the normal case after a crash/reconnect, and must not be blocked.
+        let state = test_state();
+        let tuic = "550e8400-e29b-41d4-a716-446655440a01";
+        handle_messaging(
+            &state,
+            &serde_json::json!({"action": "register", "tuic_session": tuic, "name": "old"}),
+            Some("mcp-1"),
+        );
+        // mcp-1 is NOT inserted into mcp_sessions → treated as dead.
+        let r = handle_messaging(
+            &state,
+            &serde_json::json!({"action": "register", "tuic_session": tuic, "name": "new"}),
+            Some("mcp-2"),
+        );
+        assert_eq!(r["ok"], true);
+        assert_eq!(state.peer_agents.get(tuic).unwrap().mcp_session_id, "mcp-2");
     }
 
     fn register_peer(state: &Arc<AppState>, tuic: &str, name: &str, mcp: &str) {

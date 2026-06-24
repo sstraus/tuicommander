@@ -393,6 +393,27 @@ This requires the client to be launched with `--dangerously-load-development-cha
 - Inbox capacity: 100 messages per agent (FIFO eviction)
 - Peer registrations cleaned up on MCP session delete and TTL reap
 
+### Security
+
+The messaging actions form a trust boundary distinct from the rest of the HTTP API:
+
+- **Loopback-only.** `register`, `list_peers`, `send`, and `inbox` are restricted to
+  localhost connections, exactly like `agent spawn`. A remote/LAN MCP client — even one
+  that is Basic-Auth authenticated or reaches the server via `lan_auth_bypass` — is
+  rejected. Peer messaging is only available to agents running on the same machine
+  (the documented same-instance coordination model). Enforced in `handle_agent_unified`.
+- **Identity-hijack protection.** `register` will not overwrite a peer whose
+  `tuic_session` is still bound to a *different, live* MCP session (which would steal that
+  peer's inbox routing). Re-registration from the same session (reconnect / rename) and
+  takeover of a dead/stale binding remain allowed.
+- **Audit logging.** `register` and `send` emit `tracing::info!(source = "agent_msg", …)`
+  records (registrant/sender/recipient identities, message size, delivery channel — never
+  message content) so peer-messaging activity is forensically traceable.
+
+> Note: same-user local processes are inside the trust boundary by design (the Unix
+> socket has no auth — see Security Model). The controls above limit *remote* injection
+> and *cross-session* identity hijacking, and provide an audit trail.
+
 ## Authentication
 
 When remote access is enabled:
