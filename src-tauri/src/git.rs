@@ -1879,7 +1879,10 @@ pub(crate) struct GitPanelContext {
 /// Untracked entries count toward `changed` (matches the panel's prior behavior).
 pub(crate) fn status_counts_cli(path: &Path) -> crate::git_reads::StatusCounts {
     let porcelain = git_cmd(path)
-        .args(["status", "--porcelain=v2"])
+        // `--untracked-files=all` recurses untracked directories so the badge
+        // count matches the per-file expansion in get_working_tree_status (a
+        // collapsed `? dir/` would otherwise count as 1 while the panel lists N).
+        .args(["status", "--porcelain=v2", "--untracked-files=all"])
         .run_silent()
         .map(|o| o.stdout)
         .unwrap_or_default();
@@ -2380,7 +2383,16 @@ pub(crate) async fn get_working_tree_status(path: String) -> Result<WorkingTreeS
     tokio::task::spawn_blocking(move || {
         let repo_path = PathBuf::from(&path);
         let out = git_cmd(&repo_path)
-            .args(["status", "--porcelain=v2", "--branch", "--show-stash"])
+            // `--untracked-files=all` expands a wholly-untracked directory into its
+            // individual files (`? dir/a`, `? dir/b`) instead of one collapsed
+            // `? dir/` entry that ChangesTab can't open a diff for.
+            .args([
+                "status",
+                "--porcelain=v2",
+                "--branch",
+                "--show-stash",
+                "--untracked-files=all",
+            ])
             .run()
             .map_err(|e| format!("git status failed: {e}"))?;
         let mut status = parse_porcelain_v2(&out.stdout);
@@ -3768,6 +3780,38 @@ mod tests {
     async fn get_working_tree_status_nonexistent_path() {
         let result = get_working_tree_status("/nonexistent/repo/xyz".to_string()).await;
         assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn get_working_tree_status_expands_untracked_dir() {
+        // A wholly-untracked directory with multiple files must surface as
+        // individual file paths (`--untracked-files=all`), not a single
+        // collapsed `providers/` entry that has no diff to open.
+        let (dir, path) = setup_test_repo_with_commit();
+        std::fs::create_dir(path.join("providers")).expect("mkdir providers");
+        std::fs::write(path.join("providers/a.txt"), "a").expect("write a");
+        std::fs::write(path.join("providers/b.txt"), "b").expect("write b");
+
+        let status = get_working_tree_status(path.to_string_lossy().to_string())
+            .await
+            .unwrap();
+
+        assert!(
+            status.untracked.contains(&"providers/a.txt".to_string()),
+            "providers/a.txt should be listed individually, got {:?}",
+            status.untracked
+        );
+        assert!(
+            status.untracked.contains(&"providers/b.txt".to_string()),
+            "providers/b.txt should be listed individually, got {:?}",
+            status.untracked
+        );
+        assert!(
+            !status.untracked.iter().any(|p| p == "providers/"),
+            "collapsed providers/ entry must not appear, got {:?}",
+            status.untracked
+        );
+        drop(dir);
     }
 
     // --- validate_paths_within_repo tests ---

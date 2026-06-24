@@ -279,7 +279,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
 							// that were skipped while the directory was non-git.
 							invoke("stop_repo_watcher", { repoPath })
 								.then(() => invoke("start_repo_watcher", { repoPath }))
-								.catch((e) => appLogger.debug("git", "Watcher restart after git-init failed", { repoPath, error: String(e) }));
+								.catch((e) =>
+									appLogger.debug("git", "Watcher restart after git-init failed", { repoPath, error: String(e) }),
+								);
 						}
 					} catch (e) {
 						appLogger.debug("git", "Repo probe failed — staying in shell mode", { repoPath, error: String(e) });

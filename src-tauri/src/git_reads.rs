@@ -142,6 +142,7 @@ impl GixGitReads {
 
     fn gix_status_counts(&self, repo: &Path) -> Option<StatusCounts> {
         use gix::status::Item;
+        use gix::status::UntrackedFiles;
         use gix::status::index_worktree::Item as IwItem;
         use gix::status::plumbing::index_as_worktree::EntryStatus;
 
@@ -153,7 +154,13 @@ impl GixGitReads {
             return None;
         }
 
-        let platform = grepo.status(gix::progress::Discard).ok()?;
+        // `UntrackedFiles::Files` emits each untracked file individually rather
+        // than collapsing a wholly-untracked directory into one entry — parity
+        // with the CLI's `--untracked-files=all` (shootout_status_counts).
+        let platform = grepo
+            .status(gix::progress::Discard)
+            .ok()?
+            .untracked_files(UntrackedFiles::Files);
         let iter = platform
             .into_iter(std::iter::empty::<gix::bstr::BString>())
             .ok()?;
@@ -1258,6 +1265,16 @@ mod tests {
         std::fs::write(untracked.join("new.txt"), "n\n").unwrap();
         eq("untracked", &untracked);
         assert_eq!(gix.status_counts(&untracked).changed, 1);
+
+        // wholly-untracked directory with >1 file: both backends must recurse
+        // (--untracked-files=all / UntrackedFiles::Files) and count each file,
+        // not collapse the directory into a single entry.
+        let (_g2a, untracked_dir) = clean_repo();
+        std::fs::create_dir(untracked_dir.join("providers")).unwrap();
+        std::fs::write(untracked_dir.join("providers/a.txt"), "a\n").unwrap();
+        std::fs::write(untracked_dir.join("providers/b.txt"), "b\n").unwrap();
+        eq("untracked-dir", &untracked_dir);
+        assert_eq!(gix.status_counts(&untracked_dir).changed, 2);
 
         // unstaged-only modification (no staging)
         let (_g2b, unstaged) = clean_repo();

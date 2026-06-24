@@ -94,6 +94,17 @@ function splitPath(filePath: string): { dir: string; base: string } {
 	return { dir: filePath.slice(0, lastSep + 1), base: filePath.slice(lastSep + 1) };
 }
 
+/**
+ * True for collapsed untracked-directory entries. `git status` (without
+ * `--untracked-files=all`) reports a wholly-untracked directory as a single
+ * trailing-slash path (e.g. `providers/`) — that's not a file, so it has no
+ * diff. Until the backend expands these into individual files, treat them as
+ * non-diffable so a plain click doesn't open an empty "No changes" tab.
+ */
+export function isDirEntry(filePath: string): boolean {
+	return filePath.endsWith("/") || filePath.endsWith("\\");
+}
+
 export const ChangesTab: Component<ChangesTabProps> = (props) => {
 	const [staged, setStaged] = createSignal<FileEntry[]>([]);
 	const [unstaged, setUnstaged] = createSignal<FileEntry[]>([]);
@@ -281,7 +292,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 	}
 
 	function openDiff(file: FileEntry, section: "staged" | "unstaged") {
-		if (!props.repoPath || !isDiffStatus(file.status)) return;
+		if (!props.repoPath || !isDiffStatus(file.status) || isDirEntry(file.path)) return;
 		props.onOpenDiff(
 			props.repoPath,
 			file.path,
@@ -401,7 +412,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 				},
 			});
 		}
-		if (isDiffStatus(file.status)) {
+		if (isDiffStatus(file.status) && !isDirEntry(file.path)) {
 			items.push({ label: "View Diff", shortcut: "Enter", action: () => openDiff(file, section) });
 		}
 		if (unstagedPaths.length > 0) {
