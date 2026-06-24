@@ -197,12 +197,17 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	/** Guard: scroll to initialLine only once on first file load */
 	let didScrollToInitialLine = false;
 
-	/** Read file content — uses the right command depending on internal vs external */
+	/**
+	 * Read file content — uses the editor-specific commands, which allow a far
+	 * larger file than the generic markdown/html/plugin readers (the editor keeps
+	 * the doc in a CM6 rope and renders only the viewport). Internal vs external
+	 * picks the right command.
+	 */
 	const readContent = async (): Promise<string> => {
 		if (isExternal()) {
-			return invoke<string>("read_external_file", { path: props.filePath });
+			return invoke<string>("read_editor_file_external", { path: props.filePath });
 		}
-		return fb.readFile(fsRoot(), props.filePath);
+		return invoke<string>("read_editor_file", { repoPath: fsRoot(), file: props.filePath });
 	};
 
 	// Sync dirty state to tab store for the tab bar indicator

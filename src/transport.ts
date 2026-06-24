@@ -803,8 +803,14 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	fs_read_file: {
 		map: (_args, p) => ({ method: "GET", path: `/fs/read?repoPath=${p("repoPath")}&file=${p("file")}` }),
 	},
+	read_editor_file: {
+		map: (_args, p) => ({ method: "GET", path: `/fs/read-editor?repoPath=${p("repoPath")}&file=${p("file")}` }),
+	},
 	read_external_file: {
 		map: (_args, p) => ({ method: "GET", path: `/fs/read-external?path=${p("path")}` }),
+	},
+	read_editor_file_external: {
+		map: (_args, p) => ({ method: "GET", path: `/fs/read-editor-external?path=${p("path")}` }),
 	},
 	write_file: {
 		map: (args) => ({
