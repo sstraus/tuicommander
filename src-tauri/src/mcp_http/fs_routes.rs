@@ -113,6 +113,18 @@ pub(super) async fn fs_read_file_http(Query(q): Query<FsFileQuery>) -> Response 
     json_result(crate::fs::fs_read_file(q.repo_path, q.file))
 }
 
+/// Repo file read for the code editor, at the larger `MAX_EDITOR_LARGE_FILE_SIZE` cap.
+pub(super) async fn read_editor_file_http(Query(q): Query<FsFileQuery>) -> Response {
+    if let Err(e) = validate_repo_path(&q.repo_path) {
+        return e.into_response();
+    }
+    json_result(crate::read_file_impl_with_limit(
+        q.repo_path,
+        q.file,
+        crate::MAX_EDITOR_LARGE_FILE_SIZE,
+    ))
+}
+
 /// Check if a path falls within any of the given repository roots.
 /// Uses Path::starts_with for component-level matching (not string prefix).
 fn is_within_repo_roots(path: &std::path::Path, roots: &[String]) -> bool {
@@ -141,6 +153,25 @@ pub(super) async fn read_external_file_http(Query(q): Query<FsExternalFileQuery>
             .into_response();
     }
     json_result(crate::read_external_file(q.path))
+}
+
+/// External (absolute-path) file read for the code editor, at the larger
+/// `MAX_EDITOR_LARGE_FILE_SIZE` cap. Same repo-root restriction as `read_external_file_http`.
+pub(super) async fn read_editor_file_external_http(Query(q): Query<FsExternalFileQuery>) -> Response {
+    let roots = registered_repo_roots();
+    if !is_within_repo_roots(std::path::Path::new(&q.path), &roots) {
+        return (
+            StatusCode::FORBIDDEN,
+            Json(serde_json::json!({
+                "error": "Access denied: path must be within a registered repository"
+            })),
+        )
+            .into_response();
+    }
+    json_result(crate::read_external_file_with_limit(
+        &q.path,
+        crate::MAX_EDITOR_LARGE_FILE_SIZE,
+    ))
 }
 
 pub(super) async fn write_file_http(Json(body): Json<FsWriteFileRequest>) -> Response {

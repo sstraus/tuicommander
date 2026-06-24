@@ -857,7 +857,12 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             get(fs_routes::search_content_all_http),
         )
         .route("/fs/read", get(fs_routes::fs_read_file_http))
+        .route("/fs/read-editor", get(fs_routes::read_editor_file_http))
         .route("/fs/read-external", get(fs_routes::read_external_file_http))
+        .route(
+            "/fs/read-editor-external",
+            get(fs_routes::read_editor_file_external_http),
+        )
         .route("/fs/write", post(fs_routes::write_file_http))
         .route("/fs/mkdir", post(fs_routes::create_directory_http))
         .route("/fs/delete", post(fs_routes::delete_path_http))
@@ -1194,7 +1199,12 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
             get(fs_routes::search_content_all_http),
         )
         .route("/fs/read", get(fs_routes::fs_read_file_http))
+        .route("/fs/read-editor", get(fs_routes::read_editor_file_http))
         .route("/fs/read-external", get(fs_routes::read_external_file_http))
+        .route(
+            "/fs/read-editor-external",
+            get(fs_routes::read_editor_file_external_http),
+        )
         .route("/fs/write", post(fs_routes::write_file_http))
         .route("/fs/mkdir", post(fs_routes::create_directory_http))
         .route("/fs/delete", post(fs_routes::delete_path_http))
