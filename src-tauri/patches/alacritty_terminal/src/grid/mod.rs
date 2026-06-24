@@ -279,6 +279,17 @@ impl<T: GridCell + Default + PartialEq> Grid<T> {
         T: ResetDiscriminant<D>,
         D: PartialEq,
     {
+        // DEFERRED (2026-06-24) — story 056-7545 (grid-level Ink duplication into
+        // scrollback). When Claude Code's Ink TUI re-renders a tall block in place
+        // (cursor-up + erase-in-display/line + reprint) and the redrawn region
+        // crosses the scroll-region/screen boundary, the intermediate/old render
+        // appears to land here in history (region.start == 0 → lines committed to
+        // scrollback) instead of being overwritten, so the grid itself accumulates
+        // duplicate copies. NOT yet root-caused/fixed: requires a live make-dev
+        // repro Boss can watch (grid vs reference terminal) before touching this —
+        // blind fork surgery here is high-risk. Distinct from 055-2027 (frontend
+        // rowCache drift, grid clean). See story work logs for the captured repro.
+
         // When rotating the entire region with fixed lines at the top, just reset everything.
         if region.end - region.start <= positions && region.start != 0 {
             for i in (region.start.0..region.end.0).map(Line::from) {
