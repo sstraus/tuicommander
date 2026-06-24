@@ -234,16 +234,19 @@ describe("terminalsStore debounced busy signal", () => {
 	});
 
 	describe("awaitingInputConfident", () => {
-		it("clears confident awaitingInput on idle→busy immediately", () => {
+		it("preserves confident awaitingInput on idle→busy (Ink menu survives repaint oscillation)", () => {
 			testInScope(() => {
 				const id = addTerminal();
 				store.update(id, { shellState: "busy" });
 				store.update(id, { shellState: "idle" });
 				store.setAwaitingInput(id, "question", true);
-				// Idle→busy clears ALL question state — confident false positives are
-				// now prevented upstream in Rust (spinner suppression #658-785c).
+				// A confident prompt (e.g. Ink "Enter to select") must survive the
+				// idle→busy oscillation caused by TUI repaints (cursor blink, animation,
+				// scrollbar). It clears only on real user-input, process exit, or the
+				// agent→shell transition — never on a repaint-driven idle→busy.
 				store.update(id, { shellState: "busy" });
-				expect(store.get(id)?.awaitingInput).toBeNull();
+				expect(store.get(id)?.awaitingInput).toBe("question");
+				expect(store.get(id)?.awaitingInputConfident).toBe(true);
 			});
 		});
 

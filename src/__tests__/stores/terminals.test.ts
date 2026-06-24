@@ -100,6 +100,46 @@ describe("terminalsStore", () => {
 		});
 	});
 
+	describe("addUserPromptLine()", () => {
+		it("appends user-prompt lines in order", () => {
+			testInScope(() => {
+				const id = store.add(makeTerminal());
+				store.addUserPromptLine(id, 10);
+				store.addUserPromptLine(id, 42);
+				expect(store.get(id)!.userPromptLines).toEqual([10, 42]);
+			});
+		});
+
+		it("ignores negative lines (keystroke-reconstructed UserInput has no grid row)", () => {
+			testInScope(() => {
+				const id = store.add(makeTerminal());
+				store.addUserPromptLine(id, -1);
+				expect(store.get(id)!.userPromptLines).toEqual([]);
+			});
+		});
+
+		it("dedups a consecutive repeat of the same line (prompt redraw re-fires busy)", () => {
+			testInScope(() => {
+				const id = store.add(makeTerminal());
+				store.addUserPromptLine(id, 7);
+				store.addUserPromptLine(id, 7);
+				expect(store.get(id)!.userPromptLines).toEqual([7]);
+			});
+		});
+
+		it("evicts the oldest lines past the cap (mirrors commandBlocks)", () => {
+			testInScope(() => {
+				const id = store.add(makeTerminal());
+				// MAX_BLOCKS is 500; push 501 distinct lines and assert the oldest dropped.
+				for (let i = 0; i < 501; i++) store.addUserPromptLine(id, i);
+				const lines = store.get(id)!.userPromptLines;
+				expect(lines.length).toBe(500);
+				expect(lines[0]).toBe(1);
+				expect(lines[lines.length - 1]).toBe(500);
+			});
+		});
+	});
+
 	describe("setActive()", () => {
 		it("sets the active terminal", () => {
 			testInScope(() => {
@@ -234,6 +274,39 @@ describe("terminalsStore", () => {
 				expect(store.get(id)!.awaitingInput).toBe("question");
 				// And going back to idle also must not clear it
 				store.update(id, { shellState: "idle" });
+				expect(store.get(id)!.awaitingInput).toBe("question");
+			});
+		});
+
+		it("agentType set→null clears awaitingInput (agent exited to a plain shell)", () => {
+			testInScope(() => {
+				const id = store.add(makeTerminal({ agentType: "claude" }));
+				// Confident question: deliberately survives idle↔busy, so only an
+				// explicit signal (user-input, process exit, or agent→shell) may clear it.
+				store.setAwaitingInput(id, "question", true);
+				// Agent process exits; detection flips agentType to null (shell prompt returned).
+				store.update(id, { agentType: null });
+				expect(store.get(id)!.awaitingInput).toBeNull();
+				expect(store.get(id)!.awaitingInputConfident).toBe(false);
+			});
+		});
+
+		it("agentType null→null does not clear awaitingInput (no agent transition)", () => {
+			testInScope(() => {
+				// A plain shell that legitimately detected a question (e.g. a script's
+				// "Continue? " prompt). No agent→shell transition occurs, so it must survive.
+				const id = store.add(makeTerminal({ agentType: null }));
+				store.setAwaitingInput(id, "question", true);
+				store.update(id, { agentType: null });
+				expect(store.get(id)!.awaitingInput).toBe("question");
+			});
+		});
+
+		it("agentType claude→codex does not clear awaitingInput (still an agent)", () => {
+			testInScope(() => {
+				const id = store.add(makeTerminal({ agentType: "claude" }));
+				store.setAwaitingInput(id, "question", true);
+				store.update(id, { agentType: "codex" });
 				expect(store.get(id)!.awaitingInput).toBe("question");
 			});
 		});
@@ -453,6 +526,21 @@ describe("terminalsStore", () => {
 				// Agent resumes output → idle→busy transition should clear stale question
 				store.update(id, { shellState: "busy" });
 				expect(store.get(id)!.awaitingInput).toBeNull();
+			});
+		});
+
+		it("preserves a CONFIDENT awaitingInput across idle→busy oscillation", () => {
+			testInScope(() => {
+				const id = store.add(makeTerminal());
+				store.update(id, { shellState: "idle" });
+				// Confident prompt (e.g. Ink "Enter to select" menu)
+				store.setAwaitingInput(id, "question", true);
+				expect(store.get(id)!.awaitingInput).toBe("question");
+				// A fullscreen TUI repaint oscillates idle→busy; the confident prompt
+				// must survive (it clears only on real user-input or process exit).
+				store.update(id, { shellState: "busy" });
+				expect(store.get(id)!.awaitingInput).toBe("question");
+				expect(store.get(id)!.awaitingInputConfident).toBe(true);
 			});
 		});
 

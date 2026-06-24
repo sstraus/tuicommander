@@ -265,10 +265,14 @@ function createTerminalsStore() {
 			busyDurationMap.delete(id);
 			// Error state is NOT cleared here: API errors are persistent and should only
 			// be cleared by explicit agent activity (status-line, user-input) or process exit.
-			// Question state IS cleared: idle→busy means the agent resumed work, so any
-			// pending question notification is stale. False-positive idle→busy oscillations
-			// from spinner ticks are suppressed upstream in Rust (spinner suppression).
-			if (prev === "idle" && state.terminals[id]?.awaitingInput) {
+			// Low-confidence question state IS cleared: idle→busy means the agent resumed
+			// work, so any pending (heuristic) question notification is stale.
+			// CONFIDENT questions are preserved (awaitingInputConfident): a confident prompt
+			// like an Ink "Enter to select" menu stays awaiting even while the TUI repaints
+			// (cursor blink, animation, scrollbar) — those repaints oscillate idle→busy and
+			// would otherwise wrongly clear a genuine interactive prompt. Confident questions
+			// instead clear on real user-input (Terminal.tsx) or process exit (below).
+			if (prev === "idle" && state.terminals[id]?.awaitingInput && !state.terminals[id]?.awaitingInputConfident) {
 				setState("terminals", id, "awaitingInput", null);
 				setState("terminals", id, "awaitingInputConfident", false);
 			}
@@ -498,6 +502,21 @@ function createTerminalsStore() {
 					const prev = state.terminals[id]?.shellState ?? null;
 					const next = data.shellState ?? null;
 					if (prev !== next) handleShellStateChange(id, prev, next);
+				}
+				// Agent exited back to a plain shell (agentType set→null). Any pending
+				// question/error was the agent's — a shell can't be "awaiting input" on
+				// its behalf, and nothing else clears it: Ctrl+C emits no UserInput, the
+				// PTY shell never "exits" (so the shellState→null clear never fires), and
+				// confident questions deliberately survive idle→busy. A stale badge would
+				// otherwise stick forever and hijack repo-switch routing (useGitOperations
+				// prefers a tab with awaitingInput). Parallels the process-exit clear above.
+				if ("agentType" in data) {
+					const prevAgent = state.terminals[id]?.agentType ?? null;
+					const nextAgent = data.agentType ?? null;
+					if (prevAgent !== null && nextAgent === null && state.terminals[id]?.awaitingInput) {
+						setState("terminals", id, "awaitingInput", null);
+						setState("terminals", id, "awaitingInputConfident", false);
+					}
 				}
 				// Keep sessionToTerminal reverse map in sync: callers that pass sessionId
 				// via update() would otherwise desync the map and break plugin filtering
