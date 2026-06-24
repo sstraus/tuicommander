@@ -6,6 +6,7 @@ import {
 	createSignal,
 	For,
 	Match,
+	on,
 	onCleanup,
 	onMount,
 	Show,
@@ -468,21 +469,32 @@ export const TabBar: Component<TabBarProps> = (props) => {
 		return tabOrderingStore.getOrdered(allIds);
 	};
 
-	// Deactivate non-terminal tabs that become invisible after branch switch
-	createEffect(() => {
-		const diffActive = diffTabsStore.state.activeId;
-		if (diffActive && !visibleDiffIds().includes(diffActive)) {
-			diffTabsStore.setActive(null);
-		}
-		const mdActive = mdTabsStore.state.activeId;
-		if (mdActive && !visibleMdIds().includes(mdActive)) {
-			mdTabsStore.setActive(null);
-		}
-		const editActive = editorTabsStore.state.activeId;
-		if (editActive && !visibleEditIds().includes(editActive)) {
-			editorTabsStore.setActive(null);
-		}
-	});
+	// Deactivate non-terminal tabs that become invisible after a BRANCH SWITCH.
+	// Gated on activeBranchKey (with defer) so it fires only on an actual branch
+	// change — NOT on every tab open. A plain createEffect here re-ran whenever a
+	// tab was added (activeId change) and nuked a just-opened diff/md/editor whose
+	// branchKey didn't yet match the active branch (e.g. opening a diff from a
+	// worktree's Git panel), so the click appeared to do nothing.
+	createEffect(
+		on(
+			activeBranchKey,
+			() => {
+				const diffActive = diffTabsStore.state.activeId;
+				if (diffActive && !visibleDiffIds().includes(diffActive)) {
+					diffTabsStore.setActive(null);
+				}
+				const mdActive = mdTabsStore.state.activeId;
+				if (mdActive && !visibleMdIds().includes(mdActive)) {
+					mdTabsStore.setActive(null);
+				}
+				const editActive = editorTabsStore.state.activeId;
+				if (editActive && !visibleEditIds().includes(editActive)) {
+					editorTabsStore.setActive(null);
+				}
+			},
+			{ defer: true },
+		),
+	);
 
 	// Evict non-pinned plugin-panel tabs from other repos on repo switch — they
 	// would otherwise pile up forever, invisible but still holding HTML in memory.
