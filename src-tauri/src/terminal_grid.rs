@@ -1137,6 +1137,16 @@ impl TerminalGrid {
         let num_cols = grid.columns();
         let num_lines = grid.screen_lines();
 
+        // A row past the visible screen has no logical line. This happens when
+        // the frontend's screenRows briefly exceeds the backend grid's
+        // screen_lines after a resize and the stale row reaches this command.
+        // Returning empty avoids the backward walk indexing past the screen
+        // bottom, which trips the grid's `requested.0 < visible_lines`
+        // assertion (panic in debug).
+        if row >= num_lines {
+            return (row, String::new());
+        }
+
         // Walk backwards to find the first row of this logical line.
         let mut start = row;
         while start > 0 {
@@ -2254,6 +2264,19 @@ mod tests {
         let (start, text) = grid.get_logical_line(1);
         assert_eq!(start, 1);
         assert_eq!(text, "second");
+    }
+
+    #[test]
+    fn get_logical_line_out_of_range_row_does_not_panic() {
+        // The frontend's screenRows can briefly exceed the backend grid's
+        // screen_lines after a resize, so an out-of-range row reaches this
+        // command. It must not index past the screen bottom (which trips the
+        // grid's `requested.0 < visible_lines` assertion → panic in debug).
+        let mut grid = TerminalGrid::new(5, 10, 0);
+        let _ = grid.process(b"hello");
+        let (start, text) = grid.get_logical_line(10);
+        assert_eq!(start, 10);
+        assert_eq!(text, "");
     }
 
     // --- Scrollback reading tests ---
