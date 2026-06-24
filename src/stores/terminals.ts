@@ -70,6 +70,7 @@ export interface TerminalData {
 	activeBlock: CommandBlock | null; // Current in-progress block (A received, D not yet)
 	lastCommandExecAt: number | null; // Timestamp of last OSC 133 "C" (real command execution); monotonic, never evicted — used to gate completion against prompt-redraw/wake false-busy
 	foldedBlocks: Set<number>; // promptLine values of folded blocks
+	userPromptLines: number[]; // Absolute lines where the user submitted a prompt (UserInput.line), for the green scrollbar marker
 	alias: string | null; // Human-friendly alias from Rust (e.g. "tc-1")
 	standby: boolean; // Session is SIGSTOP'd (auto-standby)
 }
@@ -104,6 +105,7 @@ type TerminalCreateData = Omit<
 	| "activeBlock"
 	| "lastCommandExecAt"
 	| "foldedBlocks"
+	| "userPromptLines"
 	| "alias"
 	| "standby"
 > & {
@@ -374,6 +376,7 @@ function createTerminalsStore() {
 				activeBlock: null,
 				lastCommandExecAt: null,
 				foldedBlocks: new Set<number>(),
+				userPromptLines: [],
 				alias: null,
 				standby: false,
 				...data,
@@ -412,6 +415,7 @@ function createTerminalsStore() {
 				activeBlock: null,
 				lastCommandExecAt: null,
 				foldedBlocks: new Set<number>(),
+				userPromptLines: [],
 				alias: null,
 				standby: false,
 				...data,
@@ -602,6 +606,20 @@ function createTerminalsStore() {
 					break;
 				}
 			}
+		},
+
+		/** Record an absolute line where the user submitted a prompt (UserInput.line
+		 *  from the OSC 7770 state=busy transition). Drives the green scrollbar marker.
+		 *  Ignores negative lines (keystroke-reconstructed UserInput has no grid row)
+		 *  and dedups consecutive repeats (a prompt redraw can re-fire busy on the same
+		 *  row). Capped at MAX_BLOCKS, mirroring commandBlocks eviction. */
+		addUserPromptLine(id: string, line: number): void {
+			if (!has(id) || line < 0) return;
+			setState("terminals", id, "userPromptLines", (prev) => {
+				if (prev[prev.length - 1] === line) return prev;
+				const next = [...prev, line];
+				return next.length > MAX_BLOCKS ? next.slice(-MAX_BLOCKS) : next;
+			});
 		},
 
 		toggleBlockFold(id: string, promptLine: number): void {

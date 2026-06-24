@@ -40,7 +40,7 @@ type ParsedEvent =
 	| { type: "usage-limit"; percentage: number; limit_type: string }
 	| { type: "usage-exhausted"; reset_time: string | null }
 	| { type: "plan-file"; path: string }
-	| { type: "user-input"; content: string }
+	| { type: "user-input"; content: string; line: number }
 	| { type: "api-error"; pattern_name: string; matched_text: string; error_kind: string }
 	| { type: "tool-error"; matched_text: string }
 	| { type: "intent"; text: string; title?: string }
@@ -336,6 +336,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					break;
 				case "user-input":
 					planFileNotified = false;
+					// Record the prompt row for the green scrollbar marker. line < 0 (the
+					// keystroke-reconstructed path) is ignored by the store.
+					terminalsStore.addUserPromptLine(props.id, parsed.line);
 					// Clear suggest bar, pending buffer, and mark dismissed
 					terminalsStore.update(props.id, { suggestDismissed: true, suggestedActions: null, activeSubTasks: 0 });
 					// User resumed typing — clear any stale error/question badge. See comment

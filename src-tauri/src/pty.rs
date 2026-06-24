@@ -1556,14 +1556,18 @@ fn clean_action_required_title(title: &str) -> String {
 ///   set by a prior `PreToolUse(AskUserQuestion)`; empty content never overwrites
 ///   `last_prompt`)
 /// - anything else (incl. `idle`, unknown) → `None`
-fn tuic_state_awaiting_event(payload: &str) -> Option<ParsedEvent> {
+fn tuic_state_awaiting_event(payload: &str, line: i64) -> Option<ParsedEvent> {
     match payload {
         "awaiting" => Some(ParsedEvent::Question {
             prompt_text: String::new(),
             confident: true,
         }),
+        // `line` is the absolute prompt row (history_size + cursor row) at the
+        // busy transition — the row the user's submitted prompt sits on. Carried
+        // so the frontend can mark user-prompt lines on the scrollbar.
         "busy" => Some(ParsedEvent::UserInput {
             content: String::new(),
+            line,
         }),
         _ => None,
     }
@@ -2169,7 +2173,7 @@ impl ChunkProcessor {
                             // ignored here (it's a separate field). The awaiting_input
                             // field is driven by Question/UserInput events instead.
                             self.handle_tuic_state(&payload, session_id, state);
-                            if let Some(evt) = tuic_state_awaiting_event(&payload) {
+                            if let Some(evt) = tuic_state_awaiting_event(&payload, line as i64) {
                                 tuic_events.push(evt);
                             }
                         }
@@ -4147,7 +4151,10 @@ pub(crate) async fn write_pty(
                         if word_count >= 10 {
                             state.last_prompts.insert(session_id.clone(), content.clone());
                         }
-                        let parsed = ParsedEvent::UserInput { content };
+                        // Keystroke-reconstructed: no grid context, so no prompt
+                        // row (line = -1). The scrollbar marker uses the OSC 7770
+                        // state=busy path's absolute line instead.
+                        let parsed = ParsedEvent::UserInput { content, line: -1 };
                         // Broadcast to SSE/WebSocket consumers
                         if let Ok(json) = serde_json::to_value(&parsed) {
                             let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
@@ -9922,7 +9929,7 @@ mod tests {
 
     #[test]
     fn tuic_state_awaiting_yields_confident_question() {
-        match tuic_state_awaiting_event("awaiting") {
+        match tuic_state_awaiting_event("awaiting", 0) {
             Some(ParsedEvent::Question {
                 confident,
                 prompt_text,
@@ -9935,10 +9942,14 @@ mod tests {
     }
 
     #[test]
-    fn tuic_state_busy_yields_userinput_clear() {
-        match tuic_state_awaiting_event("busy") {
-            Some(ParsedEvent::UserInput { content }) => {
+    fn tuic_state_busy_yields_userinput_clear_with_prompt_line() {
+        // The busy transition's absolute prompt row (history_size + cursor row,
+        // here 42) must reach the UserInput event so the frontend can mark the
+        // user-prompt line on the scrollbar.
+        match tuic_state_awaiting_event("busy", 42) {
+            Some(ParsedEvent::UserInput { content, line }) => {
                 assert_eq!(content, "", "busy clear must not overwrite last_prompt");
+                assert_eq!(line, 42, "busy UserInput must carry the prompt row");
             }
             other => panic!("expected UserInput clear, got {other:?}"),
         }
@@ -9947,7 +9958,7 @@ mod tests {
     #[test]
     fn tuic_state_idle_yields_no_awaiting_event() {
         assert!(
-            tuic_state_awaiting_event("idle").is_none(),
+            tuic_state_awaiting_event("idle", 0).is_none(),
             "idle only transitions shell_state; it pushes no awaiting event"
         );
     }
@@ -9955,7 +9966,7 @@ mod tests {
     #[test]
     fn tuic_state_unknown_yields_no_awaiting_event() {
         assert!(
-            tuic_state_awaiting_event("thinking").is_none(),
+            tuic_state_awaiting_event("thinking", 0).is_none(),
             "unknown verb must push no awaiting event"
         );
     }
@@ -9972,6 +9983,7 @@ mod tests {
         };
         let other = ParsedEvent::UserInput {
             content: "hi".into(),
+            line: -1,
         };
         // Instrumented: every Question (silence + regex) is suppressed.
         assert!(suppress_heuristic_question(true, &q_low));

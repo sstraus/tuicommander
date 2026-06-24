@@ -783,9 +783,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const term = terminalsStore.get(props.terminalId);
 		if (!term) return;
 		const blocks = term.commandBlocks;
+		const promptLines = term.userPromptLines;
 		const searchCount = searchMatches.length;
 		const showBlocks = blockTimestampsVisible;
-		const key = `${showBlocks ? blocks.length : 0}:${totalRows}:${showBlocks ? (blocks[blocks.length - 1]?.exitCode ?? "") : ""}:s${searchCount}:${searchCount > 0 ? searchMatches[0].row : ""}`;
+		const key = `${showBlocks ? blocks.length : 0}:${showBlocks ? promptLines.length : 0}:${totalRows}:${showBlocks ? (blocks[blocks.length - 1]?.exitCode ?? "") : ""}:s${searchCount}:${searchCount > 0 ? searchMatches[0].row : ""}`;
 		if (key === lastScrollbarMarksKey) return;
 		lastScrollbarMarksKey = key;
 
@@ -796,6 +797,13 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				const ratio = block.promptLine / totalRows;
 				const color = block.exitCode !== null && block.exitCode !== 0 ? "#f85149" : "rgba(88,166,255,0.5)";
 				html += `<div style="position:absolute;right:0;width:100%;height:2px;top:${ratio * trackH}px;background:${color}"></div>`;
+			}
+			// Dedicated GREEN tick at each line where the USER submitted a prompt
+			// (distinct from the blue/red agent tool-call block ticks above): few,
+			// one per turn. Drawn after the block ticks so it sits on top.
+			for (const line of promptLines) {
+				const ratio = line / totalRows;
+				html += `<div style="position:absolute;right:0;width:100%;height:2px;top:${ratio * trackH}px;background:#3fb950"></div>`;
 			}
 		}
 		if (searchCount > 0) {

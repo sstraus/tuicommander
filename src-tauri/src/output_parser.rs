@@ -52,9 +52,15 @@ pub enum ParsedEvent {
     /// Plan file detected in terminal output (e.g. plans/foo.md, .claude/plans/bar.md)
     #[serde(rename = "plan-file")]
     PlanFile { path: String },
-    /// User submitted a line of input via the PTY (reconstructed from keystrokes)
+    /// User submitted a line of input via the PTY.
+    ///
+    /// `line` is the absolute prompt row (`history_size + cursor row`, the same
+    /// coordinate space as AgentBlock/OSC133) captured at the OSC 7770
+    /// `state=busy` transition — i.e. the row the cursor sat on when the agent
+    /// resumed work after the user submitted, which is the user's prompt line.
+    /// `-1` when the event has no grid context (keystroke-reconstructed path).
     #[serde(rename = "user-input")]
-    UserInput { content: String },
+    UserInput { content: String, line: i64 },
     /// API error from an agent (5xx server error, auth failure, etc.)
     #[serde(rename = "api-error")]
     ApiError {
