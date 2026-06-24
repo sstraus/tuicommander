@@ -1460,11 +1460,7 @@ const UpstreamMcpPanel: Component<{ upstreamStatus: UpstreamStatusEntry[] }> = (
 								</div>
 								{/* Action buttons — never shrink */}
 								{/* Authorize — show for explicit OAuth2 config OR when server auto-detected needs_auth (DCR case) */}
-								<Show
-									when={
-										shouldShowAuthorize(server.auth?.type, st()?.status, server.enabled)
-									}
-								>
+								<Show when={shouldShowAuthorize(server.auth?.type, st()?.status, server.enabled)}>
 									<Show
 										when={st()?.status === "authenticating"}
 										fallback={

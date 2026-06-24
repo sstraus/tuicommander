@@ -205,10 +205,7 @@ describe("appLogger", () => {
 		});
 
 		await vi.waitFor(() => {
-			expect(mockRpc).toHaveBeenCalledWith(
-				"push_log",
-				expect.objectContaining({ level: "error", source: "terminal" }),
-			);
+			expect(mockRpc).toHaveBeenCalledWith("push_log", expect.objectContaining({ level: "error", source: "terminal" }));
 		});
 		const call = mockRpc.mock.calls.find((c) => c[0] === "push_log");
 		const parsed = JSON.parse((call?.[1] as { dataJson: string }).dataJson);

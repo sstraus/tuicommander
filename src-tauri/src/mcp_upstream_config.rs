@@ -590,8 +590,14 @@ mod tests {
             token_endpoint: None,
         });
         let json = serde_json::to_string(&server).unwrap();
-        assert!(json.contains(r#""type":"oauth2""#), "expected oauth2 tag, got: {json}");
-        assert!(!json.contains("o_auth2"), "must not emit legacy o_auth2 tag: {json}");
+        assert!(
+            json.contains(r#""type":"oauth2""#),
+            "expected oauth2 tag, got: {json}"
+        );
+        assert!(
+            !json.contains("o_auth2"),
+            "must not emit legacy o_auth2 tag: {json}"
+        );
     }
 
     #[test]
