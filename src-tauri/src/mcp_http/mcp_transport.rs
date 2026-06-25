@@ -804,7 +804,30 @@ pub(crate) async fn handle_mcp_tool_call(
         .map(|meta| meta.is_claude_code)
         .unwrap_or(false);
     match name {
-        "session" => handle_session(state, args, mcp_session_id),
+        "session" => {
+            // Executing / destructive session actions carry the same loopback
+            // restriction as `agent spawn`: `input` writes raw bytes to a PTY's stdin
+            // (arbitrary command execution on a shell session, unfiltered context
+            // injection on an agent session), `create`/`kill`/`close` spawn or
+            // destroy sessions, and `pause`/`resume` halt/resume output buffering
+            // (a remote `pause` on any session is a DoS). A non-loopback MCP client
+            // (authenticated remote, or admitted via lan_auth_bypass) must not reach
+            // them — remote terminal control is served separately by the auth-gated
+            // POST /sessions/{id}/write route. Read-only actions (list/output/status/…)
+            // stay open for monitoring.
+            let action = args["action"].as_str().unwrap_or("");
+            if matches!(
+                action,
+                "create" | "input" | "kill" | "close" | "pause" | "resume"
+            ) && !addr.ip().is_loopback()
+            {
+                serde_json::json!({
+                    "error": "This session action is restricted to localhost connections"
+                })
+            } else {
+                handle_session(state, args, mcp_session_id)
+            }
+        }
         "agent" => handle_agent_unified(state, addr, args, mcp_session_id),
         "repo" => handle_repo(state, args, is_claude_code).await,
         "ui" => handle_ui_unified(state, addr, args, mcp_session_id).await,
@@ -3840,10 +3863,17 @@ mod tests {
         });
         let rejected = handle_agent_unified(&state, lan, &args, Some("mcp-lan"));
         assert!(
-            rejected["error"].as_str().unwrap_or("").contains("localhost"),
+            rejected["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("localhost"),
             "expected localhost-only rejection, got {rejected}"
         );
-        assert_eq!(state.peer_agents.len(), 0, "LAN register must create no peer");
+        assert_eq!(
+            state.peer_agents.len(),
+            0,
+            "LAN register must create no peer"
+        );
 
         // Loopback caller passes the gate and registers normally.
         let loop_addr: SocketAddr = "127.0.0.1:1".parse().unwrap();
@@ -3872,7 +3902,10 @@ mod tests {
             Some("mcp-2"),
         );
         assert!(
-            hijack["error"].as_str().unwrap_or("").contains("another active"),
+            hijack["error"]
+                .as_str()
+                .unwrap_or("")
+                .contains("another active"),
             "expected hijack rejection, got {hijack}"
         );
         let peer = state.peer_agents.get(tuic).unwrap();

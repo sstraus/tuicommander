@@ -1,6 +1,11 @@
 import { EditorState } from "@codemirror/state";
 import { describe, expect, it } from "vitest";
-import { buildQuery, matchStats } from "../../components/CodeEditorPanel/editorSearchEngine";
+import {
+	buildQuery,
+	createMatchScanner,
+	matchStats,
+	type ScanProgress,
+} from "../../components/CodeEditorPanel/editorSearchEngine";
 
 function stateOf(doc: string, selFrom?: number, selTo?: number): EditorState {
 	return EditorState.create({
@@ -54,5 +59,60 @@ describe("matchStats", () => {
 		const stats = matchStats(state, buildQuery("a", opts), 3);
 		expect(stats.count).toBe(3);
 		expect(stats.truncated).toBe(true);
+	});
+});
+
+describe("createMatchScanner", () => {
+	const opts = { caseSensitive: false, regex: false, wholeWord: false };
+
+	/** Drive the scanner to completion, one window per step (forces the multi-window
+	 *  path), and return the final snapshot. */
+	function runToCompletion(state: EditorState, term: string, sel?: { from: number; to: number }, window = 7): ScanProgress {
+		const scanner = createMatchScanner(state, buildQuery(term, opts), sel ?? { from: -1, to: -1 }, { window });
+		let res = scanner.step();
+		let guard = 0;
+		while (!res.done && guard++ < 100_000) res = scanner.step();
+		return res;
+	}
+
+	it("counts every match across many windows, matching the synchronous scan", () => {
+		const doc = "foo bar ".repeat(100); // 100 "foo" matches over 800 chars
+		const state = stateOf(doc);
+		const res = runToCompletion(state, "foo");
+		expect(res.done).toBe(true);
+		expect(res.truncated).toBe(false);
+		expect(res.count).toBe(matchStats(state, buildQuery("foo", opts)).count);
+		expect(res.count).toBe(100);
+	});
+
+	it("counts matches landing exactly on window boundaries exactly once", () => {
+		// Matches at offsets 0, 3, 6 with a window of 3 → one match owned per window.
+		const state = stateOf("foofoofoo");
+		const res = runToCompletion(state, "foo", undefined, 3);
+		expect(res.count).toBe(3);
+		expect(res.done).toBe(true);
+	});
+
+	it("locates the active match under the selection", () => {
+		const doc = "foo ".repeat(60); // matches at 0,4,8,... ; 30th match starts at 116
+		const state = stateOf(doc, 116, 119);
+		const res = runToCompletion(state, "foo", { from: 116, to: 119 });
+		expect(res.index).toBe(29);
+		expect(res.count).toBe(60);
+	});
+
+	it("stops at the cap and flags truncation", () => {
+		const state = stateOf("a a a a a a a a a a");
+		const scanner = createMatchScanner(state, buildQuery("a", opts), { from: -1, to: -1 }, { window: 3, cap: 4 });
+		let res = scanner.step();
+		while (!res.done) res = scanner.step();
+		expect(res.count).toBe(4);
+		expect(res.truncated).toBe(true);
+		expect(res.done).toBe(true);
+	});
+
+	it("completes immediately with zero for an empty query", () => {
+		const res = runToCompletion(stateOf("anything"), "");
+		expect(res).toEqual({ count: 0, index: -1, truncated: false, done: true });
 	});
 });

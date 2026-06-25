@@ -596,14 +596,16 @@ pub(crate) const MAX_EDITOR_FILE_SIZE: u64 = 10 * 1024 * 1024;
 /// The editor keeps the doc in a CM6 rope and renders only the viewport, so it
 /// tolerates far larger files than the eager panels above.
 ///
-/// Interim ceiling from the Tier-1 measurement (`plans/large-file-editor.md` T1.4):
-/// at 100 MB every size-dependent JS cost stays sub-100 ms with heap ~1.2× the file,
-/// so the editor stays responsive. A running-app spot check can justify raising it.
-pub(crate) const MAX_EDITOR_LARGE_FILE_SIZE: u64 = 100 * 1024 * 1024;
+/// Hard ceiling for the editor: files above this are refused before reading so a
+/// huge payload can't freeze the webview crossing IPC as one string. The 100 MB
+/// Tier-1 measurement (`plans/large-file-editor.md` T1.4) showed sub-100 ms JS cost
+/// with heap ~1.2× the file; 250 MB trades some headroom for opening bigger files,
+/// with the frontend showing a non-blocking "may be slow" warning past 100 MB.
+pub(crate) const MAX_EDITOR_LARGE_FILE_SIZE: u64 = 250 * 1024 * 1024;
 
 /// Read a UTF-8 text file, refusing files over `limit` before reading so a huge
 /// file can't freeze the webview. The "too large" message is matched by the editor
-/// frontend to show a friendly notice with an open-externally action, so keep that
+/// frontend (regex /too large/i) to show a friendly blocking notice, so keep that
 /// phrase stable.
 fn read_text_file_guarded_with_limit(path: &std::path::Path, limit: u64) -> Result<String, String> {
     if let Ok(meta) = std::fs::metadata(path)
@@ -791,6 +793,19 @@ async fn deep_link_mcp_call(
         serde_json::Value::Object(map) => map,
         _ => serde_json::Map::new(),
     };
+    // Defense-in-depth backstop: deep-link-handler.ts is the enforcement boundary
+    // (default-deny + confirm dialog), but mirror its hard BLOCKED set here so these
+    // can never run via a tuic:// URL even if the frontend allowlist regresses.
+    // config/save mutates app config; debug/invoke_js is arbitrary JS execution.
+    if matches!(
+        (tool.as_str(), action.as_str()),
+        ("config", "save") | ("debug", "invoke_js")
+    ) {
+        return Ok(serde_json::json!({
+            "error": "This command is not permitted via deep link"
+        }));
+    }
+
     args.insert("action".to_string(), serde_json::Value::String(action));
 
     let addr: std::net::SocketAddr = ([127, 0, 0, 1], 0).into();

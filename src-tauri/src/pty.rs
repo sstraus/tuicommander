@@ -226,6 +226,69 @@ fn lower_pty_child_priority(pid: Option<u32>) {
 #[cfg(not(any(unix, windows)))]
 fn lower_pty_child_priority(_pid: Option<u32>) {}
 
+/// macOS thread QoS for the interactive terminal path.
+///
+/// `lower_pty_child_priority` nices compiler/test workloads *down*, but on
+/// Apple Silicon the scheduler is QoS-band driven: nice only reorders threads
+/// *within* a band, so under a saturating `cargo build` our PTY reader, frame
+/// ticker, and keystroke-write threads — all at default QoS — still waited
+/// behind the compiler's many default-QoS worker threads. Raising our own
+/// threads to USER_INTERACTIVE puts the interactive path in a higher band, the
+/// lever that keeps typing/echo responsive under load (the native trick AppKit
+/// apps like iTerm get for free on the foreground GUI thread).
+///
+/// macOS-only: Linux/Windows have no per-thread QoS equivalent that helps here
+/// (raising priority needs privilege); there we rely on lowering children.
+#[cfg(target_os = "macos")]
+mod thread_qos {
+    use std::os::raw::{c_int, c_uint};
+
+    /// `QOS_CLASS_USER_INTERACTIVE` from `<sys/qos.h>`.
+    const QOS_CLASS_USER_INTERACTIVE: c_uint = 0x21;
+
+    unsafe extern "C" {
+        fn pthread_set_qos_class_self_np(qos_class: c_uint, relative_priority: c_int) -> c_int;
+        #[cfg(test)]
+        fn pthread_get_qos_class_np(
+            thread: libc::pthread_t,
+            qos_class: *mut c_uint,
+            relative_priority: *mut c_int,
+        ) -> c_int;
+    }
+
+    /// Raise the calling thread to USER_INTERACTIVE QoS. Best-effort: a failure
+    /// leaves the thread at its current QoS (degraded latency, not broken), so
+    /// the non-zero return is intentionally ignored.
+    pub(super) fn raise_self_to_user_interactive() {
+        // SAFETY: extern "C" call with scalar args; affects only the calling thread.
+        unsafe {
+            pthread_set_qos_class_self_np(QOS_CLASS_USER_INTERACTIVE, 0);
+        }
+    }
+
+    /// Read back the calling thread's QoS class. Test-only verification helper.
+    #[cfg(test)]
+    pub(super) fn current_qos_class() -> c_uint {
+        let mut class: c_uint = 0;
+        let mut rel: c_int = 0;
+        // SAFETY: out-params point to valid stack locals; pthread_self is always valid.
+        unsafe {
+            pthread_get_qos_class_np(libc::pthread_self(), &mut class, &mut rel);
+        }
+        class
+    }
+}
+
+/// Raise the calling thread's scheduling QoS for the interactive terminal I/O
+/// path. macOS-only (see [`thread_qos`]); a no-op on other platforms.
+#[cfg(target_os = "macos")]
+fn raise_thread_for_interactive_io() {
+    thread_qos::raise_self_to_user_interactive();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn raise_thread_for_interactive_io() {}
+
 /// Resolve the shell to use: explicit override > env default > platform default.
 pub(crate) fn resolve_shell(override_shell: Option<String>) -> String {
     let shell = override_shell.unwrap_or_else(default_shell);
@@ -3289,6 +3352,9 @@ pub(crate) fn spawn_reader_thread(
     let ticker_state = state.clone();
     let ticker_sid = session_id.clone();
     std::thread::spawn(move || {
+        // Frame serialize+emit is the Rust side of the echo→render path; keep it
+        // in the high QoS band so output stays live under a saturating build.
+        raise_thread_for_interactive_io();
         const TICK: std::time::Duration = std::time::Duration::from_millis(16);
         // Safety net: if in_flight stays true for this long (~500 ms),
         // force-reset it so frame delivery resumes. Prevents permanent blank
@@ -3428,6 +3494,8 @@ pub(crate) fn spawn_reader_thread(
     });
 
     std::thread::spawn(move || {
+        // PTY reader drives byte intake → echo; keep it above default-QoS builds.
+        raise_thread_for_interactive_io();
         let sid_for_panic = session_id.clone();
         let state_for_panic = state.clone();
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -4088,6 +4156,10 @@ pub(crate) async fn write_pty(
     let state = Arc::clone(&state);
     let app = app.clone();
     tokio::task::spawn_blocking(move || {
+    // Keystroke delivery to the PTY: run on the high QoS band so the write (and
+    // thus the echo round-trip) isn't starved by a saturating build. Idempotent
+    // per call; bumps whichever blocking-pool thread serves this keystroke.
+    raise_thread_for_interactive_io();
     // Restore cursor if hidden — Ink-based agents send DECTCEM hide for
     // spinners but may not send CNORM when returning to the prompt.
     // Best-effort try_lock: this is cosmetic (touches the local grid, not the PTY)
@@ -5897,6 +5969,27 @@ pub(crate) async fn set_session_visible(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The interactive-path threads raise their QoS to USER_INTERACTIVE. Verify
+    /// the syscall actually takes effect by reading the class back on the same
+    /// thread (default QoS for a fresh test thread is *not* USER_INTERACTIVE).
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn raises_thread_to_user_interactive_qos() {
+        // Run on a dedicated thread so we don't leave the test runner's worker
+        // permanently bumped.
+        let observed = std::thread::spawn(|| {
+            raise_thread_for_interactive_io();
+            thread_qos::current_qos_class()
+        })
+        .join()
+        .expect("qos probe thread panicked");
+        // QOS_CLASS_USER_INTERACTIVE == 0x21.
+        assert_eq!(
+            observed, 0x21,
+            "thread QoS was not raised to USER_INTERACTIVE"
+        );
+    }
 
     #[test]
     fn grid_send_min_interval_policy() {

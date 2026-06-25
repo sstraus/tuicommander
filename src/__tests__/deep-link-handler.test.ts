@@ -61,3 +61,49 @@ describe("deep link handler — OAuth callback", () => {
 		expect(callbacks.onInstallError).toHaveBeenCalledWith(expect.stringContaining("access_denied"));
 	});
 });
+
+describe("deep link handler — cmd gateway (default-deny)", () => {
+	beforeEach(() => {
+		mockInvoke.mockReset();
+		mockInvoke.mockResolvedValue(undefined);
+		callbacks.confirm.mockReset().mockResolvedValue(true);
+		callbacks.onInstallError.mockReset();
+	});
+
+	it("runs a safe read-only command without confirmation", async () => {
+		await handleDeepLink("tuic://cmd/session/list", callbacks);
+		expect(callbacks.confirm).not.toHaveBeenCalled();
+		expect(mockInvoke).toHaveBeenCalledWith("deep_link_mcp_call", {
+			tool: "session",
+			action: "list",
+			params: {},
+		});
+	});
+
+	it("requires confirmation for a destructive command (session/input)", async () => {
+		await handleDeepLink("tuic://cmd/session/input?data=rm", callbacks);
+		expect(callbacks.confirm).toHaveBeenCalledTimes(1);
+		expect(mockInvoke).toHaveBeenCalledWith("deep_link_mcp_call", {
+			tool: "session",
+			action: "input",
+			params: { data: "rm" },
+		});
+	});
+
+	it("requires confirmation for an unknown command — default-deny (agent/send was previously un-gated)", async () => {
+		await handleDeepLink("tuic://cmd/agent/send?to=peer", callbacks);
+		expect(callbacks.confirm).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not execute when confirmation is denied", async () => {
+		callbacks.confirm.mockResolvedValue(false);
+		await handleDeepLink("tuic://cmd/agent/send?to=peer", callbacks);
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+
+	it("never executes a blocked command, even with confirmation available", async () => {
+		await handleDeepLink("tuic://cmd/config/save", callbacks);
+		expect(callbacks.confirm).not.toHaveBeenCalled();
+		expect(mockInvoke).not.toHaveBeenCalled();
+	});
+});

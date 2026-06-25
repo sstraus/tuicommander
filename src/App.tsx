@@ -1774,6 +1774,15 @@ const App: Component = () => {
 				handle?.openSearch();
 				return;
 			}
+			// Editor: routes Cmd+F at the document level so it works regardless of
+			// focus (CodeMirror's Mod-f keymap only fires with focus in the content,
+			// so dragging the scrollbar away from it would otherwise swallow Cmd+F).
+			const editorActiveId = editorTabsStore.state.activeId;
+			if (editorActiveId) {
+				const handle = editorTabsStore.getHandle<{ openSearch: () => void }>(editorActiveId);
+				handle?.openSearch();
+				return;
+			}
 			const active = terminalsStore.getActive();
 			active?.ref?.openSearch();
 		},

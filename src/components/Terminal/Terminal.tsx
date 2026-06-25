@@ -902,8 +902,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
 				pty.write(sessionId, data).catch((err) => appLogger.error("terminal", "Failed to write to PTY", err));
 		},
 		writeln: (data: string) => {
+			// PTY injection rule: writeln submits a line, so route through
+			// sendCommand (agent-aware Enter; Ink raw-mode ignores a bare \n and
+			// Windows needs \r\n). `write`/`input` below stay raw on purpose — they
+			// are low-level byte escapes for plugins.
 			if (sessionId)
-				pty.write(sessionId, data + "\n").catch((err) => appLogger.error("terminal", "writeln failed", err));
+				pty
+					.sendCommand(sessionId, data, terminalsStore.get(props.id)?.agentType ?? null)
+					.catch((err) => appLogger.error("terminal", "writeln failed", err));
 		},
 		input: (data: string) => {
 			if (sessionId) pty.write(sessionId, data).catch((err) => appLogger.error("terminal", "input failed", err));

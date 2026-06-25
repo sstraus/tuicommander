@@ -29,16 +29,29 @@ function parseDeepLink(urlString: string): { command: string; pathSegments: stri
 	}
 }
 
-/** Commands that require user confirmation before execution */
-const DESTRUCTIVE_COMMANDS = new Set([
-	"agent/spawn",
-	"session/create",
-	"session/input",
-	"session/kill",
-	"session/close",
+/** Read-only / notify cmd/ actions that run WITHOUT confirmation. Everything
+ *  else under cmd/ (destructive OR unknown) requires user confirmation — a
+ *  malicious page can open a tuic:// URL unattended, so we default-deny rather
+ *  than enumerate destructive actions (which drifts as new tools land, e.g.
+ *  agent/send and session/pause were previously un-gated). Mirror of the
+ *  loopback guards in mcp_transport.rs. */
+const SAFE_COMMANDS = new Set([
+	"ui/toast",
+	"repo/list",
+	"repo/active",
+	"repo/prs",
+	"repo/status",
+	"repo/worktree_list",
+	"session/list",
+	"session/output",
+	"session/status",
+	"agent/detect",
+	"agent/stats",
+	"agent/list_peers",
+	"agent/inbox",
 ]);
 
-/** Commands that are blocked entirely via deep link */
+/** Commands that are blocked entirely via deep link, even with confirmation. */
 const BLOCKED_COMMANDS = new Set(["config/save", "debug/invoke_js"]);
 
 /** Handle a single deep link URL. Exported for tests. */
@@ -148,11 +161,13 @@ export async function handleDeepLink(urlString: string, callbacks: DeepLinkCallb
 				return;
 			}
 
-			// Destructive commands — require confirmation
-			if (DESTRUCTIVE_COMMANDS.has(cmdKey)) {
+			// Default-deny: only explicit read-only/notify commands run silently.
+			// Destructive AND unknown actions require confirmation so a page that
+			// opens a tuic:// URL cannot act unattended.
+			if (!SAFE_COMMANDS.has(cmdKey)) {
 				const proceed = await callbacks.confirm(
 					"Execute command?",
-					`Allow deep link to run:\n${tool} → ${action}\n\nThis action may modify sessions or spawn processes.`,
+					`Allow deep link to run:\n${tool} → ${action}\n\nThis may modify sessions, send messages, or spawn processes.`,
 				);
 				if (!proceed) return;
 			}

@@ -26,6 +26,25 @@ pub(crate) const RATE_LIMIT_PER_SESSION: usize = 200;
 pub(crate) const TOOL_DISPATCH_LIMIT_PER_MINUTE: usize = 60;
 pub(crate) const TOOL_DISPATCH_LIMIT_PER_SESSION: usize = 500;
 
+// ── LLM retry/backoff ─────────────────────────────────────────
+
+/// Max retry attempts for a single transient LLM call (excludes the first try).
+pub(crate) const MAX_LLM_RETRIES: u32 = 4;
+const BACKOFF_BASE_MS: u64 = 500;
+const BACKOFF_CAP: Duration = Duration::from_secs(16);
+
+// ── History compaction ────────────────────────────────────────
+
+/// Number of most-recent tool-result messages kept verbatim during compaction.
+pub(crate) const COMPACT_KEEP_RECENT_TOOL_RESULTS: usize = 6;
+/// Tool-result bodies below this byte size are never elided (not worth it).
+const MIN_ELIDE_BYTES: usize = 512;
+/// Default prompt-token budget that triggers compaction. Conservative; small
+/// local models (<32k context) should lower it via config.
+/// DEFERRED (2026-06-25) — derive from per-model context window instead of a
+/// fixed default once the provider registry exposes context sizes.
+pub(crate) const DEFAULT_COMPACT_THRESHOLD_TOKENS: usize = 100_000;
+
 // ── Active agents registry ────────────────────────────────────
 
 #[allow(dead_code)]
@@ -274,6 +293,103 @@ pub(crate) fn select_model_for_phase<'a>(
         Some(m) => m.as_str(),
         None => base,
     }
+}
+
+// ---------------------------------------------------------------------------
+// LLM retry classification + backoff
+// ---------------------------------------------------------------------------
+
+/// Classify a genai error as transient (worth retrying): HTTP 429 / 5xx, or a
+/// network/transport failure. Non-429 4xx and request-shape errors are fatal.
+pub(crate) fn is_transient_llm_error(e: &genai::Error) -> bool {
+    use genai::Error as E;
+    match e {
+        E::HttpError { status, .. } => status.as_u16() == 429 || status.is_server_error(),
+        E::WebModelCall { webc_error, .. } | E::WebAdapterCall { webc_error, .. } => {
+            is_transient_webc(webc_error)
+        }
+        E::WebStream { .. } => true, // mid-stream network drop
+        _ => false,
+    }
+}
+
+fn is_transient_webc(e: &genai::webc::Error) -> bool {
+    use genai::webc::Error as W;
+    match e {
+        W::ResponseFailedStatus { status, .. } => {
+            status.as_u16() == 429 || status.is_server_error()
+        }
+        W::Reqwest(_) => true, // timeout / connect / transport
+        _ => false,
+    }
+}
+
+/// Exponential backoff (base 500ms, ×2 per attempt) capped at `BACKOFF_CAP`,
+/// plus 0..250ms jitter. `attempt` is 1-based.
+pub(crate) fn retry_backoff(attempt: u32) -> Duration {
+    let exp = BACKOFF_BASE_MS.saturating_mul(2u64.saturating_pow(attempt.saturating_sub(1)));
+    let base = Duration::from_millis(exp).min(BACKOFF_CAP);
+    // Cheap jitter (no rand dep): 0..250ms from wall-clock nanos.
+    let jitter = (std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0)
+        % 250) as u64;
+    base + Duration::from_millis(jitter)
+}
+
+// ---------------------------------------------------------------------------
+// Deterministic history compaction
+// ---------------------------------------------------------------------------
+
+pub(crate) struct CompactionStats {
+    pub elided: usize,
+}
+
+/// Rough token estimate from in-memory byte size (≈4 bytes/token). Fallback for
+/// providers that don't return usage.
+pub(crate) fn estimate_tokens(msgs: &[genai::chat::ChatMessage]) -> usize {
+    msgs.iter().map(|m| m.size()).sum::<usize>() / 4
+}
+
+/// Elide the bodies of tool-result messages older than the last `keep_recent`
+/// tool results, replacing each with a short stub. Preserves message count and
+/// `call_id` so tool_use/tool_result pairing stays valid (Anthropic requires
+/// every tool_use to have a matching tool_result).
+pub(crate) fn compact_history(
+    msgs: &mut [genai::chat::ChatMessage],
+    keep_recent: usize,
+) -> CompactionStats {
+    use genai::chat::{ChatRole, ContentPart, MessageContent};
+
+    let tool_idxs: Vec<usize> = msgs
+        .iter()
+        .enumerate()
+        .filter(|(_, m)| m.role == ChatRole::Tool)
+        .map(|(i, _)| i)
+        .collect();
+    let cutoff = tool_idxs.len().saturating_sub(keep_recent);
+    let mut elided = 0;
+
+    for &i in &tool_idxs[..cutoff] {
+        let parts = std::mem::take(&mut msgs[i].content).into_parts();
+        let new_parts: Vec<ContentPart> = parts
+            .into_iter()
+            .map(|p| match p {
+                ContentPart::ToolResponse(mut tr) if tr.content.len() >= MIN_ELIDE_BYTES => {
+                    let n = tr.content.len();
+                    tr.content =
+                        format!("[elided {n} bytes of earlier tool output to fit context]");
+                    elided += 1;
+                    ContentPart::ToolResponse(tr)
+                }
+                other => other,
+            })
+            .collect();
+        msgs[i].content = MessageContent::from_parts(new_parts);
+    }
+
+    CompactionStats { elided }
 }
 
 #[cfg(test)]
@@ -644,5 +760,129 @@ mod tests {
             select_model_for_phase(base, &overrides, ToolPhase::Plan),
             base
         );
+    }
+
+    // ── Transient error classification ─────────────────────────
+
+    fn http_err(code: u16) -> genai::Error {
+        genai::Error::HttpError {
+            status: reqwest::StatusCode::from_u16(code).unwrap(),
+            canonical_reason: "test".into(),
+            body: "{}".into(),
+        }
+    }
+
+    #[test]
+    fn transient_http_429_and_5xx() {
+        assert!(is_transient_llm_error(&http_err(429)));
+        assert!(is_transient_llm_error(&http_err(500)));
+        assert!(is_transient_llm_error(&http_err(503)));
+    }
+
+    #[test]
+    fn transient_http_4xx_non_429_is_fatal() {
+        assert!(!is_transient_llm_error(&http_err(400)));
+        assert!(!is_transient_llm_error(&http_err(401)));
+        assert!(!is_transient_llm_error(&http_err(404)));
+    }
+
+    #[test]
+    fn transient_webc_status() {
+        let mk = |code: u16| genai::webc::Error::ResponseFailedStatus {
+            status: reqwest::StatusCode::from_u16(code).unwrap(),
+            body: "x".into(),
+            headers: Box::new(reqwest::header::HeaderMap::new()),
+        };
+        assert!(is_transient_webc(&mk(429)));
+        assert!(is_transient_webc(&mk(502)));
+        assert!(!is_transient_webc(&mk(401)));
+    }
+
+    // ── Backoff ────────────────────────────────────────────────
+
+    #[test]
+    fn backoff_is_monotonic_and_capped() {
+        // Base component (minus jitter) must grow then cap. Compare floors.
+        let floor = |a: u32| {
+            Duration::from_millis(
+                BACKOFF_BASE_MS.saturating_mul(2u64.saturating_pow(a.saturating_sub(1))),
+            )
+            .min(BACKOFF_CAP)
+        };
+        assert!(floor(1) < floor(2));
+        assert!(floor(2) < floor(3));
+        assert_eq!(floor(10), BACKOFF_CAP);
+        // Actual value never exceeds cap + max jitter.
+        assert!(retry_backoff(10) <= BACKOFF_CAP + Duration::from_millis(250));
+        assert!(retry_backoff(1) >= Duration::from_millis(BACKOFF_BASE_MS));
+    }
+
+    // ── Compaction ─────────────────────────────────────────────
+
+    fn tool_msg(call_id: &str, body_len: usize) -> genai::chat::ChatMessage {
+        use genai::chat::{MessageContent, ToolResponse};
+        let body = "x".repeat(body_len);
+        genai::chat::ChatMessage::tool(MessageContent::from_tool_responses(vec![
+            ToolResponse::new(call_id, body),
+        ]))
+    }
+
+    fn tool_body(msg: &genai::chat::ChatMessage) -> String {
+        msg.content.tool_responses()[0].content.clone()
+    }
+
+    #[test]
+    fn compact_elides_old_tool_bodies_preserving_pairing() {
+        let mut msgs = vec![
+            genai::chat::ChatMessage::user("fix the build"),
+            tool_msg("call_0", 4096),
+            tool_msg("call_1", 4096),
+            tool_msg("call_2", 4096),
+            tool_msg("call_3", 4096),
+            tool_msg("call_4", 4096),
+            tool_msg("call_5", 4096),
+            tool_msg("call_6", 4096),
+            tool_msg("call_7", 4096),
+        ];
+        let len_before = msgs.len();
+        let stats = compact_history(&mut msgs, 6);
+
+        // 8 tool results, keep 6 → 2 oldest elided.
+        assert_eq!(stats.elided, 2);
+        // Message count unchanged (pairing preserved).
+        assert_eq!(msgs.len(), len_before);
+        // Oldest two elided, call_id preserved.
+        assert!(tool_body(&msgs[1]).contains("elided"));
+        assert_eq!(msgs[1].content.tool_responses()[0].call_id, "call_0");
+        assert!(tool_body(&msgs[2]).contains("elided"));
+        // Recent six intact.
+        assert_eq!(tool_body(&msgs[3]).len(), 4096);
+        assert_eq!(tool_body(&msgs[8]).len(), 4096);
+        // User message untouched.
+        assert_eq!(msgs[0].role, genai::chat::ChatRole::User);
+    }
+
+    #[test]
+    fn compact_skips_small_bodies() {
+        let mut msgs = vec![tool_msg("a", 10), tool_msg("b", 10), tool_msg("c", 10)];
+        // Even though all are "old" (keep_recent 0), small bodies aren't elided.
+        let stats = compact_history(&mut msgs, 0);
+        assert_eq!(stats.elided, 0);
+        assert_eq!(tool_body(&msgs[0]).len(), 10);
+    }
+
+    #[test]
+    fn compact_noop_when_under_keep_recent() {
+        let mut msgs = vec![tool_msg("a", 4096), tool_msg("b", 4096)];
+        let stats = compact_history(&mut msgs, 6);
+        assert_eq!(stats.elided, 0);
+        assert_eq!(tool_body(&msgs[0]).len(), 4096);
+    }
+
+    #[test]
+    fn estimate_tokens_scales_with_size() {
+        let small = vec![tool_msg("a", 40)];
+        let big = vec![tool_msg("a", 4000)];
+        assert!(estimate_tokens(&big) > estimate_tokens(&small));
     }
 }

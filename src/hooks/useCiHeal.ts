@@ -7,6 +7,7 @@ import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { toastsStore } from "../stores/toasts";
 import { rpc } from "../transport";
+import { getShellFamily, sendCommand } from "../utils/sendCommand";
 
 const MAX_ATTEMPTS = 3;
 
@@ -114,7 +115,17 @@ export function useCiHeal(): void {
 
 			await waitForAgentIdle(terminalId, 30_000);
 
-			await rpc("write_pty", { sessionId: terminal.sessionId, data: prompt });
+			// PTY injection rule: route through sendCommand so the prompt actually
+			// submits (Ink raw-mode agents ignore a trailing \n; only the split
+			// Ctrl-U/\r writes submit). A raw write_pty here silently failed to
+			// submit for Claude/Gemini.
+			const shellFamily = await getShellFamily(terminal.sessionId);
+			await sendCommand(
+				(data) => rpc("write_pty", { sessionId: terminal.sessionId, data }),
+				prompt.trimEnd(),
+				terminal.agentType,
+				shellFamily,
+			);
 		} catch (err) {
 			appLogger.error("ci-heal", `Auto-heal failed for ${branch}`, err);
 		} finally {

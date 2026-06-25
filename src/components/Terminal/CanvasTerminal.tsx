@@ -37,41 +37,6 @@ import { altSequenceFromCode, createCompositionState, keyToSequence } from "./te
 // Re-export for external consumers
 export type { CellMetrics, CursorShape, DecodedFrame };
 
-// TEMP black-screen diagnostic (split case, 2026-06-24). Remove after root-cause.
-// Query live via debug invoke_js: `return window.__BLACKDIAG__()`.
-interface BlackDiag {
-	show: number;
-	frame: number;
-	lastFrameOffset: number;
-	paint: number;
-	lastPaintOffset: number;
-	bailScrollPosF: number;
-	bailHidden: number;
-	hiddenSkipFrame: number;
-}
-const __blackDiag = new Map<string, BlackDiag>();
-function __bd(sid: string): BlackDiag {
-	let d = __blackDiag.get(sid);
-	if (!d) {
-		d = {
-			show: 0,
-			frame: 0,
-			lastFrameOffset: -1,
-			paint: 0,
-			lastPaintOffset: -1,
-			bailScrollPosF: 0,
-			bailHidden: 0,
-			hiddenSkipFrame: 0,
-		};
-		__blackDiag.set(sid, d);
-	}
-	return d;
-}
-if (typeof window !== "undefined") {
-	(window as unknown as { __BLACKDIAG__: () => unknown }).__BLACKDIAG__ = () => Object.fromEntries(__blackDiag);
-	(window as unknown as { __BLACKDIAG_RESET__: () => void }).__BLACKDIAG_RESET__ = () => __blackDiag.clear();
-}
-
 export interface CanvasTerminalRef {
 	focus: () => void;
 	refresh: () => void;
@@ -258,12 +223,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// A smooth-scroll gesture owns the base canvas (rendered locally from cache);
 		// don't let backend-frame repaints fight it until the gesture settles.
 		if (scrollPosF != null) {
-			__bd(props.sessionId).bailScrollPosF++;
 			return;
 		}
 		if (rafId !== undefined) return;
 		if (hidden) {
-			__bd(props.sessionId).bailHidden++;
 			return;
 		}
 		if (!alive) return;
@@ -353,7 +316,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 	function remeasure() {
 		if (!ctx) return;
-		canvasRef.dataset.sid = props.sessionId; // TEMP black-screen diagnostic
 		const rect = containerRef.getBoundingClientRect();
 		if (rect.width <= 0 || rect.height <= 0) return;
 
@@ -447,9 +409,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	}
 
 	function paintFrame(frame: DecodedFrame, m: CellMetrics, dirtyIndices?: Set<number>) {
-		const __d = __bd(props.sessionId);
-		__d.paint++;
-		__d.lastPaintOffset = frame.displayOffset;
 		gridRenderer.paintGrid(rowMap, m, { fullRepaint: fullRepaintNeeded, dirtyIndices });
 		fullRepaintNeeded = false;
 
@@ -1343,11 +1302,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const frame = decodeBinaryFrame(buffer);
 		if (timing) recordFrameTiming(props.sessionId, "decode", performance.now() - decodeT0);
 		if (!frame) return;
-		{
-			const __d = __bd(props.sessionId);
-			__d.frame++;
-			__d.lastFrameOffset = frame.displayOffset;
-		}
 
 		if (frame.bell) props.onBell?.();
 
@@ -1457,7 +1411,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		}
 
 		if (hidden) {
-			__bd(props.sessionId).hiddenSkipFrame++;
 			return;
 		}
 		scheduleRepaint();
@@ -1901,7 +1854,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				const isVisible = entries[0]?.isIntersecting ?? false;
 				if (isVisible && hidden) {
 					hidden = false;
-					__bd(props.sessionId).show++;
 					fullRepaintNeeded = true;
 					lastDisplayOffset = -1;
 					// Freeze-investigation: hidden→visible is the repo-switch show path.

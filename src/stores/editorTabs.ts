@@ -19,6 +19,10 @@ export interface EditorTabData extends BaseTab {
 
 function createEditorTabsStore() {
 	const base = createTabManager<EditorTabData>("editor");
+	// Imperative per-tab handles (e.g. openSearch) so the global Cmd+F router can
+	// drive the active editor tab even when focus left the CodeMirror content
+	// (e.g. while dragging the scrollbar). Mirrors diffTabsStore / mdTabsStore.
+	const handles = new Map<string, unknown>();
 
 	return {
 		state: base.state,
@@ -32,6 +36,21 @@ function createEditorTabsStore() {
 		getCount: base.getCount,
 		setPinned: base.setPinned,
 		reorderByIds: base.reorderByIds,
+
+		/** Register an imperative handle for a tab (e.g. openSearch) */
+		setHandle(tabId: string, handle: unknown): void {
+			handles.set(tabId, handle);
+		},
+
+		/** Remove the imperative handle when a tab component unmounts */
+		clearHandle(tabId: string): void {
+			handles.delete(tabId);
+		},
+
+		/** Retrieve the imperative handle for a tab */
+		getHandle<T = unknown>(tabId: string): T | undefined {
+			return handles.get(tabId) as T | undefined;
+		},
 
 		/** Add a new editor tab (or activate existing if same file already open).
 		 *  Pass `fsRoot` via opts when the file lives in a worktree that differs from the canonical repo path. */

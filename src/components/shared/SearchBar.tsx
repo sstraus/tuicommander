@@ -19,7 +19,8 @@ export interface SearchBarProps {
 	onClose: () => void;
 	/** 0-based active match index */
 	matchIndex: number;
-	/** Total number of matches */
+	/** Total number of matches. A negative value means "not counted yet" (e.g. a
+	 *  huge file still being counted asynchronously) — the counter is then hidden. */
 	matchCount: number;
 	/** Optional label override for match count (e.g. "500+" for truncated results) */
 	matchLabel?: string;
@@ -182,6 +183,8 @@ export const SearchBar: Component<SearchBarProps> = (props) => {
 
 	const counterText = () => {
 		if (!searchTerm()) return "";
+		// Negative count = not computed (huge file); hide the counter entirely.
+		if (props.matchCount < 0) return "";
 		if (props.matchCount === 0) return "No results";
 		const countLabel = props.matchLabel ?? String(props.matchCount);
 		if (props.matchIndex < 0) return `${countLabel} found`;

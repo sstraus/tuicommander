@@ -1199,11 +1199,16 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
             get(fs_routes::search_content_all_http),
         )
         .route("/fs/read", get(fs_routes::fs_read_file_http))
-        .route("/fs/read-editor", get(fs_routes::read_editor_file_http))
+        // SECURITY: remote clients get the standard (10 MB) cap, NOT the large
+        // editor cap. The 250 MB editor read is a desktop-local feature; serving
+        // it over a (possibly metered/slow) remote link risks OOM/latency since
+        // the whole file is read into a String→JSON with no streaming. Route the
+        // editor paths through the standard-cap handlers remotely.
+        .route("/fs/read-editor", get(fs_routes::fs_read_file_http))
         .route("/fs/read-external", get(fs_routes::read_external_file_http))
         .route(
             "/fs/read-editor-external",
-            get(fs_routes::read_editor_file_external_http),
+            get(fs_routes::read_external_file_http),
         )
         .route("/fs/write", post(fs_routes::write_file_http))
         .route("/fs/mkdir", post(fs_routes::create_directory_http))

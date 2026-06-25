@@ -47,6 +47,8 @@ pub(crate) struct ConversationConfig {
     pub bypassed_tools: HashSet<String>,
     /// Extended-thinking effort (Opus 4.7+); gated by model capability.
     pub reasoning: ReasoningLevel,
+    /// Prompt-token budget that triggers history compaction. None disables it.
+    pub compact_after_tokens: Option<usize>,
 }
 
 /// User-facing reasoning effort. `Auto` enables a sensible default on capable
@@ -106,6 +108,7 @@ impl Default for ConversationConfig {
             model_override: None,
             bypassed_tools: HashSet::new(),
             reasoning: ReasoningLevel::Auto,
+            compact_after_tokens: Some(engine::DEFAULT_COMPACT_THRESHOLD_TOKENS),
         }
     }
 }
@@ -150,6 +153,18 @@ pub(crate) enum ConversationEvent {
     Resumed,
     RateLimited {
         wait_ms: u64,
+    },
+    /// A transient LLM error is being retried after `wait_ms` backoff.
+    Retrying {
+        attempt: u32,
+        wait_ms: u64,
+        reason: String,
+    },
+    /// History was compacted: `elided` old tool-result bodies were truncated
+    /// because the request reached `before_tokens` prompt tokens.
+    Compacted {
+        elided: usize,
+        before_tokens: usize,
     },
     Error {
         message: String,
@@ -371,6 +386,88 @@ pub(crate) fn approve_conversation_action(session_id: &str, approved: bool) -> R
     Ok(())
 }
 
+// ── Stream draining ───────────────────────────────────────────
+
+/// Result of draining one streamed LLM response.
+enum DrainOutcome {
+    Done {
+        text_buf: String,
+        captured: Option<genai::chat::MessageContent>,
+        usage: Option<genai::chat::Usage>,
+    },
+    Cancelled,
+    Failed {
+        /// Whether the error is worth retrying.
+        transient: bool,
+        /// Whether any content was already streamed to the UI (blocks retry to
+        /// avoid duplicated text).
+        emitted: bool,
+        msg: String,
+    },
+}
+
+/// Drain one streamed LLM response, emitting TextChunk/ReasoningChunk events as
+/// content arrives. On a stream error, reports whether it's transient and
+/// whether anything was already emitted so the caller can decide to retry.
+async fn drain_stream(
+    mut stream: genai::chat::ChatStream,
+    event_tx: &broadcast::Sender<ConversationEvent>,
+    cancel: &Arc<AtomicBool>,
+) -> DrainOutcome {
+    use futures_util::StreamExt;
+    use genai::chat::ChatStreamEvent as GenaiStreamEvent;
+
+    let mut text_buf = String::new();
+    let mut captured = None;
+    let mut usage = None;
+    let mut emitted = false;
+
+    loop {
+        tokio::select! {
+            event = stream.next() => {
+                match event {
+                    Some(Ok(GenaiStreamEvent::Chunk(chunk))) => {
+                        emitted = true;
+                        text_buf.push_str(&chunk.content);
+                        let _ = event_tx.send(ConversationEvent::TextChunk { text: chunk.content });
+                    }
+                    Some(Ok(GenaiStreamEvent::ReasoningChunk(chunk))) => {
+                        // Opus 4.7+ extended thinking. The matching thought-signature
+                        // chunks are preserved via captured_content (see history append).
+                        emitted = true;
+                        let _ = event_tx.send(ConversationEvent::ReasoningChunk { text: chunk.content });
+                    }
+                    Some(Ok(GenaiStreamEvent::End(end))) => {
+                        captured = end.captured_content;
+                        usage = end.captured_usage;
+                        break;
+                    }
+                    Some(Err(e)) => {
+                        return DrainOutcome::Failed {
+                            transient: engine::is_transient_llm_error(&e),
+                            emitted,
+                            msg: e.to_string(),
+                        };
+                    }
+                    None => break,
+                    _ => {}
+                }
+            }
+            _ = tokio::time::sleep(Duration::from_millis(50)) => {
+                if cancel.load(Ordering::Acquire) {
+                    return DrainOutcome::Cancelled;
+                }
+            }
+        }
+    }
+
+    DrainOutcome::Done {
+        text_buf,
+        captured,
+        usage,
+    }
+}
+
 // ── Internal loop ─────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
@@ -385,10 +482,8 @@ async fn run_conversation(
     event_tx: broadcast::Sender<ConversationEvent>,
     approval_tx: Arc<Mutex<Option<oneshot::Sender<bool>>>>,
 ) -> Result<String, String> {
-    use futures_util::StreamExt;
     use genai::chat::{
-        ChatMessage, ChatOptions, ChatRequest, ChatStreamEvent as GenaiStreamEvent, ContentPart,
-        MessageContent, Tool, ToolCall, ToolResponse,
+        ChatMessage, ChatOptions, ChatRequest, ContentPart, Tool, ToolCall, ToolResponse,
     };
 
     // Create filesystem sandbox from the session's CWD so that file tools
@@ -550,8 +645,10 @@ async fn run_conversation(
         let model = select_model_for_phase(&base_model, &model_overrides, phase);
 
         // Reasoning effort depends on the active per-phase model.
+        // capture_usage gives us the real prompt-token count (compaction trigger).
         let mut chat_options = ChatOptions::default()
             .with_capture_tool_calls(true)
+            .with_capture_usage(true)
             .with_temperature(config.temperature.into());
         if let Some(effort) = resolve_reasoning(config.reasoning, model) {
             chat_options = chat_options
@@ -559,46 +656,59 @@ async fn run_conversation(
                 .with_capture_reasoning_content(true);
         }
 
-        let stream_resp = client
-            .exec_chat_stream(model, chat_req.clone(), Some(&chat_options))
-            .await
-            .map_err(|e| format!("LLM stream error: {e}"))?;
+        // LLM call with bounded retry on transient errors (429/5xx/network).
+        // We only retry when nothing was streamed yet, so the UI never sees
+        // duplicated text.
+        let mut attempt: u32 = 0;
+        let (text_buf, captured, usage) = loop {
+            let outcome = match client
+                .exec_chat_stream(model, chat_req.clone(), Some(&chat_options))
+                .await
+            {
+                Ok(resp) => drain_stream(resp.stream, &event_tx, &cancel).await,
+                Err(e) => DrainOutcome::Failed {
+                    transient: engine::is_transient_llm_error(&e),
+                    emitted: false,
+                    msg: e.to_string(),
+                },
+            };
 
-        let mut stream = stream_resp.stream;
-        let mut text_buf = String::new();
-        let mut captured: Option<MessageContent> = None;
-
-        loop {
-            tokio::select! {
-                event = stream.next() => {
-                    match event {
-                        Some(Ok(GenaiStreamEvent::Chunk(chunk))) => {
-                            text_buf.push_str(&chunk.content);
-                            let _ = event_tx.send(ConversationEvent::TextChunk { text: chunk.content });
-                        }
-                        Some(Ok(GenaiStreamEvent::ReasoningChunk(chunk))) => {
-                            // Opus 4.7+ extended thinking. The matching thought-signature
-                            // chunks are preserved via captured_content (see history append).
-                            let _ = event_tx.send(ConversationEvent::ReasoningChunk { text: chunk.content });
-                        }
-                        Some(Ok(GenaiStreamEvent::End(end))) => {
-                            captured = end.captured_content;
-                            break;
-                        }
-                        Some(Err(e)) => {
-                            return Err(format!("Stream error at iteration {iteration}: {e}"));
-                        }
-                        None => break,
-                        _ => {}
+            match outcome {
+                DrainOutcome::Done {
+                    text_buf,
+                    captured,
+                    usage,
+                } => break (text_buf, captured, usage),
+                DrainOutcome::Cancelled => return Ok("cancelled".into()),
+                DrainOutcome::Failed {
+                    transient,
+                    emitted,
+                    msg,
+                } => {
+                    if !(transient && !emitted && attempt < engine::MAX_LLM_RETRIES) {
+                        return Err(format!("LLM stream error: {msg}"));
                     }
-                }
-                _ = tokio::time::sleep(Duration::from_millis(50)) => {
-                    if cancel.load(Ordering::Acquire) {
-                        return Ok("cancelled".into());
+                    if tokio::time::Instant::now() >= deadline {
+                        return Ok("timeout".into());
+                    }
+                    attempt += 1;
+                    let wait = engine::retry_backoff(attempt);
+                    let _ = event_tx.send(ConversationEvent::Retrying {
+                        attempt,
+                        wait_ms: wait.as_millis() as u64,
+                        reason: msg,
+                    });
+                    tokio::select! {
+                        _ = tokio::time::sleep(wait) => {}
+                        _ = async {
+                            while !cancel.load(Ordering::Acquire) {
+                                tokio::time::sleep(Duration::from_millis(100)).await;
+                            }
+                        } => return Ok("cancelled".into()),
                     }
                 }
             }
-        }
+        };
 
         // Extract tool calls from the captured assistant content (clone so the
         // original stays intact for the signature-preserving history append below).
@@ -745,6 +855,30 @@ async fn run_conversation(
         }
 
         last_tool_names = tool_calls.iter().map(|tc| tc.fn_name.clone()).collect();
+
+        // Compaction: if the request we just sent reached the token budget,
+        // elide old tool-result bodies so the next iteration stays bounded.
+        // Uses the real prompt_tokens when the provider reports usage, else a
+        // byte-size heuristic.
+        if let Some(thr) = config.compact_after_tokens {
+            let before = usage
+                .as_ref()
+                .and_then(|u| u.prompt_tokens)
+                .map(|t| t as usize)
+                .unwrap_or_else(|| engine::estimate_tokens(&chat_req.messages));
+            if before > thr {
+                let stats = engine::compact_history(
+                    &mut chat_req.messages,
+                    engine::COMPACT_KEEP_RECENT_TOOL_RESULTS,
+                );
+                if stats.elided > 0 {
+                    let _ = event_tx.send(ConversationEvent::Compacted {
+                        elided: stats.elided,
+                        before_tokens: before,
+                    });
+                }
+            }
+        }
     }
 
     Ok("max_iterations".into())
@@ -929,6 +1063,39 @@ mod tests {
         let json = serde_json::to_string(&evt).unwrap();
         assert!(json.contains("\"type\":\"rate_limited\""));
         assert!(json.contains("\"wait_ms\":2000"));
+    }
+
+    #[test]
+    fn conversation_event_retrying_serializes() {
+        let evt = ConversationEvent::Retrying {
+            attempt: 2,
+            wait_ms: 1000,
+            reason: "HTTP 503".into(),
+        };
+        let json = serde_json::to_string(&evt).unwrap();
+        assert!(json.contains("\"type\":\"retrying\""));
+        assert!(json.contains("\"attempt\":2"));
+        assert!(json.contains("\"wait_ms\":1000"));
+    }
+
+    #[test]
+    fn conversation_event_compacted_serializes() {
+        let evt = ConversationEvent::Compacted {
+            elided: 3,
+            before_tokens: 120_000,
+        };
+        let json = serde_json::to_string(&evt).unwrap();
+        assert!(json.contains("\"type\":\"compacted\""));
+        assert!(json.contains("\"elided\":3"));
+        assert!(json.contains("\"before_tokens\":120000"));
+    }
+
+    #[test]
+    fn config_default_enables_compaction() {
+        assert_eq!(
+            ConversationConfig::default().compact_after_tokens,
+            Some(engine::DEFAULT_COMPACT_THRESHOLD_TOKENS)
+        );
     }
 
     #[test]

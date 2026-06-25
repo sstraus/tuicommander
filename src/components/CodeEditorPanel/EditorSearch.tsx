@@ -1,9 +1,16 @@
 import { findNext, findPrevious, replaceAll, replaceNext, setSearchQuery } from "@codemirror/search";
 import type { EditorView } from "@codemirror/view";
-import { type Component, createEffect, createSignal } from "solid-js";
+import { type Component, createEffect, createSignal, onCleanup } from "solid-js";
 import type { SearchOptions } from "../shared/DomSearchEngine";
 import { SearchBar } from "../shared/SearchBar";
-import { buildQuery, MATCH_COUNT_CAP, matchStats } from "./editorSearchEngine";
+import { buildQuery, createMatchScanner, MATCH_COUNT_CAP, matchStats, SEARCH_HEAVY_BYTES } from "./editorSearchEngine";
+
+/** Run `cb` when the main thread is idle. WKWebView lacks requestIdleCallback,
+ *  so fall back to a short timer that reports a small idle budget. */
+const onIdle: (cb: (deadline: { timeRemaining: () => number }) => void) => void =
+	typeof window !== "undefined" && "requestIdleCallback" in window
+		? (cb) => window.requestIdleCallback(cb)
+		: (cb) => setTimeout(() => cb({ timeRemaining: () => 8 }), 16);
 
 export interface EditorSearchProps {
 	visible: boolean;
@@ -27,6 +34,17 @@ export const EditorSearch: Component<EditorSearchProps> = (props) => {
 
 	let lastTerm = "";
 	let lastOpts: SearchOptions = EMPTY_OPTS;
+	/** Bumped on every stats refresh so a slow in-flight async scan that's been
+	 *  superseded (new query, closed, unmounted) stops updating the signals. */
+	let scanGen = 0;
+	/** Debounces the expensive jump-to-match + count on search-as-you-type so
+	 *  typing stays smooth on large files (findNext scans the rope; the count is
+	 *  async but still worth coalescing). Explicit navigation runs immediately. */
+	let searchDebounce: ReturnType<typeof setTimeout> | undefined;
+	onCleanup(() => {
+		scanGen++;
+		clearTimeout(searchDebounce);
+	});
 
 	/** Push a query into the view (highlights + scrollbar ticks). Stats are read
 	 *  separately via refreshStats *after* the cursor-moving command runs — the
@@ -44,11 +62,39 @@ export const EditorSearch: Component<EditorSearchProps> = (props) => {
 
 	const refreshStats = () => {
 		const view = props.view;
+		// Supersede any in-flight async scan even when we bail or go synchronous.
+		const gen = ++scanGen;
 		if (!view || !lastTerm) return;
-		const stats = matchStats(view.state, buildQuery(lastTerm, lastOpts));
-		setMatchCount(stats.count);
-		setMatchIndex(stats.index);
-		setTruncated(stats.truncated);
+		const query = buildQuery(lastTerm, lastOpts);
+
+		// Small docs: one synchronous scan is simplest and flicker-free.
+		if (view.state.doc.length <= SEARCH_HEAVY_BYTES) {
+			const stats = matchStats(view.state, query);
+			setMatchCount(stats.count);
+			setMatchIndex(stats.index);
+			setTruncated(stats.truncated);
+			return;
+		}
+
+		// Large docs: count in windowed steps across idle callbacks so the scan
+		// never blocks typing. Negative count = "still counting" → counter hidden.
+		setMatchCount(-1);
+		setMatchIndex(-1);
+		setTruncated(false);
+		const scanner = createMatchScanner(view.state, query, view.state.selection.main);
+		const pump = (deadline: { timeRemaining: () => number }) => {
+			if (gen !== scanGen) return; // superseded
+			let res = scanner.step();
+			while (!res.done && deadline.timeRemaining() > 2) res = scanner.step();
+			if (res.done) {
+				setMatchCount(res.count);
+				setMatchIndex(res.index);
+				setTruncated(res.truncated);
+			} else {
+				onIdle(pump);
+			}
+		};
+		onIdle(pump);
 	};
 
 	// Clear the query (and thus highlights + scrollbar ticks) when search closes.
@@ -56,6 +102,8 @@ export const EditorSearch: Component<EditorSearchProps> = (props) => {
 		if (!props.visible) {
 			props.view?.dispatch({ effects: setSearchQuery.of(buildQuery("", EMPTY_OPTS)) });
 			lastTerm = "";
+			clearTimeout(searchDebounce);
+			scanGen++; // cancel any in-flight async count
 			setMatchIndex(-1);
 			setMatchCount(0);
 			setTruncated(false);
@@ -65,30 +113,41 @@ export const EditorSearch: Component<EditorSearchProps> = (props) => {
 	const handleSearch = (term: string, opts: SearchOptions) => {
 		lastTerm = term;
 		lastOpts = opts;
+		// Highlights/scrollbar ticks update immediately (CM only decorates the
+		// viewport, so this is cheap even on huge files).
 		setQuery(term, opts);
-		// Jump to the first match from the cursor so search-as-you-type tracks it.
-		if (term && props.view) {
+		clearTimeout(searchDebounce);
+		if (!term || !props.view) {
+			scanGen++; // cancel any in-flight async count
+			resetStats();
+			return;
+		}
+		// Debounce the jump-to-first-match + count so rapid typing doesn't scan the
+		// rope per keystroke. Explicit Enter/Next/Prev (below) run without delay.
+		searchDebounce = setTimeout(() => {
+			if (!props.view) return;
 			findNext(props.view);
 			refreshStats();
-		} else {
-			resetStats();
-		}
+		}, 120);
 	};
 
 	const handleNext = () => {
 		if (!lastTerm || !props.view) return;
+		clearTimeout(searchDebounce);
 		findNext(props.view);
 		refreshStats();
 	};
 
 	const handlePrev = () => {
 		if (!lastTerm || !props.view) return;
+		clearTimeout(searchDebounce);
 		findPrevious(props.view);
 		refreshStats();
 	};
 
 	const handleReplace = (replacement: string) => {
 		if (!lastTerm || !props.view) return;
+		clearTimeout(searchDebounce);
 		setQuery(lastTerm, lastOpts, replacement);
 		replaceNext(props.view);
 		refreshStats();
@@ -96,6 +155,7 @@ export const EditorSearch: Component<EditorSearchProps> = (props) => {
 
 	const handleReplaceAll = (replacement: string) => {
 		if (!lastTerm || !props.view) return;
+		clearTimeout(searchDebounce);
 		setQuery(lastTerm, lastOpts, replacement);
 		replaceAll(props.view);
 		refreshStats();

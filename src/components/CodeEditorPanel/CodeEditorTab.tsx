@@ -20,7 +20,6 @@ import {
 	scrollPastEnd,
 } from "@codemirror/view";
 import { colorPicker } from "@replit/codemirror-css-color-picker";
-import { openPath } from "@tauri-apps/plugin-opener";
 import { createCodeMirror, createEditorControlledValue, createEditorReadonly } from "solid-codemirror";
 import { type Component, createEffect, createSignal, Match, on, onCleanup, Show, Switch } from "solid-js";
 import { useFileBrowser } from "../../hooks/useFileBrowser";
@@ -34,7 +33,6 @@ import { referencesStore } from "../../stores/references";
 import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
 import { uiStore } from "../../stores/ui";
-import { isTauri } from "../../transport";
 import { openFileAction } from "../../utils/filePreview";
 import { isAbsolutePath } from "../../utils/pathUtils";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
@@ -66,6 +64,12 @@ function wordAtCursor(view: EditorView): string | null {
 
 /** Large file threshold — skip syntax highlighting above this size */
 const LARGE_FILE_BYTES = 500 * 1024;
+
+/** Past this size the editor still opens, but shows a non-blocking "may be slow"
+ *  warning. Mirrors the backend's MAX_EDITOR_LARGE_FILE_SIZE hard cap (250 MB),
+ *  above which the read is refused entirely. Compared against the content's
+ *  string length as a byte proxy — same approximation as LARGE_FILE_BYTES. */
+const WARN_FILE_BYTES = 100 * 1024 * 1024;
 
 /**
  * True when a file is unchanged on disk versus the last seen stat. Both mtime
@@ -171,6 +175,9 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	/** True when the backend refused the read because the file exceeds the editor size limit.
 	 *  The whole file would otherwise cross IPC as one string and freeze the webview. */
 	const [tooLarge, setTooLarge] = createSignal(false);
+	/** True when the file opened but is large enough that the editor may be slow.
+	 *  Non-blocking: the file is loaded normally; this only drives a warning banner. */
+	const [largeFile, setLargeFile] = createSignal(false);
 	const [isReadOnly, setIsReadOnly] = createSignal(false);
 	/** True when the file changed on disk while editor has unsaved changes */
 	const [diskConflict, setDiskConflict] = createSignal(false);
@@ -178,6 +185,12 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 	const [dirty, setDirty] = createSignal(false);
 	/** Shared <SearchBar> overlay visibility (replaces CodeMirror's built-in panel) */
 	const [searchVisible, setSearchVisible] = createSignal(false);
+
+	// Expose openSearch to the global Cmd+F router (App.tsx findInTerminal) so the
+	// shortcut works even when focus left the CodeMirror content (e.g. while
+	// dragging the scrollbar). The CM `Mod-f` keymap only fires with focus inside.
+	editorTabsStore.setHandle(props.id, { openSearch: () => setSearchVisible(true) });
+	onCleanup(() => editorTabsStore.clearHandle(props.id));
 	/** Current symbol under cursor (for breadcrumb) */
 	const [currentSymbol, setCurrentSymbol] = createSignal<string | null>(null);
 	let outlineSymbols: { name: string; lineStart: number; lineEnd: number | null }[] = [];
@@ -229,6 +242,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 				setError(null);
 				setNotDisplayable(false);
 				setTooLarge(false);
+				setLargeFile(false);
 				if (isExternal() && !props.externalEditable) setIsReadOnly(true);
 
 				try {
@@ -237,6 +251,8 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 					setCode(content);
 					setSavedContent(content);
 					setDirty(false);
+					// Large but under the hard cap: open as normal, warn it may be slow.
+					setLargeFile(content.length > WARN_FILE_BYTES);
 
 					// Scroll to initialLine on the very first load only
 					if (props.initialLine !== undefined && !didScrollToInitialLine) {
@@ -758,6 +774,17 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 				</div>
 			</Show>
 
+			<Show when={largeFile()}>
+				<div class={s.conflictBanner}>
+					<span>
+						{t("codeEditor.largeFileWarning", "Large file — editing may be slow.")}
+					</span>
+					<button class={e.btn} onClick={() => setLargeFile(false)}>
+						{t("codeEditor.dismiss", "Dismiss")}
+					</button>
+				</div>
+			</Show>
+
 			<Show when={loading()}>
 				<div class={s.empty}>{t("codeEditor.loading", "Loading...")}</div>
 			</Show>
@@ -777,17 +804,6 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 							</svg>
 							<div class={s.noticeTitle}>{t("codeEditor.tooLargeTitle", "File too large to open")}</div>
 							<div class={s.noticeSub}>{error()}</div>
-							<Show when={isTauri()}>
-								<button
-									class={e.btn}
-									style={{ "margin-top": "12px" }}
-									onClick={() =>
-										openPath(absPath()).catch((err) => appLogger.error("app", "Failed to open file externally", err))
-									}
-								>
-									{t("codeEditor.openExternally", "Open in external editor")}
-								</button>
-							</Show>
 						</div>
 					</Match>
 					<Match when={notDisplayable()}>

@@ -621,6 +621,90 @@ pub(crate) struct BranchPrStatus {
     pub(crate) rebase_merge_allowed: bool,
 }
 
+/// Classification of a single check node for summary counting.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CheckCategory {
+    Passed,
+    Failed,
+    Pending,
+}
+
+/// Map a deduped statusCheckRollup node (CheckRun or StatusContext) to a summary category.
+fn classify_check_node(node: &serde_json::Value) -> CheckCategory {
+    if node["__typename"].as_str() == Some("CheckRun") {
+        // `conclusion` is only meaningful once `status` is COMPLETED.
+        if node["status"].as_str().unwrap_or("").to_uppercase() != "COMPLETED" {
+            return CheckCategory::Pending;
+        }
+        match node["conclusion"]
+            .as_str()
+            .unwrap_or("")
+            .to_uppercase()
+            .as_str()
+        {
+            "SUCCESS" | "NEUTRAL" | "SKIPPED" => CheckCategory::Passed,
+            "FAILURE" | "ERROR" | "TIMED_OUT" | "CANCELLED" | "STARTUP_FAILURE"
+            | "ACTION_REQUIRED" => CheckCategory::Failed,
+            _ => CheckCategory::Pending,
+        }
+    } else {
+        // StatusContext
+        match node["state"].as_str().unwrap_or("").to_uppercase().as_str() {
+            "SUCCESS" => CheckCategory::Passed,
+            "FAILURE" | "ERROR" => CheckCategory::Failed,
+            _ => CheckCategory::Pending,
+        }
+    }
+}
+
+/// Deduplicate statusCheckRollup context nodes by check name.
+///
+/// GitHub attaches every check suite to the head commit, so when a workflow runs
+/// more than once on the same commit (e.g. a stale run cancelled by a `concurrency`
+/// group, or a re-run after the base branch advanced) the rollup lists each check
+/// name multiple times. We keep only the most recently started entry per name —
+/// matching what `gh pr checks` displays. Insertion order is preserved for a stable
+/// list. Expects the `contexts` object (reads its `nodes` array).
+fn dedup_rollup_nodes(contexts: &serde_json::Value) -> Vec<serde_json::Value> {
+    let nodes = match contexts["nodes"].as_array() {
+        Some(arr) => arr,
+        None => return vec![],
+    };
+
+    // name -> (timestamp, node). Insertion order tracked separately for stable output.
+    let mut latest: std::collections::HashMap<String, (String, serde_json::Value)> =
+        std::collections::HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+
+    for node in nodes {
+        let name = node["name"]
+            .as_str()
+            .or_else(|| node["context"].as_str())
+            .unwrap_or("")
+            .to_string();
+        let ts = node["startedAt"]
+            .as_str()
+            .or_else(|| node["createdAt"].as_str())
+            .unwrap_or("")
+            .to_string();
+        match latest.get(&name) {
+            // Keep the newest entry; ISO-8601 timestamps sort lexicographically.
+            Some((existing_ts, _)) if existing_ts.as_str() >= ts.as_str() => {}
+            _ => {
+                if !latest.contains_key(&name) {
+                    order.push(name.clone());
+                }
+                latest.insert(name, (ts, node.clone()));
+            }
+        }
+    }
+
+    order
+        .into_iter()
+        .filter_map(|name| latest.remove(&name).map(|(_, node)| node))
+        .collect()
+}
+
 /// Shared logic for extracting fields from a single PR node.
 fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
     let branch = v["headRefName"].as_str()?.to_string();
@@ -633,37 +717,20 @@ fn parse_pr_node(v: &serde_json::Value) -> Option<BranchPrStatus> {
     let author = v["author"]["login"].as_str().unwrap_or("").to_string();
     let commits = v["commits"]["totalCount"].as_i64().unwrap_or(0) as i32;
 
-    // Parse CI check summary from GraphQL statusCheckRollup
+    // Parse CI check summary from GraphQL statusCheckRollup. GitHub attaches every
+    // check suite to the head commit, so a re-run (or a stale run cancelled by a
+    // `concurrency` group) duplicates a check name in the rollup. Dedup to the
+    // newest entry per name — matching `gh pr checks` — before tallying, otherwise
+    // passed/failed/pending double-count the stale duplicates.
     let rollup_contexts = &v["commits"]["nodes"][0]["commit"]["statusCheckRollup"]["contexts"];
     let mut passed: u32 = 0;
     let mut failed: u32 = 0;
     let mut pending: u32 = 0;
-
-    // checkRunCountsByState: [{state: "SUCCESS", count: 5}, ...]
-    if let Some(counts) = rollup_contexts["checkRunCountsByState"].as_array() {
-        for entry in counts {
-            let count = entry["count"].as_u64().unwrap_or(0) as u32;
-            match entry["state"].as_str().unwrap_or("") {
-                "SUCCESS" | "NEUTRAL" | "SKIPPED" => passed += count,
-                "FAILURE" | "ERROR" | "TIMED_OUT" | "CANCELLED" | "STARTUP_FAILURE" => {
-                    failed += count
-                }
-                "ACTION_REQUIRED" | "STALE" | "QUEUED" | "IN_PROGRESS" | "WAITING" | "PENDING" => {
-                    pending += count
-                }
-                _ => pending += count,
-            }
-        }
-    }
-    // statusContextCountsByState: same shape for commit statuses
-    if let Some(counts) = rollup_contexts["statusContextCountsByState"].as_array() {
-        for entry in counts {
-            let count = entry["count"].as_u64().unwrap_or(0) as u32;
-            match entry["state"].as_str().unwrap_or("") {
-                "SUCCESS" => passed += count,
-                "FAILURE" | "ERROR" => failed += count,
-                _ => pending += count,
-            }
+    for node in dedup_rollup_nodes(rollup_contexts) {
+        match classify_check_node(&node) {
+            CheckCategory::Passed => passed += 1,
+            CheckCategory::Failed => failed += 1,
+            CheckCategory::Pending => pending += 1,
         }
     }
 
@@ -1003,9 +1070,12 @@ fn build_unified_batch_query(
           nodes {
             commit {
               statusCheckRollup {
-                contexts {
-                  checkRunCountsByState { state count }
-                  statusContextCountsByState { state count }
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun { name status conclusion startedAt }
+                    ... on StatusContext { context state createdAt }
+                  }
                 }
               }
             }
@@ -1374,9 +1444,12 @@ query RepoPRs($owner: String!, $repo: String!, $first: Int!) {
           nodes {
             commit {
               statusCheckRollup {
-                contexts {
-                  checkRunCountsByState { state count }
-                  statusContextCountsByState { state count }
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun { name status conclusion startedAt }
+                    ... on StatusContext { context state createdAt }
+                  }
                 }
               }
             }
@@ -1531,9 +1604,12 @@ fn build_multi_repo_pr_query(
           nodes {
             commit {
               statusCheckRollup {
-                contexts {
-                  checkRunCountsByState { state count }
-                  statusContextCountsByState { state count }
+                contexts(first: 100) {
+                  nodes {
+                    __typename
+                    ... on CheckRun { name status conclusion startedAt }
+                    ... on StatusContext { context state createdAt }
+                  }
                 }
               }
             }
@@ -1675,11 +1751,11 @@ query PRChecks($owner: String!, $repo: String!, $number: Int!) {
         nodes {
           commit {
             statusCheckRollup {
-              contexts(first: 50) {
+              contexts(first: 100) {
                 nodes {
                   __typename
-                  ... on CheckRun { name status conclusion detailsUrl }
-                  ... on StatusContext { context state targetUrl }
+                  ... on CheckRun { name status conclusion detailsUrl startedAt }
+                  ... on StatusContext { context state targetUrl createdAt }
                 }
               }
             }
@@ -1695,16 +1771,16 @@ query PRChecks($owner: String!, $repo: String!, $number: Int!) {
 fn parse_pr_check_contexts(data: &serde_json::Value) -> Vec<serde_json::Value> {
     let nodes = &data["data"]["repository"]["pullRequest"]["commits"]["nodes"];
     let contexts = match nodes.as_array().and_then(|a| a.first()) {
-        Some(node) => &node["commit"]["statusCheckRollup"]["contexts"]["nodes"],
+        Some(node) => &node["commit"]["statusCheckRollup"]["contexts"],
         None => return vec![],
     };
 
-    let context_nodes = match contexts.as_array() {
-        Some(arr) => arr,
-        None => return vec![],
-    };
-
-    context_nodes
+    // GitHub lists a check name multiple times on the head commit when a workflow
+    // re-runs (a stale run cancelled by a `concurrency` group, or a re-run after the
+    // base advanced). Dedup to the newest entry per name — the same strategy the
+    // summary tally uses in `parse_pr_node` — so the detail list shows no duplicates
+    // and agrees with the passed/failed counts.
+    dedup_rollup_nodes(contexts)
         .iter()
         .map(|ctx| {
             let typename = ctx["__typename"].as_str().unwrap_or("");
@@ -2326,6 +2402,82 @@ mod tests {
         assert!(classify_review_state(Some("")).is_none());
     }
 
+    // --- statusCheckRollup dedup + classification tests ---
+
+    #[test]
+    fn classify_check_node_maps_each_category() {
+        let cr = |status: &str, conclusion: serde_json::Value| serde_json::json!({"__typename": "CheckRun", "status": status, "conclusion": conclusion});
+        assert_eq!(
+            classify_check_node(&cr("COMPLETED", "SUCCESS".into())),
+            CheckCategory::Passed
+        );
+        assert_eq!(
+            classify_check_node(&cr("COMPLETED", "SKIPPED".into())),
+            CheckCategory::Passed
+        );
+        assert_eq!(
+            classify_check_node(&cr("COMPLETED", "FAILURE".into())),
+            CheckCategory::Failed
+        );
+        assert_eq!(
+            classify_check_node(&cr("COMPLETED", "TIMED_OUT".into())),
+            CheckCategory::Failed
+        );
+        // ACTION_REQUIRED is a blocking conclusion (e.g. security gate) — must
+        // count as Failed, NOT Pending, or a blocked PR renders as clean.
+        assert_eq!(
+            classify_check_node(&cr("COMPLETED", "ACTION_REQUIRED".into())),
+            CheckCategory::Failed
+        );
+        // Not yet COMPLETED → pending regardless of (absent) conclusion.
+        assert_eq!(
+            classify_check_node(&cr("IN_PROGRESS", serde_json::Value::Null)),
+            CheckCategory::Pending
+        );
+        // StatusContext is classified by its `state`.
+        let sc = |state: &str| serde_json::json!({"__typename": "StatusContext", "state": state});
+        assert_eq!(classify_check_node(&sc("SUCCESS")), CheckCategory::Passed);
+        assert_eq!(classify_check_node(&sc("FAILURE")), CheckCategory::Failed);
+        assert_eq!(classify_check_node(&sc("PENDING")), CheckCategory::Pending);
+    }
+
+    #[test]
+    fn dedup_rollup_keeps_newest_entry_per_check_name() {
+        // Same check name run twice (stale FAILURE, then newer SUCCESS) plus one
+        // distinct check. GitHub lists all three; we keep the newest per name.
+        let contexts = serde_json::json!({
+            "nodes": [
+                {"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "FAILURE", "startedAt": "2025-01-01T00:00:00Z"},
+                {"__typename": "CheckRun", "name": "build", "status": "COMPLETED", "conclusion": "SUCCESS", "startedAt": "2025-01-01T01:00:00Z"},
+                {"__typename": "CheckRun", "name": "test", "status": "IN_PROGRESS", "conclusion": serde_json::Value::Null, "startedAt": "2025-01-01T00:00:00Z"},
+            ]
+        });
+        let nodes = dedup_rollup_nodes(&contexts);
+        assert_eq!(nodes.len(), 2, "duplicate 'build' must collapse to one");
+        let build = nodes.iter().find(|n| n["name"] == "build").unwrap();
+        assert_eq!(
+            build["conclusion"], "SUCCESS",
+            "newest 'build' entry (by startedAt) must win"
+        );
+        // The deduped set tallies as 1 passed (build) + 1 pending (test), not 3.
+        let mut passed = 0;
+        let mut pending = 0;
+        for n in &nodes {
+            match classify_check_node(n) {
+                CheckCategory::Passed => passed += 1,
+                CheckCategory::Pending => pending += 1,
+                CheckCategory::Failed => unreachable!(),
+            }
+        }
+        assert_eq!((passed, pending), (1, 1));
+    }
+
+    #[test]
+    fn dedup_rollup_handles_missing_nodes() {
+        assert!(dedup_rollup_nodes(&serde_json::json!({})).is_empty());
+        assert!(dedup_rollup_nodes(&serde_json::json!({"nodes": []})).is_empty());
+    }
+
     // --- parse_graphql_prs tests ---
 
     /// Helper to build a GraphQL PR node for testing
@@ -2349,14 +2501,59 @@ mod tests {
         labels: &[(&str, &str)],
         base_ref_name: &str,
     ) -> serde_json::Value {
-        let check_run_counts_json: Vec<serde_json::Value> = check_run_counts
-            .iter()
-            .map(|(s, c)| serde_json::json!({"state": s, "count": c}))
-            .collect();
-        let status_context_counts_json: Vec<serde_json::Value> = status_context_counts
-            .iter()
-            .map(|(s, c)| serde_json::json!({"state": s, "count": c}))
-            .collect();
+        // Expand the (state, count) fixtures into individual statusCheckRollup
+        // nodes — one per check, each with a unique name (dedup is by name) so the
+        // counts map 1:1 onto nodes. Terminal conclusions are COMPLETED CheckRuns;
+        // transient states stay non-COMPLETED (classified pending).
+        let is_terminal_conclusion = |s: &str| {
+            matches!(
+                s.to_uppercase().as_str(),
+                "SUCCESS"
+                    | "NEUTRAL"
+                    | "SKIPPED"
+                    | "FAILURE"
+                    | "ERROR"
+                    | "TIMED_OUT"
+                    | "CANCELLED"
+                    | "STARTUP_FAILURE"
+            )
+        };
+        let mut rollup_nodes: Vec<serde_json::Value> = Vec::new();
+        let mut idx = 0u32;
+        for (s, c) in check_run_counts {
+            for _ in 0..*c {
+                idx += 1;
+                let node = if is_terminal_conclusion(s) {
+                    serde_json::json!({
+                        "__typename": "CheckRun",
+                        "name": format!("check-{idx}"),
+                        "status": "COMPLETED",
+                        "conclusion": s,
+                        "startedAt": format!("2025-01-01T00:{:02}:00Z", idx % 60),
+                    })
+                } else {
+                    serde_json::json!({
+                        "__typename": "CheckRun",
+                        "name": format!("check-{idx}"),
+                        "status": s,
+                        "conclusion": serde_json::Value::Null,
+                        "startedAt": format!("2025-01-01T00:{:02}:00Z", idx % 60),
+                    })
+                };
+                rollup_nodes.push(node);
+            }
+        }
+        for (s, c) in status_context_counts {
+            for _ in 0..*c {
+                idx += 1;
+                rollup_nodes.push(serde_json::json!({
+                    "__typename": "StatusContext",
+                    "context": format!("status-{idx}"),
+                    "state": s,
+                    "createdAt": format!("2025-01-01T00:{:02}:00Z", idx % 60),
+                }));
+            }
+        }
         let labels_json: Vec<serde_json::Value> = labels
             .iter()
             .map(|(name, color)| serde_json::json!({"name": name, "color": color}))
@@ -2387,8 +2584,7 @@ mod tests {
                     "commit": {
                         "statusCheckRollup": {
                             "contexts": {
-                                "checkRunCountsByState": check_run_counts_json,
-                                "statusContextCountsByState": status_context_counts_json,
+                                "nodes": rollup_nodes,
                             }
                         }
                     }
@@ -3040,6 +3236,55 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_pr_check_contexts_dedups_reruns_by_name() {
+        // Reproduces the duplicate-checks bug: GitHub lists "Socket Security" twice
+        // on the head commit (a stale cancelled run + the current failing run). The
+        // detail list must collapse to the newest entry per name, like the summary.
+        let data = serde_json::json!({
+            "data": { "repository": { "pullRequest": { "commits": { "nodes": [{
+                "commit": { "statusCheckRollup": { "contexts": { "nodes": [
+                    {
+                        "__typename": "CheckRun",
+                        "name": "Socket Security",
+                        "status": "COMPLETED",
+                        "conclusion": "CANCELLED",
+                        "detailsUrl": "https://github.com/runs/stale",
+                        "startedAt": "2026-06-25T08:00:00Z"
+                    },
+                    {
+                        "__typename": "CheckRun",
+                        "name": "Socket Security",
+                        "status": "COMPLETED",
+                        "conclusion": "FAILURE",
+                        "detailsUrl": "https://github.com/runs/current",
+                        "startedAt": "2026-06-25T10:00:00Z"
+                    },
+                    {
+                        "__typename": "CheckRun",
+                        "name": "Frontend",
+                        "status": "COMPLETED",
+                        "conclusion": "SUCCESS",
+                        "detailsUrl": "https://github.com/runs/fe",
+                        "startedAt": "2026-06-25T09:00:00Z"
+                    }
+                ] } } }
+            }] } } } }
+        });
+
+        let result = parse_pr_check_contexts(&data);
+        assert_eq!(
+            result.len(),
+            2,
+            "duplicate check name must collapse to one entry"
+        );
+        assert_eq!(result[0]["name"], "Socket Security");
+        // Newest run (FAILURE) wins over the stale CANCELLED one.
+        assert_eq!(result[0]["conclusion"], "failure");
+        assert_eq!(result[0]["html_url"], "https://github.com/runs/current");
+        assert_eq!(result[1]["name"], "Frontend");
+    }
+
+    #[test]
     fn test_parse_pr_check_contexts_empty() {
         let data = serde_json::json!({
             "data": {
@@ -3256,6 +3501,7 @@ mod tests {
     // test to avoid parallel race conditions.
 
     #[test]
+    #[serial_test::serial] // mutates GH_TOKEN/GITHUB_TOKEN — must not race the other env tests
     fn test_resolve_github_token_filters_empty_from_gh_token_crate() {
         // Simulate Tauri GUI process: GITHUB_TOKEN="" (set but empty).
         // gh_token crate's get() uses env::var_os() which returns Some("") for

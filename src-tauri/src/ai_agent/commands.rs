@@ -49,6 +49,7 @@ pub(crate) async fn start_conversation(
             .into_iter()
             .collect::<HashSet<_>>(),
         reasoning: ReasoningLevel::from_opt(reasoning_effort.as_deref()),
+        compact_after_tokens: Some(super::engine::DEFAULT_COMPACT_THRESHOLD_TOKENS),
     };
 
     let mut rx = engine_start(state.inner().clone(), session_id, message, config).await?;

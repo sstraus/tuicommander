@@ -157,7 +157,9 @@ pub(super) async fn read_external_file_http(Query(q): Query<FsExternalFileQuery>
 
 /// External (absolute-path) file read for the code editor, at the larger
 /// `MAX_EDITOR_LARGE_FILE_SIZE` cap. Same repo-root restriction as `read_external_file_http`.
-pub(super) async fn read_editor_file_external_http(Query(q): Query<FsExternalFileQuery>) -> Response {
+pub(super) async fn read_editor_file_external_http(
+    Query(q): Query<FsExternalFileQuery>,
+) -> Response {
     let roots = registered_repo_roots();
     if !is_within_repo_roots(std::path::Path::new(&q.path), &roots) {
         return (

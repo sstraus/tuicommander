@@ -92,6 +92,8 @@ type ConversationEvent =
 	| { type: "paused" }
 	| { type: "resumed" }
 	| { type: "rate_limited"; wait_ms: number }
+	| { type: "retrying"; attempt: number; wait_ms: number; reason: string }
+	| { type: "compacted"; elided: number; before_tokens: number }
 	| { type: "error"; message: string }
 	| { type: "completed"; reason: string; usage: { input_tokens: number; output_tokens: number } | null };
 
@@ -588,6 +590,20 @@ function applyConversationEvent(s: PerTerminalConversationState, event: Conversa
 
 		case "rate_limited":
 			appLogger.info("conversation", `Rate limited, waiting ${event.wait_ms}ms`);
+			break;
+
+		case "retrying":
+			appLogger.info(
+				"conversation",
+				`Retrying LLM call (attempt ${event.attempt}) in ${event.wait_ms}ms: ${event.reason}`,
+			);
+			break;
+
+		case "compacted":
+			appLogger.info(
+				"conversation",
+				`History compacted: elided ${event.elided} old tool result(s) at ${event.before_tokens} tokens`,
+			);
 			break;
 
 		case "error":
