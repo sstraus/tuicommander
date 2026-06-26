@@ -440,8 +440,19 @@ mod tests {
         let mut sup =
             TunnelSupervisor::start_with_binary(test_profile(), script.to_path_buf(), cb).await;
 
-        // Wait for the process to exit and supervisor to settle.
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        // Poll for the supervisor to settle on Stopped. The process exits at
+        // ~0.2s, but the Connected→Stopped transition can lag under parallel
+        // test load, so wait for the terminal state rather than reading status
+        // once after a fixed sleep (which flaked as "expected Stopped, got
+        // Connected").
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        let mut final_status = sup.status();
+        while !matches!(final_status, TunnelStatus::Stopped { .. })
+            && tokio::time::Instant::now() < deadline
+        {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            final_status = sup.status();
+        }
 
         let history = statuses.lock().clone();
         // Should see Starting, then either Connected or Stopped (process exits
@@ -450,7 +461,6 @@ mod tests {
         assert!(!history.is_empty(), "should have status updates");
 
         // Final status should be Stopped with a non-error reason.
-        let final_status = sup.status();
         match &final_status {
             TunnelStatus::Stopped { .. } => {} // expected
             other => panic!("expected Stopped, got {other:?}"),

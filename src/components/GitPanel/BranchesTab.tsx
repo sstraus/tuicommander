@@ -426,7 +426,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
 	async function doDeleteBranch(force: boolean) {
 		const d = dialog();
-		if (!d || d.type !== "delete" || !props.repoPath) return;
+		if (d?.type !== "delete" || !props.repoPath) return;
 		const { branch } = d;
 		setDialog(null);
 		if (await deleteBranchByName(branch.name, force)) {
@@ -444,7 +444,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
 	async function doDeleteMerged() {
 		const d = dialog();
-		if (!d || d.type !== "deleteMerged") return;
+		if (d?.type !== "deleteMerged") return;
 		const targets = d.branches;
 		setDialog(null);
 		let deleted = 0;
@@ -516,7 +516,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
 	async function doMerge() {
 		const d = dialog();
-		if (!d || d.type !== "merge" || !props.repoPath) return;
+		if (d?.type !== "merge" || !props.repoPath) return;
 		const { branch } = d;
 		const target = currentBranch()?.name ?? "current";
 		setDialog(null);
@@ -582,7 +582,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
 	async function doRebase() {
 		const d = dialog();
-		if (!d || d.type !== "rebase" || !props.repoPath) return;
+		if (d?.type !== "rebase" || !props.repoPath) return;
 		const { branch } = d;
 		setDialog(null);
 		try {

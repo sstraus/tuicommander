@@ -776,9 +776,7 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 
 			<Show when={largeFile()}>
 				<div class={s.conflictBanner}>
-					<span>
-						{t("codeEditor.largeFileWarning", "Large file — editing may be slow.")}
-					</span>
+					<span>{t("codeEditor.largeFileWarning", "Large file — editing may be slow.")}</span>
 					<button class={e.btn} onClick={() => setLargeFile(false)}>
 						{t("codeEditor.dismiss", "Dismiss")}
 					</button>
