@@ -1465,6 +1465,7 @@ pub fn run() {
             github_poller::github_set_pr_hide_drafts,
             github_auth::github_start_login,
             github_auth::github_poll_login,
+            github_auth::github_poll_add_account,
             github_auth::github_logout,
             github_auth::github_disconnect,
             github_auth::github_diagnostics,

@@ -293,7 +293,7 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
         tokio::select! {
             _ = pending_sleep => {
                 pending_poll_at = None;
-                let rate_budget = state.github_rate_limit_remaining.load(std::sync::atomic::Ordering::Relaxed);
+                let rate_budget = crate::github::min_rate_budget(&state);
                 let batch = if pending_poll_paths.is_empty() { &paths } else { &pending_poll_paths };
                 poll_batch(&state, &handle, batch, false, &issue_filter, pr_hide_drafts, &mut ps).await;
                 pending_poll_paths.clear();
@@ -302,7 +302,7 @@ async fn poll_loop(state: Arc<AppState>, handle: AppHandle, mut rx: mpsc::Receiv
                 interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             }
             _ = interval.tick() => {
-                let rate_budget = state.github_rate_limit_remaining.load(std::sync::atomic::Ordering::Relaxed);
+                let rate_budget = crate::github::min_rate_budget(&state);
                 let batch_paths = if startup {
                     paths.clone()
                 } else {

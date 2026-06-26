@@ -207,17 +207,19 @@ pub(crate) fn parse_remote_url(url: &str) -> Option<(String, String)> {
 
 /// Build the per-repo cooldown-cache key.
 ///
-/// github.com keeps the host-agnostic `owner/name` key (unchanged, so a
-/// github.com-only user's diagnostics/cooldown behavior is identical). GHE
-/// accounts prefix with the account id (`{id}:owner/name`) so the same
-/// owner/name on different hosts never collides — and the `:` discriminates
-/// cloud vs GHE keys when scoping resets.
+/// The ambient github.com default keeps the host-agnostic `owner/name` key
+/// (unchanged, so a single-account user's diagnostics/cooldown behavior is
+/// identical). Every other account — a GHE PAT or an additional named
+/// github.com account — prefixes with the account id (`{id}:owner/name`) so the
+/// same owner/name across accounts never collides, and the `:` discriminates the
+/// ambient default's keys from named-account keys when scoping resets. (A GitHub
+/// login can't contain `:`, so `{login}:owner/name` stays unambiguous.)
 pub(crate) fn cooldown_key(
     account: &crate::github_account::GitHubAccount,
     owner: &str,
     name: &str,
 ) -> String {
-    if account.is_cloud() {
+    if account.is_ambient_default() {
         format!("{owner}/{name}")
     } else {
         format!("{}:{owner}/{name}", account.id)
@@ -246,14 +248,15 @@ impl GheAccountState {
     }
 }
 
-/// Run a closure with the circuit breaker for `account` (github.com → the global
-/// breaker; GHE → its per-account breaker).
+/// Run a closure with the circuit breaker for `account` (the ambient github.com
+/// default → the global breaker; every named account, GHE or additional
+/// github.com → its per-account breaker keyed by id).
 pub(crate) fn with_account_breaker<R>(
     state: &AppState,
     account: &crate::github_account::GitHubAccount,
     f: impl FnOnce(&GitHubCircuitBreaker) -> R,
 ) -> R {
-    if account.is_cloud() {
+    if account.is_ambient_default() {
         f(&state.github_circuit_breaker)
     } else {
         let entry = state
@@ -262,6 +265,30 @@ pub(crate) fn with_account_breaker<R>(
             .or_insert_with(GheAccountState::new);
         f(&entry.circuit_breaker)
     }
+}
+
+/// The most-constrained GitHub rate budget across all active accounts: the
+/// ambient default's global budget and every named account's per-account budget.
+///
+/// The poller runs a single global loop that polls every account in one batch,
+/// so it must pace for the tightest constraint — otherwise a low-budget named
+/// account would be drained by the shared cadence. (Each account also
+/// self-protects via its own breaker once it actually hits the limit; this just
+/// keeps the proactive throttle honest.)
+pub(crate) fn min_rate_budget(state: &AppState) -> u32 {
+    let mut min = state
+        .github_rate_limit_remaining
+        .load(std::sync::atomic::Ordering::Relaxed);
+    for entry in state.ghe_state.iter() {
+        let b = entry
+            .value()
+            .rate_limit_remaining
+            .load(std::sync::atomic::Ordering::Relaxed);
+        if b < min {
+            min = b;
+        }
+    }
+    min
 }
 
 /// Parse a header value as a u64, returning None if missing or unparseable.
@@ -485,9 +512,10 @@ fn resolve_repo_for_rest(
         }
     };
 
-    // Token: cloud uses the cached/rotated global token (unchanged); a PAT
-    // account uses its vault token.
-    let token = if account.is_cloud() {
+    // Token: the ambient default uses the cached/rotated global token
+    // (unchanged); every named account (GHE PAT or additional github.com) uses
+    // its own per-account vault token.
+    let token = if account.is_ambient_default() {
         state.github_token.read().clone()
     } else {
         crate::github_auth::resolve_token_for_account(&account).0
@@ -522,10 +550,11 @@ pub(crate) async fn graphql_with_retry(
         );
     }
 
-    // GitHub Enterprise Server (PAT) accounts: single pasted token, its own
-    // endpoint, no candidate fallback (the github.com env→OAuth→gh chain does
-    // not apply to a GHE host).
-    if !account.is_cloud() {
+    // Named accounts (GHE PAT, or an additional github.com account): a single
+    // explicit per-account token, its own endpoint, NO candidate fallback. The
+    // ambient env→OAuth→gh chain applies only to the ambient default — so
+    // `gh auth switch` can never drift a named account's identity.
+    if !account.is_ambient_default() {
         let token = match crate::github_auth::resolve_token_for_account(account).0 {
             Some(t) => t,
             None => return Err("No GitHub token available".to_string()),
@@ -961,14 +990,15 @@ pub(crate) async fn get_viewer_login(state: &AppState) -> Result<String, String>
     Ok(login)
 }
 
-/// Like [`get_viewer_login`] but for a specific account. github.com delegates to
-/// the global cache (unchanged); each GHE account caches its own viewer login in
+/// Like [`get_viewer_login`] but for a specific account. The ambient github.com
+/// default delegates to the global cache (unchanged); every named account (GHE
+/// or an additional github.com account) caches its own viewer login in
 /// `ghe_state` so viewer search terms never cross-contaminate between accounts.
 pub(crate) async fn get_viewer_login_for(
     state: &AppState,
     account: &crate::github_account::GitHubAccount,
 ) -> Result<String, String> {
-    if account.is_cloud() {
+    if account.is_ambient_default() {
         return get_viewer_login(state).await;
     }
     // Per-account cache check (guard dropped before the await).
@@ -1357,7 +1387,7 @@ pub(crate) async fn get_all_batch_impl(
 
     for (_id, (account, repos_all)) in by_account {
         // Skip accounts with no token or an open breaker (per-account isolation).
-        let has_token = if account.is_cloud() {
+        let has_token = if account.is_ambient_default() {
             state.github_token.read().is_some()
         } else {
             crate::github_auth::resolve_token_for_account(&account)
@@ -1398,10 +1428,11 @@ pub(crate) async fn get_all_batch_impl(
         .await
         {
             Ok(()) => {}
-            // github.com errors propagate (zero-change); GHE faults are isolated.
-            Err(e) if account.is_cloud() => return Err(e),
+            // The ambient default's errors propagate (zero-change); every named
+            // account's fault is isolated so it can't abort the whole poll.
+            Err(e) if account.is_ambient_default() => return Err(e),
             Err(e) => {
-                tracing::warn!(source = "github", account = %account.id, error = %e, "GHE account poll failed (isolated)");
+                tracing::warn!(source = "github", account = %account.id, error = %e, "named account poll failed (isolated)");
             }
         }
     }
@@ -1438,7 +1469,7 @@ async fn poll_one_account(
     // Store rate-limit budget for proactive throttling in the poller.
     if let Some(remaining) = response["data"]["rateLimit"]["remaining"].as_u64() {
         let budget = remaining as u32;
-        if account.is_cloud() {
+        if account.is_ambient_default() {
             state
                 .github_rate_limit_remaining
                 .store(budget, std::sync::atomic::Ordering::Relaxed);
@@ -3927,6 +3958,134 @@ mod tests {
         assert!(
             with_account_breaker(&state, &cloud, |b| b.check()).is_ok(),
             "github.com breaker must stay closed"
+        );
+    }
+
+    fn named_cloud_account() -> GitHubAccount {
+        GitHubAccount::github_com_named("octocat-named")
+    }
+
+    #[test]
+    fn named_github_com_cooldown_key_is_account_scoped() {
+        // The ambient default keeps bare keys; an additional named github.com
+        // account is colon-prefixed by login, so the login-cooldown-clear
+        // (`contains(':')`) preserves named-account cooldowns.
+        assert_eq!(
+            cooldown_key(&cloud_account(), "octocat", "hello"),
+            "octocat/hello"
+        );
+        assert_eq!(
+            cooldown_key(&named_cloud_account(), "octocat", "hello"),
+            "octocat-named:octocat/hello"
+        );
+    }
+
+    #[test]
+    fn named_github_com_breaker_isolated_from_ambient_default() {
+        // Two cloud accounts (the ambient default + a named github.com account)
+        // each get their own breaker. Tripping the named one must not open the
+        // ambient default's.
+        let state = crate::state::tests_support::make_test_app_state();
+        let ambient = cloud_account();
+        let named = named_cloud_account();
+
+        with_account_breaker(&state, &named, |b| {
+            for _ in 0..3 {
+                b.record_failure();
+            }
+        });
+        assert!(
+            with_account_breaker(&state, &named, |b| b.check()).is_err(),
+            "named github.com breaker should be open"
+        );
+        assert!(
+            with_account_breaker(&state, &ambient, |b| b.check()).is_ok(),
+            "ambient default breaker must stay closed — one cloud account's limit must not throttle the other"
+        );
+    }
+
+    #[test]
+    fn named_github_com_rate_budget_isolated() {
+        use std::sync::atomic::Ordering;
+        let state = crate::state::tests_support::make_test_app_state();
+        let named = named_cloud_account();
+        state
+            .github_rate_limit_remaining
+            .store(5000, Ordering::Relaxed);
+        state
+            .ghe_state
+            .entry(named.id.clone())
+            .or_insert_with(GheAccountState::new)
+            .rate_limit_remaining
+            .store(10, Ordering::Relaxed);
+
+        assert_eq!(
+            state.github_rate_limit_remaining.load(Ordering::Relaxed),
+            5000,
+            "ambient default budget unchanged"
+        );
+        assert_eq!(
+            state
+                .ghe_state
+                .get(&named.id)
+                .unwrap()
+                .rate_limit_remaining
+                .load(Ordering::Relaxed),
+            10,
+            "named account budget is isolated in its own ghe_state entry"
+        );
+    }
+
+    #[test]
+    fn min_rate_budget_paces_for_the_tightest_account() {
+        use std::sync::atomic::Ordering;
+        let state = crate::state::tests_support::make_test_app_state();
+        // Ambient default has plenty; a named account is nearly exhausted.
+        state
+            .github_rate_limit_remaining
+            .store(5000, Ordering::Relaxed);
+        let named = named_cloud_account();
+        state
+            .ghe_state
+            .entry(named.id.clone())
+            .or_insert_with(GheAccountState::new)
+            .rate_limit_remaining
+            .store(7, Ordering::Relaxed);
+
+        assert_eq!(
+            min_rate_budget(&state),
+            7,
+            "the global poll cadence must pace for the most-constrained account"
+        );
+    }
+
+    #[tokio::test]
+    async fn named_github_com_viewer_login_cached_per_account() {
+        // Viewer identity must be per-account: a named github.com account reads
+        // its OWN cached viewer login, not the global (ambient-default) one — so
+        // `author:@me` / issue filters never cross-contaminate between accounts.
+        let state = crate::state::tests_support::make_test_app_state();
+        let named = named_cloud_account();
+        state
+            .ghe_state
+            .entry(named.id.clone())
+            .or_insert_with(GheAccountState::new)
+            .viewer_login
+            .write()
+            .replace("named-viewer".to_string());
+        *state.github_viewer_login.write() = Some("ambient-viewer".to_string());
+
+        assert_eq!(
+            get_viewer_login_for(&state, &named).await.unwrap(),
+            "named-viewer",
+            "named account uses its own viewer cache"
+        );
+        assert_eq!(
+            get_viewer_login_for(&state, &cloud_account())
+                .await
+                .unwrap(),
+            "ambient-viewer",
+            "ambient default still uses the global viewer cache"
         );
     }
 

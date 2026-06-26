@@ -51,6 +51,17 @@ const h = vi.hoisted(() => {
 				});
 			case "github_list_accounts":
 				return Promise.resolve([...accounts]);
+			case "github_start_login":
+				return Promise.resolve({
+					device_code: "dev-code",
+					user_code: "WDJB-MJHT",
+					verification_uri: "https://github.com/login/device",
+					expires_in: 900,
+					interval: 5,
+				});
+			case "github_poll_login":
+			case "github_poll_add_account":
+				return Promise.resolve({ status: "pending" });
 			case "github_add_account": {
 				const acc: Account = {
 					id: String(args?.host),
@@ -93,33 +104,70 @@ vi.mock("../../components/SettingsPanel/SettingFields", () => ({
 	SettingToggle: () => null,
 }));
 
-describe("GitHubTab — Enterprise accounts", () => {
-	let GitHubTab: typeof import("../../components/SettingsPanel/tabs/GitHubTab").GitHubTab;
+async function loadTab() {
+	const mod = await import("../../components/SettingsPanel/tabs/GitHubTab");
+	return mod.GitHubTab;
+}
 
+function resetState() {
+	h.accounts.length = 0;
+	for (const k of Object.keys(h.resolutions)) delete h.resolutions[k];
+	for (const k of Object.keys(h.repos)) delete h.repos[k];
+	h.rpc.mockClear();
+}
+
+describe("GitHubTab — single-account collapse (006)", () => {
+	let GitHubTab: Awaited<ReturnType<typeof loadTab>>;
 	beforeEach(async () => {
-		h.accounts.length = 0;
-		for (const k of Object.keys(h.resolutions)) delete h.resolutions[k];
-		for (const k of Object.keys(h.repos)) delete h.repos[k];
-		h.rpc.mockClear();
-		const mod = await import("../../components/SettingsPanel/tabs/GitHubTab");
-		GitHubTab = mod.GitHubTab;
+		resetState();
+		GitHubTab = await loadTab();
 	});
 
-	it("lists existing Enterprise accounts from github_list_accounts", async () => {
+	it("collapses the account manager + bindings to a single affordance when there is only the default account", async () => {
+		const { findByText, queryByText } = render(() => <GitHubTab />);
+		// Only the compact disclosure shows.
+		expect(await findByText("Add another GitHub account")).toBeTruthy();
+		// The manager body and bindings stay hidden in the 99% case.
+		expect(queryByText("Additional GitHub Accounts")).toBeNull();
+		expect(queryByText("Repository Bindings")).toBeNull();
+		expect(queryByText("No additional accounts configured.")).toBeNull();
+	});
+
+	it("reveals the manager when the disclosure is clicked", async () => {
+		const { findByText } = render(() => <GitHubTab />);
+		fireEvent.click(await findByText("Add another GitHub account"));
+		expect(await findByText("Additional GitHub Accounts")).toBeTruthy();
+		expect(await findByText("No additional accounts configured.")).toBeTruthy();
+	});
+});
+
+describe("GitHubTab — additional accounts", () => {
+	let GitHubTab: Awaited<ReturnType<typeof loadTab>>;
+	beforeEach(async () => {
+		resetState();
+		GitHubTab = await loadTab();
+	});
+
+	it("auto-shows the manager and lists existing accounts when one is configured", async () => {
 		h.accounts.push({ id: "ghe.acme.com", host: { host: "ghe.acme.com" }, login: "octocat", kind: "ghe_pat" });
 		const { findByText } = render(() => <GitHubTab />);
+		// No disclosure click needed — a 2nd account means the manager is shown.
 		expect(await findByText("octocat")).toBeTruthy();
 		expect(await findByText(/ghe\.acme\.com/)).toBeTruthy();
 	});
 
-	it("shows the empty state with no accounts", async () => {
+	it("labels a named github.com account as OAuth (device flow)", async () => {
+		h.accounts.push({ id: "octocat2", host: { host: "github.com" }, login: "octocat2", kind: "github_com_oauth" });
 		const { findByText } = render(() => <GitHubTab />);
-		expect(await findByText("No Enterprise accounts configured.")).toBeTruthy();
+		expect(await findByText("octocat2")).toBeTruthy();
+		expect(await findByText(/github\.com · OAuth/)).toBeTruthy();
 	});
 
 	it("adds an Enterprise account via github_add_account(host, pat)", async () => {
 		const { getByText, getByPlaceholderText, findByText } = render(() => <GitHubTab />);
-		await findByText("No Enterprise accounts configured.");
+		// Reveal the manager first (single-account collapse).
+		fireEvent.click(await findByText("Add another GitHub account"));
+		await findByText("No additional accounts configured.");
 
 		fireEvent.input(getByPlaceholderText("ghe.example.com"), { target: { value: "ghe.acme.com" } });
 		fireEvent.input(getByPlaceholderText("Personal Access Token"), { target: { value: "ghp_secret" } });
@@ -128,31 +176,35 @@ describe("GitHubTab — Enterprise accounts", () => {
 		await waitFor(() =>
 			expect(h.rpc).toHaveBeenCalledWith("github_add_account", { host: "ghe.acme.com", pat: "ghp_secret" }),
 		);
-		// The newly added account appears in the list.
 		expect(await findByText("ent-user")).toBeTruthy();
 	});
 
-	it("removes an account via github_remove_account(id)", async () => {
+	it("starts a device-flow login when adding a github.com account (003)", async () => {
+		const { findByText, getByText } = render(() => <GitHubTab />);
+		fireEvent.click(await findByText("Add another GitHub account"));
+		fireEvent.click(await findByText("Add github.com account"));
+		await waitFor(() => expect(h.rpc).toHaveBeenCalledWith("github_start_login"));
+		// The polling card shows the "add account" variant.
+		expect(getByText(/Add another account — enter this code/)).toBeTruthy();
+	});
+
+	it("removes an account via github_remove_account(id) and re-collapses", async () => {
 		h.accounts.push({ id: "ghe.acme.com", host: { host: "ghe.acme.com" }, login: "octocat", kind: "ghe_pat" });
 		const { findByText, getByText } = render(() => <GitHubTab />);
 		await findByText("octocat");
 
 		fireEvent.click(getByText("Remove"));
 		await waitFor(() => expect(h.rpc).toHaveBeenCalledWith("github_remove_account", { id: "ghe.acme.com" }));
-		expect(await findByText("No Enterprise accounts configured.")).toBeTruthy();
+		// Back to the single-account collapsed state.
+		expect(await findByText("Add another GitHub account")).toBeTruthy();
 	});
 });
 
 describe("GitHubTab — Repository bindings", () => {
-	let GitHubTab: typeof import("../../components/SettingsPanel/tabs/GitHubTab").GitHubTab;
-
+	let GitHubTab: Awaited<ReturnType<typeof loadTab>>;
 	beforeEach(async () => {
-		h.accounts.length = 0;
-		for (const k of Object.keys(h.resolutions)) delete h.resolutions[k];
-		for (const k of Object.keys(h.repos)) delete h.repos[k];
-		h.rpc.mockClear();
-		const mod = await import("../../components/SettingsPanel/tabs/GitHubTab");
-		GitHubTab = mod.GitHubTab;
+		resetState();
+		GitHubTab = await loadTab();
 	});
 
 	it("binds an ambiguous repo to the chosen candidate via github_bind_repo", async () => {
@@ -177,7 +229,7 @@ describe("GitHubTab — Repository bindings", () => {
 			],
 		};
 		const { findByText, getByText } = render(() => <GitHubTab />);
-		// The ambiguous repo surfaces a chooser (no silent origin pick).
+		// An ambiguous repo forces the bindings section open (needs attention).
 		expect(await findByText("proj")).toBeTruthy();
 
 		fireEvent.click(getByText("Bind"));
@@ -190,7 +242,9 @@ describe("GitHubTab — Repository bindings", () => {
 		);
 	});
 
-	it("unbinds a bound repo via github_unbind_repo", async () => {
+	it("unbinds a bound repo via github_unbind_repo when the manager is shown", async () => {
+		// A 2nd account keeps the bindings section visible (not the collapsed 99% case).
+		h.accounts.push({ id: "octocat2", host: { host: "github.com" }, login: "octocat2", kind: "github_com_oauth" });
 		h.repos["/work/proj"] = { path: "/work/proj", displayName: "proj" };
 		h.resolutions["/work/proj"] = {
 			status: "bound",

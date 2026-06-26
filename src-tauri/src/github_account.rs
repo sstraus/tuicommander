@@ -189,8 +189,38 @@ impl GitHubAccount {
         }
     }
 
+    /// Build an ADDITIONAL github.com account (beyond the implicit ambient
+    /// default). Its id is the GitHub login, captured at creation — a GitHub
+    /// username can never equal the reserved [`Self::GITHUB_COM_ID`] (`.` is
+    /// invalid in logins), so it never collides with the ambient default.
+    ///
+    /// Additional cloud accounts are persisted registry entries with their own
+    /// per-account token (`Credential::GithubToken(id)`); they never use the
+    /// ambient env/gh/keyring chain or the global breaker/viewer/rate state.
+    pub(crate) fn github_com_named(login: &str) -> Self {
+        Self {
+            id: login.to_string(),
+            host: GitHubHost::new("github.com").expect("github.com is a valid host"),
+            login: Some(login.to_string()),
+            kind: AccountKind::GithubComOauth,
+        }
+    }
+
     pub(crate) fn is_cloud(&self) -> bool {
         self.host.is_cloud()
+    }
+
+    /// Whether this is the implicit ambient github.com default — the single
+    /// account that resolves its token via the env→keyring→gh chain and uses
+    /// the global breaker/viewer/rate state. Every OTHER account (a GHE PAT or
+    /// an additional named github.com account) is keyed by its own id and uses
+    /// per-account token + per-account runtime state.
+    ///
+    /// This is the routing predicate that replaced `is_cloud()` at the
+    /// global-vs-per-account branch points: a named github.com account IS cloud
+    /// (for endpoint URLs) but is NOT the ambient default (for state/token).
+    pub(crate) fn is_ambient_default(&self) -> bool {
+        self.id == Self::GITHUB_COM_ID
     }
 }
 
@@ -412,13 +442,25 @@ pub(crate) fn resolve_repo_account(
     }
 
     // 2) Map every remote to (host, owner, repo) and match against accounts.
-    let match_host = |host: &GitHubHost| -> Option<&GitHubAccount> {
+    //
+    // Collect ALL accounts configured for a host, not just the first: two
+    // github.com accounts share host `github.com`, so each must surface as its
+    // own bind candidate (the persisted binding's account_id is the
+    // disambiguator). The implicit github.com default is listed first, then any
+    // registry accounts for the same host, deduped by account id.
+    let match_hosts = |host: &GitHubHost| -> Vec<&GitHubAccount> {
+        let mut out: Vec<&GitHubAccount> = Vec::new();
         if let Some(d) = github_com_default
             && d.host == *host
         {
-            return Some(d);
+            out.push(d);
         }
-        registry.list().iter().find(|a| a.host == *host)
+        for a in registry.list().iter().filter(|a| a.host == *host) {
+            if !out.iter().any(|e| e.id == a.id) {
+                out.push(a);
+            }
+        }
+        out
     };
 
     let mut candidates: Vec<BindCandidate> = Vec::new();
@@ -428,21 +470,26 @@ pub(crate) fn resolve_repo_account(
         let Some((host, owner, repo)) = parse_remote_url(&url) else {
             continue;
         };
-        if let Some(account) = match_host(&host) {
+        let accounts = match_hosts(&host);
+        if accounts.is_empty() {
+            if host.is_cloud() {
+                // github.com is a known GitHub host; an unregistered GHE host is
+                // not assumed to be GitHub (we never auto-probe).
+                saw_cloud_without_account = true;
+            }
+            continue;
+        }
+        for account in accounts {
             let cand = BindCandidate {
                 account_id: account.id.clone(),
-                host,
-                owner,
-                repo,
-                remote_name,
+                host: host.clone(),
+                owner: owner.clone(),
+                repo: repo.clone(),
+                remote_name: remote_name.clone(),
             };
             if !candidates.contains(&cand) {
                 candidates.push(cand);
             }
-        } else if host.is_cloud() {
-            // github.com is a known GitHub host; an unregistered GHE host is not
-            // assumed to be GitHub (we never auto-probe).
-            saw_cloud_without_account = true;
         }
     }
 
@@ -510,6 +557,40 @@ pub(crate) fn bind_repo_to_account(
 // Tauri commands
 // ---------------------------------------------------------------------------
 
+/// Validate a token against `{host}/user` and return the resolved login.
+///
+/// Shared by GHE PAT add and the additional-github.com device-flow add so the
+/// token-validation + login-resolution is written once.
+#[cfg(feature = "desktop")]
+pub(crate) async fn fetch_account_login(
+    client: &reqwest::Client,
+    host: &GitHubHost,
+    token: &str,
+) -> Result<Option<String>, String> {
+    let url = format!("{}/user", host.rest_base());
+    let resp = client
+        .get(&url)
+        .header("Authorization", format!("Bearer {token}"))
+        .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "TUICommander")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .send()
+        .await
+        .map_err(|e| format!("Could not reach {}: {e}", host.as_str()))?;
+    if !resp.status().is_success() {
+        let status = resp.status();
+        return Err(format!(
+            "Token rejected by {} (HTTP {status})",
+            host.as_str()
+        ));
+    }
+    let body: serde_json::Value = resp
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse /user response: {e}"))?;
+    Ok(body["login"].as_str().map(String::from))
+}
+
 /// Add a GitHub Enterprise Server account: validate the PAT against
 /// `{rest_base}/user`, store it under the new account id, and persist the record.
 #[cfg(feature = "desktop")]
@@ -528,31 +609,7 @@ pub(crate) async fn github_add_account(
         return Err("Personal Access Token is required".to_string());
     }
 
-    // Validate the PAT and resolve the viewer login.
-    let url = format!("{}/user", host.rest_base());
-    let resp = state
-        .http_client
-        .get(&url)
-        .header("Authorization", format!("Bearer {pat}"))
-        .header("Accept", "application/vnd.github+json")
-        .header("User-Agent", "TUICommander")
-        .header("X-GitHub-Api-Version", "2022-11-28")
-        .send()
-        .await
-        .map_err(|e| format!("Could not reach {}: {e}", host.as_str()))?;
-    if !resp.status().is_success() {
-        let status = resp.status();
-        return Err(format!(
-            "Token rejected by {} (HTTP {status})",
-            host.as_str()
-        ));
-    }
-    let body: serde_json::Value = resp
-        .json()
-        .await
-        .map_err(|e| format!("Failed to parse /user response: {e}"))?;
-    let login = body["login"].as_str().map(String::from);
-
+    let login = fetch_account_login(&state.http_client, &host, &pat).await?;
     let account = GitHubAccount::ghe_pat(host, login);
     add_account_record(account.clone(), Some(&pat))?;
     Ok(account)
@@ -1197,7 +1254,250 @@ mod tests {
         assert!(matches!(res, RepoResolution::NeedsBind(_)));
     }
 
+    /// A second github.com account (same host as the implicit default), kept
+    /// distinct by a unique id. Models the multi-account-on-github.com case.
+    fn github_com_named(id: &str, login: &str) -> GitHubAccount {
+        GitHubAccount {
+            id: id.to_string(),
+            host: GitHubHost::new("github.com").unwrap(),
+            login: Some(login.to_string()),
+            kind: AccountKind::GithubComOauth,
+        }
+    }
+
+    #[test]
+    fn resolve_two_github_com_accounts_surfaces_both() {
+        // A single github.com remote with two configured github.com accounts must
+        // surface BOTH as candidates (host-only matching can't pick one) so the
+        // user disambiguates by account.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = make_repo_with_remotes(
+            dir.path(),
+            "main",
+            &[("origin", "git@github.com:octocat/hello.git")],
+        );
+        let default = github_com_default(); // id "github.com"
+        let mut reg = GitHubAccountRegistry::default();
+        reg.upsert(github_com_named("github.com#work", "work-login"));
+
+        let res = resolve_repo_account(&repo, &reg, &RepoBindingStore::default(), Some(&default));
+        match res {
+            RepoResolution::NeedsBind(c) => {
+                assert_eq!(c.len(), 2, "both github.com accounts should be candidates");
+                let ids: Vec<&str> = c.iter().map(|b| b.account_id.as_str()).collect();
+                assert!(ids.contains(&"github.com") && ids.contains(&"github.com#work"));
+                // Same remote/owner/repo for both candidates.
+                assert!(c.iter().all(|b| b.owner == "octocat" && b.repo == "hello"));
+            }
+            other => panic!("expected NeedsBind([2]), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn resolve_binding_disambiguates_same_host_by_account_id() {
+        // With two github.com accounts, an explicit binding to one resolves to
+        // exactly that account (disambiguation is by account_id, not host).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = make_repo_with_remotes(
+            dir.path(),
+            "main",
+            &[("origin", "git@github.com:octocat/hello.git")],
+        );
+        let default = github_com_default();
+        let work = github_com_named("github.com#work", "work-login");
+        let mut reg = GitHubAccountRegistry::default();
+        reg.upsert(work.clone());
+
+        let mut bindings = RepoBindingStore::default();
+        bindings.set_binding(
+            &repo,
+            RepoBinding {
+                account_id: "github.com#work".into(),
+                owner: "octocat".into(),
+                repo: "hello".into(),
+                remote_name: "origin".into(),
+            },
+        );
+
+        let res = resolve_repo_account(&repo, &reg, &bindings, Some(&default));
+        assert_eq!(
+            res,
+            RepoResolution::Bound {
+                account: work,
+                owner: "octocat".into(),
+                repo: "hello".into()
+            }
+        );
+    }
+
+    #[test]
+    fn resolve_dedups_identical_candidates_across_remotes() {
+        // Two remotes pointing at the same owner/repo on the same host must not
+        // produce duplicate candidates.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = make_repo_with_remotes(
+            dir.path(),
+            "main",
+            &[
+                ("origin", "git@github.com:octocat/hello.git"),
+                ("mirror", "git@github.com:octocat/hello.git"),
+            ],
+        );
+        let default = github_com_default();
+        let res = resolve_repo_account(
+            &repo,
+            &GitHubAccountRegistry::default(),
+            &RepoBindingStore::default(),
+            Some(&default),
+        );
+        match res {
+            // Same account_id + owner/repo; the two remotes differ only by name,
+            // so they remain distinct candidates but neither is duplicated.
+            RepoResolution::NeedsBind(c) => {
+                let names: Vec<&str> = c.iter().map(|b| b.remote_name.as_str()).collect();
+                assert_eq!(c.len(), 2);
+                assert!(names.contains(&"origin") && names.contains(&"mirror"));
+                // No exact duplicate entry.
+                let mut seen = std::collections::HashSet::new();
+                for cand in &c {
+                    assert!(
+                        seen.insert((
+                            cand.account_id.clone(),
+                            cand.owner.clone(),
+                            cand.repo.clone(),
+                            cand.remote_name.clone()
+                        )),
+                        "duplicate candidate: {cand:?}"
+                    );
+                }
+            }
+            other => panic!("expected NeedsBind, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn ambient_default_vs_named_routing_predicate() {
+        // The state/token routing predicate: only the ambient default (id
+        // "github.com") is global; a named github.com account is cloud-for-
+        // endpoints but per-account-for-state.
+        let primary =
+            GitHubAccount::github_com(AccountKind::GithubComOauth, Some("octocat".into()));
+        assert!(primary.is_ambient_default());
+        assert!(primary.is_cloud());
+
+        let named = GitHubAccount::github_com_named("octocat");
+        assert!(
+            !named.is_ambient_default(),
+            "named cloud account is not the ambient default"
+        );
+        assert!(
+            named.is_cloud(),
+            "named cloud account is still cloud for endpoint URLs"
+        );
+        assert_eq!(named.id, "octocat");
+
+        let ghe = GitHubAccount::ghe_pat(GitHubHost::new("ghe.acme.com").unwrap(), None);
+        assert!(!ghe.is_ambient_default());
+        assert!(!ghe.is_cloud());
+    }
+
+    #[test]
+    fn legacy_github_com_binding_resolves_before_viewer_login() {
+        // Boot-window / criterion 4: a persisted binding to the ambient default
+        // id "github.com" must still resolve to Bound even when the viewer login
+        // is not yet known (login = None at boot, before /user).
+        let dir = tempfile::tempdir().expect("tempdir");
+        let repo = make_repo_with_remotes(
+            dir.path(),
+            "main",
+            &[("origin", "git@github.com:octocat/hello.git")],
+        );
+        let default = GitHubAccount::github_com(AccountKind::GithubComOauth, None);
+        let mut bindings = RepoBindingStore::default();
+        bindings.set_binding(
+            &repo,
+            RepoBinding {
+                account_id: "github.com".into(),
+                owner: "octocat".into(),
+                repo: "hello".into(),
+                remote_name: "origin".into(),
+            },
+        );
+        let res = resolve_repo_account(
+            &repo,
+            &GitHubAccountRegistry::default(),
+            &bindings,
+            Some(&default),
+        );
+        assert!(
+            matches!(res, RepoResolution::Bound { .. }),
+            "legacy github.com binding must resolve at boot, got {res:?}"
+        );
+    }
+
     // --- persistence operations (Step 6) ---
+
+    #[test]
+    fn two_github_com_accounts_persist_independent_tokens_and_ids() {
+        // Story 001 criterion 5: two additional github.com accounts persist
+        // independent ids and independent per-account tokens.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
+
+        let alice = GitHubAccount::github_com_named("alice");
+        let bob = GitHubAccount::github_com_named("bob");
+        assert_ne!(alice.id, bob.id);
+
+        add_account_record(alice.clone(), Some("gho_alice")).unwrap();
+        add_account_record(bob.clone(), Some("gho_bob")).unwrap();
+
+        let reg = GitHubAccountRegistry::load();
+        assert_eq!(reg.get("alice"), Some(&alice));
+        assert_eq!(reg.get("bob"), Some(&bob));
+
+        assert_eq!(
+            crate::credentials::get(Credential::GithubToken("alice")).unwrap(),
+            Some("gho_alice".to_string())
+        );
+        assert_eq!(
+            crate::credentials::get(Credential::GithubToken("bob")).unwrap(),
+            Some("gho_bob".to_string())
+        );
+
+        crate::credentials::delete(Credential::GithubToken("alice")).unwrap();
+        crate::credentials::delete(Credential::GithubToken("bob")).unwrap();
+    }
+
+    #[test]
+    fn removing_one_named_github_com_account_keeps_the_other() {
+        // Story 003: with two additional github.com accounts, removing one leaves
+        // the other's record AND its per-account token intact.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
+
+        add_account_record(GitHubAccount::github_com_named("keep"), Some("gho_keep")).unwrap();
+        add_account_record(GitHubAccount::github_com_named("drop"), Some("gho_drop")).unwrap();
+        assert_eq!(GitHubAccountRegistry::load().list().len(), 2);
+
+        remove_account_everywhere("drop").unwrap();
+
+        let reg = GitHubAccountRegistry::load();
+        assert!(reg.get("drop").is_none());
+        assert_eq!(
+            reg.get("keep"),
+            Some(&GitHubAccount::github_com_named("keep"))
+        );
+        assert_eq!(
+            crate::credentials::get(Credential::GithubToken("keep")).unwrap(),
+            Some("gho_keep".to_string())
+        );
+        assert_eq!(
+            crate::credentials::get(Credential::GithubToken("drop")).unwrap(),
+            None
+        );
+
+        crate::credentials::delete(Credential::GithubToken("keep")).unwrap();
+    }
 
     #[test]
     fn add_account_record_persists_record_and_pat() {

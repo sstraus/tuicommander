@@ -253,6 +253,51 @@ pub(crate) async fn github_poll_login(
     Ok(result)
 }
 
+/// Poll the Device Flow for an ADDITIONAL github.com account. Unlike
+/// [`github_poll_login`], success does NOT touch the ambient default's token or
+/// runtime state: it validates the new token against `/user`, resolves the login
+/// (the account id), and persists a named registry entry with its own
+/// per-account token. The frontend drives this with the same start/interval as a
+/// normal login, but in "add account" mode.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn github_poll_add_account(
+    state: State<'_, Arc<AppState>>,
+    device_code: String,
+) -> Result<PollResult, String> {
+    let result = poll_device_flow(&state.http_client, &device_code).await?;
+
+    if let PollResult::Success {
+        ref access_token, ..
+    } = result
+    {
+        let host = crate::github_account::GitHubHost::new("github.com")
+            .expect("github.com is a valid host");
+        let login =
+            crate::github_account::fetch_account_login(&state.http_client, &host, access_token)
+                .await?
+                .ok_or_else(|| "GitHub did not return a login for this token".to_string())?;
+
+        if login == crate::github_account::GitHubAccount::GITHUB_COM_ID {
+            // Defensive: a real GitHub login can never be "github.com", but never
+            // let a value collide with the ambient default's reserved id.
+            return Err("Unexpected login collides with the default account id".to_string());
+        }
+
+        let account = crate::github_account::GitHubAccount::github_com_named(&login);
+        let token = access_token.clone();
+        let account_for_save = account.clone();
+        tokio::task::spawn_blocking(move || {
+            crate::github_account::add_account_record(account_for_save, Some(&token))
+        })
+        .await
+        .map_err(|e| format!("keyring task panicked: {e}"))??;
+        tracing::info!(source = "github", login = %login, "Registered additional github.com account");
+    }
+
+    Ok(result)
+}
+
 /// Log out of GitHub OAuth. Deletes the token from keyring and clears
 /// the runtime state. Falls back to env/gh CLI tokens if available.
 #[cfg(feature = "desktop")]
@@ -604,25 +649,34 @@ pub(crate) fn resolve_token_without_keychain() -> (Option<String>, TokenSource) 
 
 /// Resolve the token for a specific account.
 ///
-/// - github.com accounts run the EXISTING env→keyring-OAuth→gh chain unchanged
-///   (so a github.com-only user sees no behavior change).
-/// - GitHub Enterprise Server (PAT) accounts return their vault PAT with
-///   [`TokenSource::Pat`]; a missing PAT yields `(None, TokenSource::None)`.
+/// - The ambient github.com default runs the EXISTING env→keyring-OAuth→gh chain
+///   unchanged (so a single-account user sees no behavior change).
+/// - Every NAMED account (a GHE PAT or an additional github.com account) returns
+///   ONLY its own per-account vault token — never the ambient chain. This anchors
+///   each named account to an explicit token so `gh auth switch` (or an env-var
+///   change) can't silently drift its identity. A GHE account reports
+///   [`TokenSource::Pat`]; an additional github.com account reports
+///   [`TokenSource::OAuth`] (its device-flow token, stored per-account). A
+///   missing token yields `(None, TokenSource::None)`.
 pub(crate) fn resolve_token_for_account(
     account: &crate::github_account::GitHubAccount,
 ) -> (Option<String>, TokenSource) {
-    match account.kind {
-        crate::github_account::AccountKind::GhePat => {
-            match crate::credentials::get(Credential::GithubToken(&account.id))
-                .ok()
-                .flatten()
-            {
-                Some(token) => (Some(token), TokenSource::Pat),
-                None => (None, TokenSource::None),
-            }
+    if account.is_ambient_default() {
+        // Ambient github.com default — existing chain, byte-for-byte unchanged.
+        return resolve_token_with_source();
+    }
+    match crate::credentials::get(Credential::GithubToken(&account.id))
+        .ok()
+        .flatten()
+    {
+        Some(token) => {
+            let source = match account.kind {
+                crate::github_account::AccountKind::GhePat => TokenSource::Pat,
+                _ => TokenSource::OAuth,
+            };
+            (Some(token), source)
         }
-        // github.com — existing resolution chain, byte-for-byte unchanged.
-        _ => resolve_token_with_source(),
+        None => (None, TokenSource::None),
     }
 }
 
@@ -864,6 +918,34 @@ mod tests {
         let host = GitHubHost::new("ghe.missing-pat-test.example").unwrap();
         let acc = GitHubAccount::ghe_pat(host, None);
         // Ensure no token is present for this id.
+        let _ = crate::credentials::delete(Credential::GithubToken(&acc.id));
+
+        assert_eq!(resolve_token_for_account(&acc), (None, TokenSource::None));
+    }
+
+    // --- Story 005: named github.com accounts anchored to their own token ---
+
+    #[test]
+    fn resolve_for_named_github_com_uses_own_token_not_chain() {
+        // An additional named github.com account resolves ONLY from its own
+        // per-account vault slot — never the ambient env→OAuth→gh chain — so a
+        // `gh auth switch` cannot drift its identity. Source is OAuth (its
+        // device-flow token), distinct from a GHE PAT.
+        let acc = GitHubAccount::github_com_named("named-anchor-test");
+        crate::credentials::set(Credential::GithubToken(&acc.id), "gho_named_anchor").unwrap();
+
+        let (token, source) = resolve_token_for_account(&acc);
+        assert_eq!(token, Some("gho_named_anchor".to_string()));
+        assert_eq!(source, TokenSource::OAuth);
+
+        crate::credentials::delete(Credential::GithubToken(&acc.id)).unwrap();
+    }
+
+    #[test]
+    fn resolve_for_named_github_com_missing_token_is_none() {
+        // No ambient fallback: a named github.com account with no stored token
+        // resolves to None, it does NOT silently fall back to env/gh.
+        let acc = GitHubAccount::github_com_named("named-missing-test");
         let _ = crate::credentials::delete(Credential::GithubToken(&acc.id));
 
         assert_eq!(resolve_token_for_account(&acc), (None, TokenSource::None));

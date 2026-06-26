@@ -96,12 +96,29 @@ export const GitHubTab: Component = () => {
 	const [avatarBroken, setAvatarBroken] = createSignal(false);
 	const [diagnostics, setDiagnostics] = createSignal<GitHubDiagnostics | null>(null);
 
-	// Enterprise (GHE) accounts — github.com is handled by the device-flow UI above.
+	// Additional accounts (beyond the ambient github.com default): extra
+	// github.com accounts added via device-flow, plus GitHub Enterprise (PAT).
 	const [accounts, setAccounts] = createSignal<GitHubAccount[]>([]);
 	const [newHost, setNewHost] = createSignal("");
 	const [newPat, setNewPat] = createSignal("");
 	const [addingAccount, setAddingAccount] = createSignal(false);
 	const [accountError, setAccountError] = createSignal<string | null>(null);
+	// Device-flow "add account" mode (vs the primary login) + the disclosure that
+	// reveals the add UI for the single-account 99% case (Repository Bindings and
+	// the account manager stay hidden until there's a 2nd account or ambiguity).
+	const [addMode, setAddMode] = createSignal(false);
+	const [showAddPanel, setShowAddPanel] = createSignal(false);
+
+	// Any repo that can't be silently resolved (ambiguous, or a github.com host
+	// with no account) — these force the binding manager to show.
+	function needsAttention(): boolean {
+		return Object.values(resolutions()).some((r) => r.status === "needs-bind" || r.status === "needs-account");
+	}
+	// The 99% case: only the ambient github.com default (the registry, which
+	// excludes it, is empty) and nothing ambiguous to resolve.
+	function isSingleAccountSetup(): boolean {
+		return accounts().length === 0 && !needsAttention();
+	}
 
 	let pollTimer: ReturnType<typeof setTimeout> | undefined;
 	let cancelled = false;
@@ -225,9 +242,10 @@ export const GitHubTab: Component = () => {
 		}
 	}
 
-	async function startLogin() {
+	async function startLogin(additional = false) {
 		cancelled = false;
 		setError(null);
+		setAddMode(additional);
 		setLoading(true);
 		try {
 			const resp = await rpc<DeviceCodeResponse>("github_start_login");
@@ -246,7 +264,7 @@ export const GitHubTab: Component = () => {
 			handleOpenUrl(resp.verification_uri);
 
 			// Start polling
-			pollForToken(resp.device_code, resp.interval);
+			pollForToken(resp.device_code, resp.interval, additional);
 		} catch (e) {
 			setLoading(false);
 			setError(e instanceof Error ? e.message : String(e));
@@ -254,17 +272,29 @@ export const GitHubTab: Component = () => {
 		}
 	}
 
-	async function pollForToken(code: string, interval: number) {
+	async function pollForToken(code: string, interval: number, additional = false) {
 		if (cancelled) return;
 
 		try {
-			const result = await rpc<PollResult>("github_poll_login", { deviceCode: code });
+			// "add account" mode registers a NAMED github.com account without
+			// touching the ambient default; normal mode logs in the default.
+			const result = await rpc<PollResult>(additional ? "github_poll_add_account" : "github_poll_login", {
+				deviceCode: code,
+			});
 
 			switch (result.status) {
 				case "success":
 					setPolling(false);
 					setDeviceCode(null);
-					await fetchStatus();
+					setAddMode(false);
+					if (additional) {
+						// New named account persisted — refresh the manager, leave
+						// the ambient default's auth status untouched.
+						await fetchAccounts();
+						await fetchResolutions();
+					} else {
+						await fetchStatus();
+					}
 					return;
 
 				case "pending":
@@ -290,7 +320,7 @@ export const GitHubTab: Component = () => {
 
 			// Schedule next poll
 			if (!cancelled) {
-				pollTimer = setTimeout(() => pollForToken(code, interval), interval * 1000);
+				pollTimer = setTimeout(() => pollForToken(code, interval, additional), interval * 1000);
 			}
 		} catch (e) {
 			setPolling(false);
@@ -305,6 +335,7 @@ export const GitHubTab: Component = () => {
 		if (pollTimer) clearTimeout(pollTimer);
 		setPolling(false);
 		setDeviceCode(null);
+		setAddMode(false);
 	}
 
 	async function logout() {
@@ -362,7 +393,9 @@ export const GitHubTab: Component = () => {
 			{/* Polling state — waiting for user to authorize */}
 			<Show when={polling() && deviceCode()}>
 				<div class={g.codeCard}>
-					<div class={g.codeLabel}>Enter this code on GitHub:</div>
+					<div class={g.codeLabel}>
+						{addMode() ? "Add another account — enter this code on GitHub:" : "Enter this code on GitHub:"}
+					</div>
 					<div class={g.userCode}>{deviceCode()!.user_code}</div>
 					<div class={g.actions} style="justify-content: center">
 						<button class={cx(g.btn)} onClick={copyCode}>
@@ -431,7 +464,7 @@ export const GitHubTab: Component = () => {
 						{authStatus()?.source === "env" ? "environment variable (GH_TOKEN or GITHUB_TOKEN)" : "gh CLI"}.
 					</div>
 					<div class={g.actions}>
-						<button class={cx(g.btn)} onClick={startLogin} disabled={loading()}>
+						<button class={cx(g.btn)} onClick={() => startLogin()} disabled={loading()}>
 							{loading() ? "Starting..." : "Switch to OAuth"}
 						</button>
 						<button class={cx(g.btn, g.btnDanger)} onClick={disconnect} disabled={loading()}>
@@ -743,7 +776,7 @@ export const GitHubTab: Component = () => {
 						and organization repositories.
 					</div>
 					<div class={g.actions} style="justify-content: center">
-						<button class={cx(g.btn, g.btnPrimary)} onClick={startLogin} disabled={loading()}>
+						<button class={cx(g.btn, g.btnPrimary)} onClick={() => startLogin()} disabled={loading()}>
 							{loading() ? "Starting..." : "Login with GitHub"}
 						</button>
 					</div>
@@ -753,125 +786,154 @@ export const GitHubTab: Component = () => {
 				</div>
 			</Show>
 
-			{/* Enterprise accounts (GitHub Enterprise Server, PAT auth) — independent
-			    of the github.com device-flow login above. */}
-			<h3>Enterprise Accounts</h3>
-			<p class={s.hint} style={{ "margin-bottom": "12px" }}>
-				Add GitHub Enterprise Server accounts with a Personal Access Token. github.com uses the device-flow login above.
-			</p>
-
-			<Show when={accountError()}>
-				<div class={g.error}>{accountError()}</div>
-			</Show>
-
-			<For each={accounts()}>
-				{(acc) => (
-					<div class={g.statusCard}>
-						<div class={g.userInfo}>
-							<div class={g.userName}>{acc.login ?? acc.host.host}</div>
-							<div class={g.tokenSource}>
-								{acc.host.host} · {SOURCE_LABELS.pat}
-							</div>
+			{/* Additional accounts. The 99% single-account setup (only the ambient
+			    github.com default, nothing ambiguous) collapses to a single
+			    "Add another account" affordance — the manager + bindings appear
+			    only once there's a 2nd account or a repo needs disambiguation. */}
+			<Show when={!polling()}>
+				<Show
+					when={!isSingleAccountSetup() || showAddPanel()}
+					fallback={
+						<div class={g.actions} style={{ "margin-top": "16px" }}>
+							<button class={cx(g.btn)} onClick={() => setShowAddPanel(true)}>
+								Add another GitHub account
+							</button>
 						</div>
+					}
+				>
+					<h3>Additional GitHub Accounts</h3>
+					<p class={s.hint} style={{ "margin-bottom": "12px" }}>
+						Add a second github.com account (device-flow) or a GitHub Enterprise Server account (Personal Access Token).
+						The github.com account you logged in with above is your default.
+					</p>
+
+					<Show when={accountError()}>
+						<div class={g.error}>{accountError()}</div>
+					</Show>
+
+					<For each={accounts()}>
+						{(acc) => (
+							<div class={g.statusCard}>
+								<div class={g.userInfo}>
+									<div class={g.userName}>{acc.login ?? acc.host.host}</div>
+									<div class={g.tokenSource}>
+										{acc.host.host} · {acc.kind === "ghe_pat" ? SOURCE_LABELS.pat : SOURCE_LABELS.oauth}
+									</div>
+								</div>
+								<div class={g.actions}>
+									<button class={cx(g.btn, g.btnDanger)} onClick={() => removeAccount(acc.id)}>
+										Remove
+									</button>
+								</div>
+							</div>
+						)}
+					</For>
+
+					<Show when={accounts().length === 0}>
+						<p class={s.hint}>No additional accounts configured.</p>
+					</Show>
+
+					<div class={s.group}>
+						<label>Add another github.com account</label>
 						<div class={g.actions}>
-							<button class={cx(g.btn, g.btnDanger)} onClick={() => removeAccount(acc.id)}>
-								Remove
+							<button class={cx(g.btn, g.btnPrimary)} onClick={() => startLogin(true)} disabled={loading()}>
+								{loading() ? "Starting..." : "Add github.com account"}
 							</button>
 						</div>
 					</div>
-				)}
-			</For>
 
-			<Show when={accounts().length === 0}>
-				<p class={s.hint}>No Enterprise accounts configured.</p>
+					<div class={s.group}>
+						<label>Add Enterprise account</label>
+						<input
+							type="text"
+							placeholder="ghe.example.com"
+							value={newHost()}
+							onInput={(e) => setNewHost(e.currentTarget.value)}
+						/>
+						<input
+							type="password"
+							placeholder="Personal Access Token"
+							value={newPat()}
+							onInput={(e) => setNewPat(e.currentTarget.value)}
+						/>
+						<div class={g.actions}>
+							<button class={cx(g.btn, g.btnPrimary)} onClick={addAccount} disabled={addingAccount()}>
+								{addingAccount() ? "Validating..." : "Add account"}
+							</button>
+						</div>
+					</div>
+				</Show>
 			</Show>
 
-			<div class={s.group}>
-				<label>Add Enterprise account</label>
-				<input
-					type="text"
-					placeholder="ghe.example.com"
-					value={newHost()}
-					onInput={(e) => setNewHost(e.currentTarget.value)}
-				/>
-				<input
-					type="password"
-					placeholder="Personal Access Token"
-					value={newPat()}
-					onInput={(e) => setNewPat(e.currentTarget.value)}
-				/>
-				<div class={g.actions}>
-					<button class={cx(g.btn, g.btnPrimary)} onClick={addAccount} disabled={addingAccount()}>
-						{addingAccount() ? "Validating..." : "Add account"}
-					</button>
-				</div>
-			</div>
-
 			{/* Repository → account bindings. Every repo resolves to one account;
-			    ambiguous repos (multiple GitHub remotes/accounts) are chosen here. */}
-			<h3>Repository Bindings</h3>
-			<p class={s.hint} style={{ "margin-bottom": "12px" }}>
-				Each repository is monitored through exactly one account. Ambiguous repositories need you to choose — no remote
-				is picked silently.
-			</p>
+			    ambiguous repos (multiple GitHub remotes/accounts) are chosen here.
+			    Hidden in the single-account setup — there's nothing to choose. */}
+			<Show when={!isSingleAccountSetup()}>
+				<h3>Repository Bindings</h3>
+				<p class={s.hint} style={{ "margin-bottom": "12px" }}>
+					Each repository is monitored through exactly one account. Ambiguous repositories need you to choose — no
+					remote is picked silently.
+				</p>
 
-			<Show when={activeRepos().length > 0} fallback={<p class={s.hint}>No repositories in the workspace yet.</p>}>
-				<For each={activeRepos()}>
-					{(repo) => {
-						const res = () => resolutions()[repo.path];
-						return (
-							<Show when={res() && res().status !== "unmonitored"}>
-								<div class={g.statusCard}>
-									<div class={g.userInfo}>
-										<div class={g.userName}>{repo.name}</div>
-										<Show when={res().status === "bound"}>
-											<div class={g.tokenSource}>
-												→ {res().owner}/{res().repo} via{" "}
-												{res().account?.login ?? res().account?.host.host ?? res().account?.id}
-											</div>
-										</Show>
-										<Show when={res().status === "needs-account"}>
-											<div class={g.tokenSource}>No account for this host — add one above.</div>
-										</Show>
-										<Show when={res().status === "needs-bind"}>
-											<select
-												value={chosenRemote()[repo.path] ?? res().candidates?.[0]?.remote_name ?? ""}
-												onChange={(e) => setChosenRemote({ ...chosenRemote(), [repo.path]: e.currentTarget.value })}
-											>
-												<For each={res().candidates}>
-													{(c) => (
-														<option value={c.remote_name}>
-															{c.owner}/{c.repo} via {c.remote_name} ({c.account_id})
-														</option>
-													)}
-												</For>
-											</select>
-										</Show>
+				<Show when={activeRepos().length > 0} fallback={<p class={s.hint}>No repositories in the workspace yet.</p>}>
+					<For each={activeRepos()}>
+						{(repo) => {
+							const res = () => resolutions()[repo.path];
+							return (
+								<Show when={res() && res().status !== "unmonitored"}>
+									<div class={g.statusCard}>
+										<div class={g.userInfo}>
+											<div class={g.userName}>{repo.name}</div>
+											<Show when={res().status === "bound"}>
+												<div class={g.tokenSource}>
+													→ {res().owner}/{res().repo} via{" "}
+													{res().account?.login ?? res().account?.host.host ?? res().account?.id}
+												</div>
+											</Show>
+											<Show when={res().status === "needs-account"}>
+												<div class={g.tokenSource}>No account for this host — add one above.</div>
+											</Show>
+											<Show when={res().status === "needs-bind"}>
+												<select
+													class={g.bindSelect}
+													value={chosenRemote()[repo.path] ?? res().candidates?.[0]?.remote_name ?? ""}
+													onChange={(e) => setChosenRemote({ ...chosenRemote(), [repo.path]: e.currentTarget.value })}
+												>
+													<For each={res().candidates}>
+														{(c) => (
+															<option value={c.remote_name}>
+																{c.owner}/{c.repo} via {c.remote_name} ({c.account_id})
+															</option>
+														)}
+													</For>
+												</select>
+											</Show>
+										</div>
+										<div class={g.actions}>
+											<Show when={res().status === "bound"}>
+												<button class={cx(g.btn)} onClick={() => unbindRepo(repo.path)}>
+													Unbind
+												</button>
+											</Show>
+											<Show when={res().status === "needs-bind"}>
+												<button
+													class={cx(g.btn, g.btnPrimary)}
+													onClick={() => {
+														const remote = chosenRemote()[repo.path] ?? res().candidates?.[0]?.remote_name ?? "";
+														const cand = res().candidates?.find((c) => c.remote_name === remote);
+														if (cand) bindRepo(repo.path, cand.account_id, cand.remote_name);
+													}}
+												>
+													Bind
+												</button>
+											</Show>
+										</div>
 									</div>
-									<div class={g.actions}>
-										<Show when={res().status === "bound"}>
-											<button class={cx(g.btn)} onClick={() => unbindRepo(repo.path)}>
-												Unbind
-											</button>
-										</Show>
-										<Show when={res().status === "needs-bind"}>
-											<button
-												class={cx(g.btn, g.btnPrimary)}
-												onClick={() => {
-													const remote = chosenRemote()[repo.path] ?? res().candidates?.[0]?.remote_name ?? "";
-													const cand = res().candidates?.find((c) => c.remote_name === remote);
-													if (cand) bindRepo(repo.path, cand.account_id, cand.remote_name);
-												}}
-											>
-												Bind
-											</button>
-										</Show>
-									</div>
-								</div>
-							</Show>
-						);
-					}}
-				</For>
+								</Show>
+							);
+						}}
+					</For>
+				</Show>
 			</Show>
 		</div>
 	);
