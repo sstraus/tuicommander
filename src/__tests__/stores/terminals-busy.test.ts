@@ -272,5 +272,50 @@ describe("terminalsStore debounced busy signal", () => {
 				expect(store.get(id)?.awaitingInputConfident).toBe(false);
 			});
 		});
+
+		it("clears a confident question after sustained busy with no re-detection (prompt answered, agent resumed work)", () => {
+			testInScope(() => {
+				const id = addTerminal();
+				store.update(id, { shellState: "busy" });
+				store.setAwaitingInput(id, "question", true);
+				// The agent keeps producing output (busy) and the prompt is never
+				// re-detected — it was answered. The badge must not stay stuck.
+				vi.advanceTimersByTime(2499);
+				expect(store.get(id)?.awaitingInput).toBe("question");
+				vi.advanceTimersByTime(1);
+				expect(store.get(id)?.awaitingInput).toBeNull();
+				expect(store.get(id)?.awaitingInputConfident).toBe(false);
+			});
+		});
+
+		it("keeps a confident question when the terminal is idle at the deadline (genuine static prompt)", () => {
+			testInScope(() => {
+				const id = addTerminal();
+				// Menu shown, then the terminal goes idle waiting for the answer —
+				// no output. This is a real pending prompt and must stay highlighted.
+				store.update(id, { shellState: "busy" });
+				store.update(id, { shellState: "idle" });
+				store.setAwaitingInput(id, "question", true);
+				vi.advanceTimersByTime(5000);
+				expect(store.get(id)?.awaitingInput).toBe("question");
+				expect(store.get(id)?.awaitingInputConfident).toBe(true);
+			});
+		});
+
+		it("refreshes the clear timer on re-detection (Ink menu repaint keeps it highlighted)", () => {
+			testInScope(() => {
+				const id = addTerminal();
+				store.update(id, { shellState: "busy" });
+				store.setAwaitingInput(id, "question", true);
+				vi.advanceTimersByTime(2000);
+				// Repaint re-emits the same confident question — refreshes the deadline.
+				store.setAwaitingInput(id, "question", true);
+				vi.advanceTimersByTime(2000);
+				expect(store.get(id)?.awaitingInput).toBe("question");
+				// Past the refreshed deadline with no further re-detection → cleared.
+				vi.advanceTimersByTime(500);
+				expect(store.get(id)?.awaitingInput).toBeNull();
+			});
+		});
 	});
 });
