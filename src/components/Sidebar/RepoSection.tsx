@@ -328,33 +328,59 @@ export const BranchItem: Component<{
 	};
 
 	const contextMenuItems = (): ContextMenuItem[] => {
-		const items: ContextMenuItem[] = [
+		const isShell = props.branch.isShell;
+		const hasBranch = !isShell && !!props.branch.name;
+		const isLinkedWorktree = !!props.branch.worktreePath && props.branch.worktreePath !== props.repoPath;
+		const isMainWorktree = props.branch.worktreePath === props.repoPath;
+
+		// Group 1 — quick actions, ordered by real usage frequency (Copy Path and the
+		// GitHub links are the most-used, so they lead).
+		const quick: ContextMenuItem[] = [
 			{
 				label: "Copy Path",
 				title: props.branch.worktreePath ? shortenHomePath(props.branch.worktreePath) : undefined,
 				action: handleCopyPath,
 				disabled: !props.branch.worktreePath,
 			},
-			{ label: "Add Terminal", action: props.onAddTerminal },
 		];
-		if (!props.branch.isShell && props.branch.name) {
-			items.push({ label: "Set Label", action: () => props.onSetLabel?.(branchLabel()) });
-			if (branchLabel()) {
-				items.push({
-					label: "Clear Label",
-					action: () => repoSettingsStore.setLabel(props.repoPath, props.branch.name, null),
+		if (hasBranch && props.githubBaseUrl) {
+			const ghBase = props.githubBaseUrl;
+			const branchUrl = `${ghBase}/tree/${encodeURIComponent(props.branch.name)}`;
+			quick.push({ label: "Open in GitHub", action: () => handleOpenUrl(branchUrl) });
+			const prStatus = githubStore.getPrStatus(props.repoPath, props.branch.name);
+			if (prStatus?.url) {
+				quick.push({ label: "Open PR", action: () => handleOpenUrl(prStatus.url) });
+			}
+		}
+		quick.push({ label: "Add Terminal", action: props.onAddTerminal });
+		if (!isShell) {
+			const agentItems = props.agentMenuItems?.();
+			if (agentItems && agentItems.length > 0) quick.push(...agentItems);
+		}
+		// "Switch Branch" submenu — only on the main worktree row.
+		if (isMainWorktree && props.onSwitchBranch && props.switchBranchList && props.currentBranch) {
+			const switchBranch = props.onSwitchBranch;
+			const current = props.currentBranch();
+			const branchList = props.switchBranchList();
+			if (branchList.length > 0) {
+				const branchChildren: ContextMenuItem[] = branchList.map((name) => ({
+					label: name === current ? `${name}  \u2713` : name,
+					action: () => {
+						if (name !== current) switchBranch(name);
+					},
+					disabled: name === current,
+				}));
+				quick.push({
+					label: t("sidebar.switchBranch", "Switch Branch"),
+					action: () => {},
+					children: branchChildren,
 				});
 			}
 		}
-		if (!props.branch.isShell) {
-			const agentItems = props.agentMenuItems?.();
-			if (agentItems && agentItems.length > 0) {
-				items.push(...agentItems);
-			}
-			const isLinkedWorktree = !!props.branch.worktreePath && props.branch.worktreePath !== props.repoPath;
 
-			// "Branch ›" submenu — condensed git branch operations. The frequent
-			// "Switch Branch" stays a top-level entry below (not nested here).
+		// Group 2 — git branch lifecycle ("Branch ›" submenu).
+		const git: ContextMenuItem[] = [];
+		if (!isShell) {
 			const branchOps: ContextMenuItem[] = [];
 			if (props.onCreateBranch) {
 				branchOps.push({ label: "Create Branch…", action: props.onCreateBranch });
@@ -378,56 +404,40 @@ export const BranchItem: Component<{
 				});
 			}
 			if (branchOps.length > 0) {
-				items.push({ label: "Branch", action: () => {}, children: branchOps });
+				git.push({ label: "Branch", action: () => {}, children: branchOps });
 			}
 		}
-		// "Switch Branch" submenu — only on main worktree row (worktreePath === repoPath)
-		const isMainWorktree = props.branch.worktreePath === props.repoPath;
-		if (isMainWorktree && props.onSwitchBranch && props.switchBranchList && props.currentBranch) {
-			const switchBranch = props.onSwitchBranch; // capture narrowed value before closure
-			const current = props.currentBranch();
-			const branchList = props.switchBranchList();
-			if (branchList.length > 0) {
-				const branchChildren: ContextMenuItem[] = branchList.map((name) => ({
-					label: name === current ? `${name}  \u2713` : name,
-					action: () => {
-						if (name !== current) switchBranch(name);
-					},
-					disabled: name === current,
-				}));
-				items.push({
-					label: t("sidebar.switchBranch", "Switch Branch"),
-					action: () => {},
-					children: branchChildren,
-					separator: true,
-				});
-			}
-		}
-		// GitHub links
-		if (props.githubBaseUrl) {
-			const ghBase = props.githubBaseUrl;
-			const branchUrl = `${ghBase}/tree/${encodeURIComponent(props.branch.name)}`;
-			items.push({ label: "Open in GitHub", action: () => handleOpenUrl(branchUrl), separator: true });
-			// If branch has an open PR, add direct link
-			const prStatus = githubStore.getPrStatus(props.repoPath, props.branch.name);
-			if (prStatus?.url) {
-				items.push({ label: "Open PR", action: () => handleOpenUrl(prStatus.url) });
-			}
-		}
-		// Plugin-registered branch actions
+
+		// Group 3 — PR / workflow actions (plugin + built-in smart prompts).
+		const workflow: ContextMenuItem[] = [];
 		const branchActions = contextMenuActionsStore.getContextActions("branch");
 		if (branchActions.length > 0) {
 			const ctx = { target: "branch" as const, repoPath: props.repoPath, branchName: props.branch.name };
 			for (const a of branchActions) {
-				items.push({
-					label: a.label,
-					action: () => a.action(ctx),
-					disabled: a.disabled?.(ctx),
-					separator: branchActions.indexOf(a) === 0,
+				workflow.push({ label: a.label, action: () => a.action(ctx), disabled: a.disabled?.(ctx) });
+			}
+		}
+
+		// Group 4 — metadata (least frequent).
+		const meta: ContextMenuItem[] = [];
+		if (hasBranch) {
+			meta.push({ label: "Set Label", action: () => props.onSetLabel?.(branchLabel()) });
+			if (branchLabel()) {
+				meta.push({
+					label: "Clear Label",
+					action: () => repoSettingsStore.setLabel(props.repoPath, props.branch.name, null),
 				});
 			}
 		}
-		return items;
+
+		// Flatten, inserting a separator before each non-empty group after the first.
+		const out: ContextMenuItem[] = [];
+		for (const group of [quick, git, workflow, meta]) {
+			if (group.length === 0) continue;
+			if (out.length > 0) group[0] = { ...group[0], separator: true };
+			out.push(...group);
+		}
+		return out;
 	};
 
 	const isPendingOp = () => props.branch.isPreparing || props.branch.isRemoving;
