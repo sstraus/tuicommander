@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Making a WebView terminal feel native — TUICommander Blog</title>
+  <meta name="description" content="A cargo build shouldn't make your terminal stutter. The engineering study behind v1.5's near-native input latency: off-main-thread rendering, a binary frame protocol, and the Apple Silicon QoS discovery that closed the gap." />
+
+  <meta property="og:title" content="Making a WebView terminal feel native — TUICommander" />
+  <meta property="og:description" content="The engineering study behind v1.5's near-native terminal: off-main-thread rendering, a binary frame protocol, and the Apple Silicon QoS discovery that made typing fluid even under a saturating compile." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time>June 26, 2026</time>
+      <h1>Making a WebView terminal feel native</h1>
+      <p class="blog-post-summary">A terminal that lives inside a WebView starts with a handicap: it shares a thread and a scheduler with everything else the app does. v1.5 is where we closed the gap. This is the study behind it — off-main-thread rendering, a binary frame protocol, and the Apple Silicon scheduling discovery that finally made typing fluid while a <code>cargo build</code> saturates every core.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The cargo build that stuttered</h2>
+      <p>The bug report was just a feeling: "typing gets mushy when a build is running." Easy to dismiss, hard to ignore once you've felt it. You kick off <code>cargo build</code> in one pane, switch to another to keep working, and the echo of your own keystrokes arrives a beat late. Hit <code>Ctrl+C</code> and it doesn't land for half a second. For a tool aimed at engineers who live in the terminal eight hours a day, "mushy under load" is not a papercut — it's the difference between a native terminal and a web app pretending to be one.</p>
+      <p>We'd already <a href="native-terminal.html">replaced xterm.js with an Alacritty-backed Canvas renderer</a>, so we owned the grid end to end. That was the prerequisite. But owning the pipeline only matters if the pipeline gets CPU when it needs it. The stutter under load proved it didn't. So we went looking for <em>why</em> — and the answer turned out to be two separate problems wearing one symptom.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Two bottlenecks, one symptom</h2>
+      <p>Input latency in a WebView terminal comes from two places, and they're easy to confuse:</p>
+      <ol>
+        <li><strong>Main-thread contention.</strong> The WebView's JavaScript runs on a single thread. If rendering, IPC, and input handling all queue behind each other on that thread, a keystroke waits its turn. Under burst output the queue never drains.</li>
+        <li><strong>Scheduler priority.</strong> Even with a clear thread, the OS decides <em>when</em> your threads run. A <code>cargo build</code> spawns dozens of compiler threads that all want CPU. If the terminal's threads sit in the same priority class as <code>rustc</code>'s workers, the scheduler treats your keystroke as no more urgent than a codegen unit.</li>
+      </ol>
+      <p>You can't fix one and declare victory. Move rendering off the main thread and you still lose if the scheduler starves the render thread under load. Raise priority and you still lose if every paint blocks input on the same thread. We had to solve both.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Getting rendering off the main thread</h2>
+      <p>The grid lives in Rust. The frontend's only job is to paint it. So the first move was to make painting not touch the main thread at all: the canvas runs in an <code>OffscreenCanvas</code> inside a dedicated Web Worker. Rust serializes only the rows that changed and ships them to the worker, which decodes and paints while the main thread stays free for input.</p>
+      <p>The wire format is deliberately dumb and tight — a binary frame, not JSON. A small fixed header, then a flat block of cells decoded into struct-of-arrays typed arrays with zero per-cell object allocation:</p>
+
+      <figure class="blog-figure">
+        <svg viewBox="0 0 760 250" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Render pipeline: Rust grid to binary frame to worker to canvas, off the main thread" style="width:100%;height:auto;background:#1a1a1a;border:1px solid #2e2e32;border-radius:8px;font-family:ui-monospace,Menlo,monospace">
+          <!-- Rust side -->
+          <rect x="20" y="40" width="150" height="70" rx="6" fill="#1e1e1e" stroke="#4ec9b0"/>
+          <text x="95" y="68" text-anchor="middle" fill="#4ec9b0" font-size="13">Rust backend</text>
+          <text x="95" y="88" text-anchor="middle" fill="#a0a0a0" font-size="11">alacritty grid</text>
+          <text x="95" y="102" text-anchor="middle" fill="#a0a0a0" font-size="11">+ damage tracker</text>
+
+          <!-- arrow -->
+          <line x1="170" y1="75" x2="250" y2="75" stroke="#59a8dd" stroke-width="2"/>
+          <polygon points="250,75 242,71 242,79" fill="#59a8dd"/>
+          <text x="210" y="66" text-anchor="middle" fill="#59a8dd" font-size="10">binary frame</text>
+          <text x="210" y="95" text-anchor="middle" fill="#666666" font-size="10">dirty rows only</text>
+
+          <!-- Worker -->
+          <rect x="250" y="40" width="170" height="70" rx="6" fill="#1e1e1e" stroke="#dcdcaa"/>
+          <text x="335" y="68" text-anchor="middle" fill="#dcdcaa" font-size="13">Web Worker</text>
+          <text x="335" y="88" text-anchor="middle" fill="#a0a0a0" font-size="11">decode (SoA arrays)</text>
+          <text x="335" y="102" text-anchor="middle" fill="#a0a0a0" font-size="11">paint OffscreenCanvas</text>
+
+          <!-- arrow -->
+          <line x1="420" y1="75" x2="500" y2="75" stroke="#59a8dd" stroke-width="2"/>
+          <polygon points="500,75 492,71 492,79" fill="#59a8dd"/>
+
+          <!-- Canvas -->
+          <rect x="500" y="40" width="150" height="70" rx="6" fill="#1e1e1e" stroke="#59a8dd"/>
+          <text x="575" y="72" text-anchor="middle" fill="#e0e0e0" font-size="13">Canvas pixels</text>
+          <text x="575" y="92" text-anchor="middle" fill="#a0a0a0" font-size="11">on screen</text>
+
+          <!-- main thread lane -->
+          <rect x="20" y="160" width="630" height="60" rx="6" fill="#161616" stroke="#2e2e32" stroke-dasharray="4 3"/>
+          <text x="335" y="185" text-anchor="middle" fill="#f48771" font-size="12">main thread — stays free</text>
+          <text x="335" y="205" text-anchor="middle" fill="#a0a0a0" font-size="11">keystrokes · cursor overlay · IPC ack only</text>
+
+          <text x="335" y="25" text-anchor="middle" fill="#666666" font-size="11">paint path never touches the main thread</text>
+        </svg>
+        <figcaption>The grid is authoritative in Rust. Only changed rows cross the wire, as a binary frame, into a worker that paints an OffscreenCanvas — leaving the main thread for input.</figcaption>
+      </figure>
+
+      <p>This bought a lot. But it introduced a gotcha that cost a day to find: <strong>WebKit deprioritizes a worker's <code>requestAnimationFrame</code> for sporadic paints.</strong> Type two characters and the glyphs wouldn't appear until you pressed a third. The cursor (a main-thread overlay) moved instantly; the glyphs (the worker's base paint) trailed. The cause: with no continuous animation running, WebKit decides the worker's rAF isn't urgent and defers it — so single-keystroke repaints waited on a <code>setTimeout</code> fallback that was set to 100&nbsp;ms. We dropped the fallback to 16&nbsp;ms and the lag vanished. The lesson stuck: in a worker, never assume rAF fires promptly for one-off paints.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The ack loop that ate a core</h2>
+      <p>Off-thread rendering needs back-pressure: the frontend acknowledges each frame so Rust knows when to send the next, instead of flooding the IPC channel. A refactor quietly broke this. The acknowledgement path started <em>producing</em> the next frame as a side effect — frontend acks &rarr; Rust serializes and sends &rarr; frontend receives and acks immediately &rarr; repeat, with no throttle in between. We measured 240+ IPC calls per second pinning the Tauri main thread at 100%, on an idle terminal.</p>
+      <p>The fix was to make the ack do exactly one thing — clear the in-flight flag — and let a single 8&nbsp;ms ticker be the sole thing that ever sends a frame. One producer, one cadence, no feedback loop. The principle generalizes: an acknowledgement should release work, never schedule it.</p>
+      <p>We applied the same discipline to the raw output event. The desktop canvas renders from grid frames, so the per-chunk <code>pty-output</code> event (which only drives the activity dot) is now throttled to roughly ten emits a second. Under an output storm — say a runaway <code>yes</code> — emitting per chunk used to flood the WebView and starve keydown so badly that <code>Ctrl+C</code> couldn't get through. Dropping intermediate pulses is free; nobody needs the activity dot to blink 10,000 times a second.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The discovery: scheduling, not threading</h2>
+      <p>With rendering off the main thread and the IPC loop tamed, the app was fast — until you saturated the machine. Under a 14-core <code>cargo build</code>, typing went mushy again. We'd fixed contention; the remaining culprit was priority.</p>
+      <p>We already gave PTY child processes a lower scheduling priority right after spawn — <code>nice +10</code> on macOS/Linux, <code>BELOW_NORMAL</code> on Windows — so a build yields to the UI. On Intel that was enough. On Apple Silicon it wasn't, and the reason is subtle: <strong>the macOS scheduler on Apple Silicon is driven by Quality-of-Service bands, and <code>nice</code> only reorders threads <em>within</em> a band.</strong> Our interactive threads and the compiler's worker threads were sitting in the same default band, so <code>nice</code> couldn't lift our keystroke above their codegen.</p>
+
+      <figure class="blog-figure">
+        <svg viewBox="0 0 760 290" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Apple Silicon QoS bands: interactive I/O path elevated above the default band where compiler workers run" style="width:100%;height:auto;background:#1a1a1a;border:1px solid #2e2e32;border-radius:8px;font-family:ui-monospace,Menlo,monospace">
+          <text x="380" y="28" text-anchor="middle" fill="#666666" font-size="11">macOS / Apple Silicon — the scheduler picks the highest band first</text>
+
+          <!-- USER_INTERACTIVE band -->
+          <rect x="40" y="50" width="680" height="64" rx="6" fill="#16241f" stroke="#4ec9b0"/>
+          <text x="60" y="76" fill="#4ec9b0" font-size="13">QOS · USER_INTERACTIVE</text>
+          <rect x="330" y="62" width="120" height="20" rx="4" fill="#1e1e1e" stroke="#4ec9b0"/>
+          <text x="390" y="76" text-anchor="middle" fill="#e0e0e0" font-size="11">reader thread</text>
+          <rect x="460" y="62" width="110" height="20" rx="4" fill="#1e1e1e" stroke="#4ec9b0"/>
+          <text x="515" y="76" text-anchor="middle" fill="#e0e0e0" font-size="11">frame ticker</text>
+          <rect x="580" y="62" width="120" height="20" rx="4" fill="#1e1e1e" stroke="#4ec9b0"/>
+          <text x="640" y="76" text-anchor="middle" fill="#e0e0e0" font-size="11">keystroke write</text>
+          <text x="60" y="100" fill="#a0a0a0" font-size="11">TUIC's interactive I/O path — raised here in v1.5</text>
+
+          <!-- arrow up -->
+          <line x1="200" y1="150" x2="200" y2="120" stroke="#dcdcaa" stroke-width="2" stroke-dasharray="4 3"/>
+          <polygon points="200,114 196,122 204,122" fill="#dcdcaa"/>
+          <text x="210" y="138" fill="#dcdcaa" font-size="10">elevated out of the crowd</text>
+
+          <!-- DEFAULT band -->
+          <rect x="40" y="150" width="680" height="64" rx="6" fill="#241a16" stroke="#dcdcaa"/>
+          <text x="60" y="176" fill="#dcdcaa" font-size="13">QOS · DEFAULT</text>
+          <text x="60" y="198" fill="#a0a0a0" font-size="11">where the interactive path used to live — shared with…</text>
+
+          <!-- BACKGROUND band -->
+          <rect x="40" y="226" width="680" height="48" rx="6" fill="#1e1716" stroke="#f48771"/>
+          <text x="60" y="250" fill="#f48771" font-size="13">nice +10 / BELOW_NORMAL</text>
+          <text x="300" y="250" fill="#a0a0a0" font-size="11">cargo · rustc workers · bundlers — PTY children, deprioritized</text>
+        </svg>
+        <figcaption>On Apple Silicon, <code>nice</code> only reorders within a band. The fix was to raise the reader thread, frame ticker, and keystroke-write thread to <code>USER_INTERACTIVE</code> — a strictly higher band than where the compiler's workers run.</figcaption>
+      </figure>
+
+      <p>So v1.5 raises three threads — the PTY reader, the frame ticker, and the keystroke-write thread — to <code>QOS_CLASS_USER_INTERACTIVE</code> via <code>pthread_set_qos_class_self_np</code>. That puts the entire interactive path in a strictly higher scheduler band than the default one where compiler threads live. It complements the child renice rather than replacing it: renice keeps builds polite within their band; QoS elevation makes sure your keystroke is in a band above the whole crowd. On an M4 Max under full saturation, the UI goes from frozen to responsive. It's macOS-only — a no-op on Linux and Windows, where per-thread QoS has no useful equivalent and the renice already does the job.</p>
+      <p>This was the headline insight of the whole effort: past a point, terminal responsiveness on Apple Silicon isn't a threading problem or an algorithm problem. It's a <em>scheduling</em> problem, and the OS won't solve it for you unless you tell it which threads carry the human's intent.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Protecting input when the machine is truly pinned</h2>
+      <p>One more layer, for the worst case. When the system load per core crosses a saturation threshold <em>and</em> you're actively typing, we briefly widen the minimum interval between grid frames. Frames drop by about a third while your fingers are moving, which hands those cycles back to echo and input. The moment you stop typing, full frame cadence returns; on an unloaded machine the throttle never engages at all. It's a small, surgical concession — sacrifice a little visual smoothness exactly when, and only when, fluid input matters more.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Scroll that doesn't drift</h2>
+      <p>Native terminals don't duplicate lines when you scroll, don't go black when you zoom, and don't leave a ghost row hanging below the prompt. Getting there meant fixing three separate scroll defects, all rooted in the same trap: <strong>identifying a row by a coordinate that moves under you.</strong></p>
+      <ul>
+        <li><strong>Eviction-stable row identity.</strong> The smooth-scroll row cache keyed rows by a coordinate that shifted every time the scrollback cap (10,000 lines) rotated and evicted the oldest line. After enough output, a cached row could alias onto a different line. We re-keyed the cache by an absolute index anchored to a <code>historyBase</code> counter that only ever grows, so a row's identity never changes once it exists.</li>
+        <li><strong>Zoom-black.</strong> Zooming resized the grid but emitted no frame, because the reader thread only sends on PTY data or the ticker — and static, idle-agent content produces neither. The screen blanked until a scroll forced a redraw. Now a resize captures the freshly damaged rows and sends a frame immediately.</li>
+        <li><strong>Overscan ghost.</strong> The smooth-scroll overscan canvas extends one row past the viewport; at rest it could leave a stale line peeking below the prompt. We now wipe the overscan canvas on every return to rest.</li>
+      </ul>
+    </div>
+
+    <div class="blog-section">
+      <h2>And the freezes</h2>
+      <p>The most damaging "slowness" isn't latency — it's a multi-second freeze when you switch repos or open a tab. We caught it with runtime diagnostics: an in-flight grid frame flag stuck with a repeat count climbing into the hundreds, meaning the WebView's JS thread was blocked for minutes at a time. The root cause traced to a thundering-herd of visibility and repo-change events that an earlier batching fix had partly lost in the terminal rewrite. Restoring batched updates and a stuck-frame detector turned a creeping, restart-to-fix freeze into a non-event. (If you ever want to see what the app sees, <code>POST /diagnostics {"enabled":true}</code> on the local debug port emits a full health snapshot every 30 seconds — CPU split between TUIC and its PTY children, thread and FD counts, stuck frames, and more.)</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The usability sharpening that shipped alongside</h2>
+      <p>The same release tightened the everyday edges, because "fast" and "pleasant" are the same goal seen from two angles:</p>
+      <ul>
+        <li><strong>Context-menu shortcut keys</strong> — with a menu open, press an item's chord (the branch menu's <code>M</code> / <code>R</code> / <code>d</code>) to fire it directly instead of just dismissing the menu.</li>
+        <li><strong>"Active only" repo filter</strong> — one click hides every repo with no open terminals, with an accent banner showing the shown/total count.</li>
+        <li><strong>Inline git blame in the editor</strong> — a dim GitLens-style "author · time · summary" at the end of the active line, fetched on load/save, never per keystroke.</li>
+        <li><strong>One-click delete-merged branches</strong> — a broom button bulk-deletes branches already merged into main, behind a confirm dialog, using safe <code>git branch -d</code> so it can never drop unmerged work.</li>
+        <li><strong>User-prompt scrollbar markers</strong> — green ticks mark every line where you submitted a command, so you can jump back to an earlier prompt at a glance.</li>
+        <li><strong>250&nbsp;MB files in the editor</strong> — a dedicated read path lifts the editor ceiling; oversized files are refused up front with a notice instead of freezing the UI mid-load.</li>
+        <li><strong>Cmd/Ctrl+R reloads a web or preview tab</strong> — the Run shortcut does the obvious thing when a preview is focused.</li>
+      </ul>
+      <p>And the interaction fixes that quietly remove daily friction: <code>Cmd+C</code> no longer copies duplicated text and now unwraps soft-wrapped selections; a stale "awaiting input" badge clears when an agent exits to the shell; smooth-scroll snaps cleanly to the line when a gesture ends; the macOS dock icon reliably restores a minimized window even with a detached panel open.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Is it indistinguishable?</h2>
+      <p>Close enough that the honest answer is "we stopped being able to tell in normal use." Typing stays crisp while a 14-core build runs. Scroll holds its position through scrollback eviction. Zoom repaints instantly. The freezes are gone. The remaining tell is raw throughput — Canvas 2D will never out-scroll a WebGL renderer on a <code>cat</code> of a 100&nbsp;MB file — but that was a tradeoff we took on purpose, because agents emit text at LLM speed, not disk speed, and the bottleneck there is never the renderer.</p>
+      <p>What we keep coming back to is how little of this was about clever algorithms. It was about respecting the platform: keep the main thread for the human, tell the OS scheduler which threads carry intent, and never let an acknowledgement schedule work. Do that, and a terminal in a WebView stops feeling like a web app — and starts feeling like the tool you forget you're using.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>Apache License 2.0 &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>
