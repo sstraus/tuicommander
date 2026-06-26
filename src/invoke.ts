@@ -155,10 +155,14 @@ export function listen<T>(event: string, handler: (event: { payload: T }) => voi
 				if (disposed) return;
 				disposed = true;
 				try {
-					unlisten();
+					// Tauri's UnlistenFn is `async () => _unlisten(...)`, so a double-unregister
+					// (listeners[eventId] is undefined) throws *inside* the async fn and surfaces
+					// as a rejected promise, not a sync throw — hence the wrap + .catch(). The
+					// outer try/catch covers the (defensive) sync-throw path. The listener is
+					// already gone either way; swallow.
+					void Promise.resolve(unlisten()).catch(() => {});
 				} catch {
-					// Tauri's internal listener registry crashes on double-unregister
-					// (listeners[eventId] is undefined). Swallow — the listener is already gone.
+					// listener already gone
 				}
 			};
 		});

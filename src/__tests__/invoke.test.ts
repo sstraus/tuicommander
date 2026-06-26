@@ -6,13 +6,18 @@ vi.mock("@tauri-apps/api/core", () => ({
 	invoke: (...args: unknown[]) => mockTauriInvoke(...args),
 }));
 
+const mockTauriListen = vi.fn();
+vi.mock("@tauri-apps/api/event", () => ({
+	listen: (...args: unknown[]) => mockTauriListen(...args),
+}));
+
 // Mock transport to simulate Tauri mode
 vi.mock("../transport", () => ({
 	isTauri: () => true,
 }));
 
 // Import after mocks are set up
-const { invoke, _inflight_TEST_ONLY } = await import("../invoke");
+const { invoke, listen, _inflight_TEST_ONLY } = await import("../invoke");
 
 describe("invoke in-flight dedup", () => {
 	beforeEach(() => {
@@ -176,5 +181,33 @@ describe("invoke in-flight dedup", () => {
 		expect(mockTauriInvoke).toHaveBeenCalledTimes(2);
 		expect(r1).toBe("first");
 		expect(r2).toBe("second");
+	});
+});
+
+describe("listen() unlisten error handling", () => {
+	it("swallows the async rejection when Tauri's unlisten double-unregisters", async () => {
+		// Tauri's UnlistenFn is `async () => _unlisten(...)`, so a double-unregister
+		// (listeners[eventId] is undefined) throws *inside* the async fn and surfaces
+		// as a REJECTED PROMISE, not a sync throw. The dispose wrapper must catch that
+		// async rejection, otherwise it bubbles up as the "[boot rejection] undefined
+		// is not an object (listeners[eventId].handlerId)" unhandled rejection.
+		mockTauriListen.mockResolvedValueOnce(() =>
+			Promise.reject(new Error("undefined is not an object (evaluating 'listeners[eventId].handlerId')")),
+		);
+		const dispose = await listen("evt", () => {});
+
+		const seen: unknown[] = [];
+		const onUnhandled = (reason: unknown) => seen.push(reason);
+		process.on("unhandledRejection", onUnhandled);
+
+		expect(() => dispose()).not.toThrow();
+		// Second call hits the disposed guard — must remain a no-op.
+		expect(() => dispose()).not.toThrow();
+
+		// Let the rejected promise settle; with the fix it is caught, so nothing
+		// reaches the unhandledRejection handler.
+		await new Promise((r) => setTimeout(r, 20));
+		process.off("unhandledRejection", onUnhandled);
+		expect(seen).toEqual([]);
 	});
 });
