@@ -65,6 +65,10 @@ export const LogTab: Component<LogTabProps> = (props) => {
 	const [scrollTop, setScrollTop] = createSignal(0);
 	const [viewportHeight, setViewportHeight] = createSignal(0);
 	const [focusedIndex, setFocusedIndex] = createSignal(-1);
+	/** Measured height of the expanded section (body + files). Wrapped body
+	 *  lines defeat any line-count estimate, so we reserve the real rendered
+	 *  height instead — otherwise the next row overlaps the body. */
+	const [expandedExtraHeight, setExpandedExtraHeight] = createSignal(0);
 
 	let scrollRef!: HTMLDivElement;
 
@@ -139,9 +143,13 @@ export const LogTab: Component<LogTabProps> = (props) => {
 	async function toggleExpand(hash: string) {
 		if (expandedHash() === hash) {
 			setExpandedHash(null);
+			setExpandedExtraHeight(0);
 			return;
 		}
 		setExpandedHash(hash);
+		// Reset so the previous commit's height isn't reused before the new
+		// section is measured.
+		setExpandedExtraHeight(0);
 
 		const repoPath = props.repoPath;
 		if (!repoPath) return;
@@ -168,12 +176,33 @@ export const LogTab: Component<LogTabProps> = (props) => {
 	function estimateSize(index: number): number {
 		const commit = commits()[index];
 		if (!commit || expandedHash() !== commit.hash) return ROW_HEIGHT;
+		// Once the expanded section is measured, reserve its real height — this
+		// accounts for body text wrapping, which a line-count estimate cannot.
+		// The +6 covers the flex gap between line 2 and the section.
+		const measured = expandedExtraHeight();
+		if (measured > 0) return ROW_HEIGHT + measured + 6;
+		// First-paint fallback before the ResizeObserver fires (rough estimate).
 		const bodyLines = commit.body ? commit.body.split("\n").length : 0;
 		const bodyHeight = bodyLines > 0 ? bodyLines * BODY_LINE_HEIGHT + 8 : 0;
 		const files = changedFiles()[commit.hash];
 		if (!files) return ROW_HEIGHT + EXPANDED_OVERHEAD + bodyHeight + FILE_LINE_HEIGHT;
 		return ROW_HEIGHT + EXPANDED_OVERHEAD + bodyHeight + files.length * FILE_LINE_HEIGHT;
 	}
+
+	// Single ResizeObserver tracking the currently-expanded section's height.
+	let expandedRO: ResizeObserver | undefined;
+	function attachExpandedMeasure(el: HTMLDivElement) {
+		expandedRO?.disconnect();
+		expandedRO = new ResizeObserver((entries) => {
+			const h = Math.ceil(entries[0].contentRect.height);
+			if (h > 0 && h !== expandedExtraHeight()) {
+				setExpandedExtraHeight(h);
+				virtualizer.measure();
+			}
+		});
+		expandedRO.observe(el);
+	}
+	onCleanup(() => expandedRO?.disconnect());
 
 	// Re-fetch when repo changes or revision bumps
 	createEffect(
@@ -329,35 +358,38 @@ export const LogTab: Component<LogTabProps> = (props) => {
 												{commit()?.author_name} · {commit() ? relativeTimeWithClock(commit()!.author_date) : ""}
 											</span>
 										</div>
-										{/* Expanded: full body + changed files list */}
+										{/* Expanded: full body + changed files list (measured so the
+										    row reserves the real wrapped height). */}
 										<Show when={isExpanded()}>
-											<Show when={commit()?.body}>
-												<div class={s.commitBody}>{commit()!.body}</div>
-											</Show>
-											<div class={s.changedFiles}>
-												<Show when={!isFilesLoading()} fallback={<div class={s.filesLoading}>Loading files...</div>}>
-													<For each={files() ?? []}>
-														{(file) => (
-															<div
-																class={cx(s.changedFile, isDiffStatus(file.status) && s.changedFileClickable)}
-																onClick={(e) => {
-																	e.stopPropagation();
-																	if (props.repoPath && isDiffStatus(file.status)) {
-																		props.onOpenDiff(props.repoPath, file.path, file.status, commit()!.hash);
-																	}
-																}}
-															>
-																<span class={cx(s.fileStatus, FILE_STATUS_CLASS[file.status] ?? s.statusOther)}>
-																	{file.status}
-																</span>
-																<span class={s.filePath}>{file.path}</span>
-															</div>
-														)}
-													</For>
-													<Show when={files()?.length === 0}>
-														<div class={s.filesLoading}>No changed files</div>
-													</Show>
+											<div ref={attachExpandedMeasure}>
+												<Show when={commit()?.body}>
+													<div class={s.commitBody}>{commit()!.body}</div>
 												</Show>
+												<div class={s.changedFiles}>
+													<Show when={!isFilesLoading()} fallback={<div class={s.filesLoading}>Loading files...</div>}>
+														<For each={files() ?? []}>
+															{(file) => (
+																<div
+																	class={cx(s.changedFile, isDiffStatus(file.status) && s.changedFileClickable)}
+																	onClick={(e) => {
+																		e.stopPropagation();
+																		if (props.repoPath && isDiffStatus(file.status)) {
+																			props.onOpenDiff(props.repoPath, file.path, file.status, commit()!.hash);
+																		}
+																	}}
+																>
+																	<span class={cx(s.fileStatus, FILE_STATUS_CLASS[file.status] ?? s.statusOther)}>
+																		{file.status}
+																	</span>
+																	<span class={s.filePath}>{file.path}</span>
+																</div>
+															)}
+														</For>
+														<Show when={files()?.length === 0}>
+															<div class={s.filesLoading}>No changed files</div>
+														</Show>
+													</Show>
+												</div>
 											</div>
 										</Show>
 									</div>
