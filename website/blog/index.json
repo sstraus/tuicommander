@@ -4,7 +4,7 @@
       "slug": "near-native-performance",
       "title": "Making a WebView terminal feel native",
       "date": "2026-06-26",
-      "status": "draft",
+      "status": "published",
       "feature": "Performance & usability (v1.5) — near-native terminal latency study",
       "summary": "A cargo build shouldn't make your terminal stutter. The engineering study behind v1.5's near-native input latency: off-main-thread rendering, a binary frame protocol, and the Apple Silicon QoS discovery that closed the gap — plus the usability sharpening that shipped alongside.",
       "screenshots": []
