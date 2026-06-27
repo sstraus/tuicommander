@@ -115,11 +115,14 @@ export default defineConfig(async ({ command }) => ({
         }
       : undefined,
     watch: {
-      // 3. tell Vite to ignore watching `src-tauri` and `.claude` (worktrees
-      //    under `.claude/worktrees/` are full checkouts incl. `src/` — watching
-      //    them double-watches the tree and a worktree create/remove triggers a
-      //    spurious full reload of the dev session).
-      ignored: ["**/src-tauri/**", "**/.claude/**"],
+      // 3. tell Vite to ignore watching `src-tauri`, `.claude`, and `.mdkb`.
+      //    Vite already ignores `.git`/`node_modules` by default; these are the
+      //    agent/tooling dirs it would otherwise watch. Worktrees under
+      //    `.claude/worktrees/` are full checkouts incl. `src/` (double-watch +
+      //    spurious reload on create/remove), and `.mdkb/` is written constantly
+      //    by mdkb (memory writes, code index) — both would churn the dev server
+      //    or trigger spurious full reloads mid-session.
+      ignored: ["**/src-tauri/**", "**/.claude/**", "**/.mdkb/**"],
     },
   },
 }));
