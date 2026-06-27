@@ -222,7 +222,6 @@ github-release:
 # tests won't confuse it with the production TUICommander.
 # Uses --debug for fast iteration; full release build only on github-release.
 preview:
-	@pnpm exec vite build
 	@echo "Building TUIC-preview $(VERSION) (debug mode)..."
 	pnpm tauri build --debug --bundles app --config '{"productName":"TUIC-preview","identifier":"com.tuic.preview","bundle":{"createUpdaterArtifacts":false},"app":{"windows":[{"title":"TUIC-preview","width":1200,"height":800,"minWidth":800,"minHeight":600,"decorations":true,"transparent":false,"resizable":true,"fullscreen":false,"hiddenTitle":true,"titleBarStyle":"Overlay","trafficLightPosition":{"x":13,"y":20},"backgroundColor":"#000000","dragDropEnabled":true}]}}'
 	@echo "Launching TUIC-preview..."

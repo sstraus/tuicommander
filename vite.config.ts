@@ -20,14 +20,18 @@ const gitHash = (() => {
 })();
 
 // https://vite.dev/config/
-export default defineConfig(async () => ({
+export default defineConfig(async ({ command }) => ({
   define: {
     __APP_VERSION__: JSON.stringify(tauriConf.version),
     __BUILD_GIT_HASH__: JSON.stringify(gitHash),
   },
   plugins: [
     solid(),
-    checker({ typescript: true }),
+    // The type-check overlay is only useful in the dev server (`vite` / `tauri
+    // dev`). One-shot builds run `tsc` up front (`pnpm build` = `tsc && vite
+    // build`, and `make check` runs it too), so keeping the checker in build
+    // mode just type-checks twice — skip it. Speeds up make dev/preview/build.
+    ...(command === "serve" ? [checker({ typescript: true })] : []),
     visualizer({ filename: "dist/bundle-stats.html", gzipSize: true }),
     purgecss({
       // Do NOT pass `content` — the plugin auto-scans the bundled JS output.
