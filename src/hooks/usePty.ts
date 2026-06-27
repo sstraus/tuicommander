@@ -1,8 +1,21 @@
 import { appLogger } from "../stores/appLogger";
-import { rpc } from "../transport";
+import { isTauri, rpc } from "../transport";
 import type { OrchestratorStats, PtyConfig } from "../types";
 import { clearShellFamilyCache, getShellFamily, sendCommand as sendCommandUtil } from "../utils/sendCommand";
 import { browserCreatedSessions } from "./useAppInit";
+
+/** Pre-generate a session id for browser-mode creates and register it locally
+ *  BEFORE the create RPC. The backend's `session-created` event is delivered to
+ *  the browser over SSE, which can arrive before the RPC's HTTP response — so
+ *  registering the id up front closes that race window and the echo is dropped
+ *  by the `session-created` listener instead of spawning a duplicate "PTY:" tab.
+ *  Desktop (Tauri) has no such echo race, so the backend mints the id there. */
+function preRegisterBrowserSessionId(): string | undefined {
+	if (isTauri()) return undefined;
+	const id = crypto.randomUUID();
+	browserCreatedSessions.add(id);
+	return id;
+}
 
 /** Worktree configuration */
 interface WorktreeConfig {
@@ -51,7 +64,10 @@ export function usePty() {
 
 	/** Create a new PTY session */
 	async function createSession(config: PtyConfig): Promise<string> {
-		const sessionId = await rpc<string>("create_pty", { config });
+		const requestedId = preRegisterBrowserSessionId();
+		const sessionId = await rpc<string>("create_pty", {
+			config: requestedId ? { ...config, session_id: requestedId } : config,
+		});
 		browserCreatedSessions.add(sessionId);
 		return sessionId;
 	}
@@ -61,8 +77,9 @@ export function usePty() {
 		ptyConfig: PtyConfig,
 		worktreeConfig: WorktreeConfig,
 	): Promise<WorktreeResult> {
+		const requestedId = preRegisterBrowserSessionId();
 		const result = await rpc<WorktreeResult>("create_pty_with_worktree", {
-			pty_config: ptyConfig,
+			pty_config: requestedId ? { ...ptyConfig, session_id: requestedId } : ptyConfig,
 			worktree_config: worktreeConfig,
 		});
 		browserCreatedSessions.add(result.session_id);

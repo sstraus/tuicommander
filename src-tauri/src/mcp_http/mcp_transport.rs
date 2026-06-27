@@ -912,7 +912,15 @@ fn handle_session(
             let shell = resolve_shell(args["shell"].as_str().map(|s| s.to_string()));
             let cwd = args["cwd"].as_str().map(|s| s.to_string());
 
-            match super::session::spawn_pty_session(state.clone(), shell, cwd, rows, cols, None) {
+            match super::session::spawn_pty_session(
+                state.clone(),
+                shell,
+                cwd,
+                rows,
+                cols,
+                None,
+                None,
+            ) {
                 Ok(session_id) => serde_json::json!({"session_id": session_id}),
                 Err((_, body)) => {
                     serde_json::json!({"error": body.0.get("error").and_then(|v| v.as_str()).unwrap_or("spawn failed")})
@@ -1380,14 +1388,22 @@ async fn handle_github(state: &Arc<AppState>, args: &serde_json::Value) -> serde
 /// Reuses the same setup as `session action=create` but with fixed defaults.
 fn create_session_in_dir(state: &Arc<AppState>, cwd: &str) -> Result<String, String> {
     let shell = resolve_shell(None);
-    super::session::spawn_pty_session(state.clone(), shell, Some(cwd.to_string()), 24, 80, None)
-        .map_err(|(_, body)| {
-            body.0
-                .get("error")
-                .and_then(|v| v.as_str())
-                .unwrap_or("spawn failed")
-                .to_string()
-        })
+    super::session::spawn_pty_session(
+        state.clone(),
+        shell,
+        Some(cwd.to_string()),
+        24,
+        80,
+        None,
+        None,
+    )
+    .map_err(|(_, body)| {
+        body.0
+            .get("error")
+            .and_then(|v| v.as_str())
+            .unwrap_or("spawn failed")
+            .to_string()
+    })
 }
 
 async fn handle_worktree(

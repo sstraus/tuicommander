@@ -37,6 +37,12 @@ pub(super) struct CreateSessionRequest {
     pub cols: Option<u16>,
     pub shell: Option<String>,
     pub cwd: Option<String>,
+    /// Client-provided session id. Browser clients generate the id up front and
+    /// register it locally BEFORE this request so the `session-created` echo
+    /// (delivered over SSE, which can beat the HTTP response) is recognized as
+    /// locally-created and does not spawn a duplicate "PTY:" tab. Honored only
+    /// when non-empty and not already in use; otherwise the backend mints one.
+    pub session_id: Option<String>,
 }
 
 #[derive(Deserialize)]

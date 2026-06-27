@@ -336,8 +336,14 @@ pub(super) fn spawn_pty_session(
     rows: u16,
     cols: u16,
     worktree: Option<crate::state::WorktreeInfo>,
+    requested_id: Option<String>,
 ) -> Result<String, (StatusCode, Json<serde_json::Value>)> {
-    let session_id = Uuid::new_v4().to_string();
+    // Honor a client-provided id when it is non-empty and not already taken
+    // (browser duplicate-tab fix); otherwise mint a fresh one.
+    let session_id = match requested_id {
+        Some(id) if !id.is_empty() && !state.sessions.contains_key(&id) => id,
+        _ => Uuid::new_v4().to_string(),
+    };
     let pty_system = native_pty_system();
 
     let pair = pty_system
@@ -468,7 +474,7 @@ pub(super) async fn create_session(
     }
     let shell = resolve_shell(body.shell);
 
-    match spawn_pty_session(state, shell, body.cwd, rows, cols, None) {
+    match spawn_pty_session(state, shell, body.cwd, rows, cols, None, body.session_id) {
         Ok(session_id) => (
             StatusCode::CREATED,
             Json(serde_json::json!({"session_id": session_id})),
@@ -643,6 +649,7 @@ pub(super) async fn create_session_with_worktree(
         rows,
         cols,
         Some(worktree),
+        body.config.session_id,
     ) {
         Ok(session_id) => {
             let mut response = serde_json::json!({
@@ -1415,7 +1422,10 @@ pub(super) async fn terminal_styled_rows(
     let bytes = state
         .vt_log_buffers
         .get(&session_id)
-        .map(|vt| vt.lock().grid_serialize_styled_range(query.start, query.count))
+        .map(|vt| {
+            vt.lock()
+                .grid_serialize_styled_range(query.start, query.count)
+        })
         .unwrap_or_default();
     Json(bytes)
 }
@@ -1725,6 +1735,7 @@ mod tests {
             24,
             80,
             None,
+            None,
         );
 
         let session_id = match result {
@@ -1743,5 +1754,65 @@ mod tests {
         tx.send(vec![1, 2, 3]).unwrap();
         rx.changed().await.unwrap();
         assert_eq!(*rx.borrow_and_update(), vec![1, 2, 3]);
+    }
+
+    /// A client-provided session id is honored (browser duplicate-tab fix): the
+    /// browser pre-registers this id locally so the session-created echo is
+    /// recognized as locally-created.
+    #[tokio::test]
+    async fn spawn_pty_session_honors_requested_id() {
+        let state = super::super::tests::test_state();
+        let result = super::spawn_pty_session(
+            state.clone(),
+            std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into()),
+            None,
+            24,
+            80,
+            None,
+            Some("client-provided-id".to_string()),
+        );
+        match result {
+            Ok(id) => assert_eq!(
+                id, "client-provided-id",
+                "must honor the client-provided id"
+            ),
+            Err(_) => {} // PTY unavailable in CI — skip gracefully
+        }
+    }
+
+    /// A requested id that collides with an existing session is rejected in
+    /// favor of a fresh uuid, so a buggy/duplicate client id can never hijack
+    /// or alias another live session.
+    #[tokio::test]
+    async fn spawn_pty_session_rejects_duplicate_requested_id() {
+        let state = super::super::tests::test_state();
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "/bin/sh".into());
+        let first = match super::spawn_pty_session(
+            state.clone(),
+            shell.clone(),
+            None,
+            24,
+            80,
+            None,
+            Some("dup-id".to_string()),
+        ) {
+            Ok(id) => id,
+            Err(_) => return, // PTY unavailable in CI — skip gracefully
+        };
+        assert_eq!(first, "dup-id");
+        let second = super::spawn_pty_session(
+            state.clone(),
+            shell,
+            None,
+            24,
+            80,
+            None,
+            Some("dup-id".to_string()),
+        )
+        .expect("second spawn should succeed with a fresh id");
+        assert_ne!(
+            second, "dup-id",
+            "duplicate requested id must fall back to a fresh uuid"
+        );
     }
 }

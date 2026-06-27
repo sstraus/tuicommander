@@ -35,6 +35,10 @@ export interface PtyConfig {
 	/** Pre-set agent type for sessions launched from a run config. Enables intent
 	 *  parsing from the start even when the binary name doesn't match classify_agent. */
 	agent_type?: string | null;
+	/** Client-provided PTY session id (browser mode only). Generated and locally
+	 *  registered before the create RPC so the `session-created` SSE echo is
+	 *  recognized as locally-created and does not spawn a duplicate "PTY:" tab. */
+	session_id?: string;
 }
 
 /** PTY exit event data */

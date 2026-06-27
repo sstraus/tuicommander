@@ -159,11 +159,20 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 		}),
 	},
 	create_pty_with_worktree: {
-		map: (args) => ({
-			method: "POST",
-			path: "/sessions/worktree",
-			body: { config: args.config, base_repo: args.baseRepo, branch_name: args.branchName },
-		}),
+		// Browser path: createSessionWithWorktree sends { pty_config, worktree_config };
+		// flatten worktree_config into the HTTP route's { config, base_repo, branch_name }.
+		map: (args) => {
+			const wt = (args.worktree_config ?? {}) as { task_name?: string; base_repo?: string; branch?: string | null };
+			return {
+				method: "POST",
+				path: "/sessions/worktree",
+				body: {
+					config: args.pty_config,
+					base_repo: wt.base_repo,
+					branch_name: wt.branch ?? wt.task_name,
+				},
+			};
+		},
 	},
 	write_pty: {
 		map: (args) => ({
