@@ -22,14 +22,16 @@ import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
 import { PrStateBadge } from "./RepoSection";
 import s from "./Sidebar.module.css";
 
-/** Whether a PR is eligible for merge: open, approved, CI all green */
+/** Whether a PR is eligible for merge: open, approved, CI not failing.
+ *  Pending checks do NOT hide Merge — show it as soon as the PR is approved and
+ *  let GitHub gate the actual merge if branch protection requires green CI. A
+ *  definitive CI failure still hides Merge (don't offer merge on a red PR). */
 export function canMergePr(pr: BranchPrStatus): boolean {
 	return (
 		pr.state?.toUpperCase() === "OPEN" &&
 		!pr.is_draft &&
 		pr.review_decision === "APPROVED" &&
-		(pr.checks?.failed ?? 0) === 0 &&
-		(pr.checks?.pending ?? 0) === 0
+		(pr.checks?.failed ?? 0) === 0
 	);
 }
 

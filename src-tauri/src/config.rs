@@ -250,8 +250,10 @@ pub(crate) enum OrphanCleanup {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub(crate) enum MergeStrategy {
-    #[default]
     Merge,
+    // Squash is the global default (matches the common "squash & merge" PR flow);
+    // per-repo Option<MergeStrategy> overrides still win when set.
+    #[default]
     Squash,
     Rebase,
 }
@@ -2557,7 +2559,8 @@ mod tests {
         assert!(loaded.delete_branch_on_remove);
         assert!(!loaded.auto_archive_merged);
         assert_eq!(loaded.orphan_cleanup, OrphanCleanup::Ask);
-        assert_eq!(loaded.pr_merge_strategy, MergeStrategy::Merge);
+        // squash is the global default; old configs without the field inherit it
+        assert_eq!(loaded.pr_merge_strategy, MergeStrategy::Squash);
         assert_eq!(loaded.after_merge, WorktreeAfterMerge::Archive);
         assert_eq!(loaded.auto_delete_on_pr_close, AutoDeleteOnPrClose::Off);
     }

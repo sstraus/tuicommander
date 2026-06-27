@@ -69,14 +69,14 @@ describe("canMergePr", () => {
 		).toBe(false);
 	});
 
-	it("returns false when CI has pending checks", () => {
+	it("returns true when CI has pending checks (let GitHub gate the actual merge)", () => {
 		expect(
 			canMergePr(
 				makePr({
 					checks: { passed: 2, failed: 0, pending: 1, total: 3 },
 				}),
 			),
-		).toBe(false);
+		).toBe(true);
 	});
 
 	it("returns true when no CI checks exist (0 total)", () => {
