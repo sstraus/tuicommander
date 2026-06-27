@@ -7,6 +7,7 @@ import { settingsStore } from "../../stores/settings";
 import { terminalsStore } from "../../stores/terminals";
 import { filterMatchesToBlock } from "../../utils/blockSearchFilter";
 import { formatRelativeTime } from "../../utils/formatRelativeTime";
+import { ensureKeyboardViewportTracking, keyboardOcclusion } from "../../utils/keyboardViewport";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { markPerf, noteFrameRequest } from "../../utils/perfTrace";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
@@ -81,6 +82,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	// Smooth-scroll stage: wraps base + overlay canvases and gets a transient
 	// translateY during a scroll gesture (snaps back to 0 on a line boundary).
 	let stageRef!: HTMLDivElement;
+	// Wraps the stage; gets a translateY to slide ONLY this terminal up so the
+	// cursor stays visible above the on-screen keyboard on touch devices. Clipped
+	// by containerRef's overflow:hidden; independent of the stage's scroll transform.
+	let kbLiftRef!: HTMLDivElement;
 	// Behind the base canvas: paints only the one row above and one below the
 	// viewport, revealed as the stage slides. Never used for hit-testing.
 	let overscanCanvasRef!: HTMLCanvasElement;
@@ -104,6 +109,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 	const [metrics, setMetrics] = createSignal<CellMetrics | null>(null);
 	const [focused, setFocused] = createSignal(false);
+	const isTouchDevice = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
 	let currentFrame: DecodedFrame | null = null;
 	let lastDisplayOffset = -1;
 	let lastScreenRows = -1;
@@ -1924,7 +1930,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// each key-repeat tick has something to delete and keeps firing
 		// deleteContent* events. Desktop keeps the field empty so macOS dead-key
 		// composition (which needs an empty input) is unaffected.
-		const isTouchDevice = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
 		const INPUT_BUFFER = "   ";
 		const resetInputBuffer = () => {
 			if (isTouchDevice) {
@@ -2688,9 +2693,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			// canvas black until the first interaction. Forcing a full frame here is
 			// idempotent on desktop and fixes the black-on-load in browser mode.
 			noteFrameRequest();
-			invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(
-				ipcErr("terminal_request_frame"),
-			);
+			invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
 		} catch (e) {
 			appLogger.error("terminal", "Failed to subscribe to terminal grid channel", {
 				sessionId: props.sessionId,
@@ -2796,6 +2799,29 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			},
 		});
 	});
+
+	// On-screen keyboard handling (touch only): slide THIS terminal up by the
+	// amount the virtual keyboard occludes so the cursor stays visible, without
+	// resizing the app layout or the PTY (no reflow/SIGWINCH). The lift is a pure
+	// transform on kbLiftRef (wraps the stage) and is clipped by containerRef's
+	// overflow:hidden. Only the focused terminal lifts.
+	if (isTouchDevice) {
+		ensureKeyboardViewportTracking();
+		createEffect(() => {
+			const occ = keyboardOcclusion();
+			const isFocused = focused();
+			if (!kbLiftRef) return;
+			if (!isFocused || occ <= 0) {
+				kbLiftRef.style.transform = "";
+				return;
+			}
+			// Bring the terminal's bottom edge up to the keyboard's top edge; since
+			// the cursor sits near the bottom this reveals it just above the keyboard.
+			const keyboardTop = window.innerHeight - occ;
+			const lift = Math.max(0, Math.round(containerRef.getBoundingClientRect().bottom - keyboardTop));
+			kbLiftRef.style.transform = lift > 0 ? `translateY(${-lift}px)` : "";
+		});
+	}
 
 	createEffect(() => {
 		terminalsStore.state.terminals[props.terminalId]?.fontSize;
@@ -2953,62 +2979,74 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				autocapitalize="off"
 				spellcheck={false}
 			/>
-			{/* Smooth-scroll stage: base + overlay translate together during a gesture.
-			    At rest transform is identity → geometry/coordinates are unchanged. */}
+			{/* Keyboard-lift wrapper: slides the whole stage up on touch devices so the
+			    cursor stays above the on-screen keyboard. Identity transform at rest;
+			    clipped by containerRef's overflow:hidden. */}
 			<div
-				ref={stageRef!}
+				ref={kbLiftRef!}
 				style={{
 					position: "absolute",
-					top: "0",
-					left: "0",
+					inset: "0",
 					"will-change": "transform",
 				}}
 			>
-				{/* Overscan: the row above/below the viewport, revealed as the stage slides.
-				    Sits behind the (opaque) base canvas; never hit-tested. */}
-				<canvas
-					ref={overscanCanvasRef!}
-					style={{
-						position: "absolute",
-						left: "0",
-						"pointer-events": "none",
-					}}
-				/>
-				<canvas
-					ref={canvasRef!}
-					style={{
-						position: "relative",
-						display: "block",
-						outline: "none",
-						cursor: "text",
-					}}
-					tabIndex={0}
-				/>
-				{/* Overlay canvas: cursor, selection, search highlights — redrawn every frame without touching base canvas */}
-				<canvas
-					ref={overlayCanvasRef!}
-					style={{
-						position: "absolute",
-						top: "0",
-						left: "0",
-						"pointer-events": "none",
-					}}
-				/>
-				{/* Suggest/intent overlay — inside the stage so it scrolls with the content
-				    (rebuilt from the row cache during a smooth-scroll gesture). */}
+				{/* Smooth-scroll stage: base + overlay translate together during a gesture.
+				    At rest transform is identity → geometry/coordinates are unchanged. */}
 				<div
-					ref={overlayRef!}
+					ref={stageRef!}
 					style={{
 						position: "absolute",
 						top: "0",
 						left: "0",
-						right: "0",
-						bottom: "0",
-						"pointer-events": "none",
-						"z-index": "10",
-						overflow: "hidden",
+						"will-change": "transform",
 					}}
-				/>
+				>
+					{/* Overscan: the row above/below the viewport, revealed as the stage slides.
+				    Sits behind the (opaque) base canvas; never hit-tested. */}
+					<canvas
+						ref={overscanCanvasRef!}
+						style={{
+							position: "absolute",
+							left: "0",
+							"pointer-events": "none",
+						}}
+					/>
+					<canvas
+						ref={canvasRef!}
+						style={{
+							position: "relative",
+							display: "block",
+							outline: "none",
+							cursor: "text",
+						}}
+						tabIndex={0}
+					/>
+					{/* Overlay canvas: cursor, selection, search highlights — redrawn every frame without touching base canvas */}
+					<canvas
+						ref={overlayCanvasRef!}
+						style={{
+							position: "absolute",
+							top: "0",
+							left: "0",
+							"pointer-events": "none",
+						}}
+					/>
+					{/* Suggest/intent overlay — inside the stage so it scrolls with the content
+				    (rebuilt from the row cache during a smooth-scroll gesture). */}
+					<div
+						ref={overlayRef!}
+						style={{
+							position: "absolute",
+							top: "0",
+							left: "0",
+							right: "0",
+							bottom: "0",
+							"pointer-events": "none",
+							"z-index": "10",
+							overflow: "hidden",
+						}}
+					/>
+				</div>
 			</div>
 			{/* Scrollbar */}
 			<div
