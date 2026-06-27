@@ -563,3 +563,79 @@ pub(super) struct ClaudeTimelineQuery {
 pub(super) struct ClaudeStatsQuery {
     pub scope: String,
 }
+
+// --- Git panel (story 064) ---
+
+#[derive(Deserialize)]
+pub(super) struct GitGutterQuery {
+    pub path: String,
+    pub file: String,
+    pub scope: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct GitRecentBranchesQuery {
+    pub path: String,
+    pub limit: Option<usize>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct GitBranchBaseQuery {
+    pub path: String,
+    #[serde(rename = "branchName")]
+    pub branch_name: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct GitWorktreeDirtyQuery {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "branchName")]
+    pub branch_name: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct GitRepoQuery {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct GitCommitGraphQuery {
+    pub path: String,
+    pub count: Option<u32>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct GitCloneBranchNameRequest {
+    #[serde(rename = "sourceBranch")]
+    pub source_branch: String,
+    #[serde(rename = "existingNames")]
+    pub existing_names: Vec<String>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct GitCreateBranchRequest {
+    pub path: String,
+    pub name: String,
+    #[serde(rename = "startPoint")]
+    pub start_point: Option<String>,
+    pub checkout: bool,
+}
+
+#[derive(Deserialize)]
+pub(super) struct GitDeleteBranchRequest {
+    pub path: String,
+    pub name: String,
+    pub force: bool,
+}
+
+#[derive(Deserialize)]
+pub(super) struct GitDeleteLocalBranchRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "branchName")]
+    pub branch_name: String,
+    #[serde(rename = "keepWorktree")]
+    pub keep_worktree: Option<bool>,
+}

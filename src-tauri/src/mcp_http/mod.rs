@@ -962,6 +962,39 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/repo/stash/show", get(git_routes::stash_show_http))
         .route("/repo/file-history", get(git_routes::file_history_http))
         .route("/repo/file-blame", get(git_routes::file_blame_http))
+        // Git panel (story 064)
+        .route(
+            "/repo/gutter-changes",
+            get(git_routes::get_gutter_changes_http),
+        )
+        .route(
+            "/repo/branches-detail",
+            get(git_routes::get_branches_detail_http),
+        )
+        .route(
+            "/repo/recent-branches",
+            get(git_routes::get_recent_branches_http),
+        )
+        .route("/repo/branch-base", get(git_routes::get_branch_base_http))
+        .route(
+            "/repo/worktree-dirty",
+            get(git_routes::check_worktree_dirty_http),
+        )
+        .route(
+            "/repo/base-ref-options",
+            get(git_routes::list_base_ref_options_http),
+        )
+        .route(
+            "/repo/clone-branch-name",
+            post(git_routes::generate_clone_branch_name_http),
+        )
+        .route("/repo/commit-graph", get(git_routes::get_commit_graph_http))
+        .route("/repo/create-branch", post(git_routes::create_branch_http))
+        .route("/repo/delete-branch", post(git_routes::delete_branch_http))
+        .route(
+            "/repo/delete-local-branch",
+            post(git_routes::delete_local_branch_http),
+        )
         // System
         .route("/system/local-ips", get(git_routes::get_local_ips_http))
         .route("/system/local-ip", get(git_routes::get_local_ip_http))
@@ -1362,6 +1395,39 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
         .route("/repo/stash/show", get(git_routes::stash_show_http))
         .route("/repo/file-history", get(git_routes::file_history_http))
         .route("/repo/file-blame", get(git_routes::file_blame_http))
+        // Git panel (story 064)
+        .route(
+            "/repo/gutter-changes",
+            get(git_routes::get_gutter_changes_http),
+        )
+        .route(
+            "/repo/branches-detail",
+            get(git_routes::get_branches_detail_http),
+        )
+        .route(
+            "/repo/recent-branches",
+            get(git_routes::get_recent_branches_http),
+        )
+        .route("/repo/branch-base", get(git_routes::get_branch_base_http))
+        .route(
+            "/repo/worktree-dirty",
+            get(git_routes::check_worktree_dirty_http),
+        )
+        .route(
+            "/repo/base-ref-options",
+            get(git_routes::list_base_ref_options_http),
+        )
+        .route(
+            "/repo/clone-branch-name",
+            post(git_routes::generate_clone_branch_name_http),
+        )
+        .route("/repo/commit-graph", get(git_routes::get_commit_graph_http))
+        .route("/repo/create-branch", post(git_routes::create_branch_http))
+        .route("/repo/delete-branch", post(git_routes::delete_branch_http))
+        .route(
+            "/repo/delete-local-branch",
+            post(git_routes::delete_local_branch_http),
+        )
         // System info
         .route("/system/local-ips", get(git_routes::get_local_ips_http))
         .route("/system/local-ip", get(git_routes::get_local_ip_http))

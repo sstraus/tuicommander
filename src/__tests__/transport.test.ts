@@ -491,6 +491,93 @@ describe("transport", () => {
 			expect(result.method).toBe("GET");
 			expect(result.path).toBe("/claude/session-stats?scope=current");
 		});
+
+		// --- Git panel (story 064) ---
+		it("maps get_gutter_changes to GET with optional scope", () => {
+			const a = mapCommandToHttp("get_gutter_changes", { path: "/r", file: "a.ts", scope: "head" });
+			expect(a.method).toBe("GET");
+			expect(a.path).toBe("/repo/gutter-changes?path=%2Fr&file=a.ts&scope=head");
+			const b = mapCommandToHttp("get_gutter_changes", { path: "/r", file: "a.ts" });
+			expect(b.path).toBe("/repo/gutter-changes?path=%2Fr&file=a.ts");
+		});
+
+		it("maps get_branches_detail to GET /repo/branches-detail", () => {
+			const result = mapCommandToHttp("get_branches_detail", { path: "/r" });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/repo/branches-detail?path=%2Fr");
+		});
+
+		it("maps get_recent_branches with optional limit", () => {
+			expect(mapCommandToHttp("get_recent_branches", { path: "/r", limit: 5 }).path).toBe(
+				"/repo/recent-branches?path=%2Fr&limit=5",
+			);
+			expect(mapCommandToHttp("get_recent_branches", { path: "/r" }).path).toBe("/repo/recent-branches?path=%2Fr");
+		});
+
+		it("maps get_branch_base to GET with null-passthrough transform", () => {
+			const result = mapCommandToHttp("get_branch_base", { path: "/r", branchName: "feat" });
+			expect(result.path).toBe("/repo/branch-base?path=%2Fr&branchName=feat");
+			expect(result.transform?.("main")).toBe("main");
+			expect(result.transform?.(null)).toBeNull();
+		});
+
+		it("maps check_worktree_dirty to GET", () => {
+			const result = mapCommandToHttp("check_worktree_dirty", { repoPath: "/r", branchName: "feat" });
+			expect(result.path).toBe("/repo/worktree-dirty?repoPath=%2Fr&branchName=feat");
+		});
+
+		it("maps list_base_ref_options to GET", () => {
+			expect(mapCommandToHttp("list_base_ref_options", { repoPath: "/r" }).path).toBe(
+				"/repo/base-ref-options?repoPath=%2Fr",
+			);
+		});
+
+		it("maps generate_clone_branch_name_cmd to POST", () => {
+			const result = mapCommandToHttp("generate_clone_branch_name_cmd", {
+				sourceBranch: "main",
+				existingNames: ["a", "b"],
+			});
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/repo/clone-branch-name");
+			expect(result.body).toEqual({ sourceBranch: "main", existingNames: ["a", "b"] });
+		});
+
+		it("maps get_commit_graph with optional count", () => {
+			expect(mapCommandToHttp("get_commit_graph", { path: "/r", count: 200 }).path).toBe(
+				"/repo/commit-graph?path=%2Fr&count=200",
+			);
+			expect(mapCommandToHttp("get_commit_graph", { path: "/r" }).path).toBe("/repo/commit-graph?path=%2Fr");
+		});
+
+		it("maps create_branch to POST", () => {
+			const result = mapCommandToHttp("create_branch", {
+				path: "/r",
+				name: "feat",
+				startPoint: "main",
+				checkout: true,
+			});
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/repo/create-branch");
+			expect(result.body).toEqual({ path: "/r", name: "feat", startPoint: "main", checkout: true });
+		});
+
+		it("maps delete_branch to POST", () => {
+			const result = mapCommandToHttp("delete_branch", { path: "/r", name: "feat", force: false });
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/repo/delete-branch");
+			expect(result.body).toEqual({ path: "/r", name: "feat", force: false });
+		});
+
+		it("maps delete_local_branch to POST", () => {
+			const result = mapCommandToHttp("delete_local_branch", {
+				repoPath: "/r",
+				branchName: "feat",
+				keepWorktree: true,
+			});
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/repo/delete-local-branch");
+			expect(result.body).toEqual({ repoPath: "/r", branchName: "feat", keepWorktree: true });
+		});
 	});
 
 	describe("rpc()", () => {

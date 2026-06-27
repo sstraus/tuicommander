@@ -600,6 +600,28 @@ GET /repo/file-blame?path=/path/to/repo&file=src/main.rs
 
 Returns line-by-line blame annotations.
 
+### Git Panel (Branches / Graph / Gutter)
+
+```
+GET  /repo/gutter-changes?path=&file=&scope=      -> GutterChange[]
+GET  /repo/branches-detail?path=                  -> BranchDetail[] (cached)
+GET  /repo/recent-branches?path=&limit=           -> string[]
+GET  /repo/branch-base?path=&branchName=          -> string | null
+GET  /repo/worktree-dirty?repoPath=&branchName=   -> bool
+GET  /repo/base-ref-options?repoPath=             -> BaseRefOption[]
+GET  /repo/commit-graph?path=&count=              -> GraphNode[]
+POST /repo/clone-branch-name   { sourceBranch, existingNames }   -> string
+POST /repo/create-branch       { path, name, startPoint?, checkout }       -> { ok: true }
+POST /repo/delete-branch       { path, name, force }                        -> DeleteBranchResult
+POST /repo/delete-local-branch { repoPath, branchName, keepWorktree? }      -> { ok: true }
+```
+
+Powers the Git panel's Branches tab, commit graph, and editor gutter in
+browser/PWA/remote. Mutations call the shared `*_impl` + `invalidate_repo_caches`.
+`update_from_base`, `switch_branch`, `merge_and_archive_worktree` (git write-paths
+needing State extraction) and `run_diff_triage` (event-emitting) are not yet mapped —
+see `todo.md`.
+
 ## Stash Endpoints
 
 ### List Stashes

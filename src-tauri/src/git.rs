@@ -1805,6 +1805,14 @@ pub(crate) async fn get_branches_detail(
     state: State<'_, Arc<AppState>>,
     path: String,
 ) -> Result<Vec<BranchDetail>, String> {
+    branches_detail_cached(&state, path).await
+}
+
+/// HTTP/remote-safe cached read shared with the Tauri command above (no Tauri `State`).
+pub(crate) async fn branches_detail_cached(
+    state: &Arc<AppState>,
+    path: String,
+) -> Result<Vec<BranchDetail>, String> {
     let p = path.clone();
     cached_try(state.git_cache.branches_detail.clone(), path, move || {
         git_reads().branches_detail(Path::new(&p))

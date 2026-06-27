@@ -527,6 +527,77 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	get_repo_info: {
 		map: (_args, p) => ({ method: "GET", path: `/repo/info?path=${p("path")}` }),
 	},
+
+	// --- Git panel (story 064) ---
+	get_gutter_changes: {
+		map: (args, p) => {
+			let path = `/repo/gutter-changes?path=${p("path")}&file=${p("file")}`;
+			if (args.scope != null) path += `&scope=${encodeURIComponent(String(args.scope))}`;
+			return { method: "GET", path };
+		},
+	},
+	get_branches_detail: {
+		map: (_args, p) => ({ method: "GET", path: `/repo/branches-detail?path=${p("path")}` }),
+	},
+	get_recent_branches: {
+		map: (args, p) => {
+			let path = `/repo/recent-branches?path=${p("path")}`;
+			if (args.limit != null) path += `&limit=${encodeURIComponent(String(args.limit))}`;
+			return { method: "GET", path };
+		},
+	},
+	get_branch_base: {
+		map: (_args, p) => ({
+			method: "GET",
+			path: `/repo/branch-base?path=${p("path")}&branchName=${p("branchName")}`,
+			// Option<String> -> null on miss; pass null through the empty-body guard.
+			transform: (data) => data ?? null,
+		}),
+	},
+	check_worktree_dirty: {
+		map: (_args, p) => ({
+			method: "GET",
+			path: `/repo/worktree-dirty?repoPath=${p("repoPath")}&branchName=${p("branchName")}`,
+		}),
+	},
+	list_base_ref_options: {
+		map: (_args, p) => ({ method: "GET", path: `/repo/base-ref-options?repoPath=${p("repoPath")}` }),
+	},
+	generate_clone_branch_name_cmd: {
+		map: (args) => ({
+			method: "POST",
+			path: "/repo/clone-branch-name",
+			body: { sourceBranch: args.sourceBranch, existingNames: args.existingNames },
+		}),
+	},
+	get_commit_graph: {
+		map: (args, p) => {
+			let path = `/repo/commit-graph?path=${p("path")}`;
+			if (args.count != null) path += `&count=${encodeURIComponent(String(args.count))}`;
+			return { method: "GET", path };
+		},
+	},
+	create_branch: {
+		map: (args) => ({
+			method: "POST",
+			path: "/repo/create-branch",
+			body: { path: args.path, name: args.name, startPoint: args.startPoint, checkout: args.checkout },
+		}),
+	},
+	delete_branch: {
+		map: (args) => ({
+			method: "POST",
+			path: "/repo/delete-branch",
+			body: { path: args.path, name: args.name, force: args.force },
+		}),
+	},
+	delete_local_branch: {
+		map: (args) => ({
+			method: "POST",
+			path: "/repo/delete-local-branch",
+			body: { repoPath: args.repoPath, branchName: args.branchName, keepWorktree: args.keepWorktree },
+		}),
+	},
 	get_git_diff: {
 		map: (_args, p) => ({
 			method: "GET",
