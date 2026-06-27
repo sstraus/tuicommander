@@ -65,7 +65,7 @@ const PR_BADGE_CLASSES: Record<string, string> = {
  *  1. question  → --attention (pulsing)
  *  2. busy      → --activity  (pulsing)
  *  3. unseen    → --unseen    (static purple)
- *  4. idle      → --fg-muted  (no terminals in repo)
+ *  4. idle      → --fg-muted  (no open terminal on this branch)
  *  5. base      → --warning (main) or --success (worktree)
  */
 export const BranchIcon: Component<{
@@ -76,7 +76,7 @@ export const BranchIcon: Component<{
 	hasQuestion?: boolean;
 	hasBusy?: boolean;
 	hasUnseen?: boolean;
-	repoHasTerminals?: boolean;
+	branchHasTerminals?: boolean;
 }> = (props) => {
 	const iconShape = () => {
 		if (props.hasError) return "error";
@@ -88,16 +88,16 @@ export const BranchIcon: Component<{
 	};
 
 	/** Single source of truth for icon color — priority cascade.
-	 *  Error > question > busy > unseen > base.
-	 *  Busy overrides the base color; idle does NOT — the base color
-	 *  (yellow for main, green for worktree) is already correct when
-	 *  nothing special is happening. */
+	 *  Error > question > busy > unseen > idle > base.
+	 *  A branch with no open terminal is idle (grey), even when other branches
+	 *  in the same repo have tabs open — the base color (yellow for main, green
+	 *  for worktree) means "has an open tab here, nothing special happening". */
 	const colorClass = () => {
 		if (props.hasError) return "error";
 		if (props.hasQuestion) return "question";
 		if (props.hasBusy) return "activity";
 		if (props.hasUnseen) return "unseen";
-		if (props.repoHasTerminals === false) return "idle";
+		if (props.branchHasTerminals === false) return "idle";
 		if (props.isMainBranch) return "main";
 		return "worktree";
 	};
@@ -266,7 +266,6 @@ export const BranchItem: Component<{
 	switchBranchList?: () => string[];
 	currentBranch?: () => string;
 	githubBaseUrl?: string | null;
-	repoHasTerminals: boolean;
 	onSetLabel?: (currentLabel: string | undefined) => void;
 }> = (props) => {
 	const ctxMenu = createContextMenu();
@@ -460,7 +459,7 @@ export const BranchItem: Component<{
 						hasQuestion={false}
 						hasBusy={true}
 						hasUnseen={false}
-						repoHasTerminals={false}
+						branchHasTerminals={true}
 					/>
 					<div class={s.branchContent}>
 						<span class={s.branchName} style={{ opacity: "0.5" }}>
@@ -485,7 +484,7 @@ export const BranchItem: Component<{
 					hasQuestion={hasQuestion()}
 					hasBusy={hasBusy()}
 					hasUnseen={hasUnseen()}
-					repoHasTerminals={props.repoHasTerminals}
+					branchHasTerminals={props.branch.terminals.length > 0}
 				/>
 				<div class={s.branchContent}>
 					<span class={s.branchName} onDblClick={handleDoubleClick} title={branchLabel() ?? props.branch.name}>
@@ -651,7 +650,6 @@ export const RepoSection: Component<{
 	}
 
 	const branches = createMemo(() => Object.values(props.repo.branches));
-	const repoHasTerminals = createMemo(() => branches().some((b) => b.terminals.length > 0));
 	// Pre-compute PR statuses once per poll cycle; avoids calling getPrStatus inside sort comparator
 	const prStatuses = createMemo(() => {
 		const map = new Map<string, ReturnType<typeof githubStore.getPrStatus>>();
@@ -877,7 +875,6 @@ export const RepoSection: Component<{
 									switchBranchList={branch.worktreePath === props.repo.path ? props.switchBranchList : undefined}
 									currentBranch={branch.worktreePath === props.repo.path ? props.currentBranch : undefined}
 									githubBaseUrl={githubBaseUrl()}
-									repoHasTerminals={repoHasTerminals()}
 								/>
 								<Show when={branch.tabsExpanded && getBranchTabsAvailable(branch)}>
 									<BranchTabList terminalIds={branch.terminals} />
