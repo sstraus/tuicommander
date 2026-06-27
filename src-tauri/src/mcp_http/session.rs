@@ -1298,6 +1298,26 @@ pub(super) async fn terminal_scroll_to(
     (StatusCode::OK, Json(serde_json::json!({"ok": true})))
 }
 
+/// Coalesced scroll to an absolute display offset. Mirrors the desktop
+/// `terminal_scroll_to_offset` Tauri command: records the target and marks the
+/// grid dirty so the frame ticker applies it under its own lock — taking NO vt
+/// lock here, so scrolling never contends with the PTY output processor. The
+/// ticker emits the resulting frame over the same bus SSE/WS feeds in browser
+/// mode. This is the wheel + scrollbar-drag scroll path.
+pub(super) async fn terminal_scroll_to_offset(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+    Json(body): Json<super::types::TerminalScrollToOffsetRequest>,
+) -> impl IntoResponse {
+    if let Some(p) = state.pending_scroll.get(&session_id) {
+        p.store(body.offset as i64, std::sync::atomic::Ordering::Relaxed);
+    }
+    if let Some(d) = state.grid_frame_dirty.get(&session_id) {
+        d.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+    (StatusCode::OK, Json(serde_json::json!({"ok": true})))
+}
+
 pub(super) async fn terminal_scroll_info(
     State(state): State<Arc<AppState>>,
     Path(session_id): Path<String>,

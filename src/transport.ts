@@ -227,6 +227,13 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			body: { line: args.line },
 		}),
 	},
+	terminal_scroll_to_offset: {
+		map: (args) => ({
+			method: "POST",
+			path: `/sessions/${args.sessionId}/terminal/scroll-to-offset`,
+			body: { offset: args.offset },
+		}),
+	},
 	terminal_scroll_info: {
 		map: (args) => ({
 			method: "GET",

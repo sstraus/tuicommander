@@ -547,6 +547,10 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             post(session::terminal_scroll_to),
         )
         .route(
+            "/sessions/{id}/terminal/scroll-to-offset",
+            post(session::terminal_scroll_to_offset),
+        )
+        .route(
             "/sessions/{id}/terminal/scroll-info",
             get(session::terminal_scroll_info),
         )
@@ -1033,6 +1037,10 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
         .route(
             "/sessions/{id}/terminal/scroll-to",
             post(session::terminal_scroll_to),
+        )
+        .route(
+            "/sessions/{id}/terminal/scroll-to-offset",
+            post(session::terminal_scroll_to_offset),
         )
         .route(
             "/sessions/{id}/terminal/scroll-info",

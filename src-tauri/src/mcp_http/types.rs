@@ -462,6 +462,11 @@ pub(super) struct TerminalScrollToRequest {
 }
 
 #[derive(Deserialize)]
+pub(super) struct TerminalScrollToOffsetRequest {
+    pub offset: usize,
+}
+
+#[derive(Deserialize)]
 pub(super) struct TerminalSearchRequest {
     pub query: String,
 }
