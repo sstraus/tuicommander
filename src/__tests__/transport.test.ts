@@ -380,6 +380,87 @@ describe("transport", () => {
 				allowRecursive: true,
 			});
 		});
+
+		// --- PTY/terminal read commands (story 062) ---
+		it("maps get_shell_state to GET with {state} unwrap transform", () => {
+			const result = mapCommandToHttp("get_shell_state", { sessionId: "s1" });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/sessions/s1/shell-state");
+			expect(result.transform?.({ state: "busy" })).toBe("busy");
+			expect(result.transform?.({ state: null })).toBeNull();
+		});
+
+		it("maps get_last_prompt to GET with {prompt} unwrap transform", () => {
+			const result = mapCommandToHttp("get_last_prompt", { sessionId: "s1" });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/sessions/s1/last-prompt");
+			expect(result.transform?.({ prompt: "do the thing" })).toBe("do the thing");
+			expect(result.transform?.({ prompt: null })).toBeNull();
+		});
+
+		it("maps get_input_buffer_content to GET with {content} unwrap transform", () => {
+			const result = mapCommandToHttp("get_input_buffer_content", { sessionId: "s1" });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/sessions/s1/input-buffer");
+			expect(result.transform?.({ content: "ls -la" })).toBe("ls -la");
+		});
+
+		it("maps get_session_leaf_pid to GET with {pid} unwrap transform", () => {
+			const result = mapCommandToHttp("get_session_leaf_pid", { sessionId: "s1" });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/sessions/s1/leaf-pid");
+			expect(result.transform?.({ pid: 4321 })).toBe(4321);
+			expect(result.transform?.({ pid: null })).toBeNull();
+		});
+
+		it("maps has_foreground_process to GET with {process} unwrap transform", () => {
+			const result = mapCommandToHttp("has_foreground_process", { sessionId: "s1" });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/sessions/s1/has-foreground");
+			expect(result.transform?.({ process: "htop" })).toBe("htop");
+			expect(result.transform?.({ process: null })).toBeNull();
+		});
+
+		it("maps set_session_visible to POST /sessions/{id}/visible", () => {
+			const result = mapCommandToHttp("set_session_visible", { sessionId: "s1", visible: false });
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/sessions/s1/visible");
+			expect(result.body).toEqual({ visible: false });
+		});
+
+		it("maps get_process_stats to GET /process/stats", () => {
+			const result = mapCommandToHttp("get_process_stats", {});
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/process/stats");
+		});
+
+		it("maps terminal_get_selection_text to GET with {text} unwrap transform", () => {
+			const result = mapCommandToHttp("terminal_get_selection_text", {
+				sessionId: "s1",
+				startRow: 1,
+				startCol: 2,
+				endRow: 3,
+				endCol: 4,
+			});
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/sessions/s1/terminal/selection-text?startRow=1&startCol=2&endRow=3&endCol=4");
+			expect(result.transform?.({ text: "hello" })).toBe("hello");
+		});
+
+		it("maps terminal_get_logical_line to GET (tuple array, no transform)", () => {
+			const result = mapCommandToHttp("terminal_get_logical_line", { sessionId: "s1", row: 7 });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/sessions/s1/terminal/logical-line?row=7");
+			expect(result.transform).toBeUndefined();
+		});
+
+		it("maps terminal_hyperlink_span to GET with null-passthrough transform", () => {
+			const result = mapCommandToHttp("terminal_hyperlink_span", { sessionId: "s1", row: 2, col: 5 });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/sessions/s1/terminal/hyperlink-span?row=2&col=5");
+			expect(result.transform?.([2, 9, "https://x.dev"])).toEqual([2, 9, "https://x.dev"]);
+			expect(result.transform?.(null)).toBeNull();
+		});
 	});
 
 	describe("rpc()", () => {

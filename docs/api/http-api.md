@@ -118,6 +118,27 @@ GET /sessions/:id/foreground
 
 Returns the foreground process info for a session.
 
+### PTY / Terminal Read State
+
+```
+GET  /sessions/:id/shell-state                         -> { "state": "busy"|"idle"|null }
+GET  /sessions/:id/last-prompt                         -> { "prompt": string|null }
+GET  /sessions/:id/input-buffer                        -> { "content": string }
+GET  /sessions/:id/leaf-pid                            -> { "pid": number|null }
+GET  /sessions/:id/has-foreground                      -> { "process": string|null }
+POST /sessions/:id/visible              { "visible": bool }   -> { "ok": true }
+GET  /sessions/:id/terminal/selection-text?startRow=&startCol=&endRow=&endCol=  -> { "text": string }
+GET  /sessions/:id/terminal/logical-line?row=N         -> [logicalStartRow, text]
+GET  /sessions/:id/terminal/hyperlink-span?row=R&col=C -> [startCol, endCol, url] | null
+GET  /process/stats                                    -> ProcessStats[]
+```
+
+Read-only PTY/terminal state mirroring the desktop Tauri commands (story 062). The
+`{field}`-wrapped responses are unwrapped by the frontend transport to match the
+command's bare return (e.g. `Option<String>` → `null`). The desktop-only commands
+themselves are absent from the remote binary, so these handlers read `AppState`
+directly.
+
 ### Pause/Resume
 
 ```

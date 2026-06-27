@@ -227,6 +227,48 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			path: `/sessions/${args.sessionId}/shell-family`,
 		}),
 	},
+	get_shell_state: {
+		map: (args) => ({
+			method: "GET",
+			path: `/sessions/${args.sessionId}/shell-state`,
+			transform: (data) => (data as { state: string | null }).state ?? null,
+		}),
+	},
+	get_last_prompt: {
+		map: (args) => ({
+			method: "GET",
+			path: `/sessions/${args.sessionId}/last-prompt`,
+			transform: (data) => (data as { prompt: string | null }).prompt ?? null,
+		}),
+	},
+	get_input_buffer_content: {
+		map: (args) => ({
+			method: "GET",
+			path: `/sessions/${args.sessionId}/input-buffer`,
+			transform: (data) => (data as { content: string }).content,
+		}),
+	},
+	get_session_leaf_pid: {
+		map: (args) => ({
+			method: "GET",
+			path: `/sessions/${args.sessionId}/leaf-pid`,
+			transform: (data) => (data as { pid: number | null }).pid ?? null,
+		}),
+	},
+	has_foreground_process: {
+		map: (args) => ({
+			method: "GET",
+			path: `/sessions/${args.sessionId}/has-foreground`,
+			transform: (data) => (data as { process: string | null }).process ?? null,
+		}),
+	},
+	set_session_visible: {
+		map: (args) => ({
+			method: "POST",
+			path: `/sessions/${args.sessionId}/visible`,
+			body: { visible: args.visible },
+		}),
+	},
 
 	// --- Terminal grid commands ---
 	terminal_scroll: {
@@ -306,6 +348,27 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			transform: (data) => (data as { url: string | null }).url,
 		}),
 	},
+	terminal_hyperlink_span: {
+		map: (args) => ({
+			method: "GET",
+			path: `/sessions/${args.sessionId}/terminal/hyperlink-span?row=${args.row}&col=${args.col}`,
+			// Option<(start,end,url)> -> [start,end,url] | null; pass null through the empty-body guard.
+			transform: (data) => data ?? null,
+		}),
+	},
+	terminal_get_selection_text: {
+		map: (args) => ({
+			method: "GET",
+			path: `/sessions/${args.sessionId}/terminal/selection-text?startRow=${args.startRow}&startCol=${args.startCol}&endRow=${args.endRow}&endCol=${args.endCol}`,
+			transform: (data) => (data as { text: string }).text,
+		}),
+	},
+	terminal_get_logical_line: {
+		map: (args) => ({
+			method: "GET",
+			path: `/sessions/${args.sessionId}/terminal/logical-line?row=${args.row}`,
+		}),
+	},
 	terminal_request_frame: {
 		map: (args) => ({
 			method: "POST",
@@ -316,6 +379,7 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	// --- Orchestrator ---
 	get_orchestrator_stats: { map: () => ({ method: "GET", path: "/stats" }) },
 	get_session_metrics: { map: () => ({ method: "GET", path: "/metrics" }) },
+	get_process_stats: { map: () => ({ method: "GET", path: "/process/stats" }) },
 	list_active_sessions: { map: () => ({ method: "GET", path: "/sessions" }) },
 	can_spawn_session: {
 		map: () => ({

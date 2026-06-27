@@ -534,6 +534,21 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             "/sessions/{id}/foreground",
             get(session::get_foreground_process),
         )
+        .route("/sessions/{id}/shell-state", get(session::get_shell_state))
+        .route("/sessions/{id}/last-prompt", get(session::get_last_prompt))
+        .route(
+            "/sessions/{id}/input-buffer",
+            get(session::get_input_buffer_content),
+        )
+        .route(
+            "/sessions/{id}/leaf-pid",
+            get(session::get_session_leaf_pid),
+        )
+        .route(
+            "/sessions/{id}/has-foreground",
+            get(session::has_foreground_process),
+        )
+        .route("/sessions/{id}/visible", post(session::set_session_visible))
         .route("/sessions/{id}", delete(session::close_session))
         // WebSocket streaming
         .route("/sessions/{id}/stream", get(session::ws_stream))
@@ -581,6 +596,18 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route(
             "/sessions/{id}/terminal/hyperlink",
             get(session::terminal_hyperlink_at),
+        )
+        .route(
+            "/sessions/{id}/terminal/hyperlink-span",
+            get(session::terminal_hyperlink_span),
+        )
+        .route(
+            "/sessions/{id}/terminal/selection-text",
+            get(session::terminal_get_selection_text),
+        )
+        .route(
+            "/sessions/{id}/terminal/logical-line",
+            get(session::terminal_get_logical_line),
         )
         .route(
             "/sessions/{id}/terminal/request-frame",
@@ -1043,6 +1070,21 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
             "/sessions/{id}/foreground",
             get(session::get_foreground_process),
         )
+        .route("/sessions/{id}/shell-state", get(session::get_shell_state))
+        .route("/sessions/{id}/last-prompt", get(session::get_last_prompt))
+        .route(
+            "/sessions/{id}/input-buffer",
+            get(session::get_input_buffer_content),
+        )
+        .route(
+            "/sessions/{id}/leaf-pid",
+            get(session::get_session_leaf_pid),
+        )
+        .route(
+            "/sessions/{id}/has-foreground",
+            get(session::has_foreground_process),
+        )
+        .route("/sessions/{id}/visible", post(session::set_session_visible))
         .route("/sessions/{id}", delete(session::close_session))
         // WebSocket streaming
         .route("/sessions/{id}/stream", get(session::ws_stream))
@@ -1090,6 +1132,18 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
         .route(
             "/sessions/{id}/terminal/hyperlink",
             get(session::terminal_hyperlink_at),
+        )
+        .route(
+            "/sessions/{id}/terminal/hyperlink-span",
+            get(session::terminal_hyperlink_span),
+        )
+        .route(
+            "/sessions/{id}/terminal/selection-text",
+            get(session::terminal_get_selection_text),
+        )
+        .route(
+            "/sessions/{id}/terminal/logical-line",
+            get(session::terminal_get_logical_line),
         )
         .route(
             "/sessions/{id}/terminal/request-frame",

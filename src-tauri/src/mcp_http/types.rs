@@ -535,3 +535,20 @@ pub(super) struct TerminalCellQuery {
     pub row: usize,
     pub col: usize,
 }
+
+#[derive(Deserialize)]
+pub(super) struct TerminalSelectionQuery {
+    #[serde(rename = "startRow")]
+    pub start_row: usize,
+    #[serde(rename = "startCol")]
+    pub start_col: usize,
+    #[serde(rename = "endRow")]
+    pub end_row: usize,
+    #[serde(rename = "endCol")]
+    pub end_col: usize,
+}
+
+#[derive(Deserialize)]
+pub(super) struct SessionVisibleRequest {
+    pub visible: bool,
+}

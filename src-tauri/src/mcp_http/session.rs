@@ -549,6 +549,130 @@ pub(super) async fn get_foreground_process(
     }
 }
 
+// --- PTY/terminal read-state queries (browser/remote parity, story 062). ---
+// These mirror the desktop-only `#[tauri::command]`s in pty.rs by reading the
+// same AppState directly — the commands themselves are cfg'd out of the remote
+// build, so the access logic is replicated here (as get_foreground_process does).
+
+/// Shell state atom ("busy"/"idle") for a session, or null if never produced output.
+pub(super) async fn get_shell_state(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> impl IntoResponse {
+    let value = state
+        .shell_states
+        .get(&session_id)
+        .map(|atom| crate::pty::shell_state_str(atom.load(Ordering::Relaxed)).to_string());
+    Json(serde_json::json!({ "state": value }))
+}
+
+/// Last relevant user prompt (>= 10 words) for a session, or null.
+pub(super) async fn get_last_prompt(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> impl IntoResponse {
+    let value = state.last_prompts.get(&session_id).map(|v| v.clone());
+    Json(serde_json::json!({ "prompt": value }))
+}
+
+/// Current input-line buffer content for a session (empty string if not typing).
+pub(super) async fn get_input_buffer_content(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> impl IntoResponse {
+    let content = state
+        .input_buffers
+        .get(&session_id)
+        .map(|entry| entry.lock().content())
+        .unwrap_or_default();
+    Json(serde_json::json!({ "content": content }))
+}
+
+/// PID of the deepest foreground process (PGID on Unix), or null.
+pub(super) async fn get_session_leaf_pid(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> impl IntoResponse {
+    let pid = (|| -> Option<u32> {
+        let entry = state.sessions.get(&session_id)?;
+        let session = entry.value().lock();
+        #[cfg(not(windows))]
+        {
+            let pgid = session.master.process_group_leader()?;
+            Some(pgid as u32)
+        }
+        #[cfg(windows)]
+        {
+            let child_pid = session._child.process_id()?;
+            crate::pty::deepest_descendant_pid(child_pid)
+        }
+    })();
+    Json(serde_json::json!({ "pid": pid }))
+}
+
+/// Non-shell foreground process name (e.g. "htop", "node"), or null if the
+/// foreground is the shell itself. Used to warn before closing a tab.
+pub(super) async fn has_foreground_process(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+) -> impl IntoResponse {
+    const SHELLS: &[&str] = &[
+        "zsh",
+        "bash",
+        "fish",
+        "sh",
+        "dash",
+        "ksh",
+        "csh",
+        "tcsh",
+        "nushell",
+        "nu",
+        "powershell",
+        "pwsh",
+        "cmd",
+    ];
+    let process = (|| -> Option<String> {
+        let entry = state.sessions.get(&session_id)?;
+        #[cfg(not(windows))]
+        let pid = {
+            let session = entry.value().lock();
+            let pgid = session.master.process_group_leader()?;
+            u32::try_from(pgid).ok()?
+        };
+        #[cfg(windows)]
+        let pid = {
+            let session = entry.value().lock();
+            let child_pid = session._child.process_id()?;
+            crate::pty::deepest_descendant_pid(child_pid)?
+        };
+        let name = crate::pty::process_name_from_pid(pid)?;
+        if SHELLS.contains(&name.as_str()) {
+            None
+        } else {
+            Some(name)
+        }
+    })();
+    Json(serde_json::json!({ "process": process }))
+}
+
+/// Set a session's tab-visibility flag (focus/blur tracking; wakes on Unix).
+pub(super) async fn set_session_visible(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+    Json(body): Json<SessionVisibleRequest>,
+) -> impl IntoResponse {
+    state
+        .session_visibility
+        .insert(session_id.clone(), body.visible);
+    #[cfg(unix)]
+    if body.visible
+        && let Err(e) = crate::pty::wake_session(&state, &session_id)
+    {
+        tracing::warn!(session_id, error = %e, "Wake on focus failed");
+    }
+    (StatusCode::OK, Json(serde_json::json!({ "ok": true })))
+}
+
 pub(super) async fn get_stats(State(state): State<Arc<AppState>>) -> impl IntoResponse {
     Json(state.orchestrator_stats())
 }
@@ -1391,6 +1515,47 @@ pub(super) async fn terminal_get_row_text(
     };
     let text = vt.lock().grid_get_row_text(query.row);
     Json(serde_json::json!({"text": text})).into_response()
+}
+
+/// Extract the text of a selection span (start/end row/col) from the grid.
+pub(super) async fn terminal_get_selection_text(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+    Query(q): Query<super::types::TerminalSelectionQuery>,
+) -> impl IntoResponse {
+    let Some(vt) = state.vt_log_buffers.get(&session_id) else {
+        return session_not_found().into_response();
+    };
+    let text = vt
+        .lock()
+        .grid_get_selection_text(q.start_row, q.start_col, q.end_row, q.end_col);
+    Json(serde_json::json!({"text": text})).into_response()
+}
+
+/// Unwrap a soft-wrapped logical line at `row` → `[logicalStartRow, text]`.
+pub(super) async fn terminal_get_logical_line(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+    Query(q): Query<super::types::TerminalRowQuery>,
+) -> impl IntoResponse {
+    let Some(vt) = state.vt_log_buffers.get(&session_id) else {
+        return session_not_found().into_response();
+    };
+    let (idx, text) = vt.lock().grid_get_logical_line(q.row);
+    Json(serde_json::json!([idx, text])).into_response()
+}
+
+/// Hyperlink span at a cell → `[startCol, endCol, url]` or null (OSC 8).
+pub(super) async fn terminal_hyperlink_span(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+    Query(q): Query<super::types::TerminalCellQuery>,
+) -> impl IntoResponse {
+    let span = state
+        .vt_log_buffers
+        .get(&session_id)
+        .and_then(|vt| vt.lock().grid_hyperlink_span(q.row, q.col));
+    Json(serde_json::json!(span))
 }
 
 pub(super) async fn terminal_get_lines(
