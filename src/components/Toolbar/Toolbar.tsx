@@ -4,6 +4,7 @@ import { useGitHub } from "../../hooks/useGitHub";
 import { t } from "../../i18n";
 import type { ActivityItem } from "../../plugins/types";
 import { activityStore } from "../../stores/activityStore";
+import { commandPaletteStore } from "../../stores/commandPalette";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { pluginStore } from "../../stores/pluginStore";
@@ -14,6 +15,7 @@ import { settingsStore } from "../../stores/settings";
 import { terminalsStore } from "../../stores/terminals";
 import { uiStore } from "../../stores/ui";
 import { updaterStore } from "../../stores/updater";
+import { isTauri } from "../../transport";
 import { cx } from "../../utils";
 import { keyFor } from "../../utils/hotkey";
 import { getRepoColor } from "../../utils/repoColor";
@@ -685,15 +687,37 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 					</Show>
 				</div>
 
-				<IdeLauncher
-					repoPath={launchPath()}
-					focusedFilePath={focusedFilePath()}
-					cwd={terminalsStore.getActive()?.cwd ?? undefined}
-					cursorLine={editorTabsStore.getActive()?.cursorLine}
-					cursorCol={editorTabsStore.getActive()?.cursorCol}
-					runCommand={props.runCommand}
-					onRun={props.onRun}
-				/>
+				{/* IdeLauncher launches local external editors — impossible from a
+				    browser, where it renders nothing. In that slot show a Command
+				    Palette button instead, since browser-desktop has no native menu
+				    and keyboard shortcuts may be swallowed by the browser. */}
+				<Show
+					when={isTauri()}
+					fallback={
+						<button
+							class={s.watcherBtn}
+							onClick={() => commandPaletteStore.toggle()}
+							title={t("toolbar.commandPalette", "Command palette ({key})", {
+								key: keyFor("command-palette"),
+							})}
+							aria-label="Command palette"
+						>
+							<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+								<path d="M15.5 14h-.79l-.28-.27a6.471 6.471 0 0 0 1.48-5.34c-.47-2.78-2.79-5-5.59-5.34a6.505 6.505 0 0 0-7.27 7.27c.34 2.8 2.56 5.12 5.34 5.59a6.471 6.471 0 0 0 5.34-1.48l.27.28v.79l4.25 4.25c.41.41 1.08.41 1.49 0 .41-.41.41-1.08 0-1.49L15.5 14zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
+							</svg>
+						</button>
+					}
+				>
+					<IdeLauncher
+						repoPath={launchPath()}
+						focusedFilePath={focusedFilePath()}
+						cwd={terminalsStore.getActive()?.cwd ?? undefined}
+						cursorLine={editorTabsStore.getActive()?.cursorLine}
+						cursorCol={editorTabsStore.getActive()?.cursorCol}
+						runCommand={props.runCommand}
+						onRun={props.onRun}
+					/>
+				</Show>
 			</div>
 
 			{/* PR detail popover triggered from notification click */}
