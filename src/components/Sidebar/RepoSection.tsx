@@ -21,6 +21,7 @@ import { compareBranches } from "../../utils/branchSort";
 import { keyFor } from "../../utils/hotkey";
 import { navigateToTerminal } from "../../utils/navigateToTerminal";
 import { handleOpenUrl } from "../../utils/openUrl";
+import { timeSync } from "../../utils/perfTrace";
 import type { ContextMenuItem } from "../ContextMenu";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import { remoteUrlToGitHub } from "../GitPanel/BranchesTab";
@@ -658,10 +659,16 @@ export const RepoSection: Component<{
 		}
 		return map;
 	});
-	const sortedBranches = createMemo(() => {
-		const statuses = prStatuses();
-		return [...branches()].sort((a, b) => compareBranches(a, b, statuses.get(a.name), statuses.get(b.name)));
-	});
+	const sortedBranches = createMemo(() =>
+		// Freeze-investigation: this re-sort + the <For> reconcile below is the
+		// leading suspect for the git.refreshBatch flush cost — setBranch creates a
+		// new branch object ref on every repo-changed, waking this memo even when
+		// nothing structural changed. timeSync is dormant unless perfDebug is on.
+		timeSync(`sidebar.sortedBranches:${props.repo.path}`, () => {
+			const statuses = prStatuses();
+			return [...branches()].sort((a, b) => compareBranches(a, b, statuses.get(a.name), statuses.get(b.name)));
+		}),
+	);
 	const canRemoveAny = createMemo(() => sortedBranches().length > 1);
 
 	const localBranchNames = createMemo(() => new Set(Object.keys(props.repo.branches)));

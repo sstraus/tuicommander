@@ -3,6 +3,7 @@ import { createStore, produce } from "solid-js/store";
 import type { AgentType } from "../agents";
 import { rpc } from "../transport";
 import type { TerminalMatch } from "../types";
+import { isPerfDebug } from "../utils/perfDebug";
 import { appLogger } from "./appLogger";
 
 /** Type of input being awaited */
@@ -311,7 +312,9 @@ function createTerminalsStore() {
 			const since = busySinceMap.get(id);
 			const duration = since != null ? Date.now() - since : 0;
 			busyDurationMap.set(id, duration);
-			appLogger.debug("terminal", `[ShellDebounce] ${id} busy→idle cooldown=${BUSY_HOLD_MS}ms dur=${duration}ms`);
+			if (isPerfDebug()) {
+				appLogger.debug("terminal", `[ShellDebounce] ${id} busy→idle cooldown=${BUSY_HOLD_MS}ms dur=${duration}ms`);
+			}
 
 			const timer = setTimeout(() => {
 				cooldownTimers.delete(id);

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-
+import { setPerfDebug } from "../../../utils/perfDebug";
 import {
 	FRAME_TIMING_CAPACITY,
 	getFrameTimingStats,
@@ -84,6 +84,9 @@ describe("frameTiming ring buffer", () => {
 describe("frameTiming enable flag + debug hook", () => {
 	beforeEach(() => {
 		resetFrameTiming();
+		// frameTiming is subordinate to the master perfDebug flag; enable it so the
+		// local toggle is the only variable under test here.
+		setPerfDebug(true);
 		setFrameTimingEnabled(false);
 		delete (globalThis as Record<string, unknown>).__terminalFrameTiming;
 	});
@@ -91,6 +94,17 @@ describe("frameTiming enable flag + debug hook", () => {
 	it("is disabled by default and toggles", () => {
 		expect(isFrameTimingEnabled()).toBe(false);
 		setFrameTimingEnabled(true);
+		expect(isFrameTimingEnabled()).toBe(true);
+	});
+
+	it("stays off whenever the master perfDebug flag is dormant", () => {
+		setFrameTimingEnabled(true);
+		expect(isFrameTimingEnabled()).toBe(true);
+		// Master gate off → frameTiming cannot record, even though locally enabled.
+		setPerfDebug(false);
+		expect(isFrameTimingEnabled()).toBe(false);
+		// Re-arming the master flag restores the local toggle.
+		setPerfDebug(true);
 		expect(isFrameTimingEnabled()).toBe(true);
 	});
 

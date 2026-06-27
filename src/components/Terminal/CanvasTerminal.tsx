@@ -9,6 +9,7 @@ import { filterMatchesToBlock } from "../../utils/blockSearchFilter";
 import { formatRelativeTime } from "../../utils/formatRelativeTime";
 import { ensureKeyboardViewportTracking, keyboardOcclusion } from "../../utils/keyboardViewport";
 import { handleOpenUrl } from "../../utils/openUrl";
+import { isPerfDebug } from "../../utils/perfDebug";
 import { markPerf, noteFrameRequest } from "../../utils/perfTrace";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 import { installTouchHandlers } from "./canvasTerminalTouch";
@@ -1021,7 +1022,18 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		if (reconcileTimer) clearTimeout(reconcileTimer);
 		reconcileTimer = setTimeout(() => {
 			reconcileTimer = undefined;
-			if (!shouldFireReconcile({ alive, isScrolling, scrollPosF, displayOffset: currentFrame?.displayOffset ?? -1 })) {
+			const off = currentFrame?.displayOffset ?? -1;
+			const fire = shouldFireReconcile({ alive, isScrolling, scrollPosF, displayOffset: off });
+			// DUP-DEBUG (2026-06-27) — TEMP: log whether the drift self-heal fired or was
+			// gated out (and why), to confirm the offset-0 gate is what lets the reflow
+			// duplicate persist. REMOVE with the onFrame dupdbg block.
+			if (isPerfDebug()) {
+				appLogger.info(
+					"terminal",
+					`[dupdbg] reconcile fire=${fire} off=${off} scrolling=${isScrolling} posF=${scrollPosF} alive=${alive}`,
+				);
+			}
+			if (!fire) {
 				return;
 			}
 			invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(ipcErr("terminal_request_frame"));
@@ -1318,6 +1330,18 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			lastResizeRows,
 		);
 		const { geomChanged, scrollChanged } = decision;
+
+		// DUP-DEBUG (2026-06-27) — TEMP reflow-duplication instrumentation, gated on
+		// isPerfDebug(). Logs the full frame-grid decision + touched row indices so a
+		// resize repro reveals the exact partial frame that strands stale rows. REMOVE
+		// once the reflow-dup root cause is pinned and fixed.
+		if (isPerfDebug()) {
+			const idx = frame.rows.map((r) => r.index).join(",");
+			appLogger.info(
+				"terminal",
+				`[dupdbg] onFrame sid=${props.sessionId.slice(0, 8)} geom=${geomChanged} scroll=${scrollChanged} full=${decision.fullReplace} wait=${decision.scrollWait} rows=${frame.rows.length} cols=${frame.screenCols} prevCols=${lastScreenCols} off=${frame.displayOffset} hist=${frame.historySize} idx=[${idx.length > 90 ? `${idx.slice(0, 90)}…` : idx}]`,
+			);
+		}
 
 		// When geometry changes, viewport is entirely different — must clear and repaint
 		if (geomChanged) {

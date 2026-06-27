@@ -5,6 +5,8 @@
 // samples because they happen at different times (decode in onFrame, paint in
 // the rAF callback), not back-to-back.
 
+import { isPerfDebug } from "../../utils/perfDebug";
+
 /** Max samples retained per metric per session (a few seconds of frames). */
 export const FRAME_TIMING_CAPACITY = 256;
 
@@ -102,6 +104,12 @@ export function resetFrameTiming(sessionId?: string): void {
 // Recording itself is pure/unconditional (see recordFrameTiming) so it stays
 // trivially testable. The flag gates the *call sites* in CanvasTerminal so the
 // harness costs nothing (no performance.now(), no push) when off.
+//
+// This is a HEAVY, opt-in sub-harness (per-frame sampling), so it stays off by
+// default even in dev — you turn it on only to capture a baseline. It is
+// SUBORDINATE to the master perfDebug flag (see utils/perfDebug.ts): it can
+// never record in a build where perfDebug is dormant, so a shipped release
+// cannot be made to per-frame-log via __terminalFrameTiming.enable() alone.
 
 let enabled = false;
 
@@ -117,11 +125,15 @@ export function onFrameTimingEnabledChange(cb: (on: boolean) => void): () => voi
 
 export function setFrameTimingEnabled(on: boolean): void {
 	enabled = on;
-	for (const cb of enabledListeners) cb(on);
+	// Broadcast the EFFECTIVE state (gated by the master flag) so render workers
+	// — which have their own module instance and no perfDebug access — stay in
+	// sync with the master gate.
+	const effective = on && isPerfDebug();
+	for (const cb of enabledListeners) cb(effective);
 }
 
 export function isFrameTimingEnabled(): boolean {
-	return enabled;
+	return enabled && isPerfDebug();
 }
 
 /**

@@ -1,4 +1,5 @@
 import { appLogger } from "../stores/appLogger";
+import { isPerfDebug } from "./perfDebug";
 import { getLastCrumb } from "./perfTrace";
 
 const THRESHOLD_MS = 200;
@@ -90,6 +91,7 @@ function rafTick() {
 }
 
 export function startFreezeDetector() {
+	if (!isPerfDebug()) return;
 	if (running) return;
 	running = true;
 	const now = performance.now();

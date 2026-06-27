@@ -13,6 +13,7 @@ import { FONT_FAMILIES, settingsStore } from "../../stores/settings";
 import { type AwaitingInputType, isShellState, terminalsStore } from "../../stores/terminals";
 import { isTauri, subscribePty, type Unsubscribe } from "../../transport";
 import { keyFor } from "../../utils/hotkey";
+import { isPerfDebug } from "../../utils/perfDebug";
 import { ComposePanel } from "../ComposePanel";
 import { getAwaitingInputSound } from "./awaitingInputSound";
 import CanvasTerminal, { type CanvasTerminalRef } from "./CanvasTerminal";
@@ -685,11 +686,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
 	const initSession = async () => {
 		if (sessionInitialized || !containerRef) return;
 		sessionInitialized = true;
-		const spawnMs = Math.round(performance.now() - mountedAt);
-		appLogger.info(
-			"terminal",
-			`initSession(${props.id}) — existing sessionId=${sessionId ?? "null"} spawnDelay=${spawnMs}ms`,
-		);
+		if (isPerfDebug()) {
+			const spawnMs = Math.round(performance.now() - mountedAt);
+			appLogger.info(
+				"terminal",
+				`initSession(${props.id}) — existing sessionId=${sessionId ?? "null"} spawnDelay=${spawnMs}ms`,
+			);
+		}
 
 		const grid = calcGridSize(containerRef);
 

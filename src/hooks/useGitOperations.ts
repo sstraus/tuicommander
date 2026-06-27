@@ -15,7 +15,7 @@ import type { RepoInfo } from "../types";
 import { verifyAndBuildResumeCommand } from "../utils/agentSession";
 import { assignTabToActiveGroup } from "../utils/paneTabAssign";
 import { pathStartsWith } from "../utils/pathUtils";
-import { markPerf, timeSync } from "../utils/perfTrace";
+import { markPerf, timeBatch } from "../utils/perfTrace";
 import { effectiveMergeMethod, isMergeMethodNotAllowed } from "../utils/prMerge";
 import { filterValidTerminals } from "../utils/terminalFilter";
 import { findOrphanTerminals } from "../utils/terminalOrphans";
@@ -417,8 +417,9 @@ export function useGitOperations(deps: GitOperationsDeps) {
 				}
 
 				const drainedPendings: PendingCreation[] = [];
-				// Freeze-investigation: time the synchronous store-mutation batch per repo.
-				timeSync(`git.refreshBatch:${repoPath}`, () =>
+				// Freeze-investigation: split the structural batch into body (our
+				// setState loop) vs reactive flush (dependent effects/memos waking).
+				timeBatch(`git.refreshBatch:${repoPath}`, (markBodyEnd) =>
 					batch(() => {
 						// Guard against race: if a branch was present before our async ops
 						// but is now gone from the live store, the user deleted it while we
@@ -459,6 +460,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 						for (const branchName of toRemove) {
 							repositoriesStore.removeBranch(repoPath, branchName);
 						}
+						markBodyEnd();
 					}),
 				);
 
@@ -498,20 +500,26 @@ export function useGitOperations(deps: GitOperationsDeps) {
 					const currentRepoForStats = repositoriesStore.get(repoPath);
 					if (!currentRepoForStats) return;
 
-					batch(() => {
-						for (const branch of Object.values(currentRepoForStats.branches)) {
-							if (!branch.worktreePath) continue;
-							const ds = stats.diff_stats[branch.worktreePath];
-							if (ds) {
-								repositoriesStore.updateBranchStats(repoPath, branch.name, ds.additions, ds.deletions);
+					// Freeze-investigation: same body-vs-flush split for the stats batch.
+					timeBatch(`git.statsBatch:${repoPath}`, (markBodyEnd) =>
+						batch(() => {
+							for (const branch of Object.values(currentRepoForStats.branches)) {
+								if (!branch.worktreePath) continue;
+								const ds = stats.diff_stats[branch.worktreePath];
+								if (ds) {
+									repositoriesStore.updateBranchStats(repoPath, branch.name, ds.additions, ds.deletions);
+								}
+								const ts = stats.last_commit_ts?.[branch.name];
+								if (ts !== undefined) {
+									// Rust emits Unix seconds (%ct); JS Date.now() uses milliseconds
+									repositoriesStore.setBranch(repoPath, branch.name, {
+										lastCommitTs: ts !== null ? ts * 1000 : null,
+									});
+								}
 							}
-							const ts = stats.last_commit_ts?.[branch.name];
-							if (ts !== undefined) {
-								// Rust emits Unix seconds (%ct); JS Date.now() uses milliseconds
-								repositoriesStore.setBranch(repoPath, branch.name, { lastCommitTs: ts !== null ? ts * 1000 : null });
-							}
-						}
-					});
+							markBodyEnd();
+						}),
+					);
 				} catch (err) {
 					appLogger.warn("git", `Phase 2 diff stats failed for ${repoPath}`, err);
 				}
