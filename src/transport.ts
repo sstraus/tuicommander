@@ -919,6 +919,46 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			body: { repoPath: args.repoPath, pattern: args.pattern },
 		}),
 	},
+	// Returns Option<ResolvedFilePath>: a miss serializes to JSON null, so the
+	// transform passes null straight through (no empty-body error).
+	resolve_terminal_path: {
+		map: (_args, p) => ({
+			method: "GET",
+			path: `/fs/resolve-terminal-path?cwd=${p("cwd")}&candidate=${p("candidate")}`,
+			transform: (data) => data ?? null,
+		}),
+	},
+	stat_path: {
+		map: (_args, p) => ({ method: "GET", path: `/fs/stat?path=${p("path")}` }),
+	},
+	warm_content_index: {
+		map: (args) => ({ method: "POST", path: "/fs/warm-index", body: { repoPath: args.repoPath } }),
+	},
+	write_external_file: {
+		map: (args) => ({
+			method: "POST",
+			path: "/fs/write-external",
+			body: { path: args.path, content: args.content },
+		}),
+	},
+	copy_path_abs: {
+		map: (args) => ({ method: "POST", path: "/fs/copy-abs", body: { from: args.from, to: args.to } }),
+	},
+	move_path_abs: {
+		map: (args) => ({ method: "POST", path: "/fs/move-abs", body: { from: args.from, to: args.to } }),
+	},
+	fs_transfer_paths: {
+		map: (args) => ({
+			method: "POST",
+			path: "/fs/transfer",
+			body: {
+				destDir: args.destDir,
+				paths: args.paths,
+				mode: args.mode,
+				allowRecursive: args.allowRecursive,
+			},
+		}),
+	},
 	search_content: {
 		map: (args, p) => {
 			let path = `/fs/search-content?repoPath=${p("repoPath")}&query=${p("query")}&caseSensitive=${p("caseSensitive")}&useRegex=${p("useRegex")}&wholeWord=${p("wholeWord")}`;

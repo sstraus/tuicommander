@@ -318,6 +318,68 @@ describe("transport", () => {
 			expect(result.transform?.({ a: 1 })).toBe('{"a":1}');
 			expect(result.transform?.(null)).toBeNull();
 		});
+
+		it("maps resolve_terminal_path to GET with null-passthrough transform", () => {
+			const result = mapCommandToHttp("resolve_terminal_path", { cwd: "/repo", candidate: "src/x.ts" });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/fs/resolve-terminal-path?cwd=%2Frepo&candidate=src%2Fx.ts");
+			expect(result.transform?.({ absolute_path: "/repo/src/x.ts", is_directory: false })).toEqual({
+				absolute_path: "/repo/src/x.ts",
+				is_directory: false,
+			});
+			expect(result.transform?.(null)).toBeNull();
+		});
+
+		it("maps stat_path to GET /fs/stat?path=", () => {
+			const result = mapCommandToHttp("stat_path", { path: "/repo/file.md" });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/fs/stat?path=%2Frepo%2Ffile.md");
+		});
+
+		it("maps warm_content_index to POST /fs/warm-index", () => {
+			const result = mapCommandToHttp("warm_content_index", { repoPath: "/repo" });
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/fs/warm-index");
+			expect(result.body).toEqual({ repoPath: "/repo" });
+		});
+
+		it("maps write_external_file to POST /fs/write-external", () => {
+			const result = mapCommandToHttp("write_external_file", { path: "/repo/a.md", content: "hi" });
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/fs/write-external");
+			expect(result.body).toEqual({ path: "/repo/a.md", content: "hi" });
+		});
+
+		it("maps copy_path_abs to POST /fs/copy-abs", () => {
+			const result = mapCommandToHttp("copy_path_abs", { from: "/a/x", to: "/b/x" });
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/fs/copy-abs");
+			expect(result.body).toEqual({ from: "/a/x", to: "/b/x" });
+		});
+
+		it("maps move_path_abs to POST /fs/move-abs", () => {
+			const result = mapCommandToHttp("move_path_abs", { from: "/a/x", to: "/b/x" });
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/fs/move-abs");
+			expect(result.body).toEqual({ from: "/a/x", to: "/b/x" });
+		});
+
+		it("maps fs_transfer_paths to POST /fs/transfer", () => {
+			const result = mapCommandToHttp("fs_transfer_paths", {
+				destDir: "/repo/dst",
+				paths: ["/a/x", "/a/y"],
+				mode: "move",
+				allowRecursive: true,
+			});
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/fs/transfer");
+			expect(result.body).toEqual({
+				destDir: "/repo/dst",
+				paths: ["/a/x", "/a/y"],
+				mode: "move",
+				allowRecursive: true,
+			});
+		});
 	});
 
 	describe("rpc()", () => {

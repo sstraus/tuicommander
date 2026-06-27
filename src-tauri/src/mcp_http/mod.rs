@@ -877,6 +877,19 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/fs/rename", post(fs_routes::rename_path_http))
         .route("/fs/copy", post(fs_routes::copy_path_http))
         .route("/fs/gitignore", post(fs_routes::add_to_gitignore_http))
+        .route(
+            "/fs/resolve-terminal-path",
+            get(fs_routes::resolve_terminal_path_http),
+        )
+        .route("/fs/stat", get(fs_routes::stat_path_http))
+        .route("/fs/warm-index", post(fs_routes::warm_content_index_http))
+        .route(
+            "/fs/write-external",
+            post(fs_routes::write_external_file_http),
+        )
+        .route("/fs/copy-abs", post(fs_routes::copy_path_abs_http))
+        .route("/fs/move-abs", post(fs_routes::move_path_abs_http))
+        .route("/fs/transfer", post(fs_routes::fs_transfer_paths_http))
         // Notes
         .route(
             "/config/notes",
@@ -1232,6 +1245,19 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
         .route("/fs/rename", post(fs_routes::rename_path_http))
         .route("/fs/copy", post(fs_routes::copy_path_http))
         .route("/fs/gitignore", post(fs_routes::add_to_gitignore_http))
+        .route(
+            "/fs/resolve-terminal-path",
+            get(fs_routes::resolve_terminal_path_http),
+        )
+        .route("/fs/stat", get(fs_routes::stat_path_http))
+        .route("/fs/warm-index", post(fs_routes::warm_content_index_http))
+        .route(
+            "/fs/write-external",
+            post(fs_routes::write_external_file_http),
+        )
+        .route("/fs/copy-abs", post(fs_routes::copy_path_abs_http))
+        .route("/fs/move-abs", post(fs_routes::move_path_abs_http))
+        .route("/fs/transfer", post(fs_routes::fs_transfer_paths_http))
         // Recent commits / git panel
         .route(
             "/repo/recent-commits",

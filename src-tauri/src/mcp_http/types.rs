@@ -292,6 +292,42 @@ pub(super) struct FsGitignoreRequest {
 }
 
 #[derive(Deserialize)]
+pub(super) struct FsResolveTerminalPathQuery {
+    pub cwd: String,
+    pub candidate: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct FsWarmIndexRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct FsExternalWriteRequest {
+    pub path: String,
+    pub content: String,
+}
+
+/// Absolute-path single-file copy/move (FileBrowser cross-repo cut/paste).
+#[derive(Deserialize)]
+pub(super) struct FsAbsTransferRequest {
+    pub from: String,
+    pub to: String,
+}
+
+/// Bulk OS drag-drop transfer (move/copy) into a destination directory.
+#[derive(Deserialize)]
+pub(super) struct FsTransferPathsRequest {
+    #[serde(rename = "destDir")]
+    pub dest_dir: String,
+    pub paths: Vec<String>,
+    pub mode: crate::fs::TransferMode,
+    #[serde(rename = "allowRecursive")]
+    pub allow_recursive: bool,
+}
+
+#[derive(Deserialize)]
 pub(super) struct FinalizeMergeRequest {
     #[serde(rename = "repoPath")]
     pub repo_path: String,
