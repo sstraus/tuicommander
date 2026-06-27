@@ -62,6 +62,12 @@ export interface HttpMapping {
 	body?: unknown;
 	/** Transform the HTTP response before returning (e.g. for can_spawn_session) */
 	transform?: (data: unknown) => unknown;
+	/**
+	 * Treat an HTTP 404 as a successful `null` result instead of throwing.
+	 * Bridges Tauri commands whose contract is `Option<T>` (None → null) onto
+	 * REST routes that signal "not found" with 404 (e.g. read_plugin_data).
+	 */
+	notFoundAsNull?: boolean;
 }
 
 /** Helper to encode a required argument for URL path/query usage */
@@ -402,6 +408,35 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	load_agents_config: { map: () => ({ method: "GET", path: "/config/agents" }) },
 	save_agents_config: {
 		map: (args) => ({ method: "PUT", path: "/config/agents", body: args.config }),
+	},
+	// Hook instrumentation toggle: GET returns {state}, the Tauri command returns the
+	// bare AgentHookState string — unwrap it. PUT's {ok:true} is discarded by callers.
+	get_agent_hook_state: {
+		map: (_args, p) => ({
+			method: "GET",
+			path: `/config/agents/${p("agentType")}/hook-instrumentation`,
+			transform: (data) => (data as { state: string }).state,
+		}),
+	},
+	set_agent_hook_instrumentation: {
+		map: (args, p) => ({
+			method: "PUT",
+			path: `/config/agents/${p("agentType")}/hook-instrumentation`,
+			body: { enabled: args.enabled },
+		}),
+	},
+
+	// --- Plugin data (read-only here; write/delete routes are tracked in story 071) ---
+	// Tauri contract is Option<String>: missing key → null. The route 404s on miss,
+	// which notFoundAsNull bridges back to null. Found content is returned as a string
+	// to match the command's String payload (the route may sniff JSON and parse it).
+	read_plugin_data: {
+		map: (_args, p) => ({
+			method: "GET",
+			path: `/api/plugins/${p("pluginId")}/data/${p("path")}`,
+			notFoundAsNull: true,
+			transform: (data) => (data == null ? null : typeof data === "string" ? data : JSON.stringify(data)),
+		}),
 	},
 
 	// --- Config: provider registry ---
@@ -1076,6 +1111,9 @@ async function rpcImpl<T>(command: string, args: Record<string, unknown>, connec
 		clearTimeout(timeoutId);
 	}
 	if (!resp.ok) {
+		if (resp.status === 404 && mapping.notFoundAsNull) {
+			return null as T;
+		}
 		const text = await resp.text().catch(() => resp.statusText);
 		throw new Error(`RPC ${command} failed: ${resp.status} ${text}`);
 	}

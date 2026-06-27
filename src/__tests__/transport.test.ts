@@ -290,6 +290,34 @@ describe("transport", () => {
 			expect(result.method).toBe("POST");
 			expect(result.path).toBe("/sessions/s1/terminal/request-frame");
 		});
+
+		it("maps get_agent_hook_state to GET and unwraps {state}", () => {
+			const result = mapCommandToHttp("get_agent_hook_state", { agentType: "claude" });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/config/agents/claude/hook-instrumentation");
+			expect(result.transform?.({ state: "installed" })).toBe("installed");
+		});
+
+		it("maps set_agent_hook_instrumentation to PUT with {enabled} body", () => {
+			const result = mapCommandToHttp("set_agent_hook_instrumentation", { agentType: "claude", enabled: true });
+			expect(result.method).toBe("PUT");
+			expect(result.path).toBe("/config/agents/claude/hook-instrumentation");
+			expect(result.body).toEqual({ enabled: true });
+		});
+
+		it("maps read_plugin_data to GET /api/plugins/{id}/data/{path} with notFoundAsNull", () => {
+			const result = mapCommandToHttp("read_plugin_data", {
+				pluginId: "my-plugin",
+				path: "credential-consent-anthropic",
+			});
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/api/plugins/my-plugin/data/credential-consent-anthropic");
+			expect(result.notFoundAsNull).toBe(true);
+			// Faithful Option<String> bridge: plain strings pass through, non-strings stringify, null stays null.
+			expect(result.transform?.("allowed")).toBe("allowed");
+			expect(result.transform?.({ a: 1 })).toBe('{"a":1}');
+			expect(result.transform?.(null)).toBeNull();
+		});
 	});
 
 	describe("rpc()", () => {
@@ -398,6 +426,37 @@ describe("transport", () => {
 
 			const result = await rpc<boolean>("can_spawn_session");
 			expect(result).toBe(true);
+		});
+
+		it("returns null on 404 when notFoundAsNull is set (read_plugin_data)", async () => {
+			const { rpc } = await import("../transport");
+
+			const mockResponse = {
+				ok: false,
+				status: 404,
+				statusText: "Not Found",
+				text: vi.fn().mockResolvedValue(""),
+			};
+			globalThis.fetch = vi.fn().mockResolvedValue(mockResponse);
+
+			const result = await rpc<string | null>("read_plugin_data", { pluginId: "p", path: "missing-key" });
+			expect(result).toBeNull();
+		});
+
+		it("still throws on non-404 errors even with notFoundAsNull", async () => {
+			const { rpc } = await import("../transport");
+
+			const mockResponse = {
+				ok: false,
+				status: 400,
+				statusText: "Bad Request",
+				text: vi.fn().mockResolvedValue("bad path"),
+			};
+			globalThis.fetch = vi.fn().mockResolvedValue(mockResponse);
+
+			await expect(rpc("read_plugin_data", { pluginId: "p", path: "../escape" })).rejects.toThrow(
+				"RPC read_plugin_data failed: 400",
+			);
 		});
 
 		it("handles resp.text() failure in error path", async () => {
