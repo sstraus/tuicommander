@@ -1917,10 +1917,33 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		canvasRef.addEventListener("focus", () => {
 			keyInputRef.focus({ preventScroll: true });
 		});
+
+		// iOS/iPadOS soft keyboards stop auto-repeating Backspace once the focused
+		// field is empty, so holding Delete erased only a single character. Keep a
+		// small space buffer in the hidden input on touch devices so
+		// each key-repeat tick has something to delete and keeps firing
+		// deleteContent* events. Desktop keeps the field empty so macOS dead-key
+		// composition (which needs an empty input) is unaffected.
+		const isTouchDevice = navigator.maxTouchPoints > 0 || "ontouchstart" in window;
+		const INPUT_BUFFER = "   ";
+		const resetInputBuffer = () => {
+			if (isTouchDevice) {
+				keyInputRef.value = INPUT_BUFFER;
+				try {
+					keyInputRef.setSelectionRange(INPUT_BUFFER.length, INPUT_BUFFER.length);
+				} catch {
+					// setSelectionRange can throw on a hidden/detached input — harmless
+				}
+			} else {
+				keyInputRef.value = "";
+			}
+		};
+
 		keyInputRef.addEventListener("focus", () => {
 			setFocused(true);
 			startBlink();
 			props.onFocus?.();
+			resetInputBuffer();
 			if (currentFrame?.focusReporting) writePtyNoScroll("\x1b[I");
 		});
 		keyInputRef.addEventListener("blur", () => {
@@ -1930,11 +1953,38 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			if (currentFrame?.focusReporting) writePtyNoScroll("\x1b[O");
 		});
 
-		// Clear stray text outside of composition. During composition the input
-		// must hold the in-progress text or compositionend will never resolve.
+		// Text from input methods that don't emit usable keydown events — iOS/
+		// iPadOS soft keyboard, dictation, and predictive/autocorrect — arrives
+		// only as `input` events (keydown fires with key "Unidentified", so
+		// keyToSequence returns null and never preventDefaults). On desktop,
+		// printable keys are handled in keydown with preventDefault(), so no
+		// `input` event fires for them; anything that reaches here is mobile-style
+		// text we must forward to the PTY ourselves. During composition the input
+		// must hold the in-progress text or compositionend will never resolve, so
+		// leave it untouched in that case.
+		// DEFERRED (2026-06-27) — verify iOS dictation interim/replacement edge
+		// cases on a real iPad: with autocorrect off the common path is
+		// incremental insertText, but some iOS versions emit insertReplacementText
+		// which could double-write. Needs device testing to confirm.
 		keyInputRef.addEventListener("input", (e) => {
-			if ((e as InputEvent).isComposing) return;
-			keyInputRef.value = "";
+			const ie = e as InputEvent;
+			if (ie.isComposing) return;
+			switch (ie.inputType) {
+				case "deleteContentBackward":
+					writePty("\x7f");
+					break;
+				case "deleteContentForward":
+					writePty("\x1b[3~");
+					break;
+				case "insertLineBreak":
+				case "insertParagraph":
+					writePty("\r");
+					break;
+				default:
+					// insertText, insertReplacementText, insertFromDictation, …
+					if (ie.data) writePty(ie.data);
+			}
+			resetInputBuffer();
 		});
 
 		// --- Keyboard ---
@@ -1947,7 +1997,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			const data = composition.onCompositionEnd(e.data);
 			if (data) writePty(data);
 			queueMicrotask(() => {
-				keyInputRef.value = "";
+				resetInputBuffer();
 			});
 		});
 
@@ -2592,7 +2642,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// Touch input (mobile/tablet)
 		cleanupTouch = installTouchHandlers(canvasRef, touchTextareaRef, {
 			onScrollPixels: (dy) => {
-				handleScrollDelta(dy);
+				// Touch is direct manipulation: the content must follow the finger,
+				// the OPPOSITE of the wheel convention handleScrollDelta expects
+				// (positive dy = toward newer/bottom). Negate so swipe-up reveals
+				// newer lines and swipe-down reveals older scrollback, matching
+				// native iOS scrolling.
+				handleScrollDelta(-dy);
 			},
 			onScrollEnd: resetScrollGesture,
 			onInput: (data) => writePty(data),
@@ -2627,6 +2682,15 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				detachDomListeners();
 				transport?.unsubscribe();
 			};
+			// Paint the current grid now. The browser-mode WS subscribe (unlike the
+			// Tauri event channel) does not replay the current frame, so an idle
+			// session with no pending output would render nothing and leave the
+			// canvas black until the first interaction. Forcing a full frame here is
+			// idempotent on desktop and fixes the black-on-load in browser mode.
+			noteFrameRequest();
+			invokeRef?.("terminal_request_frame", { sessionId: props.sessionId }).catch(
+				ipcErr("terminal_request_frame"),
+			);
 		} catch (e) {
 			appLogger.error("terminal", "Failed to subscribe to terminal grid channel", {
 				sessionId: props.sessionId,

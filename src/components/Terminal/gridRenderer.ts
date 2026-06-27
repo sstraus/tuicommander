@@ -26,6 +26,20 @@ import {
 	GUTTER_PX,
 } from "./canvasTerminalUtils";
 
+/**
+ * Codepoints that mobile browsers (and some WebViews) render as color emoji
+ * instead of monochrome text glyphs — surfacing as a box / colored circle in
+ * the canvas terminal instead of the agent's status glyph. Appending U+FE0E
+ * (VS15, the text variation selector) forces text presentation so they match
+ * the desktop look. Mirrors the mobile DOM fix in utils/logLine.ts
+ * (forceTextPresentation). Covers Claude Code, Codex, Copilot, Gemini glyphs:
+ * ● ○ ⏺ ⏵ • ◦ ∴ ✢ ⚙ ✻ ◉
+ */
+const EMOJI_PRESENTATION_CPS = new Set<number>([
+	0x25cf, 0x25cb, 0x23fa, 0x23f5, 0x2022, 0x25e6, 0x2234, 0x2722, 0x2699, 0x273b, 0x25c9,
+]);
+const VS15 = "\uFE0E";
+
 /** Live theme/font lookups supplied by the host (main reads DOM; worker reads posted state). */
 export interface GridRendererDeps {
 	/** Default (non-bold) weight; number or CSS keyword, matching settings. */
@@ -1281,7 +1295,10 @@ export function createGridRenderer(ctx: GridContext2D, deps: GridRendererDeps): 
 				lastDim = dim;
 			}
 
-			ctx.fillText(String.fromCodePoint(cp), x, y + m.baseline);
+			const glyph = EMOJI_PRESENTATION_CPS.has(cp)
+				? String.fromCodePoint(cp) + VS15
+				: String.fromCodePoint(cp);
+			ctx.fillText(glyph, x, y + m.baseline);
 		}
 		if (lastDim) ctx.globalAlpha = 1.0;
 
