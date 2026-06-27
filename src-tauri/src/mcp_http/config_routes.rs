@@ -1,19 +1,20 @@
 use crate::{AppState, MAX_CONCURRENT_SESSIONS};
-use axum::Json;
 use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
+use axum::{Extension, Json};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use super::guards::localhost_only;
+use super::guards::{Authenticated, require_local_or_auth};
 use super::types::*;
 
 pub(super) async fn get_config(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp.into_response();
     }
     let config = state.config.read().clone();
@@ -47,9 +48,10 @@ pub(super) async fn get_config(
 pub(super) async fn put_config(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(config): Json<crate::config::AppConfig>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     // Preserve server-managed secrets — clients must not overwrite these via save
@@ -82,9 +84,10 @@ pub(super) async fn put_config(
 
 pub(super) async fn hash_password_http(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(req): Json<HashPasswordRequest>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match bcrypt::hash(&req.password, 12) {
@@ -98,9 +101,10 @@ pub(super) async fn hash_password_http(
 
 pub(super) async fn rotate_session_token(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     let new_token = uuid::Uuid::new_v4().to_string();
@@ -122,9 +126,10 @@ pub(super) async fn get_notification_config() -> impl IntoResponse {
 
 pub(super) async fn put_notification_config(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(config): Json<crate::config::NotificationConfig>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match crate::config::save_notification_config(config) {
@@ -142,9 +147,10 @@ pub(super) async fn get_ui_prefs() -> impl IntoResponse {
 
 pub(super) async fn put_ui_prefs(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(config): Json<crate::config::UIPrefsConfig>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match crate::config::save_ui_prefs(config) {
@@ -162,9 +168,10 @@ pub(super) async fn get_repo_settings() -> impl IntoResponse {
 
 pub(super) async fn put_repo_settings(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(config): Json<crate::config::RepoSettingsMap>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match crate::config::save_repo_settings(config) {
@@ -188,9 +195,10 @@ pub(super) async fn get_repositories() -> impl IntoResponse {
 
 pub(super) async fn put_repositories(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(config): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match crate::config::save_repositories(config) {
@@ -208,9 +216,10 @@ pub(super) async fn get_pane_layout() -> impl IntoResponse {
 
 pub(super) async fn put_pane_layout(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(layout): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match crate::config::save_pane_layout(layout) {
@@ -224,9 +233,10 @@ pub(super) async fn put_pane_layout(
 
 pub(super) async fn clear_caches(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp.into_response();
     }
     state.clear_caches();
@@ -235,10 +245,11 @@ pub(super) async fn clear_caches(
 
 pub(super) async fn clear_repo_caches(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     State(state): State<Arc<AppState>>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp.into_response();
     }
     if let Some(path) = body.get("path").and_then(|v| v.as_str()) {
@@ -259,9 +270,10 @@ pub(super) async fn get_prompt_library() -> impl IntoResponse {
 
 pub(super) async fn put_prompt_library(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(config): Json<crate::config::PromptLibraryConfig>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match crate::config::save_prompt_library(config) {
@@ -281,9 +293,10 @@ pub(super) async fn get_repo_defaults() -> impl IntoResponse {
 
 pub(super) async fn put_repo_defaults(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(config): Json<crate::config::RepoDefaultsConfig>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match crate::config::save_repo_defaults(config) {
@@ -303,9 +316,10 @@ pub(super) async fn get_notes() -> impl IntoResponse {
 
 pub(super) async fn put_notes(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(config): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match crate::config::save_notes(config) {
@@ -325,9 +339,10 @@ pub(super) async fn get_activity() -> impl IntoResponse {
 
 pub(super) async fn put_activity(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(items): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match crate::config::save_activity(items) {
@@ -347,9 +362,10 @@ pub(super) async fn get_keybindings() -> impl IntoResponse {
 
 pub(super) async fn put_keybindings(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(config): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match crate::config::save_keybindings(config) {
@@ -369,9 +385,10 @@ pub(super) async fn get_agents_config() -> impl IntoResponse {
 
 pub(super) async fn put_agents_config(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(config): Json<crate::config::AgentsConfig>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match crate::config::save_agents_config(config) {
@@ -393,10 +410,11 @@ pub(super) async fn get_agent_hook_state(Path(agent): Path<String>) -> impl Into
 
 pub(super) async fn put_agent_hook_instrumentation(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Path(agent): Path<String>,
     Json(body): Json<serde_json::Value>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     let enabled = body
@@ -420,9 +438,10 @@ pub(super) async fn get_provider_registry() -> impl IntoResponse {
 
 pub(super) async fn put_provider_registry(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(registry): Json<crate::provider_registry::ProviderRegistry>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp;
     }
     match crate::provider_registry::save_provider_registry(registry) {
@@ -459,9 +478,10 @@ pub(super) async fn get_mcp_status_http(State(state): State<Arc<AppState>>) -> i
 
 pub(super) async fn get_remote_connections(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp.into_response();
     }
     match crate::remote_connection::RemoteConnectionStore::load(&state.data_dir) {
@@ -483,10 +503,11 @@ pub(super) async fn get_remote_connections(
 
 pub(super) async fn put_remote_connection(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     State(state): State<Arc<AppState>>,
     Json(connection): Json<crate::remote_connection::RemoteConnection>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp.into_response();
     }
     if let Err(e) = connection.validate() {
@@ -525,10 +546,11 @@ pub(super) async fn put_remote_connection(
 
 pub(super) async fn delete_remote_connection(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> impl IntoResponse {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp.into_response();
     }
     state.tunnel_manager.stop_if_running(&id);
@@ -560,5 +582,53 @@ pub(super) async fn delete_remote_connection(
             Json(serde_json::json!({"error": e.to_string()})),
         )
             .into_response(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn loopback() -> SocketAddr {
+        "127.0.0.1:1".parse().unwrap()
+    }
+    fn lan() -> SocketAddr {
+        "192.168.1.2:1".parse().unwrap()
+    }
+    fn authed() -> Option<Extension<Authenticated>> {
+        Some(Extension(Authenticated))
+    }
+    fn req() -> Json<HashPasswordRequest> {
+        Json(HashPasswordRequest {
+            password: "hunter2".to_string(),
+        })
+    }
+
+    // hash_password_http is a representative config route: it shares the exact
+    // `require_local_or_auth(&addr, auth.is_some())` guard every config handler
+    // uses, and needs no AppState — so it cleanly proves the config guard wiring.
+
+    #[tokio::test]
+    async fn config_guard_loopback_passes() {
+        let resp = hash_password_http(ConnectInfo(loopback()), None, req())
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn config_guard_authenticated_remote_passes() {
+        let resp = hash_password_http(ConnectInfo(lan()), authed(), req())
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn config_guard_unauthenticated_remote_rejected() {
+        let resp = hash_password_http(ConnectInfo(lan()), None, req())
+            .await
+            .into_response();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 }

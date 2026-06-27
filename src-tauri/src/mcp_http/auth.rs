@@ -186,9 +186,18 @@ pub(crate) fn is_tailscale_ip(ip_str: &str) -> bool {
 pub async fn basic_auth_middleware(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
-    req: Request<axum::body::Body>,
+    mut req: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
+    // Mark the request as authenticated for downstream route guards
+    // (require_local_or_auth). Reaching a handler implies the request passed
+    // one of the auth gates below (loopback/LAN bypass, session cookie, URL
+    // token, or Basic Auth); every failed path short-circuits with 401/429
+    // here and never runs the handler, so the marker only ever propagates to
+    // authenticated handler invocations. (Boss 2026-06-27: token-auth = full
+    // trust across config + agent-spawn + prompt routes.)
+    req.extensions_mut().insert(super::guards::Authenticated);
+
     // Localhost bypass: only in desktop mode where the Tauri webview connects
     // locally. Headless mode binds 0.0.0.0 so loopback must be authenticated
     // like any other address — otherwise any local process gets full access.

@@ -1,10 +1,10 @@
 use crate::pty::spawn_reader_thread;
 use crate::state::{OUTPUT_RING_BUFFER_CAPACITY, VT_LOG_BUFFER_CAPACITY, VtLogBuffer};
 use crate::{AppState, MAX_CONCURRENT_SESSIONS, OutputRingBuffer, PtySession};
-use axum::Json;
 use axum::extract::{ConnectInfo, Query, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
+use axum::{Extension, Json};
 use parking_lot::Mutex;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::net::SocketAddr;
@@ -14,7 +14,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Emitter;
 use uuid::Uuid;
 
-use super::guards::localhost_only;
+use super::guards::{Authenticated, require_local_or_auth};
 use super::types::*;
 
 pub(super) async fn detect_agents() -> impl IntoResponse {
@@ -97,9 +97,10 @@ pub(super) async fn resolve_prompt_variables_http(Json(body): Json<serde_json::V
 
 pub(super) async fn execute_headless_prompt_http(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp.into_response();
     }
     let command = match body
@@ -154,9 +155,10 @@ pub(super) async fn execute_headless_prompt_http(
 
 pub(super) async fn execute_api_prompt_http(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(body): Json<serde_json::Value>,
 ) -> Response {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp.into_response();
     }
     let system_prompt = body
@@ -226,9 +228,10 @@ pub(super) async fn verify_agent_session_http(
 pub(super) async fn spawn_agent_session(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
     Json(body): Json<SpawnAgentRequest>,
 ) -> Response {
-    if let Err(resp) = localhost_only(&addr) {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp.into_response();
     }
     if state.sessions.len() >= MAX_CONCURRENT_SESSIONS {
@@ -450,10 +453,15 @@ mod tests {
         "192.168.1.2:1".parse().unwrap()
     }
 
+    fn authed() -> Option<Extension<Authenticated>> {
+        Some(Extension(Authenticated))
+    }
+
     #[tokio::test]
-    async fn execute_headless_prompt_http_rejects_non_loopback() {
+    async fn execute_headless_prompt_http_rejects_unauthenticated_non_loopback() {
         let resp = execute_headless_prompt_http(
             ConnectInfo(lan()),
+            None,
             Json(serde_json::json!({ "command": "echo", "args": ["x"] })),
         )
         .await;
@@ -464,16 +472,30 @@ mod tests {
     async fn execute_headless_prompt_http_loopback_passes_guard() {
         // Loopback with missing 'command' field must yield 400 from the validator,
         // proving the 403 guard is NOT fired for loopback callers.
+        let resp = execute_headless_prompt_http(
+            ConnectInfo(loopback()),
+            None,
+            Json(serde_json::json!({})),
+        )
+        .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn execute_headless_prompt_http_authenticated_remote_passes_guard() {
+        // Authenticated remote (full-trust, story 059) must pass the guard:
+        // empty body yields 400 from the validator, not 403.
         let resp =
-            execute_headless_prompt_http(ConnectInfo(loopback()), Json(serde_json::json!({})))
+            execute_headless_prompt_http(ConnectInfo(lan()), authed(), Json(serde_json::json!({})))
                 .await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
-    async fn execute_api_prompt_http_rejects_non_loopback() {
+    async fn execute_api_prompt_http_rejects_unauthenticated_non_loopback() {
         let resp = execute_api_prompt_http(
             ConnectInfo(lan()),
+            None,
             Json(serde_json::json!({ "content": "hello" })),
         )
         .await;
@@ -483,7 +505,16 @@ mod tests {
     #[tokio::test]
     async fn execute_api_prompt_http_loopback_passes_guard() {
         let resp =
-            execute_api_prompt_http(ConnectInfo(loopback()), Json(serde_json::json!({}))).await;
+            execute_api_prompt_http(ConnectInfo(loopback()), None, Json(serde_json::json!({})))
+                .await;
+        assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn execute_api_prompt_http_authenticated_remote_passes_guard() {
+        let resp =
+            execute_api_prompt_http(ConnectInfo(lan()), authed(), Json(serde_json::json!({})))
+                .await;
         assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
     }
 }
