@@ -84,6 +84,9 @@
         window.__TAURI_INTERNALS__ = {
           transformCallback: function () { return 0; },
           invoke: function () { return Promise.reject(new Error('not in Tauri')); },
+          // convertFileSrc has no asset protocol in browser mode; returning the
+          // raw path degrades to a broken image instead of crashing the app.
+          convertFileSrc: function (path) { return path; },
         };
         window.__TAURI_SHIM__ = true;
       }
