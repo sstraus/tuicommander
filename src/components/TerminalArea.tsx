@@ -9,7 +9,7 @@ import { repoSettingsStore } from "../stores/repoSettings";
 import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
 import { terminalsStore } from "../stores/terminals";
-import { rpc } from "../transport";
+import { sendTextToSession } from "../utils/sendToActiveTerminal";
 import { CodeEditorTab } from "./CodeEditorPanel";
 import { DiffTab } from "./DiffTab";
 import { PaneNodeView } from "./PaneTree/PaneTree";
@@ -47,8 +47,7 @@ const SuggestOverlayContainer: Component = () => {
 						onSelect={async (text) => {
 							terminalsStore.dismissSuggestedActions(capturedId);
 							if (capturedSid) {
-								await rpc("write_pty", { sessionId: capturedSid, data: text });
-								await rpc("write_pty", { sessionId: capturedSid, data: "\r" });
+								await sendTextToSession(capturedSid, text);
 							}
 						}}
 						onDismiss={() => {

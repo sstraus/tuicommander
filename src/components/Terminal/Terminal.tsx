@@ -37,7 +37,6 @@ type ParsedEvent =
 	| { type: "status-line"; task_name: string; full_line: string; time_info: string | null; token_info: string | null }
 	| { type: "progress"; state: number; value: number }
 	| { type: "question"; prompt_text: string; confident: boolean }
-	| { type: "awaiting"; awaiting: boolean; confident: boolean; text?: string }
 	| { type: "usage-limit"; percentage: number; limit_type: string }
 	| { type: "usage-exhausted"; reset_time: string | null }
 	| { type: "plan-file"; path: string }
@@ -240,8 +239,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
 			if (disposed) return;
 			switch (parsed.type) {
 				case "progress": {
-					// Awaiting badge is owned by the authoritative "awaiting" event (060) —
-					// progress no longer clears it.
+					const awProg = terminalsStore.get(props.id)?.awaitingInput;
+					if (awProg && awProg !== "error" && awProg !== "question") {
+						terminalsStore.clearAwaitingInput(props.id);
+					}
 					if (parsed.state === 0) {
 						terminalsStore.update(props.id, { progress: null });
 					} else if (parsed.state === 1 || parsed.state === 2 || parsed.state === 3) {
@@ -251,11 +252,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
 				}
 				case "status-line": {
 					retryCount = 0;
-					// Awaiting badge is owned by the authoritative "awaiting" event (060):
-					// the backend already keeps a confident question sticky across busy
-					// status-line ticks and clears it on user-input, so status-line no
-					// longer touches awaitingInput here.
-					terminalsStore.update(props.id, { currentTask: parsed.task_name });
+					const awState = terminalsStore.get(props.id)?.awaitingInput;
+					const clearAw = awState && awState !== "question" && awState !== "error";
+					if (clearAw) {
+						appLogger.debug("terminal", `clearAwaitingInput(${props.id}) was "${awState}" → null`);
+					}
+					terminalsStore.update(props.id, {
+						currentTask: parsed.task_name,
+						...(clearAw ? { awaitingInput: null, awaitingInputConfident: false } : {}),
+					});
 					break;
 				}
 				case "active-subtasks": {
@@ -296,17 +301,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					}
 					break;
 				}
-				case "awaiting": {
-					// Authoritative awaiting state pushed by the backend accumulator (060).
-					// The frontend mirrors it directly instead of re-deriving the sticky
-					// question state from raw "question"/"status-line" events.
-					if (parsed.awaiting) {
-						terminalsStore.setAwaitingInput(props.id, "question", parsed.confident);
-					} else if (terminalsStore.get(props.id)?.awaitingInput === "question") {
-						// Only clear the question badge; leave an "error" badge
-						// (usage-exhausted) untouched — it is a separate signal.
-						terminalsStore.clearAwaitingInput(props.id);
+				case "question": {
+					const qTerminal = terminalsStore.get(props.id);
+					if (!parsed.confident && (qTerminal?.shellState === "busy" || (qTerminal?.activeSubTasks ?? 0) > 0)) {
+						appLogger.debug(
+							"terminal",
+							`[ParsedEvent] ${props.id} question IGNORED (busy=${qTerminal?.shellState === "busy"} subTasks=${qTerminal?.activeSubTasks} low-confidence) prompt="${parsed.prompt_text}"`,
+						);
+						break;
 					}
+					terminalsStore.setAwaitingInput(props.id, "question", !!parsed.confident);
 					break;
 				}
 				case "usage-limit": {

@@ -1740,25 +1740,6 @@ impl AppState {
                 // Collect push notification data outside the DashMap lock
                 let mut push_data: Option<(String, String)> = None;
 
-                // Only the question / user-input / status-line arms can change the
-                // authoritative awaiting tuple, so only snapshot+diff for those —
-                // every other parsed event (status spam, shell-state, progress, and
-                // the re-injected "awaiting" event itself) skips the two DashMap
-                // lookups and the clone (060 hot-path guard).
-                let awaiting_relevant =
-                    matches!(event_type, "question" | "user-input" | "status-line");
-                let awaiting_before = awaiting_relevant
-                    .then(|| {
-                        state.session_states.get(session_id).map(|s| {
-                            (
-                                s.awaiting_input,
-                                s.question_confident,
-                                s.question_text.clone(),
-                            )
-                        })
-                    })
-                    .flatten();
-
                 state
                     .session_states
                     .entry(session_id.clone())
@@ -1921,25 +1902,6 @@ impl AppState {
                         ..Default::default()
                     });
 
-                // Push the authoritative awaiting state to the frontend when it
-                // changes (story 060: backend is the single source of truth for
-                // the question badge; the frontend mirrors this instead of
-                // re-deriving it from raw events).
-                if awaiting_relevant {
-                    let awaiting_after = state.session_states.get(session_id).map(|s| {
-                        (
-                            s.awaiting_input,
-                            s.question_confident,
-                            s.question_text.clone(),
-                        )
-                    });
-                    if awaiting_before != awaiting_after
-                        && let Some((awaiting, confident, text)) = awaiting_after
-                    {
-                        crate::pty::emit_awaiting(state, session_id, awaiting, confident, text);
-                    }
-                }
-
                 // Spawn push notification outside the DashMap lock
                 if let Some((sid, prompt)) = push_data
                     && !state
@@ -1960,11 +1922,6 @@ impl AppState {
                 }
             }
             AppEvent::PtyExit { session_id } => {
-                let was_awaiting = state
-                    .session_states
-                    .get(session_id)
-                    .map(|s| s.awaiting_input)
-                    .unwrap_or(false);
                 if let Some(mut entry) = state.session_states.get_mut(session_id) {
                     entry.awaiting_input = false;
                     entry.question_text = None;
@@ -1974,10 +1931,6 @@ impl AppState {
                     entry.rate_limit_set_ms = 0;
                     entry.active_sub_tasks = 0;
                     entry.last_activity_ms = now_ms;
-                }
-                // Mirror the awaiting clear to the frontend (story 060).
-                if was_awaiting {
-                    crate::pty::emit_awaiting(state, session_id, false, false, None);
                 }
                 // Push "session completed" to mobile (unseen)
                 if !state
@@ -3843,118 +3796,6 @@ mod tests {
         let event = make_parsed("user-input", serde_json::json!({ "content": long }));
         let s = apply(&state, &event);
         assert_eq!(s.last_prompt.as_deref(), Some(long));
-    }
-
-    /// Drain the broadcast bus and collect (awaiting, confident) from any
-    /// authoritative `Awaiting` parsed events emitted by the accumulator (060).
-    fn drain_awaiting(rx: &mut tokio::sync::broadcast::Receiver<AppEvent>) -> Vec<(bool, bool)> {
-        let mut out = Vec::new();
-        while let Ok(ev) = rx.try_recv() {
-            if let AppEvent::PtyParsed { parsed, .. } = ev
-                && parsed.get("type").and_then(|t| t.as_str()) == Some("awaiting")
-            {
-                let awaiting = parsed
-                    .get("awaiting")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                let confident = parsed
-                    .get("confident")
-                    .and_then(|v| v.as_bool())
-                    .unwrap_or(false);
-                out.push((awaiting, confident));
-            }
-        }
-        out
-    }
-
-    #[test]
-    fn test_question_pushes_authoritative_awaiting() {
-        let state = fresh_state();
-        let mut rx = state.event_bus.subscribe();
-        let s = apply(
-            &state,
-            &make_parsed(
-                "question",
-                serde_json::json!({ "prompt_text": "Continue?", "confident": true }),
-            ),
-        );
-        assert!(s.awaiting_input);
-        assert!(s.question_confident);
-        assert_eq!(
-            drain_awaiting(&mut rx),
-            vec![(true, true)],
-            "a confident question must push authoritative awaiting=true/confident=true"
-        );
-    }
-
-    #[test]
-    fn test_user_input_pushes_awaiting_false() {
-        let state = fresh_state();
-        // Arm a confident question first (before subscribing, so we only observe
-        // the user-input clear below).
-        apply(
-            &state,
-            &make_parsed(
-                "question",
-                serde_json::json!({ "prompt_text": "Continue?", "confident": true }),
-            ),
-        );
-        let mut rx = state.event_bus.subscribe();
-        let s = apply(
-            &state,
-            &make_parsed("user-input", serde_json::json!({ "content": "yes" })),
-        );
-        assert!(!s.awaiting_input);
-        assert_eq!(
-            drain_awaiting(&mut rx),
-            vec![(false, false)],
-            "user-input clears the prompt → push authoritative awaiting=false"
-        );
-    }
-
-    #[test]
-    fn test_no_awaiting_push_when_unchanged() {
-        let state = fresh_state();
-        let mut rx = state.event_bus.subscribe();
-        // Default awaiting is false; a status-line keeps it false → no push.
-        apply(
-            &state,
-            &make_parsed(
-                "status-line",
-                serde_json::json!({ "task_name": "Working", "full_line": "Working" }),
-            ),
-        );
-        assert!(
-            drain_awaiting(&mut rx).is_empty(),
-            "no awaiting change must not push an Awaiting event"
-        );
-    }
-
-    #[test]
-    fn test_confident_question_sticky_across_status_line() {
-        let state = fresh_state();
-        apply(
-            &state,
-            &make_parsed(
-                "question",
-                serde_json::json!({ "prompt_text": "Continue?", "confident": true }),
-            ),
-        );
-        let mut rx = state.event_bus.subscribe();
-        // A busy status-line tick must NOT clear a confident question, and thus
-        // must not push an awaiting change (the badge stays sticky).
-        let s = apply(
-            &state,
-            &make_parsed(
-                "status-line",
-                serde_json::json!({ "task_name": "Working", "full_line": "Working" }),
-            ),
-        );
-        assert!(s.awaiting_input, "confident question survives status-line");
-        assert!(
-            drain_awaiting(&mut rx).is_empty(),
-            "no awaiting change → no push while the confident question is sticky"
-        );
     }
 
     #[test]

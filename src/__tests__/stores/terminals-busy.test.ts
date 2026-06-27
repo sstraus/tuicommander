@@ -273,25 +273,22 @@ describe("terminalsStore debounced busy signal", () => {
 			});
 		});
 
-		it("keeps a confident question through sustained busy — backend is authoritative (060)", () => {
+		it("clears a confident question after sustained busy with no re-detection (prompt answered, agent resumed work)", () => {
 			testInScope(() => {
 				const id = addTerminal();
 				store.update(id, { shellState: "busy" });
 				store.setAwaitingInput(id, "question", true);
-				// The frontend no longer second-guesses with a sustained-busy timer.
-				// A confident question stays until the backend's authoritative
-				// "awaiting" event flips false (simulated by clearAwaitingInput).
-				vi.advanceTimersByTime(10_000);
+				// The agent keeps producing output (busy) and the prompt is never
+				// re-detected — it was answered. The badge must not stay stuck.
+				vi.advanceTimersByTime(2499);
 				expect(store.get(id)?.awaitingInput).toBe("question");
-				expect(store.get(id)?.awaitingInputConfident).toBe(true);
-				// Backend reports the prompt was answered → badge clears.
-				store.clearAwaitingInput(id);
+				vi.advanceTimersByTime(1);
 				expect(store.get(id)?.awaitingInput).toBeNull();
 				expect(store.get(id)?.awaitingInputConfident).toBe(false);
 			});
 		});
 
-		it("keeps a confident question while idle waiting for the answer (genuine static prompt)", () => {
+		it("keeps a confident question when the terminal is idle at the deadline (genuine static prompt)", () => {
 			testInScope(() => {
 				const id = addTerminal();
 				// Menu shown, then the terminal goes idle waiting for the answer —
@@ -305,22 +302,18 @@ describe("terminalsStore debounced busy signal", () => {
 			});
 		});
 
-		it("keeps a confident question across busy/idle flapping until backend clears (060)", () => {
+		it("refreshes the clear timer on re-detection (Ink menu repaint keeps it highlighted)", () => {
 			testInScope(() => {
 				const id = addTerminal();
 				store.update(id, { shellState: "busy" });
 				store.setAwaitingInput(id, "question", true);
-				// Ink repaints + wakeup nudges flap shellState busy↔idle. The
-				// confident badge must survive all of it.
-				for (let i = 0; i < 5; i++) {
-					store.update(id, { shellState: "idle" });
-					store.update(id, { shellState: "busy" });
-					vi.advanceTimersByTime(2000);
-				}
+				vi.advanceTimersByTime(2000);
+				// Repaint re-emits the same confident question — refreshes the deadline.
+				store.setAwaitingInput(id, "question", true);
+				vi.advanceTimersByTime(2000);
 				expect(store.get(id)?.awaitingInput).toBe("question");
-				expect(store.get(id)?.awaitingInputConfident).toBe(true);
-				// Only the backend (clearAwaitingInput) clears it.
-				store.clearAwaitingInput(id);
+				// Past the refreshed deadline with no further re-detection → cleared.
+				vi.advanceTimersByTime(500);
 				expect(store.get(id)?.awaitingInput).toBeNull();
 			});
 		});

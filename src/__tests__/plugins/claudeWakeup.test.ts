@@ -26,7 +26,6 @@ class SessionTracker {
 	lastBusyAt = 0;
 	lastUserInputAt = 0;
 	hasQuestionAt = 0;
-	backendAwaiting = false;
 	activeSubtasks = 0;
 	choicePromptActive = false;
 	disarmed = false;
@@ -47,7 +46,6 @@ function canWake(session: SessionTracker, now: number, config = DEFAULTS): boole
 	if (session.totalWakesEver >= config.maxWakesEver) return false;
 	if (session.activeSubtasks > 0) return false;
 	if (session.choicePromptActive) return false;
-	if (session.backendAwaiting) return false;
 	if (session.hasQuestionAt > 0 && now - session.hasQuestionAt < config.questionStaleMs) {
 		return false;
 	}
@@ -243,17 +241,6 @@ describe("canWake", () => {
 		s.lastIdleAt = 1000;
 		s.hasQuestionAt = 40_000;
 		expect(canWake(s, 50_000)).toBe(false);
-	});
-
-	it("returns false when the backend marks the session awaiting (060)", () => {
-		const s = new SessionTracker();
-		s.shellState = "idle";
-		s.lastIdleAt = 1000;
-		// Past the flappy heuristic window (hasQuestionAt stale) — the
-		// authoritative backend flag must still block the wake.
-		s.hasQuestionAt = 0;
-		s.backendAwaiting = true;
-		expect(canWake(s, 10_000_000)).toBe(false);
 	});
 
 	it("returns false when subtasks are active", () => {

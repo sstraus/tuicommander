@@ -1208,41 +1208,6 @@ fn emit_active_subtasks(
     }
 }
 
-/// Emit the authoritative awaiting-input state via both the event bus
-/// (→ WS clients) and Tauri IPC (→ desktop), mirroring `emit_shell_state`.
-///
-/// Story 060: the backend accumulator (`state.rs`) is the single source of
-/// truth for the question/awaiting badge. The frontend mirrors this instead of
-/// re-deriving the sticky question state from individual events (which drifted —
-/// a sustained-busy timer dropped a still-active confident question). Emitted
-/// only when the reconciled awaiting state actually changes.
-pub(crate) fn emit_awaiting(
-    state: &crate::state::AppState,
-    session_id: &str,
-    awaiting: bool,
-    confident: bool,
-    text: Option<String>,
-) {
-    let parsed = ParsedEvent::Awaiting {
-        awaiting,
-        confident,
-        text,
-    };
-    match serde_json::to_value(&parsed) {
-        Ok(json) => {
-            let _ = state.event_bus.send(crate::state::AppEvent::PtyParsed {
-                session_id: session_id.to_string(),
-                parsed: json,
-            });
-        }
-        Err(e) => tracing::error!(session_id, "Failed to serialize Awaiting event: {e}"),
-    }
-    #[cfg(feature = "desktop")]
-    if let Some(app) = state.app_handle.read().as_ref() {
-        let _ = app.emit(&format!("pty-parsed-{session_id}"), &parsed);
-    }
-}
-
 /// Extract a signal number from portable_pty's signal string.
 /// Format is typically "Killed: 9", "Interrupt: 2", or "Signal 15".
 pub(crate) fn parse_signal_number(sig: &str) -> i32 {

@@ -118,22 +118,6 @@ pub enum ParsedEvent {
         #[serde(skip_serializing_if = "Option::is_none")]
         agent_type: Option<String>,
     },
-    /// Authoritative awaiting-input state derived by the backend accumulator
-    /// (`state.rs`) and pushed to the frontend so it does not re-derive the
-    /// sticky question state from individual events. The frontend mirrors this
-    /// directly — story 060 makes the backend the single source of truth for
-    /// the question/awaiting badge. Emitted only when the reconciled awaiting
-    /// state actually changes.
-    #[serde(rename = "awaiting")]
-    Awaiting {
-        /// True while the agent is parked at a question/prompt awaiting input.
-        awaiting: bool,
-        /// True for high-confidence detections (explicit pattern match),
-        /// false for the low-confidence silence `?` heuristic.
-        confident: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        text: Option<String>,
-    },
     /// Agent-emitted block boundary via OSC 7770;block=start|end.
     /// Lets AI agents (Claude Code etc.) define their own block regions
     /// independent of shell OSC 133 markers.
