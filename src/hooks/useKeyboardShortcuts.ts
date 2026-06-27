@@ -491,8 +491,11 @@ export function useKeyboardShortcuts(handlers: ShortcutHandlers): () => void {
 			} else if (dispatchAction(action as ActionName, handlers)) {
 				e.preventDefault();
 			}
-		} else if (handlers.runSmartPromptByCombo(combo)) {
+		} else if (handlers.runSmartPromptByCombo?.(combo)) {
 			// No built-in/plugin action — try a user-configured smart prompt shortcut.
+			// Optional-chained so a stale HMR handlers object (dev hot-reload of this
+			// module before App's handlers are recreated) can't hard-crash the session;
+			// the field stays required in the interface so real callers must provide it.
 			e.preventDefault();
 		}
 	};
