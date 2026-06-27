@@ -4,7 +4,7 @@
       "slug": "ipad-couch",
       "title": "Running your agents from the couch, on an iPad",
       "date": "2026-06-27",
-      "status": "draft",
+      "status": "published",
       "feature": "iPad / browser-desktop (v1.5.1) — full desktop UI over Tailscale",
       "summary": "Not a cut-down mobile view — the whole desktop UI, in Safari on an iPad, over Tailscale. The fixes in v1.5.1 (config hydration over Tailscale, touch scroll, keyboard occlusion + dictation, sidebar scroll-vs-reorder, the awaiting badge, duplicate tabs, and a Command Palette button) that made couch-mode supervision feel like sitting at the desk.",
       "screenshots": []
