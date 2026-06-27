@@ -380,6 +380,20 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	get_orchestrator_stats: { map: () => ({ method: "GET", path: "/stats" }) },
 	get_session_metrics: { map: () => ({ method: "GET", path: "/metrics" }) },
 	get_process_stats: { map: () => ({ method: "GET", path: "/process/stats" }) },
+
+	// --- Claude Usage dashboard ---
+	get_claude_usage_api: { map: () => ({ method: "GET", path: "/claude/usage" }) },
+	get_claude_project_list: { map: () => ({ method: "GET", path: "/claude/projects" }) },
+	get_claude_usage_timeline: {
+		map: (args, p) => {
+			let path = `/claude/timeline?scope=${p("scope")}`;
+			if (args.days != null) path += `&days=${encodeURIComponent(String(args.days))}`;
+			return { method: "GET", path };
+		},
+	},
+	get_claude_session_stats: {
+		map: (_args, p) => ({ method: "GET", path: `/claude/session-stats?scope=${p("scope")}` }),
+	},
 	list_active_sessions: { map: () => ({ method: "GET", path: "/sessions" }) },
 	can_spawn_session: {
 		map: () => ({

@@ -461,6 +461,36 @@ describe("transport", () => {
 			expect(result.transform?.([2, 9, "https://x.dev"])).toEqual([2, 9, "https://x.dev"]);
 			expect(result.transform?.(null)).toBeNull();
 		});
+
+		// --- Claude Usage dashboard (story 063) ---
+		it("maps get_claude_usage_api to GET /claude/usage", () => {
+			const result = mapCommandToHttp("get_claude_usage_api", {});
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/claude/usage");
+		});
+
+		it("maps get_claude_project_list to GET /claude/projects", () => {
+			const result = mapCommandToHttp("get_claude_project_list", {});
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/claude/projects");
+		});
+
+		it("maps get_claude_usage_timeline to GET with scope + days", () => {
+			const result = mapCommandToHttp("get_claude_usage_timeline", { scope: "all", days: 7 });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/claude/timeline?scope=all&days=7");
+		});
+
+		it("maps get_claude_usage_timeline omitting days when absent", () => {
+			const result = mapCommandToHttp("get_claude_usage_timeline", { scope: "my-proj" });
+			expect(result.path).toBe("/claude/timeline?scope=my-proj");
+		});
+
+		it("maps get_claude_session_stats to GET with scope", () => {
+			const result = mapCommandToHttp("get_claude_session_stats", { scope: "current" });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/claude/session-stats?scope=current");
+		});
 	});
 
 	describe("rpc()", () => {

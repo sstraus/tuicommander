@@ -1,6 +1,7 @@
 mod agent_routes;
 pub(crate) mod ai_terminal;
 pub(crate) mod auth;
+mod claude_routes;
 mod config_routes;
 mod fs_routes;
 mod git_routes;
@@ -917,6 +918,17 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/fs/copy-abs", post(fs_routes::copy_path_abs_http))
         .route("/fs/move-abs", post(fs_routes::move_path_abs_http))
         .route("/fs/transfer", post(fs_routes::fs_transfer_paths_http))
+        // Claude Usage dashboard
+        .route("/claude/usage", get(claude_routes::claude_usage_api))
+        .route(
+            "/claude/timeline",
+            get(claude_routes::claude_usage_timeline),
+        )
+        .route(
+            "/claude/session-stats",
+            get(claude_routes::claude_session_stats),
+        )
+        .route("/claude/projects", get(claude_routes::claude_project_list))
         // Notes
         .route(
             "/config/notes",
@@ -1312,6 +1324,17 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
         .route("/fs/copy-abs", post(fs_routes::copy_path_abs_http))
         .route("/fs/move-abs", post(fs_routes::move_path_abs_http))
         .route("/fs/transfer", post(fs_routes::fs_transfer_paths_http))
+        // Claude Usage dashboard
+        .route("/claude/usage", get(claude_routes::claude_usage_api))
+        .route(
+            "/claude/timeline",
+            get(claude_routes::claude_usage_timeline),
+        )
+        .route(
+            "/claude/session-stats",
+            get(claude_routes::claude_session_stats),
+        )
+        .route("/claude/projects", get(claude_routes::claude_project_list))
         // Recent commits / git panel
         .route(
             "/repo/recent-commits",

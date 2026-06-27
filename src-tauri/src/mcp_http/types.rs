@@ -552,3 +552,14 @@ pub(super) struct TerminalSelectionQuery {
 pub(super) struct SessionVisibleRequest {
     pub visible: bool,
 }
+
+#[derive(Deserialize)]
+pub(super) struct ClaudeTimelineQuery {
+    pub scope: String,
+    pub days: Option<u32>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct ClaudeStatsQuery {
+    pub scope: String,
+}

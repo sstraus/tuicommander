@@ -831,6 +831,20 @@ POST /fs/transfer      { "destDir": "/abs", "paths": [...], "mode": "move"|"copy
 
 Sandboxed filesystem operations for the file manager panel. `/fs/read-external` reads an arbitrary absolute path (not sandboxed to a repo).
 
+## Claude Usage Endpoints
+
+```
+GET /claude/usage                              -> UsageApiResponse (rate-limit usage, 5-min cached)
+GET /claude/projects                           -> ProjectEntry[]
+GET /claude/timeline?scope=all&days=7          -> TimelinePoint[] (hourly token aggregation)
+GET /claude/session-stats?scope=current        -> SessionStats
+```
+
+Powers the Claude Usage dashboard in browser/PWA/remote. `scope` is `"all"`,
+`"current"`, or a project slug. `timeline`/`session-stats` are desktop-only Tauri
+commands; the handlers call non-gated `*_impl` siblings so they also serve the
+remote daemon.
+
 **Absolute-path write boundary.** `/fs/write-external`, `/fs/copy-abs`, and `/fs/move-abs` are gated to **registered repository roots** for the HTTP boundary (a 403 otherwise), mirroring `/fs/read-external`. `/fs/transfer` gates only its `destDir` — sources are commonly external (a file dragged in from the desktop). `/fs/stat` and `/fs/resolve-terminal-path` return only metadata (no content) so they are not repo-gated; both also refuse macOS TCC-protected directories. `/fs/resolve-terminal-path` returns JSON `null` on a miss (`Option<ResolvedFilePath>`).
 
 ## Monitoring Endpoints

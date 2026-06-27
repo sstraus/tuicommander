@@ -1038,6 +1038,15 @@ pub async fn get_claude_usage_timeline(
     scope: String,
     days: Option<u32>,
 ) -> Result<Vec<TimelinePoint>, String> {
+    get_claude_usage_timeline_impl(&state, scope, days).await
+}
+
+/// HTTP/remote-safe body shared with the Tauri command above (no Tauri `State`).
+pub async fn get_claude_usage_timeline_impl(
+    state: &Arc<crate::AppState>,
+    scope: String,
+    days: Option<u32>,
+) -> Result<Vec<TimelinePoint>, String> {
     let days = days.unwrap_or(7);
     let cache = state.claude_usage_cache.lock().clone();
 
@@ -1091,6 +1100,14 @@ pub async fn get_claude_usage_timeline(
 #[tauri::command]
 pub async fn get_claude_session_stats(
     state: State<'_, Arc<crate::AppState>>,
+    scope: String,
+) -> Result<SessionStats, String> {
+    get_claude_session_stats_impl(&state, scope).await
+}
+
+/// HTTP/remote-safe body shared with the Tauri command above (no Tauri `State`).
+pub async fn get_claude_session_stats_impl(
+    state: &Arc<crate::AppState>,
     scope: String,
 ) -> Result<SessionStats, String> {
     let cache_mutex = state.claude_usage_cache.lock();
