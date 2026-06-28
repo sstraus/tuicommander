@@ -15,7 +15,7 @@
   max-width: 90vw;
   max-height: 70vh;
   background: var(--bg-secondary);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-popup);
   display: flex;
@@ -61,7 +61,6 @@
   padding: 10px 16px;
   gap: 6px;
   cursor: pointer;
-  border-left: 3px solid transparent;
   border-bottom: 1px solid var(--border);
 }
 
@@ -74,8 +73,7 @@
 }
 
 .activeRow {
-  border-left-color: var(--accent);
-  background: var(--bg-highlight);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-highlight));
 }
 
 .idleRow {

@@ -109,8 +109,6 @@
   justify-content: center;
   gap: 16px;
   background: rgba(30, 30, 30, 0.85);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 .endedText {
@@ -170,8 +168,10 @@
 
 .headerProgressFill {
   height: 100%;
+  width: 100%;
   background: var(--accent);
-  transition: width 0.3s ease;
+  transform-origin: left;
+  transition: transform 0.3s ease;
 }
 
 .usageLabel {

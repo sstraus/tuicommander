@@ -102,7 +102,7 @@ export function SessionCard(props: SessionCardProps) {
 						<span class={styles.subRowText}>{props.session.state!.current_task}</span>
 						<Show when={props.session.state?.progress != null}>
 							<div class={styles.progressBar} data-testid="progress-bar">
-								<div class={styles.progressFill} style={{ width: `${props.session.state!.progress}%` }} />
+								<div class={styles.progressFill} style={{ transform: `scaleX(${props.session.state!.progress! / 100})` }} />
 							</div>
 						</Show>
 					</div>

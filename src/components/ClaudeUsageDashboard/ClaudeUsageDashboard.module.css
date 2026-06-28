@@ -111,8 +111,10 @@
 
 .rateFill {
   height: 100%;
+  width: 100%;
   border-radius: 2px;
-  transition: width 0.3s ease;
+  transform-origin: left;
+  transition: transform 0.3s ease;
 }
 
 .rateOk {
@@ -571,8 +573,10 @@
 
 .extraFill {
   height: 100%;
+  width: 100%;
   border-radius: 3px;
-  transition: width 0.3s ease;
+  transform-origin: left;
+  transition: transform 0.3s ease;
 }
 
 .extraSub {

@@ -7,7 +7,7 @@
   max-width: 420px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-dropdown);
   z-index: 100;
   max-height: calc(100vh - 60px);

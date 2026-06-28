@@ -12,6 +12,7 @@ import { rateLimitStore } from "../../stores/ratelimit";
 import { FONT_FAMILIES, settingsStore } from "../../stores/settings";
 import { type AwaitingInputType, isShellState, terminalsStore } from "../../stores/terminals";
 import { isTauri, subscribePty, type Unsubscribe } from "../../transport";
+import { onClickKeyDown } from "../../utils/a11y";
 import { keyFor } from "../../utils/hotkey";
 import { ComposePanel } from "../ComposePanel";
 import { getAwaitingInputSound } from "./awaitingInputSound";
@@ -1108,7 +1109,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 				)}
 			</Show>
 			<Show when={terminalsStore.get(props.id)?.pendingResumeCommand}>
-				<div class={s.resumeBanner} onClick={handleResume}>
+				<div class={s.resumeBanner} role="button" tabIndex={0} onClick={handleResume} onKeyDown={onClickKeyDown(handleResume)}>
 					<span>Agent session was active — click to resume</span>
 					<button class={s.resumeDismiss} onClick={handleDismissResume} title="Dismiss">
 						&times;

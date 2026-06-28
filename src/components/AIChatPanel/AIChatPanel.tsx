@@ -4,6 +4,7 @@ import { appLogger } from "../../stores/appLogger";
 import { type ConversationMeta, conversationStore, type ToolCallEntry } from "../../stores/conversationStore";
 import { terminalsStore } from "../../stores/terminals";
 import { cx } from "../../utils";
+import { onClickKeyDown } from "../../utils/a11y";
 import { getShellFamily, sendCommand } from "../../utils/sendCommand";
 import p from "../shared/panel.module.css";
 import { ContentRenderer } from "../ui/ContentRenderer";
@@ -153,7 +154,7 @@ const ToolCallCard: Component<{ entry: ToolCallEntry }> = (props) => {
 
 	return (
 		<div class={s.toolCallCard}>
-			<div class={s.toolCallHeader} onClick={() => setExpanded(!expanded())}>
+			<div class={s.toolCallHeader} role="button" tabIndex={0} onClick={() => setExpanded(!expanded())} onKeyDown={onClickKeyDown(() => setExpanded(!expanded()))}>
 				<span class={cx(s.toolCallStatusDot, statusClass())} />
 				<span class={s.toolCallName}>{props.entry.toolName}</span>
 				<Show when={props.entry.status === "done" && doneEntry()}>

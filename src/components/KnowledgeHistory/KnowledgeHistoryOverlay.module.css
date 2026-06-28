@@ -113,7 +113,7 @@
 }
 
 .sessionRowActive {
-  background: color-mix(in srgb, var(--accent, #3b82f6) 15%, transparent);
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
 }
 
 .sessionId {
@@ -181,13 +181,13 @@
 }
 
 .badgeOk {
-  background: color-mix(in srgb, var(--ok, #2ea043) 20%, transparent);
-  color: var(--ok, #2ea043);
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
 }
 
 .badgeErr {
-  background: color-mix(in srgb, var(--err, #d73a49) 20%, transparent);
-  color: var(--err, #d73a49);
+  background: color-mix(in srgb, var(--error) 20%, transparent);
+  color: var(--error);
 }
 
 .badgeInferred {
@@ -196,8 +196,8 @@
 }
 
 .badgeTui {
-  background: color-mix(in srgb, var(--accent, #3b82f6) 20%, transparent);
-  color: var(--accent, #3b82f6);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
 }
 
 .cmdText {

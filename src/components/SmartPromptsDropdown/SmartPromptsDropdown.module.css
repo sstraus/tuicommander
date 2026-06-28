@@ -45,7 +45,7 @@
   max-height: min(500px, calc(100vh - 80px));
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   z-index: 1001;
   display: flex;
@@ -85,8 +85,8 @@
   gap: 6px;
   padding: 8px 12px;
   font-size: var(--font-xs);
-  color: var(--warning, #e5a300);
-  background: rgba(229, 163, 0, 0.08);
+  color: var(--warning);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
   border-bottom: 1px solid var(--border);
 }
 

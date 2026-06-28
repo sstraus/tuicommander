@@ -16,23 +16,23 @@
   gap: 8px;
   padding: 8px 14px;
   max-width: 360px;
-  background: var(--bg-secondary, #252526);
-  border: 1px solid var(--border, #3c3c3c);
-  border-radius: var(--radius-md, 4px);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
   font-family: var(--font-ui);
-  font-size: var(--font-md, 12px);
-  color: var(--fg-primary, #cccccc);
+  font-size: var(--font-md);
+  color: var(--fg-primary);
   cursor: pointer;
   animation: slideIn 200ms ease-out;
 }
 
 .toast[data-level="warn"] {
-  border-color: var(--warning, #e5c07b);
+  border-color: var(--warning);
 }
 
 .toast[data-level="error"] {
-  border-color: var(--error, #e06c75);
+  border-color: var(--error);
 }
 
 .level {
@@ -43,15 +43,15 @@
 }
 
 .level[data-level="info"] {
-  background: var(--accent, #61afef);
+  background: var(--accent);
 }
 
 .level[data-level="warn"] {
-  background: var(--warning, #e5c07b);
+  background: var(--warning);
 }
 
 .level[data-level="error"] {
-  background: var(--error, #e06c75);
+  background: var(--error);
 }
 
 .title {
@@ -60,7 +60,7 @@
 }
 
 .message {
-  color: var(--fg-secondary, #888888);
+  color: var(--fg-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -70,11 +70,11 @@
   flex-shrink: 0;
   margin-left: auto;
   padding: 2px 8px;
-  font-size: var(--font-sm, 11px);
-  background: var(--accent, #61afef);
-  color: var(--bg-primary, #1e1e1e);
+  font-size: var(--font-sm);
+  background: var(--accent);
+  color: var(--text-on-accent);
   border: none;
-  border-radius: var(--radius-sm, 3px);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-weight: 600;
 }

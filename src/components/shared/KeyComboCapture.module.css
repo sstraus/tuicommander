@@ -35,5 +35,5 @@
 
 .collision {
   font-size: var(--font-sm);
-  color: var(--warning, #fbbf24);
+  color: var(--warning);
 }

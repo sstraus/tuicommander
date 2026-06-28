@@ -29,7 +29,7 @@ export const UpdateProgressDialog: Component = () => {
 						<Show when={!error()} fallback={<p class={d.error}>{error()}</p>}>
 							<div class={s.progressContainer}>
 								<div class={s.progressBar}>
-									<div class={s.progressFill} style={{ width: `${pct()}%` }} />
+									<div class={s.progressFill} style={{ transform: `scaleX(${pct() / 100})` }} />
 								</div>
 								<span class={s.progressText}>{pct()}%</span>
 							</div>

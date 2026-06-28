@@ -12,7 +12,7 @@
   width: 380px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-popup);
   padding: 20px;
 }
@@ -39,7 +39,7 @@
 .actions button {
   padding: 8px 16px;
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   font-size: var(--font-md);
   font-weight: 500;
   cursor: pointer;

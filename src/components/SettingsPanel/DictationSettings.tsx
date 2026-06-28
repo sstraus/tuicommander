@@ -51,7 +51,7 @@ const ModelRow: Component<{ model: ModelInfo }> = (props) => {
 				<Show when={isDownloading()}>
 					<div class={d.downloadProgress}>
 						<div class={d.progressBar}>
-							<div class={d.progressFill} style={{ width: `${dictationStore.state.downloadPercent}%` }} />
+							<div class={d.progressFill} style={{ transform: `scaleX(${dictationStore.state.downloadPercent / 100})` }} />
 						</div>
 						<span class={d.progressText}>{dictationStore.state.downloadPercent}%</span>
 					</div>

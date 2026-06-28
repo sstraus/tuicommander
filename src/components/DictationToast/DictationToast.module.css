@@ -11,14 +11,14 @@
   padding: 6px 16px;
   max-width: 600px;
 
-  background: var(--bg-secondary, #252526);
-  border: 1px solid var(--border, #3c3c3c);
-  border-radius: var(--radius-md, 4px);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 
   font-family: var(--font-ui);
-  font-size: var(--font-md, 12px);
-  color: var(--fg-primary, #cccccc);
+  font-size: var(--font-md);
+  color: var(--fg-primary);
 
   opacity: 0;
   animation: slideUp 200ms ease-out forwards;
@@ -47,7 +47,7 @@
 
 .dots::after {
   content: "...";
-  color: var(--fg-secondary, #888888);
+  color: var(--fg-secondary);
   animation: dots 1.5s steps(3) infinite;
 }
 

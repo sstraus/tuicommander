@@ -29,6 +29,7 @@ import { remoteConnectionsStore } from "../../../stores/remoteConnections";
 import { repositoriesStore } from "../../../stores/repositories";
 import { settingsStore } from "../../../stores/settings";
 import { isTauri } from "../../../transport";
+import { onClickKeyDown } from "../../../utils/a11y";
 import { buildEnvFromEntries, findDuplicateEnvKeys } from "../../../utils/envVars";
 import { AgentIcon } from "../../ui/AgentIcon";
 import { SettingToggle } from "../SettingFields";
@@ -698,7 +699,7 @@ const AgentRow: Component<{
 
 	return (
 		<div class={a.agentRow}>
-			<div class={a.agentHeader} onClick={handleExpand}>
+			<div class={a.agentHeader} role="button" tabIndex={0} onClick={handleExpand} onKeyDown={onClickKeyDown(handleExpand)}>
 				<div class={a.agentInfo}>
 					<div class={a.agentNameRow}>
 						<div class={a.agentIcon} style={{ background: display().color, opacity: isEnabled() ? 1 : 0.4 }}>

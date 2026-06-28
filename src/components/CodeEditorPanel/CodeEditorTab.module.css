@@ -67,8 +67,8 @@
   align-items: center;
   gap: 8px;
   padding: 4px 12px;
-  background: rgba(255, 183, 77, 0.15);
-  border-bottom: 1px solid rgba(255, 183, 77, 0.4);
+  background: color-mix(in srgb, var(--attention) 15%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--attention) 40%, transparent);
   font-size: var(--font-sm);
-  color: #ffb74d;
+  color: var(--attention);
 }

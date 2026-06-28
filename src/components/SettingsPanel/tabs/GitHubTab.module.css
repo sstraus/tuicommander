@@ -13,7 +13,7 @@
   gap: 16px;
   padding: 16px;
   background: var(--bg-tertiary);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
 }
 
@@ -65,7 +65,7 @@
 .codeCard {
   padding: 24px;
   background: var(--bg-tertiary);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   text-align: center;
 }
@@ -208,9 +208,9 @@
   align-items: flex-start;
   gap: 8px;
   font-size: var(--font-sm);
-  color: var(--warning, #e3b341);
+  color: var(--warning);
   padding: 8px 12px;
-  background: rgba(227, 179, 65, 0.08);
+  background: color-mix(in srgb, var(--warning) 8%, transparent);
   border-radius: var(--radius-sm);
   line-height: 1.4;
 }
@@ -220,9 +220,9 @@
   align-items: center;
   gap: 8px;
   font-size: var(--font-sm);
-  color: var(--success, #3fb950);
+  color: var(--success);
   padding: 8px 12px;
-  background: rgba(63, 185, 80, 0.08);
+  background: color-mix(in srgb, var(--success) 8%, transparent);
   border-radius: var(--radius-sm);
 }
 

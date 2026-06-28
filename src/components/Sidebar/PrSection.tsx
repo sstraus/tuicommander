@@ -11,6 +11,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { toastsStore } from "../../stores/toasts";
 import type { BranchPrStatus } from "../../types";
 import { cx } from "../../utils";
+import { onClickKeyDown } from "../../utils/a11y";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { canApprovePr, effectiveMergeMethod, mergeWithFallback } from "../../utils/prMerge";
 import { prContextVariables } from "../../utils/promptContext";
@@ -146,7 +147,7 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 
 	return (
 		<div class={s.ghSection}>
-			<div class={s.ghSectionHeader} onClick={() => setCollapsed((v) => !v)}>
+			<div class={s.ghSectionHeader} role="button" tabIndex={0} onClick={() => setCollapsed((v) => !v)} onKeyDown={onClickKeyDown(() => setCollapsed((v) => !v))}>
 				<span class={cx(s.ghSectionChevron, !collapsed() && s.ghSectionChevronOpen)}>{"›"}</span>
 				<PrIcon />
 				<span>{props.title}</span>

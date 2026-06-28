@@ -139,11 +139,12 @@
 .tab.active::before {
   content: "";
   position: absolute;
-  top: 0;
+  bottom: 0;
   left: 0;
   right: 0;
   height: 2px;
   background: var(--accent);
+  z-index: 1;
 }
 
 .tabIcon {
@@ -293,7 +294,7 @@
 }
 
 .tab.shellExited .tabIcon {
-  color: var(--text-muted, #666);
+  color: var(--fg-muted);
   opacity: 0.45;
   font-size: var(--font-3xs);
 }
@@ -410,7 +411,7 @@
 
 .tab.mdTab.active {
   background: linear-gradient(135deg, rgba(var(--tab-md-rgb), 0.2) 0%, rgba(var(--tab-md-rgb), 0.1) 100%);
-  border-bottom-color: #22c55e;
+  border-bottom-color: var(--success);
 }
 
 .tab.mdTab.active::before {
@@ -418,7 +419,7 @@
 }
 
 .tab.mdTab .tabIcon {
-  color: #22c55e;
+  color: var(--success);
   opacity: 0.8;
   display: flex;
   align-items: center;
@@ -439,7 +440,7 @@
 
 .tab.panelTab.active {
   background: linear-gradient(135deg, rgba(var(--tab-panel-rgb), 0.2) 0%, rgba(var(--tab-panel-rgb), 0.1) 100%);
-  border-bottom-color: #a78bfa;
+  border-bottom-color: var(--merged);
 }
 
 .tab.panelTab.active::before {
@@ -447,7 +448,7 @@
 }
 
 .tab.panelTab .tabIcon {
-  color: #a78bfa;
+  color: var(--merged);
   opacity: 0.8;
   display: flex;
   align-items: center;
@@ -473,7 +474,7 @@
 
 /* Detached to floating window — dim name but keep status dot colors */
 .tab.detached {
-  border-bottom: 2px dashed var(--text-secondary, #848d97);
+  border-bottom: 2px dashed var(--fg-secondary);
 }
 
 .tab.detached .tabName {
@@ -505,11 +506,11 @@
 }
 
 .tab.dragOverLeft.dragInvalid {
-  box-shadow: inset 2px 0 0 var(--color-error, #ef4444);
+  box-shadow: inset 2px 0 0 var(--error);
 }
 
 .tab.dragOverRight.dragInvalid {
-  box-shadow: inset -2px 0 0 var(--color-error, #ef4444);
+  box-shadow: inset -2px 0 0 var(--error);
 }
 
 /* Quick switcher shortcut badges */
@@ -538,8 +539,10 @@
   height: 2px;
   background: linear-gradient(90deg, var(--success) 0%, color-mix(in srgb, var(--success) 70%, white) 50%, var(--success) 100%);
   background-size: 200% 100%;
+  width: 100%;
+  transform-origin: left;
   animation: progressShimmer 1.5s ease-in-out infinite;
-  transition: width 0.3s ease;
+  transition: transform 0.3s ease;
 }
 
 @keyframes progressShimmer {

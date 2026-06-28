@@ -98,8 +98,8 @@
 }
 
 .badge[data-type="headless"] {
-  background: rgba(192, 132, 252, 0.15);
-  color: #c084fc;
+  background: color-mix(in srgb, var(--unseen) 15%, transparent);
+  color: var(--unseen);
 }
 
 .badge[data-type="placement"] {
@@ -361,7 +361,7 @@
   margin-top: 12px;
   background: transparent;
   border: 1px dashed var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: var(--font-sm);
   cursor: pointer;

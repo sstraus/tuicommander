@@ -6,6 +6,7 @@ import { isDiffStatus } from "../../stores/diffTabs";
 import { promptLibraryStore } from "../../stores/promptLibrary";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx, globToRegex } from "../../utils";
+import { onClickKeyDown } from "../../utils/a11y";
 import { joinPath } from "../../utils/pathUtils";
 import { fileContextSmartMenuItem } from "../../utils/promptContext";
 import { ConfirmDialog } from "../ConfirmDialog";
@@ -861,7 +862,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 
 			{/* STAGED section */}
 			<Show when={filteredStaged().length > 0}>
-				<div class={s.sectionHeader} onClick={() => setStagedExpanded((v) => !v)}>
+				<div class={s.sectionHeader} role="button" tabIndex={0} onClick={() => setStagedExpanded((v) => !v)} onKeyDown={onClickKeyDown(() => setStagedExpanded((v) => !v))}>
 					<span class={cx(s.chevron, !stagedExpanded() && s.chevronCollapsed)}>&#x25BC;</span>
 					<span class={s.sectionLabel}>Staged</span>
 					<span class={s.sectionCount}>
@@ -885,7 +886,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 
 			{/* CHANGES (unstaged + untracked) section */}
 			<Show when={filteredUnstaged().length > 0}>
-				<div class={s.sectionHeader} onClick={() => setUnstagedExpanded((v) => !v)}>
+				<div class={s.sectionHeader} role="button" tabIndex={0} onClick={() => setUnstagedExpanded((v) => !v)} onKeyDown={onClickKeyDown(() => setUnstagedExpanded((v) => !v))}>
 					<span class={cx(s.chevron, !unstagedExpanded() && s.chevronCollapsed)}>&#x25BC;</span>
 					<span class={s.sectionLabel}>Changes (unstaged)</span>
 					<span class={s.sectionCount}>

@@ -27,8 +27,8 @@
 
 /* Tweak comment highlights */
 .content :global(.tweak-highlight) {
-  background: color-mix(in srgb, #f5a623 25%, transparent);
-  border-bottom: 1.5px solid color-mix(in srgb, #f5a623 70%, transparent);
+  background: color-mix(in srgb, var(--tweak-highlight) 25%, transparent);
+  border-bottom: 1.5px solid color-mix(in srgb, var(--tweak-highlight) 70%, transparent);
   border-radius: 2px;
   cursor: pointer;
   padding: 0 1px;
@@ -36,7 +36,7 @@
 }
 
 .content :global(.tweak-highlight:hover) {
-  background: color-mix(in srgb, #f5a623 40%, transparent);
+  background: color-mix(in srgb, var(--tweak-highlight) 40%, transparent);
 }
 
 /* Hover tooltip for existing highlights */
@@ -173,12 +173,12 @@
 
 /* DomSearchEngine highlight marks */
 .content :global(.search-match) {
-  background: #ffff0040;
+  background: var(--search-match);
   border-radius: 2px;
 }
 
 .content :global(.search-match-active) {
-  background: #ff8c00b0;
-  outline: 1px solid #ff8c00;
+  background: var(--search-match-active);
+  outline: 1px solid var(--search-match-border);
   border-radius: 2px;
 }

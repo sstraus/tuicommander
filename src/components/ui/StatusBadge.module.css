@@ -24,7 +24,7 @@
 }
 
 .merged {
-  background: #a371f7;
+  background: var(--merged);
   color: var(--text-on-accent);
 }
 

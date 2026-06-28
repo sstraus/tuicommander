@@ -14,9 +14,11 @@
 
 .progressFill {
   height: 100%;
+  width: 100%;
   background: var(--accent);
   border-radius: 3px;
-  transition: width 0.3s ease;
+  transform-origin: left;
+  transition: transform 0.3s ease;
 }
 
 .progressText {

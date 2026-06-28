@@ -126,11 +126,10 @@
   background: var(--bg-highlight);
 }
 
-/* The file open in the active editor — VS Code-style accent bar + tint so it
-   reads as "you are here" distinct from keyboard selection. */
 .entryActive {
   background: color-mix(in srgb, var(--accent) 14%, transparent);
-  box-shadow: inset 2px 0 0 var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius-sm);
 }
 
 .entryActive .entryName {

@@ -15,7 +15,7 @@
 .dialog {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   min-width: 400px;
   max-width: 600px;
   box-shadow: var(--shadow-dropdown);
@@ -45,7 +45,7 @@
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   transition: background 0.1s;
 }

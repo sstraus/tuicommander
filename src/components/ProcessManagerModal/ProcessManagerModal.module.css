@@ -76,8 +76,10 @@
 
 .barFill {
   height: 100%;
+  width: 100%;
   border-radius: 2px;
-  transition: width 0.3s ease;
+  transform-origin: left;
+  transition: transform 0.3s ease;
 }
 
 .cpuFill {
@@ -85,7 +87,7 @@
 }
 
 .memFill {
-  background: var(--warning, #e5c07b);
+  background: var(--warning);
 }
 
 .highCpu {
@@ -108,7 +110,7 @@
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: var(--success, #98c379);
+  background: var(--success);
   margin-right: 6px;
   animation: pulse 2s ease-in-out infinite;
 }

@@ -721,7 +721,7 @@ export const ClaudeUsageDashboard: Component = () => {
 										<div class={s.rateBar}>
 											<div
 												class={`${s.rateFill} ${rateClass(item.bucket.utilization)}`}
-												style={{ width: `${Math.min(100, item.bucket.utilization)}%` }}
+												style={{ transform: `scaleX(${Math.min(100, item.bucket.utilization) / 100})` }}
 											/>
 										</div>
 										<Show when={item.bucket.resets_at}>
@@ -780,7 +780,7 @@ export const ClaudeUsageDashboard: Component = () => {
 												<div class={s.extraBar}>
 													<div
 														class={`${s.extraFill} ${rateClass(util())}`}
-														style={{ width: `${Math.min(100, util())}%` }}
+														style={{ transform: `scaleX(${Math.min(100, util()) / 100})` }}
 													/>
 												</div>
 												<span class={s.extraSub}>{util().toFixed(1)}% used</span>

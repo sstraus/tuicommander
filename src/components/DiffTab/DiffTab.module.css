@@ -135,7 +135,7 @@
   padding: 4px 6px;
   background: var(--bg-secondary);
   border: 1px solid var(--accent);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   box-shadow: var(--shadow-dropdown);
   width: fit-content;
 }
@@ -203,7 +203,7 @@
   padding: 8px;
   background: var(--bg-secondary);
   border: 1px solid var(--accent);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   box-shadow: var(--shadow-dropdown);
   width: min(480px, calc(100vw - 64px));
 }

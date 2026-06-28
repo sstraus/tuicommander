@@ -297,11 +297,11 @@
 }
 
 .formInput.inputError {
-  border-color: var(--danger, #e55);
+  border-color: var(--error);
 }
 
 .validationError {
-  color: var(--danger, #e55);
+  color: var(--error);
   font-size: 0.75rem;
   padding: 0 4px 4px;
 }
@@ -434,8 +434,8 @@
   letter-spacing: 0.04em;
   padding: 1px 6px;
   border-radius: var(--radius-sm);
-  background: rgba(230, 180, 60, 0.15);
-  color: var(--warning, #e0a040);
+  background: color-mix(in srgb, var(--warning) 15%, transparent);
+  color: var(--warning);
   flex-shrink: 0;
 }
 

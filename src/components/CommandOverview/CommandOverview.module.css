@@ -51,15 +51,15 @@
 }
 
 .exitOk {
-  background: var(--green, #3fb950);
+  background: var(--success);
 }
 
 .exitErr {
-  background: var(--red, #f85149);
+  background: var(--error);
 }
 
 .exitRunning {
-  background: var(--yellow, #d29922);
+  background: var(--changes);
   animation: pulse 1.2s ease-in-out infinite;
 }
 

@@ -124,7 +124,7 @@
 }
 
 .agentUsageWarning {
-  color: #dcdcaa;
+  color: var(--warning);
 }
 
 .agentUsageCritical {
@@ -133,7 +133,7 @@
 }
 
 .agentRateLimited {
-  color: #f44747;
+  color: var(--error);
   animation: pulse-opacity 2s ease-in-out infinite;
 }
 
@@ -144,7 +144,7 @@
   min-width: 12px;
   height: 12px;
   padding: 0 2px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   background: var(--accent);
   color: var(--text-on-accent);
   font-size: 9px;
@@ -179,8 +179,8 @@
 }
 
 .tickerWarning {
-  color: #ffd700;
-  background: rgba(255, 215, 0, 0.1);
+  color: var(--urgent);
+  background: color-mix(in srgb, var(--urgent) 10%, transparent);
 }
 
 .tickerIcon {
@@ -210,7 +210,7 @@
 }
 
 .tickerAttention {
-  color: #dcdcaa;
+  color: var(--warning);
 }
 
 .tickerBadge {
@@ -245,7 +245,7 @@
   max-height: 300px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-bottom-anchor);
   z-index: 1001;
   display: flex;
@@ -305,7 +305,7 @@
 }
 
 .tickerPopoverRowUrgent {
-  color: #ffd700;
+  color: var(--urgent);
 }
 
 .tickerPopoverLabel {
@@ -326,8 +326,8 @@
   font-weight: 700;
   padding: 1px 4px;
   border-radius: var(--radius-sm);
-  background: rgba(255, 215, 0, 0.15);
-  color: #ffd700;
+  background: color-mix(in srgb, var(--urgent) 15%, transparent);
+  color: var(--urgent);
   flex-shrink: 0;
 }
 
@@ -353,7 +353,7 @@
   padding: 8px 12px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   box-shadow: var(--shadow-bottom-anchor);
   color: var(--fg-secondary);
   font-size: var(--font-sm);
@@ -424,7 +424,7 @@
 .micLoading {
   animation: mic-loading-pulse 0.8s ease-in-out infinite;
   cursor: wait !important;
-  color: var(--warning, #e5c07b) !important;
+  color: var(--warning) !important;
 }
 
 .micProcessing {

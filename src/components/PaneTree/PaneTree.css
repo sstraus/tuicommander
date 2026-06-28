@@ -257,7 +257,7 @@
 }
 .pane-tab-md.pane-tab-active {
   background: linear-gradient(135deg, rgba(var(--tab-md-rgb), 0.2), rgba(var(--tab-md-rgb), 0.1));
-  border-bottom-color: #22c55e;
+  border-bottom-color: var(--success);
 }
 
 .pane-tab-panel {
@@ -269,7 +269,7 @@
 }
 .pane-tab-panel.pane-tab-active {
   background: linear-gradient(135deg, rgba(var(--tab-panel-rgb), 0.2), rgba(var(--tab-panel-rgb), 0.1));
-  border-bottom-color: #a78bfa;
+  border-bottom-color: var(--merged);
 }
 
 /* ---- Tab Content (mount all, show active) ---- */

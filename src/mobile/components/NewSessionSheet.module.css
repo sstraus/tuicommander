@@ -10,9 +10,8 @@
   width: 100%;
   max-height: 60vh;
   overflow-y: auto;
-  background: rgba(37, 37, 38, 0.85);
-  backdrop-filter: blur(12px) saturate(1.6);
-  -webkit-backdrop-filter: blur(12px) saturate(1.6);
+  background: var(--bg-secondary);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
   border-top: 1px solid var(--border);
   border-radius: 12px 12px 0 0;
   padding: 8px 0 calc(56px + 8px);

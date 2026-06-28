@@ -26,7 +26,7 @@
   text-align: left;
   padding: 7px 10px;
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--fg-secondary);
   font-size: var(--font-md);
@@ -125,7 +125,7 @@
   padding: 10px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-primary);
   font-family: var(--font-mono);
   font-size: var(--font-md);
@@ -164,7 +164,7 @@
 .actions button {
   padding: 7px 14px;
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   font-size: var(--font-md);
   font-weight: 500;
   cursor: pointer;
