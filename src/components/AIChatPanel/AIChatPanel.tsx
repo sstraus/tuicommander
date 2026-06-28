@@ -453,6 +453,7 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 							onChange={(e) => setModelOverride(e.currentTarget.value)}
 							title="Model override for this conversation"
 						>
+							<option value="">Default model</option>
 							<For each={availableModels()}>{(m) => <option value={m}>{m}</option>}</For>
 						</select>
 					</Show>

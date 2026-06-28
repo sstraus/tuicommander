@@ -40,6 +40,8 @@
 .title {
   color: var(--fg-secondary);
   font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .headerSep {

@@ -427,7 +427,7 @@
 
 .branchItem.active {
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-highlight));
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
   border-radius: var(--radius-sm);
 }
 
@@ -731,13 +731,13 @@
 
 .prReviewRequired {
   background: transparent;
-  border: 1px solid var(--changes);
+  box-shadow: inset 0 0 0 1px var(--changes);
   color: var(--changes);
 }
 
 .prCiPending {
   background: transparent;
-  border: 1px solid var(--changes);
+  box-shadow: inset 0 0 0 1px var(--changes);
   color: var(--changes);
   animation: pulse-opacity 2s ease-in-out infinite;
 }

@@ -99,7 +99,7 @@
 .navItem.active {
   background: color-mix(in srgb, var(--accent) 12%, var(--bg-highlight));
   color: var(--fg-primary);
-  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 30%, transparent);
   border-radius: var(--radius-sm);
 }
 

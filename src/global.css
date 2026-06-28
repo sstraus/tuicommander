@@ -288,6 +288,9 @@ html, body {
   color: var(--fg-primary);
   font-family: var(--font-ui);
   font-size: var(--font-base);
+  /* Dark app: make native controls (number-input spinners, selects, pickers)
+     render their affordances light instead of the default black-on-dark. */
+  color-scheme: dark;
 }
 
 #app {

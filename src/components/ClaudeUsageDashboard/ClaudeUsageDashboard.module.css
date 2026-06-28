@@ -13,13 +13,18 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 6px 12px;
+  /* Narrow panels: drop the scope select to its own line instead of crushing
+     the title into a 3-line stack beside a half-width select. */
+  flex-wrap: wrap;
 }
 
 .title {
   font-size: var(--font-xl);
   font-weight: 600;
   color: var(--fg-primary);
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .scopeSelect {
@@ -30,6 +35,8 @@
   color: var(--fg-primary);
   font-size: var(--font-sm);
   cursor: pointer;
+  flex: 0 1 auto;
+  max-width: 100%;
 }
 
 .scopeSelect:focus {
