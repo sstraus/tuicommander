@@ -91,7 +91,17 @@ GPT-5.4 flagged that classifying entire stories as "architectural" is too coarse
 the **request/response** commands inside 068-070/072 are mechanical and shippable now;
 only the **push/subscription** delivery needs the event-bridge decision.
 
-**068-070 + run_diff_triage are now PLANNED** → `plans/http-parity-ai-event-bridge.md`
+**STEP 1 (RPC-now) of the plan is DONE (2026-06-28):** 070 fully closed (#070-0902,
+all 7 watcher commands); 069 RPC slice (7 chat-CRUD commands, #069-4a4f) and 068 RPC
+slice (10 agent-loop/knowledge/scheduler commands, #068-6601) shipped — both stories
+stay `in_progress` for their streaming halves. All in `mcp_http/ai_routes.rs`, loopback
+router, transport 108/108, both build targets green, pushed.
+**REMAINING = the streaming Steps 2-5** (the hard, architectural core): diff-triage→SSE
+(Step 2), conversation token WS (Step 3), chat token WS (Step 4), browser WS wiring
+(Step 5). These are the genuine event-bridge infra — best done in a focused session via
+`/wiz:work plans/http-parity-ai-event-bridge.md`.
+
+**068-070 + run_diff_triage are PLANNED** → `plans/http-parity-ai-event-bridge.md`
 (active plan, 2026-06-28). Codebase exploration found a THIRD transport GPT missed:
 agent/chat streaming uses `tauri::ipc::Channel` (per-invoke, no HTTP analog), not just
 AppHandle-vs-AppEvent. Plan recommends a **HYBRID** bridge: low-freq lifecycle/progress →
