@@ -39,6 +39,22 @@
   user-select: none;
 }
 
+.appNameFull {
+  display: block;
+}
+
+.appNameShort {
+  display: none;
+}
+
+.narrowSidebar .appNameFull {
+  display: none;
+}
+
+.narrowSidebar .appNameShort {
+  display: block;
+}
+
 :global(.platform-macos) .left {
   padding-left: 78px;
 }
@@ -73,7 +89,7 @@
   justify-content: center;
   background: transparent;
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: var(--font-xl);
   cursor: pointer;
@@ -104,7 +120,7 @@
   padding: 0 10px;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   font-family: inherit;
   transition: background 0.15s ease;
@@ -188,7 +204,7 @@
   min-width: 14px;
   height: 14px;
   padding: 0 3px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   background: var(--accent);
   color: var(--text-on-accent);
   font-size: var(--font-2xs);
@@ -208,7 +224,7 @@
   max-width: 320px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-dropdown);
   z-index: 100;
   max-height: calc(100vh - 60px);
@@ -326,11 +342,11 @@
 }
 
 /* Notification type colors */
-.notifMerged .notifIcon { color: #a371f7; }
+.notifMerged .notifIcon { color: var(--merged); }
 .notifClosed .notifIcon { color: var(--fg-muted); }
 .notifBlocked .notifIcon { color: var(--error); }
 .notifCiFailed .notifIcon { color: var(--error); }
-.notifChanges .notifIcon { color: #d29922; }
+.notifChanges .notifIcon { color: var(--changes); }
 .notifReady .notifIcon { color: var(--success); }
 
 /* Activity Center — generic plugin sections */
@@ -516,13 +532,13 @@
 }
 
 .lastItemWarn {
-  border-color: #d29922;
-  color: #d29922;
-  background: color-mix(in srgb, #d29922 12%, transparent);
+  border-color: var(--changes);
+  color: var(--changes);
+  background: color-mix(in srgb, var(--changes) 12%, transparent);
 }
 
 .lastItemWarn:hover {
-  background: color-mix(in srgb, #d29922 22%, transparent);
+  background: color-mix(in srgb, var(--changes) 22%, transparent);
 }
 
 .lastItemIcon {

@@ -36,24 +36,25 @@
 .knob {
   position: absolute;
   top: 2px;
+  left: 2px;
   width: 10px;
   height: 10px;
   border-radius: 9999px;
-  transition: left 0.2s, background 0.2s;
+  transition: transform 0.2s, background 0.2s;
 }
 
 .track[data-value="hide"] .knob {
-  left: 2px;
+  transform: translateX(0);
   background: var(--fg-muted);
 }
 
 .track[data-value="default"] .knob {
-  left: 15px;
+  transform: translateX(13px);
   background: var(--fg-muted);
 }
 
 .track[data-value="show"] .knob {
-  left: 28px;
+  transform: translateX(26px);
   background: white;
 }
 

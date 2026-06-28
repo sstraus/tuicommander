@@ -15,7 +15,7 @@
   max-width: 90vw;
   max-height: 60vh;
   background: var(--bg-secondary);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-popup);
   display: flex;
@@ -84,13 +84,13 @@
 }
 
 .badgeHttp {
-  background: rgba(97, 175, 239, 0.15);
-  color: #61afef;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
 }
 
 .badgeStdio {
-  background: rgba(152, 195, 121, 0.15);
-  color: #98c379;
+  background: color-mix(in srgb, var(--success) 15%, transparent);
+  color: var(--success);
 }
 
 .tools {
@@ -113,8 +113,8 @@
   font-size: 10px;
   padding: 1px 5px;
   border-radius: 3px;
-  background: rgba(224, 108, 117, 0.15);
-  color: #e06c75;
+  background: color-mix(in srgb, var(--error) 15%, transparent);
+  color: var(--error);
   white-space: nowrap;
 }
 

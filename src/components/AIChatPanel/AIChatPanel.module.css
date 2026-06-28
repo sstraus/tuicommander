@@ -283,7 +283,7 @@
   flex: 1;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-primary);
   font-size: var(--font-base);
   font-family: var(--font-ui);
@@ -315,7 +315,7 @@
   background: var(--accent);
   color: var(--text-on-accent);
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   flex-shrink: 0;
   transition: opacity 0.15s ease;
@@ -339,7 +339,7 @@
   background: var(--error);
   color: var(--text-on-error);
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   cursor: pointer;
   flex-shrink: 0;
   transition: opacity 0.15s ease;
@@ -591,8 +591,8 @@
 }
 
 .alwaysAllowBtn {
-  background: var(--fg-muted, #888);
-  color: var(--bg-primary, #fff);
+  background: var(--fg-muted);
+  color: var(--bg-primary);
 }
 
 /* ── Model picker ──────────────────────────────────────── */
@@ -720,7 +720,7 @@
 }
 
 .historyModel {
-  color: var(--fg-accent, #7cb8ff);
+  color: var(--accent);
   font-size: 10px;
   opacity: 0.8;
 }

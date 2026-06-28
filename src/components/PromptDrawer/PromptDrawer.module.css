@@ -15,7 +15,7 @@
   max-width: 90vw;
   max-height: 70vh;
   background: var(--bg-secondary);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-popup);
   display: flex;
@@ -125,7 +125,6 @@
   align-items: center;
   padding: 6px 12px;
   cursor: pointer;
-  border-left: 3px solid transparent;
 }
 
 .promptItem:hover {
@@ -133,8 +132,7 @@
 }
 
 .selected {
-  background: var(--bg-highlight);
-  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--bg-highlight));
 }
 
 .itemContent {
@@ -236,7 +234,7 @@
   width: 400px;
   max-width: 90vw;
   background: var(--bg-secondary);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   padding: 16px;
 }
@@ -263,7 +261,7 @@
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-primary);
   font-size: var(--font-base);
   outline: none;
@@ -314,7 +312,7 @@
   width: 500px;
   max-width: 90vw;
   background: var(--bg-secondary);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   padding: 16px;
 }
@@ -433,8 +431,8 @@
 /* Reset button */
 .resetBtn {
   background: transparent !important;
-  color: var(--warning, #e5a300) !important;
-  border: 1px solid var(--warning, #e5a300) !important;
+  color: var(--warning) !important;
+  border: 1px solid var(--warning) !important;
 }
 
 /* Badge */
@@ -475,8 +473,8 @@
 }
 
 .tagBadge[data-type="headless"] {
-  background: rgba(192, 132, 252, 0.15);
-  color: #c084fc;
+  background: color-mix(in srgb, var(--unseen) 15%, transparent);
+  color: var(--unseen);
 }
 
 .tagBadge[data-type="placement"] {

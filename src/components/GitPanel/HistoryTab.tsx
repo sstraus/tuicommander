@@ -2,6 +2,7 @@ import { type Component, createEffect, createSignal, For, on, onCleanup, Show } 
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { repositoriesStore } from "../../stores/repositories";
+import { onClickKeyDown } from "../../utils/a11y";
 import { relativeTime } from "../../utils/time";
 import type { OpenDiffFn } from "./GitPanel";
 import s from "./HistoryTab.module.css";
@@ -135,7 +136,7 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
 						<div class={s.scrollContainer}>
 							<For each={commits()}>
 								{(commit) => (
-									<div class={s.commitRow} onClick={() => openCommitDiff(commit.hash)}>
+									<div class={s.commitRow} role="button" tabIndex={0} onClick={() => openCommitDiff(commit.hash)} onKeyDown={onClickKeyDown(() => openCommitDiff(commit.hash))}>
 										{/* Line 1: dot + hash + subject */}
 										<div class={s.commitLine1} title={commit.subject}>
 											<span class={s.commitDot} />

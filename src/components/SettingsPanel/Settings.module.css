@@ -4,9 +4,7 @@
 .overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.8);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  background: rgba(0, 0, 0, 0.85);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -19,7 +17,7 @@
   height: 80vh;
   max-height: 90vh;
   background: var(--bg-secondary);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-popup);
   display: flex;
@@ -99,9 +97,10 @@
 }
 
 .navItem.active {
-  background: var(--bg-highlight);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-highlight));
   color: var(--fg-primary);
-  box-shadow: inset 3px 0 0 var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius-sm);
 }
 
 .navSeparator {
@@ -192,7 +191,7 @@
   padding: 6px 14px;
   background: var(--bg-highlight);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: var(--font-sm);
   cursor: pointer;
@@ -208,7 +207,7 @@
   padding: 6px 16px;
   background: var(--accent);
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--text-on-accent);
   font-size: var(--font-sm);
   font-weight: 500;
@@ -259,7 +258,7 @@
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-primary);
   font-size: var(--font-sm);
   box-sizing: border-box;
@@ -307,7 +306,7 @@
   font-size: var(--font-sm);
   padding: 12px;
   background: rgba(224, 175, 104, 0.1);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   margin-bottom: 8px;
 }
 
@@ -458,7 +457,7 @@
   padding: 6px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: var(--font-sm);
   cursor: pointer;
@@ -494,7 +493,7 @@
   padding: 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   margin-bottom: 8px;
 }
 
@@ -623,7 +622,7 @@
   padding: 10px;
   background: transparent;
   border: 1px dashed var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   font-size: var(--font-sm);
   cursor: pointer;
@@ -643,7 +642,7 @@
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-primary);
   font-size: var(--font-sm);
 }
@@ -673,7 +672,7 @@
   flex-shrink: 0;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   cursor: pointer;
 }
@@ -704,7 +703,7 @@
   padding: 6px 12px;
   background: var(--accent);
   border: 1px solid var(--accent);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--text-on-accent);
   font-size: var(--font-sm);
   font-weight: 600;
@@ -726,7 +725,7 @@
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   font-size: var(--font-sm);
   color: var(--fg-secondary);
   font-family: var(--font-mono);
@@ -793,7 +792,7 @@
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   font-size: var(--font-sm);
   color: var(--fg-primary);
   font-family: var(--font-mono);
@@ -811,7 +810,7 @@
   flex-shrink: 0;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
@@ -842,7 +841,7 @@
 }
 
 .mcpStatusDot.stopped {
-  background: var(--fg-muted, #555);
+  background: var(--fg-muted);
 }
 
 .mcpStatusText {
@@ -852,8 +851,8 @@
 
 .mcpStatusPort {
   font-size: var(--font-md);
-  color: var(--fg-muted, #666);
-  font-family: var(--font-mono, monospace);
+  color: var(--fg-muted);
+  font-family: var(--font-mono);
   background: var(--bg-tertiary);
   padding: 2px 8px;
   border-radius: var(--radius-md);
@@ -872,10 +871,12 @@
   top: 0;
   left: 0;
   height: 100%;
+  width: 100%;
   background: var(--accent);
   opacity: 0.3;
   border-radius: var(--radius-md);
-  transition: width 0.3s ease;
+  transform-origin: left;
+  transition: transform 0.3s ease;
 }
 
 .mcpSessionsLabel {
@@ -901,7 +902,7 @@
   border-radius: 50%;
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.08);
-  color: var(--fg-muted, #888);
+  color: var(--fg-muted);
   font-size: var(--font-xs);
   font-weight: 600;
   cursor: help;
@@ -917,7 +918,7 @@
   padding: 8px 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   box-shadow: var(--shadow-popup);
   color: var(--fg-secondary);
   font-size: var(--font-sm);
@@ -1040,7 +1041,7 @@
   padding: 0 8px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-primary);
   font-size: var(--font-sm);
   font-family: var(--font-ui);
@@ -1116,7 +1117,7 @@
   padding: 0 8px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-primary);
   font-size: var(--font-sm);
   font-family: var(--font-ui);
@@ -1134,7 +1135,7 @@
   padding: 0 12px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-primary);
   font-size: var(--font-sm);
   font-family: var(--font-ui);
@@ -1220,7 +1221,7 @@
 .terminalPreview {
   flex: 1;
   min-width: 0;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   overflow: hidden;
   border: 1px solid var(--border);
   position: sticky;

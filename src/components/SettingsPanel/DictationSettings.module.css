@@ -126,9 +126,11 @@
 
 .progressFill {
   height: 100%;
+  width: 100%;
   background: var(--accent);
   border-radius: var(--radius-sm);
-  transition: width 0.3s ease;
+  transform-origin: left;
+  transition: transform 0.3s ease;
 }
 
 .progressText {
@@ -236,7 +238,7 @@
   padding: 6px 8px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-primary);
   font-size: var(--font-sm);
 }

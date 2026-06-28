@@ -1,6 +1,7 @@
 import { type Component, createEffect, For, onCleanup, Show } from "solid-js";
 import type { UpstreamStatusEntry } from "../../stores/mcpPopup";
 import { mcpPopupStore } from "../../stores/mcpPopup";
+import { onClickKeyDown } from "../../utils/a11y";
 import s from "./McpPopup.module.css";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -106,7 +107,7 @@ export const McpPopup: Component<{ onOpenSettings: (tab: string) => void }> = (p
 								const st = () => getStatus(server.name);
 								const enabled = () => isEnabled(server.name);
 								return (
-									<div class={s.item} onClick={() => mcpPopupStore.toggleServer(server.name)}>
+									<div class={s.item} role="button" tabIndex={0} onClick={() => mcpPopupStore.toggleServer(server.name)} onKeyDown={onClickKeyDown(() => mcpPopupStore.toggleServer(server.name))}>
 										<span
 											class={s.statusDot}
 											style={{

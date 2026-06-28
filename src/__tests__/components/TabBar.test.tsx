@@ -331,7 +331,7 @@ describe("TabBar", () => {
 		expect(tab.querySelector(".progressLabel")).toBeNull();
 		const bar = tab.querySelector(".progress");
 		expect(bar).not.toBeNull();
-		expect((bar as HTMLElement).style.width).toBe("50%");
+		expect((bar as HTMLElement).style.transform).toBe("scaleX(0.5)");
 	});
 
 	it("tab with progress=0 shows bar, no label", () => {
@@ -351,7 +351,7 @@ describe("TabBar", () => {
 		expect(tab.querySelector(".progressLabel")).toBeNull();
 		const bar = tab.querySelector(".progress");
 		expect(bar).not.toBeNull();
-		expect((bar as HTMLElement).style.width).toBe("0%");
+		expect((bar as HTMLElement).style.transform).toBe("scaleX(0)");
 	});
 
 	it("tab with progress=null does not show progress elements", () => {

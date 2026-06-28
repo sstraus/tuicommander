@@ -15,7 +15,7 @@
   max-width: calc(100% - 32px);
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   /* Must beat .terminal-pane.active z-index:20 (styles.css) */
   z-index: 30;
   animation: fadeIn 0.15s ease-out;

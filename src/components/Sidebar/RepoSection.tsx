@@ -17,6 +17,7 @@ import { repoSettingsStore } from "../../stores/repoSettings";
 import { settingsStore } from "../../stores/settings";
 import { sidebarPluginStore } from "../../stores/sidebarPluginStore";
 import { cx } from "../../utils";
+import { onClickKeyDown } from "../../utils/a11y";
 import { compareBranches } from "../../utils/branchSort";
 import { keyFor } from "../../utils/hotkey";
 import { navigateToTerminal } from "../../utils/navigateToTerminal";
@@ -152,7 +153,7 @@ export const StatsBadge: Component<{ additions: number; deletions: number; onCli
 	props,
 ) => (
 	<Show when={props.additions > 0 || props.deletions > 0}>
-		<div class={s.branchStats} onClick={props.onClick} style={props.onClick ? { cursor: "pointer" } : undefined}>
+		<div class={s.branchStats} role={props.onClick ? "button" : undefined} tabIndex={props.onClick ? 0 : undefined} onClick={props.onClick} onKeyDown={props.onClick ? onClickKeyDown(() => props.onClick!(new MouseEvent("click"))) : undefined} style={props.onClick ? { cursor: "pointer" } : undefined}>
 			<span class={s.statAdd}>+{props.additions}</span>
 			<span class={s.statDel}>-{props.deletions}</span>
 		</div>
@@ -768,7 +769,7 @@ export const RepoSection: Component<{
 			onPointerDown={(e) => props.onMouseDrag(e)}
 		>
 			{/* Repo header */}
-			<div class={s.repoHeader} onClick={props.onToggle} onContextMenu={repoMenu.open}>
+			<div class={s.repoHeader} role="button" tabIndex={0} onClick={props.onToggle} onKeyDown={onClickKeyDown(props.onToggle)} onContextMenu={repoMenu.open}>
 				<Show when={props.repo.collapsed}>
 					<span
 						class={s.repoInitials}

@@ -3,6 +3,7 @@ import { markInternalDragEnd, markInternalDragStart } from "../../hooks/useFileD
 import { t } from "../../i18n";
 import { type TaskData, type TaskStatus, tasksStore } from "../../stores/tasks";
 import { cx } from "../../utils";
+import { onClickKeyDown } from "../../utils/a11y";
 import { formatDuration } from "../../utils/time";
 import s from "./TaskQueuePanel.module.css";
 
@@ -170,7 +171,7 @@ const TaskItem: Component<TaskItemProps> = (props) => {
 	};
 
 	return (
-		<div class={cx(s.item, s[props.task.status], props.compact && s.compact)} onClick={props.onSelect}>
+		<div class={cx(s.item, s[props.task.status], props.compact && s.compact)} role={props.onSelect ? "button" : undefined} tabIndex={props.onSelect ? 0 : undefined} onClick={props.onSelect} onKeyDown={props.onSelect ? onClickKeyDown(props.onSelect) : undefined}>
 			<span class={s.itemStatus} style={{ color: statusColor() }}>
 				{statusIcon()}
 			</span>

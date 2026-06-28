@@ -1,5 +1,6 @@
 import { type Component, createMemo, createSignal, For, onCleanup, Show } from "solid-js";
 import { type CommandBlock, terminalsStore } from "../../stores/terminals";
+import { onClickKeyDown } from "../../utils/a11y";
 import s from "./CommandOverview.module.css";
 
 /** Extract command text from a block using the terminal's buffer lines */
@@ -104,7 +105,7 @@ export const CommandOverview: Component = () => {
 					};
 
 					return (
-						<div class={s.row} onClick={() => handleClick(entry.termId)}>
+						<div class={s.row} role="button" tabIndex={0} onClick={() => handleClick(entry.termId)} onKeyDown={onClickKeyDown(() => handleClick(entry.termId))}>
 							<div
 								class={`${s.exitDot} ${isRunning() ? s.exitRunning : exitCode() === 0 ? s.exitOk : exitCode() != null ? s.exitErr : ""}`}
 							/>

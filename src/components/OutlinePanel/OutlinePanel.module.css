@@ -72,8 +72,8 @@
 
 .kindType,
 .kindTypeAlias {
-  background: color-mix(in srgb, #bc3fbc 20%, transparent);
-  color: #d670d6;
+  background: color-mix(in srgb, var(--merged) 20%, transparent);
+  color: var(--merged);
 }
 
 .kindDefault {

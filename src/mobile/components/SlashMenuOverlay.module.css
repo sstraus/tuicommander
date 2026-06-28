@@ -9,8 +9,6 @@
   -webkit-overflow-scrolling: touch;
   touch-action: pan-y;
   background: rgba(37, 37, 38, 0.95);
-  backdrop-filter: blur(12px) saturate(1.6);
-  -webkit-backdrop-filter: blur(12px) saturate(1.6);
   border-top: 1px solid var(--border);
   border-radius: 12px 12px 0 0;
   z-index: 50;

@@ -11,6 +11,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { toastsStore } from "../../stores/toasts";
 import type { BranchPrStatus } from "../../types";
 import { cx } from "../../utils";
+import { onClickKeyDown } from "../../utils/a11y";
 import { canApprovePr, effectiveMergeMethod, mergeWithFallback } from "../../utils/prMerge";
 import {
 	type CleanupStep,
@@ -283,7 +284,7 @@ export const RemoteOnlyPrPopover: Component<{
 						<For each={visiblePrs()}>
 							{(pr) => (
 								<div class={cx(s.remoteOnlyItem, expandedBranch() === pr.branch && s.remoteOnlyItemExpanded)}>
-									<div class={s.remoteOnlyRow} onClick={() => handleRowClick(pr.branch)}>
+									<div class={s.remoteOnlyRow} role="button" tabIndex={0} onClick={() => handleRowClick(pr.branch)} onKeyDown={onClickKeyDown(() => handleRowClick(pr.branch))}>
 										<span class={s.remoteOnlyNum}>#{pr.number}</span>
 										<span class={s.remoteOnlyTitle}>{pr.title}</span>
 										<PrStateBadge

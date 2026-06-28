@@ -209,11 +209,17 @@
   --warning: #dcdcaa;
   --attention: #e8984c;
   --error: #ef4444;
+  --changes: #d29922;
+  --urgent: #ffd700;
   --merged: #a371f7;
-  --unseen: #c084fc;  /* terminal completed while user wasn't viewing */
+  --unseen: #c084fc;
   --text-on-accent: #000000;
   --text-on-error: #000000;
   --text-on-success: #000000;
+  --search-match: #ffff0040;
+  --search-match-active: #ff8c00b0;
+  --search-match-border: #ff8c00;
+  --tweak-highlight: #f5a623;
 
   /* Tab-type colors (shared between TabBar and PaneTree) */
   --tab-diff-rgb: 239, 68, 68;       /* red */

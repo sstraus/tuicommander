@@ -167,7 +167,7 @@
   width: 100%;
   background: var(--bg-tertiary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--fg-primary);
   padding: 8px 12px;
   font-size: var(--font-sm);

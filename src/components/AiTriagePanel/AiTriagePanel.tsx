@@ -4,6 +4,7 @@ import { diffTabsStore } from "../../stores/diffTabs";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
+import { onClickKeyDown } from "../../utils/a11y";
 import p from "../shared/panel.module.css";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import s from "./AiTriagePanel.module.css";
@@ -176,7 +177,7 @@ export const AiTriagePanel: Component<AiTriagePanelProps> = (props) => {
 
 				<Show when={lowFiles().length > 0}>
 					<div class={s.lowGroup}>
-						<div class={s.lowGroupHeader} onClick={() => setLowGroupOpen(!lowGroupOpen())}>
+						<div class={s.lowGroupHeader} role="button" tabIndex={0} onClick={() => setLowGroupOpen(!lowGroupOpen())} onKeyDown={onClickKeyDown(() => setLowGroupOpen(!lowGroupOpen()))}>
 							<span class={cx(s.chevron, lowGroupOpen() && s.chevronOpen)}>&#9656;</span>
 							{lowFiles().length} low-relevance files
 						</div>

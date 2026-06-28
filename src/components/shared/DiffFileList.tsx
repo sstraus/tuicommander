@@ -2,6 +2,7 @@ import { createVirtualizer } from "@tanstack/solid-virtual";
 import { type Component, createSignal, For, type JSX, Show } from "solid-js";
 import type { DiffViewMode } from "../../stores/ui";
 import { cx } from "../../utils";
+import { onClickKeyDown } from "../../utils/a11y";
 import { type DiffFileSection, DiffViewer } from "../ui/DiffViewer";
 import s from "./diffFileList.module.css";
 
@@ -17,7 +18,7 @@ const FileSection: Component<{ file: DiffFileSection; mode: DiffViewMode; onOpen
 
 	return (
 		<div class={s.fileSection}>
-			<div class={s.fileHeader} onClick={() => setCollapsed(!collapsed())}>
+			<div class={s.fileHeader} role="button" tabIndex={0} onClick={() => setCollapsed(!collapsed())} onKeyDown={onClickKeyDown(() => setCollapsed(!collapsed()))}>
 				<svg
 					class={cx(s.chevron, collapsed() && s.chevronCollapsed)}
 					width="12"

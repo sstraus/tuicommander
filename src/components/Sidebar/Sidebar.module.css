@@ -52,9 +52,8 @@
   width: calc(100% - 16px);
   margin: 0 8px 6px;
   padding: 4px 8px;
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-  border: none;
-  border-left: 2px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
   border-radius: var(--radius-sm);
   color: var(--accent);
   font-size: var(--font-xs);
@@ -150,7 +149,7 @@
   padding: 8px 16px;
   background: var(--accent);
   border: none;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--text-on-accent);
   font-size: var(--font-md);
   cursor: pointer;
@@ -427,9 +426,9 @@
 }
 
 .branchItem.active {
-  background: var(--bg-highlight);
-  border-left: 2px solid var(--accent);
-  padding-left: 6px;
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-highlight));
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius-sm);
 }
 
 .branchPreparing {
@@ -726,20 +725,20 @@
 }
 
 .prChangesRequested {
-  background: #d29922;
+  background: var(--changes);
   color: var(--text-on-accent);
 }
 
 .prReviewRequired {
   background: transparent;
-  border: 1px solid #d29922;
-  color: #d29922;
+  border: 1px solid var(--changes);
+  color: var(--changes);
 }
 
 .prCiPending {
   background: transparent;
-  border: 1px solid #e3b341;
-  color: #e3b341;
+  border: 1px solid var(--changes);
+  color: var(--changes);
   animation: pulse-opacity 2s ease-in-out infinite;
 }
 
@@ -812,7 +811,7 @@
   gap: 8px;
   padding: 6px 12px;
   cursor: pointer;
-  border-left: 2px solid transparent;
+  padding-left: 14px;
   color: var(--fg-secondary);
   background: var(--bg-tertiary);
   transition: background 0.1s, color 0.1s;
@@ -1508,7 +1507,7 @@
 
 .ghIssueClosed {
   background: rgba(163, 113, 247, 0.12);
-  color: #a371f7;
+  color: var(--merged);
 }
 
 /* ── Accordion detail ── */

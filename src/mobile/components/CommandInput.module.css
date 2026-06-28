@@ -14,7 +14,7 @@
   min-height: 36px;
   max-height: 120px;
   padding: 8px 12px;
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--bg-tertiary);
   color: var(--fg-primary);

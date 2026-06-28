@@ -3,7 +3,7 @@
   min-width: 180px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-dropdown);
   padding: 4px;
   z-index: 1000;
@@ -80,7 +80,7 @@
   overflow-y: auto;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-dropdown);
   padding: 4px;
   z-index: 1001;

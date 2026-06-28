@@ -5,7 +5,7 @@
   margin-top: 4px;
   background: var(--bg-secondary);
   border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
   min-width: 140px;
   box-shadow: var(--shadow-dropdown);
   z-index: 100;

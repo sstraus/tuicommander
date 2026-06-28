@@ -254,10 +254,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 
 	return (
 		<div id="toolbar" class={s.toolbar} data-tauri-drag-region>
-			<div class={s.left} data-tauri-drag-region>
-				{/* Embossed app name — dark shadow below, lighter highlight above; TUIC slightly brighter */}
+			<div class={cx(s.left, uiStore.state.sidebarWidth < 240 && s.narrowSidebar)} data-tauri-drag-region>
+				{/* Embossed app name — full version for wide sidebar, short for narrow */}
 				<svg
-					class={s.appName}
+					class={`${s.appName} ${s.appNameFull}`}
 					data-tauri-drag-region
 					viewBox="0 0 110 16"
 					width="110"
@@ -307,6 +307,59 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 						font-family="system-ui,-apple-system,sans-serif"
 					>
 						TUICommander
+					</text>
+				</svg>
+				<svg
+					class={`${s.appName} ${s.appNameShort}`}
+					data-tauri-drag-region
+					viewBox="0 0 38 16"
+					width="38"
+					height="16"
+					aria-label="TUIC"
+				>
+					<defs>
+						<linearGradient id="toolbar-name-grad-short" x1="0" y1="0" x2="38" y2="0" gradientUnits="userSpaceOnUse">
+							<stop offset="0%" stop-color="#909090" />
+							<stop offset="50%" stop-color="#767676" />
+							<stop offset="100%" stop-color="#5a5a5a" />
+						</linearGradient>
+					</defs>
+					<text
+						x="0"
+						y="12"
+						fill="#060606"
+						font-size="11"
+						font-weight="700"
+						letter-spacing="0.09em"
+						font-family="system-ui,-apple-system,sans-serif"
+						dx="1"
+						dy="1"
+					>
+						TUIC
+					</text>
+					<text
+						x="0"
+						y="12"
+						fill="#3e3e3e"
+						font-size="11"
+						font-weight="700"
+						letter-spacing="0.09em"
+						font-family="system-ui,-apple-system,sans-serif"
+						dx="-0.5"
+						dy="-0.5"
+					>
+						TUIC
+					</text>
+					<text
+						x="0"
+						y="12"
+						fill="url(#toolbar-name-grad-short)"
+						font-size="11"
+						font-weight="700"
+						letter-spacing="0.09em"
+						font-family="system-ui,-apple-system,sans-serif"
+					>
+						TUIC
 					</text>
 				</svg>
 				<Show when={uiStore.state.sidebarVisible}>

@@ -21,8 +21,8 @@
 }
 
 .question {
-  background: rgba(255, 215, 0, 0.15);
-  color: #ffd700;
+  background: color-mix(in srgb, var(--urgent) 15%, transparent);
+  color: var(--urgent);
   animation: pulse-badge 1.5s ease infinite;
 }
 

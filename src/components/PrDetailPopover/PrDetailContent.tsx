@@ -4,6 +4,7 @@ import { appLogger } from "../../stores/appLogger";
 import { githubStore } from "../../stores/github";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
+import { onClickKeyDown } from "../../utils/a11y";
 import { getCiClass, getCiIcon } from "../../utils/ciDisplay";
 import { relativeTime } from "../../utils/time";
 import { CiRing } from "../ui/CiRing";
@@ -62,7 +63,7 @@ const CiAutoHealToggle: Component<{ repoPath: string; branch: string }> = (props
 	};
 
 	return (
-		<div class={s.autoHealRow} onClick={toggle}>
+		<div class={s.autoHealRow} role="button" tabIndex={0} onClick={toggle} onKeyDown={onClickKeyDown(toggle)}>
 			<label class={s.autoHealToggle} onClick={(e) => e.stopPropagation()}>
 				<input type="checkbox" checked={enabled()} onChange={toggle} />
 				<span class={s.autoHealSlider} />

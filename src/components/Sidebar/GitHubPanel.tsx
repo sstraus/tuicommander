@@ -10,6 +10,7 @@ import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
 import type { BranchPrStatus, GitHubIssue, IssueFilterMode } from "../../types";
 import { cx } from "../../utils";
+import { onClickKeyDown } from "../../utils/a11y";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { IssueDetailContent } from "../IssueDetailPopover/IssueDetailContent";
 import {
@@ -263,7 +264,7 @@ export const GitHubPanel: Component<{
 						{/* ── Issues section ── */}
 						<div class={s.ghSection}>
 							<Show when={settingsStore.state.issueFilter !== "disabled"}>
-								<div class={s.ghSectionHeader} onClick={() => setIssuesCollapsed((v) => !v)}>
+								<div class={s.ghSectionHeader} role="button" tabIndex={0} onClick={() => setIssuesCollapsed((v) => !v)} onKeyDown={onClickKeyDown(() => setIssuesCollapsed((v) => !v))}>
 									<span class={cx(s.ghSectionChevron, !issuesCollapsed() && s.ghSectionChevronOpen)}>{"›"}</span>
 									<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 										<path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z" />

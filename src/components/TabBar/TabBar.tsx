@@ -920,7 +920,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 												/>
 											</Show>
 											{progress() !== null && progress() !== undefined && (
-												<div class={s.progress} style={{ width: `${progress()}%` }} />
+												<div class={s.progress} style={{ transform: `scaleX(${progress()! / 100})` }} />
 											)}
 											<PanePositionIcon tabId={id} rects={paneRects()} />
 											<Show when={isPromoted() && !globalWorkspaceStore.isActive()}>
@@ -1319,7 +1319,7 @@ export const TabBar: Component<TabBarProps> = (props) => {
 																/>
 															</Show>
 															{progress() !== null && progress() !== undefined && (
-																<div class={s.progress} style={{ width: `${progress()}%` }} />
+																<div class={s.progress} style={{ transform: `scaleX(${progress()! / 100})` }} />
 															)}
 															<PanePositionIcon tabId={id} rects={paneRects()} />
 															<Show when={props.quickSwitcherActive && termIndex() < 9}>

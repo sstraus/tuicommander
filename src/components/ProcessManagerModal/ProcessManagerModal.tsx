@@ -146,7 +146,7 @@ export const ProcessManagerModal: Component<ProcessManagerModalProps> = (props) 
 														<div
 															class={`${s.barFill} ${cpuHigh() ? s.highCpu : s.memFill}`}
 															style={{
-																width: `${memPct()}%`,
+																transform: `scaleX(${memPct() / 100})`,
 															}}
 														/>
 													</div>
