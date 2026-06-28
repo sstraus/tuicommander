@@ -614,13 +614,15 @@ POST /repo/clone-branch-name   { sourceBranch, existingNames }   -> string
 POST /repo/create-branch       { path, name, startPoint?, checkout }       -> { ok: true }
 POST /repo/delete-branch       { path, name, force }                        -> DeleteBranchResult
 POST /repo/delete-local-branch { repoPath, branchName, keepWorktree? }      -> { ok: true }
+POST /repo/update-from-base    { path, branchName, strategy? }              -> string
+POST /repo/switch-branch       { repoPath, branchName, force, stash }       -> SwitchBranchResult
+POST /repo/merge-archive-worktree { repoPath, branchName, targetBranch, afterMerge } -> MergeArchiveResult
 ```
 
 Powers the Git panel's Branches tab, commit graph, and editor gutter in
 browser/PWA/remote. Mutations call the shared `*_impl` + `invalidate_repo_caches`.
-`update_from_base`, `switch_branch`, `merge_and_archive_worktree` (git write-paths
-needing State extraction) and `run_diff_triage` (event-emitting) are not yet mapped —
-see `todo.md`.
+`run_diff_triage` (event-emitting, LLM progress) is not yet mapped — it belongs with
+the agent/chat/watcher event-bridge work; see `todo.md`.
 
 ## Stash Endpoints
 

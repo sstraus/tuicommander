@@ -411,10 +411,69 @@ pub(crate) async fn get_branch_base(
         .map_err(|e| format!("spawn_blocking join error: {e}"))
 }
 
-/// Update a branch from its stored base ref (rebase or merge).
+/// Core logic for updating a branch from its stored base ref (rebase or merge).
 ///
 /// Reads `branch.<name>.tuicommander-base` from git config, fetches if remote,
 /// then applies the chosen strategy. On conflict, aborts and returns error.
+/// Blocking — callers wrap in `spawn_blocking`.
+pub(crate) fn update_from_base_impl(
+    state: &Arc<AppState>,
+    path: &str,
+    branch_name: &str,
+    strategy: Option<&str>,
+) -> Result<String, String> {
+    let repo_path = PathBuf::from(path);
+    let strategy = strategy.unwrap_or("rebase");
+
+    // Read stored base, fall back to default branch
+    let base = crate::worktree::get_branch_base(path, branch_name).unwrap_or_else(|| {
+        crate::worktree::get_remote_default_branch(path).unwrap_or_else(|_| "main".to_string())
+    });
+
+    // Fetch if remote
+    crate::worktree::fetch_if_remote(path, &base)?;
+
+    // Apply strategy
+    match strategy {
+        "rebase" => {
+            match git_cmd(&repo_path).args(["rebase", &base]).run() {
+                Ok(_) => Ok(format!("Rebased {branch_name} onto {base}")),
+                Err(crate::git_cli::GitError::NonZeroExit { stderr, .. }) => {
+                    // Abort the failed rebase
+                    let _ = git_cmd(&repo_path).args(["rebase", "--abort"]).run();
+                    state.invalidate_repo_caches(path);
+                    Err(format!("Rebase failed (aborted): {stderr}"))
+                }
+                Err(e) => {
+                    let _ = git_cmd(&repo_path).args(["rebase", "--abort"]).run();
+                    Err(format!("Rebase error: {e}"))
+                }
+            }
+        }
+        "merge" => {
+            match git_cmd(&repo_path)
+                .args(["merge", &base, "--no-edit"])
+                .run()
+            {
+                Ok(_) => Ok(format!("Merged {base} into {branch_name}")),
+                Err(crate::git_cli::GitError::NonZeroExit { stderr, .. }) => {
+                    let _ = git_cmd(&repo_path).args(["merge", "--abort"]).run();
+                    state.invalidate_repo_caches(path);
+                    Err(format!("Merge failed (aborted): {stderr}"))
+                }
+                Err(e) => {
+                    let _ = git_cmd(&repo_path).args(["merge", "--abort"]).run();
+                    Err(format!("Merge error: {e}"))
+                }
+            }
+        }
+        _ => Err(format!(
+            "Unknown strategy: {strategy}. Use 'rebase' or 'merge'."
+        )),
+    }
+}
+
+/// Update a branch from its stored base ref (Tauri command).
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) async fn update_from_base(
@@ -425,55 +484,7 @@ pub(crate) async fn update_from_base(
 ) -> Result<String, String> {
     let state_arc = state.inner().clone();
     tokio::task::spawn_blocking(move || {
-        let repo_path = PathBuf::from(&path);
-        let strategy = strategy.as_deref().unwrap_or("rebase");
-
-        // Read stored base, fall back to default branch
-        let base = crate::worktree::get_branch_base(&path, &branch_name).unwrap_or_else(|| {
-            crate::worktree::get_remote_default_branch(&path).unwrap_or_else(|_| "main".to_string())
-        });
-
-        // Fetch if remote
-        crate::worktree::fetch_if_remote(&path, &base)?;
-
-        // Apply strategy
-        match strategy {
-            "rebase" => {
-                match git_cmd(&repo_path).args(["rebase", &base]).run() {
-                    Ok(_) => Ok(format!("Rebased {branch_name} onto {base}")),
-                    Err(crate::git_cli::GitError::NonZeroExit { stderr, .. }) => {
-                        // Abort the failed rebase
-                        let _ = git_cmd(&repo_path).args(["rebase", "--abort"]).run();
-                        state_arc.invalidate_repo_caches(&path);
-                        Err(format!("Rebase failed (aborted): {stderr}"))
-                    }
-                    Err(e) => {
-                        let _ = git_cmd(&repo_path).args(["rebase", "--abort"]).run();
-                        Err(format!("Rebase error: {e}"))
-                    }
-                }
-            }
-            "merge" => {
-                match git_cmd(&repo_path)
-                    .args(["merge", &base, "--no-edit"])
-                    .run()
-                {
-                    Ok(_) => Ok(format!("Merged {base} into {branch_name}")),
-                    Err(crate::git_cli::GitError::NonZeroExit { stderr, .. }) => {
-                        let _ = git_cmd(&repo_path).args(["merge", "--abort"]).run();
-                        state_arc.invalidate_repo_caches(&path);
-                        Err(format!("Merge failed (aborted): {stderr}"))
-                    }
-                    Err(e) => {
-                        let _ = git_cmd(&repo_path).args(["merge", "--abort"]).run();
-                        Err(format!("Merge error: {e}"))
-                    }
-                }
-            }
-            _ => Err(format!(
-                "Unknown strategy: {strategy}. Use 'rebase' or 'merge'."
-            )),
-        }
+        update_from_base_impl(&state_arc, &path, &branch_name, strategy.as_deref())
     })
     .await
     .map_err(|e| format!("spawn_blocking join error: {e}"))?

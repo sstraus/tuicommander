@@ -352,3 +352,55 @@ pub(super) async fn finalize_merged_worktree_http(
         Err(e) => err_500(&e),
     }
 }
+
+pub(super) async fn switch_branch_http(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<SwitchBranchRequest>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&body.repo_path) {
+        return e.into_response();
+    }
+    let SwitchBranchRequest {
+        repo_path,
+        branch_name,
+        force,
+        stash,
+    } = body;
+    let res = tokio::task::spawn_blocking(move || {
+        crate::worktree::switch_branch_impl(&state, repo_path, branch_name, force, stash)
+    })
+    .await;
+    match res {
+        Ok(r) => json_result(r),
+        Err(e) => err_500(&format!("task panic: {e}")),
+    }
+}
+
+pub(super) async fn merge_and_archive_worktree_http(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<MergeArchiveRequest>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&body.repo_path) {
+        return e.into_response();
+    }
+    let MergeArchiveRequest {
+        repo_path,
+        branch_name,
+        target_branch,
+        after_merge,
+    } = body;
+    let res = tokio::task::spawn_blocking(move || {
+        crate::worktree::merge_and_archive_worktree_impl(
+            &state,
+            repo_path,
+            branch_name,
+            target_branch,
+            after_merge,
+        )
+    })
+    .await;
+    match res {
+        Ok(r) => json_result(r),
+        Err(e) => err_500(&format!("task panic: {e}")),
+    }
+}

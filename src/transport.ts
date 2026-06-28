@@ -598,6 +598,32 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			body: { repoPath: args.repoPath, branchName: args.branchName, keepWorktree: args.keepWorktree },
 		}),
 	},
+	update_from_base: {
+		map: (args) => ({
+			method: "POST",
+			path: "/repo/update-from-base",
+			body: { path: args.path, branchName: args.branchName, strategy: args.strategy },
+		}),
+	},
+	switch_branch: {
+		map: (args) => ({
+			method: "POST",
+			path: "/repo/switch-branch",
+			body: { repoPath: args.repoPath, branchName: args.branchName, force: args.force, stash: args.stash },
+		}),
+	},
+	merge_and_archive_worktree: {
+		map: (args) => ({
+			method: "POST",
+			path: "/repo/merge-archive-worktree",
+			body: {
+				repoPath: args.repoPath,
+				branchName: args.branchName,
+				targetBranch: args.targetBranch,
+				afterMerge: args.afterMerge,
+			},
+		}),
+	},
 	get_git_diff: {
 		map: (_args, p) => ({
 			method: "GET",

@@ -995,6 +995,18 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             "/repo/delete-local-branch",
             post(git_routes::delete_local_branch_http),
         )
+        .route(
+            "/repo/update-from-base",
+            post(git_routes::update_from_base_http),
+        )
+        .route(
+            "/repo/switch-branch",
+            post(worktree_routes::switch_branch_http),
+        )
+        .route(
+            "/repo/merge-archive-worktree",
+            post(worktree_routes::merge_and_archive_worktree_http),
+        )
         // System
         .route("/system/local-ips", get(git_routes::get_local_ips_http))
         .route("/system/local-ip", get(git_routes::get_local_ip_http))
@@ -1427,6 +1439,18 @@ pub fn build_remote_router(state: Arc<AppState>) -> Router {
         .route(
             "/repo/delete-local-branch",
             post(git_routes::delete_local_branch_http),
+        )
+        .route(
+            "/repo/update-from-base",
+            post(git_routes::update_from_base_http),
+        )
+        .route(
+            "/repo/switch-branch",
+            post(worktree_routes::switch_branch_http),
+        )
+        .route(
+            "/repo/merge-archive-worktree",
+            post(worktree_routes::merge_and_archive_worktree_http),
         )
         // System info
         .route("/system/local-ips", get(git_routes::get_local_ips_http))

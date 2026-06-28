@@ -354,6 +354,29 @@ pub(super) struct RemoveOrphanRequest {
 }
 
 #[derive(Deserialize)]
+pub(super) struct SwitchBranchRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "branchName")]
+    pub branch_name: String,
+    pub force: bool,
+    pub stash: bool,
+}
+
+#[derive(Deserialize)]
+pub(super) struct MergeArchiveRequest {
+    #[serde(rename = "repoPath")]
+    pub repo_path: String,
+    #[serde(rename = "branchName")]
+    pub branch_name: String,
+    #[serde(rename = "targetBranch")]
+    pub target_branch: String,
+    /// "archive", "delete", or "ask"
+    #[serde(rename = "afterMerge")]
+    pub after_merge: String,
+}
+
+#[derive(Deserialize)]
 pub(super) struct MergePrRequest {
     #[serde(rename = "repoPath")]
     pub repo_path: String,
@@ -638,4 +661,12 @@ pub(super) struct GitDeleteLocalBranchRequest {
     pub branch_name: String,
     #[serde(rename = "keepWorktree")]
     pub keep_worktree: Option<bool>,
+}
+
+#[derive(Deserialize)]
+pub(super) struct GitUpdateFromBaseRequest {
+    pub path: String,
+    #[serde(rename = "branchName")]
+    pub branch_name: String,
+    pub strategy: Option<String>,
 }

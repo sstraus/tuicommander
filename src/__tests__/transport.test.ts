@@ -578,6 +578,46 @@ describe("transport", () => {
 			expect(result.path).toBe("/repo/delete-local-branch");
 			expect(result.body).toEqual({ repoPath: "/r", branchName: "feat", keepWorktree: true });
 		});
+
+		it("maps update_from_base to POST", () => {
+			const result = mapCommandToHttp("update_from_base", {
+				path: "/r",
+				branchName: "feat",
+				strategy: "rebase",
+			});
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/repo/update-from-base");
+			expect(result.body).toEqual({ path: "/r", branchName: "feat", strategy: "rebase" });
+		});
+
+		it("maps switch_branch to POST", () => {
+			const result = mapCommandToHttp("switch_branch", {
+				repoPath: "/r",
+				branchName: "feat",
+				force: false,
+				stash: true,
+			});
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/repo/switch-branch");
+			expect(result.body).toEqual({ repoPath: "/r", branchName: "feat", force: false, stash: true });
+		});
+
+		it("maps merge_and_archive_worktree to POST", () => {
+			const result = mapCommandToHttp("merge_and_archive_worktree", {
+				repoPath: "/r",
+				branchName: "feat",
+				targetBranch: "main",
+				afterMerge: "archive",
+			});
+			expect(result.method).toBe("POST");
+			expect(result.path).toBe("/repo/merge-archive-worktree");
+			expect(result.body).toEqual({
+				repoPath: "/r",
+				branchName: "feat",
+				targetBranch: "main",
+				afterMerge: "archive",
+			});
+		});
 	});
 
 	describe("rpc()", () => {

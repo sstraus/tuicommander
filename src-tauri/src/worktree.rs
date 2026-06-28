@@ -1428,10 +1428,10 @@ pub(crate) struct SwitchBranchResult {
 /// When `stash` is true, performs `git stash push` before checkout and
 /// does NOT auto-pop (the user can pop manually).
 /// When `force` is true, passes `--force` to discard uncommitted changes.
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) fn switch_branch(
-    state: State<'_, Arc<AppState>>,
+/// Core logic for switching the checked-out branch. Blocking — callers wrap in
+/// `spawn_blocking` when on an async runtime.
+pub(crate) fn switch_branch_impl(
+    state: &Arc<AppState>,
     repo_path: String,
     branch_name: String,
     force: bool,
@@ -1496,6 +1496,19 @@ pub(crate) fn switch_branch(
         previous_branch,
         new_branch: branch_name,
     })
+}
+
+/// Switch the checked-out branch (Tauri command).
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn switch_branch(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+    branch_name: String,
+    force: bool,
+    stash: bool,
+) -> Result<SwitchBranchResult, String> {
+    switch_branch_impl(state.inner(), repo_path, branch_name, force, stash)
 }
 
 /// Create a local branch tracking a remote branch and switch to it.
@@ -1575,10 +1588,10 @@ pub(crate) fn finalize_merged_worktree(
 /// 1. `git checkout <target_branch>` (in the base repo)
 /// 2. `git merge <source_branch>` (in the base repo)
 /// 3. Based on `after_merge`: archive (move dir) or delete (remove worktree + branch)
-#[cfg(feature = "desktop")]
-#[tauri::command]
-pub(crate) fn merge_and_archive_worktree(
-    state: State<'_, Arc<AppState>>,
+/// Core logic for merging a worktree branch into a target and archiving/deleting
+/// the worktree. Blocking — callers wrap in `spawn_blocking` when on an async runtime.
+pub(crate) fn merge_and_archive_worktree_impl(
+    state: &Arc<AppState>,
     repo_path: String,
     branch_name: String,
     target_branch: String,
@@ -1633,6 +1646,19 @@ pub(crate) fn merge_and_archive_worktree(
             })
         }
     }
+}
+
+/// Merge a worktree branch into a target branch, then archive/delete (Tauri command).
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn merge_and_archive_worktree(
+    state: State<'_, Arc<AppState>>,
+    repo_path: String,
+    branch_name: String,
+    target_branch: String,
+    after_merge: String,
+) -> Result<MergeArchiveResult, String> {
+    merge_and_archive_worktree_impl(state.inner(), repo_path, branch_name, target_branch, after_merge)
 }
 
 /// Archive a worktree: move its directory to `{worktrees_dir}/__archived/{branch_name}/`

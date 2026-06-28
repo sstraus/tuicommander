@@ -649,3 +649,26 @@ pub(super) async fn delete_local_branch_http(
         Err(e) => err_500(&format!("Task failed: {e}")),
     }
 }
+
+pub(super) async fn update_from_base_http(
+    axum::extract::State(state): axum::extract::State<std::sync::Arc<crate::AppState>>,
+    Json(body): Json<GitUpdateFromBaseRequest>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&body.path) {
+        return e.into_response();
+    }
+    let GitUpdateFromBaseRequest {
+        path,
+        branch_name,
+        strategy,
+    } = body;
+    let res = tokio::task::spawn_blocking(move || {
+        crate::git::update_from_base_impl(&state, &path, &branch_name, strategy.as_deref())
+    })
+    .await;
+    match res {
+        // Plain-string result: serialized bare so `invoke<string>` receives it directly.
+        Ok(r) => json_result(r),
+        Err(e) => err_500(&format!("Task failed: {e}")),
+    }
+}
