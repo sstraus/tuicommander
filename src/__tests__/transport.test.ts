@@ -965,6 +965,32 @@ describe("transport", () => {
 			expect(readme.transform?.("/path/to/README.md")).toBe("/path/to/README.md");
 			expect(readme.transform?.(null)).toBeNull();
 		});
+
+		it("maps provider keyring + slot/ollama checks (story 072)", () => {
+			const exists = mapCommandToHttp("get_provider_api_key_exists", { providerId: "anthropic-main" });
+			expect(exists.method).toBe("GET");
+			expect(exists.path).toBe("/config/provider-key/exists?providerId=anthropic-main");
+
+			const save = mapCommandToHttp("save_provider_api_key", { providerId: "anthropic-main", key: "sk-ant-1" });
+			expect(save.method).toBe("POST");
+			expect(save.path).toBe("/config/provider-key");
+			expect(save.body).toEqual({ providerId: "anthropic-main", key: "sk-ant-1" });
+
+			const del = mapCommandToHttp("delete_provider_api_key", { providerId: "anthropic-main" });
+			expect(del.method).toBe("DELETE");
+			expect(del.path).toBe("/config/provider-key");
+			expect(del.body).toEqual({ providerId: "anthropic-main" });
+
+			const slot = mapCommandToHttp("test_slot_connection", { slot: "main" });
+			expect(slot.method).toBe("POST");
+			expect(slot.path).toBe("/config/slot-test");
+			expect(slot.body).toEqual({ slot: "main" });
+
+			const ollama = mapCommandToHttp("check_ollama_models", { providerId: "ollama-local" });
+			expect(ollama.method).toBe("POST");
+			expect(ollama.path).toBe("/config/ollama-models");
+			expect(ollama.body).toEqual({ providerId: "ollama-local" });
+		});
 	});
 
 	describe("INTENTIONALLY_UNMAPPED (native/host-only commands)", () => {

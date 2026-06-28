@@ -1,7 +1,7 @@
 use crate::{AppState, MAX_CONCURRENT_SESSIONS};
 use axum::extract::{ConnectInfo, Path, Query, State};
 use axum::http::StatusCode;
-use axum::response::IntoResponse;
+use axum::response::{IntoResponse, Response};
 use axum::{Extension, Json};
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -452,6 +452,55 @@ pub(super) async fn put_provider_registry(
             Json(serde_json::json!({"error": e})),
         ),
     }
+}
+
+// --- Provider API keys (keyring-proxied — story 072) ---
+// State-free: the underlying commands talk to the credential keyring directly,
+// so the HTTP handlers call them verbatim (loopback router, local trust boundary).
+
+#[derive(serde::Deserialize)]
+pub(super) struct ProviderIdRef {
+    #[serde(rename = "providerId")]
+    pub provider_id: String,
+}
+
+#[derive(serde::Deserialize)]
+pub(super) struct SaveProviderKeyReq {
+    #[serde(rename = "providerId")]
+    pub provider_id: String,
+    pub key: String,
+}
+
+#[derive(serde::Deserialize)]
+pub(super) struct SlotTestReq {
+    pub slot: crate::provider_registry::SlotName,
+}
+
+pub(super) async fn provider_key_exists_http(Query(q): Query<ProviderIdRef>) -> Response {
+    json_result(crate::provider_registry::get_provider_api_key_exists(
+        q.provider_id,
+    ))
+}
+
+pub(super) async fn save_provider_key_http(Json(b): Json<SaveProviderKeyReq>) -> Response {
+    json_result(crate::provider_registry::save_provider_api_key(
+        b.provider_id,
+        b.key,
+    ))
+}
+
+pub(super) async fn delete_provider_key_http(Json(b): Json<ProviderIdRef>) -> Response {
+    json_result(crate::provider_registry::delete_provider_api_key(
+        b.provider_id,
+    ))
+}
+
+pub(super) async fn test_slot_connection_http(Json(b): Json<SlotTestReq>) -> Response {
+    json_result(crate::provider_registry::test_slot_connection(b.slot).await)
+}
+
+pub(super) async fn check_ollama_models_http(Json(b): Json<ProviderIdRef>) -> impl IntoResponse {
+    Json(crate::provider_registry::check_ollama_models(b.provider_id).await)
 }
 
 // --- MCP Status ---

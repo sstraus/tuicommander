@@ -943,6 +943,20 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             "/config/provider-registry",
             get(config_routes::get_provider_registry).put(config_routes::put_provider_registry),
         )
+        // Provider API keys (keyring-proxied) + slot/ollama checks — story 072
+        .route(
+            "/config/provider-key/exists",
+            get(config_routes::provider_key_exists_http),
+        )
+        .route(
+            "/config/provider-key",
+            post(config_routes::save_provider_key_http).delete(config_routes::delete_provider_key_http),
+        )
+        .route("/config/slot-test", post(config_routes::test_slot_connection_http))
+        .route(
+            "/config/ollama-models",
+            post(config_routes::check_ollama_models_http),
+        )
         .route(
             "/config/remote-connections",
             get(config_routes::get_remote_connections).put(config_routes::put_remote_connection),

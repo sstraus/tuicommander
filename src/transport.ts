@@ -532,6 +532,26 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	save_provider_registry: {
 		map: (args) => ({ method: "PUT", path: "/config/provider-registry", body: args.registry }),
 	},
+	// --- Story 072: provider API keys (keyring-proxied) + slot/ollama checks ---
+	get_provider_api_key_exists: {
+		map: (_args, p) => ({ method: "GET", path: `/config/provider-key/exists?providerId=${p("providerId")}` }),
+	},
+	save_provider_api_key: {
+		map: (args) => ({
+			method: "POST",
+			path: "/config/provider-key",
+			body: { providerId: args.providerId, key: args.key },
+		}),
+	},
+	delete_provider_api_key: {
+		map: (args) => ({ method: "DELETE", path: "/config/provider-key", body: { providerId: args.providerId } }),
+	},
+	test_slot_connection: {
+		map: (args) => ({ method: "POST", path: "/config/slot-test", body: { slot: args.slot } }),
+	},
+	check_ollama_models: {
+		map: (args) => ({ method: "POST", path: "/config/ollama-models", body: { providerId: args.providerId } }),
+	},
 
 	// --- Git/GitHub ---
 	get_repo_info: {
@@ -1638,6 +1658,12 @@ export const INTENTIONALLY_UNMAPPED: ReadonlySet<string> = new Set<string>([
 	// Deep-link / OAuth callback entry points — invoked by the OS URL handler, not UI.
 	"deep_link_mcp_call",
 	"mcp_oauth_callback",
+	// MCP upstream OAuth (story 072): start spawns a desktop-loopback-bound callback
+	// server + relies on the desktop browser-opener; the redirect target isn't reachable
+	// from a generic browser/remote context. Desktop drives it over IPC; browser gets a
+	// clean host-only error. cancel pairs with start, so it's host-only too.
+	"start_mcp_upstream_oauth",
+	"cancel_mcp_upstream_oauth",
 	// CLI install/management — mutates the host PATH / shell integration.
 	"install_cli",
 	"uninstall_cli",
