@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { buildHttpUrl, isTauri, mapCommandToHttp } from "../transport";
+import { INTENTIONALLY_UNMAPPED, buildHttpUrl, isTauri, mapCommandToHttp } from "../transport";
 
 describe("transport", () => {
 	describe("isTauri()", () => {
@@ -761,6 +761,50 @@ describe("transport", () => {
 			expect(gen.path).toBe("/generators/generate");
 			expect(gen.body).toEqual({ request: { type: "password" } });
 			expect(mapCommandToHttp("fetch_plugin_registry", {}).path).toBe("/registry/plugins");
+		});
+	});
+
+	describe("INTENTIONALLY_UNMAPPED (native/host-only commands)", () => {
+		it("raises a precise native-only error, not a generic missing-mapping error", () => {
+			for (const command of INTENTIONALLY_UNMAPPED) {
+				expect(() => mapCommandToHttp(command, {})).toThrow(/native\/host-only/);
+			}
+		});
+
+		it("covers the documented native-only command families", () => {
+			// Sentinels from each group in the story 073 spec.
+			for (const cmd of [
+				"open_panel_window",
+				"start_native_drag",
+				"block_sleep",
+				"set_global_hotkey",
+				"check_microphone_permission",
+				"get_connect_url",
+				"regenerate_session_token",
+				"get_tailscale_status",
+				"mcp_oauth_callback",
+				"install_cli",
+				"set_last_seen_version",
+				"install_mdkb",
+				"subscribe_terminal_grid",
+				"ack_terminal_frame",
+			]) {
+				expect(INTENTIONALLY_UNMAPPED.has(cmd)).toBe(true);
+			}
+		});
+
+		it("does not also have a COMMAND_TABLE mapping (would be contradictory)", () => {
+			// If a command were both mapped and listed unmapped, mapCommandToHttp would
+			// succeed and the native-only error would be dead. Guard against that drift.
+			for (const command of INTENTIONALLY_UNMAPPED) {
+				let mapped = true;
+				try {
+					mapCommandToHttp(command, {});
+				} catch {
+					mapped = false;
+				}
+				expect(mapped).toBe(false);
+			}
 		});
 	});
 

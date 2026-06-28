@@ -1362,10 +1362,74 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	clear_logs: { map: () => ({ method: "DELETE", path: "/logs" }) },
 };
 
+/**
+ * Commands that are deliberately NOT given an HTTP mapping because they are
+ * native/host-only: they are cfg-gated out of the headless `tuic-remote` build
+ * and/or depend on the desktop OS/window/Tauri runtime, so they cannot work from
+ * a browser/PWA/remote client. Listing them here (story 073) documents the intent,
+ * lets `mapCommandToHttp` raise a precise error instead of a generic "no mapping",
+ * and gives any future mapping-coverage audit an explicit allowlist to skip.
+ *
+ * This is NOT a feature gap — these commands have no meaning off the host machine.
+ */
+export const INTENTIONALLY_UNMAPPED: ReadonlySet<string> = new Set<string>([
+	// Multi-window management — secondary/panel windows are a desktop-only concept.
+	"open_secondary_window",
+	"open_panel_window",
+	"close_panel_window",
+	"focus_panel_window",
+	"focus_main_window",
+	// Native drag-and-drop (WKWebView/OS drag) — no browser equivalent.
+	"start_native_drag",
+	// Power management — OS sleep assertions only make sense on the host.
+	"block_sleep",
+	"unblock_sleep",
+	// Global hotkey registration — OS-level, host-only.
+	"set_global_hotkey",
+	"get_global_hotkey",
+	// Microphone permission — OS permission dialogs, host-only.
+	"check_microphone_permission",
+	"open_microphone_settings",
+	// Screenshot capture response — driven by the native screenshot pipeline.
+	"screenshot_response",
+	// Connectivity/host identity — these describe the host server itself; a remote
+	// client asking the server for its own connect URL / rotating its token / reading
+	// Tailscale state is a host-administration action, not a browser feature.
+	"get_connect_url",
+	"regenerate_session_token",
+	"get_tailscale_status",
+	"recheck_tailscale_status",
+	// Deep-link / OAuth callback entry points — invoked by the OS URL handler, not UI.
+	"deep_link_mcp_call",
+	"mcp_oauth_callback",
+	// CLI install/management — mutates the host PATH / shell integration.
+	"install_cli",
+	"uninstall_cli",
+	"dismiss_cli_prompt",
+	"get_cli_status",
+	// App version bookkeeping — desktop updater state.
+	"get_last_seen_version",
+	"set_last_seen_version",
+	// mdkb daemon install/management — host binary lifecycle.
+	"install_mdkb",
+	"uninstall_mdkb",
+	// Terminal grid push — browser uses the WS log-mode stream
+	// (GET /sessions/{id}?format=log) instead of the native grid-frame protocol.
+	"subscribe_terminal_grid",
+	"unsubscribe_terminal_grid",
+	"ack_terminal_frame",
+	"terminal_exit_alt_screen",
+]);
+
 /** Map a Tauri invoke command + args to an HTTP method/path/body */
 export function mapCommandToHttp(command: string, args: Record<string, unknown>): HttpMapping {
 	const entry = COMMAND_TABLE[command];
 	if (!entry) {
+		if (INTENTIONALLY_UNMAPPED.has(command)) {
+			throw new Error(
+				`Command "${command}" is native/host-only and is not available in browser/remote mode.`,
+			);
+		}
 		throw new Error(`No HTTP mapping for command: ${command}`);
 	}
 	const p: ArgEncoder = (key) => encodeArg(command, args, key);
