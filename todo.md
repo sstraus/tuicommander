@@ -91,6 +91,19 @@ GPT-5.4 flagged that classifying entire stories as "architectural" is too coarse
 the **request/response** commands inside 068-070/072 are mechanical and shippable now;
 only the **push/subscription** delivery needs the event-bridge decision.
 
+**068-070 + run_diff_triage are now PLANNED** → `plans/http-parity-ai-event-bridge.md`
+(active plan, 2026-06-28). Codebase exploration found a THIRD transport GPT missed:
+agent/chat streaming uses `tauri::ipc::Channel` (per-invoke, no HTTP analog), not just
+AppHandle-vs-AppEvent. Plan recommends a **HYBRID** bridge: low-freq lifecycle/progress →
+`event_bus`→SSE; high-freq token streams (conversation, chat) → dedicated per-id WS
+(mirrors PTY log-mode, honors the 20+/sec "keep off the global 256-cap bus" memory
+constraint). Each story split RPC-now (Step 1, mechanical like 061-066) vs stream-later
+(Steps 2-5). Next: `/wiz:stories create` from the plan, then `/wiz:work`.
+
+**073 — DONE** (closes #073-62fc): `INTENTIONALLY_UNMAPPED` allowlist in transport.ts
+documents the 32 native/host-only commands with reasons; mapCommandToHttp raises a precise
+native-only error. Absorbs the YAGNI/native exclusions logged below.
+
 - **068** AI agent loop / **069** AI chat + conversations / **070** AI watchers.
   - **Mechanical now:** request/response commands — e.g. `pause_conversation`,
     `resume_conversation`, `agent_loop_status`, watcher CRUD, AI-chat file-backed
