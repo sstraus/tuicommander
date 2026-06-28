@@ -897,6 +897,67 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	new_conversation_id: {
 		map: () => ({ method: "POST", path: "/ai/chat/new-id" }),
 	},
+	// --- Story 068: agent loop control + knowledge + scheduler (start_conversation = WS, later) ---
+	cancel_conversation: {
+		map: (args) => ({
+			method: "POST",
+			path: "/ai/conversation/cancel",
+			body: { sessionId: args.sessionId },
+		}),
+	},
+	pause_conversation: {
+		map: (args) => ({
+			method: "POST",
+			path: "/ai/conversation/pause",
+			body: { sessionId: args.sessionId },
+		}),
+	},
+	resume_conversation: {
+		map: (args) => ({
+			method: "POST",
+			path: "/ai/conversation/resume",
+			body: { sessionId: args.sessionId },
+		}),
+	},
+	approve_conversation_action: {
+		map: (args) => ({
+			method: "POST",
+			path: "/ai/conversation/approve",
+			body: { sessionId: args.sessionId, approved: args.approved },
+		}),
+	},
+	get_session_knowledge: {
+		map: (_args, p) => ({
+			method: "GET",
+			path: `/ai/session-knowledge?sessionId=${p("sessionId")}`,
+		}),
+	},
+	toggle_ai_suggestions: {
+		map: (args) => ({
+			method: "POST",
+			path: "/ai/suggestions/toggle",
+			body: { sessionId: args.sessionId },
+		}),
+	},
+	list_knowledge_sessions: {
+		map: (args) => ({
+			method: "POST",
+			path: "/ai/knowledge/sessions",
+			body: { filter: args.filter, limit: args.limit },
+		}),
+	},
+	get_knowledge_session_detail: {
+		map: (_args, p) => ({
+			method: "GET",
+			path: `/ai/knowledge/session?sessionId=${p("sessionId")}`,
+		}),
+	},
+	load_scheduler_config: {
+		map: () => ({ method: "GET", path: "/ai/scheduler/config" }),
+	},
+	save_scheduler_config: {
+		map: (args) => ({ method: "PUT", path: "/ai/scheduler/config", body: args.config }),
+	},
 	github_start_polling: {
 		map: (args) => ({
 			method: "POST",

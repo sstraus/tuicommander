@@ -755,6 +755,43 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             post(ai_routes::delete_conversation_http),
         )
         .route("/ai/chat/new-id", post(ai_routes::new_conversation_id_http))
+        // AI agent loop control + knowledge + scheduler (story 068 RPC slice)
+        .route(
+            "/ai/conversation/cancel",
+            post(ai_routes::cancel_conversation_http),
+        )
+        .route(
+            "/ai/conversation/pause",
+            post(ai_routes::pause_conversation_http),
+        )
+        .route(
+            "/ai/conversation/resume",
+            post(ai_routes::resume_conversation_http),
+        )
+        .route(
+            "/ai/conversation/approve",
+            post(ai_routes::approve_conversation_action_http),
+        )
+        .route(
+            "/ai/session-knowledge",
+            get(ai_routes::get_session_knowledge_http),
+        )
+        .route(
+            "/ai/suggestions/toggle",
+            post(ai_routes::toggle_ai_suggestions_http),
+        )
+        .route(
+            "/ai/knowledge/sessions",
+            post(ai_routes::list_knowledge_sessions_http),
+        )
+        .route(
+            "/ai/knowledge/session",
+            get(ai_routes::get_knowledge_session_detail_http),
+        )
+        .route(
+            "/ai/scheduler/config",
+            get(ai_routes::scheduler_config_get).put(ai_routes::scheduler_config_put),
+        )
         // Watchers (for browser/mobile clients)
         .route(
             "/watchers/repo",

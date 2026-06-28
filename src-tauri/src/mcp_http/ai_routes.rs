@@ -55,6 +55,94 @@ pub(super) async fn new_conversation_id_http() -> Response {
     json_result(Ok::<String, String>(crate::ai_chat::new_conversation_id()))
 }
 
+// ── Agent loop control + knowledge + scheduler (story 068 RPC slice) ───
+// start_conversation streaming is a dedicated WS endpoint (later plan step).
+
+#[derive(Deserialize)]
+pub(super) struct SessionIdRef {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+}
+
+#[derive(Deserialize)]
+pub(super) struct ApproveActionRequest {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    pub approved: bool,
+}
+
+#[derive(Deserialize)]
+pub(super) struct ListKnowledgeSessionsRequest {
+    pub filter: Option<crate::ai_agent::commands::KnowledgeListFilter>,
+    pub limit: Option<usize>,
+}
+
+pub(super) async fn cancel_conversation_http(Json(b): Json<SessionIdRef>) -> Response {
+    json_result(crate::ai_agent::commands::cancel_conversation(b.session_id))
+}
+
+pub(super) async fn pause_conversation_http(Json(b): Json<SessionIdRef>) -> Response {
+    json_result(crate::ai_agent::commands::pause_conversation(b.session_id))
+}
+
+pub(super) async fn resume_conversation_http(Json(b): Json<SessionIdRef>) -> Response {
+    json_result(crate::ai_agent::commands::resume_conversation(b.session_id))
+}
+
+pub(super) async fn approve_conversation_action_http(
+    Json(b): Json<ApproveActionRequest>,
+) -> Response {
+    json_result(crate::ai_agent::commands::approve_conversation_action(
+        b.session_id,
+        b.approved,
+    ))
+}
+
+pub(super) async fn get_session_knowledge_http(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<SessionIdRef>,
+) -> Response {
+    json_result(crate::ai_agent::commands::get_session_knowledge_impl(
+        &state,
+        q.session_id,
+    ))
+}
+
+pub(super) async fn toggle_ai_suggestions_http(
+    State(state): State<Arc<AppState>>,
+    Json(b): Json<SessionIdRef>,
+) -> impl IntoResponse {
+    Json(crate::ai_agent::commands::toggle_ai_suggestions_impl(
+        &state,
+        b.session_id,
+    ))
+}
+
+pub(super) async fn list_knowledge_sessions_http(
+    Json(b): Json<ListKnowledgeSessionsRequest>,
+) -> Response {
+    json_result(crate::ai_agent::commands::list_knowledge_sessions(b.filter, b.limit).await)
+}
+
+pub(super) async fn get_knowledge_session_detail_http(
+    State(state): State<Arc<AppState>>,
+    Query(q): Query<SessionIdRef>,
+) -> Response {
+    json_result(
+        crate::ai_agent::commands::get_knowledge_session_detail_impl(&state, q.session_id).await,
+    )
+}
+
+pub(super) async fn scheduler_config_get() -> impl IntoResponse {
+    Json(crate::ai_agent::commands::load_scheduler_config())
+}
+
+pub(super) async fn scheduler_config_put(
+    Json(config): Json<crate::ai_agent::scheduler::SchedulerConfig>,
+) -> Response {
+    json_result(crate::ai_agent::commands::save_scheduler_config(config))
+}
+
 /// Shared accessor for the watcher config (mirrors the engine-get the Tauri
 /// commands do). The rule mutations themselves live in `ai_agent::watcher::*_rule`.
 fn watcher_cfg(state: &Arc<AppState>) -> Result<Arc<RwLock<WatcherConfig>>, String> {

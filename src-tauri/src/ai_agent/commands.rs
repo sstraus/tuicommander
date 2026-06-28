@@ -410,6 +410,14 @@ pub(crate) async fn get_knowledge_session_detail(
     state: State<'_, Arc<AppState>>,
     session_id: String,
 ) -> Result<Option<SessionDetail>, String> {
+    get_knowledge_session_detail_impl(state.inner(), session_id).await
+}
+
+/// Non-gated core for HTTP parity (browser/PWA). See `get_knowledge_session_detail`.
+pub(crate) async fn get_knowledge_session_detail_impl(
+    state: &Arc<AppState>,
+    session_id: String,
+) -> Result<Option<SessionDetail>, String> {
     if let Some(entry) = state.session_knowledge.get(&session_id) {
         let k = entry.lock();
         return Ok(Some(to_detail(&session_id, &k)));
@@ -674,6 +682,14 @@ pub(crate) async fn get_session_knowledge(
     state: State<'_, Arc<AppState>>,
     session_id: String,
 ) -> Result<SessionKnowledgeSummary, String> {
+    get_session_knowledge_impl(state.inner(), session_id)
+}
+
+/// Non-gated core for HTTP parity (browser/PWA). See `get_session_knowledge`.
+pub(crate) fn get_session_knowledge_impl(
+    state: &Arc<AppState>,
+    session_id: String,
+) -> Result<SessionKnowledgeSummary, String> {
     let entry = state.session_knowledge.get(&session_id);
     let summary = match entry {
         Some(e) => SessionKnowledgeSummary::from_knowledge(&session_id, &e.lock()),
@@ -692,6 +708,11 @@ pub(crate) async fn get_session_knowledge(
 #[cfg(feature = "desktop")]
 #[tauri::command]
 pub(crate) fn toggle_ai_suggestions(state: State<'_, Arc<AppState>>, session_id: String) -> bool {
+    toggle_ai_suggestions_impl(state.inner(), session_id)
+}
+
+/// Non-gated core for HTTP parity (browser/PWA). See `toggle_ai_suggestions`.
+pub(crate) fn toggle_ai_suggestions_impl(state: &Arc<AppState>, session_id: String) -> bool {
     let current = state
         .ai_suggestions_enabled
         .get(&session_id)

@@ -1038,6 +1038,27 @@ File-backed conversation persistence + chat config. **Streaming is NOT here** â€
 `chat_subscribe`/`chat_unsubscribe` (live token streaming) will use a dedicated WS
 endpoint per the event-bridge plan; this slice covers the request/response CRUD only.
 
+### AI Agent Loop control + knowledge + scheduler (story 068 RPC slice)
+
+```
+POST /ai/conversation/cancel   { sessionId }            -> string
+POST /ai/conversation/pause    { sessionId }            -> string
+POST /ai/conversation/resume   { sessionId }            -> string
+POST /ai/conversation/approve  { sessionId, approved }  -> { ok }
+GET  /ai/session-knowledge?sessionId=                   -> SessionKnowledgeSummary
+POST /ai/suggestions/toggle    { sessionId }            -> bool (new state)
+POST /ai/knowledge/sessions    { filter?, limit? }      -> SessionListEntry[]
+GET  /ai/knowledge/session?sessionId=                   -> SessionDetail | null
+GET  /ai/scheduler/config                               -> SchedulerConfig
+PUT  /ai/scheduler/config      (SchedulerConfig)        -> { ok }
+```
+
+Agent-loop *control* (cancel/pause/resume/approve), session-knowledge reads, and the
+scheduler config. **The agent token stream is NOT here** â€” `start_conversation` (live
+agent loop output) will use a dedicated WS endpoint per the event-bridge plan. State-
+taking commands reuse extracted `*_impl`s (`get_session_knowledge_impl`,
+`toggle_ai_suggestions_impl`, `get_knowledge_session_detail_impl`).
+
 ## Agent Endpoints
 
 ### Detect All Agents

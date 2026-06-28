@@ -821,6 +821,35 @@ describe("transport", () => {
 			expect(mapCommandToHttp("new_conversation_id", {}).method).toBe("POST");
 			expect(mapCommandToHttp("new_conversation_id", {}).path).toBe("/ai/chat/new-id");
 		});
+
+		it("maps agent loop control + knowledge + scheduler (story 068)", () => {
+			for (const cmd of ["cancel_conversation", "pause_conversation", "resume_conversation"]) {
+				const r = mapCommandToHttp(cmd, { sessionId: "s1" });
+				expect(r.method).toBe("POST");
+				expect(r.path).toBe(`/ai/conversation/${cmd.split("_")[0]}`);
+				expect(r.body).toEqual({ sessionId: "s1" });
+			}
+			const ap = mapCommandToHttp("approve_conversation_action", { sessionId: "s1", approved: true });
+			expect(ap.path).toBe("/ai/conversation/approve");
+			expect(ap.body).toEqual({ sessionId: "s1", approved: true });
+			expect(mapCommandToHttp("get_session_knowledge", { sessionId: "s1" }).path).toBe(
+				"/ai/session-knowledge?sessionId=s1",
+			);
+			expect(mapCommandToHttp("toggle_ai_suggestions", { sessionId: "s1" }).path).toBe(
+				"/ai/suggestions/toggle",
+			);
+			const lk = mapCommandToHttp("list_knowledge_sessions", { filter: { text: "x" }, limit: 50 });
+			expect(lk.method).toBe("POST");
+			expect(lk.path).toBe("/ai/knowledge/sessions");
+			expect(lk.body).toEqual({ filter: { text: "x" }, limit: 50 });
+			expect(mapCommandToHttp("get_knowledge_session_detail", { sessionId: "s1" }).path).toBe(
+				"/ai/knowledge/session?sessionId=s1",
+			);
+			expect(mapCommandToHttp("load_scheduler_config", {}).path).toBe("/ai/scheduler/config");
+			const ss = mapCommandToHttp("save_scheduler_config", { config: { jobs: [] } });
+			expect(ss.method).toBe("PUT");
+			expect(ss.body).toEqual({ jobs: [] });
+		});
 	});
 
 	describe("INTENTIONALLY_UNMAPPED (native/host-only commands)", () => {
