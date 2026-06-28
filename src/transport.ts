@@ -871,6 +871,32 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	watcher_detach: {
 		map: (args) => ({ method: "POST", path: "/ai/watchers/detach", body: { id: args.id } }),
 	},
+	// --- Story 069: AI chat config + conversation CRUD (chat_subscribe stream = WS, later) ---
+	load_ai_chat_config: {
+		map: () => ({ method: "GET", path: "/ai/chat/config" }),
+	},
+	save_ai_chat_config: {
+		map: (args) => ({ method: "PUT", path: "/ai/chat/config", body: args.config }),
+	},
+	list_conversations: {
+		map: () => ({ method: "GET", path: "/ai/chat/conversations" }),
+	},
+	load_conversation: {
+		map: (_args, p) => ({ method: "GET", path: `/ai/chat/conversation?id=${p("id")}` }),
+	},
+	save_conversation: {
+		map: (args) => ({ method: "POST", path: "/ai/chat/conversation", body: args.conversation }),
+	},
+	delete_conversation: {
+		map: (args) => ({
+			method: "POST",
+			path: "/ai/chat/conversation/delete",
+			body: { id: args.id },
+		}),
+	},
+	new_conversation_id: {
+		map: () => ({ method: "POST", path: "/ai/chat/new-id" }),
+	},
 	github_start_polling: {
 		map: (args) => ({
 			method: "POST",

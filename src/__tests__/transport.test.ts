@@ -800,6 +800,27 @@ describe("transport", () => {
 			});
 			expect(mapCommandToHttp("watcher_detach", { id: "x" }).path).toBe("/ai/watchers/detach");
 		});
+
+		it("maps AI chat config + conversation CRUD (story 069)", () => {
+			expect(mapCommandToHttp("load_ai_chat_config", {}).path).toBe("/ai/chat/config");
+			const save = mapCommandToHttp("save_ai_chat_config", { config: { temperature: 0.5 } });
+			expect(save.method).toBe("PUT");
+			expect(save.path).toBe("/ai/chat/config");
+			expect(save.body).toEqual({ temperature: 0.5 });
+			expect(mapCommandToHttp("list_conversations", {}).path).toBe("/ai/chat/conversations");
+			expect(mapCommandToHttp("load_conversation", { id: "abc" }).path).toBe(
+				"/ai/chat/conversation?id=abc",
+			);
+			const sc = mapCommandToHttp("save_conversation", { conversation: { meta: { id: "abc" } } });
+			expect(sc.method).toBe("POST");
+			expect(sc.path).toBe("/ai/chat/conversation");
+			expect(sc.body).toEqual({ meta: { id: "abc" } });
+			const del = mapCommandToHttp("delete_conversation", { id: "abc" });
+			expect(del.path).toBe("/ai/chat/conversation/delete");
+			expect(del.body).toEqual({ id: "abc" });
+			expect(mapCommandToHttp("new_conversation_id", {}).method).toBe("POST");
+			expect(mapCommandToHttp("new_conversation_id", {}).path).toBe("/ai/chat/new-id");
+		});
 	});
 
 	describe("INTENTIONALLY_UNMAPPED (native/host-only commands)", () => {

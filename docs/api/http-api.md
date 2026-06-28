@@ -1022,6 +1022,22 @@ refetches `GET /ai/watchers`; no push event for state changes. The mutation logi
 shared `ai_agent::watcher::*_rule` core; `watcher_create`/`watcher_update` reuse the
 extracted `*_impl`.
 
+### AI Chat (config + conversation CRUD — story 069 RPC slice)
+
+```
+GET  /ai/chat/config                         -> AiChatConfig
+PUT  /ai/chat/config          (AiChatConfig)  -> { ok }
+GET  /ai/chat/conversations                  -> ConversationMeta[]
+GET  /ai/chat/conversation?id=               -> Conversation
+POST /ai/chat/conversation    (Conversation)  -> { ok }   (save)
+POST /ai/chat/conversation/delete  { id }     -> { ok }
+POST /ai/chat/new-id                         -> string (new conversation id)
+```
+
+File-backed conversation persistence + chat config. **Streaming is NOT here** —
+`chat_subscribe`/`chat_unsubscribe` (live token streaming) will use a dedicated WS
+endpoint per the event-bridge plan; this slice covers the request/response CRUD only.
+
 ## Agent Endpoints
 
 ### Detect All Agents

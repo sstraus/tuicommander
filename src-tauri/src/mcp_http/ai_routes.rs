@@ -4,7 +4,7 @@
 //! chat_subscribe) use dedicated WS endpoints in a later step.
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::response::{IntoResponse, Response};
 use parking_lot::RwLock;
 use serde::Deserialize;
@@ -13,6 +13,47 @@ use std::sync::Arc;
 use super::{err_500, json_result};
 use crate::AppState;
 use crate::ai_agent::watcher::{self, WatcherConfig, WatcherTrigger};
+
+// ── AI chat: config + conversation CRUD (story 069 RPC slice) ──────────
+// All commands are non-gated, State-free; handlers call them directly.
+// chat_subscribe streaming is a dedicated WS endpoint (later plan step), not here.
+
+#[derive(Deserialize)]
+pub(super) struct ConversationIdRef {
+    pub id: String,
+}
+
+pub(super) async fn ai_chat_config_get() -> impl IntoResponse {
+    Json(crate::ai_chat::load_ai_chat_config())
+}
+
+pub(super) async fn ai_chat_config_put(
+    Json(config): Json<crate::ai_chat::AiChatConfig>,
+) -> Response {
+    json_result(crate::ai_chat::save_ai_chat_config(config))
+}
+
+pub(super) async fn list_conversations_http() -> Response {
+    json_result(crate::ai_chat::list_conversations())
+}
+
+pub(super) async fn load_conversation_http(Query(q): Query<ConversationIdRef>) -> Response {
+    json_result(crate::ai_chat::load_conversation(q.id))
+}
+
+pub(super) async fn save_conversation_http(
+    Json(conversation): Json<crate::ai_chat::Conversation>,
+) -> Response {
+    json_result(crate::ai_chat::save_conversation(conversation))
+}
+
+pub(super) async fn delete_conversation_http(Json(b): Json<ConversationIdRef>) -> Response {
+    json_result(crate::ai_chat::delete_conversation(b.id))
+}
+
+pub(super) async fn new_conversation_id_http() -> Response {
+    json_result(Ok::<String, String>(crate::ai_chat::new_conversation_id()))
+}
 
 /// Shared accessor for the watcher config (mirrors the engine-get the Tauri
 /// commands do). The rule mutations themselves live in `ai_agent::watcher::*_rule`.

@@ -737,6 +737,24 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         .route("/ai/watchers/toggle", post(ai_routes::watcher_toggle_http))
         .route("/ai/watchers/attach", post(ai_routes::watcher_attach_http))
         .route("/ai/watchers/detach", post(ai_routes::watcher_detach_http))
+        // AI chat (story 069 RPC slice) — config + conversation CRUD
+        .route(
+            "/ai/chat/config",
+            get(ai_routes::ai_chat_config_get).put(ai_routes::ai_chat_config_put),
+        )
+        .route(
+            "/ai/chat/conversations",
+            get(ai_routes::list_conversations_http),
+        )
+        .route(
+            "/ai/chat/conversation",
+            get(ai_routes::load_conversation_http).post(ai_routes::save_conversation_http),
+        )
+        .route(
+            "/ai/chat/conversation/delete",
+            post(ai_routes::delete_conversation_http),
+        )
+        .route("/ai/chat/new-id", post(ai_routes::new_conversation_id_http))
         // Watchers (for browser/mobile clients)
         .route(
             "/watchers/repo",
