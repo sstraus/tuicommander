@@ -96,31 +96,47 @@ pub async fn plugin_read_file(
     plugin_read_file_impl(&state, path, plugin_id).await
 }
 
+/// Run a blocking filesystem closure on Tokio's blocking pool, flattening the
+/// JoinError into the closure's own `Result<T, String>`. Keeps the synchronous
+/// `std::fs` calls off the async worker threads.
+async fn spawn_blocking_fs<T, F>(f: F) -> Result<T, String>
+where
+    F: FnOnce() -> Result<T, String> + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|e| format!("fs task failed: {e}"))?
+}
+
 pub(crate) async fn plugin_read_file_impl(
     state: &std::sync::Arc<crate::AppState>,
     path: String,
     plugin_id: String,
 ) -> Result<String, String> {
     crate::plugins::check_plugin_capability(state, &plugin_id, "fs:read")?;
-    let canonical = validate_within_home(&path)?;
+    spawn_blocking_fs(move || {
+        let canonical = validate_within_home(&path)?;
 
-    // Check file size before reading
-    let metadata =
-        std::fs::metadata(&canonical).map_err(|e| format!("Failed to stat file: {e}"))?;
+        // Check file size before reading
+        let metadata =
+            std::fs::metadata(&canonical).map_err(|e| format!("Failed to stat file: {e}"))?;
 
-    if !metadata.is_file() {
-        return Err("Path is not a file".into());
-    }
+        if !metadata.is_file() {
+            return Err("Path is not a file".into());
+        }
 
-    if metadata.len() > MAX_FILE_SIZE {
-        return Err(format!(
-            "File exceeds maximum size ({} bytes > {} bytes)",
-            metadata.len(),
-            MAX_FILE_SIZE
-        ));
-    }
+        if metadata.len() > MAX_FILE_SIZE {
+            return Err(format!(
+                "File exceeds maximum size ({} bytes > {} bytes)",
+                metadata.len(),
+                MAX_FILE_SIZE
+            ));
+        }
 
-    std::fs::read_to_string(&canonical).map_err(|e| format!("Failed to read file: {e}"))
+        std::fs::read_to_string(&canonical).map_err(|e| format!("Failed to read file: {e}"))
+    })
+    .await
 }
 
 /// List filenames in a directory, optionally filtered by a glob pattern.
@@ -153,48 +169,51 @@ async fn plugin_list_directory_inner(
     pattern: Option<String>,
     sort_by: Option<String>,
 ) -> Result<Vec<String>, String> {
-    let canonical = validate_within_home(&path)?;
+    spawn_blocking_fs(move || {
+        let canonical = validate_within_home(&path)?;
 
-    if !canonical.is_dir() {
-        return Err("Path is not a directory".into());
-    }
-
-    let glob_pattern = pattern
-        .as_deref()
-        .map(|p| glob::Pattern::new(p).map_err(|e| format!("Invalid glob pattern: {e}")))
-        .transpose()?;
-
-    let entries =
-        std::fs::read_dir(&canonical).map_err(|e| format!("Failed to read directory: {e}"))?;
-
-    // Sort mode: "name" (default, alphabetical) or "mtime" (newest first).
-    // mtime mode enables plugins to efficiently find recently-modified files
-    // without scanning every entry (e.g. cache-keepalive picking the active JSONL).
-    let sort_mode = sort_by.as_deref().unwrap_or("name");
-    let mut items: Vec<(String, std::time::SystemTime)> = Vec::new();
-    for entry in entries.flatten() {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if let Some(ref pat) = glob_pattern
-            && !pat.matches(&name)
-        {
-            continue;
+        if !canonical.is_dir() {
+            return Err("Path is not a directory".into());
         }
-        let mtime = if sort_mode == "mtime" {
-            entry
-                .metadata()
-                .and_then(|m| m.modified())
-                .unwrap_or(std::time::UNIX_EPOCH)
-        } else {
-            std::time::UNIX_EPOCH
-        };
-        items.push((name, mtime));
-    }
 
-    match sort_mode {
-        "mtime" => items.sort_by_key(|a| std::cmp::Reverse(a.1)),
-        _ => items.sort_by(|a, b| a.0.cmp(&b.0)),
-    }
-    Ok(items.into_iter().map(|(n, _)| n).collect())
+        let glob_pattern = pattern
+            .as_deref()
+            .map(|p| glob::Pattern::new(p).map_err(|e| format!("Invalid glob pattern: {e}")))
+            .transpose()?;
+
+        let entries =
+            std::fs::read_dir(&canonical).map_err(|e| format!("Failed to read directory: {e}"))?;
+
+        // Sort mode: "name" (default, alphabetical) or "mtime" (newest first).
+        // mtime mode enables plugins to efficiently find recently-modified files
+        // without scanning every entry (e.g. cache-keepalive picking the active JSONL).
+        let sort_mode = sort_by.as_deref().unwrap_or("name");
+        let mut items: Vec<(String, std::time::SystemTime)> = Vec::new();
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if let Some(ref pat) = glob_pattern
+                && !pat.matches(&name)
+            {
+                continue;
+            }
+            let mtime = if sort_mode == "mtime" {
+                entry
+                    .metadata()
+                    .and_then(|m| m.modified())
+                    .unwrap_or(std::time::UNIX_EPOCH)
+            } else {
+                std::time::UNIX_EPOCH
+            };
+            items.push((name, mtime));
+        }
+
+        match sort_mode {
+            "mtime" => items.sort_by_key(|a| std::cmp::Reverse(a.1)),
+            _ => items.sort_by(|a, b| a.0.cmp(&b.0)),
+        }
+        Ok(items.into_iter().map(|(n, _)| n).collect())
+    })
+    .await
 }
 
 /// Read the last `max_bytes` of a file as UTF-8 text.
@@ -223,43 +242,52 @@ pub(crate) async fn plugin_read_file_tail_impl(
 }
 
 async fn plugin_read_file_tail_inner(path: String, max_bytes: u64) -> Result<String, String> {
-    use std::io::{Read, Seek, SeekFrom};
+    // Clamp the tail window so a caller can't force a huge heap reservation
+    // (the HTTP route exposes this without plugin-JS bounds). Matches the 10 MB
+    // whole-file ceiling in `plugin_read_file_impl`.
+    const MAX_TAIL_BYTES: u64 = 10 * 1024 * 1024;
+    let max_bytes = max_bytes.min(MAX_TAIL_BYTES);
 
-    let canonical = validate_within_home(&path)?;
+    spawn_blocking_fs(move || {
+        use std::io::{Read, Seek, SeekFrom};
 
-    let metadata =
-        std::fs::metadata(&canonical).map_err(|e| format!("Failed to stat file: {e}"))?;
+        let canonical = validate_within_home(&path)?;
 
-    if !metadata.is_file() {
-        return Err("Path is not a file".into());
-    }
+        let metadata =
+            std::fs::metadata(&canonical).map_err(|e| format!("Failed to stat file: {e}"))?;
 
-    let file_size = metadata.len();
+        if !metadata.is_file() {
+            return Err("Path is not a file".into());
+        }
 
-    // If the file fits within max_bytes, read the whole thing
-    if file_size <= max_bytes {
-        return std::fs::read_to_string(&canonical)
-            .map_err(|e| format!("Failed to read file: {e}"));
-    }
+        let file_size = metadata.len();
 
-    let mut file =
-        std::fs::File::open(&canonical).map_err(|e| format!("Failed to open file: {e}"))?;
+        // If the file fits within max_bytes, read the whole thing
+        if file_size <= max_bytes {
+            return std::fs::read_to_string(&canonical)
+                .map_err(|e| format!("Failed to read file: {e}"));
+        }
 
-    let seek_pos = file_size - max_bytes;
-    file.seek(SeekFrom::Start(seek_pos))
-        .map_err(|e| format!("Failed to seek: {e}"))?;
+        let mut file =
+            std::fs::File::open(&canonical).map_err(|e| format!("Failed to open file: {e}"))?;
 
-    let mut buf = Vec::with_capacity(max_bytes as usize);
-    file.read_to_end(&mut buf)
-        .map_err(|e| format!("Failed to read file tail: {e}"))?;
+        let seek_pos = file_size - max_bytes;
+        file.seek(SeekFrom::Start(seek_pos))
+            .map_err(|e| format!("Failed to seek: {e}"))?;
 
-    let text = String::from_utf8_lossy(&buf);
+        let mut buf = Vec::with_capacity(max_bytes as usize);
+        file.read_to_end(&mut buf)
+            .map_err(|e| format!("Failed to read file tail: {e}"))?;
 
-    // Skip partial first line (find first newline and skip past it)
-    match text.find('\n') {
-        Some(idx) => Ok(text[idx + 1..].to_string()),
-        None => Ok(text.to_string()),
-    }
+        let text = String::from_utf8_lossy(&buf);
+
+        // Skip partial first line (find first newline and skip past it)
+        match text.find('\n') {
+            Some(idx) => Ok(text[idx + 1..].to_string()),
+            None => Ok(text.to_string()),
+        }
+    })
+    .await
 }
 
 /// Start watching a path for filesystem changes.

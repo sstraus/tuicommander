@@ -1506,7 +1506,7 @@
 }
 
 .ghIssueClosed {
-  background: rgba(163, 113, 247, 0.12);
+  background: color-mix(in srgb, var(--merged) 12%, transparent);
   color: var(--merged);
 }
 

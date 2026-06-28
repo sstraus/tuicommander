@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::AppState;
 use crate::ai_agent::conversation_engine::{
     ConversationEvent, batched_conversation_stream, build_config,
-    start_conversation as engine_start,
+    start_conversation as engine_start, subscribe_conversation,
 };
 use crate::ai_chat_registry::{ChatEvent, chat_registry, validate_id};
 
@@ -24,7 +24,10 @@ use crate::ai_chat_registry::{ChatEvent, chat_registry, validate_id};
 /// client has disconnected. Shared by the conversation and chat bridges.
 async fn send_json<T: Serialize>(sink: &mut SplitSink<WebSocket, Message>, frame: &T) -> bool {
     let Ok(json) = serde_json::to_string(frame) else {
-        return true; // skip an unserializable frame, keep the stream alive
+        // Skip an unserializable frame but keep the stream alive — log it so a
+        // silent gap in the client's stream is at least visible server-side.
+        tracing::warn!("ai_stream: failed to serialize frame, skipping");
+        return true;
     };
     futures_util::SinkExt::send(sink, Message::Text(json.into()))
         .await
@@ -61,6 +64,12 @@ pub(super) async fn conversation_ws(
 async fn bridge_conversation(socket: WebSocket, session_id: String, state: Arc<AppState>) {
     let (mut sink, mut stream) = socket.split();
 
+    // Validate the session id up front (mirrors `bridge_chat`'s `validate_id`).
+    if let Err(e) = validate_id(&session_id) {
+        let _ = send_json(&mut sink, &ConversationEvent::Error { message: e }).await;
+        return;
+    }
+
     // First frame carries the start params (atomic start+subscribe — no
     // POST-then-subscribe race where early TextChunks would be missed).
     let params: StartConversationParams = match stream.next().await {
@@ -87,14 +96,23 @@ async fn bridge_conversation(socket: WebSocket, session_id: String, state: Arc<A
         params.model_override,
         params.bypassed_tools,
         params.reasoning_effort,
-    );
+    )
+    .await;
 
-    let rx = match engine_start(state, session_id, params.message, config).await {
+    let rx = match engine_start(state, session_id.clone(), params.message, config).await {
         Ok(rx) => rx,
-        Err(e) => {
-            let _ = send_json(&mut sink, &ConversationEvent::Error { message: e }).await;
-            return;
-        }
+        // A conversation is already running on this session — re-attach to its
+        // live stream instead of erroring. The reconnecting client keeps its own
+        // transcript, so live events (no backfill) resume the stream. If the
+        // conversation ended in the race between start and subscribe, surface the
+        // original start error.
+        Err(e) => match subscribe_conversation(&session_id) {
+            Some(rx) => rx,
+            None => {
+                let _ = send_json(&mut sink, &ConversationEvent::Error { message: e }).await;
+                return;
+            }
+        },
     };
 
     // Same 50ms batcher the desktop Channel bridge uses. A client disconnect

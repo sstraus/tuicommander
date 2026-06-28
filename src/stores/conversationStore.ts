@@ -179,6 +179,9 @@ export interface PerTerminalConversationState {
 	persistTimer: ReturnType<typeof setTimeout> | null;
 	initialized: boolean;
 	registrySubscription: RegistrySubscription | null;
+	// Browser/PWA only: disposer for the active conversation token-stream WS.
+	// Desktop uses a Tauri Channel (auto-cleaned), so this stays null there.
+	conversationStreamDispose: (() => void) | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -256,7 +259,17 @@ function createState(): PerTerminalConversationState {
 		persistTimer: null,
 		initialized: false,
 		registrySubscription: null,
+		conversationStreamDispose: null,
 	};
+}
+
+/** Close the active browser conversation token-stream WS, if any. No-op on
+ * desktop (Channel transport) and when no stream is open. */
+function closeConversationStream(s: PerTerminalConversationState): void {
+	if (s.conversationStreamDispose) {
+		s.conversationStreamDispose();
+		s.conversationStreamDispose = null;
+	}
 }
 
 function getOrCreate(key: string): PerTerminalConversationState {
@@ -699,8 +712,12 @@ async function sendMessage(text: string, sessionId: string | null): Promise<void
 			await coreInvoke("start_conversation", { sessionId, message: text, autonomy: "assisted", onEvent });
 		} else {
 			// Browser/PWA: dedicated WS carries the token stream (event-bridge plan Step 5).
-			openConversationStream<ConversationEvent>(sessionId, { message: text, autonomy: "assisted" }, (event) =>
-				applyConversationEvent(s, event, capturedKey),
+			closeConversationStream(s); // drop any orphaned prior stream first
+			s.conversationStreamDispose = openConversationStream<ConversationEvent>(
+				sessionId,
+				{ message: text, autonomy: "assisted" },
+				(event) => applyConversationEvent(s, event, capturedKey),
+				() => onConversationStreamClosed(s, capturedKey),
 			);
 		}
 	} catch (e) {
@@ -761,10 +778,12 @@ async function startAgent(sessionId: string, goal: string, isUnrestricted?: bool
 			});
 		} else {
 			// Browser/PWA: dedicated WS carries the agent token stream (event-bridge plan Step 5).
-			openConversationStream<ConversationEvent>(
+			closeConversationStream(s); // drop any orphaned prior stream first
+			s.conversationStreamDispose = openConversationStream<ConversationEvent>(
 				sessionId,
 				{ message: goal, autonomy: "autonomous", bypassedTools: bypassed },
 				(event) => applyConversationEvent(s, event, capturedKey),
+				() => onConversationStreamClosed(s, capturedKey),
 			);
 		}
 	} catch (e) {
@@ -773,6 +792,18 @@ async function startAgent(sessionId: string, goal: string, isUnrestricted?: bool
 			s.setAgentError(String(e));
 		});
 		appLogger.warn("conversation", "start_conversation (autonomous) failed", { error: String(e) });
+	}
+}
+
+/** Handle an unexpected browser WS drop: clear our disposer handle, and if the
+ * stream was still active (no Completed/Error frame arrived), surface a synthetic
+ * error so the UI doesn't wedge in a perpetual "streaming"/"running" state. A
+ * close right after a terminal frame is expected — `isStreaming`/`agentState`
+ * are already settled, so we stay quiet. */
+function onConversationStreamClosed(s: PerTerminalConversationState, ownerKey: string): void {
+	s.conversationStreamDispose = null;
+	if (s.isStreaming() || s.agentState() === "running") {
+		applyConversationEvent(s, { type: "error", message: "Stream connection lost" }, ownerKey);
 	}
 }
 
@@ -938,6 +969,10 @@ async function onTerminalClose(key: string): Promise<void> {
 		await s.registrySubscription.cleanup();
 		s.registrySubscription = null;
 	}
+
+	// Browser/PWA: the terminal is gone, so close the token-stream WS rather than
+	// leak it waiting for a terminal frame that no one will consume.
+	closeConversationStream(s);
 
 	if ((s.isStreaming() || s.agentState() === "running") && s.activeSessionId) {
 		try {

@@ -149,11 +149,13 @@ export const BranchIcon: Component<{
 };
 
 /** Stats badge component - shows additions/deletions */
-export const StatsBadge: Component<{ additions: number; deletions: number; onClick?: (e: MouseEvent) => void }> = (
-	props,
-) => (
+export const StatsBadge: Component<{
+	additions: number;
+	deletions: number;
+	onClick?: (e: MouseEvent | KeyboardEvent) => void;
+}> = (props) => (
 	<Show when={props.additions > 0 || props.deletions > 0}>
-		<div class={s.branchStats} role={props.onClick ? "button" : undefined} tabIndex={props.onClick ? 0 : undefined} onClick={props.onClick} onKeyDown={props.onClick ? onClickKeyDown(() => props.onClick!(new MouseEvent("click"))) : undefined} style={props.onClick ? { cursor: "pointer" } : undefined}>
+		<div class={s.branchStats} role={props.onClick ? "button" : undefined} tabIndex={props.onClick ? 0 : undefined} onClick={props.onClick} onKeyDown={props.onClick ? onClickKeyDown((e) => props.onClick!(e)) : undefined} style={props.onClick ? { cursor: "pointer" } : undefined}>
 			<span class={s.statAdd}>+{props.additions}</span>
 			<span class={s.statDel}>-{props.deletions}</span>
 		</div>

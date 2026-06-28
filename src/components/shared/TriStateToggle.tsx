@@ -1,4 +1,5 @@
 import type { Component } from "solid-js";
+import { onClickKeyDown } from "../../utils/a11y";
 import s from "./TriStateToggle.module.css";
 
 export type TriState = "show" | "default" | "hide";
@@ -20,7 +21,14 @@ export const TriStateToggle: Component<TriStateToggleProps> = (props) => {
 
 	return (
 		<div class={s.triToggle}>
-			<div class={s.track} data-value={props.value} onClick={handleClick} role="button" tabIndex={0}>
+			<div
+				class={s.track}
+				data-value={props.value}
+				onClick={handleClick}
+				onKeyDown={onClickKeyDown(handleClick)}
+				role="button"
+				tabIndex={0}
+			>
 				<div class={s.knob} />
 			</div>
 			<span class={s.label}>

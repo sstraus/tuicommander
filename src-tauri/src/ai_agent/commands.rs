@@ -37,7 +37,8 @@ pub(crate) async fn start_conversation(
         model_override,
         bypassed_tools,
         reasoning_effort,
-    );
+    )
+    .await;
 
     let rx = engine_start(state.inner().clone(), session_id, message, config).await?;
 

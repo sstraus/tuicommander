@@ -281,25 +281,6 @@ impl ChatRegistry {
         }
     }
 
-    /// Convenience: update state + fan_out a Snapshot event.
-    #[allow(dead_code)]
-    pub async fn update_and_notify<F>(&self, chat_id: &str, f: F)
-    where
-        F: FnOnce(&mut ConversationState),
-    {
-        let snap = self.update(chat_id, f).await;
-        self.fan_out(chat_id, ChatEvent::Snapshot(snap)).await;
-    }
-
-    /// Append a message to the chat.
-    #[allow(dead_code)]
-    pub async fn append_message(&self, chat_id: &str, msg: ChatMessage) {
-        self.update_and_notify(chat_id, |s| {
-            s.messages.push(msg);
-        })
-        .await;
-    }
-
     /// Update streaming text (append delta) and fan-out a Chunk event.
     #[allow(dead_code)]
     pub async fn append_streaming_chunk(&self, chat_id: &str, delta: &str) {
@@ -334,16 +315,6 @@ impl ChatRegistry {
     #[allow(dead_code)]
     pub fn chat_count(&self) -> usize {
         self.chats.len()
-    }
-
-    /// Number of subscribers for a chat (for testing/debug).
-    #[cfg(feature = "desktop")]
-    #[allow(dead_code)]
-    pub async fn subscriber_count(&self, chat_id: &str) -> usize {
-        match self.chats.get(chat_id) {
-            Some(slot) => slot.lock().await.subscribers.len(),
-            None => 0,
-        }
     }
 }
 
@@ -405,18 +376,6 @@ impl ConversationState {
     }
     pub fn push_message(&mut self, msg: ChatMessage) {
         self.messages.push(msg);
-    }
-    #[allow(dead_code)]
-    pub fn messages(&self) -> &[ChatMessage] {
-        &self.messages
-    }
-    #[allow(dead_code)]
-    pub fn streaming_text(&self) -> &str {
-        &self.streaming_text
-    }
-    #[allow(dead_code)]
-    pub fn is_streaming(&self) -> bool {
-        self.is_streaming
     }
 }
 

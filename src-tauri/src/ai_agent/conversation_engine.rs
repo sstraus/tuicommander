@@ -337,11 +337,23 @@ pub(crate) async fn start_conversation(
     Ok(event_rx)
 }
 
+/// Subscribe to an already-active conversation's live event stream, if one
+/// exists on `session_id`. Returns a fresh broadcast receiver carrying only
+/// future events (no backfill) — a reconnecting client retains its own
+/// accumulated transcript, so resuming the live stream is enough.
+pub(crate) fn subscribe_conversation(
+    session_id: &str,
+) -> Option<broadcast::Receiver<ConversationEvent>> {
+    ACTIVE_CONVERSATIONS
+        .get(session_id)
+        .map(|h| h.event_tx.subscribe())
+}
+
 /// Build a `ConversationConfig` from the loosely-typed transport params shared by
 /// the desktop Tauri command and the browser WebSocket handler. Per-call params
 /// win; `reasoning_effort` falls back to the persisted AI-chat setting.
 #[allow(clippy::too_many_arguments)]
-pub(crate) fn build_config(
+pub(crate) async fn build_config(
     autonomy: Option<String>,
     max_steps: Option<usize>,
     temperature: Option<f32>,
@@ -349,8 +361,16 @@ pub(crate) fn build_config(
     bypassed_tools: Option<Vec<String>>,
     reasoning_effort: Option<String>,
 ) -> ConversationConfig {
-    let reasoning_effort =
-        reasoning_effort.or_else(|| crate::ai_chat::load_ai_chat_config().reasoning_effort);
+    // The `reasoning_effort` fallback reads the AI-chat config from disk; do it on
+    // the blocking pool so we never stall an async worker thread.
+    let reasoning_effort = match reasoning_effort {
+        Some(r) => Some(r),
+        None => {
+            tokio::task::spawn_blocking(|| crate::ai_chat::load_ai_chat_config().reasoning_effort)
+                .await
+                .unwrap_or(None)
+        }
+    };
     ConversationConfig {
         autonomy: match autonomy.as_deref() {
             Some("autonomous") => Autonomy::Autonomous,
@@ -441,7 +461,11 @@ pub(crate) fn batched_conversation_stream(
                             tracing::warn!("conversation bridge lagged {n} events — text chunks lost");
                         }
                         Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                            let _ = flush(&tx, &mut text_batch, &mut reasoning_batch).await;
+                            if !flush(&tx, &mut text_batch, &mut reasoning_batch).await {
+                                tracing::debug!(
+                                    "conversation bridge: consumer gone at Closed, trailing batch dropped"
+                                );
+                            }
                             break;
                         }
                     }
@@ -1013,6 +1037,31 @@ mod tests {
     #[test]
     fn autonomy_default_is_assisted() {
         assert_eq!(ConversationConfig::default().autonomy, Autonomy::Assisted);
+    }
+
+    #[test]
+    fn subscribe_conversation_unknown_session_is_none() {
+        // No conversation is active for this id, so re-attach yields None and the
+        // bridge falls back to surfacing the original start error.
+        assert!(subscribe_conversation("no-such-session-unit-test").is_none());
+    }
+
+    #[tokio::test]
+    async fn build_config_maps_autonomy() {
+        // Pass an explicit reasoning_effort so we don't touch the config file.
+        let auto = build_config(
+            Some("autonomous".into()),
+            None,
+            None,
+            None,
+            None,
+            Some("high".into()),
+        )
+        .await;
+        assert_eq!(auto.autonomy, Autonomy::Autonomous);
+
+        let assisted = build_config(None, None, None, None, None, Some("high".into())).await;
+        assert_eq!(assisted.autonomy, Autonomy::Assisted);
     }
 
     #[test]

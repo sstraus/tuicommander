@@ -6,6 +6,8 @@ class MockWebSocket {
 	url: string;
 	onopen: (() => void) | null = null;
 	onmessage: ((e: { data: string }) => void) | null = null;
+	onerror: (() => void) | null = null;
+	onclose: ((e: { code: number }) => void) | null = null;
 	closed = false;
 	sent: string[] = [];
 	constructor(url: string) {
@@ -26,6 +28,12 @@ class MockWebSocket {
 	}
 	triggerRaw(data: string): void {
 		this.onmessage?.({ data });
+	}
+	triggerError(): void {
+		this.onerror?.();
+	}
+	triggerClose(code: number): void {
+		this.onclose?.({ code });
 	}
 }
 
@@ -79,6 +87,34 @@ describe("aiStream", () => {
 			openConversationStream("s", { message: "x" }, (e) => events.push(e));
 			MockWebSocket.instances[0].triggerRaw("not json");
 			expect(events).toEqual([]);
+		});
+
+		it("fires onClose(false) on a socket error", () => {
+			vi.stubGlobal("window", { location: { protocol: "http:", host: "h" } });
+			const onClose = vi.fn();
+			openConversationStream("s", { message: "x" }, () => {}, onClose);
+			MockWebSocket.instances[0].triggerError();
+			expect(onClose).toHaveBeenCalledWith(false);
+		});
+
+		it("fires onClose(true) only for a clean (1000) close, once", () => {
+			vi.stubGlobal("window", { location: { protocol: "http:", host: "h" } });
+			const onClose = vi.fn();
+			openConversationStream("s", { message: "x" }, () => {}, onClose);
+			const ws = MockWebSocket.instances[0];
+			ws.triggerClose(1000);
+			ws.triggerClose(1006); // a second close must not re-fire
+			expect(onClose).toHaveBeenCalledTimes(1);
+			expect(onClose).toHaveBeenCalledWith(true);
+		});
+
+		it("does not fire onClose when the caller disposes the stream", () => {
+			vi.stubGlobal("window", { location: { protocol: "http:", host: "h" } });
+			const onClose = vi.fn();
+			const dispose = openConversationStream("s", { message: "x" }, () => {}, onClose);
+			dispose();
+			MockWebSocket.instances[0].triggerClose(1006);
+			expect(onClose).not.toHaveBeenCalled();
 		});
 	});
 
