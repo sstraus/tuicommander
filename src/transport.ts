@@ -815,6 +815,62 @@ const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	fetch_plugin_registry: {
 		map: () => ({ method: "GET", path: "/registry/plugins" }),
 	},
+	// --- Story 070: AI watchers (RPC; fires surface as session-created SSE) ---
+	watcher_list: {
+		map: () => ({ method: "GET", path: "/ai/watchers" }),
+	},
+	watcher_create: {
+		map: (args) => ({
+			method: "POST",
+			path: "/ai/watchers",
+			body: {
+				name: args.name,
+				sessionId: args.sessionId,
+				trigger: args.trigger,
+				instructions: args.instructions,
+				promptId: args.promptId,
+				repoPath: args.repoPath,
+				maxFires: args.maxFires,
+				cooldownSecs: args.cooldownSecs,
+			},
+		}),
+	},
+	watcher_update: {
+		map: (args) => ({
+			method: "POST",
+			path: "/ai/watchers/update",
+			body: {
+				id: args.id,
+				name: args.name,
+				trigger: args.trigger,
+				instructions: args.instructions,
+				promptId: args.promptId,
+				repoPath: args.repoPath,
+				maxFires: args.maxFires,
+				cooldownSecs: args.cooldownSecs,
+			},
+		}),
+	},
+	watcher_delete: {
+		map: (args) => ({ method: "POST", path: "/ai/watchers/delete", body: { id: args.id } }),
+	},
+	watcher_toggle: {
+		map: (args) => ({
+			method: "POST",
+			path: "/ai/watchers/toggle",
+			body: { id: args.id, enabled: args.enabled },
+		}),
+	},
+	watcher_attach: {
+		map: (args) => ({
+			method: "POST",
+			path: "/ai/watchers/attach",
+			body: { templateId: args.templateId, sessionId: args.sessionId },
+		}),
+	},
+	watcher_detach: {
+		map: (args) => ({ method: "POST", path: "/ai/watchers/detach", body: { id: args.id } }),
+	},
 	github_start_polling: {
 		map: (args) => ({
 			method: "POST",

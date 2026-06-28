@@ -478,6 +478,32 @@ pub(crate) async fn watcher_create(
     max_fires: Option<u32>,
     cooldown_secs: Option<u32>,
 ) -> Result<String, String> {
+    watcher_create_impl(
+        state.inner(),
+        name,
+        session_id,
+        trigger,
+        instructions,
+        prompt_id,
+        repo_path,
+        max_fires,
+        cooldown_secs,
+    )
+}
+
+/// Non-gated core for HTTP parity (browser/PWA). See `watcher_create`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn watcher_create_impl(
+    state: &Arc<AppState>,
+    name: String,
+    session_id: Option<String>,
+    trigger: super::watcher::WatcherTrigger,
+    instructions: Option<String>,
+    prompt_id: Option<String>,
+    repo_path: Option<String>,
+    max_fires: Option<u32>,
+    cooldown_secs: Option<u32>,
+) -> Result<String, String> {
     let rule = super::watcher::WatcherRule {
         id: String::new(),
         name,
@@ -586,6 +612,32 @@ pub(crate) async fn watcher_detach(
 #[allow(clippy::too_many_arguments)] // Tauri command: args are deserialized from a JS object.
 pub(crate) async fn watcher_update(
     state: State<'_, Arc<AppState>>,
+    id: String,
+    name: Option<String>,
+    trigger: Option<super::watcher::WatcherTrigger>,
+    instructions: Option<String>,
+    prompt_id: Option<String>,
+    repo_path: Option<String>,
+    max_fires: Option<u32>,
+    cooldown_secs: Option<u32>,
+) -> Result<(), String> {
+    watcher_update_impl(
+        state.inner(),
+        id,
+        name,
+        trigger,
+        instructions,
+        prompt_id,
+        repo_path,
+        max_fires,
+        cooldown_secs,
+    )
+}
+
+/// Non-gated core for HTTP parity (browser/PWA). See `watcher_update`.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn watcher_update_impl(
+    state: &Arc<AppState>,
     id: String,
     name: Option<String>,
     trigger: Option<super::watcher::WatcherTrigger>,

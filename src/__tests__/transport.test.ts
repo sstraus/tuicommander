@@ -762,6 +762,44 @@ describe("transport", () => {
 			expect(gen.body).toEqual({ request: { type: "password" } });
 			expect(mapCommandToHttp("fetch_plugin_registry", {}).path).toBe("/registry/plugins");
 		});
+
+		it("maps AI watcher CRUD (story 070)", () => {
+			expect(mapCommandToHttp("watcher_list", {}).path).toBe("/ai/watchers");
+			expect(mapCommandToHttp("watcher_list", {}).method).toBe("GET");
+			const create = mapCommandToHttp("watcher_create", {
+				name: "w1",
+				sessionId: "s1",
+				trigger: { type: "Idle" },
+				instructions: "do it",
+				promptId: null,
+				repoPath: "/r",
+				maxFires: 3,
+				cooldownSecs: 30,
+			});
+			expect(create.method).toBe("POST");
+			expect(create.path).toBe("/ai/watchers");
+			expect(create.body).toEqual({
+				name: "w1",
+				sessionId: "s1",
+				trigger: { type: "Idle" },
+				instructions: "do it",
+				promptId: null,
+				repoPath: "/r",
+				maxFires: 3,
+				cooldownSecs: 30,
+			});
+			expect(mapCommandToHttp("watcher_update", { id: "x" }).path).toBe("/ai/watchers/update");
+			expect(mapCommandToHttp("watcher_delete", { id: "x" }).body).toEqual({ id: "x" });
+			expect(mapCommandToHttp("watcher_toggle", { id: "x", enabled: true }).body).toEqual({
+				id: "x",
+				enabled: true,
+			});
+			expect(mapCommandToHttp("watcher_attach", { templateId: "t", sessionId: "s" }).body).toEqual({
+				templateId: "t",
+				sessionId: "s",
+			});
+			expect(mapCommandToHttp("watcher_detach", { id: "x" }).path).toBe("/ai/watchers/detach");
+		});
 	});
 
 	describe("INTENTIONALLY_UNMAPPED (native/host-only commands)", () => {

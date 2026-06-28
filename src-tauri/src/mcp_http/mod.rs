@@ -1,4 +1,5 @@
 mod agent_routes;
+mod ai_routes;
 pub(crate) mod ai_terminal;
 pub(crate) mod auth;
 mod claude_routes;
@@ -726,6 +727,16 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             "/github/diagnostics",
             get(github_routes::github_diagnostics),
         )
+        // AI watchers (story 070 RPC parity) — CRUD; fires surface as SessionCreated SSE
+        .route(
+            "/ai/watchers",
+            get(ai_routes::watcher_list_http).post(ai_routes::watcher_create_http),
+        )
+        .route("/ai/watchers/update", post(ai_routes::watcher_update_http))
+        .route("/ai/watchers/delete", post(ai_routes::watcher_delete_http))
+        .route("/ai/watchers/toggle", post(ai_routes::watcher_toggle_http))
+        .route("/ai/watchers/attach", post(ai_routes::watcher_attach_http))
+        .route("/ai/watchers/detach", post(ai_routes::watcher_detach_http))
         // Watchers (for browser/mobile clients)
         .route(
             "/watchers/repo",

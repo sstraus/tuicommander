@@ -1003,6 +1003,25 @@ Body: `{"paths": ["/path/to/repo", ...]}`
 
 Updates the set of "hot" repository paths (repos with active terminals). Cold repos (not in this set) get throttled watcher debounce (15s vs 1.5s) and reduced GitHub polling frequency (~10min vs ~1min). Browser-only mode equivalent of the `set_hot_repos` Tauri command.
 
+### AI Watchers (agent rules — story 070)
+
+```
+GET  /ai/watchers                                            -> WatcherRule[]
+POST /ai/watchers          { name, sessionId?, trigger, instructions?, promptId?, repoPath?, maxFires?, cooldownSecs? } -> id
+POST /ai/watchers/update   { id, name?, trigger?, instructions?, promptId?, repoPath?, maxFires?, cooldownSecs? } -> { ok }
+POST /ai/watchers/delete   { id }                            -> { ok }
+POST /ai/watchers/toggle   { id, enabled }                   -> { ok }
+POST /ai/watchers/attach   { templateId, sessionId }         -> id
+POST /ai/watchers/detach   { id }                            -> { ok }
+```
+
+CRUD for the agent watcher rules (WatcherManager). Watcher *fires* surface as the
+existing `session-created` SSE event (a fired watcher spawns an agent session), so no
+dedicated watcher-fire stream is needed. Config mutations are client-initiated → the UI
+refetches `GET /ai/watchers`; no push event for state changes. The mutation logic is the
+shared `ai_agent::watcher::*_rule` core; `watcher_create`/`watcher_update` reuse the
+extracted `*_impl`.
+
 ## Agent Endpoints
 
 ### Detect All Agents
