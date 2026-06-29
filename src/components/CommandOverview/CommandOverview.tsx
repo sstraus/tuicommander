@@ -105,7 +105,13 @@ export const CommandOverview: Component = () => {
 					};
 
 					return (
-						<div class={s.row} role="button" tabIndex={0} onClick={() => handleClick(entry.termId)} onKeyDown={onClickKeyDown(() => handleClick(entry.termId))}>
+						<div
+							class={s.row}
+							role="button"
+							tabIndex={0}
+							onClick={() => handleClick(entry.termId)}
+							onKeyDown={onClickKeyDown(() => handleClick(entry.termId))}
+						>
 							<div
 								class={`${s.exitDot} ${isRunning() ? s.exitRunning : exitCode() === 0 ? s.exitOk : exitCode() != null ? s.exitErr : ""}`}
 							/>

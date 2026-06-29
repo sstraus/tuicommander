@@ -155,7 +155,14 @@ export const StatsBadge: Component<{
 	onClick?: (e: MouseEvent | KeyboardEvent) => void;
 }> = (props) => (
 	<Show when={props.additions > 0 || props.deletions > 0}>
-		<div class={s.branchStats} role={props.onClick ? "button" : undefined} tabIndex={props.onClick ? 0 : undefined} onClick={props.onClick} onKeyDown={props.onClick ? onClickKeyDown((e) => props.onClick!(e)) : undefined} style={props.onClick ? { cursor: "pointer" } : undefined}>
+		<div
+			class={s.branchStats}
+			role={props.onClick ? "button" : undefined}
+			tabIndex={props.onClick ? 0 : undefined}
+			onClick={props.onClick}
+			onKeyDown={props.onClick ? onClickKeyDown((e) => props.onClick!(e)) : undefined}
+			style={props.onClick ? { cursor: "pointer" } : undefined}
+		>
 			<span class={s.statAdd}>+{props.additions}</span>
 			<span class={s.statDel}>-{props.deletions}</span>
 		</div>
@@ -771,7 +778,14 @@ export const RepoSection: Component<{
 			onPointerDown={(e) => props.onMouseDrag(e)}
 		>
 			{/* Repo header */}
-			<div class={s.repoHeader} role="button" tabIndex={0} onClick={props.onToggle} onKeyDown={onClickKeyDown(props.onToggle)} onContextMenu={repoMenu.open}>
+			<div
+				class={s.repoHeader}
+				role="button"
+				tabIndex={0}
+				onClick={props.onToggle}
+				onKeyDown={onClickKeyDown(props.onToggle)}
+				onContextMenu={repoMenu.open}
+			>
 				<Show when={props.repo.collapsed}>
 					<span
 						class={s.repoInitials}

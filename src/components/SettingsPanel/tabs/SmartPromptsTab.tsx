@@ -563,7 +563,13 @@ const PromptRow: Component<{ prompt: SavedPrompt; headlessAgents: AgentType[] }>
 
 	return (
 		<div class={sp.promptRow}>
-			<div class={sp.promptHeader} role="button" tabIndex={0} onClick={() => setExpanded(!expanded())} onKeyDown={onClickKeyDown(() => setExpanded(!expanded()))}>
+			<div
+				class={sp.promptHeader}
+				role="button"
+				tabIndex={0}
+				onClick={() => setExpanded(!expanded())}
+				onKeyDown={onClickKeyDown(() => setExpanded(!expanded()))}
+			>
 				{/* Enable/disable toggle */}
 				<label class={s.toggle} onClick={(e) => e.stopPropagation()}>
 					<input type="checkbox" checked={isEnabled()} onChange={handleToggle} />
@@ -615,7 +621,13 @@ const CategoryGroup: Component<{ category: string; prompts: SavedPrompt[]; headl
 
 	return (
 		<>
-			<div class={sp.categoryHeader} role="button" tabIndex={0} onClick={() => setOpen(!open())} onKeyDown={onClickKeyDown(() => setOpen(!open()))}>
+			<div
+				class={sp.categoryHeader}
+				role="button"
+				tabIndex={0}
+				onClick={() => setOpen(!open())}
+				onKeyDown={onClickKeyDown(() => setOpen(!open()))}
+			>
 				<span class={sp.categoryChevron} classList={{ [sp.open]: open() }}>
 					&#9654;
 				</span>

@@ -18,7 +18,13 @@ const FileSection: Component<{ file: DiffFileSection; mode: DiffViewMode; onOpen
 
 	return (
 		<div class={s.fileSection}>
-			<div class={s.fileHeader} role="button" tabIndex={0} onClick={() => setCollapsed(!collapsed())} onKeyDown={onClickKeyDown(() => setCollapsed(!collapsed()))}>
+			<div
+				class={s.fileHeader}
+				role="button"
+				tabIndex={0}
+				onClick={() => setCollapsed(!collapsed())}
+				onKeyDown={onClickKeyDown(() => setCollapsed(!collapsed()))}
+			>
 				<svg
 					class={cx(s.chevron, collapsed() && s.chevronCollapsed)}
 					width="12"

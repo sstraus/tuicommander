@@ -177,7 +177,13 @@ export const AiTriagePanel: Component<AiTriagePanelProps> = (props) => {
 
 				<Show when={lowFiles().length > 0}>
 					<div class={s.lowGroup}>
-						<div class={s.lowGroupHeader} role="button" tabIndex={0} onClick={() => setLowGroupOpen(!lowGroupOpen())} onKeyDown={onClickKeyDown(() => setLowGroupOpen(!lowGroupOpen()))}>
+						<div
+							class={s.lowGroupHeader}
+							role="button"
+							tabIndex={0}
+							onClick={() => setLowGroupOpen(!lowGroupOpen())}
+							onKeyDown={onClickKeyDown(() => setLowGroupOpen(!lowGroupOpen()))}
+						>
 							<span class={cx(s.chevron, lowGroupOpen() && s.chevronOpen)}>&#9656;</span>
 							{lowFiles().length} low-relevance files
 						</div>

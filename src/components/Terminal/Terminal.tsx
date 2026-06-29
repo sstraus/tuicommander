@@ -532,37 +532,51 @@ export const Terminal: Component<TerminalProps> = (props) => {
 				// Guard: terminal may have been removed from the store already
 				// (e.g. pane closed). Updating a removed entry would recreate it as a ghost.
 				const stillExists = terminalsStore.get(props.id);
+				const hadAgent = stillExists?.agentType != null;
 				if (stillExists) {
 					// Restore original tab name if it was overwritten by OSC title
 					if (originalName && !stillExists.nameIsCustom) {
 						terminalsStore.update(props.id, { name: originalName });
 					}
-					const hadAgent = stillExists.agentType !== null;
-					terminalsStore.update(props.id, {
-						// Mark the shell as exited so the tab dot turns grey/dim instead of
-						// staying green ("idle"). Without this, a dead session keeps its last
-						// shellState forever — a ghost tab that looks idle but has no PTY.
-						shellState: "exited",
-						sessionId: null,
-						currentTask: null,
-						agentType: null,
-						agentSessionId: null,
-					});
-					terminalsStore.clearAwaitingInput(props.id);
 					if (hadAgent) {
+						// Agent finished: keep the tab with a grey "exited" dot so the user
+						// can read the final output and re-launch. Without this a dead session
+						// keeps its last shellState forever — a ghost tab that looks idle.
+						terminalsStore.update(props.id, {
+							shellState: "exited",
+							sessionId: null,
+							currentTask: null,
+							agentType: null,
+							agentSessionId: null,
+						});
+						terminalsStore.clearAwaitingInput(props.id);
 						pluginRegistry.notifyStateChange({
 							type: "agent-stopped",
 							sessionId: targetSessionId,
 							terminalId: props.id,
 						});
+					} else {
+						// Plain interactive shell exited: drop the session refs and let the
+						// app close the tab (see notifyShellExit below) — a dead shell must
+						// not linger as a grey ghost dot.
+						terminalsStore.update(props.id, { sessionId: null });
+						terminalsStore.clearAwaitingInput(props.id);
 					}
 				}
 				sessionId = null;
 				setCurrentSessionId(null);
 				props.onSessionExit?.(props.id);
-				if (terminalsStore.state.activeId !== props.id) {
+				// Completion chime only for an agent finishing in a background tab.
+				// A plain shell exit closes its tab, so it stays silent.
+				if (hadAgent && terminalsStore.state.activeId !== props.id) {
 					appLogger.info("terminal", `[Notify] ${props.id} completion — session exited (background tab)`);
 					notificationsStore.playCompletion();
+				}
+				// Plain shell exit: close the tab via the app-level onShellExit handler.
+				// This is the single owner of local session-exit handling; the global
+				// session-closed listener deliberately stays remote-only.
+				if (stillExists && !hadAgent) {
+					terminalsStore.notifyShellExit(props.id);
 				}
 			},
 			{
@@ -1112,7 +1126,13 @@ export const Terminal: Component<TerminalProps> = (props) => {
 				)}
 			</Show>
 			<Show when={terminalsStore.get(props.id)?.pendingResumeCommand}>
-				<div class={s.resumeBanner} role="button" tabIndex={0} onClick={handleResume} onKeyDown={onClickKeyDown(handleResume)}>
+				<div
+					class={s.resumeBanner}
+					role="button"
+					tabIndex={0}
+					onClick={handleResume}
+					onKeyDown={onClickKeyDown(handleResume)}
+				>
 					<span>Agent session was active — click to resume</span>
 					<button class={s.resumeDismiss} onClick={handleDismissResume} title="Dismiss">
 						&times;

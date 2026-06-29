@@ -1295,9 +1295,7 @@ export function createGridRenderer(ctx: GridContext2D, deps: GridRendererDeps): 
 				lastDim = dim;
 			}
 
-			const glyph = EMOJI_PRESENTATION_CPS.has(cp)
-				? String.fromCodePoint(cp) + VS15
-				: String.fromCodePoint(cp);
+			const glyph = EMOJI_PRESENTATION_CPS.has(cp) ? String.fromCodePoint(cp) + VS15 : String.fromCodePoint(cp);
 			ctx.fillText(glyph, x, y + m.baseline);
 		}
 		if (lastDim) ctx.globalAlpha = 1.0;

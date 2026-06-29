@@ -541,6 +541,9 @@ describe("terminalsStore", () => {
 				store.update(id, { shellState: "busy" });
 				expect(store.get(id)!.awaitingInput).toBe("question");
 				expect(store.get(id)!.awaitingInputConfident).toBe(true);
+				// A confident question arms the sustained-busy clear timer; cancel it so
+				// the real setTimeout doesn't outlive the test (vitest leak warning).
+				store.clearAwaitingInput(id);
 			});
 		});
 
@@ -763,6 +766,45 @@ describe("terminalsStore", () => {
 				expect(store.nextDefaultName()).toBe("Terminal 2");
 				store.add(makeTerminal({ name: "T2" }));
 				expect(store.nextDefaultName()).toBe("Terminal 3");
+			});
+		});
+	});
+
+	describe("onShellExit / notifyShellExit", () => {
+		it("notifyShellExit fires registered callbacks with the terminal id", () => {
+			testInScope(() => {
+				const callback = vi.fn();
+				store.onShellExit(callback);
+
+				store.notifyShellExit("term-1");
+
+				expect(callback).toHaveBeenCalledWith("term-1");
+			});
+		});
+
+		it("fires every registered callback", () => {
+			testInScope(() => {
+				const a = vi.fn();
+				const b = vi.fn();
+				store.onShellExit(a);
+				store.onShellExit(b);
+
+				store.notifyShellExit("term-1");
+
+				expect(a).toHaveBeenCalledWith("term-1");
+				expect(b).toHaveBeenCalledWith("term-1");
+			});
+		});
+
+		it("stops firing after unsubscribe", () => {
+			testInScope(() => {
+				const callback = vi.fn();
+				const unsubscribe = store.onShellExit(callback);
+
+				unsubscribe();
+				store.notifyShellExit("term-1");
+
+				expect(callback).not.toHaveBeenCalled();
 			});
 		});
 	});

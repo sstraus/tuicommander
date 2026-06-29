@@ -1368,3 +1368,10 @@ lo scrive ma non contiene nulla--> _(fixed + verified end-to-end: invoked save_r
 ## Soft-keyboard lift: cursor-anchored (browser-desktop on iPad)
 
 - [HUMAN] On iPad Safari (browser-desktop mode, NOT PWA), open a terminal and start a fresh agent (Claude Code etc.) with little/no context so its input row sits near the TOP of the grid. Focus the terminal → virtual keyboard appears. The input/cursor row MUST stay visible (lifted only enough to clear the keyboard) — it must NOT be pushed off-screen above the viewport. Then let the agent fill the screen so the input moves to the BOTTOM and refocus: the cursor must again sit just above the keyboard. Requires a real virtual keyboard (touch) — not observable over HTTP. (`CanvasTerminal.tsx` `updateKeyboardLift()`: lift = `max(0, cursorBottomY − keyboardTop)`, anchored to the cursor row, pure transform on `kbLiftRef`, no PTY resize.)
+
+## Shell exit closes the tab (2026-06-28)
+
+- [VISUAL] In a plain shell tab (no agent), type `exit` (or Ctrl-D) → the tab must DISAPPEAR, not turn into a grey "exited" dot. (`Terminal.tsx` pty-exit handler routes plain shells to `terminalsStore.notifyShellExit`; `App.tsx` `onShellExit` → `closeTerminal`.) Not observable over HTTP — tab removal is frontend store state.
+- [VISUAL] Exit the LAST remaining terminal → the tab closes and is NOT auto-replaced (no shell instantly reappears). Workspace may show zero terminals; the TabBar "+" reopens one. (`App.tsx` `onShellExit` deliberately does not call `createNewTerminal`.)
+- [VISUAL] An AGENT session ending (e.g. Claude exits, or kill its PTY) still KEEPS its tab with the grey "exited" dot + completion chime if backgrounded — agents are NOT auto-closed. (`Terminal.tsx`: `hadAgent` branch unchanged.)
+- [VISUAL] Exit a background (non-active) plain shell tab → it closes silently, no completion chime. (`Terminal.tsx`: chime gated on `hadAgent`.)

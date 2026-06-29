@@ -785,7 +785,10 @@ pub(crate) async fn github_set_pr_hide_drafts(
     github_set_pr_hide_drafts_impl(state.inner(), hide)
 }
 
-pub(crate) fn github_set_pr_hide_drafts_impl(state: &Arc<AppState>, hide: bool) -> Result<(), String> {
+pub(crate) fn github_set_pr_hide_drafts_impl(
+    state: &Arc<AppState>,
+    hide: bool,
+) -> Result<(), String> {
     if let Some(poller) = state.github_poller.lock().as_ref()
         && let Err(e) = poller.cmd_tx.try_send(PollerCmd::SetPrHideDrafts(hide))
     {

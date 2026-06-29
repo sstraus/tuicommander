@@ -28,9 +28,7 @@ pub(super) async fn plugin_fs_read(
     AxumPath(plugin_id): AxumPath<String>,
     Query(q): Query<FsReadQuery>,
 ) -> Response {
-    json_result(
-        crate::plugin_fs::plugin_read_file_impl(&state, q.path, plugin_id).await,
-    )
+    json_result(crate::plugin_fs::plugin_read_file_impl(&state, q.path, plugin_id).await)
 }
 
 #[derive(Deserialize)]
@@ -65,11 +63,7 @@ pub(super) async fn plugin_fs_list(
 ) -> Response {
     json_result(
         crate::plugin_fs::plugin_list_directory_impl(
-            &state,
-            q.path,
-            q.pattern,
-            q.sort_by,
-            plugin_id,
+            &state, q.path, q.pattern, q.sort_by, plugin_id,
         )
         .await,
     )

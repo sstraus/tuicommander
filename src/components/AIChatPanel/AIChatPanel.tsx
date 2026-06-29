@@ -154,7 +154,13 @@ const ToolCallCard: Component<{ entry: ToolCallEntry }> = (props) => {
 
 	return (
 		<div class={s.toolCallCard}>
-			<div class={s.toolCallHeader} role="button" tabIndex={0} onClick={() => setExpanded(!expanded())} onKeyDown={onClickKeyDown(() => setExpanded(!expanded()))}>
+			<div
+				class={s.toolCallHeader}
+				role="button"
+				tabIndex={0}
+				onClick={() => setExpanded(!expanded())}
+				onKeyDown={onClickKeyDown(() => setExpanded(!expanded()))}
+			>
 				<span class={cx(s.toolCallStatusDot, statusClass())} />
 				<span class={s.toolCallName}>{props.entry.toolName}</span>
 				<Show when={props.entry.status === "done" && doneEntry()}>

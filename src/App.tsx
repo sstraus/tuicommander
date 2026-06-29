@@ -857,6 +857,18 @@ const App: Component = () => {
 		onCleanup(dispose);
 	}
 
+	// A plain interactive shell exiting (user typed `exit`) closes its tab instead
+	// of leaving a grey "exited" ghost dot. We do NOT auto-respawn a replacement —
+	// that made `exit` feel broken (the tab vanished then instantly reappeared).
+	// The workspace may end up with zero terminals; the TabBar "+" reopens one.
+	// Agent sessions are not routed here — they keep their tab.
+	{
+		const dispose = terminalsStore.onShellExit((id) => {
+			void terminalLifecycle.closeTerminal(id, true);
+		});
+		onCleanup(dispose);
+	}
+
 	// Notify plugins when the active repository changes so globally-pinned
 	// plugin panels (e.g. Wiz Kanban) can reload their content.
 	createEffect(

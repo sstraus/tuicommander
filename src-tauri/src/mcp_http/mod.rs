@@ -950,9 +950,13 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         )
         .route(
             "/config/provider-key",
-            post(config_routes::save_provider_key_http).delete(config_routes::delete_provider_key_http),
+            post(config_routes::save_provider_key_http)
+                .delete(config_routes::delete_provider_key_http),
         )
-        .route("/config/slot-test", post(config_routes::test_slot_connection_http))
+        .route(
+            "/config/slot-test",
+            post(config_routes::test_slot_connection_http),
+        )
         .route(
             "/config/ollama-models",
             post(config_routes::check_ollama_models_http),

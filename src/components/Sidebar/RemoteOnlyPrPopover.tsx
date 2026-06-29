@@ -284,7 +284,13 @@ export const RemoteOnlyPrPopover: Component<{
 						<For each={visiblePrs()}>
 							{(pr) => (
 								<div class={cx(s.remoteOnlyItem, expandedBranch() === pr.branch && s.remoteOnlyItemExpanded)}>
-									<div class={s.remoteOnlyRow} role="button" tabIndex={0} onClick={() => handleRowClick(pr.branch)} onKeyDown={onClickKeyDown(() => handleRowClick(pr.branch))}>
+									<div
+										class={s.remoteOnlyRow}
+										role="button"
+										tabIndex={0}
+										onClick={() => handleRowClick(pr.branch)}
+										onKeyDown={onClickKeyDown(() => handleRowClick(pr.branch))}
+									>
 										<span class={s.remoteOnlyNum}>#{pr.number}</span>
 										<span class={s.remoteOnlyTitle}>{pr.title}</span>
 										<PrStateBadge

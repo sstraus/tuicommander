@@ -371,9 +371,7 @@ pub(crate) async fn github_auth_status(
     github_auth_status_impl(state.inner()).await
 }
 
-pub(crate) async fn github_auth_status_impl(
-    state: &Arc<AppState>,
-) -> Result<AuthStatus, String> {
+pub(crate) async fn github_auth_status_impl(state: &Arc<AppState>) -> Result<AuthStatus, String> {
     let mut token = state.github_token.read().clone();
     let mut source = *state.github_token_source.read();
 

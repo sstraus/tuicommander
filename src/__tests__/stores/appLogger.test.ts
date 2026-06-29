@@ -484,4 +484,53 @@ describe("appLogger", () => {
 			expect(appLogger.entryCount()).toBe(1);
 		});
 	});
+
+	// ---- Audience pool isolation (#6) ----
+	//
+	// User and diagnostic entries live in separate bounded pools, so a flood of
+	// diagnostic telemetry can never evict the user-facing signal.
+
+	it("a diagnostic flood does not evict user entries", () => {
+		testInScope(() => {
+			appLogger.error("git", "user-critical");
+
+			// 1100 exceeds the historical shared 1000-entry cap. Under the old
+			// single-buffer design the user entry (oldest) would be evicted; with
+			// separate pools it must survive.
+			for (let i = 0; i < 1100; i++) {
+				appLogger.diag.info("app", `diag-${i}`);
+			}
+
+			const entries = appLogger.getEntries();
+			expect(entries.some((e) => e.message === "user-critical")).toBe(true);
+			// The diagnostic pool is bounded independently — its oldest entries are
+			// the ones evicted, not the user entry.
+			expect(entries.some((e) => e.message === "diag-0")).toBe(false);
+			expect(entries.some((e) => e.message === "diag-1099")).toBe(true);
+		});
+	});
+
+	it("getEntries merges the two pools in chronological (id) order", () => {
+		testInScope(() => {
+			appLogger.info("app", "u1");
+			appLogger.diag.info("app", "d1");
+			appLogger.info("app", "u2");
+			appLogger.diag.info("app", "d2");
+
+			const msgs = appLogger.getEntries().map((e) => e.message);
+			expect(msgs).toEqual(["u1", "d1", "u2", "d2"]);
+		});
+	});
+
+	it("dedup is per-pool: an interleaved diagnostic entry doesn't break user dedup", () => {
+		testInScope(() => {
+			appLogger.warn("git", "retry");
+			appLogger.diag.warn("app", "telemetry");
+			appLogger.warn("git", "retry");
+
+			const retries = appLogger.getEntries().filter((e) => e.message === "retry");
+			expect(retries).toHaveLength(1);
+			expect(retries[0].repeatCount).toBe(1);
+		});
+	});
 });

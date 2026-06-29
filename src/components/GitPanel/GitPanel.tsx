@@ -123,7 +123,13 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
 			{/* Sub-panels: History & Blame — only visible in Changes tab */}
 			<Show when={activeTab() === "changes"}>
 				<div class={s.subPanels}>
-					<div class={s.subPanelHeader} role="button" tabIndex={0} onClick={() => setHistoryExpanded((v) => !v)} onKeyDown={onClickKeyDown(() => setHistoryExpanded((v) => !v))}>
+					<div
+						class={s.subPanelHeader}
+						role="button"
+						tabIndex={0}
+						onClick={() => setHistoryExpanded((v) => !v)}
+						onKeyDown={onClickKeyDown(() => setHistoryExpanded((v) => !v))}
+					>
 						<span class={cx(s.subChevron, !historyExpanded() && s.subChevronCollapsed)}>&#x25BC;</span>
 						<span class={s.subPanelLabel}>History</span>
 						<Show when={selectedFile()}>
@@ -135,7 +141,13 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
 							<HistoryTab repoPath={props.visible ? gitPath() : null} filePath={selectedFile()} onOpenDiff={openDiff} />
 						</div>
 					</Show>
-					<div class={s.subPanelHeader} role="button" tabIndex={0} onClick={() => setBlameExpanded((v) => !v)} onKeyDown={onClickKeyDown(() => setBlameExpanded((v) => !v))}>
+					<div
+						class={s.subPanelHeader}
+						role="button"
+						tabIndex={0}
+						onClick={() => setBlameExpanded((v) => !v)}
+						onKeyDown={onClickKeyDown(() => setBlameExpanded((v) => !v))}
+					>
 						<span class={cx(s.subChevron, !blameExpanded() && s.subChevronCollapsed)}>&#x25BC;</span>
 						<span class={s.subPanelLabel}>Blame</span>
 						<Show when={selectedFile()}>

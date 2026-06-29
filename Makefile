@@ -63,7 +63,7 @@ check:
 	@cd src-tauri && rtk cargo fmt --check && echo "  rustfmt ✓"
 	@cd src-tauri && rtk cargo clippy --release -- -D warnings && echo "  clippy ✓"
 	@cd src-tauri && ulimit -n 10240 && rtk cargo test -q && echo "  cargo test ✓"
-	@rtk pnpm exec vitest run --reporter=dot 2>&1 | tail -3
+	@bash -o pipefail -c 'rtk pnpm exec vitest run --reporter=dot 2>&1 | tail -3' && echo "  vitest ✓"
 	@rtk pnpm audit --audit-level=high && echo "  pnpm audit ✓"
 	@cd src-tauri && rtk err cargo audit -q --ignore RUSTSEC-2026-0097 --ignore RUSTSEC-2023-0071 && echo "  cargo audit ✓"
 

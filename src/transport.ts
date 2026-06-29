@@ -6,7 +6,7 @@
  */
 
 import type { LogLine } from "./mobile/utils/logLine";
-import { appLogger } from "./stores/appLogger";
+import { appLogger, previewLogPayload } from "./stores/appLogger";
 import { remoteConnectionsStore } from "./stores/remoteConnections";
 
 // ---------------------------------------------------------------------------
@@ -1921,23 +1921,16 @@ export async function subscribePty(
 		const unlistenExit = await listen(`pty-exit-${sessionId}`, () => {
 			onExit();
 		});
-		// Idempotent dispose: Tauri's internal listener registry crashes
-		// on double-unregister (listeners[eventId].handlerId on undefined).
+		// Idempotent dispose. Tauri's unlisten is async and REJECTS if its internal
+		// registry entry is already gone (double-unregister / session-exit race:
+		// listeners[eventId].handlerId on undefined). A sync try/catch can't catch an
+		// async rejection — swallow the promise rejection explicitly instead.
 		let disposed = false;
 		return () => {
 			if (disposed) return;
 			disposed = true;
-			try {
-				unlistenOutput();
-			} catch (err) {
-				// Swallow: listener already gone (e.g. session exit race)
-				void err;
-			}
-			try {
-				unlistenExit();
-			} catch (err) {
-				void err;
-			}
+			Promise.resolve(unlistenOutput() as unknown).catch(() => {});
+			Promise.resolve(unlistenExit() as unknown).catch(() => {});
 		};
 	}
 
@@ -2142,13 +2135,15 @@ export async function subscribeEvents(
 				const payload = JSON.parse(event.data);
 				handler(payload);
 			} catch {
-				appLogger.warn("network", `Failed to parse SSE event "${eventType}": ${event.data}`);
+				appLogger.warn("network", `Failed to parse SSE event "${eventType}"`, {
+					eventData: previewLogPayload(event.data),
+				});
 			}
 		}) as EventListener);
 	}
 
 	es.addEventListener("lagged", ((event: MessageEvent) => {
-		appLogger.warn("network", `SSE lagged: ${event.data}`);
+		appLogger.warn("network", "SSE lagged", { eventData: previewLogPayload(event.data) });
 	}) as EventListener);
 
 	es.onerror = () => {

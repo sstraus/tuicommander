@@ -67,7 +67,12 @@ describe("createMatchScanner", () => {
 
 	/** Drive the scanner to completion, one window per step (forces the multi-window
 	 *  path), and return the final snapshot. */
-	function runToCompletion(state: EditorState, term: string, sel?: { from: number; to: number }, window = 7): ScanProgress {
+	function runToCompletion(
+		state: EditorState,
+		term: string,
+		sel?: { from: number; to: number },
+		window = 7,
+	): ScanProgress {
 		const scanner = createMatchScanner(state, buildQuery(term, opts), sel ?? { from: -1, to: -1 }, { window });
 		let res = scanner.step();
 		let guard = 0;

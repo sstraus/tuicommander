@@ -427,7 +427,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
 	async function doDeleteBranch(force: boolean) {
 		const d = dialog();
-		if (!d || d.type !== "delete" || !props.repoPath) return;
+		if (d?.type !== "delete" || !props.repoPath) return;
 		const { branch } = d;
 		setDialog(null);
 		if (await deleteBranchByName(branch.name, force)) {
@@ -445,7 +445,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
 	async function doDeleteMerged() {
 		const d = dialog();
-		if (!d || d.type !== "deleteMerged") return;
+		if (d?.type !== "deleteMerged") return;
 		const targets = d.branches;
 		setDialog(null);
 		let deleted = 0;
@@ -517,7 +517,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
 	async function doMerge() {
 		const d = dialog();
-		if (!d || d.type !== "merge" || !props.repoPath) return;
+		if (d?.type !== "merge" || !props.repoPath) return;
 		const { branch } = d;
 		const target = currentBranch()?.name ?? "current";
 		setDialog(null);
@@ -583,7 +583,7 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
 	async function doRebase() {
 		const d = dialog();
-		if (!d || d.type !== "rebase" || !props.repoPath) return;
+		if (d?.type !== "rebase" || !props.repoPath) return;
 		const { branch } = d;
 		setDialog(null);
 		try {
@@ -996,7 +996,13 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 						const isCollapsed = () => collapsedGroups().has(key);
 						return (
 							<>
-								<div class={s.groupHeader} role="button" tabIndex={0} onClick={() => toggleGroup(key)} onKeyDown={onClickKeyDown(() => toggleGroup(key))}>
+								<div
+									class={s.groupHeader}
+									role="button"
+									tabIndex={0}
+									onClick={() => toggleGroup(key)}
+									onKeyDown={onClickKeyDown(() => toggleGroup(key))}
+								>
 									<span class={cx(s.chevron, isCollapsed() && s.chevronCollapsed)}>&#x25BC;</span>
 									<span class={s.groupIcon}>
 										<FolderIcon />
@@ -1141,7 +1147,13 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 				<Show when={branches().length > 0} fallback={<div class={s.empty}>No branches</div>}>
 					{/* Recent section */}
 					<Show when={recentBranches().length > 0}>
-						<div class={s.sectionHeader} role="button" tabIndex={0} onClick={() => setRecentExpanded((v) => !v)} onKeyDown={onClickKeyDown(() => setRecentExpanded((v) => !v))}>
+						<div
+							class={s.sectionHeader}
+							role="button"
+							tabIndex={0}
+							onClick={() => setRecentExpanded((v) => !v)}
+							onKeyDown={onClickKeyDown(() => setRecentExpanded((v) => !v))}
+						>
 							<span class={cx(s.chevron, !recentExpanded() && s.chevronCollapsed)}>&#x25BC;</span>
 							Recent
 							<span class={s.sectionCount}>{recentBranches().length}</span>
@@ -1152,7 +1164,13 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 					</Show>
 
 					{/* Local section */}
-					<div class={s.sectionHeader} role="button" tabIndex={0} onClick={() => setLocalExpanded((v) => !v)} onKeyDown={onClickKeyDown(() => setLocalExpanded((v) => !v))}>
+					<div
+						class={s.sectionHeader}
+						role="button"
+						tabIndex={0}
+						onClick={() => setLocalExpanded((v) => !v)}
+						onKeyDown={onClickKeyDown(() => setLocalExpanded((v) => !v))}
+					>
 						<span class={cx(s.chevron, !localExpanded() && s.chevronCollapsed)}>&#x25BC;</span>
 						Local
 						<span class={s.sectionCount}>{localBranches().length}</span>
@@ -1163,7 +1181,13 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
 					{/* Remote section - only show when there are remote branches */}
 					<Show when={remoteBranches().length > 0}>
-						<div class={s.sectionHeader} role="button" tabIndex={0} onClick={() => setRemoteExpanded((v) => !v)} onKeyDown={onClickKeyDown(() => setRemoteExpanded((v) => !v))}>
+						<div
+							class={s.sectionHeader}
+							role="button"
+							tabIndex={0}
+							onClick={() => setRemoteExpanded((v) => !v)}
+							onKeyDown={onClickKeyDown(() => setRemoteExpanded((v) => !v))}
+						>
 							<span class={cx(s.chevron, !remoteExpanded() && s.chevronCollapsed)}>&#x25BC;</span>
 							Remote
 							<span class={s.sectionCount}>{remoteBranches().length}</span>

@@ -147,7 +147,13 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 
 	return (
 		<div class={s.ghSection}>
-			<div class={s.ghSectionHeader} role="button" tabIndex={0} onClick={() => setCollapsed((v) => !v)} onKeyDown={onClickKeyDown(() => setCollapsed((v) => !v))}>
+			<div
+				class={s.ghSectionHeader}
+				role="button"
+				tabIndex={0}
+				onClick={() => setCollapsed((v) => !v)}
+				onKeyDown={onClickKeyDown(() => setCollapsed((v) => !v))}
+			>
 				<span class={cx(s.ghSectionChevron, !collapsed() && s.ghSectionChevronOpen)}>{"›"}</span>
 				<PrIcon />
 				<span>{props.title}</span>

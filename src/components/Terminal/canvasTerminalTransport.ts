@@ -1,5 +1,6 @@
 import { appLogger } from "../../stores/appLogger";
 import { isTauri, rpc } from "../../transport";
+import { isPerfDebug } from "../../utils/perfDebug";
 
 export interface TerminalTransport {
 	subscribe(onFrame: (data: ArrayBuffer) => void): Promise<void>;
@@ -61,7 +62,13 @@ export class TauriTransport implements TerminalTransport {
 
 	unsubscribe(): void {
 		this.invokeRef?.("unsubscribe_terminal_grid", { sessionId: this.sessionId }).catch(() => {});
-		for (const unlisten of this.unlisteners) unlisten();
+		for (const unlisten of this.unlisteners) {
+			// Tauri's unlisten is async under the hood and REJECTS if its internal
+			// registry entry is already gone (webview/session teardown race — common
+			// now that a shell exit disposes the terminal). Teardown must swallow it,
+			// not surface an unhandled rejection.
+			Promise.resolve(unlisten() as unknown).catch(() => {});
+		}
 		this.unlisteners = [];
 	}
 
@@ -138,14 +145,22 @@ export class WsTransport implements TerminalTransport {
 					const { type, ...payload } = event;
 					this.eventHandlers.get(type)?.(payload);
 				} catch (err) {
-					console.debug("WsTransport: unparseable text frame", (e.data as string)?.slice?.(0, 100), err);
+					if (isPerfDebug()) {
+						appLogger.debug("terminal", "WsTransport received an unparseable text frame", {
+							sessionId: this.sessionId,
+							frameStart: (e.data as string)?.slice?.(0, 100),
+							error: err,
+						});
+					}
 				}
 			}
 		};
 		this.ws.onclose = () => {
 			if (this.closed) return;
 			if (this.reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
-				console.warn(`WsTransport: giving up after ${MAX_RECONNECT_ATTEMPTS} reconnect attempts`, this.sessionId);
+				appLogger.warn("terminal", `Terminal stream disconnected after ${MAX_RECONNECT_ATTEMPTS} reconnect attempts`, {
+					sessionId: this.sessionId,
+				});
 				return;
 			}
 			const delay = INITIAL_RECONNECT_MS * 2 ** Math.min(this.reconnectAttempts, 5);
@@ -156,7 +171,9 @@ export class WsTransport implements TerminalTransport {
 						this.reconnectAttempts = 0;
 					})
 					.catch((err) => {
-						console.debug("WsTransport: reconnect failed", this.sessionId, err);
+						if (isPerfDebug()) {
+							appLogger.debug("terminal", "WsTransport reconnect failed", { sessionId: this.sessionId, error: err });
+						}
 					});
 			}, delay);
 		};

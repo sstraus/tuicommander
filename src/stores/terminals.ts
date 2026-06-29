@@ -209,6 +209,7 @@ function createTerminalsStore() {
 	const busyToIdleCallbacks: Array<(id: string, durationMs: number) => void> = [];
 	const idleToBusyCallbacks: Array<(id: string) => void> = [];
 	const onRemoveCallbacks: Array<(id: string) => void> = [];
+	const shellExitCallbacks: Array<(id: string) => void> = [];
 	// Tracks which terminals have completed their initial shell startup (reached idle at least once).
 	// Used to distinguish "busy from .zshrc startup" from "busy from a user-launched process".
 	const reachedIdleSet = new Set<string>();
@@ -849,6 +850,24 @@ function createTerminalsStore() {
 				const idx = onRemoveCallbacks.indexOf(callback);
 				if (idx >= 0) onRemoveCallbacks.splice(idx, 1);
 			};
+		},
+
+		/** Register a callback fired when a plain interactive shell (no agent) exits.
+		 *  App wires this to close the tab — a dead shell shouldn't linger as a
+		 *  grey "exited" dot. Agent sessions are NOT routed here; they keep the tab. */
+		onShellExit(callback: (id: string) => void): () => void {
+			shellExitCallbacks.push(callback);
+			return () => {
+				const idx = shellExitCallbacks.indexOf(callback);
+				if (idx >= 0) shellExitCallbacks.splice(idx, 1);
+			};
+		},
+
+		/** Fire the shell-exit callbacks for a terminal whose plain shell ended.
+		 *  Called by Terminal.tsx's pty-exit handler (the single owner of local
+		 *  session-exit handling). */
+		notifyShellExit(id: string): void {
+			for (const cb of shellExitCallbacks) cb(id);
 		},
 
 		/** Mark a tab as detached to a floating window */

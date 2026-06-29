@@ -5,7 +5,7 @@
  * from a remote TUIC daemon and routes them into local stores.
  */
 
-import { appLogger } from "../stores/appLogger";
+import { appLogger, previewLogPayload } from "../stores/appLogger";
 import { repositoriesStore } from "../stores/repositories";
 
 /**
@@ -29,7 +29,7 @@ export function startRemoteEventBridge(connectionId: string, baseUrl: string): (
 
 		es.onopen = () => {
 			reconnectDelay = 1000;
-			appLogger.info("network", `SSE bridge connected for ${connectionId}`);
+			appLogger.debug("network", `SSE bridge connected for ${connectionId}`);
 		};
 
 		// The server sends named SSE events (event: repo-changed\ndata: {...}\n\n),
@@ -41,7 +41,10 @@ export function startRemoteEventBridge(connectionId: string, baseUrl: string): (
 					repositoriesStore.bumpRevision(payload.path);
 				}
 			} catch {
-				appLogger.warn("network", `Failed to parse repo-changed SSE event: ${event.data}`);
+				appLogger.warn("network", "Failed to parse repo-changed SSE event", {
+					connectionId,
+					eventData: previewLogPayload(event.data),
+				});
 			}
 		}) as EventListener);
 

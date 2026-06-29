@@ -45,7 +45,13 @@ export const ReferencesPanel: Component<ReferencesPanelProps> = (props) => {
 					<div class={s.resultList}>
 						<For each={referencesStore.references}>
 							{(ref) => (
-								<div class={s.resultItem} role="button" tabIndex={0} onClick={() => handleClick(ref)} onKeyDown={onClickKeyDown(() => handleClick(ref))}>
+								<div
+									class={s.resultItem}
+									role="button"
+									tabIndex={0}
+									onClick={() => handleClick(ref)}
+									onKeyDown={onClickKeyDown(() => handleClick(ref))}
+								>
 									<span class={s.resultName}>{ref.name}</span>
 									<span class={s.resultFile}>
 										{ref.filePath}

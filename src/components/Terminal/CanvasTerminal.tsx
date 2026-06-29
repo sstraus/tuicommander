@@ -2163,6 +2163,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					e.preventDefault();
 					props.onResume?.();
 				} else if (e.key.length === 1) {
+					// preventDefault stops the hidden key-input from also emitting an
+					// `input` event for this printable key — without it the char is
+					// written twice (keydown + input), e.g. "c" → "cc" (issue: resume
+					// banner double-echo). Mirrors the normal printable path below.
+					e.preventDefault();
 					props.onResumeDismiss?.();
 					// Let the keystroke pass through to PTY
 					// macOS Right Option: send composed char directly, skip ESC prefix

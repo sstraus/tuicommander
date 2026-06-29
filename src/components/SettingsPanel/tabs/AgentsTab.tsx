@@ -699,7 +699,13 @@ const AgentRow: Component<{
 
 	return (
 		<div class={a.agentRow}>
-			<div class={a.agentHeader} role="button" tabIndex={0} onClick={handleExpand} onKeyDown={onClickKeyDown(handleExpand)}>
+			<div
+				class={a.agentHeader}
+				role="button"
+				tabIndex={0}
+				onClick={handleExpand}
+				onKeyDown={onClickKeyDown(handleExpand)}
+			>
 				<div class={a.agentInfo}>
 					<div class={a.agentNameRow}>
 						<div class={a.agentIcon} style={{ background: display().color, opacity: isEnabled() ? 1 : 0.4 }}>

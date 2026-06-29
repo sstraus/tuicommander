@@ -107,7 +107,13 @@ export const McpPopup: Component<{ onOpenSettings: (tab: string) => void }> = (p
 								const st = () => getStatus(server.name);
 								const enabled = () => isEnabled(server.name);
 								return (
-									<div class={s.item} role="button" tabIndex={0} onClick={() => mcpPopupStore.toggleServer(server.name)} onKeyDown={onClickKeyDown(() => mcpPopupStore.toggleServer(server.name))}>
+									<div
+										class={s.item}
+										role="button"
+										tabIndex={0}
+										onClick={() => mcpPopupStore.toggleServer(server.name)}
+										onKeyDown={onClickKeyDown(() => mcpPopupStore.toggleServer(server.name))}
+									>
 										<span
 											class={s.statusDot}
 											style={{

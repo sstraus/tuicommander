@@ -171,7 +171,13 @@ const TaskItem: Component<TaskItemProps> = (props) => {
 	};
 
 	return (
-		<div class={cx(s.item, s[props.task.status], props.compact && s.compact)} role={props.onSelect ? "button" : undefined} tabIndex={props.onSelect ? 0 : undefined} onClick={props.onSelect} onKeyDown={props.onSelect ? onClickKeyDown(props.onSelect) : undefined}>
+		<div
+			class={cx(s.item, s[props.task.status], props.compact && s.compact)}
+			role={props.onSelect ? "button" : undefined}
+			tabIndex={props.onSelect ? 0 : undefined}
+			onClick={props.onSelect}
+			onKeyDown={props.onSelect ? onClickKeyDown(props.onSelect) : undefined}
+		>
 			<span class={s.itemStatus} style={{ color: statusColor() }}>
 				{statusIcon()}
 			</span>
