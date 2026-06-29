@@ -28,9 +28,17 @@ pub(crate) fn get_cli_status() -> CliStatus {
         .join(".cli-prompt-dismissed")
         .exists();
 
-    let install_path = resolve_install_path();
+    // Prefer the canonical install location (keeps install/update semantics),
+    // then fall back to wherever `tuic` lives on the user's PATH — they may have
+    // symlinked it into their own bin dir without using our installer (#98).
+    let canonical = resolve_install_path();
+    let install_path = if std::path::Path::new(&canonical).exists() {
+        Some(canonical)
+    } else {
+        crate::cli::which_cli(sidecar_name())
+    };
 
-    if !std::path::Path::new(&install_path).exists() {
+    let Some(install_path) = install_path else {
         return CliStatus {
             installed: false,
             path: None,
@@ -38,7 +46,7 @@ pub(crate) fn get_cli_status() -> CliStatus {
             auto_updatable: false,
             prompt_dismissed,
         };
-    }
+    };
 
     // Check if installed version matches current sidecar
     let version_match = check_version_match(&install_path);

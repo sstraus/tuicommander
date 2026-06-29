@@ -150,6 +150,16 @@ pub(crate) fn enriched_path() -> String {
 
 /// Check if a CLI tool exists on PATH or in well-known directories.
 pub(crate) fn has_cli(name: &str) -> bool {
+    which_cli(name).is_some()
+}
+
+/// Locate a CLI tool and return the path where it was found, or None.
+///
+/// Uses `which`/`where` first (honors the inherited PATH, including dirs the
+/// user added like `~/bin`), then falls back to probing well-known dirs that
+/// desktop-launched apps miss. The path is returned *as found* — a symlink on
+/// PATH is reported as the symlink, not its target (issue #98).
+pub(crate) fn which_cli(name: &str) -> Option<String> {
     let checker = if cfg!(target_os = "windows") {
         "where"
     } else {
@@ -158,11 +168,19 @@ pub(crate) fn has_cli(name: &str) -> bool {
     let mut cmd = std::process::Command::new(checker);
     cmd.arg(name);
     apply_no_window(&mut cmd);
-    if cmd.output().map(|o| o.status.success()).unwrap_or(false) {
-        return true;
+    if let Ok(output) = cmd.output()
+        && output.status.success()
+        && let Some(line) = String::from_utf8_lossy(&output.stdout).lines().next()
+    {
+        let path = line.trim();
+        if !path.is_empty() {
+            return Some(path.to_string());
+        }
     }
-    // Also check extra_bin_dirs
-    resolve_cli(name) != name
+    // Fallback: probe extra_bin_dirs (resolve_cli returns `name` unchanged when
+    // not found).
+    let resolved = resolve_cli(name);
+    (resolved != name).then_some(resolved)
 }
 
 #[cfg(test)]
@@ -190,6 +208,25 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_which_cli_none_for_missing() {
+        assert_eq!(which_cli("nonexistent_binary_xyz_12345"), None);
+    }
+
+    #[test]
+    fn test_which_cli_finds_known_binary() {
+        // `sh` is on PATH on every Unix; `cmd` on every Windows.
+        #[cfg(not(target_os = "windows"))]
+        let name = "sh";
+        #[cfg(target_os = "windows")]
+        let name = "cmd";
+        let found = which_cli(name);
+        assert!(
+            found.as_deref().is_some_and(|p| !p.is_empty()),
+            "which_cli({name:?}) should resolve to a path, got {found:?}"
+        );
     }
 
     #[test]

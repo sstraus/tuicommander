@@ -24,6 +24,8 @@
 	<string>Terminal commands may need to access your calendar data.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Terminal commands may need to access your contacts.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>TUICommander needs to send Apple Events so terminal commands can control other apps (e.g. opening a diff in BBEdit).</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 </dict>
