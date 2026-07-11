@@ -10,6 +10,12 @@
 
 Features to test when TUICommander is more usable.
 
+## macOS Cmd editing keys in terminal (2026-07-11)
+
+- [HUMAN] In a plain zsh terminal type a long command, then: Cmd+Left → cursor jumps to line start (`\x01`), Cmd+Right → line end (`\x05`), Cmd+Backspace → deletes to line start (`\x15`), Cmd+Delete → deletes to line end (`\x0b`). (`terminalInput.ts` `cmdSequenceForKey`, wired in `CanvasTerminal.tsx`.)
+- [HUMAN] Same four chords inside Claude Code's input box — line start/end jump and kill-to-start/end must work (readline control codes).
+- [HUMAN] Verify no regressions on nearby chords: Cmd+Up/Down still jumps between command blocks, Cmd+C still copies a selection, Cmd+Shift+Left/Right does nothing new (falls through), Option+Left/Right still word-jumps.
+
 ## Clipboard "Copy Path" fix (2026-07-02, uncommitted)
 
 - [ ] **Copy Path / copy actions in all context menus** now route through the native clipboard-manager plugin (`writeClipboard`) instead of `navigator.clipboard.writeText` (rejected by WKWebView). Verify paste works after: RepoSection branch/worktree Copy Path, TabBar (diff/markdown/editor) Copy Path, FileBrowser Copy Path, CodeEditorTab, MarkdownPanel/Tab, StatusBar cwd, App "Copy Block Output", ErrorLogPanel, GeneratorsModal, AIChatPanel, GitHubPanel/Tab, ServicesTab, KnowledgeHistory, useSmartPrompts clipboard output.
