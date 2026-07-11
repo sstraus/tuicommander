@@ -1,5 +1,7 @@
 import { type Component, createMemo } from "solid-js";
 import { fileIconRegistry } from "../../plugins/fileIconRegistry";
+import { settingsStore } from "../../stores/settings";
+import { getFileIconColor } from "./fileColors";
 
 /** Default monochrome folder icon */
 const DEFAULT_FOLDER = `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M1 3.5A1.5 1.5 0 0 1 2.5 2h3.172a1.5 1.5 0 0 1 1.06.44l.658.658A.5.5 0 0 0 7.744 3.25H13.5A1.5 1.5 0 0 1 15 4.75v7.75a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 1 12.5V3.5z"/></svg>`;
@@ -29,5 +31,9 @@ export const FileIcon: Component<FileIconProps> = (props) => {
 
 	const svg = () => icon() ?? (props.isDir ? DEFAULT_FOLDER : DEFAULT_FILE);
 
-	return <span class={props.class} innerHTML={svg()} />;
+	// File type tint for the default icons; plugin-provided icons style themselves
+	const color = () =>
+		!icon() && settingsStore.state.fileTreeColorsEnabled ? getFileIconColor(props.name, props.isDir) : undefined;
+
+	return <span class={props.class} style={{ color: color() }} innerHTML={svg()} />;
 };

@@ -61,6 +61,7 @@ pub fn save_json_config<T: Serialize>(filename: &str, config: &T) -> Result<(), 
 | `auto_show_pr_popover` | `bool` | `false` | Auto-show PR popover when switching to a branch with a PR |
 | `update_channel` | `String` | `"stable"` | Update channel: "stable" or "nightly" |
 | `inline_blame_enabled` | `bool` | `true` | Show GitLens-style inline git blame on the code editor's active line |
+| `file_tree_colors_enabled` | `bool` | `true` | Tint file browser icons by file type (VSCode-style pastel palette) |
 
 **Commands:** `load_app_config()`, `save_app_config(config)`
 

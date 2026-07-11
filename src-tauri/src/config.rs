@@ -602,6 +602,9 @@ pub(crate) struct AppConfig {
     /// Show GitLens-style inline git blame on the active line in the code editor.
     #[serde(default = "default_true")]
     pub(crate) inline_blame_enabled: bool,
+    /// Tint file browser icons by file type (VSCode-style pastel palette).
+    #[serde(default = "default_true")]
+    pub(crate) file_tree_colors_enabled: bool,
 }
 
 /// A user-defined launcher for the "Open in" menu. The executable is spawned
@@ -733,6 +736,7 @@ impl Default for AppConfig {
             standby_timeout_minutes: default_standby_timeout(),
             custom_launchers: Vec::new(),
             inline_blame_enabled: true,
+            file_tree_colors_enabled: true,
         }
     }
 }
@@ -1850,6 +1854,7 @@ mod tests {
             standby_timeout_minutes: 5,
             custom_launchers: Vec::new(),
             inline_blame_enabled: true,
+            file_tree_colors_enabled: false,
         };
         let loaded: AppConfig = round_trip_in_dir(dir.path(), "config.json", &cfg);
         assert_eq!(loaded.shell.as_deref(), Some("/bin/zsh"));
@@ -1883,6 +1888,7 @@ mod tests {
         );
         assert!(!loaded.intent_tab_title);
         assert!(!loaded.suggest_followups);
+        assert!(!loaded.file_tree_colors_enabled);
     }
 
     #[test]
@@ -1915,6 +1921,7 @@ mod tests {
         assert!(loaded.intent_tab_title); // defaults to true
         assert!(loaded.suggest_followups); // defaults to true
         assert!(!loaded.experimental_features_enabled);
+        assert!(loaded.file_tree_colors_enabled); // defaults to true
     }
 
     #[test]

@@ -388,6 +388,16 @@ export const AppearanceTab: Component = () => {
 				hint={t("appearance.hint.terminalTheme", "Color theme for terminal output and app chrome")}
 			/>
 
+			<SettingToggle
+				checked={settingsStore.state.fileTreeColorsEnabled}
+				onChange={(v) => settingsStore.setFileTreeColorsEnabled(v)}
+				label={t("appearance.label.fileTreeColors", "File Type Colors")}
+				hint={t(
+					"appearance.hint.fileTreeColors",
+					"Tint file browser icons by file type (VSCode-style), using a modern pastel palette",
+				)}
+			/>
+
 			<h3>{t("appearance.heading.terminal", "Terminal")}</h3>
 
 			<div class={s.terminalSplit}>

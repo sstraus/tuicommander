@@ -493,6 +493,44 @@ describe("settingsStore", () => {
 		});
 	});
 
+	describe("fileTreeColorsEnabled", () => {
+		it("defaults to true", () => {
+			testInScope(() => {
+				expect(store.state.fileTreeColorsEnabled).toBe(true);
+			});
+		});
+
+		it("setFileTreeColorsEnabled persists via debounced save_config", async () => {
+			await testInScopeAsync(async () => {
+				store.setFileTreeColorsEnabled(false);
+				expect(store.state.fileTreeColorsEnabled).toBe(false);
+				vi.advanceTimersByTime(600);
+				await vi.runAllTimersAsync();
+				expect(mockInvoke).toHaveBeenCalledWith("save_config", {
+					config: expect.objectContaining({ file_tree_colors_enabled: false }),
+				});
+			});
+		});
+
+		it("hydrates file_tree_colors_enabled from config", async () => {
+			mockInvoke.mockResolvedValueOnce({
+				shell: null,
+				font_family: "JetBrains Mono",
+				font_size: 14,
+				theme: "dark",
+				mcp_server_enabled: false,
+				ide: "vscode",
+				file_tree_colors_enabled: false,
+			});
+			mockInvoke.mockResolvedValueOnce({ primary_agent: "claude" });
+
+			await testInScopeAsync(async () => {
+				await store.hydrate();
+				expect(store.state.fileTreeColorsEnabled).toBe(false);
+			});
+		});
+	});
+
 	describe("custom launchers (#71)", () => {
 		const launcher = {
 			id: "abc",

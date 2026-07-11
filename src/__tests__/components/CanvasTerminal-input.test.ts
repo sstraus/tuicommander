@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
 	altSequenceFromCode,
+	cmdSequenceForKey,
 	createCompositionState,
 	DUP_KEYDOWN_WINDOW_MS,
 	keyToSequence,
@@ -160,6 +161,53 @@ describe("keyToSequence", () => {
 		expect(keyToSequence(evt("Alt"))).toBeNull();
 		expect(keyToSequence(evt("Meta"))).toBeNull();
 		expect(keyToSequence(evt("CapsLock"))).toBeNull();
+	});
+});
+
+describe("cmdSequenceForKey", () => {
+	const evt = (key: string, opts: Partial<KeyboardEvent> = {}): KeyboardEvent =>
+		({
+			key,
+			code: "",
+			ctrlKey: false,
+			altKey: false,
+			shiftKey: false,
+			metaKey: true,
+			...opts,
+		}) as unknown as KeyboardEvent;
+
+	it("maps Cmd+Left to beginning-of-line", () => {
+		expect(cmdSequenceForKey(evt("ArrowLeft"))).toBe("\x01");
+	});
+
+	it("maps Cmd+Right to end-of-line", () => {
+		expect(cmdSequenceForKey(evt("ArrowRight"))).toBe("\x05");
+	});
+
+	it("maps Cmd+Backspace to kill-to-line-start", () => {
+		expect(cmdSequenceForKey(evt("Backspace"))).toBe("\x15");
+	});
+
+	it("maps Cmd+Delete to kill-to-line-end", () => {
+		expect(cmdSequenceForKey(evt("Delete"))).toBe("\x0b");
+	});
+
+	it("ignores combos with extra modifiers so other handlers keep them", () => {
+		expect(cmdSequenceForKey(evt("ArrowLeft", { shiftKey: true }))).toBeNull();
+		expect(cmdSequenceForKey(evt("ArrowLeft", { altKey: true }))).toBeNull();
+		expect(cmdSequenceForKey(evt("ArrowLeft", { ctrlKey: true }))).toBeNull();
+	});
+
+	it("ignores non-editing Cmd keys (block nav, clipboard, app shortcuts)", () => {
+		expect(cmdSequenceForKey(evt("ArrowUp"))).toBeNull();
+		expect(cmdSequenceForKey(evt("ArrowDown"))).toBeNull();
+		expect(cmdSequenceForKey(evt("c"))).toBeNull();
+		expect(cmdSequenceForKey(evt("v"))).toBeNull();
+		expect(cmdSequenceForKey(evt("Enter"))).toBeNull();
+	});
+
+	it("returns null without the Cmd modifier", () => {
+		expect(cmdSequenceForKey(evt("ArrowLeft", { metaKey: false }))).toBeNull();
 	});
 });
 

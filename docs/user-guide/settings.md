@@ -24,6 +24,7 @@ Open settings with `Cmd+,`. Settings are organized into tabs.
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | **Terminal theme** | — | — | Color theme with preview swatches |
+| **File Type Colors** | `boolean` | `true` | Tint file browser icons by file type (VSCode-style pastel palette). Folders get a muted gray-blue; dotfiles and lockfiles are dimmed. |
 | **Terminal font** | — | JetBrains Mono | 13 bundled monospace fonts: Fira Code, Hack, Cascadia Code, Source Code Pro, IBM Plex Mono, Inconsolata, Ubuntu Mono, Anonymous Pro, Roboto Mono, Space Mono, Monaspace Neon, Geist Mono |
 | **Default font size** | — | — | 8–32px slider. Applies to new terminals; existing terminals keep their zoom level. |
 | **Split tab mode** | — | — | Separate or unified tab appearance |

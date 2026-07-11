@@ -34,7 +34,7 @@ import { createGridRenderer, type GridRenderer } from "./gridRenderer";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { filePathRegex, fileUrlRegex } from "./linkProvider";
 import { continuationRowsAfterSuggest, isSuggestBlock } from "./suggestOverlay";
-import { altSequenceFromCode, createCompositionState, keyToSequence } from "./terminalInput";
+import { altSequenceFromCode, cmdSequenceForKey, createCompositionState, keyToSequence } from "./terminalInput";
 
 // Re-export for external consumers
 export type { CellMetrics, CursorShape, DecodedFrame };
@@ -2304,6 +2304,18 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					const ctrl = String.fromCharCode(cm[1].charCodeAt(0) - 0x40);
 					e.preventDefault();
 					writePty(ctrl);
+					return;
+				}
+			}
+
+			// macOS Cmd editing keys: Cmd+Left/Right → line start/end,
+			// Cmd+Backspace/Delete → kill to line start/end. Cmd+Up/Down
+			// (block nav) and Cmd+C/V (clipboard) are handled above.
+			if (isMacOS()) {
+				const cmdSeq = cmdSequenceForKey(e);
+				if (cmdSeq !== null) {
+					e.preventDefault();
+					writePty(cmdSeq);
 					return;
 				}
 			}

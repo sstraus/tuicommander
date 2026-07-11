@@ -74,6 +74,7 @@ interface RustAppConfig {
 	standby_timeout_minutes?: number;
 	custom_launchers?: CustomLauncher[];
 	inline_blame_enabled?: boolean;
+	file_tree_colors_enabled?: boolean;
 }
 
 // Default values
@@ -381,6 +382,7 @@ interface SettingsStoreState {
 	standbyTimeoutMinutes: number;
 	customLaunchers: CustomLauncher[];
 	inlineBlameEnabled: boolean;
+	fileTreeColorsEnabled: boolean;
 }
 
 const SAVE_DEBOUNCE_MS = 500;
@@ -432,6 +434,7 @@ function createSettingsStore() {
 		standbyTimeoutMinutes: 5,
 		customLaunchers: [],
 		inlineBlameEnabled: true,
+		fileTreeColorsEnabled: true,
 	});
 
 	// Shadow copy of the last loaded config — preserves fields not tracked in SolidJS store
@@ -488,6 +491,7 @@ function createSettingsStore() {
 			standby_timeout_minutes: state.standbyTimeoutMinutes,
 			custom_launchers: [...state.customLaunchers],
 			inline_blame_enabled: state.inlineBlameEnabled,
+			file_tree_colors_enabled: state.fileTreeColorsEnabled,
 			services: baseConfig?.services ?? { auth: { session_token_duration_secs: 86400 } },
 			mcp_server_enabled: baseConfig?.mcp_server_enabled ?? true,
 		};
@@ -576,6 +580,7 @@ function createSettingsStore() {
 				setState("standbyTimeoutMinutes", config.standby_timeout_minutes ?? 5);
 				setState("customLaunchers", config.custom_launchers ?? []);
 				setState("inlineBlameEnabled", config.inline_blame_enabled ?? true);
+				setState("fileTreeColorsEnabled", config.file_tree_colors_enabled ?? true);
 			} catch (err) {
 				appLogger.error("config", "Failed to hydrate settings", err);
 			}
@@ -802,6 +807,12 @@ function createSettingsStore() {
 		/** Toggle GitLens-style inline git blame on the editor's active line */
 		setInlineBlameEnabled(enabled: boolean): void {
 			setState("inlineBlameEnabled", enabled);
+			save();
+		},
+
+		/** Toggle VSCode-style file type colors on file browser icons */
+		setFileTreeColorsEnabled(enabled: boolean): void {
+			setState("fileTreeColorsEnabled", enabled);
 			save();
 		},
 

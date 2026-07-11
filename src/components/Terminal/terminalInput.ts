@@ -251,3 +251,26 @@ export function altSequenceFromCode(e: KeyboardEvent): string | null {
 
 	return null;
 }
+
+/**
+ * macOS Cmd editing keys (iTerm2 "Natural Text Editing" convention):
+ * Cmd+Left/Right jump to line start/end, Cmd+Backspace kills to line start,
+ * Cmd+Delete kills to line end. Readline control codes work in shells and TUI
+ * prompts alike. Returns null for every other combo so Cmd+Up/Down block
+ * navigation, Cmd+C/V clipboard, and app shortcuts stay untouched.
+ */
+export function cmdSequenceForKey(e: KeyboardEvent): string | null {
+	if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return null;
+	switch (e.key) {
+		case "ArrowLeft":
+			return "\x01"; // beginning-of-line
+		case "ArrowRight":
+			return "\x05"; // end-of-line
+		case "Backspace":
+			return "\x15"; // kill to line start
+		case "Delete":
+			return "\x0b"; // kill to line end
+		default:
+			return null;
+	}
+}

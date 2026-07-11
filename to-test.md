@@ -10,6 +10,18 @@
 
 Features to test when TUICommander is more usable.
 
+## File type colors in file browser (2026-07-11)
+
+- [VISUAL] Open the file browser (flat and tree view) → icons are tinted by file type with a pastel palette: folders gray-blue, `.ts` blue, `.js` yellow, `.json` amber, `.rs` rose, `.md` violet, images green, Dockerfile sky-blue; dotfiles/lockfiles dimmed; unknown types keep the plain foreground. (`FileBrowserPanel/fileColors.ts` via `FileIcon.tsx`.)
+- [VISUAL] Settings → Appearance → "File Type Colors" toggle off → icons return to monochrome everywhere (file browser + Command Palette file results); toggle persists across restart (`file_tree_colors_enabled` in config.json).
+- [VISUAL] Switch themes (Dracula, Nord, deep-black) → pastel tints stay legible on each dark background; dotfile/lockfile muting follows the theme's `--fg-muted`.
+
+## macOS Cmd editing keys in terminal (2026-07-11)
+
+- [HUMAN] In a plain zsh terminal type a long command, then: Cmd+Left → cursor jumps to line start (`\x01`), Cmd+Right → line end (`\x05`), Cmd+Backspace → deletes to line start (`\x15`), Cmd+Delete → deletes to line end (`\x0b`). (`terminalInput.ts` `cmdSequenceForKey`, wired in `CanvasTerminal.tsx`.)
+- [HUMAN] Same four chords inside Claude Code's input box — line start/end jump and kill-to-start/end must work (readline control codes).
+- [HUMAN] Verify no regressions on nearby chords: Cmd+Up/Down still jumps between command blocks, Cmd+C still copies a selection, Cmd+Shift+Left/Right does nothing new (falls through), Option+Left/Right still word-jumps.
+
 ## Clipboard "Copy Path" fix (2026-07-02, uncommitted)
 
 - [ ] **Copy Path / copy actions in all context menus** now route through the native clipboard-manager plugin (`writeClipboard`) instead of `navigator.clipboard.writeText` (rejected by WKWebView). Verify paste works after: RepoSection branch/worktree Copy Path, TabBar (diff/markdown/editor) Copy Path, FileBrowser Copy Path, CodeEditorTab, MarkdownPanel/Tab, StatusBar cwd, App "Copy Block Output", ErrorLogPanel, GeneratorsModal, AIChatPanel, GitHubPanel/Tab, ServicesTab, KnowledgeHistory, useSmartPrompts clipboard output.
