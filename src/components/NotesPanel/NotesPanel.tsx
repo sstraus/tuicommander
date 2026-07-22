@@ -160,7 +160,11 @@ export const NotesPanel: Component<NotesPanelProps> = (props) => {
 	};
 
 	const handleKeyDown = (e: KeyboardEvent) => {
-		if (e.key === "Enter" && !e.shiftKey) {
+		if (e.key === "Enter" && !e.shiftKey && !e.isComposing && e.keyCode !== 229) {
+			// keyCode 229 = IME composition in progress or just confirmed.
+			// WebKit (Safari/Tauri on macOS) sets isComposing=false on the
+			// confirming Enter keydown before keyup, so isComposing alone
+			// isn't reliable here — keyCode is the fallback signal.
 			e.preventDefault();
 			handleSubmit();
 		}
