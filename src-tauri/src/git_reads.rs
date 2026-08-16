@@ -1506,7 +1506,23 @@ mod tests {
         let cli = CliGitReads;
         let gix = GixGitReads::new();
 
-        let json = |v: &Vec<CommitLogEntry>| serde_json::to_value(v).unwrap();
+        // Compare date IDENTITY, not rendering: git-cli's ISO output spells
+        // UTC as `Z` on some versions (e.g. 2.34) and `+00:00` on others,
+        // while gix always renders `+00:00`. Same instant, two legal ISO-8601
+        // spellings — normalize to `Z` before comparing.
+        let json = |v: &Vec<CommitLogEntry>| {
+            let mut val = serde_json::to_value(v).unwrap();
+            if let serde_json::Value::Array(items) = &mut val {
+                for item in items {
+                    if let Some(serde_json::Value::String(d)) = item.get_mut("author_date") {
+                        if let Some(stripped) = d.strip_suffix("+00:00") {
+                            *d = format!("{stripped}Z");
+                        }
+                    }
+                }
+            }
+            val
+        };
         let a = cli.commit_log(&repo, None, None).unwrap();
         let b = gix.commit_log(&repo, None, None).unwrap();
         assert_eq!(json(&a), json(&b), "commit_log gix != cli");

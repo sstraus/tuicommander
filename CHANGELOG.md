@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 ### Fixed
+- **Tests: `shootout_commit_log` no longer depends on the git CLI's UTC date spelling** — gix renders `+00:00`, git ≤2.34 renders `Z`; the differential test now normalizes the equivalent spellings before comparing.
 
 - **Awaiting-input state is turn-scoped and transport-consistent** — Historical questions no longer re-arm after a later response or completion, bare Enter clears waits through desktop and HTTP input alike, and an open MCP UI confirmation no longer blocks other agents' requests.
 - **Agent state transitions cannot be dropped by a busy event consumer** — Sticky per-session state now uses a lossless reducer lane instead of depending on the best-effort broadcast bus, preserves every response-required OSC notification in a PTY chunk, keeps an unobserved shell in `starting`, and recognizes a non-empty input box above arbitrarily tall custom HUDs.
