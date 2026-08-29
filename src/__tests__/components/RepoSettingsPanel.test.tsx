@@ -103,6 +103,7 @@ describe("SettingsPanel — repo context", () => {
 			terminalMetaHotkeys: null,
 			worktreeStorage: null,
 			promptOnCreate: null,
+			promptOnWorktreeSwitch: null,
 			deleteBranchOnRemove: null,
 			autoArchiveMerged: null,
 			orphanCleanup: null,

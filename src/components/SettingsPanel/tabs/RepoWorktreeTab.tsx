@@ -220,6 +220,22 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
 				<div class={s.toggle}>
 					<input
 						type="checkbox"
+						checked={effectiveBool(props.settings.promptOnWorktreeSwitch, props.defaults.promptOnWorktreeSwitch)}
+						onChange={(e) => props.onUpdate("promptOnWorktreeSwitch", e.currentTarget.checked)}
+					/>
+					<span>
+						{t("repoWorktree.toggle.promptOnWorktreeSwitch", "Ask to switch after creating a worktree")}
+						<Show when={props.settings.promptOnWorktreeSwitch === null}>
+							<span class={s.hintInline}> {t("repoWorktree.hint.globalDefault", "(Global Default)")}</span>
+						</Show>
+					</span>
+				</div>
+			</div>
+
+			<div class={s.group}>
+				<div class={s.toggle}>
+					<input
+						type="checkbox"
 						checked={effectiveBool(props.settings.deleteBranchOnRemove, props.defaults.deleteBranchOnRemove)}
 						onChange={(e) => props.onUpdate("deleteBranchOnRemove", e.currentTarget.checked)}
 					/>

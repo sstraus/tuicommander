@@ -399,6 +399,10 @@ const App: Component = () => {
 		confirm: (opts) => dialogs.confirm(opts),
 		handleBranchSelect: gitOps.handleBranchSelect,
 		closeTerminalsForBranch: gitOps.closeTerminalsForBranch,
+		getPromptOnWorktreeSwitch: (repoPath: string) => {
+			const effective = repoSettingsStore.getEffective(repoPath);
+			return effective?.promptOnWorktreeSwitch ?? repoDefaultsStore.state.promptOnWorktreeSwitch;
+		},
 	});
 
 	// Register built-in activity sections for git and worktree notifications

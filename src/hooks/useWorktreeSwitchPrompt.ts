@@ -10,6 +10,10 @@ interface WorktreeSwitchDeps {
 	confirm: (options: ConfirmOptions) => Promise<boolean>;
 	handleBranchSelect: (repoPath: string, branchName: string) => Promise<void>;
 	closeTerminalsForBranch: (repoPath: string, branchName: string) => Promise<void>;
+	/** Returns the effective promptOnWorktreeSwitch setting for the given repo.
+	 *  When false, a created worktree is registered in the sidebar without asking.
+	 *  Defaults to true (ask) when not provided. */
+	getPromptOnWorktreeSwitch?: (repoPath: string) => boolean;
 }
 
 interface WorktreeCreatedPayload {
@@ -27,6 +31,11 @@ interface WorktreeRemovedPayload {
  * Offer the newly created worktree without pretending a running agent can move
  * with its terminal. Branch selection opens or focuses a terminal rooted in the
  * worktree; the agent terminal remains attached to its original branch and CWD.
+ *
+ * Only backend-initiated creations reach here (MCP, HTTP), so an orchestrating
+ * agent creating a worktree every few minutes asks a question nobody is at the
+ * keyboard to answer. `promptOnWorktreeSwitch` turns the question off; the
+ * sidebar row and activity entry are added by the caller either way.
  */
 export async function promptForCreatedWorktree(
 	deps: WorktreeSwitchDeps,
@@ -34,6 +43,8 @@ export async function promptForCreatedWorktree(
 	branch: string,
 	worktreePath: string,
 ): Promise<void> {
+	if (deps.getPromptOnWorktreeSwitch?.(repoPath) === false) return;
+
 	const activeTerm = terminalsStore.getActive();
 	const isAgentRunning = activeTerm?.agentType != null;
 

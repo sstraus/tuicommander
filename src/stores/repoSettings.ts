@@ -39,6 +39,8 @@ export interface RepoSettings {
 	/** null = inherit from repoDefaultsStore */
 	promptOnCreate: boolean | null;
 	/** null = inherit from repoDefaultsStore */
+	promptOnWorktreeSwitch: boolean | null;
+	/** null = inherit from repoDefaultsStore */
 	deleteBranchOnRemove: boolean | null;
 	/** null = inherit from repoDefaultsStore */
 	autoArchiveMerged: boolean | null;
@@ -78,6 +80,7 @@ export interface EffectiveRepoSettings {
 	terminalMetaHotkeys: boolean;
 	worktreeStorage: WorktreeStorage;
 	promptOnCreate: boolean;
+	promptOnWorktreeSwitch: boolean;
 	deleteBranchOnRemove: boolean;
 	autoArchiveMerged: boolean;
 	orphanCleanup: OrphanCleanup;
@@ -106,6 +109,7 @@ const OVERRIDABLE_NULL_DEFAULTS: Pick<
 	| "terminalMetaHotkeys"
 	| "worktreeStorage"
 	| "promptOnCreate"
+	| "promptOnWorktreeSwitch"
 	| "deleteBranchOnRemove"
 	| "autoArchiveMerged"
 	| "orphanCleanup"
@@ -127,6 +131,7 @@ const OVERRIDABLE_NULL_DEFAULTS: Pick<
 	terminalMetaHotkeys: null,
 	worktreeStorage: null,
 	promptOnCreate: null,
+	promptOnWorktreeSwitch: null,
 	deleteBranchOnRemove: null,
 	autoArchiveMerged: null,
 	orphanCleanup: null,
@@ -214,6 +219,7 @@ function createRepoSettingsStore() {
 		worktreeStorage: (s, local) =>
 			s.worktreeStorage ?? local()?.worktree_storage ?? repoDefaultsStore.state.worktreeStorage,
 		promptOnCreate: (s) => s.promptOnCreate ?? repoDefaultsStore.state.promptOnCreate,
+		promptOnWorktreeSwitch: (s) => s.promptOnWorktreeSwitch ?? repoDefaultsStore.state.promptOnWorktreeSwitch,
 		deleteBranchOnRemove: (s, local) =>
 			s.deleteBranchOnRemove ?? local()?.delete_branch_on_remove ?? repoDefaultsStore.state.deleteBranchOnRemove,
 		autoArchiveMerged: (s, local) =>
@@ -316,6 +322,7 @@ function createRepoSettingsStore() {
 				terminalMetaHotkeys: resolvers.terminalMetaHotkeys(settings, local),
 				worktreeStorage: resolvers.worktreeStorage(settings, local),
 				promptOnCreate: resolvers.promptOnCreate(settings, local),
+				promptOnWorktreeSwitch: resolvers.promptOnWorktreeSwitch(settings, local),
 				deleteBranchOnRemove: resolvers.deleteBranchOnRemove(settings, local),
 				autoArchiveMerged: resolvers.autoArchiveMerged(settings, local),
 				orphanCleanup: resolvers.orphanCleanup(settings, local),

@@ -706,6 +706,13 @@ export const GitHubTab: Component = () => {
 				/>
 
 				<SettingToggle
+					checked={repoDefaultsStore.state.promptOnWorktreeSwitch}
+					onChange={(v) => repoDefaultsStore.setPromptOnWorktreeSwitch(v)}
+					label="Ask to switch after creating a worktree"
+					hint="Show the 'Switch to new worktree?' dialog when an agent creates a worktree over MCP or the HTTP API. Turn off during parallel agent runs"
+				/>
+
+				<SettingToggle
 					checked={repoDefaultsStore.state.deleteBranchOnRemove}
 					onChange={(v) => repoDefaultsStore.setDeleteBranchOnRemove(v)}
 					label="Delete local branch when removing worktree"

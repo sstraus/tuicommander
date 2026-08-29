@@ -97,6 +97,54 @@ describe("promptForCreatedWorktree", () => {
 		});
 	});
 
+	it("skips the prompt entirely when promptOnWorktreeSwitch is off for the repo", async () => {
+		await testInScopeAsync(async () => {
+			const terminalId = seedActiveTerminal(null);
+			const confirm = vi.fn().mockResolvedValue(true);
+			const handleBranchSelect = vi.fn().mockResolvedValue(undefined);
+
+			await promptForCreatedWorktree(
+				{
+					confirm,
+					handleBranchSelect,
+					closeTerminalsForBranch: vi.fn(),
+					getPromptOnWorktreeSwitch: () => false,
+				},
+				REPO,
+				BRANCH,
+				WORKTREE,
+			);
+
+			expect(confirm).not.toHaveBeenCalled();
+			expect(handleBranchSelect).not.toHaveBeenCalled();
+			expect(repositoriesStore.get(REPO)!.branches.main.terminals).toContain(terminalId);
+			expect(mockInvoke).not.toHaveBeenCalled();
+		});
+	});
+
+	it("still asks when promptOnWorktreeSwitch is on for the repo", async () => {
+		await testInScopeAsync(async () => {
+			seedActiveTerminal(null);
+			const confirm = vi.fn().mockResolvedValue(true);
+			const handleBranchSelect = vi.fn().mockResolvedValue(undefined);
+
+			await promptForCreatedWorktree(
+				{
+					confirm,
+					handleBranchSelect,
+					closeTerminalsForBranch: vi.fn(),
+					getPromptOnWorktreeSwitch: () => true,
+				},
+				REPO,
+				BRANCH,
+				WORKTREE,
+			);
+
+			expect(confirm).toHaveBeenCalledWith(expect.objectContaining({ title: "Switch to new worktree?" }));
+			expect(handleBranchSelect).toHaveBeenCalledWith(REPO, BRANCH);
+		});
+	});
+
 	it("keeps moving a plain shell into the worktree", async () => {
 		await testInScopeAsync(async () => {
 			const terminalId = seedActiveTerminal(null);

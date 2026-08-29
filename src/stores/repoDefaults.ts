@@ -27,6 +27,7 @@ export interface RepoDefaults {
 	archiveScript: string;
 	worktreeStorage: WorktreeStorage;
 	promptOnCreate: boolean;
+	promptOnWorktreeSwitch: boolean;
 	deleteBranchOnRemove: boolean;
 	autoArchiveMerged: boolean;
 	orphanCleanup: OrphanCleanup;
@@ -45,6 +46,7 @@ const INITIAL_DEFAULTS: RepoDefaults = {
 	archiveScript: "",
 	worktreeStorage: "sibling",
 	promptOnCreate: true,
+	promptOnWorktreeSwitch: true,
 	deleteBranchOnRemove: true,
 	autoArchiveMerged: false,
 	orphanCleanup: "ask",
@@ -68,6 +70,7 @@ function createRepoDefaultsStore() {
 				archive_script: state.archiveScript,
 				worktree_storage: state.worktreeStorage,
 				prompt_on_create: state.promptOnCreate,
+				prompt_on_worktree_switch: state.promptOnWorktreeSwitch,
 				delete_branch_on_remove: state.deleteBranchOnRemove,
 				auto_archive_merged: state.autoArchiveMerged,
 				orphan_cleanup: state.orphanCleanup,
@@ -93,6 +96,7 @@ function createRepoDefaultsStore() {
 					archive_script?: string;
 					worktree_storage?: WorktreeStorage;
 					prompt_on_create?: boolean;
+					prompt_on_worktree_switch?: boolean;
 					delete_branch_on_remove?: boolean;
 					auto_archive_merged?: boolean;
 					orphan_cleanup?: OrphanCleanup;
@@ -111,6 +115,7 @@ function createRepoDefaultsStore() {
 						archiveScript: loaded.archive_script ?? INITIAL_DEFAULTS.archiveScript,
 						worktreeStorage: loaded.worktree_storage ?? INITIAL_DEFAULTS.worktreeStorage,
 						promptOnCreate: loaded.prompt_on_create ?? INITIAL_DEFAULTS.promptOnCreate,
+						promptOnWorktreeSwitch: loaded.prompt_on_worktree_switch ?? INITIAL_DEFAULTS.promptOnWorktreeSwitch,
 						deleteBranchOnRemove: loaded.delete_branch_on_remove ?? INITIAL_DEFAULTS.deleteBranchOnRemove,
 						autoArchiveMerged: loaded.auto_archive_merged ?? INITIAL_DEFAULTS.autoArchiveMerged,
 						orphanCleanup: loaded.orphan_cleanup ?? INITIAL_DEFAULTS.orphanCleanup,
@@ -162,6 +167,11 @@ function createRepoDefaultsStore() {
 
 		setPromptOnCreate(value: boolean): void {
 			setState("promptOnCreate", value);
+			save();
+		},
+
+		setPromptOnWorktreeSwitch(value: boolean): void {
+			setState("promptOnWorktreeSwitch", value);
 			save();
 		},
 

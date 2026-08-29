@@ -54,6 +54,26 @@ describe("repoDefaultsStore", () => {
 			});
 		});
 
+		it("defaults promptOnWorktreeSwitch to true when the key is absent", async () => {
+			mockInvoke.mockResolvedValueOnce({ base_branch: "main" });
+
+			await store.hydrate();
+
+			testInScope(() => {
+				expect(store.state.promptOnWorktreeSwitch).toBe(true);
+			});
+		});
+
+		it("loads an explicit promptOnWorktreeSwitch of false", async () => {
+			mockInvoke.mockResolvedValueOnce({ prompt_on_worktree_switch: false });
+
+			await store.hydrate();
+
+			testInScope(() => {
+				expect(store.state.promptOnWorktreeSwitch).toBe(false);
+			});
+		});
+
 		it("keeps defaults when backend returns null", async () => {
 			mockInvoke.mockResolvedValueOnce(null);
 			await store.hydrate();
@@ -83,6 +103,19 @@ describe("repoDefaultsStore", () => {
 					"save_repo_defaults",
 					expect.objectContaining({
 						config: expect.objectContaining({ base_branch: "main" }),
+					}),
+				);
+			});
+		});
+
+		it("setPromptOnWorktreeSwitch updates state and persists", () => {
+			testInScope(() => {
+				store.setPromptOnWorktreeSwitch(false);
+				expect(store.state.promptOnWorktreeSwitch).toBe(false);
+				expect(mockInvoke).toHaveBeenCalledWith(
+					"save_repo_defaults",
+					expect.objectContaining({
+						config: expect.objectContaining({ prompt_on_worktree_switch: false }),
 					}),
 				);
 			});
@@ -148,6 +181,7 @@ describe("repoDefaultsStore", () => {
 						archive_script: "",
 						worktree_storage: "sibling",
 						prompt_on_create: true,
+						prompt_on_worktree_switch: true,
 						delete_branch_on_remove: true,
 						auto_archive_merged: false,
 						orphan_cleanup: "ask",

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **The "Switch to new worktree?" dialog can be turned off** (Settings, GitHub tab, Worktree Defaults, "Ask to switch after creating a worktree", with a per-repo override on the repository's Worktree tab). Only backend-initiated creations raise that dialog: `worktree-created` is emitted by the MCP `repo worktree_create` tool and the HTTP worktree route, never by the in-app "+" button. An orchestrating agent that creates a worktree every few minutes therefore asks a question nobody is at the keyboard to answer, and each one waits out its ten-second auto-cancel. The setting defaults to on, so nothing changes until you turn it off. The sidebar row and the Activity entry for the new worktree are added either way.
+
 ## [1.7.5] - 2026-08-27
 
 ### Fixed

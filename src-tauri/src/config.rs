@@ -1060,6 +1060,8 @@ pub(crate) struct RepoSettingsEntry {
     #[serde(default)]
     pub(crate) prompt_on_create: Option<bool>,
     #[serde(default)]
+    pub(crate) prompt_on_worktree_switch: Option<bool>,
+    #[serde(default)]
     pub(crate) delete_branch_on_remove: Option<bool>,
     #[serde(default)]
     pub(crate) auto_archive_merged: Option<bool>,
@@ -1100,6 +1102,7 @@ impl RepoSettingsEntry {
             || !self.color.is_empty()
             || self.worktree_storage.is_some()
             || self.prompt_on_create.is_some()
+            || self.prompt_on_worktree_switch.is_some()
             || self.delete_branch_on_remove.is_some()
             || self.auto_archive_merged.is_some()
             || self.orphan_cleanup.is_some()
@@ -1133,6 +1136,9 @@ pub(crate) struct RepoDefaultsConfig {
     pub(crate) worktree_storage: WorktreeStorage,
     #[serde(default = "default_true")]
     pub(crate) prompt_on_create: bool,
+    /// Ask whether to switch to a worktree the backend just created
+    #[serde(default = "default_true")]
+    pub(crate) prompt_on_worktree_switch: bool,
     #[serde(default = "default_true")]
     pub(crate) delete_branch_on_remove: bool,
     #[serde(default)]
@@ -1162,6 +1168,7 @@ impl Default for RepoDefaultsConfig {
             archive_script: String::new(),
             worktree_storage: WorktreeStorage::default(),
             prompt_on_create: true,
+            prompt_on_worktree_switch: true,
             delete_branch_on_remove: true,
             auto_archive_merged: false,
             orphan_cleanup: OrphanCleanup::default(),
@@ -3553,6 +3560,7 @@ mod tests {
                 color: String::new(),
                 worktree_storage: None,
                 prompt_on_create: None,
+                prompt_on_worktree_switch: None,
                 delete_branch_on_remove: None,
                 auto_archive_merged: None,
                 orphan_cleanup: None,
@@ -4032,6 +4040,7 @@ mod tests {
         let cfg = RepoDefaultsConfig {
             worktree_storage: WorktreeStorage::InsideRepo,
             prompt_on_create: false,
+            prompt_on_worktree_switch: false,
             delete_branch_on_remove: false,
             auto_archive_merged: true,
             orphan_cleanup: OrphanCleanup::On,
@@ -4043,6 +4052,7 @@ mod tests {
         let loaded: RepoDefaultsConfig = round_trip_in_dir(dir.path(), "repo-defaults.json", &cfg);
         assert_eq!(loaded.worktree_storage, WorktreeStorage::InsideRepo);
         assert!(!loaded.prompt_on_create);
+        assert!(!loaded.prompt_on_worktree_switch);
         assert!(!loaded.delete_branch_on_remove);
         assert!(loaded.auto_archive_merged);
         assert_eq!(loaded.orphan_cleanup, OrphanCleanup::On);
@@ -4058,6 +4068,7 @@ mod tests {
         let loaded: RepoDefaultsConfig = serde_json::from_str(json).unwrap();
         assert_eq!(loaded.worktree_storage, WorktreeStorage::Sibling);
         assert!(loaded.prompt_on_create);
+        assert!(loaded.prompt_on_worktree_switch);
         assert!(loaded.delete_branch_on_remove);
         assert!(!loaded.auto_archive_merged);
         assert_eq!(loaded.orphan_cleanup, OrphanCleanup::Ask);
@@ -4077,6 +4088,7 @@ mod tests {
                 path: "/my/repo".to_string(),
                 worktree_storage: Some(WorktreeStorage::AppDir),
                 prompt_on_create: Some(false),
+                prompt_on_worktree_switch: Some(false),
                 delete_branch_on_remove: Some(false),
                 auto_archive_merged: Some(true),
                 orphan_cleanup: Some(OrphanCleanup::Off),
@@ -4090,6 +4102,7 @@ mod tests {
         let entry = loaded.repos.get("/my/repo").unwrap();
         assert_eq!(entry.worktree_storage, Some(WorktreeStorage::AppDir));
         assert_eq!(entry.prompt_on_create, Some(false));
+        assert_eq!(entry.prompt_on_worktree_switch, Some(false));
         assert_eq!(entry.delete_branch_on_remove, Some(false));
         assert_eq!(entry.auto_archive_merged, Some(true));
         assert_eq!(entry.orphan_cleanup, Some(OrphanCleanup::Off));
@@ -4108,6 +4121,7 @@ mod tests {
         let entry: RepoSettingsEntry = serde_json::from_str(json).unwrap();
         assert_eq!(entry.worktree_storage, None);
         assert_eq!(entry.prompt_on_create, None);
+        assert_eq!(entry.prompt_on_worktree_switch, None);
         assert_eq!(entry.delete_branch_on_remove, None);
         assert_eq!(entry.orphan_cleanup, None);
     }
@@ -4125,6 +4139,15 @@ mod tests {
     fn has_custom_settings_true_when_prompt_on_create_set() {
         let entry = RepoSettingsEntry {
             prompt_on_create: Some(false),
+            ..RepoSettingsEntry::default()
+        };
+        assert!(entry.has_custom_settings());
+    }
+
+    #[test]
+    fn has_custom_settings_true_when_prompt_on_worktree_switch_set() {
+        let entry = RepoSettingsEntry {
+            prompt_on_worktree_switch: Some(false),
             ..RepoSettingsEntry::default()
         };
         assert!(entry.has_custom_settings());
