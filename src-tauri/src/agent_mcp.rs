@@ -3770,18 +3770,16 @@ mod tests {
         } else {
             "tuic-test-runner"
         };
-        let bridge_name = if cfg!(windows) {
-            "tuic-bridge.exe"
-        } else {
-            "tuic-bridge"
-        };
         let exe = sandbox.path().join(runner_name);
         // The CI target and checkout can live on different Windows drives.
         #[cfg(windows)]
         std::fs::copy(std::env::current_exe().unwrap(), &exe).unwrap();
         #[cfg(not(windows))]
         std::fs::hard_link(std::env::current_exe().unwrap(), &exe).unwrap();
-        std::fs::hard_link(&exe, sandbox.path().join(bridge_name)).unwrap();
+        // The bridge is copied and hashed, never launched. Hardlinking the
+        // entire test runner here made owning launches copy hundreds of MB and
+        // block on Linux writeback under the parallel suite's 120s bound.
+        let bridge = fake_bridge(sandbox.path(), b"bridge bytes");
         let linked_worktree = sandbox.path().join("linked");
         std::fs::create_dir_all(&linked_worktree).unwrap();
         std::fs::write(linked_worktree.join(".git"), b"gitdir: isolated-fixture").unwrap();
@@ -3839,7 +3837,7 @@ mod tests {
                 );
                 assert_eq!(
                     std::fs::read(command).unwrap(),
-                    std::fs::read(sandbox.path().join(bridge_name)).unwrap(),
+                    std::fs::read(&bridge).unwrap(),
                     "{name}"
                 );
             } else {
@@ -3869,7 +3867,7 @@ mod tests {
         std::fs::copy(std::env::current_exe().unwrap(), &worktree_exe).unwrap();
         #[cfg(not(windows))]
         std::fs::hard_link(std::env::current_exe().unwrap(), &worktree_exe).unwrap();
-        std::fs::hard_link(&worktree_exe, worktree_sandbox.path().join(bridge_name)).unwrap();
+        fake_bridge(worktree_sandbox.path(), b"bridge bytes");
         let home = sandbox.path().join("worktree-binary");
         std::fs::create_dir_all(home.join(".claude")).unwrap();
         std::fs::write(home.join(".claude/installed"), b"present").unwrap();
