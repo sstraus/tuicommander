@@ -3674,6 +3674,30 @@ pub fn archive_worktree(
 /// on it.
 const SCRIPT_TIMEOUT: Duration = Duration::from_secs(900);
 
+/// Keep cmd.exe's PATH below its environment-value limit, with the first
+/// spelling of each directory retained. Callers put the resolved Git dir first.
+#[cfg(any(windows, test))]
+fn windows_hook_path(path: &str) -> String {
+    let normalized = path.replace('/', "\\");
+    let mut seen = std::collections::HashSet::new();
+    let mut dirs = Vec::new();
+    let mut length = 0;
+    for dir in normalized.split(';') {
+        if !seen.insert(dir.trim_end_matches('\\').to_lowercase()) {
+            continue;
+        }
+        let added = dir.encode_utf16().count() + usize::from(!dirs.is_empty());
+        // cmd silently drops an inherited environment value over 8191 units.
+        // Keep whole directories in precedence order, never a partial last path.
+        if length + added > 8191 {
+            break;
+        }
+        length += added;
+        dirs.push(dir);
+    }
+    dirs.join(";")
+}
+
 /// Run `script` through the platform shell in `cwd`, killing it at `timeout`.
 ///
 /// Both callers pass [`SCRIPT_TIMEOUT`]; the parameter is what lets a test drive
@@ -3707,28 +3731,9 @@ fn run_shell_script(
         })
         .unwrap_or(path);
     #[cfg(windows)]
-    let path = path.replace('/', "\\");
+    let path = windows_hook_path(&path);
     cmd.env("PATH", path);
     tuic_core::cli::apply_no_window(&mut cmd);
-    #[cfg(all(test, windows))]
-    {
-        use std::os::windows::ffi::OsStrExt;
-
-        let parent_path = std::env::var_os("PATH").unwrap_or_default();
-        let command_path = cmd
-            .get_envs()
-            .find(|(key, _)| key.to_string_lossy().eq_ignore_ascii_case("PATH"))
-            .and_then(|(_, value)| value)
-            .expect("PATH set above");
-        eprintln!(
-            "WINDOWS_HOOK_ENV parent_path_chars={} parent_path_utf16={} pathext_present={} command_path_chars={} command_path_utf16={}",
-            parent_path.to_string_lossy().chars().count(),
-            parent_path.encode_wide().count(),
-            std::env::var_os("PATHEXT").is_some(),
-            command_path.to_string_lossy().chars().count(),
-            command_path.encode_wide().count(),
-        );
-    }
     crate::git_cli::output_with_deadline(&mut cmd, timeout).map_err(|e| match e {
         crate::git_cli::GitError::TimedOut { after } => format!(
             "Script timed out after {:.0}s and was killed",
@@ -3784,6 +3789,37 @@ mod tests {
     use std::process::Command;
     use tempfile::TempDir;
     use tuic_test_support::{fail_with_stderr_script, print_file_script, touch_script};
+
+    // Catches: cmd dropping an oversized duplicated PATH and losing Git lookup.
+    #[test]
+    fn windows_hook_path_keeps_git_first_and_bounds_long_duplicate_paths() {
+        let git = r"C:\Program Files\Git\cmd";
+        let repeated = r"c:/program files/git/cmd/;C:\Windows\System32";
+        let path = format!("{git};{}", vec![repeated; 400].join(";"));
+        assert!(path.encode_utf16().count() > 8191);
+        assert_eq!(
+            windows_hook_path(&path),
+            format!(r"{git};C:\Windows\System32")
+        );
+    }
+
+    // Catches: deduplication changing precedence or dropping distinct tool dirs.
+    #[test]
+    fn windows_hook_path_preserves_unique_directory_order() {
+        assert_eq!(
+            windows_hook_path(r"C:/Git/cmd;C:/Tools;D:\Tools;c:\TOOLS\"),
+            r"C:\Git\cmd;C:\Tools;D:\Tools"
+        );
+    }
+
+    // Catches: a long unique PATH exceeding cmd's limit or cutting a UTF-16 path.
+    #[test]
+    fn windows_hook_path_bounds_unique_entries_without_splitting_directories() {
+        let first = format!(r"C:\{}", "界".repeat(8187));
+        let path = format!(r"{first};D:\🦀;E:\Tools");
+        assert_eq!(windows_hook_path(&path), first);
+        assert!(windows_hook_path(&path).encode_utf16().count() <= 8191);
+    }
 
     // Catches: lossy-name recovery deleting another branch's dirty or clean registered checkout.
     #[test]
