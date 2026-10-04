@@ -1,0 +1,9 @@
+test(=worktree::tests::archive_that_advances_branch_keeps_its_new_commit) |
+test(=worktree::tests::archive_hook_cannot_remove_content_proof_recovery_ref_1295) |
+test(=worktree::tests::forced_removal_still_compares_the_branch_tip_before_deleting) |
+test(=bg_windows_parent_returns_before_detached_command_and_records_its_exit) |
+test(=agent_mcp::tests::secondary_launch_leaves_agent_config_unchanged) |
+test(=remote_deploy::tests::matching_remote_hash_skips_scp_and_token_stays_out_of_arguments) |
+test(=remote_deploy::tests::mismatched_remote_hash_pushes_before_launch) |
+test(=remote_deploy::tests::launch_failure_includes_the_last_five_log_lines) |
+test(=tunnels::exec::tests::one_shot_ssh_and_scp_put_the_destination_after_double_dash)

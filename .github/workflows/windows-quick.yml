@@ -1,0 +1,151 @@
+name: Windows quick
+
+on:
+  push:
+    branches:
+      - 'ci/windows-*'
+
+concurrency:
+  group: windows-quick-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  SCCACHE_IDLE_TIMEOUT: "0"
+  RUST_VERSION: "1.98.0"
+
+jobs:
+  windows:
+    name: Windows quick (nine regressions)
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      # Git for Windows defaults to core.autocrlf=true, which rewrites every
+      # checked-out file to CRLF. The suite compares file bytes it wrote itself
+      # against bytes git handed back, so that default made the Windows leg
+      # assert on different content than the other two. Global and before the
+      # checkout, because the test fixtures create their own repositories in
+      # temp directories, which no .gitattributes of ours would reach.
+      - name: Keep line endings verbatim (Windows)
+        shell: bash
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          # See the rust job: include_str! reaches into the `plugins` submodule.
+          submodules: recursive
+
+      # Keep the Windows build/target dir short (C:/t): whisper.cpp's nested
+      # CMake TryCompile paths can exceed the 260-char MAX_PATH that MSBuild's
+      # FileTracker enforces (it ignores LongPathsEnabled). The bundled WebRTC
+      # APM needs the same thing for the same reason — abseil's
+      # hashtablez_sampler_force_weak_definition.cc resolves one character past
+      # 260 from the meson build dir under a normal target path.
+      - name: Short CARGO_TARGET_DIR (Windows)
+        shell: bash
+        run: echo "CARGO_TARGET_DIR=C:/t" >> $GITHUB_ENV
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # webrtc-audio-processing builds the bundled APM (dictation echo
+      # cancellation) with meson and ninja, which no runner image ships. pip
+      # rather than apt/brew/choco so every leg gets the same version: Ubuntu
+      # 22.04 packages meson 0.61, which is older than the abseil wrap expects.
+      - name: Install meson and ninja
+        shell: bash
+        run: python -m pip install --upgrade meson ninja
+
+      - name: Install Rust ${{ env.RUST_VERSION }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ env.RUST_VERSION }}
+          components: clippy
+
+      - name: Setup sccache
+        uses: mozilla-actions/sccache-action@v0.0.10
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          cache-workspace-crates: true
+          workspaces: './src-tauri -> target'
+          # On Windows the real target dir is CARGO_TARGET_DIR=C:/t (MAX_PATH workaround).
+          # rust-cache's `workspaces` input joins target with root, so it can't point at
+          # an absolute path — use `cache-directories` instead.
+          cache-directories: C:/t
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      # A restored Windows build cache (C:/t) may hold a CMakeCache.txt from an
+      # older VS generator (e.g. VS 17 2022). When the runner image moves to a
+      # newer VS (18 2026), CMake aborts: "generator does not match the generator
+      # used previously". Drop the stale CMake config so whisper-rs-sys
+      # reconfigures against the current toolchain (sccache still caches the
+      # actual compiles, so the rebuild cost is minimal).
+      - name: Clear stale CMake cache (Windows)
+        shell: pwsh
+        run: |
+          if (Test-Path C:/t) {
+            Get-ChildItem -Path C:/t -Recurse -Force -ErrorAction SilentlyContinue |
+              Where-Object { $_.Name -eq 'CMakeCache.txt' -or $_.Name -eq 'CMakeFiles' } |
+              Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+          }
+
+      - name: Create dist stub for include_dir
+        shell: bash
+        # Both shells, because the SPA fallback serves mobile.html for /mobile/*
+        # and index.html for everything else. A stub carrying index.html alone
+        # 404s every mobile deep link, which fails a test a real `vite build`
+        # passes — the stub has to have the shape the build produces.
+        run: mkdir -p dist && for f in index mobile; do echo '<html></html>' > "dist/$f.html"; done
+
+      - name: Create sidecar stub for Tauri build.rs
+        shell: bash
+        run: |
+          target=$(rustc --print host-tuple)
+          touch "src-tauri/binaries/tuic-bridge-${target}"
+          touch "src-tauri/binaries/tuic-${target}"
+          # Windows needs .exe extension for sidecar resolution
+          if [[ "$target" == *windows* ]]; then
+            touch "src-tauri/binaries/tuic-bridge-${target}.exe"
+            touch "src-tauri/binaries/tuic-${target}.exe"
+          fi
+
+      # Only the two library harnesses and CLI integration harness contain
+      # the nine failures recorded in run 37222466921. No workspace-wide build.
+      - name: Library regressions
+        working-directory: src-tauri
+        shell: bash
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          CARGO_INCREMENTAL: "0"
+          CARGO_PROFILE_TEST_OPT_LEVEL: "1"
+          CMAKE_C_COMPILER_LAUNCHER: "sccache"
+          CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
+          CMAKE_C_FLAGS: "-Z7"
+          CMAKE_CXX_FLAGS: "-Z7"
+        run: |
+          filter=$(cat ../.github/windows-quick-filter.txt)
+          bash ../scripts/with-test-tmp.sh cargo nextest run -p tuic-git -p tuicommander --lib --profile ci -E "$filter" --status-level pass --final-status-level pass
+
+      - name: Windows background CLI regression
+        if: ${{ !cancelled() }}
+        working-directory: src-tauri
+        shell: bash
+        env:
+          SCCACHE_GHA_ENABLED: "true"
+          RUSTC_WRAPPER: "sccache"
+          CARGO_INCREMENTAL: "0"
+          CARGO_PROFILE_TEST_OPT_LEVEL: "1"
+          CMAKE_C_COMPILER_LAUNCHER: "sccache"
+          CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
+          CMAKE_C_FLAGS: "-Z7"
+          CMAKE_CXX_FLAGS: "-Z7"
+        run: |
+          filter=$(cat ../.github/windows-quick-filter.txt)
+          bash ../scripts/with-test-tmp.sh cargo nextest run -p tuic-cli --test bg_windows --profile ci -E "$filter" --status-level pass --final-status-level pass
