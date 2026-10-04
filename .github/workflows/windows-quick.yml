@@ -115,9 +115,59 @@ jobs:
             touch "src-tauri/binaries/tuic-${target}.exe"
           fi
 
+      - name: Diagnose native Windows Git lookup
+        shell: bash
+        run: |
+          python - <<'PYTHON'
+          import os
+          import pathlib
+          import subprocess
+
+          for key in ("PATH", "ProgramFiles", "PATHEXT", "COMSPEC", "HOME", "USERPROFILE", "LOCALAPPDATA"):
+              print(f"{key}={os.environ.get(key, '<absent>')}", flush=True)
+          program_files = os.environ.get("ProgramFiles", "C:/Program Files")
+          standard_git = pathlib.Path(program_files) / "Git" / "cmd" / "git.exe"
+          print(f"standard_git={standard_git}; exists={standard_git.is_file()}", flush=True)
+
+          def probe(args, env=None):
+              print(f"command={args!r}", flush=True)
+              try:
+                  result = subprocess.run(args, env=env, capture_output=True, text=True, timeout=30)
+                  print(f"exit={result.returncode} stdout={result.stdout!r} stderr={result.stderr!r}", flush=True)
+                  return result
+              except (OSError, subprocess.TimeoutExpired) as error:
+                  print(f"probe_error={error!r}", flush=True)
+                  return None
+
+          located = probe(["where.exe", "git"])
+          probe(["where.exe", "git.exe"])
+          probe(["cmd.exe", "/C", "where.exe git & where.exe git.exe & git --version & git.exe --version"])
+          if standard_git.is_file():
+              probe([str(standard_git), "--version"])
+
+          # Diagnostic reconstruction of the current Rust enrichment, not a
+          # captured hook environment. Product code stays unchanged.
+          home = pathlib.Path(os.environ.get("HOME", os.environ.get("USERPROFILE", "")))
+          local = pathlib.Path(os.environ.get("LOCALAPPDATA", str(home / "AppData" / "Local")))
+          extra = [home / ".cargo" / "bin", pathlib.Path(program_files) / "Git" / "cmd",
+                   local / "Programs" / "Microsoft VS Code" / "bin",
+                   local / "Programs" / "cursor" / "resources" / "app" / "bin",
+                   pathlib.Path(program_files) / "Microsoft VS Code" / "bin",
+                   local / "Programs" / "windsurf" / "resources" / "app" / "bin",
+                   home / "scoop" / "shims", home / "AppData" / "Roaming" / "npm"]
+          enriched = ";".join([str(path) for path in extra] + [os.environ.get("PATH", "")])
+          if located and located.returncode == 0 and located.stdout.splitlines():
+              enriched = str(pathlib.Path(located.stdout.splitlines()[0].strip()).parent) + ";" + enriched
+          elif standard_git.is_file():
+              enriched = str(standard_git.parent) + ";" + enriched
+          env = dict(os.environ, PATH=enriched.replace("/", "\\"))
+          print(f"reconstructed_hook_PATH={env['PATH']}", flush=True)
+          probe(["cmd.exe", "/C", "where.exe git & where.exe git.exe & git --version & git.exe --version"], env)
+          PYTHON
+
       # Only the two library harnesses and CLI integration harness contain
       # the nine failures recorded in run 37222466921. No workspace-wide build.
-      - name: Library regressions
+      - name: Nine targeted regressions
         working-directory: src-tauri
         shell: bash
         env:
@@ -130,22 +180,12 @@ jobs:
           CMAKE_C_FLAGS: "-Z7"
           CMAKE_CXX_FLAGS: "-Z7"
         run: |
-          filter=$(cat ../.github/windows-quick-filter.txt)
-          bash ../scripts/with-test-tmp.sh cargo nextest run -p tuic-git -p tuicommander --lib --profile ci -E "$filter" --status-level pass --final-status-level pass
-
-      - name: Windows background CLI regression
-        if: ${{ !cancelled() }}
-        working-directory: src-tauri
-        shell: bash
-        env:
-          SCCACHE_GHA_ENABLED: "true"
-          RUSTC_WRAPPER: "sccache"
-          CARGO_INCREMENTAL: "0"
-          CARGO_PROFILE_TEST_OPT_LEVEL: "1"
-          CMAKE_C_COMPILER_LAUNCHER: "sccache"
-          CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
-          CMAKE_C_FLAGS: "-Z7"
-          CMAKE_CXX_FLAGS: "-Z7"
-        run: |
-          filter=$(cat ../.github/windows-quick-filter.txt)
-          bash ../scripts/with-test-tmp.sh cargo nextest run -p tuic-cli --test bg_windows --profile ci -E "$filter" --status-level pass --final-status-level pass
+          # Keep sccache's inherited temp directory alive across both builds.
+          bash ../scripts/with-test-tmp.sh bash -c '
+            filter=$(cat ../.github/windows-quick-filter.txt)
+            cargo nextest run -p tuic-git -p tuicommander --lib --profile ci -E "$filter" --status-level pass --final-status-level pass
+            libraries=$?
+            cargo nextest run -p tuic-cli --test bg_windows --profile ci -E "$filter" --status-level pass --final-status-level pass
+            cli=$?
+            if (( libraries != 0 || cli != 0 )); then exit 1; fi
+          '
