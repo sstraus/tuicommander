@@ -3829,6 +3829,9 @@ mod tests {
                         .as_str()
                         .unwrap(),
                 );
+                // Compare filesystem identities, not a normal Windows path
+                // against canonicalize's verbatim path spelling.
+                let command = command.canonicalize().unwrap();
                 assert!(
                     command
                         .starts_with(home.join("tuic-config/mcp-bridge").canonicalize().unwrap()),

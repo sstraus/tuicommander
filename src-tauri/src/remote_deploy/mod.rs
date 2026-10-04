@@ -238,6 +238,10 @@ mod tests {
 
         assert!(!Path::new(&format!("{}.log", scp.display())).exists());
         let ssh_log = std::fs::read_to_string(format!("{}.log", ssh.display())).unwrap();
+        // Rust's batch argument encoding doubles internal quotes. Decode that
+        // fixture representation before checking the remote POSIX command.
+        #[cfg(windows)]
+        let ssh_log = ssh_log.replace("\"\"", "\"");
         assert!(!ssh_log.contains("pair-secret"));
         assert_eq!(
             std::fs::read_to_string(format!("{}.stdin", ssh.display())).unwrap(),
