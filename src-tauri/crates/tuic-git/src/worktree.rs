@@ -3710,6 +3710,25 @@ fn run_shell_script(
     let path = path.replace('/', "\\");
     cmd.env("PATH", path);
     tuic_core::cli::apply_no_window(&mut cmd);
+    #[cfg(all(test, windows))]
+    {
+        use std::os::windows::ffi::OsStrExt;
+
+        let parent_path = std::env::var_os("PATH").unwrap_or_default();
+        let command_path = cmd
+            .get_envs()
+            .find(|(key, _)| key.to_string_lossy().eq_ignore_ascii_case("PATH"))
+            .and_then(|(_, value)| value)
+            .expect("PATH set above");
+        eprintln!(
+            "WINDOWS_HOOK_ENV parent_path_chars={} parent_path_utf16={} pathext_present={} command_path_chars={} command_path_utf16={}",
+            parent_path.to_string_lossy().chars().count(),
+            parent_path.encode_wide().count(),
+            std::env::var_os("PATHEXT").is_some(),
+            command_path.to_string_lossy().chars().count(),
+            command_path.encode_wide().count(),
+        );
+    }
     crate::git_cli::output_with_deadline(&mut cmd, timeout).map_err(|e| match e {
         crate::git_cli::GitError::TimedOut { after } => format!(
             "Script timed out after {:.0}s and was killed",
