@@ -3689,6 +3689,8 @@ fn run_shell_script(
         ("sh", "-c")
     };
 
+    #[cfg(all(test, windows))]
+    let script = format!("set PATH >&2 & set PATHEXT >&2 & where.exe git >&2 & {script}");
     let mut cmd = std::process::Command::new(shell);
     cmd.arg(flag).arg(script).current_dir(cwd);
     let path = tuic_core::cli::enriched_path();
