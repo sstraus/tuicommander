@@ -131,3 +131,14 @@ App.tsx
 ├── useQuickSwitcher → branch quick-switch UI
 └── useSplitPanes    → split terminal panes
 ```
+
+### Relay and Web Push cryptography
+
+Relay AES-256-GCM and HKDF-SHA256 use `ring`. Web Push uses `ring` for
+P-256 ephemeral ECDH, HKDF-SHA256, AES-128-GCM and ES256 VAPID signing.
+The stored VAPID private key remains a base64url-encoded 32-byte scalar;
+`p256` derives its public point because `ring` requires both components when
+loading a scalar. Push records retain the existing single-record framing,
+exact record size, padding delimiter and HTTP headers. Fixed migration guards
+pin the relay bytes, RFC8291 intermediate values and ciphertext, real push
+request bodies, and stored-key VAPID verification with both implementations.

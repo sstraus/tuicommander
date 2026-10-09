@@ -1,9 +1,9 @@
 //! Web Push notification support — VAPID keys, subscription management, push sending.
 
 use base64ct::{Base64UrlUnpadded, Encoding};
+use p256::elliptic_curve::sec1::ToEncodedPoint;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use web_push_native::p256;
 
 /// Known push service host suffixes. Endpoints not matching these are rejected (SSRF prevention).
 const ALLOWED_PUSH_HOSTS: &[&str] = &[
@@ -308,7 +308,10 @@ fn build_vapid_authorization(
     subject: &str,
     valid_secs: u64,
 ) -> Result<axum::http::HeaderValue, String> {
-    use p256::ecdsa::{signature::Signer, Signature};
+    use ring::{
+        rand::SystemRandom,
+        signature::{EcdsaKeyPair, ECDSA_P256_SHA256_FIXED_SIGNING},
+    };
 
     let jwt_header = Base64UrlUnpadded::encode_string(br#"{"alg":"ES256","typ":"JWT"}"#);
 
@@ -331,8 +334,21 @@ fn build_vapid_authorization(
     let jwt_claims = Base64UrlUnpadded::encode_string(claims_json.as_bytes());
 
     let signing_input = format!("{jwt_header}.{jwt_claims}");
-    let sig: Signature = signing_key.sign(signing_input.as_bytes());
-    let sig_b64 = Base64UrlUnpadded::encode_string(&sig.to_bytes());
+    // ring cannot derive the public point from the persisted private scalar alone.
+    // p256 retains scalar-only loading; ring performs ES256 signing.
+    let rng = SystemRandom::new();
+    let public = signing_key.verifying_key().to_encoded_point(false);
+    let pair = EcdsaKeyPair::from_private_key_and_public_key(
+        &ECDSA_P256_SHA256_FIXED_SIGNING,
+        signing_key.to_bytes().as_ref(),
+        public.as_bytes(),
+        &rng,
+    )
+    .map_err(|e| format!("Invalid VAPID key: {e}"))?;
+    let sig = pair
+        .sign(&rng, signing_input.as_bytes())
+        .map_err(|_| "VAPID signing failed".to_string())?;
+    let sig_b64 = Base64UrlUnpadded::encode_string(sig.as_ref());
     let jwt = format!("{signing_input}.{sig_b64}");
 
     let public_b64 = Base64UrlUnpadded::encode_string(
@@ -385,12 +401,6 @@ fn build_push_request(
         tracing::warn!(source = "push", endpoint = %sub.endpoint, "Invalid auth secret length ({})", auth_bytes.len());
         return None;
     }
-    let ua_auth: web_push_native::Auth = {
-        let mut arr = [0u8; 16];
-        arr.copy_from_slice(&auth_bytes);
-        arr.into()
-    };
-
     let auth_header = match build_vapid_authorization(
         vapid_signing_key,
         &endpoint,
@@ -404,14 +414,25 @@ fn build_push_request(
         }
     };
 
-    let builder = web_push_native::WebPushBuilder::new(endpoint, ua_public, ua_auth);
-    match builder.build(payload_bytes.to_vec()) {
-        Ok(mut request) => {
-            request
-                .headers_mut()
-                .insert(axum::http::header::AUTHORIZATION, auth_header);
-            Some((sub.endpoint.clone(), request))
+    let ua_public = ua_public.to_encoded_point(false);
+    let payload = match crypto::encrypt_push(ua_public.as_bytes(), &auth_bytes, payload_bytes) {
+        Ok(payload) => payload,
+        Err(e) => {
+            tracing::warn!(source = "push", "Failed to encrypt push request: {e}");
+            return None;
         }
+    };
+    match axum::http::Request::builder()
+        .uri(endpoint)
+        .method(axum::http::Method::POST)
+        .header("TTL", 12 * 3600)
+        .header(axum::http::header::CONTENT_ENCODING, "aes128gcm")
+        .header(axum::http::header::CONTENT_TYPE, "application/octet-stream")
+        .header(axum::http::header::CONTENT_LENGTH, payload.len())
+        .header(axum::http::header::AUTHORIZATION, auth_header)
+        .body(payload)
+    {
+        Ok(request) => Some((sub.endpoint.clone(), request)),
         Err(e) => {
             tracing::warn!(source = "push", "Failed to build push request: {e}");
             None
@@ -622,8 +643,7 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-mod crypto;
+pub(crate) mod crypto;
 #[cfg(test)]
 use crypto::{encrypt_push_record, push_key_material};
 #[cfg(test)]

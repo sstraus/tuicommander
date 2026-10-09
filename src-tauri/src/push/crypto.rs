@@ -1,7 +1,28 @@
-//! Fixed-material seam for guarding the existing Web Push record encoding.
-use aes_gcm::{aead::Aead, Aes128Gcm, KeyInit};
-use hkdf::Hkdf;
-use sha2::Sha256;
+//! RFC 8291 key derivation and the existing single-record aes128gcm encoding.
+use ring::{
+    aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_128_GCM},
+    agreement::{self, EphemeralPrivateKey, UnparsedPublicKey, ECDH_P256},
+    hkdf,
+    rand::{SecureRandom, SystemRandom},
+};
+
+struct HkdfLength(usize);
+
+impl hkdf::KeyType for HkdfLength {
+    fn len(&self) -> usize {
+        self.0
+    }
+}
+
+pub(crate) fn hkdf_sha256<const N: usize>(salt: &[u8], input: &[u8], info: &[u8]) -> [u8; N] {
+    let prk = hkdf::Salt::new(hkdf::HKDF_SHA256, salt).extract(input);
+    let mut output = [0; N];
+    prk.expand(&[info], HkdfLength(N))
+        .expect("fixed SHA-256 HKDF output fits the RFC5869 limit")
+        .fill(&mut output)
+        .expect("HKDF output buffer matches requested length");
+    output
+}
 
 pub(super) fn push_key_material(
     auth: &[u8],
@@ -13,16 +34,9 @@ pub(super) fn push_key_material(
     let mut info = b"WebPush: info\0".to_vec();
     info.extend_from_slice(ua_public);
     info.extend_from_slice(as_public);
-    let mut ikm = [0; 32];
-    Hkdf::<Sha256>::new(Some(auth), shared)
-        .expand(&info, &mut ikm)
-        .unwrap();
-    let hk = Hkdf::<Sha256>::new(Some(salt), &ikm);
-    let mut key = [0; 16];
-    let mut nonce = [0; 12];
-    hk.expand(b"Content-Encoding: aes128gcm\0", &mut key)
-        .unwrap();
-    hk.expand(b"Content-Encoding: nonce\0", &mut nonce).unwrap();
+    let ikm = hkdf_sha256(auth, shared, &info);
+    let key = hkdf_sha256(salt, &ikm, b"Content-Encoding: aes128gcm\0");
+    let nonce = hkdf_sha256(salt, &ikm, b"Content-Encoding: nonce\0");
     (ikm, key, nonce)
 }
 
@@ -43,11 +57,44 @@ pub(super) fn encrypt_push_record(
     body.extend_from_slice(&size.to_be_bytes());
     body.push(u8::try_from(as_public.len())?);
     body.extend_from_slice(as_public);
-    let mut plaintext = message.to_vec();
-    plaintext.push(2);
-    let encrypted = Aes128Gcm::new(&(*key).into())
-        .encrypt(&(*nonce).into(), plaintext.as_slice())
+    let mut encrypted = message.to_vec();
+    encrypted.push(2);
+    let cipher = LessSafeKey::new(
+        UnboundKey::new(&AES_128_GCM, key).map_err(|_| anyhow::anyhow!("invalid push key"))?,
+    );
+    cipher
+        .seal_in_place_append_tag(
+            Nonce::assume_unique_for_key(*nonce),
+            Aad::empty(),
+            &mut encrypted,
+        )
         .map_err(|_| anyhow::anyhow!("push encryption failed"))?;
     body.extend_from_slice(&encrypted);
     Ok(body)
+}
+
+pub(super) fn encrypt_push(
+    ua_public: &[u8],
+    auth: &[u8],
+    message: &[u8],
+) -> anyhow::Result<Vec<u8>> {
+    let rng = SystemRandom::new();
+    let private = EphemeralPrivateKey::generate(&ECDH_P256, &rng)
+        .map_err(|_| anyhow::anyhow!("push ECDH key generation failed"))?;
+    let public = private
+        .compute_public_key()
+        .map_err(|_| anyhow::anyhow!("push public key generation failed"))?;
+    let mut salt = [0; 16];
+    rng.fill(&mut salt)
+        .map_err(|_| anyhow::anyhow!("push salt generation failed"))?;
+    agreement::agree_ephemeral(
+        private,
+        &UnparsedPublicKey::new(&ECDH_P256, ua_public),
+        |shared| {
+            let (_, key, nonce) =
+                push_key_material(auth, shared, ua_public, public.as_ref(), &salt);
+            encrypt_push_record(&salt, public.as_ref(), &key, &nonce, message)
+        },
+    )
+    .map_err(|_| anyhow::anyhow!("invalid push ECDH public key"))?
 }

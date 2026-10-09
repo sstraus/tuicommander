@@ -14,11 +14,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
-use aes_gcm::aead::{Aead, Generate};
-use aes_gcm::{Aes256Gcm, KeyInit};
 use futures_util::{SinkExt, StreamExt};
-use hkdf::Hkdf;
-use sha2::Sha256;
+use ring::aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_256_GCM};
+use ring::rand::{SecureRandom, SystemRandom};
 use tokio::sync::oneshot;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -62,6 +60,16 @@ enum PeerStatus {
 // TRUST MODEL note in the module docs above.
 // ---------------------------------------------------------------------------
 
+struct Aes256Gcm(LessSafeKey);
+
+impl Aes256Gcm {
+    fn new(key: &[u8; 32]) -> Self {
+        Self(LessSafeKey::new(
+            UnboundKey::new(&AES_256_GCM, key).expect("AES-256 key is exactly 32 bytes"),
+        ))
+    }
+}
+
 /// Derive a 256-bit AES key from the relay token using HKDF-SHA-256.
 ///
 /// NOT E2E: the relay receives this same token for authentication and can
@@ -70,21 +78,24 @@ enum PeerStatus {
 /// BREAKING CHANGE: mobile clients must update their key derivation to use the
 /// same HKDF parameters (salt + info) or they will fail to decrypt messages.
 fn derive_cipher(relay_token: &str) -> Aes256Gcm {
-    Aes256Gcm::new(&derive_key(relay_token).into())
+    Aes256Gcm::new(&derive_key(relay_token))
 }
 
 fn derive_key(relay_token: &str) -> [u8; 32] {
-    let hk = Hkdf::<Sha256>::new(Some(b"tuicommander-relay-v1"), relay_token.as_bytes());
-    let mut okm = [0u8; 32];
-    hk.expand(b"aes-256-gcm-key", &mut okm)
-        .expect("HKDF-SHA256 expand for 32 bytes always succeeds");
-    okm
+    crate::push::crypto::hkdf_sha256(
+        b"tuicommander-relay-v1",
+        relay_token.as_bytes(),
+        b"aes-256-gcm-key",
+    )
 }
 
 /// Encrypt plaintext with AES-256-GCM. Returns nonce (12 bytes) || ciphertext.
 fn encrypt(cipher: &Aes256Gcm, plaintext: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let nonce = aes_gcm::Nonce::<aes_gcm::aead::consts::U12>::generate();
-    encrypt_with_nonce(cipher, nonce.into(), plaintext)
+    let mut nonce = [0; 12];
+    SystemRandom::new()
+        .fill(&mut nonce)
+        .map_err(|_| anyhow::anyhow!("nonce generation failed"))?;
+    encrypt_with_nonce(cipher, nonce, plaintext)
 }
 
 fn encrypt_with_nonce(
@@ -92,9 +103,15 @@ fn encrypt_with_nonce(
     nonce: [u8; 12],
     plaintext: &[u8],
 ) -> anyhow::Result<Vec<u8>> {
-    let ciphertext = cipher
-        .encrypt(&nonce.into(), plaintext)
-        .map_err(|e| anyhow::anyhow!("encryption failed: {e}"))?;
+    let mut ciphertext = plaintext.to_vec();
+    cipher
+        .0
+        .seal_in_place_append_tag(
+            Nonce::assume_unique_for_key(nonce),
+            Aad::empty(),
+            &mut ciphertext,
+        )
+        .map_err(|_| anyhow::anyhow!("encryption failed"))?;
     let mut out = Vec::with_capacity(12 + ciphertext.len());
     out.extend_from_slice(&nonce);
     out.extend_from_slice(&ciphertext);
@@ -107,12 +124,14 @@ fn decrypt(cipher: &Aes256Gcm, data: &[u8]) -> anyhow::Result<Vec<u8>> {
         anyhow::bail!("ciphertext too short (missing nonce)");
     }
     let (nonce_bytes, ciphertext) = data.split_at(12);
-    let nonce = aes_gcm::Nonce::try_from(nonce_bytes)
+    let nonce = Nonce::try_assume_unique_for_key(nonce_bytes)
         .map_err(|_| anyhow::anyhow!("invalid nonce length"))?;
-    let plaintext = cipher
-        .decrypt(&nonce, ciphertext)
-        .map_err(|e| anyhow::anyhow!("decryption failed: {e}"))?;
-    Ok(plaintext)
+    let mut plaintext = ciphertext.to_vec();
+    let decrypted = cipher
+        .0
+        .open_in_place(nonce, Aad::empty(), &mut plaintext)
+        .map_err(|_| anyhow::anyhow!("decryption failed"))?;
+    Ok(decrypted.to_vec())
 }
 
 // ---------------------------------------------------------------------------
@@ -525,7 +544,6 @@ async fn connect_and_run(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aes_gcm::KeyInit;
 
     #[test]
     fn crypto_guard_relay_fixed_nonce_prevents_ciphertext_or_framing_drift() {
@@ -822,9 +840,11 @@ mod tests {
         //   salt = b"tuicommander-relay-v1"
         //   info = b"aes-256-gcm-key"
         // by comparing against a manually-computed reference.
-        let hk = Hkdf::<Sha256>::new(Some(b"tuicommander-relay-v1"), b"test_token");
-        let mut expected = [0u8; 32];
-        hk.expand(b"aes-256-gcm-key", &mut expected).unwrap();
+        let expected: [u8; 32] =
+            hex::decode("1b4d1ef34de6d5b63ed99d9934cddb5ca72136151442609da11b4e631a2016c7")
+                .unwrap()
+                .try_into()
+                .unwrap();
 
         let reference_cipher = Aes256Gcm::new(&expected.into());
         let cipher = derive_cipher("test_token");
