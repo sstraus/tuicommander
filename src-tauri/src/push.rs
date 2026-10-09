@@ -308,7 +308,7 @@ fn build_vapid_authorization(
     subject: &str,
     valid_secs: u64,
 ) -> Result<axum::http::HeaderValue, String> {
-    use p256::ecdsa::{Signature, signature::Signer};
+    use p256::ecdsa::{signature::Signer, Signature};
 
     let jwt_header = Base64UrlUnpadded::encode_string(br#"{"alg":"ES256","typ":"JWT"}"#);
 
@@ -621,3 +621,10 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod crypto;
+#[cfg(test)]
+use crypto::{encrypt_push_record, push_key_material};
+#[cfg(test)]
+mod crypto_guards;
