@@ -310,7 +310,7 @@ fn build_vapid_authorization(
 ) -> Result<axum::http::HeaderValue, String> {
     use ring::{
         rand::SystemRandom,
-        signature::{EcdsaKeyPair, ECDSA_P256_SHA256_FIXED_SIGNING},
+        signature::{ECDSA_P256_SHA256_FIXED_SIGNING, EcdsaKeyPair},
     };
 
     let jwt_header = Base64UrlUnpadded::encode_string(br#"{"alg":"ES256","typ":"JWT"}"#);

@@ -1,7 +1,7 @@
 //! RFC 8291 key derivation and the existing single-record aes128gcm encoding.
 use ring::{
-    aead::{Aad, LessSafeKey, Nonce, UnboundKey, AES_128_GCM},
-    agreement::{self, EphemeralPrivateKey, UnparsedPublicKey, ECDH_P256},
+    aead::{AES_128_GCM, Aad, LessSafeKey, Nonce, UnboundKey},
+    agreement::{self, ECDH_P256, EphemeralPrivateKey, UnparsedPublicKey},
     hkdf,
     rand::{SecureRandom, SystemRandom},
 };
