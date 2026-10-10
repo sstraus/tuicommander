@@ -1,3 +1,8 @@
+## Tablet desktop switch (1658-fb34)
+
+- [x] Browser iPad emulation: Settings → Open Desktop UI reaches `/`, a later root visit stays desktop, and the visible Switch link returns to `/mobile` and clears the preference. _(verified: worktree Vite :14358 via stealth wrapper, iPad UA, five touch points, standalone flag; screenshots `~/Gits/.tmp/tablet-1658-{settings,desktop,return-mobile}.png`; 15 targeted tests passed.)_
+- [ ] [HUMAN] On the already-installed iPad PWA, confirm the updated manifest scope takes effect and both switches stay in the installed app window. Browser emulation proves routing and preference handling but cannot prove iOS updates an existing installation's manifest.
+
 ## MCP transport import cfgs (1652-4954)
 
 - [x] Import-only change; no runtime behavior to verify after restart. _(verified: src-tauri/src/mcp_http/mcp_transport.rs:12 and mcp_transport_tests.rs:2 imports match test/unix consumers; Rust changes load at Boss's next manual `make dev` restart or `make build`.)_
