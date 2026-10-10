@@ -75,7 +75,7 @@ describe("mobile control menu", () => {
 
 	it("renders interrupt and EOF in the error colour, catching a missing or broken danger rule", () => {
 		const stylesheet = document.createElement("style");
-		stylesheet.textContent = ":root { --error: rgb(255, 0, 0); --fg-secondary: rgb(128, 128, 128); }" + keybarCss;
+		stylesheet.textContent = ":root { --error: rgb(255, 0, 0); --fg-primary: rgb(128, 128, 128); }" + keybarCss;
 		document.head.append(stylesheet);
 		try {
 			const view = render(() => <TerminalKeybar sessionId="owned" />);
