@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-li
 import { afterEach, expect, it, vi } from "vitest";
 import { dictationStore } from "../../stores/dictation";
 import { SessionDetailScreen } from "../screens/SessionDetailScreen";
+import { SettingsScreen } from "../screens/SettingsScreen";
 
 vi.mock("../components/OutputView", () => ({ OutputView: () => <div /> }));
 vi.mock("../components/TerminalKeybar", () => ({ TerminalKeybar: () => <div /> }));
@@ -18,7 +19,7 @@ afterEach(async () => {
 	vi.unstubAllGlobals();
 });
 
-it("persists the mobile mute checkbox without ending the armed conversation", async () => {
+it("persists the mobile Settings mute checkbox without ending the armed conversation", async () => {
 	// catches: mobile mute updates a local checkbox but loses the preference or stops capture.
 	const globals = globalThis as Record<string, unknown>;
 	const internals = globals.__TAURI_INTERNALS__;
@@ -77,10 +78,11 @@ it("persists the mobile mute checkbox without ending the armed conversation", as
 			onOpenFiles={() => {}}
 		/>
 	));
-	const checkbox = (await screen.findByRole("checkbox", { name: "Spoken replies" })) as HTMLInputElement;
-	expect(checkbox.checked).toBe(true);
 	fireEvent.click(await screen.findByRole("button", { name: "Start voice conversation" }));
 	await screen.findByRole("button", { name: "Stop voice conversation" });
+	render(() => <SettingsScreen isConnected={true} />);
+	const checkbox = (await screen.findByRole("checkbox", { name: "Spoken replies" })) as HTMLInputElement;
+	expect(checkbox.checked).toBe(true);
 	fireEvent.click(checkbox);
 	await waitFor(() => expect(config.hands_free_spoken_replies).toBe(false));
 	await waitFor(() => expect(checkbox.checked).toBe(false));
