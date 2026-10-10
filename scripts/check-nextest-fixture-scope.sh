@@ -25,7 +25,7 @@ run() {
 
 # Catches: a unit test that spawns a bin fixture but is missing from the setup filter.
 consumers="$(cd "$tauri" && grep -rlE 'tuic-(acp|mcp)-fixture' src crates/*/src | LC_ALL=C sort | tr '\n' ' ')"
-[ "$consumers" = "src/mcp_proxy/stdio_client.rs src/state.rs " ] || {
+[ "$consumers" = "src/acp_chat.rs src/mcp_proxy/stdio_client.rs src/state.rs " ] || {
   echo "lib unit tests consuming bin fixtures changed: $consumers" >&2
   echo "update the fixture-bins filters in src-tauri/.config/nextest.toml and this list" >&2
   exit 1
@@ -46,6 +46,11 @@ rm -f "$marker"
 # Catches: the stdio_client group dropped from the filter while state.rs stays.
 run -p tuicommander --no-default-features --lib -E 'test(/^mcp_proxy::stdio_client::tests::/)'
 [ -e "$marker" ] || { echo "fixture-bins setup did not run for stdio_client tests" >&2; exit 1; }
+rm -f "$marker"
+
+# Catches: ACP chat losing its fixture setup while the other consumers keep it.
+run -p tuicommander --no-default-features --lib -E 'test(/^acp_chat::tests::custom_chat_/)'
+[ -e "$marker" ] || { echo "fixture-bins setup did not run for ACP chat tests" >&2; exit 1; }
 rm -f "$marker"
 
 # Catches: the filter widened to the whole lib binary.

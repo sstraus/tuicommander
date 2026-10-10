@@ -1744,8 +1744,8 @@ mod session_placement_tests {
             .find(|r| r.session_id == "restored-pty")
             .unwrap();
         assert_eq!(
-            row.worktree_path.as_deref(),
-            Some(worktree.to_str().unwrap())
+            row.worktree_path.as_deref().map(std::path::Path::new),
+            Some(worktree.as_path())
         );
         assert_eq!(row.worktree_branch.as_deref(), Some("feature"));
         assert_eq!(row.cwd.as_deref(), Some(root_path));

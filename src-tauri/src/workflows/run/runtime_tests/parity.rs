@@ -115,7 +115,9 @@ async fn public_graph_start_pins_revision_and_retries_without_duplicate_roots() 
 async fn public_plan_graph_start_requires_owner_and_reaches_pinned_coordinator() {
     // Catches: merged public plan starts refusing slice E dispatch, returning a legacy ledger, or bypassing owner fencing.
     let (config, project, plan, _story, template, _guard) = fixture();
-    let project_path = project.path().to_str().unwrap();
+    // Catches raw aliases being used as SQLite keys instead of the canonical owner.
+    let project_alias = project.path().join(".");
+    let project_path = project_alias.to_str().unwrap();
     let story_definition = definition(project_path, false, true);
     let definition =
         semantics::plan_dispatch::plan_definition(project_path, &template, &story_definition);
@@ -154,7 +156,7 @@ async fn public_plan_graph_start_requires_owner_and_reaches_pinned_coordinator()
     assert_eq!(
         RunStore::open()
             .unwrap()
-            .list_plan_runs(project_path, &plan, 20)
+            .list_plan_runs(&canonical_owner(project_path), &plan, 20)
             .unwrap()
             .len(),
         1

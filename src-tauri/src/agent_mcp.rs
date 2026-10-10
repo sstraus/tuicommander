@@ -2148,6 +2148,8 @@ mod tests {
     #[test]
     fn startup_root_selection_deduplicates_environment_and_run_profiles() {
         let dir = TempDir::new().unwrap();
+        // Windows canonicalization adds a verbatim prefix to each selected spec.
+        let canonical_root = dir.path().canonicalize().unwrap();
         let root = dir.path().to_str().unwrap();
         let config: crate::config::AgentsConfig = serde_json::from_value(serde_json::json!({
             "agents": {"claude": {
@@ -2160,7 +2162,7 @@ mod tests {
         })).unwrap();
         let profiles: Vec<_> = startup_mcp_config_specs(&config, Some(root))
             .into_iter()
-            .filter(|(_, spec)| spec.config_path.starts_with(dir.path()))
+            .filter(|(_, spec)| spec.config_path.starts_with(&canonical_root))
             .collect();
         assert_eq!(
             profiles.len(),

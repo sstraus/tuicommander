@@ -10,9 +10,9 @@ command = "sh scripts/nextest-test-tmp.sh"
 [scripts.setup.repo-test-temp-windows]
 command = "powershell -NoProfile -File scripts/nextest-test-tmp.ps1"
 
-# The bin fixtures are consumed by exactly two groups of lib unit tests (they
+# The bin fixtures are consumed by three groups of lib unit tests (they
 # derive the path from current_exe): mcp_proxy::stdio_client::tests and the ACP
-# push test in state.rs. Integration tests reach the same bins through
+# push test in state.rs, plus acp_chat::tests::custom_chat_*. Integration tests reach the same bins through
 # CARGO_BIN_EXE_*, which cargo itself builds. Every setup entry below is
 # filtered to those consumers, so a run that selects none of them skips the
 # ~5 min build (#1308-50c9). A new lib unit test that spawns a fixture bin must
