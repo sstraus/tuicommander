@@ -1312,3 +1312,19 @@ process's already-acquired runtime owner and never acquires a second owner or
 forwards execution. The global concurrency default remains two. Summaries use
 elapsed UTC `24h`/`7d` windows; previews and next-run values use stored IANA zones
 and the durable scheduled cursor. No new configuration setting is required.
+
+### Automation completion and deadlines
+
+Runs persist their reservation deadline and dispatch start in the ledger. The
+30-second runtime wake and PTY/progress events reconcile task, session and durable
+progress records, including after broadcast lag. Idle alone leaves a run active;
+reported completion or a known zero process exit confirms success. Failed tasks
+and nonzero exits fail the run; missing or unverifiable completion becomes
+`unknown`. A task completion with no known exit code does not prove success.
+
+`needs_you` stays open and counts toward overlap, capacity and maximum duration.
+The deadline includes dispatch and precheck time. Expiry stops only the session
+bound to that run. Final output is bounded to 256 KiB; final states reject late
+or duplicate evidence. Boot preserves final history and interrupts open runs
+without retry. `automation-run-changed` is dual-emitted to desktop and SSE with
+an identical `{ "run": ... }` payload, including failure and needs-you transitions.

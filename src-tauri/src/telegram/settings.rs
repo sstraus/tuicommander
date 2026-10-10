@@ -13,6 +13,10 @@ use std::{
 struct SetupState {
     connected: bool,
     #[serde(default)]
+    owner_pid: Option<u32>,
+    #[serde(default)]
+    owner_kind: String,
+    #[serde(default)]
     registered_agent_name: Option<String>,
     last_error: Option<String>,
     last_message_time: Option<u64>,
@@ -77,6 +81,7 @@ pub(crate) struct Snapshot {
     registered_agent_name: Option<String>,
     chats: Vec<String>,
     connected: bool,
+    polling_owner: Option<&'static str>,
     last_error: Option<String>,
     last_message_time: Option<u64>,
 }
@@ -154,23 +159,25 @@ fn chat_id(text: &str) -> Result<i64, Error> {
     }
     Ok(id)
 }
-pub(super) fn status(connected: bool, error: Option<Error>, message: bool) {
+pub(super) fn status(paths: &Paths, connected: bool, error: Option<Error>, message: bool) {
     let mut state = STATE.lock().unwrap_or_else(|e| e.into_inner());
     state.connected = connected;
+    state.owner_pid = Some(std::process::id());
+    state.owner_kind = if cfg!(feature = "desktop") {
+        "desktop"
+    } else {
+        "tuic_remote"
+    }
+    .into();
     state.last_error = error.map(|e| e.to_string());
     if message {
         state.last_message_time = Some(now_ms());
     }
     state.updated_at = now_ms();
-    if let Ok(paths) = paths() {
-        if !paths.directory.exists() {
-            return;
-        }
-        if let Ok(bytes) = serde_json::to_vec(&*state)
-            && let Err(error) = write(&paths, "status.json", &bytes)
-        {
-            tracing::warn!(source="telegram", error=%error, "Telegram status unavailable");
-        }
+    if let Ok(bytes) = serde_json::to_vec(&*state)
+        && let Err(error) = write(paths, "status.json", &bytes)
+    {
+        tracing::warn!(source="telegram", error=%error, "Telegram status unavailable");
     }
 }
 pub(super) fn registration_status(paths: &Paths, name: Option<String>) {
@@ -191,6 +198,19 @@ fn snapshot(paths: &Paths, _state: &AppState) -> Result<Snapshot, Error> {
     } else {
         SetupState::default()
     };
+    let connected =
+        config.enabled && status.connected && now_ms().saturating_sub(status.updated_at) <= 60_000;
+    let polling_owner = connected.then(|| {
+        if status.owner_pid == Some(std::process::id()) {
+            "this_app"
+        } else if status.owner_kind == "tuic_remote" {
+            "tuic_remote"
+        } else if status.owner_kind == "desktop" {
+            "desktop"
+        } else {
+            "another_process"
+        }
+    });
     Ok(Snapshot {
         enabled: config.enabled,
         token_set: super::config::private_open(&paths.file("bot.token"), false).is_ok(),
@@ -203,7 +223,8 @@ fn snapshot(paths: &Paths, _state: &AppState) -> Result<Snapshot, Error> {
             None
         },
         chats: chats(paths)?.iter().map(ToString::to_string).collect(),
-        connected: status.connected && now_ms().saturating_sub(status.updated_at) <= 60_000,
+        connected,
+        polling_owner,
         last_error: status.last_error.clone(),
         last_message_time: status.last_message_time,
     })
@@ -237,7 +258,6 @@ async fn change_at(_state: &Arc<AppState>, paths: Paths, change: Change) -> Resu
         {
             Ok(bot) => bot,
             Err(error) => {
-                status(false, Some(error), false);
                 CHANGED.notify_one();
                 return Err(error);
             }

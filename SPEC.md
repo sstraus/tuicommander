@@ -856,3 +856,9 @@ The Automations dialog uses the registered command mapping in browser/PWA mode.
 Definitions and immutable run snapshots belong to the addressed instance. Run
 Now requires its runtime owner with no remote fallback. Execution remains
 Once-only in phase 1; previews and storage also support recurring cron.
+
+Automation completion core (#1616-1882): task, known PTY exit and durable progress
+provide result provenance. Idle is not success; lost completion is unknown.
+Persisted deadlines include precheck and needs-you time, stop only owned sessions,
+and preserve immutable terminal history with 256 KiB output snapshots. Transitions
+use desktop and SSE dual-emission; boot interrupts open runs without retry.

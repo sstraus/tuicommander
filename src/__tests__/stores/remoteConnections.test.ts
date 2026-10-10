@@ -48,6 +48,7 @@ type StatusPayload = {
 	protocol_version?: number;
 	out_of_date?: boolean;
 	error?: string;
+	retry_after_secs?: number;
 	step?: string;
 };
 
@@ -200,6 +201,14 @@ describe("remoteConnectionsStore renders what the backend reports", () => {
 			push(connected);
 			expect(store.getConnectionState("c1")?.status).toBe("connected");
 			expect(store.getConnectionState("c1")?.protocolVersion).toBe(2);
+		});
+
+		it("clears failed-attempt details when the next backend attempt begins", () => {
+			push({ id: "c1", status: "error", error: "Cannot resolve mac-mint", retry_after_secs: 3 });
+			expect(store.getConnectionState("c1")).toMatchObject({ error: "Cannot resolve mac-mint", retryAfterSecs: 3 });
+			push({ id: "c1", status: "connecting" });
+			expect(store.getConnectionState("c1")?.error).toBeUndefined();
+			expect(store.getConnectionState("c1")?.retryAfterSecs).toBeUndefined();
 		});
 
 		it("keeps the deployment step from the backend status", () => {
