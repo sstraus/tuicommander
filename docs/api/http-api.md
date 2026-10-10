@@ -1498,9 +1498,11 @@ DELETE /config/remote-connections/{id}/connect
 ```
 
 Live state, not configuration: `GET .../status` answers with one object per
-connection — `{ id, status, base_url?, token?, protocol_version?, build?, out_of_date?, live_sessions?, update_notice?, update_in_progress?, error?, step? }`,
+connection — `{ id, status, base_url?, token?, protocol_version?, build?, out_of_date?, live_sessions?, update_notice?, update_in_progress?, error?, retry_after_secs?, step? }`,
 where `status` is `disconnected | connecting | deploying | connected |
-unauthenticated | error`. `step` is present while deploying. `base_url`, `token`
+unauthenticated | error`. `error` is shown only for settled failures.
+`retry_after_secs` is the rounded-up delay of a scheduled retry, present only
+while waiting after a failure; it is omitted when a new attempt starts. `step` is present while deploying. `base_url`, `token`
 and `protocol_version` are present **only** while
 connected; `update_in_progress` is present as `true` while a manual or unattended update
 owns the connection. The route and token fields answer "where do I send a call", and a

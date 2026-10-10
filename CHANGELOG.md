@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Explain remote host DNS, connection, TLS, authentication, and rejected-name failures; suggest known Tailscale peer names and show retry delays without stale errors during connection attempts.
+
 - Widen the Activity Dashboard popup by 20%, while keeping it within small windows (#1664-f4ab).
 
 - Add Spoken replies to mobile hands-free and Settings; muting keeps dictation active, and Edge HTTP 401/403 stops repeat requests for five minutes with one text outage notice (#1659-f3cc).
