@@ -342,7 +342,11 @@ Two holds remain, and they are the reason this is not a raw write:
 A held turn stays **in the mode**: `pendingText` still shows it, the phase is
 `holding_back`, and `deliver_due` retries it on every tick. Speech that
 arrives meanwhile joins it, so turns that were held reach the model as one
-message, in spoken order. A disarm drops a held turn like one still inside its
+message, in spoken order, with a line break between phrases. The PTY sink wraps
+the multiline turn in bracketed paste (`ESC[200~`, LF-separated text,
+`ESC[201~`), then sends one separate CR to submit. The embedded LF is composer
+content, not a submit key. Transcript trimming prevents a trailing newline from
+adding a blank line between phrases. A disarm drops a held turn like one still inside its
 hold-back (`discardedPending`). A target that cannot take hands-free input is
 refused at `arm` and at the sink; it stays unavailable, with no fallback.
 

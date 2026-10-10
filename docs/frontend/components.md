@@ -4,6 +4,8 @@ Slice F exposes `start_graph {target:{type:story|plan,id},expected_revision?,def
 
 All components are SolidJS functional components in `src/components/`.
 
+`MobileViewBanner` offers browser clients a link to `/mobile`. On tablets it remains visible, even if previously dismissed on a phone, so users who chose desktop in mobile Settings can return. Switching clears the device-local desktop preference; native Tauri never renders the banner.
+
 ## Component Tree
 
 ```

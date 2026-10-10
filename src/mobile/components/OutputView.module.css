@@ -35,6 +35,12 @@
   min-height: 1.5em;
 }
 
+.dotSlot {
+  display: inline-block;
+  width: 1ch;
+  text-indent: 0;
+}
+
 .text > .line {
   padding-inline-start: var(--wrap-indent, 0ch);
   text-indent: calc(-1 * var(--wrap-indent, 0ch));
