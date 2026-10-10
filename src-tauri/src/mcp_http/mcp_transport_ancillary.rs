@@ -1011,12 +1011,16 @@ pub(super) fn handle_voice(
             let turn = args["turn"].as_u64();
             match dictation::speak(&dictation_state, caller, text, turn) {
                 Ok(reply) => to_json_or_error(reply),
-                Err(error) => serde_json::json!({"error": error}),
+                Err(error) => {
+                    serde_json::json!({"available": false, "unavailableReason": error, "error": error})
+                }
             }
         }
         "stop" => match dictation::stop_speaking(&dictation_state, caller) {
             Ok(status) => to_json_or_error(status),
-            Err(error) => serde_json::json!({"error": error}),
+            Err(error) => {
+                serde_json::json!({"available": false, "unavailableReason": error, "error": error})
+            }
         },
         // Status answers whether this caller *could* speak, so it checks the
         // binding too: a model bound elsewhere must be told it is not the
@@ -1027,7 +1031,9 @@ pub(super) fn handle_voice(
             args["utterance_id"].as_str(),
         ) {
             Ok(status) => to_json_or_error(status),
-            Err(error) => serde_json::json!({"error": error}),
+            Err(error) => {
+                serde_json::json!({"available": false, "unavailableReason": error, "error": error})
+            }
         },
         other => serde_json::json!({"error": format!(
             "Unknown voice action '{other}'. Available: {VOICE_ACTIONS}"

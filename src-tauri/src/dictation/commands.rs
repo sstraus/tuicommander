@@ -730,7 +730,32 @@ fn with_resolved_engine(mut config: DictationConfig) -> DictationConfig {
 /// Every `Err` here is a setup problem stated in the user's terms, because
 /// every one of them reaches a model as "unavailable, and here is why" rather
 /// than as a failure it should retry.
+fn speech_service(config: &DictationConfig) -> &'static str {
+    match speech_engine(config) {
+        SpeechEngine::Edge => "Microsoft Edge",
+        SpeechEngine::Pocket => "Pocket TTS",
+        SpeechEngine::External => "External speech engine",
+    }
+}
+
 fn open_voice(
+    config: &DictationConfig,
+    library: &speech::library::SpeechLibrary,
+    language: &str,
+) -> Result<(Arc<dyn speech::Speech>, String), String> {
+    let (engine, voice) = build_voice(config, library, language)?;
+    Ok((
+        Arc::new(speech::rejection::GuardedSpeech::new(
+            engine,
+            library.rejections.clone(),
+            speech_service(config),
+            None,
+        )),
+        voice,
+    ))
+}
+
+fn build_voice(
     config: &DictationConfig,
     library: &speech::library::SpeechLibrary,
     language: &str,
@@ -867,6 +892,17 @@ fn speech_language(config: &DictationConfig, dictation: &DictationState) -> Resu
     })
 }
 
+/// The persisted preference and service health are enforced before queueing.
+fn replies_available(config: &DictationConfig, dictation: &DictationState) -> Result<(), String> {
+    if !config.hands_free_spoken_replies {
+        return Err("Spoken replies are off; reply in text".into());
+    }
+    if let Some(reason) = dictation.speech.rejections.reason(speech_service(config)) {
+        return Err(reason);
+    }
+    Ok(())
+}
+
 /// Build the reply queue for a conversation that is being armed.
 ///
 /// Failure is not fatal to arming: hands-free without a voice is dictation,
@@ -881,9 +917,17 @@ pub(crate) fn open_speaker(
     generation: u64,
 ) -> Result<speaker::Armed, String> {
     let config = get_dictation_config();
+    replies_available(&config, dictation)?;
     let language = speech_language(&config, dictation)?;
     let owner = conversation_owner(dictation);
-    open_speaker_for(dictation, generation, &config, &language, owner.as_deref())
+    open_speaker_for(
+        dictation,
+        generation,
+        &config,
+        &language,
+        owner.as_deref(),
+        generation,
+    )
 }
 
 /// Who armed the conversation, if one is armed.
@@ -935,8 +979,10 @@ fn open_speaker_for(
     config: &DictationConfig,
     language: &str,
     owner: Option<&str>,
+    conversation_generation: u64,
 ) -> Result<speaker::Armed, String> {
-    let (engine, voice) = open_voice(config, &dictation.speech, language)?;
+    let (engine, voice) = build_voice(config, &dictation.speech, language)?;
+    let engine = guard_replies(config, dictation, engine, conversation_generation);
     let device = open_reply_output(dictation, owner)?;
     // Wrapped so the canceller learns what is being played. Without this the
     // microphone hears the reply and the VAD opens a turn on the application's
@@ -958,6 +1004,24 @@ fn open_speaker_for(
         voice,
         language: language.to_string(),
     })
+}
+
+fn guard_replies(
+    config: &DictationConfig,
+    dictation: &DictationState,
+    engine: Arc<dyn speech::Speech>,
+    conversation_generation: u64,
+) -> Arc<dyn speech::Speech> {
+    let mode = dictation.hands_free.clone();
+    Arc::new(speech::rejection::GuardedSpeech::new(
+        engine,
+        dictation.speech.rejections.clone(),
+        speech_service(config),
+        Some(Arc::new(move |reason| {
+            mode.lock()
+                .note_speech_outage(conversation_generation, reason);
+        })),
+    ))
 }
 
 /// Barge-in, pointed at the slot rather than at one queue.
@@ -1211,11 +1275,13 @@ pub(crate) fn speak(
     // and the rebuild below is handed the answers. The two locks are always
     // taken in this order.
     let config = get_dictation_config();
+    replies_available(&config, dictation)?;
     let language = speech_language(&config, dictation)?;
     let armed_at = dictation.hands_free.lock().generation();
     let owner = conversation_owner(dictation);
 
     let mut slot = dictation.speaker.lock();
+    replies_available(&get_dictation_config(), dictation)?;
     // The queue is per language, so a conversation that changed language needs
     // a new one. `hush` on the way out is what makes the change invalidate the
     // replies written for the old language: it opens a new turn, and `say`
@@ -1234,6 +1300,7 @@ pub(crate) fn speak(
             &config,
             &language,
             owner.as_deref(),
+            armed_at,
         )?);
     }
     // A voice preview gives way to the conversation instead of playing under
@@ -1348,7 +1415,8 @@ pub(crate) fn speech_status(dictation: &DictationState, utterance: Option<&str>)
     // take the two locks in the opposite order to `speak`.
     let language = conversation_language(&config, dictation).unwrap_or_default();
     let openable = session_id.as_ref().map(|_| {
-        speech_language(&config, dictation)
+        replies_available(&config, dictation)
+            .and_then(|()| speech_language(&config, dictation))
             .and_then(|language| open_voice(&config, &dictation.speech, &language).map(|_| ()))
     });
     let armed_at = dictation.hands_free.lock().generation();
@@ -1394,9 +1462,10 @@ pub(crate) fn speech_status(dictation: &DictationState, utterance: Option<&str>)
             },
         }
     });
+    let unavailable_reason = replies_available(&config, dictation).err();
     SpeechStatus {
-        available: true,
-        unavailable_reason: String::new(),
+        available: unavailable_reason.is_none(),
+        unavailable_reason: unavailable_reason.unwrap_or_default(),
         session_id,
         language,
         turn: status.generation,
@@ -2446,7 +2515,10 @@ pub(crate) fn arm_hands_free_with(
         && let Some(Err(error)) = continuous::deliver_entry_hint(
             &mut dictation.hands_free.lock(),
             &super::adapters::PtyVoiceSink(state.as_ref()),
-            &continuous::entry_hint_text(&config.hands_free_start_notice),
+            &continuous::entry_hint_for_replies(
+                &config.hands_free_start_notice,
+                config.hands_free_spoken_replies,
+            ),
             Some(&config.language),
         )
     {
@@ -2678,6 +2750,12 @@ fn dictation_config_from_value(value: serde_json::Value) -> DictationConfig {
             defaults.hands_free_start_notice,
             &mut recovered,
         ),
+        hands_free_spoken_replies: recovered_field(
+            &object,
+            "hands_free_spoken_replies",
+            defaults.hands_free_spoken_replies,
+            &mut recovered,
+        ),
         hands_free_earcons: recovered_field(
             &object,
             "hands_free_earcons",
@@ -2833,7 +2911,7 @@ pub(crate) fn save_dictation_config(
         || previous.speech_edge_voice != config.speech_edge_voice;
     if let Some(dictation) = dictation {
         let mut slot = dictation.speaker.lock();
-        if voice_changed {
+        if voice_changed || !config.hands_free_spoken_replies {
             *slot = None;
         } else if let Some(armed) = slot.as_ref() {
             // A level, not a voice: the queue keeps speaking and the next
@@ -4245,6 +4323,155 @@ mod tests {
             language: "it".to_string(),
         });
         (dictation, gate, config)
+    }
+
+    #[test]
+    fn spoken_replies_off_refuses_existing_queue_without_synthesis() {
+        // catches: a UI-only mute still lets the model invoke the engine.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        struct CountingSpeech(Arc<AtomicUsize>);
+        impl speech::Speech for CountingSpeech {
+            fn synthesize(
+                &self,
+                _: &str,
+                _: &str,
+                _: &speech::SpeechCancel,
+            ) -> Result<speech::SpeechAudio, speech::SpeechError> {
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Err(speech::SpeechError::Failed("unexpected synthesis".into()))
+            }
+        }
+        let (dictation, _gate, _config) = armed_with_a_voice("session-a");
+        let calls = Arc::new(AtomicUsize::new(0));
+        dictation.speaker.lock().as_mut().unwrap().speaker = Arc::new(speaker::Speaker::new(
+            Arc::new(CountingSpeech(calls.clone())),
+            Arc::new(QuietOutput),
+            1,
+        ));
+        let base = get_dictation_config();
+        save_dictation_config(
+            base.clone(),
+            DictationConfig {
+                hands_free_spoken_replies: false,
+                ..base
+            },
+            Some(&dictation),
+        )
+        .unwrap();
+        let status = speech_status_for(&dictation, Caller::Model("session-a"), None).unwrap();
+        assert!(!status.available);
+        assert!(status.unavailable_reason.contains("Spoken replies are off"));
+        assert!(
+            speak(&dictation, Caller::Model("session-a"), "hello", None)
+                .unwrap_err()
+                .contains("Spoken replies are off")
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        assert!(
+            dictation.speaker.lock().is_none(),
+            "mute cancels the old queue"
+        );
+        assert!(
+            !get_dictation_config().hands_free_spoken_replies,
+            "persisted off"
+        );
+        assert!(
+            DictationConfig::default().hands_free_spoken_replies,
+            "default on"
+        );
+        let base = get_dictation_config();
+        save_dictation_config(
+            base.clone(),
+            DictationConfig {
+                hands_free_spoken_replies: true,
+                ..base
+            },
+            Some(&dictation),
+        )
+        .unwrap();
+        assert!(get_dictation_config().hands_free_spoken_replies);
+    }
+
+    #[test]
+    fn queued_auth_rejection_notifies_bound_conversation_once_and_refuses_retry() {
+        // catches: a queued HTTP 403 fails silently and the model keeps calling speech.
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        struct Rejecting(Arc<AtomicUsize>, Arc<parking_lot::Mutex<()>>);
+        impl speech::Speech for Rejecting {
+            fn synthesize(
+                &self,
+                _: &str,
+                _: &str,
+                _: &speech::SpeechCancel,
+            ) -> Result<speech::SpeechAudio, speech::SpeechError> {
+                let _guard = self.1.lock();
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Err(speech::SpeechError::Rejected { status: 403 })
+            }
+        }
+        #[derive(Default)]
+        struct Notices(parking_lot::Mutex<Vec<(String, String)>>);
+        impl continuous::VoiceSink for Notices {
+            fn write(&self, session: &str, text: &str) -> Result<continuous::VoiceWrite, String> {
+                self.0.lock().push((session.into(), text.into()));
+                Ok(continuous::VoiceWrite::Written)
+            }
+        }
+        let (dictation, _gate, _config) = armed_with_a_voice("session-a");
+        let base = get_dictation_config();
+        save_dictation_config(
+            base.clone(),
+            DictationConfig {
+                speech_engine: "edge".into(),
+                ..base
+            },
+            Some(&dictation),
+        )
+        .unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let release = Arc::new(parking_lot::Mutex::new(()));
+        let held = release.lock();
+        let generation = dictation.hands_free.lock().generation();
+        let engine = guard_replies(
+            &get_dictation_config(),
+            &dictation,
+            Arc::new(Rejecting(calls.clone(), release.clone())),
+            generation,
+        );
+        *dictation.speaker.lock() = Some(speaker::Armed {
+            speaker: Arc::new(speaker::Speaker::new(
+                engine,
+                Arc::new(QuietOutput),
+                generation,
+            )),
+            voice: "edge-test".into(),
+            language: "it".into(),
+        });
+        let queued = speak(&dictation, Caller::Model("session-a"), "hello", None).unwrap();
+        assert!(matches!(queued.state.as_str(), "queued" | "rendering"));
+        drop(held);
+        wait_for_utterance(&dictation, &queued.utterance_id, "failed");
+        let status = speech_status_for(&dictation, Caller::Model("session-a"), None).unwrap();
+        assert!(!status.available);
+        assert!(status.unavailable_reason.contains("HTTP 403"));
+        assert!(status.unavailable_reason.contains("Microsoft Edge"));
+        let sink = Notices::default();
+        assert_eq!(
+            continuous::deliver_speech_outage(&mut dictation.hands_free.lock(), &sink),
+            Some(Ok(continuous::VoiceWrite::Written))
+        );
+        assert!(
+            continuous::deliver_speech_outage(&mut dictation.hands_free.lock(), &sink).is_none()
+        );
+        assert_eq!(
+            sink.0.lock().as_slice(),
+            &[("session-a".into(), status.unavailable_reason.clone())]
+        );
+        assert_eq!(
+            speak(&dictation, Caller::Model("session-a"), "retry", None).unwrap_err(),
+            status.unavailable_reason
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
 
     /// Poll until `id` reaches a state the test is waiting for, or say what it

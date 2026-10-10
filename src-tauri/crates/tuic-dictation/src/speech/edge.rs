@@ -486,6 +486,16 @@ impl Socket for WsSocket {
     }
 }
 
+fn rejected(status: u16) -> SpeechError {
+    if matches!(status, 401 | 403) {
+        SpeechError::Rejected { status }
+    } else {
+        SpeechError::Failed(format!(
+            "the Microsoft Edge speech service rejected the request (HTTP {status})"
+        ))
+    }
+}
+
 fn connection_failed(error: &tungstenite::Error) -> SpeechError {
     SpeechError::Failed(format!(
         "the connection to the Microsoft Edge speech service failed: {error}"
@@ -562,11 +572,7 @@ fn dial_service() -> Result<Box<dyn Socket>> {
         .map_err(|error| unreachable_service(&error))?;
     let (socket, _) = tungstenite::client_tls(request, tcp).map_err(|error| match error {
         tungstenite::HandshakeError::Failure(tungstenite::Error::Http(response)) => {
-            SpeechError::Failed(format!(
-                "the Microsoft Edge speech service rejected the request (HTTP {}); \
-                 if this persists, check that the system clock is correct",
-                response.status().as_u16()
-            ))
+            rejected(response.status().as_u16())
         }
         tungstenite::HandshakeError::Failure(error) => unreachable_service(&error),
         tungstenite::HandshakeError::Interrupted(_) => {
@@ -761,6 +767,18 @@ mod tests {
     }
 
     const SENTENCE: &str = "Ciao Boss, il pannello è su main.";
+
+    #[test]
+    fn only_auth_http_rejections_trigger_cooldown_without_clock_advice() {
+        // catches: 403 blames the clock, or a transient server failure disables speech.
+        for status in [401, 403] {
+            let error = rejected(status);
+            assert!(matches!(error, SpeechError::Rejected { .. }));
+            assert!(error.to_string().contains(&format!("HTTP {status}")));
+            assert!(!error.to_string().contains("clock"));
+        }
+        assert!(matches!(rejected(500), SpeechError::Failed(_)));
+    }
 
     #[test]
     fn the_recorded_stream_decodes_to_audible_mono_speech_at_the_streams_rate() {

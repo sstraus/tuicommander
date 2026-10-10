@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Add Spoken replies to mobile hands-free and Settings; muting keeps dictation active, and Edge HTTP 401/403 stops repeat requests for five minutes with one text outage notice (#1659-f3cc).
+
 - Use the terminal composer pin and play icon buttons in desktop AI Chat, with named Queue and parked-draft states (#1636-0d08).
 
 - Accept pasted images in AI Chat before ego connects, retain concurrent pastes while its first session opens, and share Finder/text clipboard rules with Ideas and terminal Compose (#1639-f474).

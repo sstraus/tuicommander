@@ -222,6 +222,8 @@ fn push_once(choices: &mut Vec<VoiceChoice>, id: String, source: VoiceSource) {
 
 #[derive(Default)]
 pub struct SpeechLibrary {
+    /// Shared across voices and conversations, independent of engine lifetime.
+    pub rejections: Arc<super::rejection::Rejections>,
     /// Built lazily, one per language, dropped on replacement, deletion and
     /// shutdown.
     engines: Mutex<HashMap<String, Arc<PocketSpeech>>>,

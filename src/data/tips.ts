@@ -10,6 +10,12 @@ const mod = isMacOS() ? "Cmd" : "Ctrl";
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Spoken replies",
+		description:
+			"Turn off Spoken replies in mobile hands-free or Settings > Voice to keep dictating while the agent answers in text.",
+		shortcut: null,
+	},
+	{
 		feature: "Automations",
 		description:
 			"Open Automations from the command palette to edit scheduled agent runs and Once previews. The Automations backend API is required.",

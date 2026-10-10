@@ -4879,3 +4879,9 @@ Needs an iPhone (iOS 16.4+, 18.4+ preferred), the desktop TUICommander running a
 - [ ] After Boss's next packaged `make build`, confirm the macOS bundle declares `LSMinimumSystemVersion` 12.0. Mermaid diagrams require system WebKit updated to Safari 17.4+; the OS version alone does not guarantee that update. No desktop instance was launched in this lane.
 
 - [ ] After Boss's next `make dev` restart or `make build`: copy and paste text in the desktop app with the arboard commands; confirm terminal copy still succeeds after an IPC await and macOS paste shows no system Paste pill. Rust changes require the restart to load (#1651-6cbe).
+
+
+### Spoken replies toggle (#1659-f3cc)
+- [ ] Capture the mobile conversation and Settings toggles on the worktree Vite. The stealth wrapper snapshot showed Spoken replies checked; wrapper screenshot and three bounded headless attempts timed out without an image.
+- [ ] After Boss restarts make dev (Rust does not hot reload), arm hands-free on mobile, turn Spoken replies off, dictate, and confirm text answers with no reply audio. Turn it on again and confirm audio returns when the speech service is available.
+- [ ] After an Edge access rejection, confirm the UI reports the cool-down and dictation continues; wait five minutes before retrying speech.

@@ -764,6 +764,7 @@ pub struct HandsFree {
     /// Where this arm's entry hint is. The exit hint is owed only to a model
     /// that read it, so `Written` is the only state that buys one.
     entry_hint: EntryHint,
+    speech_outage_notice: Option<String>,
     /// The language this conversation's model was last told to reply in.
     ///
     /// Stated once — by the start notice when the language is already known,
@@ -790,6 +791,7 @@ impl HandsFree {
             activation: Activation::default(),
             turn_language: None,
             entry_hint: EntryHint::NotSent,
+            speech_outage_notice: None,
             announced_language: None,
         }
     }
@@ -886,6 +888,7 @@ impl HandsFree {
         // Nothing has been said to the model about this conversation yet, so
         // nothing is owed to it when the conversation ends.
         self.entry_hint = EntryHint::NotSent;
+        self.speech_outage_notice = None;
         self.announced_language = None;
         self.last_hold = None;
         Ok(self.generation)
@@ -1085,6 +1088,13 @@ impl HandsFree {
         }
     }
 
+    /// Record an asynchronous failure only for the conversation that requested speech.
+    pub fn note_speech_outage(&mut self, generation: u64, reason: String) {
+        if self.binding.is_some() && self.generation == generation {
+            self.speech_outage_notice = Some(reason);
+        }
+    }
+
     /// Disarm the whole mode. Never re-arms itself; `arm` is the only way back.
     pub fn disarm(&mut self, reason: DisarmReason) -> Option<Disarmed> {
         let session_id = self.binding.as_ref()?.session_id.clone();
@@ -1099,6 +1109,7 @@ impl HandsFree {
             reason: reason.clone(),
         };
         self.binding = None;
+        self.speech_outage_notice = None;
         // Every reason this machine can end for — the user's abort, a closed
         // target, a lost owner, a dead microphone — is the user no longer
         // addressing it. None of them may hand the next arm an open window,
@@ -1289,6 +1300,15 @@ pub fn entry_hint_text(configured: &str) -> String {
     }
 }
 
+/// A muted conversation asks for text even when a custom notice suggests speech.
+pub fn entry_hint_for_replies(configured: &str, spoken_replies: bool) -> String {
+    if spoken_replies {
+        entry_hint_text(configured)
+    } else {
+        "Hands-free dictation is now on for this terminal. Spoken replies are off. Reply in text; do not call the voice tool to speak.".to_string()
+    }
+}
+
 /// What the model is told when the conversation ends.
 ///
 /// Sent only to a model that read the entry hint — see [`deliver_exit_hint`].
@@ -1345,6 +1365,21 @@ pub fn deliver_entry_hint(
         }
         Err(error) => Some(Err(error)),
     }
+}
+
+/// Deliver an asynchronous outage through the same sink as hands-free notices.
+/// A dialog holds it for the next tick; a written notice is removed exactly once.
+pub fn deliver_speech_outage(
+    mode: &mut HandsFree,
+    sink: &dyn VoiceSink,
+) -> Option<Result<VoiceWrite, String>> {
+    let notice = mode.speech_outage_notice.as_ref()?;
+    let session = &mode.binding()?.session_id;
+    let result = sink.write(session, notice);
+    if !matches!(&result, Ok(VoiceWrite::Held(_))) {
+        mode.speech_outage_notice = None;
+    }
+    Some(result)
 }
 
 /// Tell the model the conversation ended — but only if it heard it begin.
@@ -1688,6 +1723,10 @@ pub fn tick(
     // mode again. `parking_lot` is not reentrant, so that shape deadlocks the
     // runtime — and every status poll behind it — the first time the sink
     // refuses a delivery.
+    let outage = deliver_speech_outage(&mut mode.lock(), sink);
+    if let Some(Err(error)) = outage {
+        mode.lock().note_send_failed(&error);
+    }
     let delivered = deliver_due(&mut mode.lock(), sink, now_ms);
     match delivered {
         Some(Ok(delivery)) => Tick::Running {
@@ -1912,6 +1951,17 @@ mod tests {
     }
 
     // --- Segmentation -----------------------------------------------------
+
+    #[test]
+    fn muted_entry_notice_does_not_invite_speech_even_with_custom_text() {
+        // catches: a custom spoken-reply instruction overrides the user's mute.
+        for configured in ["", "Always call voice speak"] {
+            let notice = entry_hint_for_replies(configured, false);
+            assert!(notice.contains("Reply in text"));
+            assert!(!notice.contains("Always call"));
+        }
+        assert_eq!(entry_hint_for_replies("", true), MODE_ENTRY_HINT);
+    }
 
     /// The defect 811-9313 fixed one layer down, stated as a boundary rule: a
     /// phrase that ends in a pause is exactly what a hands-free utterance is,
@@ -2604,6 +2654,35 @@ mod tests {
                 .push((session_id.to_string(), text.to_string()));
             Ok(VoiceWrite::Written)
         }
+    }
+
+    #[test]
+    fn speech_outage_waits_for_composer_and_never_leaks_to_rearmed_conversation() {
+        // catches: a held outage is dropped or a stale worker notifies the next target.
+        let mut mode = armed();
+        let generation = mode.generation();
+        let sink = FakeSink::default();
+        *sink.hold.borrow_mut() = Some(VoiceHold::Draft);
+        mode.note_speech_outage(generation, "reply in text".into());
+        assert_eq!(
+            deliver_speech_outage(&mut mode, &sink),
+            Some(Ok(VoiceWrite::Held(VoiceHold::Draft)))
+        );
+        *sink.hold.borrow_mut() = None;
+        assert_eq!(
+            deliver_speech_outage(&mut mode, &sink),
+            Some(Ok(VoiceWrite::Written))
+        );
+        assert!(deliver_speech_outage(&mut mode, &sink).is_none());
+        assert_eq!(
+            sink.written.borrow().as_slice(),
+            &[written("reply in text")]
+        );
+        mode.note_speech_outage(generation, "old pending outage".into());
+        mode.disarm(DisarmReason::Manual);
+        mode.arm("new-target", "desktop", true).unwrap();
+        mode.note_speech_outage(generation, "stale worker".into());
+        assert!(deliver_speech_outage(&mut mode, &sink).is_none());
     }
 
     fn written(text: &str) -> (String, String) {

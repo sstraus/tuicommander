@@ -6,6 +6,7 @@ import type { SessionInfo } from "../useSessions";
 const { rpc, toastAdd, voice } = vi.hoisted(() => {
 	const voice = {
 		state: { handsFree: null as unknown, handsFreeError: null as string | null },
+		setSpokenReplies: vi.fn(),
 		armHandsFree: vi.fn(),
 		disarmHandsFree: vi.fn(),
 		setStatus: (_status: unknown) => {},
@@ -23,13 +24,23 @@ vi.mock("../components/OutputView", () => ({ OutputView: () => <div /> }));
 vi.mock("../components/TerminalKeybar", () => ({ TerminalKeybar: () => <div /> }));
 vi.mock("../../stores/dictation", async () => {
 	const { createStore } = await import("solid-js/store");
-	const [state, setState] = createStore({ handsFree: null as unknown, handsFreeError: null as string | null });
+	const [state, setState] = createStore({
+		handsFree: null as unknown,
+		handsFreeError: null as string | null,
+		spokenReplies: true,
+	});
 	voice.state = state as typeof voice.state;
 	voice.setStatus = (status) => setState("handsFree", status);
 	voice.setError = (message) => setState("handsFreeError", message);
 	return {
 		browserAudioOwner: "browser-test",
-		dictationStore: { state, armHandsFree: voice.armHandsFree, disarmHandsFree: voice.disarmHandsFree },
+		dictationStore: {
+			state,
+			refreshConfig: vi.fn().mockResolvedValue(undefined),
+			setSpokenReplies: voice.setSpokenReplies,
+			armHandsFree: voice.armHandsFree,
+			disarmHandsFree: voice.disarmHandsFree,
+		},
 	};
 });
 
@@ -111,4 +122,14 @@ it("ends the conversation when the session screen is left", async () => {
 	unmount();
 
 	expect(voice.disarmHandsFree).toHaveBeenCalledTimes(1);
+});
+
+it("lets the mobile user mute replies without disarming dictation", async () => {
+	// catches: mute is inaccessible from an armed mobile conversation.
+	mount();
+	const toggle = await screen.findByRole("checkbox", { name: "Spoken replies" });
+	expect((toggle as HTMLInputElement).checked).toBe(true);
+	fireEvent.click(toggle);
+	expect(voice.setSpokenReplies).toHaveBeenCalledWith(false);
+	expect(voice.disarmHandsFree).not.toHaveBeenCalled();
 });

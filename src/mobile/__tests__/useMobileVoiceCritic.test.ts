@@ -22,7 +22,15 @@ vi.mock("../../stores/dictation", () => {
 			}),
 	);
 	const disarm = vi.fn(async () => setState("handsFree", { armed: false }));
-	return { browserAudioOwner: "browser-x", dictationStore: { state, armHandsFree: arm, disarmHandsFree: disarm } };
+	return {
+		browserAudioOwner: "browser-x",
+		dictationStore: {
+			state,
+			refreshConfig: vi.fn().mockResolvedValue(undefined),
+			armHandsFree: arm,
+			disarmHandsFree: disarm,
+		},
+	};
 });
 
 import { dictationStore } from "../../stores/dictation";

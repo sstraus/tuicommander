@@ -27,6 +27,7 @@ interface DictationConfig {
 	hands_free_start_notice: string;
 	/** Play the hands-free earcons on the owning client. On by default. */
 	hands_free_earcons: boolean;
+	hands_free_spoken_replies: boolean;
 	/** A user-supplied speech engine as argv, used when `speech_engine` is `external`. Edited in Expert. */
 	speech_command: string[];
 	/** Which engine speaks replies. Rust answers an unset value from what is installed, so this is never empty on read. */
@@ -376,6 +377,7 @@ interface DictationStoreState {
 	handsFreeActivationPhrase: string;
 	/** Whether the delivered/dropped earcons play. Defaults to true, as in Rust. */
 	handsFreeEarcons: boolean;
+	spokenReplies: boolean;
 	/** Which engine speaks replies. */
 	speechEngine: SpeechEngineId;
 	/** The external speech command as argv; empty when none is set. */
@@ -475,6 +477,7 @@ function createDictationStore() {
 		handsFreeHoldBackMs: DEFAULT_HOLD_BACK_MS,
 		handsFreeActivationPhrase: "",
 		handsFreeEarcons: true,
+		spokenReplies: true,
 		speechEngine: "edge",
 		speechCommand: [],
 		speechEdgeVoice: "",
@@ -616,7 +619,6 @@ function createDictationStore() {
 	const actions = {
 		/** Load config from Rust backend (file-based) */
 		async refreshConfig(): Promise<void> {
-			if (!isTauri()) return;
 			try {
 				const config = await invoke<DictationConfig>("get_dictation_config");
 				setState({
@@ -632,6 +634,7 @@ function createDictationStore() {
 					handsFreeHoldBackMs: config.hands_free_hold_back_ms ?? DEFAULT_HOLD_BACK_MS,
 					handsFreeActivationPhrase: config.hands_free_activation_phrase ?? "",
 					handsFreeEarcons: config.hands_free_earcons ?? true,
+					spokenReplies: config.hands_free_spoken_replies ?? true,
 					speechEngine: config.speech_engine || "edge",
 					speechCommand: config.speech_command ?? [],
 					speechEdgeVoice: config.speech_edge_voice ?? "",
@@ -697,6 +700,8 @@ function createDictationStore() {
 				if (partial.speech_edge_voice !== undefined) storeUpdate.speechEdgeVoice = partial.speech_edge_voice;
 				if (partial.speech_volume_db !== undefined) storeUpdate.speechVolumeDb = partial.speech_volume_db;
 				if (partial.speech_levelling !== undefined) storeUpdate.speechLevelling = partial.speech_levelling;
+				if (partial.hands_free_spoken_replies !== undefined)
+					storeUpdate.spokenReplies = partial.hands_free_spoken_replies;
 				if (partial.hands_free_earcons !== undefined) storeUpdate.handsFreeEarcons = partial.hands_free_earcons;
 				if (partial.rms_threshold !== undefined) storeUpdate.rmsThreshold = partial.rms_threshold;
 				if (partial.no_speech_threshold !== undefined) storeUpdate.noSpeechThreshold = partial.no_speech_threshold;
@@ -724,6 +729,10 @@ function createDictationStore() {
 
 		setNotifyModelOnHandsFree(value: boolean): void {
 			actions.saveConfig({ hands_free_notify_model: value });
+		},
+
+		setSpokenReplies(value: boolean): void {
+			void actions.saveConfig({ hands_free_spoken_replies: value });
 		},
 
 		setHandsFreeEarcons(value: boolean): void {
@@ -1150,8 +1159,8 @@ function createDictationStore() {
 				// Inside the arming gesture, so the first earcon is not lost
 				// to a context that started suspended.
 				primeEarcons();
-				// `refreshConfig` is desktop-only, so this is where a browser
-				// tab learns whether to play them. Never a reason to refuse.
+				// Refresh earcons at each arm, including after another client saved.
+				// Never a reason to refuse capture.
 				void invoke<DictationConfig>("get_dictation_config")
 					.then((config) => {
 						if (typeof config?.hands_free_earcons === "boolean")
