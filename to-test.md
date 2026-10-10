@@ -1,3 +1,7 @@
+## Saved AI Chat tabs (1628-4459)
+
+- [ ] Check saved-tab connecting, failure/Retry, and pending model/mode rows at the normal panel width. An isolated worktree Vite preview reached the saved-tab click with `navigator.webdriver` undefined; the mandatory stealth wrapper then stalled on the shared browser attachment lock and timed out before producing a screenshot. A subsequent bundled headless Chrome capture also timed out after 120 seconds without producing an image (the preview port was still occupied). Visual verification is owed. No desktop instance was launched.
+
 ## Automation prechecks (1614-7e8f) — Rust restart required
 
 - [ ] After dispatcher/API integration and Boss's next planned `make dev` restart or `make build`, run an automation whose precheck exits 0, exits nonzero and times out; confirm dispatch only for exit 0 and saved `skipped_precheck` diagnostics otherwise. Confirm Run Now records a bypass and does not execute the precheck. The standalone helper has targeted shell/process tests; runtime persistence belongs to Step 6. Rust does not hot-reload; this lane does not launch desktop.

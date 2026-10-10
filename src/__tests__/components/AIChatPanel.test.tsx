@@ -929,6 +929,334 @@ describe("AIChatPanel: one chat across repositories", () => {
 });
 
 describe("AIChatPanel: parallel tabs", () => {
+	// Catches: selecting a restored tab without a binding never connects or replays.
+	it("restores two saved tabs and loads the second when selected without sending", async () => {
+		aiChatTabs.add("global", SESSION);
+		aiChatTabs.add("global", SECOND_SESSION);
+		aiChatTabs.add("global", SESSION);
+		aiChatTabs.resetMemory();
+		client.loadSession.mockImplementation(async (_id, session) => {
+			acpStore.applySnapshot(snapshot({ attachments: [attachment({ sessionId: session })] }));
+			feed(
+				{
+					kind: "sessionUpdate",
+					update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Saved second answer" } },
+				},
+				session,
+			);
+		});
+		const { container } = renderIdlePanel();
+		await settle();
+		(container.querySelector(`button[data-chat-session="${SECOND_SESSION}"]`) as HTMLButtonElement).click();
+		await settle();
+		expect(
+			container.querySelector(`button[data-chat-session="${SECOND_SESSION}"]`)?.getAttribute("aria-selected"),
+		).toBe("true");
+		expect(container.textContent).toContain("Saved second answer");
+		expect(container.textContent).toContain("Model: Opus");
+		expect(client.connect).toHaveBeenCalledTimes(1);
+		expect(client.loadSession).toHaveBeenCalledWith(CONNECTION, SECOND_SESSION, CHAT_ROOT);
+		expect(client.newSession).not.toHaveBeenCalled();
+		expect(client.prompt).not.toHaveBeenCalled();
+	});
+
+	function restoreTabs(): void {
+		aiChatTabs.add("global", SESSION);
+		aiChatTabs.add("global", SECOND_SESSION);
+		aiChatTabs.add("global", SESSION);
+		aiChatTabs.resetMemory();
+	}
+
+	function selectTab(container: HTMLElement, session: string): void {
+		(container.querySelector(`button[data-chat-session="${session}"]`) as HTMLButtonElement).click();
+	}
+
+	// Catches: an unattached saved tab looks idle and hides its model row during connect.
+	it("shows connecting and pending model controls until a saved tab attaches", async () => {
+		restoreTabs();
+		let finish!: () => void;
+		client.loadSession.mockImplementation(
+			() =>
+				new Promise<void>((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const { container } = renderIdlePanel();
+		await settle();
+		selectTab(container, SECOND_SESSION);
+		await settle();
+		expect(container.textContent).toContain("Connecting conversation…");
+		expect(container.textContent).toContain("Model: pending · Mode: pending");
+		expect(
+			container.querySelector(`button[data-chat-session="${SECOND_SESSION}"]`)?.getAttribute("aria-selected"),
+		).toBe("true");
+		acpStore.applySnapshot(snapshot({ attachments: [attachment({ sessionId: SECOND_SESSION })] }));
+		finish();
+		await settle();
+		expect(container.textContent).toContain("Model: Opus");
+		expect(container.textContent).not.toContain("Connecting conversation…");
+	});
+
+	// Catches: Retry clears the error without reattaching the saved tab that failed.
+	it("retries the refused saved tab on its existing connection", async () => {
+		restoreTabs();
+		client.loadSession
+			.mockRejectedValueOnce(new Error("Saved conversation unavailable"))
+			.mockImplementation(async (_id, session) => {
+				acpStore.applySnapshot(snapshot({ attachments: [attachment({ sessionId: session })] }));
+				acpTranscript.restore(session, [{ id: "saved-answer", kind: "agent", text: "Recovered second answer" }]);
+			});
+		const { container } = renderIdlePanel();
+		await settle();
+		selectTab(container, SECOND_SESSION);
+		await settle();
+		expect(container.textContent).toContain("Saved conversation unavailable");
+		expect(container.textContent).toContain("The conversation could not be opened");
+		[...container.querySelectorAll("button")].find((button) => button.textContent === "Retry")?.click();
+		await settle();
+		expect(container.textContent).toContain("Recovered second answer");
+		expect(container.textContent).toContain("Model: Opus");
+		expect(client.loadSession.mock.calls.map((call) => call[1])).toEqual([SECOND_SESSION, SECOND_SESSION]);
+		expect(client.connect).toHaveBeenCalledTimes(1);
+		expect(client.reconnect).not.toHaveBeenCalled();
+	});
+
+	// Catches: rapid selections spawn two egos or let an older selection take focus.
+	it("shares a pending connection and keeps the latest saved tab selected", async () => {
+		restoreTabs();
+		let finish!: () => void;
+		client.connect.mockImplementation(
+			() =>
+				new Promise<AcpConnectionSnapshot>((resolve) => {
+					finish = () => {
+						const opened = snapshot();
+						acpStore.applySnapshot(opened);
+						acpStore.markStreaming(CONNECTION);
+						resolve(opened);
+					};
+				}),
+		);
+		client.loadSession.mockImplementation(async (_id, session) => {
+			acpStore.applySnapshot(snapshot({ attachments: [attachment({ sessionId: session })] }));
+		});
+		const { container } = renderIdlePanel();
+		await settle();
+		selectTab(container, SESSION);
+		await settle();
+		selectTab(container, SECOND_SESSION);
+		await settle();
+		finish();
+		await settle();
+		expect(client.connect).toHaveBeenCalledTimes(1);
+		expect(client.loadSession).toHaveBeenCalledTimes(1);
+		expect(client.loadSession).toHaveBeenCalledWith(CONNECTION, SECOND_SESSION, CHAT_ROOT);
+		expect(
+			container.querySelector(`button[data-chat-session="${SECOND_SESSION}"]`)?.getAttribute("aria-selected"),
+		).toBe("true");
+	});
+
+	// Catches: a slow failed load overwrites the current tab's successful state.
+	it("ignores a previous saved tab failure after another tab has attached", async () => {
+		restoreTabs();
+		let refuse!: () => void;
+		client.loadSession.mockImplementation(async (_id, session) => {
+			if (session === SECOND_SESSION)
+				return new Promise<void>((_resolve, reject) => {
+					refuse = () => reject(new Error("Previous tab failed"));
+				});
+			acpStore.applySnapshot(snapshot({ attachments: [attachment()] }));
+			acpTranscript.restore(SESSION, [{ id: "current-answer", kind: "agent", text: "Current answer" }]);
+		});
+		const { container } = renderIdlePanel();
+		await settle();
+		selectTab(container, SECOND_SESSION);
+		await settle();
+		selectTab(container, SESSION);
+		await settle();
+		refuse();
+		await settle();
+		expect(container.textContent).toContain("Current answer");
+		expect(container.textContent).not.toContain("Previous tab failed");
+		expect(container.textContent).not.toContain("Connecting conversation…");
+	});
+
+	// Catches: clicking an already attached saved tab loads it again and duplicates history.
+	it("adopts the existing attachment of a saved tab without replaying it", async () => {
+		restoreTabs();
+		client.connect.mockImplementation(async () => {
+			const opened = snapshot({ attachments: [attachment({ sessionId: SECOND_SESSION })] });
+			acpStore.applySnapshot(opened);
+			acpStore.markStreaming(CONNECTION);
+			acpTranscript.restore(SECOND_SESSION, [{ id: "live-answer", kind: "agent", text: "Existing live answer" }]);
+			return opened;
+		});
+		const { container } = renderIdlePanel();
+		await settle();
+		selectTab(container, SECOND_SESSION);
+		await settle();
+		selectTab(container, SECOND_SESSION);
+		await settle();
+		expect(container.textContent).toContain("Existing live answer");
+		expect(container.textContent).toContain("Model: Opus");
+		expect(client.loadSession).not.toHaveBeenCalled();
+	});
+
+	// Catches: a missing load capability silently replaces saved conversations with a new one.
+	it("explains an unsupported saved-tab load without creating a replacement", async () => {
+		restoreTabs();
+		client.connect.mockImplementation(async () => {
+			const opened = snapshot();
+			if (opened.capabilities) opened.capabilities.load = false;
+			acpStore.applySnapshot(opened);
+			return opened;
+		});
+		const { container } = renderIdlePanel();
+		await settle();
+		selectTab(container, SECOND_SESSION);
+		await settle();
+		expect(container.textContent).toContain("This agent cannot load saved conversations.");
+		expect(container.querySelectorAll("[data-chat-session]")).toHaveLength(2);
+		expect(client.newSession).not.toHaveBeenCalled();
+		expect(client.loadSession).not.toHaveBeenCalled();
+	});
+
+	// Catches: restored tab labels use Chat N or an opaque UUID instead of conversation content.
+	it("names saved tabs and picker entries from titles or their first prompt", async () => {
+		restoreTabs();
+		client.listSessions.mockResolvedValue({
+			sessions: [
+				{ sessionId: SESSION, cwd: CHAT_ROOT, title: SESSION },
+				{ sessionId: SECOND_SESSION, cwd: CHAT_ROOT, title: "Release discussion" },
+			],
+		});
+		acpTranscript.restore(SESSION, [{ id: "first-question", kind: "user", text: "Review the saved tabs" }]);
+		const { container } = renderIdlePanel();
+		await settle();
+		selectTab(container, SECOND_SESSION);
+		await settle();
+		expect([...container.querySelectorAll("[data-chat-session]")].map((tab) => tab.textContent)).toEqual([
+			"Review the saved tabs",
+			"Release discussion",
+		]);
+		const picker = container.querySelector('select[title="Conversation"]') as HTMLSelectElement;
+		expect([...picker.options].map((option) => option.textContent)).toEqual([
+			"Review the saved tabs",
+			"Release discussion",
+		]);
+		feed(
+			{ kind: "sessionUpdate", update: { sessionUpdate: "session_info_update", title: "Updated release discussion" } },
+			SECOND_SESSION,
+		);
+		expect(container.querySelector(`[data-chat-session="${SECOND_SESSION}"]`)?.textContent).toBe(
+			"Updated release discussion",
+		);
+	});
+
+	// Catches: an attached tab with late config options loses the entire model/mode row.
+	it.each<{ configOptions: AcpSessionConfigOption[] }>([
+		{ configOptions: [] },
+		{
+			configOptions: [
+				{
+					id: "effort",
+					name: "Effort",
+					type: "select",
+					currentValue: "high",
+					options: [{ value: "high", name: "High" }],
+				},
+			],
+		},
+	])("keeps model and mode pending until options arrive, starting with $configOptions", async ({ configOptions }) => {
+		const { container } = await renderPanel();
+		acpStore.applySnapshot(snapshot({ attachments: [attachment({ configOptions })] }));
+		expect(container.textContent).toContain("Model: pending · Mode: pending");
+		acpStore.applySnapshot(snapshot({ attachments: [attachment()] }));
+		expect(container.textContent).toContain("Model: Opus");
+		expect(container.textContent).not.toContain("Model: pending");
+		expect(container.querySelector('[aria-label="Session settings"]')).not.toBeNull();
+	});
+
+	// Catches: a late custom-launch failure replaces another tab's successful connection state.
+	it("ignores a previous custom tab failure after the default tab attaches", async () => {
+		restoreTabs();
+		const launch = {
+			executable: "/opt/observer/ego",
+			profile: "coordinator",
+			workspace: "/srv/observer",
+			peerId: "observer-peer",
+		};
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "load_config") return { ai_chat_launches: { [SESSION]: launch } };
+			if (command === "acp_workspace_root") return CHAT_ROOT;
+			return undefined;
+		});
+		let refuse!: () => void;
+		client.openConversation.mockImplementation(
+			() =>
+				new Promise((_resolve, reject) => {
+					refuse = () => reject(new Error("Previous custom tab failed"));
+				}),
+		);
+		client.loadSession.mockImplementation(async (_id, session) => {
+			acpStore.applySnapshot(snapshot({ attachments: [attachment({ sessionId: session })] }));
+		});
+		const { container } = renderIdlePanel();
+		await settle();
+		selectTab(container, SESSION);
+		await settle();
+		selectTab(container, SECOND_SESSION);
+		await settle();
+		refuse();
+		await settle();
+		expect(container.textContent).toContain("Model: Opus");
+		expect(container.textContent).not.toContain("Previous custom tab failed");
+	});
+
+	// Catches: switching from a saved custom tab to a saved default tab never starts its owner.
+	it("attaches saved custom and default tabs to their own connections", async () => {
+		restoreTabs();
+		const launch = {
+			executable: "/opt/observer/ego",
+			profile: "coordinator",
+			workspace: "/srv/observer",
+			peerId: "observer-peer",
+		};
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "load_config") return { ai_chat_launches: { [SESSION]: launch } };
+			if (command === "acp_workspace_root") return CHAT_ROOT;
+			return undefined;
+		});
+		const customConnection = "01932d5e-0000-7000-8000-0000000000c2";
+		client.openConversation.mockImplementation(async () => {
+			const connection = snapshot({ connectionId: customConnection, attachments: [attachment()] });
+			acpStore.applySnapshot(connection);
+			acpStore.markStreaming(customConnection);
+			return { connection, sessionId: SESSION, launch };
+		});
+		client.loadSession.mockImplementation(async (_id, session) => {
+			acpStore.applySnapshot(snapshot({ attachments: [attachment({ sessionId: session })] }));
+		});
+		const { container } = renderIdlePanel();
+		await settle();
+		selectTab(container, SESSION);
+		await settle();
+		expect(client.openConversation).toHaveBeenCalledWith({ sessionId: SESSION });
+		expect(client.connect).not.toHaveBeenCalled();
+		selectTab(container, SECOND_SESSION);
+		await settle();
+		await typeAndSend(container, "Continue the default conversation");
+		expect(client.connect).toHaveBeenCalledWith(CHAT_ROOT);
+		expect(client.loadSession).toHaveBeenCalledWith(CONNECTION, SECOND_SESSION, CHAT_ROOT);
+		expect(client.prompt).toHaveBeenCalledWith(
+			CONNECTION,
+			SECOND_SESSION,
+			"Continue the default conversation",
+			[],
+			ROOT,
+		);
+		expect(client.newSession).not.toHaveBeenCalled();
+	});
+
 	it("keeps both tabs and transcripts when the panel is hidden and shown", async () => {
 		client.newSession.mockResolvedValueOnce(SESSION).mockResolvedValueOnce(SECOND_SESSION);
 		const [visible, setVisible] = createSignal(true);

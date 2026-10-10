@@ -66,13 +66,15 @@ reach. The header names that repository. Switching repository keeps the same
 tabs and the same conversation, and starts or loads nothing.
 If desktop and mobile open the chat together, they attach to the same running ego.
 
-ego starts when you send the first message or click **+**; opening the panel
+ego starts when you send the first message, click **+**, or select a saved tab; opening the panel
 starts nothing. There is one ego for the app: a reloaded window or the phone
 gets the one already running, and quitting TUICommander ends it. **New** in the
 control bar starts another conversation; the picker beside it lists previous
 conversations by title, newest first. Selecting one loads its history. The open
 tabs and the selected tab are restored after restarting TUICommander, and their
-history is replayed when ego starts.
+history is replayed when ego starts. Selecting a saved tab connects and loads it
+without sending a message. The panel shows **Connecting conversation…** while
+it attaches, or the failure reason and **Retry** if it cannot open the conversation.
 
 The panel has chat tabs for parallel conversations.
 Click **+** or press `Cmd+T` (`Ctrl+T` on Windows/Linux) while the panel has
@@ -84,8 +86,10 @@ unsent composer draft. Open tabs and the selected tab return when the panel is
 hidden and shown or detached into its own window; the detached view replays
 their histories from ego.
 
-An untitled conversation appears with its first prompt or latest activity time;
-its session ID is available in the option tooltip.
+Tabs and the picker use the conversation title, its first prompt, or its latest
+activity time. A conversation without these details shows **Untitled conversation**;
+its session ID is available in the tooltip. The model/mode row remains visible
+with **pending** values until the selected session publishes its options.
 
 When ego updates the session title, the panel header and conversation picker
 show the new title. During a turn, the footer shows context-window use as a
