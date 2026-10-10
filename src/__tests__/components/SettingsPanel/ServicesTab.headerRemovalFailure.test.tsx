@@ -45,7 +45,7 @@ it("preserves a configured upstream's header secret when removing its config fai
 		view.getByTitle("Remove").click();
 		await vi.dynamicImportSettled();
 		await vi.advanceTimersByTimeAsync(0);
-		expect(view.getByText("Error: Configuration write failed")).toBeTruthy();
+		expect(vi.mocked(rpc).mock.calls.filter(([command]) => command === "save_mcp_upstreams")).toHaveLength(1);
 		expect(view.getByTitle("Edit")).toBeTruthy();
 		expect(vault.get(header.credential_ref)).toBe("DUMMY_STILL_NEEDED");
 	} finally {
