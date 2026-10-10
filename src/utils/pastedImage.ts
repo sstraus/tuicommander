@@ -25,11 +25,18 @@ function isImageFileName(e: ClipboardEvent): boolean {
 	return IMAGE_FILE_NAME.test(e.clipboardData?.getData?.("text/plain").trim() ?? "");
 }
 
+/** Text wins over incidental images; Finder's image filename is not substantive text. */
+export function isImagePaste(e: ClipboardEvent): boolean {
+	const items = e.clipboardData?.items;
+	if (!items) return false;
+	if (Array.from(items).some((item) => item.type === "text/plain") && !isImageFileName(e)) return false;
+	return Array.from(items).some((item) => item.type.startsWith("image/"));
+}
+
 /** Shared clipboard precedence for file-backed and ACP image attachments. */
 export function pastedImageFiles(e: ClipboardEvent): File[] {
 	const items = e.clipboardData?.items;
-	if (!items) return [];
-	if (Array.from(items).some((item) => item.type === "text/plain") && !isImageFileName(e)) return [];
+	if (!items || !isImagePaste(e)) return [];
 	return Array.from(items)
 		.filter((item) => IMAGE_EXTENSIONS.has(item.type))
 		.map((item) => item.getAsFile())
