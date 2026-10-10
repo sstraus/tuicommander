@@ -1309,6 +1309,18 @@ of their creating agent. Older definitions omit it. Shared definition actions
 ignore client-supplied creator provenance on creation and preserve the original
 value on update. Pause and resume change only `enabled` under the definition lock.
 
+### Automation transport ownership
+
+HTTP `/automations/action` and IPC `automation_action` use the instance-scoped
+`automations.json` and `automation_runs.sqlite3` through one Rust API. Per-id
+create/update/delete and enabled-only updates use the existing definition lock;
+run snapshots remain immutable across later edits and definition deletion.
+A reader can inspect history without owning execution. Run Now requires this
+process's already-acquired runtime owner and never acquires a second owner or
+forwards execution. The global concurrency default remains two. Summaries use
+elapsed UTC `24h`/`7d` windows; previews and next-run values use stored IANA zones
+and the durable scheduled cursor. No new configuration setting is required.
+
 ### Automation completion and deadlines
 
 Runs persist their reservation deadline and dispatch start in the ledger. The

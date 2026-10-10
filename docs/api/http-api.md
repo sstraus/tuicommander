@@ -1498,9 +1498,11 @@ DELETE /config/remote-connections/{id}/connect
 ```
 
 Live state, not configuration: `GET .../status` answers with one object per
-connection — `{ id, status, base_url?, token?, protocol_version?, build?, out_of_date?, live_sessions?, update_notice?, update_in_progress?, error?, step? }`,
+connection — `{ id, status, base_url?, token?, protocol_version?, build?, out_of_date?, live_sessions?, update_notice?, update_in_progress?, error?, retry_after_secs?, step? }`,
 where `status` is `disconnected | connecting | deploying | connected |
-unauthenticated | error`. `step` is present while deploying. `base_url`, `token`
+unauthenticated | error`. `error` is shown only for settled failures.
+`retry_after_secs` is the rounded-up delay of a scheduled retry, present only
+while waiting after a failure; it is omitted when a new attempt starts. `step` is present while deploying. `base_url`, `token`
 and `protocol_version` are present **only** while
 connected; `update_in_progress` is present as `true` while a manual or unattended update
 owns the connection. The route and token fields answer "where do I send a call", and a
@@ -2923,6 +2925,46 @@ Raw, text and log `/sessions/{id}/stream` WebSockets carry OSC titles as
 presentation events, independent of `activity` pulses and semantic lifecycle.
 Grid clients continue to receive binary rendering frames; terminal metadata
 consumers use the separate session event subscription.
+
+### Automations
+
+`POST /automations/action` accepts `{ "input": { "action": "list" } }`.
+Unknown `/automations/*` endpoints return HTTP 404 with a JSON `error`, rather
+than the SPA frontend shell.
+It is available on desktop, browser/PWA and headless hosts. The addressed backend
+owns the definitions, history and execution; this route never forwards Run Now
+to a different machine. It shares its input parser and Rust implementation with
+`automation_action` IPC. Success is the JSON value below (no reply wrapper).
+Application errors use HTTP 500 with `{ "error": "message" }`; IPC rejects with
+the identical message. Malformed HTTP JSON/envelopes use Axum extraction errors.
+
+| Action | Input fields besides `action` | Success |
+|---|---|---|
+| `list` | None | Array of `{definition,next_run_ms,last_status}` |
+| `get` | `id` | Stored definition |
+| `create` | `definition` | Stored definition, including resolved timezone |
+| `update` | `definition`, optional `id`; or `id,enabled` | Stored definition |
+| `pause`, `resume` | `id` | `{ok:true}`; atomic enabled-only edit |
+| `delete` | `id` | `{ok:true}`; history retained |
+| `run_now` | `id` | Full persisted run, including status and reason |
+| `list_runs` | Optional `id`, `limit` (default 50, 1–100), `offset` (default 0) | Newest-first run snapshots, including deleted definitions |
+| `summary` | `window`: `24h` or `7d` | `{total,by_status}` over elapsed UTC windows |
+| `preview` | `cron`, optional/null `timezone`, `count` (default 4, 1–20) | `{cron,timezone,occurrences}` with UTC ISO timestamps |
+| `preview_definition` | `definition`, `count` (default 4, 1–20) | Preview plus `once_local,completed`; respects the durable cursor |
+| `preset` | `preset`: hourly/daily/weekdays/weekly cadence | `{cron}` |
+
+Definitions use the snake_case storage model, including optional `once_local`.
+Update replaces only the named definition and rejects a changed id; enabled-only
+update preserves concurrent edits. Supplying both `definition` and `enabled` is
+an error. Create ignores client creator provenance; update preserves it.
+Presets use `{kind,minute}`, adding `hour` for daily/weekdays and `hour,weekday`
+for weekly (Sunday 0 or 7). Blank create/definition-preview zones and omitted
+cron-preview zones resolve to the backend's local IANA zone.
+
+Paused or consumed Once definitions have a null `next_run_ms`. List computes
+future cron occurrences but phase 1 execution remains Once-only. Run Now requires
+the runtime owner, allows paused Once definitions, bypasses prechecks and records
+overlap/capacity refusals without queueing. No execution retry is introduced.
 
 Automation runtime transitions are streamed on `/events` as
 `automation-run-changed`, with payload `{ "run": <AutomationRun> }`, identical

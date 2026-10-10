@@ -147,3 +147,11 @@ A recognized retry has `accepted: true` even after the queue drained; `typed`
 reports no new typing on that retry.
 
 Telegram setup maps `telegram_settings`/`telegram_setup` to authenticated GET/PUT `/config/telegram`, with identical action payloads across IPC and HTTP. Mobile Settings mounts the same Telegram component.
+
+### Automations command
+
+`automation_action({input})` maps to `POST /automations/action` with `{input}`.
+The action and all snake_case model fields pass through unchanged. The backend
+returns the raw action result, including persisted definitions on save and full
+runs on Run Now. Explicitly address the desired backend; no execution fallback
+exists. The route is shared by desktop and headless hosts.

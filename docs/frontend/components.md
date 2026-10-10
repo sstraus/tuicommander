@@ -116,20 +116,25 @@ its window renders, so its renderer stays outside the initial desktop graph.
 `SessionControls` lists ego's durable `session/list` results by `updatedAt` and
 loads a picked session through ACP. `useAcpChat` restores the saved root-to-session
 binding from app config after a fresh document opens.
-The control bar summarizes the current model and mode. Its session settings
+The control bar summarizes the current model and mode, with pending values while
+the selected attachment has not published options. Its session settings
 button opens a shared-style modal with one labeled select and description per
 ACP select config option. Choices and displayed values come from the selected
 session's latest attachment snapshot. Flat choices use ACP `value` fields;
 grouped choices use `group` and nested `options`. Rejected changes show an error
 in the modal.
 The panel draws open chat tabs from `aiChatTabs`; each tab selects one ACP
-session on the repository's connection. A detached window reads the saved tab
-list and replays each open conversation. `aiChatDraft` keeps unsent text and
+session on the shared default connection or its saved custom-launch connection.
+Selecting a restored tab connects and attaches or replays it without a prompt;
+the panel shows connecting status, or the reason and Retry after a refusal.
+Concurrent selections share a pending default connection and only the latest
+selection changes focus. A detached window reads the saved tab list.
+`aiChatDraft` keeps unsent text and
 staged images per tab while the document is mounted.
 ACP session title updates rename the panel header and picker entry. The usage
 footer shows context-window occupancy and the reported cumulative cost.
-Untitled sessions use their first prompt or latest activity time in the picker,
-with the session ID in the option tooltip. Small single-choice elicitation
+Untitled sessions use their first prompt or latest activity time in tabs and the picker,
+with the session ID in the tooltip. Small single-choice elicitation
 forms use direct answer buttons and Cancel. Prompt failures and empty completed
 turns appear in the transcript.
 `Transcript` interprets complete ACP answer text as it streams: it hides the

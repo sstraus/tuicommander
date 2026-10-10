@@ -927,6 +927,9 @@ one configured ego binary and speaks ACP to it, per
 - Multiple chat tabs keep separate ACP sessions, transcripts and composer drafts
   within one panel. Open tabs and the selected tab survive hide/show and detach;
   closing a tab leaves its durable ego conversation available in the picker.
+  Selecting a saved tab attaches or replays it without sending a message, with
+  connecting status or a failure reason and Retry. Tabs use conversation titles
+  or prompts; model/mode controls show pending values until options arrive.
   The focused panel uses `Cmd/Ctrl+T` for a new tab (`Cmd/Ctrl+Alt+T` in browser
   mode) and `Cmd/Ctrl+W` to close one (`Cmd/Ctrl+Alt+W` in browser mode)
 - Transcript text and tool output are selectable. User and assistant messages,
@@ -1301,7 +1304,7 @@ The `tuic-dictation` Rust crate implements audio, transcription and speech; the 
 - Sources and licensing: the graphs come from a public Hugging Face export of Kyutai's Pocket TTS weights; the voices come from Kyutai's ungated repository without the voice-cloning weights. Both are CC-BY-4.0, attributed in `THIRD_PARTY_NOTICES.md`.
 
 ### 9.8 Spoken Replies
-- **Spoken replies** defaults on and can be disabled from Voice Settings, the mobile conversation header or mobile Settings. Off keeps dictation armed, cancels the speech queue, and enforces text replies server-side. Edge 401/403 rejections start a five-minute cool-down across conversations.
+- **Spoken replies** defaults on and can be disabled from Voice Settings or mobile Settings. Off keeps dictation armed, cancels the speech queue, and enforces text replies server-side. Edge 401/403 rejections start a five-minute cool-down across conversations.
 - Arming hands-free also opens a **reply queue** for that conversation, so the model can answer out loud. Arming without a working voice still works — that is ordinary dictation — and the reason is reported rather than discovered on the first reply.
 - **The user can talk over a reply.** Speaking stops the moment the capture loop hears them, and their words land in the new turn rather than behind the sentence they interrupted. Echo cancellation runs first, so a reply never interrupts itself on its own voice coming back through the microphone.
 - **Accepting a reply is not the user hearing it.** Every reply gets an id and one of six fates: `queued`, `rendering`, `speaking`, `finished`, `interrupted` or `failed`. Only `finished` means somebody heard it to the end, and only the audio device going quiet can produce it.
@@ -2548,6 +2551,8 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 
 ---
 
+Remote host cards name DNS, refused connections, timeout, TLS, and authentication failures. A 403 Untrusted Host explains that the daemon rejected the host name. When a short name cannot resolve, a matching running Tailscale peer supplies its advertised full DNS name. Failed connections show the automatic retry delay; active attempts clear the previous failure.
+
 ## 25. Generators
 
 Secure value generators accessible from the command palette (`open-generators` action).
@@ -2743,6 +2748,15 @@ Machine-local scheduled-run editor with search, backend cadence/zone preview,
 prechecks, workspace and duration controls, pause/resume, Run now, confirmed
 delete and recent status history. Open **Automations** from the command palette.
 Step 8 API integration is required before use; see [Automations](user-guide/automations.md).
+
+### Automation transport availability
+
+Automations definition management, pause/resume, schedule previews/presets,
+retained run history and UTC aggregates are available through matching Tauri IPC
+and HTTP on desktop/headless hosts. Browser/PWA uses the same command mapping.
+Run Now uses the addressed machine's runtime owner and supports paused Once
+schedules; recurring execution remains outside phase 1. Full run replies retain
+output, workspace and task/session evidence.
 
 Automation execution now reconciles task, PTY and progress completion evidence,
 retains bounded final output, and expires active runs at their persisted deadline.

@@ -2138,3 +2138,14 @@ readable. These actions manage definitions; they do not launch runs.
 The shared entry point is `automations::actions::execute(store, action,
 creator_session)`, using `DefinitionAction`. Plan Step 8 owns HTTP/IPC/CLI wiring
 and the Route Parity Gate. The MCP endpoint is `POST /mcp`.
+
+### Automation HTTP/IPC adapter
+
+The shared desktop/headless router exposes `POST /automations/action` with
+`{input:{action:...}}`. `automations::api::execute` is also the Tauri command
+implementation; stores, schedule rules, aggregates and execution ownership stay
+in Rust. `COMMAND_TABLE.automation_action` maps the same input without renaming
+fields. Route snapshots and registered-route PATCH probes cover this route.
+The existing MCP `automations` tool retains its definition-only contract and
+shares `DefinitionStore` actions with the API; this change does not add MCP run
+controls. HTTP application error messages match IPC rejections.
