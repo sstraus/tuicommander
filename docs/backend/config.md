@@ -499,6 +499,8 @@ Validation and the runtime registry diff use the exact merged pre/post values
 from the locked transaction. The lock is released before asynchronous reconnect
 work starts.
 
+Header metadata uses an explicit empty array when no headers remain, so removing the last header stays a valid config delta. Authenticated HTTP upstreams cannot change origin in place. The locked save compares the latest prior entries by ID or credential-owning name, before persistence and activation, even if the request clears auth/header metadata. Use a separate upstream name for another provider. Same-origin path edits remain allowed.
+
 **Commands:** `load_mcp_upstreams()`, `save_mcp_upstreams(base, config)`
 
 ### Notification Config (`notifications.json`)
@@ -1298,3 +1300,19 @@ Automation definitions may contain `created_by_session`, the host-issued identit
 of their creating agent. Older definitions omit it. Shared definition actions
 ignore client-supplied creator provenance on creation and preserve the original
 value on update. Pause and resume change only `enabled` under the definition lock.
+
+### Automation completion and deadlines
+
+Runs persist their reservation deadline and dispatch start in the ledger. The
+30-second runtime wake and PTY/progress events reconcile task, session and durable
+progress records, including after broadcast lag. Idle alone leaves a run active;
+reported completion or a known zero process exit confirms success. Failed tasks
+and nonzero exits fail the run; missing or unverifiable completion becomes
+`unknown`. A task completion with no known exit code does not prove success.
+
+`needs_you` stays open and counts toward overlap, capacity and maximum duration.
+The deadline includes dispatch and precheck time. Expiry stops only the session
+bound to that run. Final output is bounded to 256 KiB; final states reject late
+or duplicate evidence. Boot preserves final history and interrupts open runs
+without retry. `automation-run-changed` is dual-emitted to desktop and SSE with
+an identical `{ "run": ... }` payload, including failure and needs-you transitions.

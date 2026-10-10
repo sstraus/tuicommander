@@ -1,5 +1,8 @@
 blank_issues_enabled: true
 contact_links:
+  - name: Questions and ideas
+    url: https://discord.gg/4DQ7Ah6hSh
+    about: Discuss questions and ideas in TUICommander & Co on Discord. Reproducible bugs belong in GitHub issues.
   - name: Discussions
     url: https://github.com/sstraus/tuicommander/discussions
     about: Ask questions, share ideas, or show what you've built

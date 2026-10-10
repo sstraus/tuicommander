@@ -1578,6 +1578,12 @@ Content-Type: application/json
 
 The tab's verdict on a `session action=suspend` request announced by the `session-suspend-requested` event. The waiting MCP call returns it. Unknown or already-answered ids are ignored.
 
+### MCP Upstream Credentials
+
+`POST /mcp/upstreams/credential` accepts `{name, token, url, header?}`. Without `header`, it saves the existing Bearer credential. With `header: {name, credential_ref}`, it saves a secret header value in the upstream-scoped OS credential vault. `credential_ref` must be a UUID. `url` is required and must be HTTP or HTTPS. The vault entry binds the secret to that URL origin; requests to a different origin fail before sending. Old unbound credentials require re-saving or authorization. Names and values are validated without echoing values in errors.
+
+`DELETE /mcp/upstreams/credential` accepts `{name, header?}` and removes that credential. Both return JSON `null` on success, matching IPC unit results. `POST /mcp/upstreams/reconnect` also returns JSON `null` on success. Config entries carry only `headers: [{name, credential_ref}]`; the API never returns header values.
+
 ### MCP Upstream Status
 
 ```
@@ -1597,7 +1603,7 @@ server from `config` explicitly deletes that ID; removing an optional `auth`
 field explicitly clears it. Fields and servers unchanged from `base` preserve
 concurrent updates, including OAuth/DCR auth written by another process. After
 the atomic write, the live registry hot-reloads the exact locked pre/post
-configurations. Returns `200` with an empty body, `400` for invalid config or
+configurations. Returns `200` with JSON `null`, `400` for invalid config or
 duplicate IDs, and `500` for persistence or conflicting-add failures.
 
 ```
@@ -2839,7 +2845,7 @@ OSC 133 event `line` and hook-generated `UserInput.line` are eviction-stable all
 
 ### Telegram Settings
 
-`GET /config/telegram` mirrors `telegram_settings`. `PUT /config/telegram` accepts `{ "change": { "action": "..." } }` and mirrors `telegram_setup`, including token replacement/check, one-use pairing, typed chat IDs and enable/target updates. Both routes require local access or the existing authenticated remote session. The read response contains only `token_set`, never the token. Chat IDs are decimal strings.
+`GET /config/telegram` mirrors `telegram_settings`. `PUT /config/telegram` accepts `{ "change": { "action": "..." } }` and mirrors `telegram_setup`, including token replacement/check, one-use pairing, typed chat IDs and enable/target updates. Both routes require local access or the existing authenticated remote session. The read response contains only `token_set`, never the token. Chat IDs are decimal strings. `polling_owner` is `this_app`, `tuic_remote`, `desktop`, `another_process` (an older owner), or null when disconnected; the name is relative to the process serving the snapshot.
 
 Workflow run snapshots add `eventContractVersion` and default-empty `graphExecutions`. Graph events use the existing paged history shape. Internal graph transition commands are rejected by public `workflow_run_action`; no autonomous-start action is added in slice A. Pre-contract runs can be inspected and cancelled but cannot resume.
 
@@ -2919,3 +2925,9 @@ Raw, text and log `/sessions/{id}/stream` WebSockets carry OSC titles as
 presentation events, independent of `activity` pulses and semantic lifecycle.
 Grid clients continue to receive binary rendering frames; terminal metadata
 consumers use the separate session event subscription.
+
+Automation runtime transitions are streamed on `/events` as
+`automation-run-changed`, with payload `{ "run": <AutomationRun> }`, identical
+to the desktop event. This includes failure and needs-you changes. Final runs
+retain bounded output; missed live events are reconciled from host state rather
+than replaying or restarting execution.

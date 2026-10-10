@@ -202,7 +202,7 @@ cell's full text span, since native search points have no subcell index.
 | IME composition | OK | `compositionstart/compositionend`; hidden input positioned at cursor coords via `syncImePosition()` for East Asian IME candidate windows |
 | Bracketed paste | OK | `\x1b[200~...\x1b[201~` |
 | MCP atomic agent submission | OK | Backend-only `session action=submit`; the shared PTY writer lock spans payload, raw-mode gap, and Enter, so CanvasTerminal input cannot splice the submitted command. No renderer state or new frontend transport exists. |
-| Image paste detection | OK | Checks `items[i].type.startsWith("image/")` |
+| Image paste detection | OK | Shared `isImagePaste()` precedence: substantive `text/plain` wins over incidental images; screenshot-only and Finder image filename pastes send Ctrl+V |
 | Resume banner keyboard | OK | Space/Enter/Escape/printable |
 | Touch tap/swipe/pinch (mobile) | OK | `installTouchHandlers` focuses the shared keyboard input; primary compatibility mouse presses cancel the browser default canvas focus action; native keyboard animation still needs iPad verification |
 

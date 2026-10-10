@@ -13,9 +13,35 @@ interface TelegramSettings {
 	registered_agent_name: string | null;
 	chats: string[];
 	connected: boolean;
+	polling_owner: "this_app" | "tuic_remote" | "desktop" | "another_process" | null;
 	last_error: string | null;
 	last_message_time: number | null;
 }
+function connectionLabel(data: TelegramSettings): string {
+	if (!data.enabled) return t("telegram.disabled", "Disabled — enable Telegram to start polling.");
+	if (!data.token_set) return t("telegram.missingToken", "No bot token — save and check a token first.");
+	if (data.last_error)
+		return t(
+			"telegram.connectionError",
+			"Polling stopped or retrying. Resolve the error below, then disable and enable Telegram.",
+		);
+	if (!data.connected)
+		return t(
+			"telegram.disconnected",
+			"No poller connected. Check the bot token and enable Telegram in this app or tuic-remote.",
+		);
+	switch (data.polling_owner) {
+		case "this_app":
+			return t("telegram.connectedHere", "Connected (this app)");
+		case "tuic_remote":
+			return t("telegram.connectedRemote", "Connected (tuic-remote)");
+		case "desktop":
+			return t("telegram.connectedDesktop", "Connected (desktop app)");
+		default:
+			return t("telegram.connectedOther", "Connected (another process)");
+	}
+}
+
 export const TelegramTab: Component = () => {
 	const [settings, setSettings] = createSignal<TelegramSettings>();
 	const [token, setToken] = createSignal("");
@@ -61,7 +87,10 @@ export const TelegramTab: Component = () => {
 		<div class={`${s.section} ${telegram.panel}`}>
 			<h3>Telegram</h3>
 			<p class={s.hint}>
-				Configure this machine. Polling runs only in tuic-remote; desktop Settings never starts another bot owner.
+				{t(
+					"telegram.pollingHint",
+					"This app and tuic-remote share one polling owner on this machine. The other process stays on standby.",
+				)}
 			</p>
 			<Show when={settings()}>
 				{(data) => (
@@ -123,21 +152,35 @@ export const TelegramTab: Component = () => {
 							</For>
 							<button
 								class={s.testBtn}
-								disabled={busy() || !data().enabled}
+								disabled={busy() || !data().enabled || !data().connected}
 								onClick={() => void change({ action: "pair" })}
 							>
 								Link chat
 							</button>
-							<Show when={code()}>
+							<Show when={code() && data().enabled && data().connected}>
 								<p class={s.hint}>
 									Send {code()} to the bot. One use, valid for 10 minutes. A bare /start does not authorize a chat.
 								</p>
 							</Show>
+							<Show when={!data().connected}>
+								<p class={s.hint}>
+									{t(
+										"telegram.pairingUnavailable",
+										"Connect a poller before linking a chat. Check the connection status below.",
+									)}
+								</p>
+							</Show>
 						</div>
-						<p aria-live="polite">
+						<p class={s.hint} aria-live="polite">
 							{data().registered_agent_name
 								? `registered agent: ${data().registered_agent_name}`
-								: "nessun agent registrato"}
+								: t("telegram.noAgent", "No agent registered")}
+						</p>
+						<p class={s.hint}>
+							{t(
+								"telegram.registrationHint",
+								"Ask an agent in the polling app to call the Telegram MCP tool with action register. Registration lasts until the agent or polling app exits.",
+							)}
 						</p>
 						<SettingToggle
 							label={t("telegram.enabled", "Enable Telegram")}
@@ -146,8 +189,8 @@ export const TelegramTab: Component = () => {
 								if (!busy()) void change({ action: "configure", enabled });
 							}}
 						/>
-						<p role="status">
-							{data().connected ? "Connected" : data().enabled ? "Waiting for daemon connection" : "Disabled"}
+						<p role="status" class={s.hint}>
+							{connectionLabel(data())}
 						</p>
 						<Show when={data().last_error}>
 							<p class={s.warning}>{data().last_error}</p>

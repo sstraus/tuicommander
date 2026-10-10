@@ -13,7 +13,7 @@ Published story workflows can start in Plans and Stories through the owning daem
 
 Desktop AI Chat uses the terminal composer’s pin and blue play buttons. The pin highlights a parked draft; tooltips identify Park, Restore, Swap, Send and Queue.
 
-AI Chat image paste discovers capabilities on first use and shares clipboard precedence with Ideas and terminal Compose: Finder image filenames allow attachments, while substantive text takes priority.
+AI Chat image paste discovers capabilities on first use and shares clipboard precedence with Ideas, terminal Compose, and terminal input: Finder image filenames allow attachments, while substantive text takes priority.
 
 ## ego Perimeter Settings
 
@@ -491,7 +491,7 @@ Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens t
 - Data persisted to Rust config backend
 
 ### 3.7 Help Panel (`Cmd+?`)
-- Shows app info and links (About, GitHub, docs)
+- Shows app info and links (About, GitHub, Discord Community, docs)
 - Keyboard shortcuts are now in the Settings > Keyboard Shortcuts page (auto-generated from `actionRegistry.ts`)
 
 ### 3.8 Git Panel (`Cmd+Shift+D`)
@@ -624,7 +624,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - **Reload:** when a web or HTML-preview tab is active, `Cmd/Ctrl+R` reloads its content instead of opening the Run Command dialog
 - File content auto-refreshes on repository revision bumps (git change detection)
 - Uses Tauri's `convertFileSrc()` asset protocol for binary files, `read_external_file` IPC for text content
-- CSP allows `asset:` and `http://asset.localhost` in `frame-src` and `media-src`
+- The permissive `default-src` CSP allows `asset:` and `http://asset.localhost` for frames and media; no per-directive CSP overrides it
 
 ### 3.16 Focus Mode (`Cmd+Alt+Enter`)
 - Hides sidebar, tab bar, and all side panels to maximize the active tab's content area
@@ -1514,7 +1514,7 @@ Three pages under **Integrations**. They were one "Services & MCP" tab; each pag
 - **MCP** — HTTP API server: always active on IPC listener (Unix domain socket on macOS/Linux, named pipe `\\.\pipe\tuicommander-mcp` on Windows). TCP port only for remote access
 - **MCP** — MCP connection info: bridge sidecar auto-installs configs for supported agents (Claude Code, Cursor, etc.)
 - **MCP** — TUIC native tool toggles: enable/disable individual MCP tools (`session`, `agent`, `task`, `remote`, `repo`, `ui`, `plugin_dev_guide`, `config`, `debug`) to restrict what AI agents can access
-- **MCP** — Upstream MCP Servers: add/edit/remove upstream MCP servers (HTTP or stdio with optional `cwd`), per-upstream enable/disable, reconnect, credential storage via OS keyring, live status dots, tool count and metrics. Saved upstreams auto-connect on boot. The MCP popup's "Manage in Settings" opens this page at this section
+- **MCP** — Upstream MCP Servers: add/edit/remove upstream MCP servers (HTTP or stdio with optional `cwd`), per-upstream enable/disable, reconnect, Bearer/OAuth and multiple masked secret header rows backed by the OS credential vault, origin-bound credentials that fail closed on provider changes or unbound old entries, same-origin-only credential redirects, live status dots, tool count and metrics. Saved upstreams auto-connect on boot. The MCP popup's "Manage in Settings" opens this page at this section
 - MCP Per-Repo Scoping: each repo can define which upstream MCP servers are relevant via an allowlist in repo settings (3-layer: per-repo > `.tuic.json` > defaults). Null/empty allowlist = all servers. Quick toggle via **Cmd+Shift+M** popup
 - **Remote Access** — port, username, password (bcrypt hash), URL display, QR code, token duration, IPv6 dual-stack, Tailscale HTTPS, cloud relay
 - **Remote Machines** — `tuic-remote` connections over SSH or a direct URL; the page lists SSH hosts discovered from `~/.ssh/config` and `known_hosts` (hashed entries are only counted), shows the loaded agent keys, probes hosts on demand and prefills the Add form from a click
@@ -1684,6 +1684,7 @@ Buffer eviction is reported; it does not create another output store.
 
 ### 14.9 Tailscale HTTPS
 - Auto-detects Tailscale daemon and FQDN via `tailscale status --json` (cross-platform)
+- Headless daemon refreshes Tailscale Host trust every 30 seconds, recovering late startup and removing stale names after rename or stop
 - Provisions TLS certificates from Tailscale Local API (Unix socket on macOS/Linux, CLI on Windows)
 - HTTP+HTTPS dual-protocol on same port via `axum-server-dual-protocol`
 - Graceful fallback: HTTP-only when Tailscale unavailable or HTTPS not enabled
@@ -1902,6 +1903,7 @@ shortcuts and the Global Hotkey. Keys macOS itself claims before the process
 - HTTP API: outbound requests scoped to manifest-declared URL patterns (SSRF prevention)
 - Credential API: cross-platform credential reading (macOS Keychain, Linux/Windows JSON file) with user consent
 - Panel API: rich HTML panels in sandboxed iframes (`sandbox="allow-scripts allow-same-origin"`) with structured message bridge (`onMessage`/`send`), transferable buffer ownership, and automatic CSS theme variable injection
+- URL tabs support external HTTPS and localhost HTTP in sandboxed frames through the permissive `default-src` CSP. Sites can still refuse embedding through their own frame policy.
 - Hidden plugin and URL tab iframes unload and reload when shown again, preventing background pages from blocking terminal input on the shared WebContent main thread
 - Explicit `http`/`https`/`mailto` clicks in inline plugin panels and HTML previews open outside the app; blocked navigation from cross-origin dashboard frames shows a toast directing users to the tab's Open in Browser action
 - Shared ticker system: `setTicker`/`clearTicker` API with source labels, priority tiers (low <10, normal 10-99, urgent >=100), counter badge, click-to-cycle, right-click popover
@@ -2672,7 +2674,7 @@ cursor persists; live mint deployment remains pending. See
 [Telegram channel](design/telegram-channel.md).
 ### Telegram Settings
 
-Desktop Settings → Telegram and Mobile Settings → Telegram setup provide token replacement/getMe check, one-use ten-minute pairing or explicit private-chat IDs, read-only registered-agent status, enable and safe status. Only `tuic-remote` owns polling. Tokens stay in owner-only private files and never return to the UI.
+Desktop Settings → Telegram and Mobile Settings → Telegram setup provide token replacement/getMe check, one-use ten-minute pairing or explicit private-chat IDs, read-only registered-agent status, enable and safe status. Desktop and `tuic-remote` share one process-held polling lock; the standby takes over when the owner exits. Settings identifies the connected owner and enables pairing only while connected. Tokens stay in owner-only private files and never return to the UI.
 
 Connected daemon notices carry their host identity. MCP confirmation responses and ACP permission/elicitation answers return to that daemon; disconnected questions disappear without changing local connections. AI Chat shows remote questions separately, with their ACP connection identity. Remote GitHub transitions fetch PR data from the repository owner, notify once, and do not run local repository automation. GitHub polling also works on the headless daemon. MCP upstream health refreshes use a separate host snapshot rather than this machine’s editable configuration.
 
@@ -2742,3 +2744,9 @@ Machine-local scheduled-run editor with search, backend cadence/zone preview,
 prechecks, workspace and duration controls, pause/resume, Run now, confirmed
 delete and recent status history. Open **Automations** from the command palette.
 Step 8 API integration is required before use; see [Automations](user-guide/automations.md).
+
+Automation execution now reconciles task, PTY and progress completion evidence,
+retains bounded final output, and expires active runs at their persisted deadline.
+If stopping one run fails, it stays active while other runs still enforce their
+deadlines. Reconciliation reports the stop errors after processing those runs.
+Blocked runs remain active; idle alone does not prove success. Rust restart required.

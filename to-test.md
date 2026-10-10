@@ -1,3 +1,15 @@
+## Terminal paste text precedence
+
+- [ ] After loading the updated frontend, copy a text line by selection in terminal Chat and paste into Claude Code; confirm text appears rather than an image attachment. Capture the paste event's MIME types to identify the original WebView clipboard payload. Also check a screenshot-only paste and a Finder image copy still attach. Component tests cover the mixed text/image precedence; this peer did not access Boss's running WebView or clipboard.
+## Scrollbar history marks (1665-ce9b)
+
+- [x] Command and user-prompt ticks remain visible without Ctrl+Cmd; disabling history marks retains search ticks; missing metadata creates no empty overlay, and zero history hides the scrollbar. _(verified: src/components/Terminal/CanvasTerminal.tsx:881 setting-only gate; real component integration tests, 99 targeted tests and 8749 full rb tests passed.)_
+- [x] Releasing modifiers or losing input/window focus clears timestamp text without clearing history ticks. _(verified: src/components/Terminal/CanvasTerminal.tsx:2440 blur reset and real component keyup/input-blur/window-blur tests.)_
+- [ ] After landing, compare a live terminal with recorded command/prompt metadata against `~/Gits/.tmp/results/scrollbar-marks-1665.png`. The screenshot uses the production marks renderer with representative metadata; it does not prove the affected live terminal has prompt metadata. No Rust restart is required.
+
+## MCP upstream secret headers (1657-e1a4) — Rust restart required
+
+- [ ] After landing and Boss's planned manual `make dev` restart or `make build`, add an HTTP upstream with Bearer and two custom header rows; confirm masked persistence, rotation and row removal. Targeted tests exercise requests, config isolation and redirects with dummy values. Rust does not hot-reload; this peer does not restart desktop.
 ## Mobile hands-free composer ownership (1662-c549)
 
 - [ ] After loading the updated PWA frontend, dictate during a busy Claude turn, including after a dialog/draft hold and while interrupting speech. Confirm the PTY queues the phrase once and the mobile composer keeps only local typing. Toggle spoken-reply mute mid-phrase and confirm the same behavior. Real microphone, speaker, and Safari PWA timing need a device check; component tests cover unsolicited, delayed, and reconnect input echoes plus keyboard/keybar Tab and editable Up/Down history recall. No Rust production change or backend restart is needed for this fix.
@@ -66,6 +78,8 @@
 
 - [ ] After Boss chooses to rebuild/restart the backend, launch a new managed peer and open **Inspect Launch Instructions…** from its terminal context menu. Confirm the final brief includes peer context, explicit system instruction sections/file snapshots and served MCP initialization sections have sources/bytes, and secrets are redacted. A shell-launched or restored session must show its launch as unavailable while retaining any MCP initialization instructions actually served; autonomous agent file reads must remain unobservable. The standalone real-component preview was visually checked; live desktop/backend integration waits for the authorized restart. No second desktop instance was launched.
 # To Test
+
+- [ ] #1669-bca7: On the affected phone, save any draft and use the mobile update action, then dictate to the coordinator with an empty mobile composer. Confirm the turn reaches the terminal once and leaves the mobile composer empty. Live logs showed an older mobile client (`c0cb1d193`) during the report; its exact device identity and cached/network version response could not be inspected. The current served bundle already includes #1662; no Rust change or app restart is required by this investigation.
 
 ## Hands-free phrase boundaries (1656-eb5e) — Rust restart required
 
@@ -4899,6 +4913,7 @@ Needs an iPhone (iOS 16.4+, 18.4+ preferred), the desktop TUICommander running a
 
 - [ ] After Boss's next `make dev` restart or `make build`: copy and paste text in the desktop app with the arboard commands; confirm terminal copy still succeeds after an IPC await and macOS paste shows no system Paste pill. Rust changes require the restart to load (#1651-6cbe).
 
+- [ ] #1657-e1a4: After a manual make dev restart, edit an upstream with Bearer/OAuth/custom headers to another URL origin; Save must show the add-new-upstream message and keep the prior config and credentials. Same-origin path edits remain allowed. The Rust request-origin check requires a restart to load. Confirm same-origin path edits retain the displayed auth method, and old unbound credentials show the re-save/authorize error.
 
 ### Spoken replies toggle (#1659-f3cc)
 - [x] Capture the mobile conversation and Settings toggles on the worktree Vite. _(verified: docs/evidence/voice-mute-1659/README.md — headless Chrome CDP screenshots and computed on/off state; both labels meet the 44px touch target.)_
@@ -4909,3 +4924,8 @@ Needs an iPhone (iOS 16.4+, 18.4+ preferred), the desktop TUICommander running a
 - [ ] After a manual Rust rebuild/restart: verify a failed short-name remote host names DNS resolution, suggests its advertised Tailscale FQDN, and shows a retry delay without a simultaneous Connecting/error state. Verify HTTP 403 Untrusted Host says the daemon rejected the name. Backend and renderer regressions cover these paths; desktop verification remains pending because this task forbids launching or accessing the live app. Two isolated headless Chrome screenshot attempts hung (the second stopped at its 45s outer limit).
 
 - [ ] After a manual `make dev` restart or `make build`, verify a remote daemon returning a chunked HTTP 403 Untrusted Host reports the rejected host name instead of a permissions error. Automated regression covers the split response.
+- [ ] Automations completion (#1616-1882): after Boss restarts `make dev` or rebuilds release, verify a Once run reports done/failed/needs-you, retains bounded output, and a blocked run expires without stopping another terminal. A stop failure must leave that run open while other runs still expire; the critic regression covers this case. Rust does not hot-reload; this peer did not launch or restart desktop TUIC.
+- [ ] After rebuilding/restarting TUIC, open `https://tuicommander.com/blog/claude-cache-tiers.html` with MCP `ui action=tab`; confirm the page renders and localhost dashboards and asset previews still load. CSP config is embedded at build time; no desktop instance was launched for this change.
+- [ ] Telegram desktop owner: after a manual `make dev` restart or `make build`, enable a checked bot token with no tuic-remote running; confirm Connected (this app), link a private chat, and ask an agent to call Telegram MCP `register`. Start tuic-remote first in a separate check; confirm the desktop reports Connected (tuic-remote) and leaves its registration intact. Close the owner and confirm the standby takes over. Rust changes require restart; no desktop build was launched by the managed peer.
+- [ ] After rebuilding/restarting `tuic-remote`, start it before tailscaled, then verify its FQDN `/health` changes from 403 to 200 within 30.5 seconds plus scheduler delay after tailscaled becomes ready, provided detection completes within its 500 ms budget; verify stop/rename removes the former FQDN. Rust changes require a manual restart to load; coordinator owns mac-mint deployment.
+- [ ] Discord community links: Help → Resources → Discord Community opens TUICommander & Co; website footers and README badge use the permanent invite, with bugs directed to GitHub issues.

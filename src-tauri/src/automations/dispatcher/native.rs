@@ -71,6 +71,11 @@ impl DispatchEffects for NativeEffects {
         .map_err(|e| format!("Automation launch task: {e}"))?
     }
 
+    fn publish(&self, run: &AutomationRun) {
+        use crate::automations::completion::CompletionEffects;
+        crate::automations::completion::NativeCompletion(&self.0).publish(run);
+    }
+
     fn stop(&self, binding: &LaunchBinding) -> Result<(), String> {
         crate::mcp_http::managed_launch::stop(&self.0, &binding.session_id)
     }

@@ -217,6 +217,10 @@ fn reserve_in(
         created_ms: now_ms,
         updated_ms: now_ms,
         finished_ms: (!initial_status.is_open()).then_some(now_ms),
+        started_ms: None,
+        deadline_ms: Some(now_ms.saturating_add(
+            i64::try_from(definition.max_duration_secs.saturating_mul(1000)).unwrap_or(i64::MAX),
+        )),
         task_id: None,
         session_id: None,
         workspace: None,
