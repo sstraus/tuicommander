@@ -1,5 +1,6 @@
 import { createSignal, Show } from "solid-js";
 import { isTauri } from "../transport";
+import { isTabletUA, setDesktopUI } from "../utils/tabletRouting";
 
 const DISMISS_KEY = "tuic-mobile-banner-dismissed";
 
@@ -10,12 +11,13 @@ function isMobileUA(): boolean {
 }
 
 /**
- * Non-intrusive banner shown in the desktop UI when accessed from a phone browser.
+ * Banner shown in the desktop UI on phones and tablets.
  * Suggests switching to /mobile. Dismissible with localStorage persistence.
  * Only renders in browser mode (never inside Tauri webview).
  */
 export function MobileViewBanner() {
-	const shouldShow = !isTauri() && isMobileUA() && !localStorage.getItem(DISMISS_KEY);
+	const tablet = isTabletUA(navigator.userAgent, navigator.maxTouchPoints);
+	const shouldShow = !isTauri() && (tablet || (isMobileUA() && !localStorage.getItem(DISMISS_KEY)));
 	const [visible, setVisible] = createSignal(shouldShow);
 
 	const dismiss = () => {
@@ -42,6 +44,7 @@ export function MobileViewBanner() {
 				<span>Mobile view available for a better experience on this device.</span>
 				<a
 					href="/mobile"
+					onClick={() => setDesktopUI(false)}
 					style={{
 						color: "var(--accent)",
 						"text-decoration": "none",
@@ -50,21 +53,23 @@ export function MobileViewBanner() {
 				>
 					Switch
 				</a>
-				<button
-					onClick={dismiss}
-					aria-label="Dismiss mobile banner"
-					style={{
-						background: "none",
-						border: "none",
-						color: "var(--fg-muted)",
-						cursor: "pointer",
-						padding: "2px 6px",
-						"font-size": "16px",
-						"line-height": "1",
-					}}
-				>
-					&times;
-				</button>
+				<Show when={!tablet}>
+					<button
+						onClick={dismiss}
+						aria-label="Dismiss mobile banner"
+						style={{
+							background: "none",
+							border: "none",
+							color: "var(--fg-muted)",
+							cursor: "pointer",
+							padding: "2px 6px",
+							"font-size": "16px",
+							"line-height": "1",
+						}}
+					>
+						&times;
+					</button>
+				</Show>
 			</div>
 		</Show>
 	);

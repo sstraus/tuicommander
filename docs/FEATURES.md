@@ -2002,6 +2002,7 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
   conversation with shared transcript cards and collapsed activity, answer
   pending interactions, and switch among titled saved conversations.
 - Server-side routing: `/mobile/*` → `mobile.html`, everything else → `index.html`
+- On iPad, the root URL opens mobile by default. Settings → Open Desktop UI remembers the choice on that device; the desktop banner's Switch link clears it and returns to mobile. The installed PWA scope includes both interfaces.
 - Session state accumulator enriches `GET /sessions` with question/rate-limit/busy state
 - SSE endpoint (`/events`) and WebSocket JSON framing for real-time updates
 
