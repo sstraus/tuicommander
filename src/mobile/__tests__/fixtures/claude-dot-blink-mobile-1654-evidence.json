@@ -94,5 +94,265 @@
       1366
     ],
     "webdriver": "undefined"
+  },
+  "criticFollowup": {
+    "preFixCommit": "b99b409c7",
+    "red": "[ab-stealth] ERROR: agent-browser failed: \u2717 Evaluation error: Error: Dot pulse moved mobile body: {\"ua\":\"Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1\",\"webdriver\":\"undefined\",\"touch\":0,\"viewport\":[390,844],\"skippedRows\":[],\"results\":[{\"name\":\"1 rows\",\"expectedRows\":1,\"rows\":[1,1,1],\"heights\":[22.3984375,22.3984375,22.3984375],\"bodyXs\":[29.2421875,28.859375,29.2421875],\"continuationXs\":[[],[],[]],\"stable\":false,\"correctRows\":true,\"aligned\":true},{\"name\":\"2 rows\",\"expectedRows\":2,\"rows\":[2,2,2],\"heights\":[44.796875,44.796875,44.796875],\"bodyXs\":[29.2421875,28.859375,29.2421875],\"continuationXs\":[[12],[28.8515625],[12]],\"stable\":false,\"correctRows\":true,\"aligned\":false},{\"name\":\"3 rows\",\"expectedRows\":3,\"rows\":[3,3,3],\"heights\":[67.1953125,67.1953125,67.1953125],\"bodyXs\":[29.2421875,28.859375,29.2421875],\"continuationXs\":[[12,12],[28.8515625,28.8515625],[12,12]],\"stable\":false,\"correctRows\":true,\"aligned\":false},{\"name\":\"recorded tool\",\"expectedRows\":4,\"rows\":[4,4,4],\"heights\":[89.59375,89.59375,89.59375],\"bodyXs\":[29.2421875,28.859375,29.2421875],\"continuationXs\":[[12,12,12],[28.8515625,28.8515625,28.8515625],[12,12,12]],\"stable\":false,\"correctRows\":true,\"aligned\":false}]}\n    at <anonymous>:86:11\n    at <anonymous>:89:3\n",
+    "greenPhone": {
+      "results": [
+        {
+          "aligned": true,
+          "bodyXs": [
+            28.84375,
+            28.84375,
+            28.84375
+          ],
+          "continuationXs": [
+            [],
+            [],
+            []
+          ],
+          "correctRows": true,
+          "expectedRows": 1,
+          "heights": [
+            22.3984375,
+            22.3984375,
+            22.3984375
+          ],
+          "name": "1 rows",
+          "rows": [
+            1,
+            1,
+            1
+          ],
+          "stable": true
+        },
+        {
+          "aligned": true,
+          "bodyXs": [
+            28.84375,
+            28.84375,
+            28.84375
+          ],
+          "continuationXs": [
+            [
+              28.8515625
+            ],
+            [
+              28.8515625
+            ],
+            [
+              28.8515625
+            ]
+          ],
+          "correctRows": true,
+          "expectedRows": 2,
+          "heights": [
+            44.796875,
+            44.796875,
+            44.796875
+          ],
+          "name": "2 rows",
+          "rows": [
+            2,
+            2,
+            2
+          ],
+          "stable": true
+        },
+        {
+          "aligned": true,
+          "bodyXs": [
+            28.84375,
+            28.84375,
+            28.84375
+          ],
+          "continuationXs": [
+            [
+              28.8515625,
+              28.8515625
+            ],
+            [
+              28.8515625,
+              28.8515625
+            ],
+            [
+              28.8515625,
+              28.8515625
+            ]
+          ],
+          "correctRows": true,
+          "expectedRows": 3,
+          "heights": [
+            67.1953125,
+            67.1953125,
+            67.1953125
+          ],
+          "name": "3 rows",
+          "rows": [
+            3,
+            3,
+            3
+          ],
+          "stable": true
+        },
+        {
+          "aligned": true,
+          "bodyXs": [
+            28.84375,
+            28.84375,
+            28.84375
+          ],
+          "continuationXs": [
+            [
+              28.8515625,
+              28.8515625,
+              28.8515625
+            ],
+            [
+              28.8515625,
+              28.8515625,
+              28.8515625
+            ],
+            [
+              28.8515625,
+              28.8515625,
+              28.8515625
+            ]
+          ],
+          "correctRows": true,
+          "expectedRows": 4,
+          "heights": [
+            89.59375,
+            89.59375,
+            89.59375
+          ],
+          "name": "recorded tool",
+          "rows": [
+            4,
+            4,
+            4
+          ],
+          "stable": true
+        }
+      ],
+      "skippedRows": [],
+      "touch": 0,
+      "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
+      "viewport": [
+        390,
+        844
+      ],
+      "webdriver": "undefined"
+    },
+    "greenTablet": {
+      "results": [
+        {
+          "aligned": true,
+          "bodyXs": [
+            28.84375,
+            28.84375,
+            28.84375
+          ],
+          "continuationXs": [
+            [],
+            [],
+            []
+          ],
+          "correctRows": true,
+          "expectedRows": 1,
+          "heights": [
+            22.3984375,
+            22.3984375,
+            22.3984375
+          ],
+          "name": "1 rows",
+          "rows": [
+            1,
+            1,
+            1
+          ],
+          "stable": true
+        },
+        {
+          "aligned": true,
+          "bodyXs": [
+            28.84375,
+            28.84375,
+            28.84375
+          ],
+          "continuationXs": [
+            [
+              28.8515625
+            ],
+            [
+              28.8515625
+            ],
+            [
+              28.8515625
+            ]
+          ],
+          "correctRows": true,
+          "expectedRows": 2,
+          "heights": [
+            44.796875,
+            44.796875,
+            44.796875
+          ],
+          "name": "2 rows",
+          "rows": [
+            2,
+            2,
+            2
+          ],
+          "stable": true
+        },
+        {
+          "aligned": true,
+          "bodyXs": [
+            28.84375,
+            28.84375,
+            28.84375
+          ],
+          "continuationXs": [
+            [
+              28.8515625
+            ],
+            [
+              28.8515625
+            ],
+            [
+              28.8515625
+            ]
+          ],
+          "correctRows": true,
+          "expectedRows": 2,
+          "heights": [
+            44.796875,
+            44.796875,
+            44.796875
+          ],
+          "name": "recorded tool",
+          "rows": [
+            2,
+            2,
+            2
+          ],
+          "stable": true
+        }
+      ],
+      "skippedRows": [
+        3
+      ],
+      "touch": 0,
+      "ua": "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/604.1",
+      "viewport": [
+        1024,
+        1366
+      ],
+      "webdriver": "undefined"
+    },
+    "wrongStableIndent": "[ab-stealth] ERROR: agent-browser failed: \u2717 Evaluation error: Error: Dot pulse moved mobile body: {\"ua\":\"Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1\",\"webdriver\":\"undefined\",\"touch\":0,\"viewport\":[390,844],\"skippedRows\":[],\"results\":[{\"name\":\"1 rows\",\"expectedRows\":1,\"rows\":[1,1,1],\"heights\":[22.3984375,22.3984375,22.3984375],\"bodyXs\":[28.84375,28.84375,28.84375],\"continuationXs\":[[],[],[]],\"stable\":true,\"correctRows\":true,\"aligned\":true},{\"name\":\"2 rows\",\"expectedRows\":2,\"rows\":[2,2,2],\"heights\":[44.796875,44.796875,44.796875],\"bodyXs\":[28.84375,28.84375,28.84375],\"continuationXs\":[[37.28125],[37.28125],[37.28125]],\"stable\":true,\"correctRows\":true,\"aligned\":false},{\"name\":\"3 rows\",\"expectedRows\":3,\"rows\":[3,3,3],\"heights\":[67.1953125,67.1953125,67.1953125],\"bodyXs\":[28.84375,28.84375,28.84375],\"continuationXs\":[[37.28125,37.28125],[37.28125,37.28125],[37.28125,37.28125]],\"stable\":true,\"correctRows\":true,\"aligned\":false},{\"name\":\"recorded tool\",\"expectedRows\":4,\"rows\":[4,4,4],\"heights\":[89.59375,89.59375,89.59375],\"bodyXs\":[28.84375,28.84375,28.84375],\"continuationXs\":[[37.28125,37.28125,37.28125],[37.28125,37.28125,37.28125],[37.28125,37.28125,37.28125]],\"stable\":true,\"correctRows\":true,\"aligned\":false}]}\n    at <anonymous>:93:11\n    at <anonymous>:96:3\n",
+    "ciLimitation": "No normal CI browser geometry runner: ci.yml:120 invokes Vitest, vitest.config.ts:38 selects test/spec.ts(x), :49 uses happy-dom. package.json has no browser testing framework. The existing Rust/browser proof is opt-in ignored (follow_http_fixture.rs:10)."
   }
 }

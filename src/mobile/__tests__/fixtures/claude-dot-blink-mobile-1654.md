@@ -44,3 +44,36 @@ Both runs used Chromium with the mac-safari profile/device emulation, and
 navigator.webdriver was undefined. Safari UA strings do not make this WebKit:
 maxTouchPoints was zero. Actual iPhone/iPad Safari PWA font and touch checks are
 tracked in to-test.md; browser evidence does not claim them.
+
+## Critic follow-up
+
+The regression now chooses each excerpt by its actual DOM row count, then
+asserts that count for every pulse frame. At 390×844 the measured scenarios are
+1/2/3/4 rows with heights 22.3984375/44.796875/67.1953125/89.59375 px.
+At 1024×1366 the recorded source reaches two rows, so three rows are explicitly
+reported as skipped rather than mislabelled. No synthetic longer producer text
+was added.
+
+Every continuation's first body character must align with the first character
+of Bash, within 0.02 CSS px for layout rounding. Phone GREEN measures Bash at
+x=28.84375 and continuations at x=28.8515625 (difference 0.0078125 px).
+The enhanced test also fails against the real pre-fix b99b409c7 component loaded
+through a Vite transform, with current CSS (the new slot class is unused by the
+pre-fix component). Visible-dot continuations were at x=12 while Bash was at
+x=29.2421875. A fixture-only forced 3ch hanging indent fails absolute alignment
+while remaining stable across all pulses, proving that equality alone cannot
+satisfy the assertion. These reports are in `criticFollowup` in the evidence JSON.
+
+### CI coverage limitation
+
+This browser geometry script is an opt-in local proof, **not a normal CI test**.
+`.github/workflows/ci.yml:120` invokes Vitest. `vitest.config.ts:38` includes only
+`*.test/spec.ts(x)`, and line 49 uses happy-dom, which cannot measure browser
+layout. `package.json` has no Playwright, Puppeteer or Vitest browser provider.
+The existing `scripts/chat-view-follow-proof.mjs` browser harness is reached from
+an explicitly ignored opt-in Rust test (`src-tauri/src/chat_view/follow_http_fixture.rs:10`)
+and requires the local browser wrapper. It is not a portable CI browser path.
+No new browser framework or CI dependency was introduced. Native grid replay and
+the existing targeted mobile unit/component tests remain normal-suite coverage;
+they do not establish real browser geometry. Actual Safari PWA checks also remain
+separate in to-test.md.
