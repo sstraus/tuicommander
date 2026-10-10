@@ -1,4 +1,4 @@
-//! Opt-in headless Telegram adapter with native peer mail and correlated replies.
+//! Opt-in Telegram adapter with native peer mail and correlated replies.
 mod api;
 mod backoff;
 mod callbacks;
@@ -14,7 +14,6 @@ mod runtime;
 pub(crate) mod settings;
 mod stop;
 mod tool;
-#[cfg(not(feature = "desktop"))]
 pub(crate) use native::start;
 pub(crate) use tool::{definition as tool_definition, handle as handle_tool};
 
