@@ -1331,6 +1331,7 @@ The `tuic-dictation` Rust crate implements audio, transcription and speech; the 
 - **Push-to-talk is untouched.** Holding the hotkey never starts continuous listening, never uses the activation phrase, never makes speech available and never notifies anyone.
 
 ### 9.11 Driving it from Settings > Voice
+- Browser Now Playing controls identify **TUICommander hands-free**. Play/Pause resume or hold spoken replies without stopping the microphone; Stop ends hands-free and drops replies. Controls are released when the conversation ends.
 - **One titled section per job, speech-to-text and text-to-speech kept apart:** Dictation (enable, hotkey, auto-send), Speech recognition (input device, Whisper model, language, voice tuning), Auto-Corrections, Hands-free conversation, Spoken replies. Each section holds its own advanced settings; there is no shared "Advanced" section.
 - **Spoken replies** lists the speech languages and the ONNX runtime with their state, size and Download / Repair / Cancel / delete, plus the voice to speak with. There is **no** speech-language control — the language is the Whisper one, and a second control would be a second source that disagrees with it.
 - **Conversation controls** — Start conversation is an accent action, Stop is distinct, and a coloured Running/Stopped indicator accompanies the backend phase.

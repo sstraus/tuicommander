@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Name iPhone Now Playing controls “TUICommander hands-free”; Play/Pause control spoken replies and Stop ends the conversation. Release controls when hands-free ends (#1670-fdc8).
+
 - Register directories from `tuic` through the running server; add MCP `repo add` and reject unsupported `ui tab` deep links instead of reporting silent success (#1668-9b59).
 - Expose matching automation IPC/HTTP actions for definitions, pause/resume, Once Run Now, retained history, schedule previews/presets and UTC summaries (#1617-290d).
 - Preserve rejected-host diagnostics across HTTP response chunks.
