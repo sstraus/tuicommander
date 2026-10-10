@@ -507,6 +507,14 @@ store action. Rust owns enforcement and cool-down decisions.
   server's microphone. A refused arm closes that socket again in the `catch`, so
   a failure never leaves the device light on; `disarmHandsFree` closes it in a
   `finally`. The refusal is stored in `handsFreeError` rather than thrown.
+  Successful browser arming also owns the page's Media Session through
+  `browserVoiceMediaSession`: title **TUICommander hands-free**, Play/Pause use
+  `resumeSpeech`/`pauseSpeech` (capture remains active), and Stop uses
+  `disarmHandsFree` (capture and replies end). Speech responses and pushed reply
+  state keep `playbackState` current; listening is active, held replies are
+  paused. Disarm, including a polled backend disarm, clears metadata, handlers
+  and playback state and closes browser audio. Browsers without the API still
+  support hands-free; unsupported actions are logged and omitted.
 - `handsFreeStartNotice` — the saved start notice, `""` meaning the built-in
   text. `setHandsFreeStartNotice(value)` saves it trimmed,
   `resetHandsFreeStartNotice()` saves `""`, and

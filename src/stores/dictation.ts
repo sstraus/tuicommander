@@ -2,6 +2,7 @@ import { createStore } from "solid-js/store";
 import { invoke, listen } from "../invoke";
 import { isTauri } from "../transport";
 import { type BrowserVoiceSession, connectBrowserVoice } from "../utils/browserVoice";
+import { browserVoiceMediaSession } from "../utils/browserVoiceMediaSession";
 import { type Earcon, playEarcon, primeEarcons } from "../utils/earcon";
 import { appLogger } from "./appLogger";
 import { toastsStore } from "./toasts";
@@ -447,6 +448,13 @@ function createDictationStore() {
 	 * state would make every subscriber re-run when a socket opened.
 	 */
 	let browserVoice: BrowserVoiceSession | null = null;
+	let nowPlaying: ReturnType<typeof browserVoiceMediaSession> = null;
+	const stopBrowserVoice = () => {
+		nowPlaying?.stop();
+		nowPlaying = null;
+		browserVoice?.stop();
+		browserVoice = null;
+	};
 	// A language switch may start a second request before the first answers.
 	// Only the most recently requested voice list may update the picker.
 	let speechVoicesRequest = 0;
@@ -549,6 +557,7 @@ function createDictationStore() {
 					}
 				: current,
 		);
+		nowPlaying?.update(state.speech?.paused === true);
 	});
 
 	let audioLevelTimer: ReturnType<typeof setInterval> | null = null;
@@ -593,6 +602,7 @@ function createDictationStore() {
 	const speechControl = async (command: "pause_speech" | "resume_speech" | "stop_speech"): Promise<void> => {
 		try {
 			setState("speech", await invoke<SpeechStatus>(command));
+			nowPlaying?.update(state.speech?.paused === true);
 		} catch (err) {
 			appLogger.warn("dictation", `${command} refused`, err);
 			await actions.refreshSpeechStatus();
@@ -604,8 +614,16 @@ function createDictationStore() {
 		if (earcon && state.handsFreeEarcons) playEarcon(earcon);
 		setState("handsFree", status);
 		if (status.armed) {
+			if (browserVoice && !nowPlaying) {
+				nowPlaying = browserVoiceMediaSession({
+					play: () => actions.resumeSpeech(),
+					pause: () => actions.pauseSpeech(),
+					stop: () => actions.disarmHandsFree(),
+				});
+			}
 			startHandsFreeMonitor();
 		} else {
+			stopBrowserVoice();
 			stopHandsFreeMonitor();
 			setState("audioLevel", 0);
 		}
@@ -1124,6 +1142,7 @@ function createDictationStore() {
 		async refreshSpeechStatus(): Promise<void> {
 			try {
 				setState("speech", await invoke<SpeechStatus>("get_speech_status"));
+				nowPlaying?.update(state.speech?.paused === true);
 			} catch (err) {
 				appLogger.error("dictation", "Failed to get speech status", err);
 			}
@@ -1168,7 +1187,7 @@ function createDictationStore() {
 					})
 					.catch(() => {});
 				if (!isTauri()) {
-					browserVoice?.stop();
+					stopBrowserVoice();
 					browserVoice = await connectBrowserVoice(owner);
 				}
 				applyHandsFree(
@@ -1183,8 +1202,7 @@ function createDictationStore() {
 				// The socket is this tab's microphone: leaving it open after a
 				// refused arm would keep the device light on for a
 				// conversation that does not exist.
-				browserVoice?.stop();
-				browserVoice = null;
+				stopBrowserVoice();
 				if (String(err).includes(OWNED_ELSEWHERE_MARKER)) setState("ownedElsewhere", true);
 				setState("handsFreeError", String(err));
 				appLogger.error("dictation", "Failed to arm hands-free", err);
@@ -1209,8 +1227,7 @@ function createDictationStore() {
 			} finally {
 				// Whether or not the backend answered: the conversation is over
 				// as far as this tab is concerned, and the microphone closes.
-				browserVoice?.stop();
-				browserVoice = null;
+				stopBrowserVoice();
 			}
 		},
 
