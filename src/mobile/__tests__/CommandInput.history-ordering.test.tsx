@@ -73,9 +73,10 @@ describe("history response ordering", () => {
 		fireEvent.click(view.getByRole("button", { name: "↑" }));
 		// Already in flight before Up: the hands-free payload is not its response.
 		receiveLine!("Computer, approva tu quelle");
-		expect(composer.value).toBe("");
+		const valueBeforeHistoryWrite = composer.value;
 		finishHistoryWrite!();
 		await Promise.resolve();
+		expect(valueBeforeHistoryWrite).toBe("");
 		receiveLine!("echo old");
 		expect(composer.value).toBe("echo old");
 		fireEvent.input(composer, { target: { value: "echo new" } });
