@@ -63,9 +63,10 @@ describe("mobile history editing", () => {
 		["↓", "\x1b[B"],
 	])(
 		"keeps explicitly recalled %s history editable instead of appending typing to an invisible command",
-		(key, sequence) => {
+		async (key, sequence) => {
 			const view = mountSession();
 			fireEvent.click(view.getByRole("button", { name: key }));
+			await Promise.resolve();
 			receiveLine!("echo old");
 			const composer = view.getByRole("textbox") as HTMLTextAreaElement;
 			expect(composer.value).toBe("echo old");
@@ -75,16 +76,18 @@ describe("mobile history editing", () => {
 			// A repeated history snapshot must still be handled when explicitly
 			// requested after local edits (the transport text itself is unchanged).
 			fireEvent.click(view.getByRole("button", { name: key }));
+			await Promise.resolve();
 			receiveLine!("echo old");
 			expect(composer.value).toBe("echo old");
 		},
 	);
 
-	it("accepts an explicitly requested empty history line and resets the delta baseline", () => {
+	it("accepts an explicitly requested empty history line and resets the delta baseline", async () => {
 		const view = mountSession();
 		const composer = view.getByRole("textbox") as HTMLTextAreaElement;
 		fireEvent.input(composer, { target: { value: "echo draft" } });
 		fireEvent.click(view.getByRole("button", { name: "↓" }));
+		await Promise.resolve();
 		receiveLine!("");
 		expect(composer.value).toBe("");
 		fireEvent.input(composer, { target: { value: "pwd" } });
@@ -95,6 +98,7 @@ describe("mobile history editing", () => {
 		const now = vi.spyOn(Date, "now").mockReturnValue(1_000);
 		const view = mountSession();
 		fireEvent.click(view.getByRole("button", { name: "↑" }));
+		await Promise.resolve();
 		receiveLine!("echo old");
 		const composer = view.getByRole("textbox") as HTMLTextAreaElement;
 		fireEvent.click(view.getByRole("button", { name: "Send" }));

@@ -83,4 +83,31 @@ describe("history response ordering", () => {
 		fireEvent.click(view.getByRole("button", { name: "Send" }));
 		await waitFor(() => expect(writes()).toEqual(["\x1b[A", "\x7f\x7f\x7fnew", "\r"]));
 	});
+	it("does not arm history after a failed Up write", async () => {
+		vi.mocked(rpc).mockRejectedValueOnce(new Error("write failed"));
+		const view = mountSession();
+		fireEvent.click(view.getByRole("button", { name: "↑" }));
+		await Promise.resolve();
+		receiveLine!("Computer, approva tu quelle");
+		expect((view.getByRole("textbox") as HTMLTextAreaElement).value).toBe("");
+	});
+
+	it("does not rearm a pending history request after local typing cancels it", async () => {
+		let finish: (() => void) | undefined;
+		vi.mocked(rpc).mockImplementation((command, args) =>
+			command === "write_pty" && args?.data === "\x1b[A"
+				? new Promise<void>((resolve) => {
+						finish = resolve;
+					})
+				: Promise.resolve(undefined),
+		);
+		const view = mountSession();
+		const composer = view.getByRole("textbox") as HTMLTextAreaElement;
+		fireEvent.click(view.getByRole("button", { name: "↑" }));
+		fireEvent.input(composer, { target: { value: "my draft" } });
+		finish!();
+		await Promise.resolve();
+		receiveLine!("Computer, approva tu quelle");
+		expect(composer.value).toBe("my draft");
+	});
 });

@@ -51,7 +51,7 @@ export function CommandInput(props: CommandInputProps) {
 	// The local draft baseline, including explicitly requested PTY completions
 	// and history replacements. Every edit computes its delta from this text.
 	let syncedText = "";
-	let inputRequest: "completion" | "history" | null = null;
+	let inputRequest: { kind: "completion" | "history"; armed: boolean } | null = null;
 	// Timestamp of the last Enter (send()). Within POST_SEND_GUARD_MS, all
 	// incoming ptyInputLine updates are ignored to prevent a lagging echo of
 	// the just-sent command from flashing back into the cleared textarea
@@ -84,8 +84,8 @@ export function CommandInput(props: CommandInputProps) {
 	createEffect(() => {
 		if (atomicReply()) return;
 		const text = props.ptyInputLine ?? "";
-		if (!inputRequest || props.ptyInputLine == null) return;
-		if (inputRequest === "completion") {
+		if (!inputRequest?.armed || props.ptyInputLine == null) return;
+		if (inputRequest.kind === "completion") {
 			if (isPostSendGuardActive(Date.now(), lastSendAt)) return;
 			if (!isSupersetEcho(text, syncedText)) return;
 		}
@@ -105,9 +105,11 @@ export function CommandInput(props: CommandInputProps) {
 	}
 
 	function writePty(data: string) {
-		lastInputWrite = rpc("write_pty", { sessionId: props.sessionId, data }).catch((err: unknown) => {
+		const write = rpc("write_pty", { sessionId: props.sessionId, data });
+		lastInputWrite = write.catch((err: unknown) => {
 			appLogger.warn("network", "Failed to write to PTY", { error: err });
 		});
+		return write;
 	}
 
 	/** Send character deltas to PTY so the remote input stays in sync.
@@ -191,8 +193,26 @@ export function CommandInput(props: CommandInputProps) {
 
 	function requestInputKey(key: ComposerInputKey) {
 		if (atomicReply() || props.sessionExists === false) return;
-		inputRequest = key === "Tab" ? (syncedText.length > 0 ? "completion" : null) : "history";
-		writePty(key === "Tab" ? "\t" : key === "ArrowUp" ? "\x1b[A" : "\x1b[B");
+		const request =
+			key === "Tab"
+				? syncedText.length > 0
+					? { kind: "completion" as const, armed: true }
+					: null
+				: { kind: "history" as const, armed: false };
+		inputRequest = request;
+		void writePty(key === "Tab" ? "\t" : key === "ArrowUp" ? "\x1b[A" : "\x1b[B").then(
+			() => {
+				if (request && inputRequest === request) {
+					// DEFERRED (2026-10-10): input_line has no causal request ID.
+					// A history response before the HTTP write ack is dropped (missed recall);
+					// a delayed unrelated snapshot after the ack can still be mistaken for history.
+					request.armed = true;
+				}
+			},
+			() => {
+				if (inputRequest === request) inputRequest = null;
+			},
+		);
 	}
 
 	async function send() {
