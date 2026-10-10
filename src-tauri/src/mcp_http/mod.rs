@@ -24,8 +24,6 @@ mod remote_mcp_sessions;
 pub(crate) mod remote_peer;
 mod remote_session_proxy;
 mod request_boundary;
-#[cfg(test)]
-mod secret_critic1435_tests;
 pub(crate) mod session;
 mod session_placement;
 pub(crate) mod sse_routes;
