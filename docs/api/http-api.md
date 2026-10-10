@@ -2923,3 +2923,9 @@ Raw, text and log `/sessions/{id}/stream` WebSockets carry OSC titles as
 presentation events, independent of `activity` pulses and semantic lifecycle.
 Grid clients continue to receive binary rendering frames; terminal metadata
 consumers use the separate session event subscription.
+
+Automation runtime transitions are streamed on `/events` as
+`automation-run-changed`, with payload `{ "run": <AutomationRun> }`, identical
+to the desktop event. This includes failure and needs-you changes. Final runs
+retain bounded output; missed live events are reconciled from host state rather
+than replaying or restarting execution.

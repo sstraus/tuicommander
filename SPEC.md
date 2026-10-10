@@ -846,3 +846,9 @@ destinations, uses the configured workspace base/profile and literal prompt,
 and saves precheck pass/refusal/manual-bypass/no-check outcomes and launch ids.
 Cron dispatch stays disabled in phase 1. Public execution transports and
 completion/maximum-duration handling remain pending; idle is not success.
+
+Automation completion core (#1616-1882): task, known PTY exit and durable progress
+provide result provenance. Idle is not success; lost completion is unknown.
+Persisted deadlines include precheck and needs-you time, stop only owned sessions,
+and preserve immutable terminal history with 256 KiB output snapshots. Transitions
+use desktop and SSE dual-emission; boot interrupts open runs without retry.

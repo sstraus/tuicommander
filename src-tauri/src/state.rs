@@ -163,6 +163,8 @@ pub(crate) struct WorktreeRemovedPayload {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "event", content = "payload")]
 pub enum AppEvent {
+    #[serde(rename = "automation-run-changed")]
+    AutomationRunChanged { payload: serde_json::Value },
     #[serde(rename = "head-changed")]
     HeadChanged { repo_path: String, branch: String },
     #[serde(rename = "repo-changed")]
@@ -5195,6 +5197,7 @@ impl AppState {
             | AppEvent::ConflictAssistStatus { .. }
             | AppEvent::ProgressRecorded { .. }
             | AppEvent::WorkflowRunChanged { .. }
+            | AppEvent::AutomationRunChanged { .. }
             | AppEvent::ReviewProgress { .. }
             | AppEvent::ProposalsReady { .. }
             // This accumulator's own output. Feeding it back in would make the

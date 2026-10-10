@@ -18,6 +18,7 @@ impl RunStore {
             return Ok(None);
         }
         run.status = RunStatus::Prechecking;
+        run.started_ms = Some(now_ms);
         run.updated_ms = now_ms.max(run.updated_ms);
         write(&tx, &run)?;
         tx.commit().map_err(error)?;
