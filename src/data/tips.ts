@@ -10,6 +10,12 @@ const mod = isMacOS() ? "Cmd" : "Ctrl";
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Mobile Control Keys",
+		description:
+			"Tap Ctrl in the mobile terminal keybar to send Ctrl+C, Ctrl+B, Ctrl+D or the agent-aware Ctrl+Enter key.",
+		shortcut: null,
+	},
+	{
 		feature: "Automations",
 		description:
 			"Open Automations from the command palette to edit scheduled agent runs and Once previews. The Automations backend API is required.",

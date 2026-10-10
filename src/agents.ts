@@ -46,6 +46,8 @@ export interface AgentConfig {
 	binary: string;
 	description: string;
 	resumeCommand: string | null;
+	/** Mobile Ctrl+Enter: native modified key, or a verified non-submitting newline fallback. */
+	ctrlEnterSequence: string;
 	/**
 	 * Session file discovery config. When set, TUICommander will scan the agent's
 	 * session storage directory to find the session ID for manually-launched agents.
@@ -82,6 +84,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		defaultHeadlessTemplate:
 			'claude --bare --print --output-format text --no-session-persistence --system-prompt "Output only the raw requested text. No explanations, no markdown fences, no commentary." -p "{prompt}"',
 		resumeCommand: "claude --continue",
+		ctrlEnterSequence: "\x1b[13;5u",
 		sessionDiscovery: { resumeWithId: (id) => `claude --resume ${id}` },
 		spawnArgs: (prompt, options = {}) => {
 			const args: string[] = [];
@@ -106,6 +109,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		description: "Google's Gemini CLI",
 		defaultHeadlessTemplate: 'gemini "{prompt}"',
 		resumeCommand: "gemini --resume",
+		ctrlEnterSequence: "\x1b[13;5u",
 		sessionDiscovery: { resumeWithId: (id) => `gemini --resume ${id}` },
 		spawnArgs: (prompt, options = {}) => {
 			const args: string[] = [];
@@ -128,6 +132,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		description: "OpenAI-based coding assistant",
 		defaultHeadlessTemplate: 'opencode "{prompt}"',
 		resumeCommand: "opencode -c",
+		ctrlEnterSequence: "\x1b[13;5u",
 		sessionDiscovery: null, // sessions stored in SQLite DB — not yet supported
 		spawnArgs: (prompt, options = {}) => {
 			const args: string[] = [];
@@ -150,6 +155,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		description: "AI pair programming in terminal",
 		defaultHeadlessTemplate: 'aider --yes-always --message "{prompt}"',
 		resumeCommand: "aider --restore-chat-history",
+		ctrlEnterSequence: "\x1b[13;5u",
 		sessionDiscovery: null, // single .aider.chat.history.md per project, no session IDs
 		spawnArgs: (prompt, options = {}) => {
 			const args: string[] = ["--yes-always"];
@@ -172,6 +178,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		description: "OpenAI Codex CLI",
 		defaultHeadlessTemplate: 'codex "{prompt}"',
 		resumeCommand: "codex resume --last",
+		ctrlEnterSequence: "\n",
 		sessionDiscovery: { resumeWithId: (id) => `codex resume ${id}` },
 		spawnArgs: (prompt, options = {}) => {
 			const args: string[] = [];
@@ -194,6 +201,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		description: "Sourcegraph's AI coding agent",
 		defaultHeadlessTemplate: 'amp "{prompt}"',
 		resumeCommand: "amp threads continue",
+		ctrlEnterSequence: "\n",
 		sessionDiscovery: null, // cloud-only, no local session files
 		spawnArgs: (prompt) => {
 			return [prompt];
@@ -213,6 +221,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		description: "Cursor's standalone coding agent CLI",
 		defaultHeadlessTemplate: 'cursor-agent "{prompt}"',
 		resumeCommand: "cursor-agent resume",
+		ctrlEnterSequence: "\n",
 		sessionDiscovery: null, // closed-source, storage path undocumented
 		spawnArgs: (prompt) => {
 			return [prompt];
@@ -232,6 +241,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		description: "Block's open-source AI coding agent",
 		defaultHeadlessTemplate: 'goose run "{prompt}"',
 		resumeCommand: "goose session --resume",
+		ctrlEnterSequence: "\n",
 		sessionDiscovery: { resumeWithId: (id) => `goose session --resume --name ${id}` },
 		spawnArgs: (prompt, options = {}) => {
 			// goose 1.49: `session` takes no positional prompt; `run -s -t` runs it, then stays interactive.
@@ -255,6 +265,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		description: "xAI's Grok coding CLI (Grok Build)",
 		defaultHeadlessTemplate: 'grok --single "{prompt}"',
 		resumeCommand: "grok --continue",
+		ctrlEnterSequence: "\n",
 		sessionDiscovery: { resumeWithId: (id) => `grok --resume ${id}` },
 		spawnArgs: (prompt, options = {}) => {
 			const args: string[] = [];
@@ -277,6 +288,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		description: "Factory's agent-native software development CLI",
 		defaultHeadlessTemplate: 'droid "{prompt}"',
 		resumeCommand: null,
+		ctrlEnterSequence: "\x1b[13;5u",
 		sessionDiscovery: null,
 		spawnArgs: (prompt) => {
 			return [prompt];
@@ -296,6 +308,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		description: "Earendil's pi coding agent",
 		defaultHeadlessTemplate: 'pi --print "{prompt}"',
 		resumeCommand: "pi --continue",
+		ctrlEnterSequence: "\n",
 		// Sessions live in ~/.pi/agent/sessions/<encoded-cwd>/ as `<ts>_<uuid7>.jsonl`, but
 		// `--continue` already resumes the newest session for the cwd, which is what resume
 		// needs. Disk discovery stays unwired until something requires a specific session id.
@@ -324,6 +337,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		defaultHeadlessTemplate: 'ego run "{prompt}"',
 		// `ego resume` with no id continues the latest session of this workspace.
 		resumeCommand: "ego resume",
+		ctrlEnterSequence: "\n",
 		sessionDiscovery: { resumeWithId: (id) => `ego resume ${id}` },
 		spawnArgs: (prompt) => [prompt],
 		outputFormat: "text",
@@ -340,6 +354,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		binary: "git",
 		description: "Background git operations (pull, push, fetch, stash)",
 		resumeCommand: null,
+		ctrlEnterSequence: "\x1b[13;5u",
 		sessionDiscovery: null,
 		spawnArgs: () => [],
 		outputFormat: "text",
@@ -357,6 +372,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		description: "Direct LLM API calls (no agent CLI needed)",
 		defaultHeadlessTemplate: "",
 		resumeCommand: null,
+		ctrlEnterSequence: "\x1b[13;5u",
 		sessionDiscovery: null,
 		spawnArgs: () => [],
 		outputFormat: "text",
@@ -500,3 +516,12 @@ export const AGENT_DISPLAY: Record<AgentType, { icon: string; color: string }> =
 	git: { icon: "G", color: "#f05032" },
 	api: { icon: "⚡", color: "#06b6d4" },
 };
+
+/** Preserve the actual modified key for an unknown foreground program. Never
+ * downgrade an unverified key to CR: that can execute a shell command. Registry
+ * choices and observations are recorded in docs/evidence/ctrl-menu-1660. */
+export function getCtrlEnterSequence(agentType?: string | null): string {
+	return agentType && Object.hasOwn(AGENTS, agentType)
+		? AGENTS[agentType as AgentType].ctrlEnterSequence
+		: "\x1b[13;5u";
+}
