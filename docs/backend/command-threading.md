@@ -240,3 +240,12 @@ without holding the blocking pool. Run uses Tokio child pipes; no PTY or shell.
 are async IPC handlers. IPC and HTTP call the same `ego_cli::perimeter` core,
 which awaits `tokio::process::Command` and reads ego's JSON. TUIC performs no
 configuration-file rewrite or provider request on this surface.
+
+### Native clipboard (2026-10-10)
+
+`write_clipboard_text` and `read_clipboard_text` are desktop-only async commands.
+They create and access arboard inside `spawn_blocking`, including the lock that
+serializes clipboard operations. The managed clipboard stays alive between calls
+so Linux retains ownership of copied text. Clipboard and worker failures return
+`Err(String)`. Browser clients use `navigator.clipboard`; these commands have no
+HTTP routes because remote clients must not access the host pasteboard.
