@@ -1002,16 +1002,34 @@ mod critic_round6_tests {
     }
 
     fn counting_script(name: &str, sleep_secs: u32) -> PathBuf {
+        // cmd append redirections can lose a record when both ports spawn at once.
+        // Serialize only the append, so the SSH processes still overlap.
         let script = crate::test_support::fake_ssh_script(
             name,
             &format!("echo x >> \"$0.log\"; sleep {sleep_secs}; exit 0"),
             &format!(
-                "echo x>> \"%~f0.log\"\r\n{} -n {} 127.0.0.1 >nul\r\nexit /b 0",
-                crate::test_support::system32_exe("ping.exe"),
-                sleep_secs + 1
+                r#"call :record
+if errorlevel 1 exit /b 1
+{ping} -n {pings} 127.0.0.1 >nul
+exit /b %errorlevel%
+:record
+mkdir "%~f0.lock" 2>nul
+if errorlevel 1 (
+    {ping} -n 2 127.0.0.1 >nul
+    if errorlevel 1 exit /b 1
+    goto record
+)
+>> "%~f0.log" echo x
+set "record_status=%errorlevel%"
+rmdir "%~f0.lock"
+if errorlevel 1 exit /b 1
+exit /b %record_status%"#,
+                ping = crate::test_support::system32_exe("ping.exe"),
+                pings = sleep_secs + 1,
             ),
         );
         let _ = std::fs::remove_file(format!("{}.log", script.display()));
+        let _ = std::fs::remove_dir(format!("{}.lock", script.display()));
         script
     }
 
@@ -1082,8 +1100,8 @@ mod critic_round6_tests {
             probe_listed_host(&gate, listed.clone(), "box", Some(22), &counter, timeout),
             probe_listed_host(&gate, listed.clone(), "box", Some(2222), &counter, timeout),
         );
-        a.unwrap();
-        b.unwrap();
+        assert_eq!(a.unwrap().auth, HostAuth::Shell);
+        assert_eq!(b.unwrap().auth, HostAuth::Shell);
         assert_eq!(spawns(&counter), 2);
     }
 
