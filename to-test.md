@@ -1,3 +1,7 @@
+## Crate diet stage B (1648-2c54) — Rust restart required
+
+- [ ] After landing and Boss's planned `make dev` restart or `make build`, confirm relay traffic still reaches a paired browser and a Web Push reaches an existing subscription with the stored VAPID key. Fixed vectors cover relay/HKDF bytes and RFC8291 ciphertext; independent verifiers cover VAPID signatures. Rust does not hot-reload; this peer does not restart desktop.
+
 ## Crate diet stage A (1640-ecee) — Rust restart required
 
 - [ ] After landing and Boss's planned `make dev` restart or `make build`, confirm CUID2 generation still returns 24 lowercase base36 characters starting with a letter, and an upstream OAuth sign-in completes with PKCE S256. Rust changes require a manual restart to load; this peer does not restart desktop.
