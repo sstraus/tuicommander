@@ -828,6 +828,7 @@ const API_PREFIXES: &[&str] = &[
     "attachments",
     "audio",
     "auth",
+    "automations",
     "circleci",
     "claude",
     "codex",

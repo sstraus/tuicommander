@@ -2927,6 +2927,8 @@ consumers use the separate session event subscription.
 ### Automations
 
 `POST /automations/action` accepts `{ "input": { "action": "list" } }`.
+Unknown `/automations/*` endpoints return HTTP 404 with a JSON `error`, rather
+than the SPA frontend shell.
 It is available on desktop, browser/PWA and headless hosts. The addressed backend
 owns the definitions, history and execution; this route never forwards Run Now
 to a different machine. It shares its input parser and Rust implementation with

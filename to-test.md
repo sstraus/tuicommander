@@ -1,3 +1,7 @@
+## Automations HTTP fallback (1617-290d) — Rust restart required
+
+- [ ] After Boss's manual `make dev` restart or `make build`, confirm `POST /automations/missing` returns HTTP 404 and JSON `{"error":"no such endpoint: /automations/missing"}`. The critic regression exercises the router; Rust does not hot-reload. No desktop instance was restarted by this peer.
+
 ## Terminal paste text precedence
 
 - [ ] After loading the updated frontend, copy a text line by selection in terminal Chat and paste into Claude Code; confirm text appears rather than an image attachment. Capture the paste event's MIME types to identify the original WebView clipboard payload. Also check a screenshot-only paste and a Finder image copy still attach. Component tests cover the mixed text/image precedence; this peer did not access Boss's running WebView or clipboard.
