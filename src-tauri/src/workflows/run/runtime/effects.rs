@@ -159,10 +159,11 @@ pub(in crate::workflows::run) async fn drive_effect(
                             state,
                             &run.project,
                             &branch,
+                            None,
                         )
                         .await
                         {
-                            Ok(path) => path,
+                            Ok(workspace) => workspace.path,
                             Err(error) => {
                                 fail_effect(store, &run.id, &effect.id)?;
                                 return Err(error);

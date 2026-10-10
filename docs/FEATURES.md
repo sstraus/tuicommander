@@ -2727,6 +2727,11 @@ past instants on creation and spring gaps, resolves folds to the earlier instant
 and keeps consumed Once definitions for inspection. The backend supplies one
 preview instant and completed schedule state. Public automation controls arrive
 with the scheduler API and dialog.
+The shared Rust runtime now admits Once schedules on desktop and headless hosts,
+reserves before dispatch and records precheck decisions and launch pointers.
+Precheck stdout never changes the literal prompt. Public execution controls and
+completion/maximum-duration integration remain pending.
+
 ### Automations dialog (backend integration pending)
 
 Machine-local scheduled-run editor with search, backend cadence/zone preview,

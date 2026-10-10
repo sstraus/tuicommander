@@ -1,3 +1,7 @@
+## Once automation dispatch (1615-57cf) — Rust restart required
+
+- [ ] After a manual `make dev` restart (or `make build` for release), verify isolated Once automation dispatch uses the configured workspace/profile, saves precheck outcomes and launch pointers, and does not inject precheck output into the prompt (#1615-57cf, #1614-7e8f). Rust does not hot-reload. Public Run Now transport and completion/deadline handling remain pending.
+
 ## Tablet desktop switch (1658-fb34)
 
 - [x] Browser iPad emulation: Settings → Open Desktop UI reaches `/`, a later root visit stays desktop, and the visible Switch link returns to `/mobile` and clears the preference. _(verified: worktree Vite :14358 via stealth wrapper, iPad UA, five touch points, standalone flag; screenshots `~/Gits/.tmp/tablet-1658-{settings,desktop,return-mobile}.png`; 15 targeted tests passed.)_

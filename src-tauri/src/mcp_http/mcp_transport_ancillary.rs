@@ -17,7 +17,6 @@ use super::mcp_transport_catalogue::UI_ACTIONS;
 use super::mcp_transport_catalogue::VOICE_ACTIONS;
 use super::mcp_transport_catalogue::validate_mcp_repo_path;
 use super::mcp_transport_peer::PEER_IDENTITY_BIND_LOCK;
-use super::mcp_transport_session_agent::handle_agent_with_parent_cwd;
 use super::mcp_transport_session_agent::handle_session;
 use super::mcp_transport_session_agent::require_action;
 use super::mcp_transport_session_agent::require_path;
@@ -1498,14 +1497,15 @@ fn launch_workflow_effect(
         }
         return Err("workflow stopped before agent spawn".into());
     }
-    let spawn_args = serde_json::json!({
-        "action": "spawn",
-        "agent_type": input.agent_type,
-        "name": format!("Workflow {:?}", package.role),
-        "prompt": package.prompt,
-        "cwd": worktree,
-    });
-    let spawned = handle_agent_with_parent_cwd(state, addr, &spawn_args, mcp_session_id, None);
+    let spawned = super::managed_launch::launch(
+        state,
+        addr,
+        mcp_session_id,
+        &input.agent_type,
+        &format!("Workflow {:?}", package.role),
+        &package.prompt,
+        &worktree,
+    );
     if let Some(error) = spawned.get("error").and_then(serde_json::Value::as_str) {
         if let Ok(failed) = store.command(
             &run.id,
@@ -2393,16 +2393,22 @@ pub(crate) fn launch_daemon_workflow_agent(
     )
 }
 
+pub(crate) struct DaemonWorkspace {
+    pub path: String,
+    pub id: String,
+}
+
 pub(crate) async fn create_daemon_workflow_worktree(
     state: &Arc<AppState>,
     project: &str,
     branch: &str,
-) -> Result<String, String> {
+    base_ref: Option<&str>,
+) -> Result<DaemonWorkspace, String> {
     super::worktree_routes::create_worktree_shared(
         state,
         project.into(),
         branch.into(),
-        None,
+        base_ref.map(str::to_owned),
         None,
         false,
     )
@@ -2412,6 +2418,9 @@ pub(crate) async fn create_daemon_workflow_worktree(
         if let Some(error) = created.setup_script_error {
             return Err(error.to_string());
         }
-        Ok(created.path)
+        Ok(DaemonWorkspace {
+            path: created.path,
+            id: created.workspace_id,
+        })
     })
 }
