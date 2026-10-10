@@ -113,6 +113,8 @@ Every `ui:panel` iframe gets two automatic injections: (1) a **base stylesheet**
 <style>.my-grid { display: grid; gap: 8px; }</style>
 ```
 
+Additional base classes: `.btn` is the button-style alias, `.btn-primary` and `.btn-danger` are its action variants. `.badge-p2`/`.badge-warning` use warning colors; `.badge-p3` uses muted colors. `.hint` is secondary helper text. Toast modifiers `.show`, `.error` and `.success`, and meter modifiers `.ok`, `.warn` and `.critical`, apply to their base element, not standalone containers.
+
 ## MANDATORY — Dashboard Style Guide
 
 **If your plugin renders a dashboard (analytics, status, reports, summaries) you MUST use the shared `.dashboard`/`.dash-*` classes from the base stylesheet.** Hand-rolling layout/card/stat CSS is forbidden — dashboards must look like a native part of TUICommander, not a third-party widget. The native Claude Usage dashboard is the reference.
@@ -148,6 +150,19 @@ Minimum dashboard skeleton:
 Full reference, checklist, and do/don'ts: `docs/plugins-style.md` in the TUICommander repo. Treat that file as authoritative — if it conflicts with this reference, it wins.
 
 Plugin packages are external desktop ES modules; browser/PWA clients do not import them. Desktop hot reload watches `.js`, `.mjs` and `.json` code outside `data/` and new top-level directories/symlinks. The watcher does not follow symlink targets. There is no `BUILTIN_PLUGINS` registration list.
+
+## Source-checked surface inventories
+
+These inventories are checked against the capability validator, the host object and the injected stylesheet. The API sections below explain how to use them. CSS names are class tokens: use a leading dot in selectors, not in HTML class attributes.
+
+### Capability inventory
+`credentials:read`, `exec:cli`, `fs:delete`, `fs:list`, `fs:read`, `fs:rename`, `fs:scan`, `fs:watch`, `fs:write`, `git:read`, `invoke:list_markdown_files`, `invoke:read_file`, `net:http`, `pty:read`, `pty:write`, `ui:context-menu`, `ui:file-icons`, `ui:file-preview`, `ui:markdown`, `ui:panel`, `ui:sidebar`, `ui:sound`, `ui:ticker`.
+
+### Host method inventory
+`addItem`, `clearTicker`, `deleteBuildArtifact`, `execCli`, `getActiveRepo`, `getActiveRepoPath`, `getActiveTerminalSessionId`, `getClaudeProjectDir`, `getGitBranches`, `getGitDiff`, `getPrNotifications`, `getRecentCommits`, `getRepoPathForSession`, `getRepos`, `getSessionCwd`, `getSettings`, `getTerminalState`, `httpFetch`, `invoke`, `listDirectory`, `log`, `onStateChange`, `openEditorTab`, `openMarkdownFile`, `openMarkdownFileBackground`, `openMarkdownPanel`, `openPanel`, `playNotificationSound`, `readCredential`, `readFile`, `readFileBase64`, `readFileTail`, `readFiles`, `readSessionOutput`, `registerCommand`, `registerContextMenuAction`, `registerDashboard`, `registerFileIconProvider`, `registerFilePreview`, `registerMarkdownProvider`, `registerOutputWatcher`, `registerSection`, `registerSidebarPanel`, `registerStructuredEventHandler`, `registerTerminalAction`, `removeItem`, `renamePath`, `scanBuildArtifacts`, `sendAgentInput`, `setTicker`, `trimBuildArtifact`, `updateItem`, `watchPath`, `writeFile`, `writeFileBase64`, `writePty`.
+
+### Base CSS class inventory
+`badge`, `badge-accent`, `badge-error`, `badge-muted`, `badge-p1`, `badge-p2`, `badge-p3`, `badge-success`, `badge-warning`, `btn`, `btn-danger`, `btn-primary`, `card`, `critical`, `danger`, `dash-header`, `dash-meter`, `dash-meter-fill`, `dash-section`, `dash-section-hint`, `dash-section-title`, `dash-stat`, `dash-stat-grid`, `dash-stat-label`, `dash-stat-sub`, `dash-stat-value`, `dash-subtitle`, `dash-title`, `dashboard`, `empty-state`, `error`, `filter-bar`, `hint`, `num`, `ok`, `primary`, `show`, `success`, `toast`, `warn`.
 
 ## PluginHost API
 
@@ -238,7 +253,7 @@ host.getGitDiff(repoPath, scope?)       // unified diff string (scope: "staged" 
 | `host.openMarkdownPanel(title: string, contentUri: string): void` | `ui:markdown` |
 | `host.openMarkdownFile(absolutePath: string): void` | `ui:markdown` |
 | `host.openMarkdownFileBackground(absolutePath: string): boolean` — opens a pinned background tab; false when no registered repo owns the path | `ui:markdown` |
-| `host.openEditorTab(filePath: string, repoPath: string, opts?: { fsRoot?: string, line?: number }): void` | *(none)* |
+| `host.openEditorTab(filePath: string, repoPath: string, opts?: { fsRoot?: string, line?: number }): void` | `ui:panel` |
 | `await host.playNotificationSound(sound?: "question" \| "error" \| "completion" \| "warning" \| "info"): Promise<void>` | `ui:sound` |
 | `host.openPanel({ id, title, html, onMessage? }): PanelHandle` | `ui:panel` |
 | `host.setTicker({ id, text, label?, icon?, priority?, ttlMs?, onClick? }): void` | `ui:ticker` |
@@ -284,6 +299,10 @@ const projectDir = await host.getClaudeProjectDir("/Users/me/my-project");  // r
 
 // Read a file (max 10 MB, UTF-8)
 const content = await host.readFile(`${projectDir}/conversation.jsonl`);  // requires "fs:read"
+
+// Read up to 1000 files in one round trip, in request order.
+// An unreadable or vanished file returns null in its slot.
+const contents = await host.readFiles(absolutePaths);  // requires "fs:read"
 
 // Read a binary file as base64 (10 MiB default; positive per-call maxBytes,
 // clamped by the host to 512 MiB)
@@ -362,6 +381,36 @@ await host.invoke("delete_plugin_data", {
   path: "cache.json",
 });
 ```
+
+## Core-rendered plugin UX
+
+Core renders the following Solid components. Plugins supply manifest metadata and host registrations; they do not import or mount these components.
+
+### Manifest UX field inventory
+`agentTypes`, `allowedUrls`, `author`, `binaries`, `capabilities`, `description`, `id`, `main`, `minAppVersion`, `name`, `version`.
+
+### Core UX component inventory
+`BrowseRow`, `PluginLogViewer`, `PluginRow`, `PluginsTab`.
+
+#### PluginsTab
+
+Settings > Plugins has Installed and Browse views. Installed lists loaded/discovered plugin state. Browse reads community registry entries and offers install, update and refresh actions. Installation accepts ZIP archives. The manifest `id` identifies the package, `main` selects its module, and `minAppVersion` controls compatibility. `author` is optional metadata. `allowedUrls`, `agentTypes` and `binaries` drive host access/event routing, not editable settings controls.
+
+#### PluginRow
+
+The Installed row shows manifest `name` (falls back to `id`), `version`, `description` and `capabilities`. It shows load errors, error counts and available updates. Its toggle persists enabled state; Logs expands PluginLogViewer; external packages can be uninstalled. A README.md adds a documentation button. `host.registerDashboard({ label?, icon?, open })` adds a dashboard button: core closes Settings before calling `open`. Register only one dashboard per plugin. `host.registerCommand({ id, title, defaultShortcut?, run })` adds a rebindable entry under Settings > Keyboard Shortcuts > Plugin Commands.
+
+#### PluginLogViewer
+
+The expanded Logs view shows the plugin ring buffer's timestamp, level and message, or an empty state. Use `host.log(level, message, data?)`; host boundary errors are captured automatically.
+
+#### BrowseRow
+
+The Browse row shows registry name, version, description, author, tags and minimum app version. It offers Install for an absent package, Update when a newer version is available, or Installed for the current version. Registry metadata is separate from the installed manifest.
+
+### Settings schema and Tasks views
+
+The current PluginManifest has no settings schema, field-kind union or generic Tasks-view declaration. Core does not render schema-driven plugin settings or generic plugin Tasks views. Do not invent manifest fields or import core Settings components. Plugins can open their own UI with `host.openPanel` or `host.openMarkdownPanel`. When a settings schema or Tasks-view API is added, document its fields, kinds and core-rendered controls here and extend the source-derived UX drift check to its real schema/renderer. The manifest field and host method inventories fail on new API entries until the guide is updated.
 
 ## Structured Event Types
 
@@ -624,3 +673,119 @@ Useful for informational purposes — do not use this to construct paths yoursel
 | Changes not reflecting | Save again or restart app |
 | `default export` error | Must export default { id, onload, onunload } |
 "###;
+
+#[cfg(test)]
+mod tests {
+    use super::PLUGIN_DOCS;
+    use regex::Regex;
+    use std::collections::BTreeSet;
+
+    const PLUGINS: &str = include_str!("../plugins.rs");
+    const HOST: &str = include_str!("../../../src/plugins/pluginRegistry.ts");
+    const CSS: &str = include_str!("../../../src/components/PluginPanel/pluginBaseStyles.ts");
+    const UX: &str = include_str!("../../../src/components/SettingsPanel/tabs/PluginsTab.tsx");
+
+    fn captures(source: &str, pattern: &str) -> BTreeSet<String> {
+        Regex::new(pattern)
+            .unwrap()
+            .captures_iter(source)
+            .map(|c| c[1].to_owned())
+            .collect()
+    }
+
+    fn section<'a>(source: &'a str, start: &str, end: &str) -> &'a str {
+        source
+            .split_once(start)
+            .expect("source section must exist")
+            .1
+            .split_once(end)
+            .expect("source section must end")
+            .0
+    }
+
+    fn inventory(guide: &str, heading: &str) -> BTreeSet<String> {
+        captures(section(guide, heading, "\n\n"), r"`([^`]+)`")
+    }
+
+    fn assert_inventory(guide: &str, heading: &str, expected: BTreeSet<String>) {
+        assert!(
+            !expected.is_empty(),
+            "source extraction must not pass by absence"
+        );
+        assert_eq!(
+            inventory(guide, heading),
+            expected,
+            "guide drift in {heading}"
+        );
+    }
+
+    // Catches: added or removed capabilities/methods/classes leave agents with a stale API.
+    #[test]
+    fn plugin_docs_matches_live_plugin_surface() {
+        assert_inventory(
+            PLUGIN_DOCS,
+            "### Capability inventory\n",
+            captures(
+                section(PLUGINS, "const KNOWN_CAPABILITIES: &[&str] = &[", "];"),
+                r#""([^"]+)""#,
+            ),
+        );
+        assert_inventory(
+            PLUGIN_DOCS,
+            "### Host method inventory\n",
+            captures(
+                section(HOST, "function buildHost(", "// Lifecycle"),
+                r"(?m)^\t\t\t(?:async )?([A-Za-z][A-Za-z0-9]*)(?:<[^>]+>)?\(",
+            ),
+        );
+        let documented_methods = captures(PLUGIN_DOCS, r"host\.([A-Za-z][A-Za-z0-9]*)\(");
+        assert_eq!(
+            documented_methods,
+            inventory(PLUGIN_DOCS, "### Host method inventory\n"),
+            "host methods need actual usage documentation, not only an inventory"
+        );
+        let css = Regex::new(r"(?s)/\*.*?\*/").unwrap().replace_all(CSS, "");
+        let selectors = css
+            .split('}')
+            .filter_map(|rule| rule.split_once('{').map(|(s, _)| s))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert_inventory(
+            PLUGIN_DOCS,
+            "### Base CSS class inventory\n",
+            captures(&selectors, r"\.([a-zA-Z][a-zA-Z0-9_-]*)"),
+        );
+    }
+
+    // Catches: new manifest-driven UI or core plugin components are absent from the UX guide.
+    #[test]
+    fn plugin_docs_matches_core_plugin_ux() {
+        let manifest = section(PLUGINS, "pub struct PluginManifest {", "\n}");
+        let field = Regex::new(r#"(?s)(?:#\[serde\(([^]]*)\)\]\s*)?pub ([a-z_]+):"#).unwrap();
+        let fields = field
+            .captures_iter(manifest)
+            .map(|c| {
+                c.get(1)
+                    .and_then(|attr| {
+                        Regex::new(r#"rename = "([^"]+)""#)
+                            .unwrap()
+                            .captures(attr.as_str())
+                            .map(|rename| rename[1].to_owned())
+                    })
+                    .unwrap_or_else(|| c[2].to_owned())
+            })
+            .collect();
+        assert_inventory(PLUGIN_DOCS, "### Manifest UX field inventory\n", fields);
+        assert_inventory(
+            PLUGIN_DOCS,
+            "### Core UX component inventory\n",
+            captures(UX, r"(?m)^(?:export )?const ([A-Za-z]+): Component"),
+        );
+        for component in inventory(PLUGIN_DOCS, "### Core UX component inventory\n") {
+            assert!(
+                PLUGIN_DOCS.contains(&format!("#### {component}\n")),
+                "each core component needs UX instructions: {component}"
+            );
+        }
+    }
+}

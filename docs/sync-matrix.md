@@ -28,7 +28,7 @@ When modifying PluginHost API, capabilities, manifest schema, Tauri commands use
 | `src-tauri/src/lib.rs` | Register new Tauri commands in `invoke_handler` |
 | `docs/backend/command-threading.md` | Where a new command runs (`fn` = macOS main thread). Update the audit when a command changes placement |
 | `docs/plugins.md` | Plugin developer guide (API reference, capabilities table, **Panel CSS Design Strategy** section, examples) |
-| `src-tauri/src/mcp_http/plugin_docs.rs` | AI-optimized plugin reference (`PLUGIN_DOCS` const — **must stay in sync with `docs/plugins.md`**) |
+| `src-tauri/src/mcp_http/plugin_docs.rs` | AI-optimized plugin reference (`PLUGIN_DOCS` const — **must stay in sync with `docs/plugins.md`**); `cargo nextest run -E 'test(plugin_docs)'` checks source-derived capability, host method, base CSS and manifest/core UX inventories. Extend the UX check when adding settings schema field kinds or Tasks views. |
 | `docs/api/tauri-commands.md` | Tauri commands reference table |
 | `docs/api/http-api.md` | HTTP API reference (if new HTTP endpoints) |
 | `docs/backend/mcp-http.md` | MCP/HTTP server docs (if new routes) |
