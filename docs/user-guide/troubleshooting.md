@@ -97,3 +97,7 @@ Include:
 - exact reproduction steps;
 - relevant logs with tokens and credentials removed;
 - whether the issue survives creating a fresh terminal tab.
+
+## Community & support
+
+Join [TUICommander & Co on Discord](https://discord.gg/4DQ7Ah6hSh) for questions and ideas. Use **#support**, **#ideas**, or **#plugins** in the **TUICommander** category. The server is checked once a day. Report reproducible bugs in [GitHub issues](https://github.com/sstraus/tuicommander/issues).

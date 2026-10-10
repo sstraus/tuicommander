@@ -42,3 +42,7 @@
 - **[Remote Daemon](./user-guide/remote-access.md#tuic-remote-beta)** — `tuic-remote` runs the backend headless on a server or build host: same HTTP/WebSocket API, no Tauri, no GUI
 
 The complete, always-current capability inventory lives in the [Feature Reference](./FEATURES.md).
+
+## Community & support
+
+Join [TUICommander & Co on Discord](https://discord.gg/4DQ7Ah6hSh) for questions and ideas. Use **#support**, **#ideas**, or **#plugins** in the **TUICommander** category. The server is checked once a day. Report reproducible bugs in [GitHub issues](https://github.com/sstraus/tuicommander/issues).

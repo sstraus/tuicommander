@@ -1,4 +1,37 @@
 use super::*;
+
+// Catches: shared status hides the polling process or reports stale/disabled connectivity.
+#[test]
+fn polling_owner_snapshot_distinguishes_this_process_remote_and_stale_status() {
+    let (_dir, paths) = crate::telegram::tests::setup();
+    let state = crate::state::tests_support::make_test_app_state();
+    status(&paths, true, None, false);
+    let current = serde_json::to_value(snapshot(&paths, &state).unwrap()).unwrap();
+    assert_eq!(current["polling_owner"], "this_app");
+    assert_eq!(current["connected"], true);
+    let mut shared: Value =
+        serde_json::from_str(&std::fs::read_to_string(paths.file("status.json")).unwrap()).unwrap();
+    shared["owner_pid"] = json!(u32::MAX);
+    shared["owner_kind"] = json!("tuic_remote");
+    write(&paths, "status.json", &serde_json::to_vec(&shared).unwrap()).unwrap();
+    let remote = serde_json::to_value(snapshot(&paths, &state).unwrap()).unwrap();
+    assert_eq!(remote["polling_owner"], "tuic_remote");
+    shared["updated_at"] = json!(1);
+    write(&paths, "status.json", &serde_json::to_vec(&shared).unwrap()).unwrap();
+    let stale = serde_json::to_value(snapshot(&paths, &state).unwrap()).unwrap();
+    assert_eq!(stale["polling_owner"], Value::Null);
+    assert_eq!(stale["connected"], false);
+    status(&paths, true, None, false);
+    save_config(
+        &paths,
+        &Config {
+            enabled: false,
+            bot_alias: "test-bot".into(),
+        },
+    )
+    .unwrap();
+    assert!(!snapshot(&paths, &state).unwrap().connected);
+}
 // Catches: code-like messages, expired credentials or replay authorize a stranger.
 #[tokio::test]
 async fn pairing_code_expired_or_wrong_authorizes_nothing() {

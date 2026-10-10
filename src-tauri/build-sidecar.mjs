@@ -3,7 +3,7 @@
 // Called by `pnpm build:sidecar` — works on macOS, Linux, and Windows.
 // Skips rebuild if the source crate hasn't changed since last build.
 import { execSync } from "child_process";
-import { copyFileSync, writeFileSync, statSync, existsSync, renameSync, rmSync } from "fs";
+import { copyFileSync, statSync, existsSync, renameSync, rmSync } from "fs";
 import { join, dirname, isAbsolute } from "path";
 import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
@@ -41,6 +41,7 @@ function replaceSidecar(sidecarPath, writeStaged) {
   const staged = `${sidecarPath}.update.${randomUUID()}`;
   try {
     writeStaged(staged);
+    assertRealSidecar(staged);
     renameSync(staged, sidecarPath);
   } finally {
     rmSync(staged, { force: true });
@@ -52,11 +53,6 @@ for (const { pkg, bin, crate: cratePath } of sidecars) {
   const sidecarName = `${bin}-${target}${ext}`;
   const sidecarPath = join(binDir, sidecarName);
   const releaseBin = join(targetDir, "release", binName);
-
-  // Touch placeholder so Tauri's build.rs finds it at compile time
-  if (!existsSync(sidecarPath)) {
-    replaceSidecar(sidecarPath, (staged) => writeFileSync(staged, ""));
-  }
 
   // Skip rebuild if the release binary is newer than all source files
   if (!force && existsSync(releaseBin)) {
@@ -88,7 +84,7 @@ for (const { pkg, bin, crate: cratePath } of sidecars) {
       // Ensure sidecar is up to date even if we skip the build
       const sidecarSize = existsSync(sidecarPath) ? statSync(sidecarPath).size : 0;
       const releaseSize = statSync(releaseBin).size;
-      if (sidecarSize === releaseSize) {
+      if (existsSync(sidecarPath) && sidecarSize === releaseSize) {
         assertRealSidecar(sidecarPath);
         console.log(`Sidecar up to date: ${sidecarName} (skipped)`);
         continue;
@@ -102,7 +98,6 @@ for (const { pkg, bin, crate: cratePath } of sidecars) {
   });
 
   replaceSidecar(sidecarPath, (staged) => copyFileSync(releaseBin, staged));
-  assertRealSidecar(sidecarPath);
 
   console.log(`Sidecar built: ${sidecarName}`);
 }
