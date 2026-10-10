@@ -839,3 +839,10 @@ Once keeps `once_local` as a wall time; the backend owns timezone resolution and
 completed-occurrence evidence. One injectable adapter isolates Step 8 envelopes.
 Targeted frontend tests verify this boundary; real scheduler integration remains
 a separate requirement before the feature is available.
+
+The shared backend now starts an owner-guarded Once runtime on desktop and
+headless boot. It claims reservations before effects, rechecks definitions and
+destinations, uses the configured workspace base/profile and literal prompt,
+and saves precheck pass/refusal/manual-bypass/no-check outcomes and launch ids.
+Cron dispatch stays disabled in phase 1. Public execution transports and
+completion/maximum-duration handling remain pending; idle is not success.

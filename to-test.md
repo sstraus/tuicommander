@@ -1,3 +1,7 @@
+## Once automation dispatch (1615-57cf) — Rust restart required
+
+- [ ] After a manual `make dev` restart (or `make build` for release), verify isolated Once automation dispatch uses the configured workspace/profile, saves precheck outcomes and launch pointers, and does not inject precheck output into the prompt (#1615-57cf, #1614-7e8f). Rust does not hot-reload. Public Run Now transport and completion/deadline handling remain pending.
+
 ## Mobile Claude dot pulse (1654-a3d5)
 
 - [ ] On an actual iPhone and iPad installed Safari PWA, run a long Claude Bash tool call; confirm grey ON/OFF pulses and green completion preserve text position and continuation indentation. Real OutputView browser geometry passes in Chromium at 390×844 and 1024×1366; device emulation does not prove Safari fonts or touch behavior.

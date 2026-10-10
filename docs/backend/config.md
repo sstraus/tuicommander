@@ -1253,7 +1253,8 @@ Retention defaults to 90 days after finalization and never removes open records.
 Notification attempts are deduplicated by run, transition and channel and settle
 as confirmed or unknown independently of execution. Boot marks outstanding
 attempts unknown; it does not replay them. Saved output remains the canonical
-report. Scheduler boot and public transports are wired in later plan steps.
+report. Scheduler boot is wired on desktop and headless hosts. Public execution
+transports remain pending; the existing MCP tool manages definitions only.
 
 ### Precheck execution foundation
 
@@ -1271,8 +1272,27 @@ reports incomplete capture as an error. Manual Run Now returns a persistable
 `bypassed` outcome without spawning; no configured precheck returns
 `not_configured`. Precheck output does not modify the prompt.
 
-This helper is the Step 5 foundation; Step 6 owns run-ledger persistence and
-runtime dispatch integration. No scheduler is started by this module.
+The shared automation runtime acquires the ledger owner lock on both desktop
+and headless boot. It reconciles open runs as interrupted without retrying,
+then admits only Once schedules on a 30-second tick. Recurring cron definitions
+remain stored but are not dispatched in phase 1.
+
+Dispatch atomically claims a reservation before workspace or agent effects,
+then checks the definition again before the precheck and before launch. Deleted,
+paused scheduled runs and changed definitions fail without launching. Manual
+runs can use paused definitions and share the same overlap/concurrency limits.
+Existing mode uses the repository; new-per-run mode uses the shared workspace
+creator with the configured base branch, preserving workflow defaults.
+
+The ledger saves `precheck_outcome` as `not_configured`, `bypassed`, or
+`executed` with termination, capped stdout/stderr, truncation and duration.
+Failed checks finalize as `skipped_precheck` without an agent. Successful checks
+retain their evidence before launch; their stdout never changes the literal
+prompt. The configured saved agent profile must exist; dispatch does not fall
+back to another CLI. Workspace path/id and task/session ids are saved after
+their effects, and errors finalize as failed. A child whose binding cannot be
+saved is stopped through the managed session API. Completion and maximum-duration
+handling remain a separate integration step; idle is not treated as success.
 
 Automation definitions may contain `created_by_session`, the host-issued identity
 of their creating agent. Older definitions omit it. Shared definition actions

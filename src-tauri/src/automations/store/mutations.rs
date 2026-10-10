@@ -1,6 +1,29 @@
 use super::*;
 
 impl RunStore {
+    /// Only a fresh reservation may perform effects. Commit the claim before
+    /// resolving a workspace, so concurrent dispatch calls cannot spawn twice.
+    pub(in crate::automations) fn claim_dispatch(
+        &self,
+        id: &str,
+        now_ms: i64,
+    ) -> Result<Option<AutomationRun>, String> {
+        self.require_owner()?;
+        let mut conn = self.connect()?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(error)?;
+        let mut run = read(&tx, id)?;
+        if run.status != RunStatus::Reserved {
+            return Ok(None);
+        }
+        run.status = RunStatus::Prechecking;
+        run.updated_ms = now_ms.max(run.updated_ms);
+        write(&tx, &run)?;
+        tx.commit().map_err(error)?;
+        Ok(Some(run))
+    }
+
     /// Apply observed execution state; the first terminal result is immutable.
     pub fn transition(
         &self,
@@ -42,6 +65,9 @@ impl RunStore {
         if let Some(value) = details.workspace {
             run.workspace = Some(value);
         }
+        if let Some(value) = details.workspace_id {
+            run.workspace_id = Some(value);
+        }
         if let Some(value) = details.stdout {
             run.stdout = SavedOutput::bounded(&value);
         }
@@ -63,6 +89,17 @@ impl RunStore {
         }
         if let Some(value) = details.reason {
             run.reason = Some(value);
+        }
+        if let Some(mut value) = details.precheck_outcome {
+            if let super::super::precheck::PrecheckOutcome::Executed(result) = &mut value {
+                let stdout = SavedOutput::bounded(&result.stdout);
+                let stderr = SavedOutput::bounded(&result.stderr);
+                result.stdout = stdout.text;
+                result.stderr = stderr.text;
+                result.stdout_truncated |= stdout.truncated;
+                result.stderr_truncated |= stderr.truncated;
+            }
+            run.precheck_outcome = Some(value);
         }
         write(&tx, &run)?;
         tx.commit().map_err(error)?;
