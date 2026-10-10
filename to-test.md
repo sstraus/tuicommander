@@ -57,6 +57,10 @@
 - [ ] After Boss chooses to rebuild/restart the backend, launch a new managed peer and open **Inspect Launch Instructions…** from its terminal context menu. Confirm the final brief includes peer context, explicit system instruction sections/file snapshots and served MCP initialization sections have sources/bytes, and secrets are redacted. A shell-launched or restored session must show its launch as unavailable while retaining any MCP initialization instructions actually served; autonomous agent file reads must remain unobservable. The standalone real-component preview was visually checked; live desktop/backend integration waits for the authorized restart. No second desktop instance was launched.
 # To Test
 
+## Hands-free phrase boundaries (1656-eb5e) — Rust restart required
+
+- [ ] After Boss's planned `make dev` restart or `make build`, hold a hands-free turn behind a draft or permission dialog, speak two phrases, then clear the hold. Confirm the phrases reach the agent on separate lines as one submission. The backend does not hot-reload; this peer does not restart desktop.
+
 ## Terminal Chat presentation (1576-6320)
 
 - [x] Compact inbox/interruption notices, image chips, merged thinking rows, hidden empty replies, answer highlighting, historical tool status and attached Copy actions. _(verified: real Transcript component in an isolated Vite browser preview; screenshot `~/Gits/.tmp/tuic-chatview-1007/chat-final.png`, DOM coordinates and 149 targeted Vitest tests. The mounted terminal toggle test confirms Compose disappears in Chat and returns in CLI. No desktop instance was launched.)_
