@@ -848,6 +848,40 @@ pub(super) fn sweep_expired_rate_limits(
     before - rate_limits.len()
 }
 
+/// Authenticate story and workflow credentials for story transition provenance.
+/// Missing caller metadata (Unix sockets and in-process services) denotes a
+/// local/unknown caller.
+pub(super) async fn workflow_actor_middleware(
+    State(state): State<Arc<AppState>>,
+    caller: Option<axum::extract::Extension<ConnectInfo<SocketAddr>>>,
+    req: Request<axum::body::Body>,
+    next: Next,
+) -> Response {
+    if !matches!(
+        req.uri().path(),
+        "/stories/action" | "/workflows/definition/action" | "/workflows/run/action"
+    ) || req
+        .extensions()
+        .get::<super::guards::UserAuthenticated>()
+        .is_some()
+    {
+        return next.run(req).await;
+    }
+    let token = state.session_token.read().clone();
+    let credentials = has_valid_session_cookie(&req, &token)
+        || has_valid_url_token(&req, &token)
+        || req.headers().contains_key(header::AUTHORIZATION);
+    if credentials {
+        let addr = caller.map_or(
+            SocketAddr::from(([127, 0, 0, 1], 0)),
+            |axum::extract::Extension(ConnectInfo(addr))| addr,
+        );
+        basic_auth_middleware(State(state), ConnectInfo(addr), req, next).await
+    } else {
+        next.run(req).await
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2200,39 +2234,5 @@ mod tests {
             }
             assert_eq!(safe_next(Some("/mobile?shared=abc")), "/mobile?shared=abc");
         }
-    }
-}
-
-/// Authenticate story and workflow credentials for story transition provenance.
-/// Missing caller metadata (Unix sockets and in-process services) denotes a
-/// local/unknown caller.
-pub(super) async fn workflow_actor_middleware(
-    State(state): State<Arc<AppState>>,
-    caller: Option<axum::extract::Extension<ConnectInfo<SocketAddr>>>,
-    req: Request<axum::body::Body>,
-    next: Next,
-) -> Response {
-    if !matches!(
-        req.uri().path(),
-        "/stories/action" | "/workflows/definition/action" | "/workflows/run/action"
-    ) || req
-        .extensions()
-        .get::<super::guards::UserAuthenticated>()
-        .is_some()
-    {
-        return next.run(req).await;
-    }
-    let token = state.session_token.read().clone();
-    let credentials = has_valid_session_cookie(&req, &token)
-        || has_valid_url_token(&req, &token)
-        || req.headers().contains_key(header::AUTHORIZATION);
-    if credentials {
-        let addr = caller.map_or(
-            SocketAddr::from(([127, 0, 0, 1], 0)),
-            |axum::extract::Extension(ConnectInfo(addr))| addr,
-        );
-        basic_auth_middleware(State(state), ConnectInfo(addr), req, next).await
-    } else {
-        next.run(req).await
     }
 }
