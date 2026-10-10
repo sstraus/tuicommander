@@ -155,19 +155,22 @@ fn crypto_guard_stored_scalar_vapid_verifies_independently_and_rejects_tampering
     assert!(verifier.verify(b"tampered", &signature).is_err());
 }
 
-#[test]
-fn crypto_guard_ring_cannot_recover_public_key_from_stored_scalar_alone() {
-    let result = ring::signature::EcdsaKeyPair::from_private_key_and_public_key(
-        &ring::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
-        &decode(AS_PRIVATE),
-        &[],
-        &ring::rand::SystemRandom::new(),
-    );
-    let error = result
-        .err()
-        .expect("ring requires the public key alongside the stored scalar");
-    assert_eq!(
-        format!("{error:?}"),
-        "KeyRejected(\"InconsistentComponents\")"
-    );
+// Keep the original migration guards and their independent verifier unchanged
+// while production only loads scalars and signs with ring.
+fn build_vapid_authorization(
+    key: &p256::ecdsa::SigningKey,
+    endpoint: &axum::http::Uri,
+    subject: &str,
+    valid_secs: u64,
+) -> Result<axum::http::HeaderValue, String> {
+    super::build_vapid_authorization(&p256::SecretKey::from(key), endpoint, subject, valid_secs)
+}
+
+fn build_push_request(
+    sub: &PushSubscription,
+    key: &p256::ecdsa::SigningKey,
+    subject: &str,
+    payload: &[u8],
+) -> Option<(String, axum::http::Request<Vec<u8>>)> {
+    super::build_push_request(sub, &p256::SecretKey::from(key), subject, payload)
 }

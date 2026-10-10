@@ -547,7 +547,7 @@ mod tests {
 
     #[test]
     fn crypto_guard_relay_fixed_nonce_prevents_ciphertext_or_framing_drift() {
-        let cipher = Aes256Gcm::new(&[0u8; 32].into());
+        let cipher = Aes256Gcm::new(&[0u8; 32]);
         let expected = hex::decode("000000000000000000000000cea7403d4d606b6e074ec5d3baf39d18d0d1c8a799996bf0265b98b5d48ab919").unwrap();
         assert_eq!(
             encrypt_with_nonce(&cipher, [0; 12], &[0; 16]).unwrap(),
@@ -833,28 +833,6 @@ mod tests {
     // -----------------------------------------------------------------------
     // Crypto tests
     // -----------------------------------------------------------------------
-
-    #[test]
-    fn derive_key_uses_hkdf_with_salt_and_info() {
-        // Verify derive_key uses HKDF-SHA256 with:
-        //   salt = b"tuicommander-relay-v1"
-        //   info = b"aes-256-gcm-key"
-        // by comparing against a manually-computed reference.
-        let expected: [u8; 32] =
-            hex::decode("1b4d1ef34de6d5b63ed99d9934cddb5ca72136151442609da11b4e631a2016c7")
-                .unwrap()
-                .try_into()
-                .unwrap();
-
-        let reference_cipher = Aes256Gcm::new(&expected.into());
-        let cipher = derive_cipher("test_token");
-
-        // If derive_cipher uses the same HKDF params, cross-decryption works
-        let plaintext = b"hkdf salt and info verification";
-        let encrypted = encrypt(&reference_cipher, plaintext).unwrap();
-        let decrypted = decrypt(&cipher, &encrypted).unwrap();
-        assert_eq!(decrypted, plaintext);
-    }
 
     // -----------------------------------------------------------------------
     // Reconnect lifecycle

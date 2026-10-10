@@ -5,6 +5,12 @@ use p256::elliptic_curve::sec1::ToEncodedPoint;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+pub(crate) mod crypto;
+#[cfg(test)]
+use crypto::{encrypt_push_record, push_key_material};
+#[cfg(test)]
+mod crypto_guards;
+
 /// Known push service host suffixes. Endpoints not matching these are rejected (SSRF prevention).
 const ALLOWED_PUSH_HOSTS: &[&str] = &[
     ".googleapis.com", // Google FCM
@@ -148,11 +154,9 @@ impl PushStore {
 /// Generate a new ES256 VAPID key pair for Web Push.
 /// Returns (private_key_base64url, public_key_base64url).
 pub(crate) fn generate_vapid_keys() -> Result<(String, String), String> {
-    use p256::ecdsa::SigningKey;
-
-    let signing_key = SigningKey::random(&mut rand_core::OsRng);
+    let signing_key = p256::SecretKey::random(&mut rand_core::OsRng);
     let private_b64 = Base64UrlUnpadded::encode_string(signing_key.to_bytes().as_ref());
-    let uncompressed = signing_key.verifying_key().to_encoded_point(false);
+    let uncompressed = signing_key.public_key().to_encoded_point(false);
     let public_b64 = Base64UrlUnpadded::encode_string(uncompressed.as_bytes());
 
     Ok((private_b64, public_b64))
@@ -189,8 +193,6 @@ pub(crate) async fn send_push_batch(
     body: &str,
     url: &str,
 ) -> PushBatchResult {
-    use p256::ecdsa::SigningKey;
-
     let mut result = PushBatchResult::default();
 
     if !config.services.push.enabled
@@ -211,10 +213,7 @@ pub(crate) async fn send_push_batch(
             return result;
         }
     };
-    let vapid_kp = match p256::SecretKey::from_slice(&kp_bytes)
-        .map(|sk| SigningKey::from(&sk))
-        .map_err(|e| e.to_string())
-    {
+    let vapid_kp = match p256::SecretKey::from_slice(&kp_bytes) {
         Ok(kp) => kp,
         Err(e) => {
             tracing::error!(source = "push", "Failed to load VAPID key pair: {e}");
@@ -303,7 +302,7 @@ pub(crate) async fn send_push_batch(
 /// Build an RFC 8292 VAPID `Authorization` header value.
 /// JWT header+claims are ES256-signed with the P-256 key; signature is IEEE P1363 (r||s).
 fn build_vapid_authorization(
-    signing_key: &p256::ecdsa::SigningKey,
+    signing_key: &p256::SecretKey,
     endpoint: &axum::http::Uri,
     subject: &str,
     valid_secs: u64,
@@ -337,7 +336,7 @@ fn build_vapid_authorization(
     // ring cannot derive the public point from the persisted private scalar alone.
     // p256 retains scalar-only loading; ring performs ES256 signing.
     let rng = SystemRandom::new();
-    let public = signing_key.verifying_key().to_encoded_point(false);
+    let public = signing_key.public_key().to_encoded_point(false);
     let pair = EcdsaKeyPair::from_private_key_and_public_key(
         &ECDSA_P256_SHA256_FIXED_SIGNING,
         signing_key.to_bytes().as_ref(),
@@ -352,10 +351,7 @@ fn build_vapid_authorization(
     let jwt = format!("{signing_input}.{sig_b64}");
 
     let public_b64 = Base64UrlUnpadded::encode_string(
-        signing_key
-            .verifying_key()
-            .to_encoded_point(false)
-            .as_bytes(),
+        signing_key.public_key().to_encoded_point(false).as_bytes(),
     );
 
     axum::http::HeaderValue::try_from(format!("vapid t={jwt}, k={public_b64}"))
@@ -365,7 +361,7 @@ fn build_vapid_authorization(
 /// Build a single push request for a subscription. Returns None if the subscription is invalid.
 fn build_push_request(
     sub: &PushSubscription,
-    vapid_signing_key: &p256::ecdsa::SigningKey,
+    vapid_signing_key: &p256::SecretKey,
     vapid_subject: &str,
     payload_bytes: &[u8],
 ) -> Option<(String, axum::http::Request<Vec<u8>>)> {
@@ -558,15 +554,12 @@ mod tests {
             .await
             .unwrap();
         });
-        let client_key = p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
+        let client_key = p256::SecretKey::random(&mut rand_core::OsRng);
         let sub = PushSubscription {
             endpoint: endpoint.clone(),
             keys: PushSubscriptionKeys {
                 p256dh: Base64UrlUnpadded::encode_string(
-                    client_key
-                        .verifying_key()
-                        .to_encoded_point(false)
-                        .as_bytes(),
+                    client_key.public_key().to_encoded_point(false).as_bytes(),
                 ),
                 auth: Base64UrlUnpadded::encode_string(&[7u8; 16]),
             },
@@ -594,9 +587,8 @@ mod tests {
     #[test]
     fn build_vapid_authorization_produces_valid_jwt_structure() {
         use base64ct::Encoding;
-        use p256::ecdsa::SigningKey;
 
-        let signing_key = SigningKey::random(&mut rand_core::OsRng);
+        let signing_key = p256::SecretKey::random(&mut rand_core::OsRng);
         let endpoint: axum::http::Uri = "https://fcm.googleapis.com/fcm/send/test".parse().unwrap();
         let header_val =
             build_vapid_authorization(&signing_key, &endpoint, "mailto:test@example.com", 3600)
@@ -642,9 +634,3 @@ mod tests {
         );
     }
 }
-
-pub(crate) mod crypto;
-#[cfg(test)]
-use crypto::{encrypt_push_record, push_key_material};
-#[cfg(test)]
-mod crypto_guards;

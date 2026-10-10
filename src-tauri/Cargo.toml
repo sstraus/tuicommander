@@ -281,7 +281,7 @@ axum-server = { version = "0.8", default-features = false, features = ["tls-rust
 axum-server-dual-protocol = { version = "0.7", default-features = false }
 # Stored VAPID keys are bare scalars: ring requires a public key too
 # (KeyRejected("InconsistentComponents") without it). p256 derives that point.
-p256 = { version = "0.13", default-features = false, features = ["ecdsa", "ecdh"] }
+p256 = { version = "0.13", default-features = false, features = ["arithmetic"] }
 rand_core = { version = "0.6", features = ["getrandom"] }
 base64ct = { version = "1", features = ["alloc"] }
 anyhow = "1"
@@ -405,6 +405,8 @@ webrtc-audio-processing-sys = { path = "patches/webrtc-audio-processing-sys" }
 wayland-scanner = { path = "patches/wayland-scanner" }
 
 [dev-dependencies]
+# Migration guards use an independent ECDH and ECDSA implementation.
+p256 = { version = "0.13", default-features = false, features = ["ecdh", "ecdsa"] }
 ctor = "0.8"
 tuic-test-support = { path = "crates/tuic-test-support" }
 tuic-core = { path = "crates/tuic-core", features = ["test-support"] }
