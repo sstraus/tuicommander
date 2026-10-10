@@ -1783,6 +1783,37 @@ mod tests {
     use axum::http::StatusCode;
     use std::future::Future;
 
+    // Catches: a chunk boundary inside the daemon's "Untrusted Host" response
+    // misdirects the user to permissions instead of the rejected host name.
+    #[tokio::test]
+    async fn health_untrusted_host_split_across_chunks_still_explains_the_rejected_name() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            assert!(socket.read(&mut request).await.unwrap() > 0);
+            // Same body as request_boundary::check, with valid HTTP
+            // chunking that an intermediary may use independently of the text.
+            socket
+                .write_all(
+                    b"HTTP/1.1 403 Forbidden\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n9\r\nUntrusted\r\n5\r\n Host\r\n0\r\n\r\n",
+                )
+                .await
+                .unwrap();
+        });
+        let error = read_health(&test_client(), &format!("http://{address}"))
+            .await
+            .unwrap_err();
+        server.await.unwrap();
+        assert!(
+            error.contains("rejected this name"),
+            "chunked Untrusted Host response lost its cause: {error}"
+        );
+    }
+
     /// A client for the probe tests, which have no `AppState` to borrow one
     /// from. The same builder the runtime uses, so a test cannot pass against a
     /// client shaped differently from the real one.
