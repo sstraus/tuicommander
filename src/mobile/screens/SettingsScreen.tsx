@@ -230,7 +230,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
 			<Show when={voice.available()}>
 				<section class={styles.section}>
 					<h3 class={styles.sectionTitle}>VOICE</h3>
-					<label class={styles.row}>
+					<label class={`${styles.row} ${styles.spokenReplies}`}>
 						<span class={styles.label}>Spoken replies</span>
 						<input
 							type="checkbox"

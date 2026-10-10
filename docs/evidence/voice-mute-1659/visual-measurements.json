@@ -1,6 +1,10 @@
 {
   "method": "Native macOS headless Chrome 149 CDP; worktree Vite; real UI/store; owned HTTP fixtures only",
-  "sourceCommit": "2e0041fef9c694fb44bfc8cf92d409b09428b726",
+  "sourceCommit": "0d7897819738e1e1726479a867a24a8e1ccdbe5f",
+  "sourceFiles": {
+    "src/mobile/screens/SettingsScreen.tsx": "c95ba006ae666733ed446a9e020ec1be5b2ab4f0",
+    "src/mobile/screens/SettingsScreen.module.css": "0a64d7bf90d6385a58e75076b75dc5330c65471b"
+  },
   "measurements": [
     {
       "name": "phone-spoken-replies-on",
@@ -100,15 +104,15 @@
         },
         {
           "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
           "path": "/dictation/config"
         },
         {
           "method": "PUT",
           "path": "/dictation/config"
-        },
-        {
-          "method": "GET",
-          "path": "/dictation/status"
         },
         {
           "method": "GET",
@@ -165,15 +169,15 @@
         },
         {
           "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
           "path": "/dictation/config"
         },
         {
           "method": "PUT",
           "path": "/dictation/config"
-        },
-        {
-          "method": "GET",
-          "path": "/dictation/status"
         },
         {
           "method": "GET",
@@ -216,9 +220,9 @@
         "x": 16,
         "y": 232,
         "width": 358,
-        "height": 38,
+        "height": 44,
         "right": 374,
-        "bottom": 270
+        "bottom": 276
       },
       "viewport": {
         "width": 390,
@@ -254,15 +258,15 @@
         },
         {
           "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
           "path": "/dictation/config"
         },
         {
           "method": "PUT",
           "path": "/dictation/config"
-        },
-        {
-          "method": "GET",
-          "path": "/dictation/status"
         },
         {
           "method": "GET",
@@ -337,9 +341,9 @@
         "x": 16,
         "y": 232,
         "width": 358,
-        "height": 38,
+        "height": 44,
         "right": 374,
-        "bottom": 270
+        "bottom": 276
       },
       "viewport": {
         "width": 390,
@@ -375,15 +379,15 @@
         },
         {
           "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
           "path": "/dictation/config"
         },
         {
           "method": "PUT",
           "path": "/dictation/config"
-        },
-        {
-          "method": "GET",
-          "path": "/dictation/status"
         },
         {
           "method": "GET",

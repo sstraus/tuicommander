@@ -14,12 +14,14 @@ against this worktree's Vite server at a 390 × 844 phone viewport.
 The screenshots render the actual SessionDetailScreen, SettingsScreen, global
 styles and dictation store. Trusted CDP touch events toggle the checkbox.
 The conversation label spans 390 × 44px at y=56, entirely inside the viewport.
-The Settings label spans 358 × 38px at x=16, y=232; it is visible and unclipped.
-Its 38px height is below the 44px touch target guideline and is recorded for the
-coordinator; this evidence-only lane does not modify production styles.
+The Settings label spans 358 × 44px at x=16, y=232; it is visible and unclipped.
+Both controls meet the 44px touch target guideline. The Settings minimum height
+is scoped to Spoken replies and preserves other rows.
 
 visual-measurements.json retains each checkbox's computed size, checked and
 disabled state, label bounds, viewport, store state and owned API request paths.
+Source blob hashes identify the captured Settings files when the base commit
+contains additional uncommitted screenshot updates.
 The off/on conversation captures demonstrate that changing the preference
 leaves hands-free armed. Leaving the conversation for Settings disarms it
 through the existing screen cleanup.

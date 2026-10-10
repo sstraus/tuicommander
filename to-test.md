@@ -4882,6 +4882,6 @@ Needs an iPhone (iOS 16.4+, 18.4+ preferred), the desktop TUICommander running a
 
 
 ### Spoken replies toggle (#1659-f3cc)
-- [ ] Capture the mobile conversation and Settings toggles on the worktree Vite. The stealth wrapper snapshot showed Spoken replies checked; wrapper screenshot and three bounded headless attempts timed out without an image.
+- [x] Capture the mobile conversation and Settings toggles on the worktree Vite. _(verified: docs/evidence/voice-mute-1659/README.md — headless Chrome CDP screenshots and computed on/off state; both labels meet the 44px touch target.)_
 - [ ] After Boss restarts make dev (Rust does not hot reload), arm hands-free on mobile, turn Spoken replies off, dictate, and confirm text answers with no reply audio. Turn it on again and confirm audio returns when the speech service is available.
 - [ ] After an Edge access rejection, confirm the UI reports the cool-down and dictation continues; wait five minutes before retrying speech.

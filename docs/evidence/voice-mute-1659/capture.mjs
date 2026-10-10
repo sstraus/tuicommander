@@ -116,7 +116,7 @@ try {
 			'(() => { const input=document.querySelector("input[type=checkbox]"); const label=input.closest("label"); const rect=label.getBoundingClientRect(); const css=getComputedStyle(input); return { checked:input.checked, disabled:input.disabled, inputWidth:css.width, inputHeight:css.height, label:label.textContent.trim(), bounds:{x:rect.x,y:rect.y,width:rect.width,height:rect.height,right:rect.right,bottom:rect.bottom}, viewport:{width:innerWidth,height:innerHeight}, ...window.voiceEvidence.state() }; })()',
 		);
 		if (state.armed !== armed) throw new Error(name + ": unexpected armed state");
-		if (state.bounds.width <= 0 || state.bounds.height <= 0 || state.bounds.right > 390 || state.bounds.bottom > 844)
+		if (state.bounds.width <= 0 || state.bounds.height < 44 || state.bounds.right > 390 || state.bounds.bottom > 844)
 			throw new Error(name + ": clipped or invisible control");
 		const shot = await call("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
 		await fs.writeFile(path.join(directory, name + ".png"), Buffer.from(shot.data, "base64"));
@@ -149,6 +149,12 @@ try {
 			{
 				method: "Native macOS headless Chrome 149 CDP; worktree Vite; real UI/store; owned HTTP fixtures only",
 				sourceCommit: execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim(),
+				sourceFiles: Object.fromEntries(
+					["src/mobile/screens/SettingsScreen.tsx", "src/mobile/screens/SettingsScreen.module.css"].map((file) => [
+						file,
+						execFileSync("git", ["hash-object", file], { cwd: root, encoding: "utf8" }).trim(),
+					]),
+				),
 				measurements,
 			},
 			null,
