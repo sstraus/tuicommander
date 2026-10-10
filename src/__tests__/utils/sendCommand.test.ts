@@ -302,7 +302,7 @@ describe("sendCommand framing (critic 1163)", () => {
 		for (const agent of ["claude", "gemini", "opencode", "grok", "pi", "future-agent", null]) {
 			const { writeFn, calls } = makeRecorder();
 			await sendCommand(writeFn, long, agent, "posix");
-			expect(calls[calls.length - 2], String(agent)).not.toContain("\x1b[200~");
+			expect(calls.at(-2)!, String(agent)).not.toContain("\x1b[200~");
 		}
 		const { writeFn, calls } = makeRecorder();
 		await sendCommand(writeFn, long, "codex", "posix");

@@ -120,3 +120,9 @@ long-lived background terminal, such as a development server, running.
 - **Rate limit indicators** — Show countdown timers for when the limit expires
 
 The dashboard is useful when running many agents in parallel — you can spot at a glance which ones need attention, which are stalled, and which are making progress.
+
+### Automations
+
+**Automations** opens scheduled agent runs on the connected app's machine.
+The entry is available in desktop and browser mode. See the
+[Automations guide](automations.md). It requires the Automations backend API.

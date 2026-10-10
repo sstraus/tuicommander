@@ -70,7 +70,7 @@ const holdDrag = async (
 		src.dispatchEvent(pointer("pointerdown", 1, 50, 50));
 		await sleep(450);
 		for (const [x, y] of path) document.dispatchEvent(pointer("pointermove", 1, x, y));
-		const [lx, ly] = path[path.length - 1] ?? [50, 50];
+		const [lx, ly] = path.at(-1)! ?? [50, 50];
 		document.dispatchEvent(pointer("pointerup", 1, lx, ly));
 		await sleep(20);
 	} finally {

@@ -64,8 +64,7 @@ function removeTerminalFromLayout(current: PaneLayoutState, termId: string): Pan
 
 	// Group still has tabs — just remove the tab
 	if (remainingTabs.length > 0) {
-		const newActiveTabId =
-			group.activeTabId === termId ? remainingTabs[remainingTabs.length - 1].id : group.activeTabId;
+		const newActiveTabId = group.activeTabId === termId ? remainingTabs.at(-1)!.id : group.activeTabId;
 		return {
 			...current,
 			groups: {

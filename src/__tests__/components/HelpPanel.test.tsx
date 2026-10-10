@@ -1,5 +1,7 @@
 import { fireEvent, render } from "@solidjs/testing-library";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { describe, expect, it, vi } from "vitest";
+import { DISCORD_URL } from "../../community";
 import { HelpPanel } from "../../components/HelpPanel/HelpPanel";
 import { mockInvoke } from "../mocks/tauri";
 
@@ -34,8 +36,16 @@ describe("HelpPanel", () => {
 		const buttonTexts = Array.from(buttons).map((b) => b.textContent?.trim());
 		expect(buttonTexts).toContain("Website");
 		expect(buttonTexts).toContain("GitHub Project");
+		expect(buttonTexts).toContain("Discord Community");
 		expect(buttonTexts).toContain("Documentation");
 		expect(buttonTexts).toContain("Report an Issue");
+	});
+
+	it("opens the community invite instead of routing support to GitHub", () => {
+		vi.mocked(openUrl).mockClear();
+		const { getByRole } = render(() => <HelpPanel {...defaultProps} />);
+		fireEvent.click(getByRole("button", { name: "Discord Community" }));
+		expect(openUrl).toHaveBeenCalledWith(DISCORD_URL);
 	});
 
 	it("shows keyboard shortcuts button", () => {
@@ -82,11 +92,8 @@ describe("HelpPanel", () => {
 
 		fireEvent.click(copyBtn!);
 
-		// writeClipboard routes through the native clipboard-manager plugin in Tauri.
-		expect(mockInvoke).toHaveBeenCalledWith(
-			"plugin:clipboard-manager|write_text",
-			expect.objectContaining({ text: __APP_VERSION__ }),
-		);
+		// writeClipboard routes through the native clipboard command in Tauri.
+		expect(mockInvoke).toHaveBeenCalledWith("write_clipboard_text", expect.objectContaining({ text: __APP_VERSION__ }));
 	});
 
 	it("displays license and credits", () => {

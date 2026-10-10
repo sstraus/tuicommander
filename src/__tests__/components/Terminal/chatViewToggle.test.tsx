@@ -51,6 +51,7 @@ import { terminalsStore } from "../../../stores/terminals";
 describe("chat view toggle", () => {
 	// Catches: the Show-keyed disposal freeze / lost scroll when switching to chat.
 	it("toggle_hides_canvas_without_unmounting_it", async () => {
+		await import("../../../components/ComposePanel/ComposePanel");
 		const id = terminalsStore.add({
 			sessionId: "live-session",
 			cwd: "/tmp/repo",

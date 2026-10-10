@@ -55,7 +55,8 @@ The result is native test-profile evidence, not a release-build performance clai
 | Assistant fallback | `Model changed` card |
 | Compact-summary user rows | `Conversation compacted` card without summary body |
 | Sidechain user/assistant rows | Omitted from the parent conversation |
-| Attachments (42 observed kinds), hook rows, system subtypes, snapshots | Harness plumbing; omitted |
+| Human `queued_command` attachments | User bubbles at their transcript position, including prompts typed mid-turn |
+| Other attachments, task-notification queued commands, queue operations, hook rows, system subtypes, snapshots | Harness plumbing; omitted |
 | Titles, modes, queue/cost/history/fork/launch/link metadata | Recognized plumbing; omitted without unknown-row inflation |
 | Nested `tool_reference`, `thinking_dropped`, `fallback_message` | Tool discovery/signature/API metadata; not conversation text |
 
@@ -63,3 +64,20 @@ Named regressions fixed by this corpus: missing older prompts, missing media
 result markers, missing model-change cards, and recognized metadata counted as
 unknown. Recorded image prompts, compaction and sidechain cases also exercise
 the existing behavior that the earlier hand-written fixture could not prove.
+
+## Human queued prompts (Claude Code 2.1.286)
+
+`queued-human.jsonl` records seven real rows: a task notification, an assistant
+text block, an enqueue/remove pair, a human queued command, a hook attachment,
+and the next assistant text block. The human attachment came from the reported
+2026-10-09 coordinator conversation. Rows retain source order, with intervening
+unrelated rows omitted. Payloads use the same equal-character-length `x`
+sanitation as the corpus above; source paths and prose are absent.
+The full-load/live-tail regression checks that only the human attachment adds a
+user entry, between the two assistant messages. Queue operations add no entries.
+
+`queued-human-image.jsonl` records one real human queued prompt with text and
+image blocks from the same reported transcript (source row 643). Non-schema
+strings use equal-character-length `x` payloads; the image data is replaced
+with `eA==` to avoid retaining binary content. The regression catches image
+prompts disappearing when the adapter accepts only string prompt payloads.

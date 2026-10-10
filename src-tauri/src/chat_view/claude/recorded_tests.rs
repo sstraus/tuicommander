@@ -120,7 +120,14 @@ fn recorded_plumbing_and_sidechains_remain_outside_the_conversation() {
     for (shape, fixture) in cases() {
         let row: Value = serde_json::from_str(fixture.lines().last().unwrap()).unwrap();
         let kind = row["type"].as_str().unwrap();
-        if !matches!(kind, "user" | "assistant") || row["isSidechain"] == true {
+        if kind == "attachment"
+            && row.pointer("/attachment/type") == Some(&json!("queued_command"))
+            && row.pointer("/attachment/origin/kind") == Some(&json!("human"))
+        {
+            let updates = run(&fixture);
+            assert_eq!(updates.len(), 1, "recorded human queued prompt: {shape}");
+            assert_eq!(updates[0]["sessionUpdate"], "user_message_chunk");
+        } else if !matches!(kind, "user" | "assistant") || row["isSidechain"] == true {
             let mut adapter = ClaudeAdapter::default();
             for line in fixture.lines() {
                 assert!(adapter.absorb(line).is_empty(), "{shape}");
@@ -171,4 +178,47 @@ fn recorded_image_prompts_and_compaction_keep_their_conversation_role() {
         images > 0 && summaries > 0,
         "real images and summaries must be exercised"
     );
+}
+
+// Catches: queued prompts bypass redaction, text limits, or human-origin filtering.
+#[test]
+fn recorded_queued_prompts_share_normal_prompt_safety() {
+    let fixture = include_str!("../../fixtures/chat_view/recorded/queued-human.jsonl");
+    let mut row: Value = fixture
+        .lines()
+        .map(|l| serde_json::from_str::<Value>(l).unwrap())
+        .find(|r| r.pointer("/attachment/origin/kind") == Some(&json!("human")))
+        .unwrap();
+    let secret = "sk-ant-api03-abcdefghijklmnopqrstuvwxyz1234567890";
+    let raw = format!("{secret} {}", "é".repeat(MAX_TEXT_CHARS));
+    row["attachment"]["prompt"] = json!(raw);
+    let updates = run(&row.to_string());
+    assert_eq!(updates.len(), 1);
+    assert!(
+        !updates[0]["content"]["text"]
+            .as_str()
+            .unwrap()
+            .contains(secret)
+    );
+    assert_eq!(
+        updates[0]["content"]["text"]
+            .as_str()
+            .unwrap()
+            .chars()
+            .count(),
+        MAX_TEXT_CHARS
+    );
+    for origin in [
+        Value::Null,
+        json!({"kind":"task-notification"}),
+        json!({"kind":"unknown"}),
+    ] {
+        row["attachment"]["origin"] = origin;
+        assert!(run(&row.to_string()).is_empty());
+    }
+    row["attachment"]["origin"] = json!({"kind":"human"});
+    for prompt in [Value::Null, json!(42), json!("  ")] {
+        row["attachment"]["prompt"] = prompt;
+        assert!(run(&row.to_string()).is_empty());
+    }
 }

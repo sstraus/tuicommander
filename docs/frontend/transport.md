@@ -13,7 +13,12 @@ OS drops are a cross-machine operation: desktop-only `fs_transfer_remote_paths` 
 | File | Purpose |
 |------|---------|
 | `src/invoke.ts` | Smart `invoke()` wrapper — zero overhead in Tauri |
-| `src/transport.ts` | HTTP transport implementation and command-to-endpoint mapping |
+| `src/transport.ts` | Public transport entry point (re-exports) |
+| `src/transport/http.ts` | RPC routing, coalescing, cached IPC invocation and HTTP requests |
+| `src/transport/ipc.ts` | Event and PTY subscriptions, including their browser WS/SSE branches |
+| `src/transport/commandTable.ts` | Command-to-endpoint mappings and native/WS exclusions |
+| `src/transport/types.ts` | Shared transport and upstream MCP types |
+| `src/transport/environment.ts` | Shared Tauri environment detection |
 
 ## invoke.ts
 

@@ -178,7 +178,9 @@ fn manual_pause_excludes_elapsed_time_without_resetting_active_budget() {
 async fn notify_retry_keeps_one_durable_notice() {
     // catches: re-entering a Notify node duplicating the repository journal notice.
     let (config, project, _plan, story, _template, _guard) = fixture();
-    let project_path = project.path().to_str().unwrap();
+    // Catches raw aliases being used as SQLite keys instead of the canonical owner.
+    let project_alias = project.path().join(".");
+    let project_path = project_alias.to_str().unwrap();
     let published = publish(
         project_path,
         WorkflowGraph {
@@ -211,7 +213,7 @@ async fn notify_retry_keeps_one_durable_notice() {
     let notices = crate::progress::ProgressStore::open()
         .unwrap()
         .list_limited(
-            project_path,
+            &canonical_owner(project_path),
             &crate::progress::ProgressListInput::default(),
             50,
         )
@@ -347,7 +349,9 @@ fn publication_visibly_refuses_nodes_without_an_executor() {
 async fn agent_without_required_profile_pauses_with_a_durable_reason() {
     // catches: silently substituting a model, or leaving a reached Agent running without a spawn.
     let (config, project, _plan, story, _template, _guard) = fixture();
-    let project_path = project.path().to_str().unwrap();
+    // Catches raw aliases being used as SQLite keys instead of the canonical owner.
+    let project_alias = project.path().join(".");
+    let project_path = project_alias.to_str().unwrap();
     let published = definition(project_path, false, true);
     let state = state(config.path());
     WorkflowRuntime::spawn(&state);
@@ -378,7 +382,7 @@ async fn agent_without_required_profile_pauses_with_a_durable_reason() {
     let notices = crate::progress::ProgressStore::open()
         .unwrap()
         .list_limited(
-            project_path,
+            &canonical_owner(project_path),
             &crate::progress::ProgressListInput::default(),
             50,
         )

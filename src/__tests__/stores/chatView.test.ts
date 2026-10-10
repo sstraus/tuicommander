@@ -10,6 +10,8 @@ vi.mock("../../invoke", () => ({
 	},
 }));
 
+vi.mock("../../stores/appLogger", () => ({ appLogger: { warn: vi.fn() } }));
+
 import { acpTranscript } from "../../stores/acpTranscript";
 import { chatViewAvailability, chatViewKey, chatViewStore } from "../../stores/chatView";
 

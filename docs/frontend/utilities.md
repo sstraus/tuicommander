@@ -173,3 +173,12 @@ All shared TypeScript types are centralized in a single file. Key type groups:
 
 ### Callback Types
 `PtyDataHandler`, `PtyExitHandler`
+
+### Clipboard (`utils/clipboard.ts`)
+
+`writeClipboard` and `readClipboard` use the desktop-only `write_clipboard_text`
+and `read_clipboard_text` Tauri commands. These arboard commands bypass WebView
+focus and user-gesture restrictions and the macOS Paste confirmation pill.
+Failures reject the promise. Browser mode uses the client's `navigator.clipboard`;
+there is no HTTP route to the host clipboard. `copyPathToClipboard` keeps absolute
+paths and shortens the home directory to `~`.

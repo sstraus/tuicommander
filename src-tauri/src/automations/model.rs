@@ -31,12 +31,19 @@ pub struct AutomationDefinition {
     pub repository: String,
     pub workspace: Workspace,
     pub cron: String,
+    /// One wall-clock occurrence in `timezone`; cron must be empty when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub once_local: Option<chrono::NaiveDateTime>,
+    #[serde(default)]
     pub timezone: String,
     pub enabled: bool,
     pub grace_secs: u64,
     pub overlap: Overlap,
     pub max_duration_secs: u64,
     pub precheck: Option<Precheck>,
+    /// Host-issued identity of the agent that created this definition.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created_by_session: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -83,7 +90,7 @@ impl AutomationsConfig {
 }
 
 impl AutomationDefinition {
-    /// Validate storage invariants without interpreting schedules or launching agents.
+    /// Validate storage and scheduling invariants without launching agents.
     pub fn validate(&self) -> Result<(), String> {
         for (name, value) in [
             ("id", &self.id),
@@ -91,7 +98,6 @@ impl AutomationDefinition {
             ("prompt", &self.prompt),
             ("run_config", &self.run_config),
             ("repository", &self.repository),
-            ("cron", &self.cron),
             ("timezone", &self.timezone),
         ] {
             if value.trim().is_empty() {
@@ -111,8 +117,17 @@ impl AutomationDefinition {
         {
             return Err("Automation precheck needs a command and positive timeout".into());
         }
-        // DEFERRED (2026-10-09) — Step 2 validates cron and the IANA zone and
-        // supplies the local-zone creation default before any scheduler exists.
+        self.schedule()?;
         Ok(())
+    }
+
+    /// Resolve either cron or Once using the stored timezone.
+    pub fn schedule(&self) -> Result<super::schedule::AutomationSchedule, String> {
+        super::schedule::AutomationSchedule::parse(&self.cron, &self.timezone, self.once_local)
+    }
+
+    /// Reject elapsed Once schedules only when creating or changing their occurrence.
+    pub fn validate_schedule_at(&self, now: chrono::DateTime<chrono::Utc>) -> Result<(), String> {
+        self.schedule()?.validate_creation(now)
     }
 }

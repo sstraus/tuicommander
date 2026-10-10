@@ -10,6 +10,7 @@ import {
 	queueTextToActiveTerminal,
 	sendTextToActiveTerminal,
 } from "../utils/sendToActiveTerminal";
+import { AutomationsHost } from "./AutomationsDialog/AutomationsHost";
 import { FileBrowserPanel } from "./FileBrowserPanel";
 import { GitPanel } from "./GitPanel/GitPanel";
 import { IdeasPanel } from "./IdeasPanel";
@@ -38,6 +39,7 @@ export const PanelOrchestrator: Component<PanelOrchestratorProps> = (props) => {
 	});
 	return (
 		<>
+			<AutomationsHost />
 			<Show when={!uiStore.isDetached("file-browser")}>
 				<FileBrowserPanel
 					visible={uiStore.state.fileBrowserPanelVisible && !globalWorkspaceStore.isActive()}

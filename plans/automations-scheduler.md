@@ -40,7 +40,7 @@ started_at: "2026-10-09T16:15:32.401Z"
 - **Adopt, Steps 3/10/11:** saved output is the canonical report; notices link the run/session. Persist notification attempted/confirmed/unknown separately; deduplicate by run/transition/channel. Notification failures cannot change execution success. Do not replay ambiguous sends or historical notices on boot.
 - **Adopt, Steps 4/7:** bounded wake reconciliation, reserve before execution, finite duration and completion provenance. Keep TUIC's simple 30s tick.
 - **Adopt, Step 11:** precheck skips remain quiet; notify failure/needs-you through existing native/push/Telegram preferences. Completed output remains in history.
-- **Reject:** model heartbeats (cost/context coupling); session reuse/result injection into replacement conversations (fixed exclusion); stream watchers, one-shot/interval/pacing and webhook/channel routing (YAGNI); automatic execution retries/restart dispatch (fixed no-retry decision); implicit last-conversation recipient (use run/session ownership).
+- **Reject:** model heartbeats (cost/context coupling); session reuse/result injection into replacement conversations (fixed exclusion); stream watchers, interval/pacing and webhook/channel routing (YAGNI); automatic execution retries/restart dispatch (fixed no-retry decision); implicit last-conversation recipient (use run/session ownership).
 
 ## Security Considerations
 
@@ -69,7 +69,7 @@ started_at: "2026-10-09T16:15:32.401Z"
 | Step | Story | Depends on |
 |---|---|---|
 | 1 | 1610-ac85 | None |
-| 2 | 1611-fa3f | 1610-ac85 |
+| 2 | 1611-fa3f, 1629-2262 (Once) | 1610-ac85 |
 | 3 | 1612-70d1 | 1610-ac85 |
 | 4 | 1613-67f3 | 1611-fa3f, 1612-70d1 |
 | 5 | 1614-7e8f | 1610-ac85 |
@@ -102,10 +102,10 @@ let file = ConfigFile::<AutomationsConfig>::new("automations.json");
 file.update_with_strict(|latest| { latest.definitions.push(definition); Ok(((), true)) })
 ```
 
-### Step 2: Cron and timezone semantics
+### Step 2: Cron, Once and timezone semantics
 
 - **Files:** `automations/schedule.rs (new), src-tauri/Cargo.toml, Cargo.lock`
-- **Constraint:** Use croner with chrono support plus chrono-tz; verify exact pinned API and DST policy against its source before adding it. No custom cron parser or RRULE in phase 1.
+- **Constraint:** Use croner with chrono support plus chrono-tz; verify exact pinned API and DST policy against its source before adding it. No custom cron parser or RRULE in phase 1. Once stores one local date-time with the same IANA zone; reject past instants at creation and spring gaps, resolve folds to the earlier instant. Keep the definition after its one scheduled occurrence is consumed, and derive completed state from the durable cursor.
 - **Validation:** test(automations::schedule::tests)
 
 ```rust
@@ -220,17 +220,27 @@ const summary = await invoke("automation_action", { input: { action: "summary", 
 if store.claim_notification(run_id, transition)? { notifications.publish(run_notice).await?; }
 ```
 
-### Phase 3 — not started
-
 ### Step 12: MCP automation tool
 
 - **Files:** `src-tauri/src/mcp_http/mcp_transport.rs, CLI HTTP adapter`
-- **Constraint:** Not started. Requires explicit phase-3 authorization.
+- **Constraint:** Phase 2 (Boss, 2026-10-09). Share the backend API with HTTP/IPC; no separate scheduler logic.
 - **Validation:** targeted MCP/CLI parity tests
 
 ```rust
 automation_api::execute(input, state).await
 ```
+
+### Step 15: Precheck output as context
+
+- **Files:** `automations/precheck.rs, dispatcher.rs`
+- **Constraint:** Phase 2 (Boss, 2026-10-09). Session reuse remains outside this plan.
+- **Validation:** targeted precheck-context tests
+
+```rust
+let prompt = attach_precheck_context(&definition.prompt, &result.stdout, result.truncated);
+```
+
+### Phase 3 — not started
 
 ### Step 13: Built-in templates
 
@@ -251,16 +261,6 @@ let draft = templates::daily_review(repository, run_config, local_zone)?;
 ```rust
 let safety = worktrees.lifecycle(&run.workspace)?;
 if safety.removal_safe { worktrees.remove(&run.workspace)?; }
-```
-
-### Step 15: Precheck output as context
-
-- **Files:** `automations/precheck.rs, dispatcher.rs`
-- **Constraint:** Not started. Requires explicit phase-3 authorization. Session reuse remains outside this plan.
-- **Validation:** targeted precheck-context tests
-
-```rust
-let prompt = attach_precheck_context(&definition.prompt, &result.stdout, result.truncated);
 ```
 
 ## Acceptance Criteria

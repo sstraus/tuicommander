@@ -753,11 +753,29 @@ existing output ring and original-byte cursors. See [MCP output paging](mcp-http
 ### Claude transcript Chat view
 
 `chat_view::View::advance` reads complete JSONL rows through `transcript_tail`,
-projects them with `ClaudeAdapter`, and retains a bounded ACP update log. It
+projects them with `ClaudeAdapter`, and retains a bounded ACP update log. Each
+view retains an open file-identity handle: replacing a JSONL at the same path
+resets the conversation even when the replacement is as large as the old file.
+The existing one-second ticker emits wake events; snapshot reads keep it alive.
+Binding discovery and its ten-second recheck require the parent JSONL, without
+requiring a subagents directory. Each frontend watch owns its cursor; delayed
+listener cleanup and snapshot replies from an earlier mount cannot clear or
+replace the current Chat conversation.
+Ticker stops log a WARN with the terminal ID and reason, and failed frontend
+refreshes log a WARN before retrying on the next wake or existing keepalive. It
 recognizes older prompt-ID rows without `origin`, excludes harness command echoes
 and sidechains, and preserves image/PDF result markers and model fallback cards.
 Recorded sanitized cases and the last-30-days schema counts are in
 [`fixtures/chat_view/recorded`](../../src-tauri/src/fixtures/chat_view/recorded/README.md).
+The opt-in `disk_ticker_http_store_browser_follow_proof` test runs the real
+snapshot/SSE routes against two fixture-bound disk transcripts, and renders the
+production store and Chat component through worktree Vite. It covers appends,
+same-path replacement, a new JSONL binding and a CLI/Chat remount. Set
+`TUIC_CHAT_FOLLOW_PROOF_DIR` to a directory under the worktree and run it with
+`--run-ignored all`; the installed stealth browser wrapper is required. Binding
+discovery itself is outside this fixture. Screenshots and `proof.json` stay in
+the specified evidence directory.
+
 The opt-in `view_real_transcript_throughput` measurement reads an authorized local
 file at runtime through the same path, reporting both the 2 MiB attach and full
 parse times plus process peak RSS. Raw transcripts are never committed.

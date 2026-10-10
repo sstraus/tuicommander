@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { type ActionEntry, getActionEntries } from "../../actions/actionRegistry";
 import * as handsFree from "../../actions/handsFreeConversation";
 import type { ShortcutHandlers } from "../../hooks/useKeyboardShortcuts";
+import { automationsUi } from "../../stores/automations";
 import { dictationStore } from "../../stores/dictation";
 import { progressStore } from "../../stores/progress";
 import { repositoriesStore } from "../../stores/repositories";
@@ -255,4 +256,13 @@ describe("actionRegistry", () => {
 			expect(searchEntries.map((e) => e.id)).toEqual(["search-terminals", "search-files", "search-file-contents"]);
 		});
 	});
+});
+
+// A discoverable palette entry is the dialog's public entry point.
+it("does not strand scheduled runs without an Automations palette entry", () => {
+	const entry = getActionEntries(createMockHandlers()).find((action) => action.id === "automations");
+	expect(entry?.label).toBe("Automations");
+	entry?.execute();
+	expect(automationsUi.visible()).toBe(true);
+	automationsUi.close();
 });

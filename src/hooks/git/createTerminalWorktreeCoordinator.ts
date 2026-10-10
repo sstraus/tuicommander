@@ -119,7 +119,7 @@ export function createTerminalWorktreeCoordinator(deps: TerminalWorktreeCoordina
 	const moveTerminalToWorktree = async (terminalId: string, worktreePath: string): Promise<void> => {
 		const terminal = terminalsStore.get(terminalId);
 		if (!terminal?.sessionId) return;
-		const escapedPath = `'${worktreePath.replace(/'/g, "'\\''")}'`;
+		const escapedPath = `'${worktreePath.replaceAll("'", "'\\''")}'`;
 		await deps.writePty(terminal.sessionId, `cd ${escapedPath}\n`);
 		appLogger.info("terminal", `[MoveToWorktree] ${terminalId} → cd ${worktreePath}`);
 	};

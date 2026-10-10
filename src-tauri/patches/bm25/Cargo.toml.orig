@@ -22,7 +22,7 @@ default = ["default_tokenizer"]
 
 # The default tokenizer is a good choice for most use-cases. It normalizes unicode, splits unicode
 # word boundaries, removes stop words, and stems the remaining words.
-default_tokenizer = ["dep:cached", "dep:stop-words", "dep:rust-stemmers", "dep:deunicode", "dep:unicode-segmentation"]
+default_tokenizer = ["dep:stop-words", "dep:rust-stemmers", "dep:deunicode", "dep:unicode-segmentation"]
 
 # With language detection enabled, you can configure the default tokenizer to detect the
 # language of the input text.
@@ -32,7 +32,6 @@ language_detection = ["dep:whichlang", "default_tokenizer"]
 parallelism = ["dep:rayon"]
 
 [dependencies]
-cached = { version = "0.56.0", optional = true }
 deunicode = { version = "1.6.2", optional = true }
 rayon = { version = "1.11.0", optional = true }
 rust-stemmers = { version = "1.2.0", optional = true }

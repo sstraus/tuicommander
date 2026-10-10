@@ -1431,7 +1431,7 @@ export const RepoSection: Component<{
 		// nothing structural changed. timeSync is dormant unless perfDebug is on.
 		timeSync(`sidebar.sortedBranches:${props.repo.path}`, () => {
 			const statuses = prStatuses();
-			return [...branches()].sort((a, b) =>
+			return branches().toSorted((a, b) =>
 				compareBranches(a, b, statuses.get(a.branchName), statuses.get(b.branchName)),
 			);
 		}),

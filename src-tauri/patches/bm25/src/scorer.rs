@@ -142,7 +142,7 @@ mod tests {
 
     use super::*;
 
-    fn scorer_with_embeddings(embeddings: &Vec<Embedding>) -> Scorer<usize> {
+    fn scorer_with_embeddings(embeddings: &[Embedding]) -> Scorer<usize> {
         let mut scorer = Scorer::<usize>::new();
 
         for (i, document_embedding) in embeddings.iter().enumerate() {
@@ -222,7 +222,7 @@ mod tests {
             matches,
             vec![ScoredDocument {
                 id: 0,
-                score: 0.6931472
+                score: std::f32::consts::LN_2
             }]
         );
     }

@@ -483,8 +483,12 @@ export function createAcpChat(
 
 		capabilities: () => connection()?.capabilities ?? null,
 		ensureStarted: async () => {
-			if (failedSession) await selectSession(failedSession);
-			else if (!pair()) await start();
+			if (failedSession) {
+				await selectSession(failedSession);
+				if (failedSession) return null;
+			}
+			const current = pair();
+			return current ? current.session : ((await start())?.sessionId ?? null);
 		},
 		configOptions: (): AcpSessionConfigOption[] => attachment()?.configOptions ?? [],
 		gap: () => {

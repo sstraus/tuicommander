@@ -226,11 +226,16 @@ const App: Component = () => {
 	let repoPathPromptResolve: ((value: string | null) => void) | null = null;
 
 	/** Browse the serving machine for a repo path (browser mode only) */
-	const promptRepoPath = (): Promise<string | null> =>
-		new Promise((resolve) => {
+	const promptRepoPath = (): Promise<string | null> => {
+		const { promise, resolve, reject } = Promise.withResolvers<string | null>();
+		try {
 			repoPathPromptResolve = resolve;
 			setRepoPathPromptVisible(true);
-		});
+		} catch (error) {
+			reject(error);
+		}
+		return promise;
+	};
 	const resolveRepoPathPrompt = (value: string | null) => {
 		setRepoPathPromptVisible(false);
 		repoPathPromptResolve?.(value);
@@ -242,11 +247,16 @@ const App: Component = () => {
 	let remotePickerResolve: ((value: string | null) => void) | null = null;
 
 	/** Open the remote browser and resolve with the absolute path picked on that machine. */
-	const pickRemoteRepoPath = (connectionId: string): Promise<string | null> =>
-		new Promise((resolve) => {
+	const pickRemoteRepoPath = (connectionId: string): Promise<string | null> => {
+		const { promise, resolve, reject } = Promise.withResolvers<string | null>();
+		try {
 			remotePickerResolve = resolve;
 			setRemotePickerConnectionId(connectionId);
-		});
+		} catch (error) {
+			reject(error);
+		}
+		return promise;
+	};
 	const resolveRemotePicker = (value: string | null) => {
 		setRemotePickerConnectionId(null);
 		remotePickerResolve?.(value);
@@ -257,11 +267,16 @@ const App: Component = () => {
 	// and folders into the file browser.
 	const [openPathPromptVisible, setOpenPathPromptVisible] = createSignal(false);
 	let openPathPromptResolve: ((value: string | null) => void) | null = null;
-	const promptOpenPath = (): Promise<string | null> =>
-		new Promise((resolve) => {
+	const promptOpenPath = (): Promise<string | null> => {
+		const { promise, resolve, reject } = Promise.withResolvers<string | null>();
+		try {
 			openPathPromptResolve = resolve;
 			setOpenPathPromptVisible(true);
-		});
+		} catch (error) {
+			reject(error);
+		}
+		return promise;
+	};
 	const resolveOpenPathPrompt = (value: string | null) => {
 		setOpenPathPromptVisible(false);
 		openPathPromptResolve?.(value);

@@ -80,11 +80,19 @@ Cargo target cleanup, mbx view refreshes and app upgrades therefore cannot remov
 the configured executable. Failed installation leaves agent configs unchanged.
 Startup migrates TUIC bridge commands from cargo/mbx targets and its installed
 revision directory, while preserving custom working commands and transports.
+Claude migration covers `~/.claude.json`, an existing
+`~/.claude-private/.claude.json`, inherited `CLAUDE_CONFIG_DIR`, and the Claude
+agent's environment flags and saved run-config environment roots. Override roots
+use `<CLAUDE_CONFIG_DIR>/.claude.json`; canonical paths are deduplicated. Relative
+overrides cannot be resolved before a launch working directory is known and emit
+a warning. Disabled integrations and custom transports remain unchanged. A missing
+or non-executable configured absolute bridge command emits a warning naming the
+config and command even when no adjacent bridge is available to repair it.
 Secondary-instance ownership rules still apply. An explicit Settings > Agents
 Install can install under user authority. Manual setup snippets only inspect
 installed copies and never create them; without a copy they report the bare
 `tuic-bridge` command. Revision cleanup is deferred until every agent config root,
-including private Claude and `CLAUDE_CONFIG_DIR` roots, can be discovered.
+including profiles used only by external shell launchers, can be discovered.
 
 ## Activation
 
@@ -1004,9 +1012,12 @@ The `url` param of `action=tab` supports three schemes:
 
 | Scheme | Behaviour |
 |--------|-----------|
-| `http(s)://` / `file://` | Loaded in a sandboxed iframe |
+| `http(s)://` | Loaded directly in a sandboxed iframe; external HTTPS and localhost HTTP use the permissive `default-src` CSP. |
+| `file://` | Read via IPC and rendered as inline HTML in a sandboxed iframe |
 | `tuic://edit/<path>?line=N` | Opens a native code-editor tab at the given file and line. Absolute paths require a `//` prefix: `tuic://edit//Users/x/file.rs?line=42`. Relative paths resolve against the active repo root. |
 | `tuic://open/<path>` | Opens a native markdown/preview tab |
+
+Site `X-Frame-Options` and CSP `frame-ancestors` still apply. There is no per-directive CSP, including `frame-src`; `http:` and `asset:` in `default-src` preserve localhost wildcard ports and asset frames.
 
 Custom URL schemes (`vscode://`, `x-devonthink://`, etc.) do **not** work inside iframes and must not be used with `action=tab`.
 
@@ -1381,6 +1392,8 @@ survive; in particular, a stale UI save cannot erase OAuth/DCR auth written
 concurrently for an otherwise unchanged upstream. Concurrently added servers
 also survive unless the caller independently adds the same ID, which is rejected
 as a conflict.
+
+Bearer, OAuth and secret-header vault entries store the intended MCP origin with the secret in one write. The HTTP credential resolver checks that binding before every request and before OAuth refresh; a mismatch sends no request and reports an origin error. Entries saved before origin binding require re-saving or authorization. Config saves cannot rebind existing credentials, even if auth metadata is cleared or an ID is replaced. The Settings form keeps its early origin-change rejection for a clear message: add an upstream with a different name for a different provider. Same-origin path edits retain auth metadata. OAuth refresh preserves the MCP origin captured at authorization, independently of the authorization server and RFC 8707 resource URLs.
 
 Persistence returns the exact configuration immediately before and after the
 locked mutation. Once the lock is released, `apply_config_diff` uses that exact
@@ -1936,7 +1949,7 @@ When MCP-only (localhost):
 
 - **Default:** Local IPC (Unix socket or Windows named pipe), with filesystem/user access controls and no HTTP credentials. The TCP listener is opt-in.
 - **HTTP authentication:** Every protected TCP request needs the existing URL token, session cookie or Basic Auth, including loopback and LAN clients. The legacy `lan_auth_bypass` preference no longer bypasses HTTP authentication. Login assets and CORS preflight are public; the headless health probe remains public.
-- **Request boundary:** Before authentication, every TCP request validates one Host authority (localhost, loopback/private literal IP, actual local interface IP, or the detected Tailscale FQDN). Missing, duplicate or foreign Host is rejected with 403. An Origin must be an exact bundled WebView/Vite origin or the HTTP/HTTPS origin of that validated Host. Foreign and opaque origins are rejected with 403 even with valid credentials. Cross-site browser requests are refused except from the explicit bundled/development origins. CORS uses the same origin policy and never a wildcard. Native clients without Origin still authenticate.
+- **Request boundary:** Before authentication, every TCP request validates one Host authority (localhost, loopback/private literal IP, actual local interface IP, or the detected Tailscale FQDN). Missing, duplicate or foreign Host is rejected with 403. An Origin must be an exact bundled WebView/Vite origin or the HTTP/HTTPS origin of that validated Host. Foreign and opaque origins are rejected with 403 even with valid credentials. Cross-site browser requests are refused except from the explicit bundled/development origins. CORS uses the same origin policy and never a wildcard. Native clients without Origin still authenticate. Daemon Tailscale detection refreshes every 30 seconds through the desktop's shared state-publication path; the Host guard reads the current state for every request, so late startup, node renames and daemon stops update trust without a server restart. With detection completing within its 500 ms budget, acceptance after Tailscale becomes ready takes at most 30.5 seconds (plus scheduler delay). A timed-out detection publishes an unavailable state and retries on the next cycle; repeated CLI failure/timeouts cannot guarantee acceptance. Daemon TLS remains controlled by its explicit manual/off configuration.
 - **Compression:** Gzip and Brotli via `CompressionLayer` (responses >860 bytes, auto-negotiated). SSE and WebSocket excluded by `DefaultPredicate`
 - **No TLS:** Intended for local network use; use SSH tunnel for remote
 - **Loopback-only session actions:** `session create`, `submit`, `input`, `kill`, `close`, `pause`, and `resume` are restricted to loopback connections — a non-loopback (remote/LAN) MCP client cannot pause/resume sessions, write to PTYs, or spawn/destroy sessions (those remain read-only: `list`, `output`, `status`)
@@ -2090,3 +2103,22 @@ There is no Tauri command or `COMMAND_TABLE` entry: window IPC has no managed
 agent caller binding. Its push event is dual-emitted over Tauri and `/events` SSE,
 and session-list response fields are identical over IPC and HTTP. Schema and
 serialization regressions cover these shared contracts.
+
+### MCP Tool: `automations`
+
+The native `automations` tool supports `list`, `get`, `create`, `update`, `pause`,
+`resume`, and `delete`. Pass `action` at the top level. `get`, `update`, `pause`,
+`resume`, and `delete` require `id`; `create` and `update` require a complete
+`definition` with the stored snake_case fields. `list` returns an array, `get`
+returns one definition, and mutations return `{ "ok": true }`. Errors use
+`{ "error": "..." }` with the shared DefinitionStore validation text.
+
+Creation requires a bound agent session. The host sets `created_by_session`;
+input cannot impersonate a creator, and updates preserve the original creator.
+Pause/resume edit only `enabled` under the store lock. Deleting a definition does
+not touch the separate run ledger. Existing definitions without provenance remain
+readable. These actions manage definitions; they do not launch runs.
+
+The shared entry point is `automations::actions::execute(store, action,
+creator_session)`, using `DefinitionAction`. Plan Step 8 owns HTTP/IPC/CLI wiring
+and the Route Parity Gate. The MCP endpoint is `POST /mcp`.

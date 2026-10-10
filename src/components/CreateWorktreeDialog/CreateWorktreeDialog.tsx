@@ -32,7 +32,7 @@ export interface CreateWorktreeDialogProps {
 
 /** Sanitize a branch name for use as a directory name (replace slashes with dashes) */
 function sanitizeForPath(name: string): string {
-	return name.replace(/\//g, "-");
+	return name.replaceAll("/", "-");
 }
 
 /** Custom styled dropdown replacing native <select>, with local/remote grouping */

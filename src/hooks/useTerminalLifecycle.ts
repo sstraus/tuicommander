@@ -116,14 +116,14 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
 		const branchKey = currentBranchKey() ?? null;
 		const remaining = store.getVisibleIds(branchKey).filter((i) => i !== closedId);
 		if (remaining.length > 0) {
-			handleTerminalSelect(remaining[remaining.length - 1]);
+			handleTerminalSelect(remaining.at(-1)!);
 		} else {
 			// No more tabs of this type — return to last terminal on active branch (never pick orphans)
 			const activeRepo = repositoriesStore.getActive();
 			const branchTerminals = activeRepo?.activeWorkspaceId
 				? (activeRepo.workspaces[activeRepo.activeWorkspaceId]?.terminals ?? [])
 				: [];
-			const nextTerminal = branchTerminals.length > 0 ? branchTerminals[branchTerminals.length - 1] : null;
+			const nextTerminal = branchTerminals.length > 0 ? branchTerminals.at(-1)! : null;
 			if (nextTerminal) {
 				handleTerminalSelect(nextTerminal);
 			}
@@ -237,7 +237,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
 			const branchTerminals = activeRepo?.activeWorkspaceId
 				? (activeRepo.workspaces[activeRepo.activeWorkspaceId]?.terminals ?? [])
 				: [];
-			const nextId = survivorId ?? (branchTerminals.length > 0 ? branchTerminals[branchTerminals.length - 1] : null);
+			const nextId = survivorId ?? (branchTerminals.length > 0 ? branchTerminals.at(-1)! : null);
 			if (nextId) {
 				// Defer one frame: SolidJS renders the next terminal on remove(),
 				// but ref.focus() inside handleTerminalSelect needs the DOM node present.
@@ -332,7 +332,7 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
 		const closed = closedTabs();
 		if (closed.length === 0) return;
 
-		const last = closed[closed.length - 1];
+		const last = closed.at(-1)!;
 		setClosedTabs((prev) => prev.slice(0, -1));
 
 		const canSpawn = await deps.pty.canSpawn();

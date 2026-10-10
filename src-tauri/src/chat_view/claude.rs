@@ -4,7 +4,7 @@
 //! rows of one API message share `message.id`. The output is the shape
 //! `acpTranscript` already folds, so `Transcript.tsx` renders it unchanged.
 //!
-//! Dropped on purpose: `attachment` / snapshot / mode rows (harness plumbing,
+//! Dropped on purpose: non-human attachments / snapshot / mode rows (harness plumbing,
 //! the largest rows in the file), empty `thinking` blocks (Claude stores only a
 //! signature) and anything that is not a human prompt, an assistant block or a
 //! tool result. A row type this adapter has never seen is counted, never fatal:
@@ -29,7 +29,6 @@ const MAX_TITLE_ARG_CHARS: usize = 120;
 
 /// Row types that carry no conversation. Skipped without decoding the body.
 const PLUMBING_ROWS: &[&str] = &[
-    "attachment",
     "file-history-snapshot",
     "file-history-delta",
     "custom-title",
@@ -54,6 +53,23 @@ const PLUMBING_ROWS: &[&str] = &[
 #[derive(Deserialize)]
 struct Head<'a> {
     #[serde(rename = "type", borrow)]
+    kind: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    attachment: Option<AttachmentHead<'a>>,
+}
+
+/// Inspect attachment discriminants without allocating their often-large payloads.
+#[derive(Deserialize)]
+struct AttachmentHead<'a> {
+    #[serde(rename = "type", borrow)]
+    kind: Option<Cow<'a, str>>,
+    #[serde(borrow)]
+    origin: Option<OriginHead<'a>>,
+}
+
+#[derive(Deserialize)]
+struct OriginHead<'a> {
+    #[serde(borrow)]
     kind: Option<Cow<'a, str>>,
 }
 
@@ -89,7 +105,15 @@ impl ClaudeAdapter {
         if PLUMBING_ROWS.contains(&kind) {
             return Vec::new();
         }
-        if kind != "user" && kind != "assistant" {
+        if kind == "attachment" {
+            let human_queued = head.attachment.as_ref().is_some_and(|a| {
+                a.kind.as_deref() == Some("queued_command")
+                    && a.origin.as_ref().and_then(|o| o.kind.as_deref()) == Some("human")
+            });
+            if !human_queued {
+                return Vec::new();
+            }
+        } else if kind != "user" && kind != "assistant" {
             self.stats.unknown_rows += 1;
             return Vec::new();
         }
@@ -100,7 +124,18 @@ impl ClaudeAdapter {
         if row.get("isSidechain").and_then(Value::as_bool) == Some(true) {
             return Vec::new();
         }
-        let updates = if kind == "user" {
+        let updates = if kind == "attachment" {
+            row.pointer("/attachment/prompt")
+                .and_then(|prompt| match prompt {
+                    Value::String(text) => Some(Cow::Borrowed(text.as_str())),
+                    Value::Array(blocks) => Some(Cow::Owned(blocks_text(blocks))),
+                    _ => None,
+                })
+                .filter(|text| !text.trim().is_empty())
+                .map(|text| prompt_update(&row, &text))
+                .into_iter()
+                .collect()
+        } else if kind == "user" {
             self.user_row(&row)
         } else {
             self.assistant_row(&row)
@@ -265,11 +300,15 @@ fn human_prompt(row: &Value, text: &str) -> Option<Value> {
     if !human || text.trim().is_empty() {
         return None;
     }
-    Some(json!({
+    Some(prompt_update(row, text))
+}
+
+fn prompt_update(row: &Value, text: &str) -> Value {
+    json!({
         "sessionUpdate": "user_message_chunk",
         "messageId": row.get("uuid").and_then(Value::as_str),
         "content": { "type": "text", "text": clean(text, MAX_TEXT_CHARS) },
-    }))
+    })
 }
 
 /// The text of a prompt made of blocks: text joined, each image a short

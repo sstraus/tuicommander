@@ -189,6 +189,15 @@ export const aiChatDraft = {
 		persistParked(activeSession, null);
 	},
 
+	/** Keep async startup bound to its draft, allowing the first session handoff. */
+	captureOwnership(): (session: string) => boolean {
+		const atRevision = revision;
+		const session = activeSession;
+		return (startedSession) =>
+			revision === atRevision ||
+			(!!startedSession && !session && revision === atRevision + 1 && activeSession === startedSession);
+	},
+
 	/** Validate bytes before FileReader expands them into base64. */
 	async stageImage(file: File, supported: boolean): Promise<string | null> {
 		const stagedAt = revision;

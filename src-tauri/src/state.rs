@@ -163,6 +163,8 @@ pub(crate) struct WorktreeRemovedPayload {
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "event", content = "payload")]
 pub enum AppEvent {
+    #[serde(rename = "automation-run-changed")]
+    AutomationRunChanged { payload: serde_json::Value },
     #[serde(rename = "head-changed")]
     HeadChanged { repo_path: String, branch: String },
     #[serde(rename = "repo-changed")]
@@ -2025,6 +2027,7 @@ pub struct SessionMaps {
 /// Global state for managing PTY sessions and worktrees
 pub struct AppState {
     pub(crate) workflow_runtime: crate::workflows::WorkflowRuntime,
+    pub(crate) automation_runtime: crate::automations::runtime::AutomationRuntime,
     pub(crate) secrets: crate::secrets::SecretStore,
     /// Every per-session side table, keyed by session id.
     pub(crate) session_maps: SessionMaps,
@@ -3452,6 +3455,7 @@ impl AppState {
         ));
         Self {
             workflow_runtime: Default::default(),
+            automation_runtime: Default::default(),
             secrets: crate::secrets::SecretStore::default(),
             session_maps: SessionMaps::default(),
             data_dir,
@@ -5193,6 +5197,7 @@ impl AppState {
             | AppEvent::ConflictAssistStatus { .. }
             | AppEvent::ProgressRecorded { .. }
             | AppEvent::WorkflowRunChanged { .. }
+            | AppEvent::AutomationRunChanged { .. }
             | AppEvent::ReviewProgress { .. }
             | AppEvent::ProposalsReady { .. }
             // This accumulator's own output. Feeding it back in would make the
@@ -9123,7 +9128,7 @@ mod tests {
             config.services.push.vapid_private_key = private;
             config.services.push.vapid_public_key = public;
         }
-        let client_key = web_push_native::p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
+        let client_key = p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
         state.push_store.upsert(crate::push::PushSubscription {
             endpoint,
             keys: crate::push::PushSubscriptionKeys {
@@ -9714,7 +9719,7 @@ mod tests {
             without_phone.last_push_ms.is_none(),
             "completion without a subscriber must leave the push budget available"
         );
-        let client_key = web_push_native::p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
+        let client_key = p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
         state.push_store.upsert(crate::push::PushSubscription {
             endpoint,
             keys: crate::push::PushSubscriptionKeys {

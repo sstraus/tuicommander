@@ -1,0 +1,43 @@
+.overlay { position: fixed; inset: 0; z-index: 1000; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.65); }
+.dialog { display: flex; flex-direction: column; width: 1080px; max-width: 94vw; height: 80vh; overflow: hidden; background: var(--bg-secondary); color: var(--fg-primary); border: 1px solid var(--border); border-radius: var(--radius-xl); box-shadow: var(--shadow-popup); font-size: var(--font-md); }
+.header { display: flex; align-items: center; justify-content: space-between; padding: 16px; border-bottom: 1px solid var(--border); }
+.header h2 { margin: 0; font-size: var(--font-xl); }
+.header p { margin: 4px 0 0; color: var(--fg-muted); }
+.content { display: flex; flex: 1; min-height: 0; }
+.sidebar { width: 280px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-right: 1px solid var(--border); overflow-y: auto; }
+.detail { flex: 1; min-width: 0; overflow-y: auto; padding: 16px; }
+.row { display: flex; align-items: end; gap: 8px; flex-wrap: wrap; }
+.row label { flex: 1; min-width: 80px; }
+.dialog button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-tertiary); color: var(--fg-secondary); cursor: pointer; }
+.dialog button:hover { background: var(--bg-highlight); color: var(--fg-primary); }
+.dialog button:disabled { opacity: 0.5; cursor: not-allowed; }
+.dialog button.primary { background: var(--accent); color: var(--text-on-accent); }
+.dialog button.danger { color: var(--error); }
+.dialog button.item { flex-direction: column; align-items: stretch; text-align: left; gap: 4px; padding: 12px; overflow-wrap: anywhere; }
+.dialog .item[aria-pressed="true"] { border-color: var(--accent); background: var(--bg-highlight); }
+.itemTitle { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-weight: 600; }
+.item small, .item code, .item time, .item > span:not(.itemTitle) { font-size: var(--font-sm); color: var(--fg-muted); }
+.actions { display: flex; justify-content: flex-end; gap: 8px; margin-bottom: 16px; }
+.editor { display: flex; flex-direction: column; gap: 16px; }
+.group { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-lg); }
+.group legend { font-weight: 600; padding: 0 8px; }
+.dialog label { display: flex; flex-direction: column; gap: 4px; color: var(--fg-secondary); }
+.dialog input:not([type="checkbox"]), .dialog textarea, .dialog select { width: 100%; box-sizing: border-box; min-height: 36px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-tertiary); color: var(--fg-primary); font: inherit; }
+.dialog textarea { resize: vertical; }
+.dialog .check { flex-direction: row; align-items: center; gap: 8px; }
+.dialog :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.hint, .empty { color: var(--fg-muted); line-height: 1.5; margin: 0; }
+.empty { padding: 16px 0; }
+.preview { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--fg-secondary); font-size: var(--font-sm); }
+.preview strong { flex-basis: 100%; }
+.error, .notice, .confirm { padding: 12px 16px; overflow-wrap: anywhere; }
+.error { color: var(--error); }
+.notice { color: var(--fg-primary); background: var(--bg-tertiary); }
+.confirm { border: 1px solid var(--error); border-radius: var(--radius-lg); margin-bottom: 16px; }
+.confirm button { margin-right: 8px; }
+.history { margin-top: 24px; }
+.history h3 { margin: 0; flex: 1; font-size: var(--font-lg); }
+.history ol { list-style: none; padding: 0; }
+.history li { display: flex; flex-wrap: wrap; gap: 8px 16px; padding: 12px 0; border-top: 1px solid var(--border); }
+.history li p { flex-basis: 100%; margin: 0; color: var(--fg-secondary); }
+@media (max-width: 700px) { .dialog { height: 90vh; } .sidebar { width: 180px; padding: 8px; } .detail { padding: 8px; } .group { padding: 8px; } .actions { flex-wrap: wrap; } }

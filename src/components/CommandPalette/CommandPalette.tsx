@@ -90,6 +90,7 @@ const BROWSER_ACTION_IDS = new Set([
 	"toggle-compose-panel",
 	"toggle-hands-free",
 	"progress",
+	"automations",
 	"reset-panel-sizes",
 	"search-terminals",
 	"search-files",
@@ -179,7 +180,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
 		};
 
 		if (!query.trim()) {
-			return [...availableActions()].sort(baseSort);
+			return availableActions().toSorted(baseSort);
 		}
 
 		const ranked = bm25Index().score(query);

@@ -537,19 +537,6 @@ pub(crate) fn subagents_path(
     )
 }
 
-/// `subagents_path`, narrowed to a directory that is actually there.
-///
-/// A session with no subagents never gets the directory, so `None` is the
-/// ordinary "this terminal spawned nothing" answer, not an error.
-pub(crate) fn subagents_dir(
-    cwd: &str,
-    config_dir: Option<&str>,
-    session_uuid: &str,
-) -> Option<PathBuf> {
-    let dir = subagents_path(cwd, config_dir, session_uuid)?;
-    dir.is_dir().then_some(dir)
-}
-
 /// Redact first, then shorten. Cutting first could split a secret so its
 /// pattern no longer matches, and its prefix would reach the page.
 ///
@@ -730,15 +717,15 @@ pub(crate) struct TranscriptSource {
     pub parent_transcript: PathBuf,
 }
 
-/// Resolve a TUIC session id to the files its subagents write.
+/// Resolve a TUIC session id to its parent transcript and possible subagent files.
 ///
 /// The id is a key into `AppState` and never reaches the filesystem: every path
 /// component comes from the session's own cwd, the agent process's
 /// `CLAUDE_CONFIG_DIR`, and the session uuid Claude itself published. An unknown
 /// id therefore resolves to `None` rather than to a path.
 ///
-/// `None` is the ordinary answer — for a shell tab, for a Claude tab that has
-/// spawned nothing, and for a session whose agent has exited.
+/// `None` is the ordinary answer for a shell tab or an undiscovered Claude
+/// session. The parent transcript does not require any subagents to exist.
 pub(crate) fn transcript_source(
     state: &crate::state::AppState,
     session_id: &str,
@@ -775,7 +762,7 @@ pub(crate) fn transcript_source(
     .session_id;
 
     Some(TranscriptSource {
-        subagents_dir: subagents_dir(&cwd, config_dir.as_deref(), &uuid)?,
+        subagents_dir: subagents_path(&cwd, config_dir.as_deref(), &uuid)?,
         parent_transcript: crate::agent_session::claude_project_dir_path(
             &cwd,
             config_dir.as_deref(),
@@ -1312,28 +1299,6 @@ mod tests {
         assert_eq!(
             tail_components(&path, 3),
             vec!["C--Users-foo-bar", "u", "subagents"],
-        );
-    }
-
-    #[test]
-    fn subagent_map_dir_is_none_when_the_directory_is_absent() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let cfg = tmp.path().to_string_lossy().into_owned();
-        assert!(
-            subagents_dir("/Users/foo/bar", Some(&cfg), "uuid-1").is_none(),
-            "a session that spawned nothing has no subagents dir"
-        );
-    }
-
-    #[test]
-    fn subagent_map_dir_is_some_once_the_directory_exists() {
-        let tmp = tempfile::tempdir().expect("tempdir");
-        let cfg = tmp.path().to_string_lossy().into_owned();
-        let dir = subagents_path("/Users/foo/bar", Some(&cfg), "uuid-1").expect("resolves");
-        std::fs::create_dir_all(&dir).expect("create");
-        assert_eq!(
-            subagents_dir("/Users/foo/bar", Some(&cfg), "uuid-1"),
-            Some(dir)
         );
     }
 

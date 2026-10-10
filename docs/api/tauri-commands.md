@@ -405,8 +405,8 @@ Commands for managing upstream MCP servers proxied through TUICommander's `/mcp`
 | `save_mcp_upstreams` | `base: UpstreamMcpConfig, config: UpstreamMcpConfig` | `()` | Apply the caller's ID-keyed base-to-config delta to the latest locked `mcp-upstreams.json`, validate it, and hot-reload the exact persisted change. Removing a server or its optional `auth` field is an explicit deletion; unrelated concurrent changes are preserved |
 | `reconnect_mcp_upstream` | `name: String` | `()` | Disconnect and reconnect a single upstream by name. Useful after credential changes or transient failures |
 | `get_mcp_upstream_status` | -- | `Vec<UpstreamStatus>` | Get live status of all upstream MCP servers. Status values: `connecting`, `ready`, `circuit_open`, `disabled`, `failed`, `authenticating`, `needs_auth` |
-| `save_mcp_upstream_credential` | `name: String, token: String` | `()` | Store a Bearer token for an upstream in the OS keyring |
-| `delete_mcp_upstream_credential` | `name: String` | `()` | Remove a Bearer token from the OS keyring (idempotent) |
+| `save_mcp_upstream_credential` | `name: String, token: String, url: String, header?: {name, credential_ref}` | `()` | Store a Bearer token or scoped header secret with its intended HTTP origin in the OS credential vault |
+| `delete_mcp_upstream_credential` | `name: String, header?: {name, credential_ref}` | `()` | Remove a Bearer/OAuth token or a scoped custom header secret (idempotent) |
 
 ### UpstreamMcpConfig schema
 
@@ -519,7 +519,7 @@ These commands stay in the root `dictation/commands.rs` adapter; their audio and
 | `list_audio_devices` | -- | `Vec<AudioDevice>` | List input devices |
 | `get_dictation_config` | -- | `DictationConfig` | Load saved config. With an activation phrase, the hands-free runtime applies at least 5000 ms of hold-back even when the saved `hands_free_hold_back_ms` is shorter; hands-free status reports the effective value |
 | `get_hands_free_default_notice` | -- | `string` | The built-in hands-free start notice, sent while `hands_free_start_notice` is empty |
-| `set_dictation_config` | `base, config` | `()` | Save only the changes between the loaded base and edited config. A changed `language`, `speechCommand` or `speech_voice` also drops the voice built for the previous one, cancelling what it was speaking; every other field leaves it alone. `hands_free_earcons` (default true) turns the hands-free earcons off; only the frontend reads it. `hands_free_notify_model` (default true) is read at arm time only — turning it off mid-conversation does not cancel the end notice the model is already owed. `hands_free_start_notice` (default empty = built-in text) replaces the start notice, also at arm time only, folded to one line |
+| `set_dictation_config` | `base, config` | `()` | Save only the changes between the loaded base and edited config. A changed `language`, `speechCommand` or `speech_voice` also drops the voice built for the previous one, cancelling what it was speaking; hands_free_spoken_replies=false also cancels it and refuses new speech while dictation stays armed. Edge 401/403 rejection makes speech unavailable for five minutes. Other fields leave the voice alone. `hands_free_earcons` (default true) turns the hands-free earcons off; only the frontend reads it. `hands_free_notify_model` (default true) is read at arm time only — turning it off mid-conversation does not cancel the end notice the model is already owed. `hands_free_start_notice` (default empty = built-in text) replaces the start notice, also at arm time only, folded to one line |
 | `check_microphone_permission` | -- | `String` | Check macOS microphone TCC permission status |
 | `open_microphone_settings` | -- | `()` | Open macOS System Settings > Privacy > Microphone |
 
@@ -869,3 +869,16 @@ requires a bound managed caller, which window IPC does not supply. Call it via
 HTTP `POST /mcp`. Its `session-worktree-declared` push is also emitted to Tauri;
 `list_active_sessions` and HTTP `GET /sessions` report the persisted declaration
 in their existing worktree fields. See [MCP backend](../backend/mcp-http.md).
+
+### Desktop text clipboard
+
+| Command | Parameters | Returns | Description |
+|---------|------------|---------|-------------|
+| `write_clipboard_text` | `text: String` | `()` | Write UTF-8 text to the local OS clipboard through arboard. Errors reject the call so copy actions show failure. |
+| `read_clipboard_text` | — | `String` | Read UTF-8 text directly from the local OS clipboard without the macOS Web Clipboard Paste pill. |
+
+Both commands require the `desktop` feature and run blocking clipboard operations
+on worker threads. They have no focus or user-gesture requirement. The clipboard
+owner stays alive between calls and is released on application exit. They are
+`INTENTIONALLY_UNMAPPED`: browser clients use `navigator.clipboard` on their own
+machine; HTTP clients cannot read or write the host pasteboard.

@@ -9,6 +9,9 @@
 import { type Component, createEffect, createSignal, For, Show } from "solid-js";
 import mobileInput from "../../mobile/components/CommandInput.module.css";
 import { uploadAttachment } from "../../services/uploadAttachment";
+import { pastedImageFiles } from "../../utils/pastedImage";
+import { ComposePinIcon, ComposeSendIcon } from "../shared/ComposeActionIcons";
+import actions from "../shared/ComposeActions.module.css";
 import s from "./AIChatPanel.module.css";
 import { aiChatDraft } from "./draft";
 import type { AcpChat } from "./useAcpChat";
@@ -65,10 +68,27 @@ export const Composer: Component<{
 		void props.chat.send(text, images, files);
 	};
 
+	const stageImages = async (files: File[]): Promise<string | null> => {
+		const ownsDraft = aiChatDraft.captureOwnership();
+		try {
+			// An unstarted conversation has no capabilities yet, not an image refusal.
+			const startedSession = await props.chat.ensureStarted();
+			for (const file of files) {
+				if (!ownsDraft(startedSession ?? "")) return null;
+				const error = await aiChatDraft.stageImage(file, props.chat.capabilities()?.promptImage === true);
+				if (!ownsDraft(startedSession ?? "")) return null;
+				if (error) return error;
+			}
+			return null;
+		} catch (error) {
+			return error instanceof Error ? error.message : String(error);
+		}
+	};
+
 	const attachFile = async (file: File) => {
 		setPasteError(null);
 		if (file.type.startsWith("image/")) {
-			setPasteError(await aiChatDraft.stageImage(file, props.chat.capabilities()?.promptImage === true));
+			setPasteError(await stageImages([file]));
 			return;
 		}
 		setUploading(true);
@@ -94,10 +114,7 @@ export const Composer: Component<{
 
 	const onPaste = (event: ClipboardEvent) => {
 		// DEFERRED (2026-09-28) — image drop needs Boss's explicit approval for drag/drop handlers.
-		const files = [...(event.clipboardData?.items ?? [])]
-			.filter((item) => item.type.startsWith("image/"))
-			.map((item) => item.getAsFile())
-			.filter((file): file is File => file !== null);
+		const files = pastedImageFiles(event);
 		if (files.length === 0) {
 			const value = event.clipboardData?.getData("text/plain") ?? "";
 			if (!textarea) return;
@@ -112,15 +129,9 @@ export const Composer: Component<{
 		}
 		event.preventDefault();
 		setPasteError(null);
-		void (async () => {
-			for (const file of files) {
-				const error = await aiChatDraft.stageImage(file, props.chat.capabilities()?.promptImage === true);
-				if (error) {
-					setPasteError(error);
-					break;
-				}
-			}
-		})();
+		void stageImages(files).then((error) => {
+			if (error) setPasteError(error);
+		});
 	};
 
 	const onKeyDown = (event: KeyboardEvent) => {
@@ -284,11 +295,14 @@ export const Composer: Component<{
 				</Show>
 				<button
 					type="button"
-					class={s.parkBtn}
-					classList={{ [s.parkedDraft]: props.mobileAttachments && !!aiChatDraft.parked() }}
+					class={props.mobileAttachments ? s.parkBtn : actions.pinButton}
+					classList={{
+						[s.parkedDraft]: !!props.mobileAttachments && !!aiChatDraft.parked(),
+						[actions.pinButtonActive]: !props.mobileAttachments && !!aiChatDraft.parked(),
+					}}
 					aria-label={parkLabel()}
 					title={parkLabel()}
-					aria-pressed={props.mobileAttachments ? !!aiChatDraft.parked() : undefined}
+					aria-pressed={!!aiChatDraft.parked()}
 					disabled={!aiChatDraft.parked() && !hasContent()}
 					onClick={() => aiChatDraft.parkOrSwap()}
 				>
@@ -296,18 +310,16 @@ export const Composer: Component<{
 						<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
 							<path d="M3 3h18v5H3zm2 7h14v11H5zm4 2v2h6v-2z" />
 						</svg>
-					) : aiChatDraft.parked() ? (
-						"Parked draft"
 					) : (
-						"Park"
+						<ComposePinIcon />
 					)}
 				</button>
 			</div>
 			<button
 				type="button"
-				aria-label={props.mobileAttachments ? (props.chat.busy() ? "Queue" : "Send") : undefined}
+				aria-label={props.chat.busy() ? "Queue" : "Send"}
 				title={props.chat.busy() ? "Queue" : "Send"}
-				class={props.mobileAttachments ? mobileInput.send : s.sendBtn}
+				class={props.mobileAttachments ? mobileInput.send : actions.sendButton}
 				disabled={!aiChatDraft.text().trim() && aiChatDraft.images().length === 0 && aiChatDraft.files().length === 0}
 				onClick={send}
 			>
@@ -315,10 +327,8 @@ export const Composer: Component<{
 					<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
 						<path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
 					</svg>
-				) : props.chat.busy() ? (
-					"Queue"
 				) : (
-					"Send"
+					<ComposeSendIcon />
 				)}
 			</button>
 		</div>

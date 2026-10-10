@@ -105,3 +105,11 @@ describe("savePastedImage (critic 1350)", () => {
 		await expect(savePastedImage(e, () => "n1")).resolves.toBeNull();
 	});
 });
+
+it("saves Finder file-name plus image clipboard data rather than rejecting it as text", async () => {
+	// Catches: shared clipboard selection treats Finder's filename as substantive text.
+	const event = pasteEvent([textItem(), imageItem("image/png")]);
+	Object.defineProperty(event.clipboardData, "getData", { value: () => "/Users/Boss/Pictures/clip.png" });
+	await expect(savePastedImage(event, () => "finder")).resolves.toBe("/saved/a.png");
+	expect(event.defaultPrevented).toBe(true);
+});

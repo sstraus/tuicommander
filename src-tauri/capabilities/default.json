@@ -24,8 +24,6 @@
     "updater:default",
     "process:allow-restart",
     "deep-link:default",
-    "clipboard-manager:allow-read-text",
-    "clipboard-manager:allow-write-text",
     "global-shortcut:allow-register",
     "global-shortcut:allow-unregister",
     "global-shortcut:allow-is-registered",

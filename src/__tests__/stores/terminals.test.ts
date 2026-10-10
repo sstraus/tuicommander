@@ -166,7 +166,7 @@ describe("terminalsStore", () => {
 				const lines = store.get(id)!.userPromptLines;
 				expect(lines.length).toBe(500);
 				expect(lines[0]).toBe(1);
-				expect(lines[lines.length - 1]).toBe(500);
+				expect(lines.at(-1)!).toBe(500);
 			});
 		});
 	});

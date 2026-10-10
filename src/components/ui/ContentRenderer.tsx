@@ -126,7 +126,7 @@ marked.use({
 				const cls = [baseCls, "ansi-block"].filter(Boolean).join(" ");
 				return `<pre data-raw-code="${raw}"><code class="${cls}">${ansiConverter.toHtml(token.text)}</code></pre>\n`;
 			}
-			const escaped = token.text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+			const escaped = token.text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 			return `<pre data-raw-code="${raw}"><code${baseCls ? ` class="${baseCls}"` : ""}>${escaped}</code></pre>\n`;
 		},
 	},
@@ -391,7 +391,7 @@ function renderMarkdownSegment(
 		});
 	} catch (err) {
 		appLogger.error("app", "Markdown parsing error", err);
-		const escaped = raw.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+		const escaped = raw.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 		return `<pre>${escaped}</pre>`;
 	}
 }

@@ -117,6 +117,8 @@ struct View {
     offset: u64,
     /// The first window has been read; later reads are plain appends.
     attached: bool,
+    /// Keep the old file open so its identity cannot be reused after replacement.
+    file_identity: Option<same_file::Handle>,
     adapter: ClaudeAdapter,
     log: ViewLog,
     last_read: Instant,
@@ -130,6 +132,7 @@ impl View {
             path,
             offset: 0,
             attached: false,
+            file_identity: None,
             adapter: ClaudeAdapter::default(),
             log: ViewLog::new(max_entries, max_bytes),
             last_read: Instant::now(),
@@ -151,6 +154,7 @@ impl View {
     fn restart(&mut self) {
         self.offset = 0;
         self.attached = false;
+        self.file_identity = None;
         self.adapter = ClaudeAdapter::default();
         self.log.reset();
     }
@@ -159,6 +163,15 @@ impl View {
     /// moved.
     fn advance(&mut self, window: u64) -> std::io::Result<bool> {
         let before = (self.log.epoch, self.log.next_seq);
+        let identity = same_file::Handle::from_path(&self.path)?;
+        if self
+            .file_identity
+            .as_ref()
+            .is_some_and(|old| *old != identity)
+        {
+            self.restart();
+        }
+        self.file_identity = Some(identity);
         let appended = if self.attached {
             let appended = read_appended(&self.path, &mut self.offset)?;
             if appended.restarted {
@@ -297,6 +310,8 @@ pub(crate) async fn chat_view_snapshot_blocking(
 fn spawn_ticker(state: Arc<AppState>, session_id: String, view: Arc<Mutex<View>>) {
     // No runtime (a unit test calling the snapshot directly): no wake events.
     let Ok(runtime) = tokio::runtime::Handle::try_current() else {
+        view.lock().ticking = false;
+        tracing::warn!(target: "chat_view", session_id, "Chat view ticker stopped: no Tokio runtime");
         return;
     };
     runtime.spawn(async move {
@@ -307,7 +322,15 @@ fn spawn_ticker(state: Arc<AppState>, session_id: String, view: Arc<Mutex<View>>
             match tick {
                 Ok(Tick::Idle) => {}
                 Ok(Tick::Moved(seq)) => state.notify_chat_view_changed(&session_id, seq),
-                Ok(Tick::Stop) | Err(_) => break,
+                Ok(Tick::Stop(reason)) => {
+                    tracing::warn!(target: "chat_view", session_id, %reason, "Chat view ticker stopped");
+                    break;
+                }
+                Err(error) => {
+                    view.lock().ticking = false;
+                    tracing::warn!(target: "chat_view", session_id, %error, "Chat view ticker stopped: tick task failed");
+                    break;
+                }
             }
         }
     });
@@ -316,11 +339,11 @@ fn spawn_ticker(state: Arc<AppState>, session_id: String, view: Arc<Mutex<View>>
 enum Tick {
     Idle,
     Moved(u64),
-    Stop,
+    Stop(String),
 }
 
 fn tick(state: &AppState, session_id: &str, view: &Arc<Mutex<View>>) -> Tick {
-    let stop = |view: &Arc<Mutex<View>>| {
+    let stop = |view: &Arc<Mutex<View>>, reason: String| {
         {
             let mut views = state.chat_views.views.lock();
             // Only the registration of this very view: a newer one may have replaced it.
@@ -329,25 +352,27 @@ fn tick(state: &AppState, session_id: &str, view: &Arc<Mutex<View>>) -> Tick {
             }
         }
         view.lock().ticking = false;
-        Tick::Stop
+        Tick::Stop(reason)
     };
     let (unread_for, bound_for) = {
         let v = view.lock();
         (v.last_read.elapsed(), v.bound_at.elapsed())
     };
     if unread_for > VIEWER_IDLE {
-        return stop(view);
+        return stop(view, "viewer idle".into());
     }
-    if bound_for >= REBIND_EVERY && rebind(state, session_id, view).is_err() {
-        return stop(view);
+    if bound_for >= REBIND_EVERY
+        && let Err(error) = rebind(state, session_id, view)
+    {
+        return stop(view, error);
     }
     let mut guard = view.lock();
     match guard.advance(TAIL_WINDOW_BYTES) {
         Ok(true) => Tick::Moved(guard.log.next_seq),
         Ok(false) => Tick::Idle,
-        Err(_) => {
+        Err(error) => {
             drop(guard);
-            stop(view)
+            stop(view, format!("transcript unreadable: {error}"))
         }
     }
 }
@@ -358,3 +383,8 @@ mod critic_tests;
 mod measurement;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod follow_http_fixture;
+#[cfg(test)]
+mod follow_tests;

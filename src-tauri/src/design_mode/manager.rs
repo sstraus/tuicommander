@@ -704,7 +704,8 @@ pub(crate) async fn live_browser(
     repo_root: &Path,
     dev_server_url: Option<&str>,
 ) -> Result<Arc<dyn InspectBrowser>, String> {
-    CdpInspectBrowser::connect(repo_root, dev_server_url).await
+    // Shared tungstenite TLS features enlarge this future; keep it off callers' stacks.
+    Box::pin(CdpInspectBrowser::connect(repo_root, dev_server_url)).await
 }
 
 #[cfg(test)]

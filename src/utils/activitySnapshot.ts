@@ -73,7 +73,7 @@ export function displayTask(
 export function projectName(cwd: string | null): string | null {
 	if (!cwd) return null;
 	const segments = cwd.replace(/\/+$/, "").split("/");
-	return segments[segments.length - 1] || null;
+	return segments.at(-1)! || null;
 }
 
 /** Derive display status from terminal state fields.

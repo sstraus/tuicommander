@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+mod admission;
 mod history;
 mod mutations;
 #[cfg(test)]
@@ -117,6 +118,8 @@ impl RunStore {
             CREATE INDEX IF NOT EXISTS automation_history_by_id ON automation_runs(automation_id,created_ms DESC,id DESC);
             CREATE INDEX IF NOT EXISTS automation_status ON automation_runs(status);
             CREATE INDEX IF NOT EXISTS automation_retention ON automation_runs(finished_ms);
+            CREATE TABLE IF NOT EXISTS automation_cursors (
+                automation_id TEXT PRIMARY KEY, occurrence_ms INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS automation_deliveries (
                 run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE CASCADE,
                 transition TEXT NOT NULL, channel TEXT NOT NULL, document_json TEXT NOT NULL,
@@ -138,33 +141,13 @@ impl RunStore {
     ) -> Result<Option<AutomationRun>, String> {
         self.require_owner()?;
         definition.validate()?;
-        let occurrence = match trigger {
-            RunTrigger::Scheduled { occurrence_ms } => Some(occurrence_ms),
-            RunTrigger::Manual => None,
-        };
-        let run = AutomationRun {
-            id: uuid::Uuid::now_v7().to_string(),
-            definition: definition.clone(),
-            trigger,
-            status: RunStatus::Reserved,
-            created_ms: now_ms,
-            updated_ms: now_ms,
-            finished_ms: None,
-            task_id: None,
-            session_id: None,
-            workspace: None,
-            stdout: SavedOutput::default(),
-            stderr: SavedOutput::default(),
-            precheck: None,
-            reason: None,
-        };
         let mut conn = self.connect()?;
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(error)?;
-        let inserted = tx.execute("INSERT INTO automation_runs(id,automation_id,occurrence_ms,status,created_ms,snapshot_json) VALUES(?1,?2,?3,'reserved',?4,?5) ON CONFLICT(automation_id,occurrence_ms) WHERE occurrence_ms IS NOT NULL DO NOTHING", params![run.id, definition.id, occurrence, now_ms, encode(&run)?]).map_err(error)?;
+        let run = reserve_in(&tx, definition, trigger, RunStatus::Reserved, now_ms)?;
         tx.commit().map_err(error)?;
-        Ok((inserted == 1).then_some(run))
+        Ok(run)
     }
 
     pub fn get(&self, id: &str) -> Result<AutomationRun, String> {
@@ -213,4 +196,41 @@ fn write(conn: &Connection, run: &AutomationRun) -> Result<(), String> {
     )
     .map_err(error)?;
     Ok(())
+}
+
+fn reserve_in(
+    conn: &Connection,
+    definition: &AutomationDefinition,
+    trigger: RunTrigger,
+    initial_status: RunStatus,
+    now_ms: i64,
+) -> Result<Option<AutomationRun>, String> {
+    let occurrence = match trigger {
+        RunTrigger::Scheduled { occurrence_ms } => Some(occurrence_ms),
+        RunTrigger::Manual => None,
+    };
+    let run = AutomationRun {
+        id: uuid::Uuid::now_v7().to_string(),
+        definition: definition.clone(),
+        trigger,
+        status: initial_status,
+        created_ms: now_ms,
+        updated_ms: now_ms,
+        finished_ms: (!initial_status.is_open()).then_some(now_ms),
+        started_ms: None,
+        deadline_ms: Some(now_ms.saturating_add(
+            i64::try_from(definition.max_duration_secs.saturating_mul(1000)).unwrap_or(i64::MAX),
+        )),
+        task_id: None,
+        session_id: None,
+        workspace: None,
+        workspace_id: None,
+        stdout: SavedOutput::default(),
+        stderr: SavedOutput::default(),
+        precheck: None,
+        precheck_outcome: None,
+        reason: None,
+    };
+    let inserted = conn.execute("INSERT INTO automation_runs(id,automation_id,occurrence_ms,status,created_ms,snapshot_json,finished_ms) VALUES(?1,?2,?3,?6,?4,?5,?7) ON CONFLICT(automation_id,occurrence_ms) WHERE occurrence_ms IS NOT NULL DO NOTHING", params![run.id, definition.id, occurrence, now_ms, encode(&run)?, status(initial_status)?, run.finished_ms]).map_err(error)?;
+    Ok((inserted == 1).then_some(run))
 }

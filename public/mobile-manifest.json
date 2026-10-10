@@ -3,7 +3,7 @@
   "short_name": "TUIC",
   "description": "Monitor your AI coding agents from your phone",
   "start_url": "/mobile",
-  "scope": "/mobile",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#1e1e1e",
   "theme_color": "#1e1e1e",

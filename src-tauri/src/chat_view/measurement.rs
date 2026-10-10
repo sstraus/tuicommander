@@ -1,5 +1,6 @@
 //! Opt-in measurement: source stays outside the repository and is read at runtime.
 
+#[cfg(unix)]
 use super::*;
 
 #[cfg(unix)]

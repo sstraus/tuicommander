@@ -548,15 +548,7 @@ const VariableDropdown: Component<{
 }> = (props) => {
 	const [open, setOpen] = createSignal(false);
 
-	const groups = () => {
-		const map = new Map<string, VarDef[]>();
-		for (const v of CONTEXT_VARIABLES) {
-			const list = map.get(v.group) ?? [];
-			list.push(v);
-			map.set(v.group, list);
-		}
-		return map;
-	};
+	const groups = () => Map.groupBy(CONTEXT_VARIABLES, (v) => v.group);
 
 	return (
 		<div class={s.varDropdownWrap}>

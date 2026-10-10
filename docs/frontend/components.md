@@ -4,6 +4,8 @@ Slice F exposes `start_graph {target:{type:story|plan,id},expected_revision?,def
 
 All components are SolidJS functional components in `src/components/`.
 
+`MobileViewBanner` offers browser clients a link to `/mobile`. On tablets it remains visible, even if previously dismissed on a phone, so users who chose desktop in mobile Settings can return. Switching clears the device-local desktop preference; native Tauri never renders the banner.
+
 ## Component Tree
 
 ```
@@ -139,7 +141,9 @@ turns appear in the transcript.
 connection acknowledgement, shows a declared intent as status, and offers
 bracketed `suggest:` items as prompt buttons. Markdown examples stay literal.
 Messages, tool output and code blocks have copy actions. The transcript has
-text selection, find/select-all/clear shortcuts, and local file paths use the
+text selection and find/select-all/clear shortcuts. Find selects phrases across
+inline Markdown within each block, skips collapsed disclosure bodies, and closes
+on Escape from the input or navigation buttons. Local file paths use the
 terminal's backend path resolver and file opener. Web links use the shared
 external URL opener. A detached AI Chat window sends resolved file links to
 the main window's same file opener, where the editor and viewer tabs live.
@@ -211,6 +215,17 @@ composer selection through the same input path as typing. It preserves the surro
 PTY delta, and shows the agent parser menu with navigation. Picking a command
 updates the input; closing the menu clears the input through the same sync path.
 A vanished session keeps its output visible but disables both input controls.
+
+The mobile composer owns its draft. PTY prompt snapshots do not create a draft
+or extend it on their own: a hands-free paste can be visible before Enter, and
+a queued agent message can look like prompt input. A Tab request from the
+composer or keybar accepts one strict extension of a nonempty local draft.
+Explicit keybar Up/Down accepts one history replacement after its PTY write is
+acknowledged, including an empty line, and updates the edit delta baseline.
+Typing, sending, Escape, or a failed write cancels the request. A history response
+arriving before the HTTP acknowledgement is dropped, causing a missed recall.
+Because snapshots have no causal request ID, an unrelated delayed snapshot after
+the acknowledgement can still be mistaken for history.
 
 ## Core Components
 
@@ -361,6 +376,10 @@ are therefore two `SettingToggle` rows, each in its own `ExpertSetting`, and not
 one group under a shared label.
 
 #### DictationSettings (`SettingsPanel/DictationSettings.tsx`)
+
+Spoken replies is a standard toggle, also available in the mobile conversation
+header and mobile Settings. It stays visible in browser mode and saves the
+backend device preference; it does not stop microphone dictation.
 
 The **Voice** page (nav key `dictation`). One `<h3>` per section. Speech-to-text and
 text-to-speech are separate sections, and each keeps its own advanced controls
@@ -582,7 +601,7 @@ system and never turns an absent provider value into zero.
 | `CiRing` | SVG circular CI status indicator with proportional segments |
 | `DiffViewer` | Syntax-highlighted unified diff renderer |
 | `Dropdown` | Reusable dropdown select component |
-| `ContentRenderer` | Safe markdown-to-HTML rendering with DOMPurify sanitization (including raw form and image-map removal), with escaped preformatted text on parser failure, interactive checkboxes, tweak highlights, and click interception for every rendered link; `MarkdownTab` sends local href resolution to Rust |
+| `ContentRenderer` | Safe markdown-to-HTML rendering with DOMPurify sanitization (including raw form and image-map removal), with escaped preformatted text on parser failure, interactive checkboxes, tweak highlights, and click interception for every rendered link; Mermaid 12 diagrams retain the dark theme and strict security setting while using upstream layout and appearance defaults; `MarkdownTab` sends local href resolution to Rust |
 | `PanelResizeHandle` | Draggable resize handle for panel boundaries |
 | `PromptOption` | Agent prompt multiple-choice option |
 | `StatusBadge` | Git status badges (clean/dirty/conflict) |
@@ -661,3 +680,18 @@ Rich parent terminal rows show N agents in each other repository containing live
 ### Browser repository picker
 
 `ApplicationOverlays` uses `RemoteRepoPicker` for browser **Add Repository** as well as connected daemon folders. An omitted `connectionId` browses the serving TUIC with the existing `get_home_directory` and `list_directory` RPCs; an explicit ID browses that daemon. Selection and cancellation resolve the existing path prompt. Native desktop selection still uses the OS dialog.
+
+### AutomationsDialog
+
+`src/components/AutomationsDialog/` provides a machine-local scheduled-run dialog.
+`AutomationsHost` loads it on demand from the command palette. The searchable
+list shows the stored zone, next occurrence and last status, including overlap
+skips. The editor supports literal prompts, run config, workspace, precheck,
+limits, backend cadence presets and backend schedule previews. Once uses
+`once_local` plus the stored zone, without browser timezone conversion. Pause, Run now,
+save, confirmed deletion and recent history share one adapter. Deletion retains
+saved history. Escape uses the modal stack; Tab stays in the dialog.
+
+The Step 8 API is a separate integration dependency. `transportAdapter.ts` is the
+only provisional command-envelope boundary; tests inject `AutomationAdapter`.
+No schedules or launch decisions are calculated in TypeScript.

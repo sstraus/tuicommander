@@ -10,9 +10,9 @@ authors and communities behind each project.
 <!-- BEGIN GENERATED:rust -->
 | Crate | Version | License |
 |-------|---------|---------|
-| aes-gcm | 0.11.0 | Apache-2.0 OR MIT |
 | agent-client-protocol | 2.0.0 | Apache-2.0 |
 | anyhow | 1.0.104 | MIT OR Apache-2.0 |
+| arboard | 3.6.1 | MIT OR Apache-2.0 |
 | arrayvec | 0.7.8 | MIT OR Apache-2.0 |
 | async-stream | 0.3.6 | MIT |
 | axum | 0.8.9 | MIT |
@@ -22,17 +22,17 @@ authors and communities behind each project.
 | base64ct | 1.8.3 | Apache-2.0 OR MIT |
 | bcrypt | 0.19.2 | MIT |
 | bitflags | 2.13.1 | MIT OR Apache-2.0 |
-| cached | 0.56.0 | MIT |
 | cap-fs-ext | 3.4.6 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | cap-std | 3.4.6 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
 | cc | 1.3.0 | MIT OR Apache-2.0 |
 | chromey | 2.58.2 | MIT OR Apache-2.0 |
 | chrono | 0.4.45 | MIT OR Apache-2.0 |
+| chrono-tz | 0.10.4 | MIT OR Apache-2.0 |
 | clap | 4.6.3 | MIT OR Apache-2.0 |
 | console-subscriber | 0.5.0 | MIT |
 | cpal | 0.17.3 | Apache-2.0 |
+| croner | 4.0.1 | MIT |
 | ctor | 0.8.0 | Apache-2.0 OR MIT |
-| cuid2 | 0.1.6 | MIT |
 | cursor-icon | 1.2.0 | MIT OR Apache-2.0 OR Zlib |
 | dashmap | 6.2.1 | MIT |
 | deunicode | 1.6.2 | BSD-3-Clause |
@@ -47,8 +47,8 @@ authors and communities behind each project.
 | grep-regex | 0.1.14 | Unlicense OR MIT |
 | grep-searcher | 0.1.17 | Unlicense OR MIT |
 | hex | 0.4.3 | MIT OR Apache-2.0 |
-| hkdf | 0.13.0 | MIT OR Apache-2.0 |
 | home | 0.5.12 | MIT OR Apache-2.0 |
+| iana-time-zone | 0.1.65 | MIT OR Apache-2.0 |
 | ignore | 0.4.31 | Unlicense OR MIT |
 | include_dir | 0.7.4 | MIT |
 | jsonc-parser | 0.33.1 | MIT |
@@ -61,8 +61,8 @@ authors and communities behind each project.
 | mime_guess | 2.0.5 | MIT |
 | moka | 0.12.15 | MIT OR Apache-2.0 AND Apache-2.0 |
 | notify | 8.2.0 | CC0-1.0 |
-| oauth2 | 5.0.0 | MIT OR Apache-2.0 |
 | ort | 2.0.0-rc.13 | MIT OR Apache-2.0 |
+| p256 | 0.13.2 | Apache-2.0 OR MIT |
 | parking_lot | 0.12.5 | MIT OR Apache-2.0 |
 | polling | 3.11.0 | Apache-2.0 OR MIT |
 | portable-pty | 0.9.0 | MIT |
@@ -79,6 +79,7 @@ authors and communities behind each project.
 | rust-stemmers | 1.2.0 | MIT OR BSD-3-Clause |
 | rustls | 0.23.45 | Apache-2.0 OR ISC OR MIT |
 | safetensors | 0.6.2 | Apache-2.0 |
+| same-file | 1.0.6 | Unlicense OR MIT |
 | schemars | 1.2.1 | MIT |
 | sentencepiece-model | 0.1.4 | BSD-2-Clause |
 | serde | 1.0.229 | MIT OR Apache-2.0 |
@@ -91,7 +92,6 @@ authors and communities behind each project.
 | tar | 0.4.46 | MIT OR Apache-2.0 |
 | tauri | 2.12.1 | Apache-2.0 OR MIT |
 | tauri-build | 2.7.1 | Apache-2.0 OR MIT |
-| tauri-plugin-clipboard-manager | 2.4.1 | Apache-2.0 OR MIT |
 | tauri-plugin-deep-link | 2.6.1 | Apache-2.0 OR MIT |
 | tauri-plugin-dialog | 2.8.1 | Apache-2.0 OR MIT |
 | tauri-plugin-global-shortcut | 2.4.0 | Apache-2.0 OR MIT |
@@ -104,20 +104,19 @@ authors and communities behind each project.
 | tempfile | 3.27.0 | MIT OR Apache-2.0 |
 | tokenizers | 0.22.2 | Apache-2.0 |
 | tokio | 1.53.1 | MIT |
-| tokio-tungstenite | 0.30.0 | MIT |
+| tokio-tungstenite | 0.29.0 | MIT |
 | toml | 1.1.3+spec-1.1.0 | MIT OR Apache-2.0 |
 | toml_edit | 0.25.13+spec-1.1.0 | MIT OR Apache-2.0 |
 | tower-http | 0.7.0 | MIT |
 | tracing | 0.1.44 | MIT |
 | tracing-appender | 0.2.5 | MIT |
 | tracing-subscriber | 0.3.23 | MIT |
-| tungstenite | 0.30.0 | MIT OR Apache-2.0 |
+| tungstenite | 0.29.0 | MIT OR Apache-2.0 |
 | ulid | 3.0.0 | MIT |
 | unicode-segmentation | 1.13.3 | MIT OR Apache-2.0 |
 | unicode-width | 0.2.2 | MIT OR Apache-2.0 |
 | url | 2.5.8 | MIT OR Apache-2.0 |
 | uuid | 1.27.0 | Apache-2.0 OR MIT |
-| web-push-native | 0.5.0 | MIT OR Apache-2.0 |
 | webrtc-audio-processing | 2.1.0 | BSD-3-Clause |
 | whichlang | 0.1.1 | MIT |
 | whisper-rs | 0.16.0 | Unlicense |
@@ -188,7 +187,7 @@ authors and communities behind each project.
 | ansi-to-html | 0.7.2 | MIT |
 | dompurify | 3.4.16 | MPL-2.0 OR Apache-2.0 |
 | marked | 18.0.12 | MIT |
-| mermaid | 11.17.2 | MIT |
+| mermaid | 12.1.0 | MIT |
 | qrcode | 1.5.4 | MIT |
 | solid-codemirror | 2.3.3 | MIT |
 | solid-js | 1.9.17 | MIT |
@@ -231,10 +230,10 @@ Counts below collapse equivalent SPDX expressions (`MIT OR Apache-2.0` ≡ `Apac
 <!-- BEGIN GENERATED:summary -->
 | License | Count |
 |---------|-------|
-| MIT OR Apache-2.0 | 81 |
-| MIT | 67 |
+| MIT OR Apache-2.0 | 80 |
+| MIT | 66 |
 | Apache-2.0 | 8 |
-| Unlicense OR MIT | 6 |
+| Unlicense OR MIT | 7 |
 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | 4 |
 | BSD-3-Clause | 3 |
 | MIT OR Apache-2.0 OR Zlib | 2 |

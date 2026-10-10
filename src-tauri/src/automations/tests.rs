@@ -21,6 +21,50 @@ fn definition(id: &str) -> AutomationDefinition {
     .unwrap()
 }
 
+// Catches: a Once definition becoming undispatchable or firing twice after restart/catch-up.
+#[test]
+fn once_occurrence_is_persisted_and_cannot_dispatch_twice_after_restart() {
+    use super::run::RunTrigger;
+    use super::store::RunOwner;
+    let mut value = serde_json::to_value(definition("once")).unwrap();
+    value["cron"] = json!("");
+    value["once_local"] = json!("2099-10-09T10:00:00");
+    value["timezone"] = json!("UTC");
+    let once: AutomationDefinition = serde_json::from_value(value).unwrap();
+    let (dir, definitions) = store();
+    definitions.create(once.clone()).unwrap();
+    assert_eq!(definitions.load().unwrap().definitions, vec![once.clone()]);
+    let path = dir.path().join("runs.sqlite3");
+    let occurrence_ms = chrono::DateTime::parse_from_rfc3339("2099-10-09T10:00:00Z")
+        .unwrap()
+        .timestamp_millis();
+    let owner = RunOwner::acquire_at(&path, occurrence_ms).unwrap();
+    assert!(
+        owner
+            .store()
+            .reserve(
+                &once,
+                RunTrigger::Scheduled { occurrence_ms },
+                occurrence_ms
+            )
+            .unwrap()
+            .is_some()
+    );
+    drop(owner);
+    let owner = RunOwner::acquire_at(&path, occurrence_ms + 1).unwrap();
+    assert!(
+        owner
+            .store()
+            .reserve(
+                &once,
+                RunTrigger::Scheduled { occurrence_ms },
+                occurrence_ms + 1
+            )
+            .unwrap()
+            .is_none()
+    );
+}
+
 // Catches: deriving an unbounded/zero concurrency default or writing on read.
 #[test]
 fn absent_file_defaults_to_two_without_creating_a_definition_document() {
@@ -211,7 +255,6 @@ fn invalid_wire_definitions_do_not_deserialize_into_runnable_defaults() {
         "repository",
         "workspace",
         "cron",
-        "timezone",
     ] {
         let mut value = serde_json::to_value(definition("a")).unwrap();
         value.as_object_mut().unwrap().remove(field);

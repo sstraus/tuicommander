@@ -47,7 +47,7 @@ function scopedLaunchCommand(
 	}
 	// EncodedCommand is accepted by both cmd and PowerShell and keeps values out of
 	// the parent shell's parser and history. The child exits when the agent exits.
-	const psQuote = (value: string) => `'${value.replace(/'/g, "''")}'`;
+	const psQuote = (value: string) => `'${value.replaceAll("'", "''")}'`;
 	const script = [
 		...entries.map(([key, value]) => `$env:${key} = ${psQuote(value)}`),
 		`Invoke-Expression ${psQuote(command)}`,

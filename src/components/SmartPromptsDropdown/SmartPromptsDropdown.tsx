@@ -54,17 +54,7 @@ export const SmartPromptsDropdown: Component<SmartPromptsDropdownProps> = (props
 	/** Group prompts by their first non-"smart" tag */
 	const groupedPrompts = createMemo(() => {
 		const groups: { tag: string; label: string; order: number; prompts: SavedPrompt[] }[] = [];
-		const groupMap = new Map<string, SavedPrompt[]>();
-
-		for (const prompt of filteredPrompts()) {
-			const tag = prompt.tags?.find((t) => t !== "smart") ?? "other";
-			let list = groupMap.get(tag);
-			if (!list) {
-				list = [];
-				groupMap.set(tag, list);
-			}
-			list.push(prompt);
-		}
+		const groupMap = Map.groupBy(filteredPrompts(), (prompt) => prompt.tags?.find((t) => t !== "smart") ?? "other");
 
 		for (const [tag, prompts] of groupMap) {
 			const meta = CATEGORY_ORDER[tag] ?? { label: tag.toUpperCase(), order: 99 };

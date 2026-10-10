@@ -17,7 +17,9 @@ normalized into each other.
 
 In the mobile session output, long text wraps to the phone width. A continuation
 keeps the original line's leading spaces or tabs, so indented lists and code
-remain readable. Box-drawing output keeps its horizontal scrolling layout.
+remain readable. Claude tool-call status dots keep the same space while pulsing
+or turning green, and wrapped continuations align after that space. Box-drawing
+output keeps its horizontal scrolling layout.
 
 ### Creating Terminals
 
@@ -51,13 +53,15 @@ Terminals are **never unmounted** from the DOM. When you switch branches or tabs
 
 ### CLI / Chat view
 
-A terminal that runs Claude Code shows a **CLI | Chat** switch in its top-right corner. **Chat** replaces the grid with the conversation read from Claude's own session file: your prompts as bubbles, Claude's replies as text, and tool calls folded into one compact card each. Plumbing (hook output, system reminders) and empty thinking blocks are left out. Compose opens and receives focus below the conversation. Reply with **Ctrl+Enter**, or queue follow-up work with **Shift+Ctrl+Enter**. Switch back to **CLI** to answer a permission prompt. The grid keeps running while hidden, so scrollback and selection are unchanged. Prompts have a theme-coloured background and gutter in Chat; the CLI grid does not tint submitted prompts.
+A terminal that runs Claude Code shows a **CLI | Chat** switch in its top-right corner. **Chat** replaces the grid with the conversation read from Claude's own session file: your prompts as bubbles (including follow-ups typed while Claude is busy), Claude's replies as text, and tool calls folded into one compact card each. Plumbing (hook output, system reminders) and empty thinking blocks are left out. Compose opens and receives focus below the conversation. Reply with **Ctrl+Enter**, or queue follow-up work with **Shift+Ctrl+Enter**. Switch back to **CLI** to answer a permission prompt. The grid keeps running while hidden, so scrollback and selection are unchanged. Prompts have a theme-coloured background and gutter in Chat; the CLI grid does not tint submitted prompts.
 
 Harness inbox and interruption notices appear as small system notes. Images without retained image data appear as attachment chips. Consecutive thinking blocks share one disclosure, and marked answers use the CLI's green highlight. Historical tool cards show status without a duration: the transcript does not provide execution timestamps. Copy appears beside a reply when you hover or focus it. The Compose handle is available in CLI view.
 
 In Chat, Compose stays docked and open after sending or queueing, clears the submitted text, and keeps focus for the next message. It cannot be closed or unpinned while Chat is active. **Esc** returns to CLI for terminal interaction; the Compose shortcut focuses the Chat input. Switching back to CLI restores that tab's previous Compose open and pin state. Unsent drafts survive switching in either direction, including text entered while a send or queue is still pending.
 
 **Chat** is disabled, with the reason as its tooltip, when the terminal has no agent, the agent is not Claude, or TUICommander has not bound the agent to a session file yet. If the agent exits or the binding is lost while Chat is open, the terminal returns to CLI with a one-line notice.
+
+Chat follows new transcript entries while the agent writes. A replaced transcript resets the displayed conversation, including when the replacement keeps the same file name and size.
 
 Older recorded prompts with a prompt ID also appear when Claude did not record a human-origin field. Command echoes, tool results and sidechain conversations stay out of user bubbles. Image and PDF tool outputs show `[image]` and `[document]` markers; a model fallback shows a **Model changed** card.
 
@@ -239,7 +243,7 @@ Search within terminal output with `Cmd+F`:
 5. Match counter shows "N of M" results
 6. Press `Escape` to close the search and refocus the terminal
 
-Search is integrated directly with the terminal grid for accurate match highlighting.
+In **CLI**, search is integrated directly with the terminal grid for accurate match highlighting. In **Chat**, **Cmd/Ctrl+F** opens the transcript search: enter text and press **Enter** / **Shift+Enter**, or use **Next** / **Previous**, to select and scroll to matches. Matches span inline Markdown formatting within a paragraph; collapsed thinking bodies are skipped until opened. **Escape** closes search, including after clicking the navigation buttons. Switching CLI/Chat closes the search and clears its highlight.
 
 ## Cross-Terminal Search
 
@@ -256,7 +260,7 @@ Also accessible via the "Search Terminals" command in the palette.
 
 - **Copy:** Select text in the terminal, then `Cmd+C`. A "Copied to clipboard" confirmation appears in the status bar. Multi-line Claude messages paste as clean text: the repeated `▎` visual gutter is removed while bullets, numbering, and indentation are preserved. Inside such a quote, rows that Claude broke only to fit the terminal width are joined back into one paragraph, so pasting into Slack or an email keeps whole sentences. Blank rows, list items and deeper indents keep their own line, and a quote that never reaches the terminal edge is copied exactly as shown.
   Claude prompt selections also remove the first `❯ ` marker and the two-column continuation margin. Width-supported wraps join, while short typed lines and additional content indentation remain. A glyph pasted inside the prompt remains part of the text. Composer cleanup applies only when the selection starts at column zero of the first composer row. Selecting body text or a VT soft-wrap continuation preserves literal markers and indentation.
-- **Paste:** `Cmd+V` writes clipboard content to the active terminal
+- **Paste:** `Cmd+V` writes clipboard content to the active terminal. Text takes priority when a copied Chat selection or other rich content also includes an image. Screenshot-only pastes and copied image filenames from Finder still send Ctrl+V so terminal agents can attach the image.
 
 ### Copy on Select
 

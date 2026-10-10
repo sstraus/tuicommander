@@ -10,6 +10,24 @@ const mod = isMacOS() ? "Cmd" : "Ctrl";
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Spoken replies",
+		description:
+			"Turn off Spoken replies in mobile hands-free or Settings > Voice to keep dictating while the agent answers in text.",
+		shortcut: null,
+	},
+	{
+		feature: "Mobile Control Keys",
+		description:
+			"Tap Ctrl in the mobile terminal keybar to send Ctrl+C, Ctrl+B, Ctrl+D or the agent-aware Ctrl+Enter key.",
+		shortcut: null,
+	},
+	{
+		feature: "Automations",
+		description:
+			"Open Automations from the command palette to edit scheduled agent runs and Once previews. The Automations backend API is required.",
+		shortcut: null,
+	},
+	{
 		feature: "Terminal Chat Input",
 		description:
 			"Switch a Claude terminal to Chat to reply in docked Compose. Ctrl+Enter sends now; Shift+Ctrl+Enter queues. Answer permission prompts in CLI.",

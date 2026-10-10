@@ -32,7 +32,7 @@ function formatTime(ms: number): string {
 function projectName(cwd: string | null): string {
 	if (!cwd) return "unknown";
 	const parts = cwd.split("/");
-	return parts[parts.length - 1] || "unknown";
+	return parts.at(-1)! || "unknown";
 }
 
 /** A plain shell. Marks the card so a PTY is not read as an unidentified agent. */

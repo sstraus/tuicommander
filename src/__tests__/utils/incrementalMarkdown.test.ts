@@ -226,7 +226,7 @@ describe("splitStream", () => {
 				reparsed += split.tail.text.length;
 				longestTail = Math.max(longestTail, split.tail.text.length);
 			}
-			const full = ticks[ticks.length - 1];
+			const full = ticks.at(-1)!;
 			// The tail stays the size of one block, whatever the answer's length.
 			expect(longestTail).toBeLessThan(200);
 			// Each character is re-parsed a bounded number of times in total…

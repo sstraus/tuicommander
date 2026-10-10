@@ -78,7 +78,7 @@ export function projectChatProtocolText(text: string): ChatProtocolText {
 		}
 		// Blank lines stay: they separate a paragraph from the list before it. An answer marker starts
 		// its own paragraph, as it starts its own row in the grid, even when no blank line precedes it.
-		if (ANSWER_MARKER_RE.test(line) && body.length > 0 && body[body.length - 1].trim()) body.push("");
+		if (ANSWER_MARKER_RE.test(line) && body.length > 0 && body.at(-1)!.trim()) body.push("");
 		body.push(line);
 	}
 	return { body: body.join("\n").replace(/^\n+|\n+$/g, ""), intent, suggestions };

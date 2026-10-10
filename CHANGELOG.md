@@ -6,8 +6,43 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Add automation completion reconciliation, bounded final output and persisted maximum-duration enforcement, including blocked runs (#1616-1882).
+
+- Keep terminal scrollbar history marks visible without Ctrl+Cmd, clear timestamp peek on focus loss, and omit empty marks overlays (#1665-ce9b).
+- Start Telegram polling in the desktop app through the shared owner lock, identify the connected owner in Settings, and gate chat pairing on connectivity.
+
+- Widen the Activity Dashboard popup by 20%, while keeping it within small windows (#1664-f4ab).
+
+- Add Spoken replies to mobile hands-free and Settings; muting keeps dictation active, and Edge HTTP 401/403 stops repeat requests for five minutes with one text outage notice (#1659-f3cc).
+- Give mobile toolbar keys enabled primary text and highlight Ctrl while its menu is open (#1663-8c02).
+
+- Use the terminal composer pin and play icon buttons in desktop AI Chat, with named Queue and parked-draft states (#1636-0d08).
+
+- Accept pasted images in AI Chat before ego connects, retain concurrent pastes while its first session opens, and share Finder/text clipboard rules with Ideas and terminal Compose (#1639-f474).
+- Add the `automations` MCP tool for definition management, with bound creator provenance and atomic pause/resume.
+### Added
+- Add multiple masked custom authentication headers beside Bearer/OAuth for HTTP MCP upstreams; bind vault secrets to the saved MCP origin before outgoing requests and block cross-origin redirects. Old unbound credentials require re-saving or OAuth authorization (#1657-e1a4).
+- Start the owner-guarded Once automation runtime on desktop and headless hosts, with durable precheck decisions, literal prompts and configured workspace/profile dispatch. Public execution controls and completion handling remain pending (#1615-57cf, #1614-7e8f).
+
+- Mobile terminal Ctrl menu offers Ctrl+C, Ctrl+B, Ctrl+D and Ctrl+Enter from one keybar button. Ctrl+Enter follows the agent registry mapping; verified behavior and conservative fallbacks are recorded with the probe evidence.
+- Add the Rust foundation for Once automation schedules with IANA timezone validation, a single preview instant and durable occurrence deduplication (#1629-2262).
+
 ### Fixed
 - Attach saved AI Chat tabs when selected, show connection failures with Retry and pending model controls, and name tabs from conversation titles or prompts (#1628-4459).
+
+- Keep enforcing other automation runs' deadlines when stopping one owned process fails (#1616-1882).
+- Restore external URL tabs by removing the restrictive `frame-src` CSP so frames inherit the permissive `default-src`.
+- Refresh daemon Tailscale status after startup so a reboot before tailscaled is ready does not leave its MagicDNS name rejected until restart.
+- Paste text into terminals when rich clipboard content also contains an image; keep screenshot and Finder image attachments.
+
+- Keep hands-free PTY echoes out of the mobile composer, including delayed echoes after typing or reconnecting; preserve explicit Tab completion and editable history recall (#1662-c549).
+- Keep mobile Claude tool-call text and wrapped continuations stationary while its status dot pulses or turns green (#1654-a3d5).
+- Preserve line breaks between held hands-free phrases and submit the combined turn once (#1656-eb5e).
+- Honor Open Desktop UI on iPad, remember the device's choice, and keep a visible return link to mobile in the desktop shell (#1658-fb34).
+- Keep terminal Chat following when Claude replaces a transcript at the same path, when it has no subagents, or after a rapid CLI/Chat remount; log failed refreshes or stopped transcript tickers (#1635-3db2).
+- Repair stale TUIC MCP bridge paths in Claude private and configured launch profiles, and warn when a missing configured bridge cannot be repaired (#1637-d6e1).
+- Search the visible Claude Chat transcript with Cmd/Ctrl+F; matches span inline Markdown and skip collapsed thinking; Enter and Shift+Enter navigate matches, and switching CLI/Chat closes search and clears its highlight (#1633-f2cc).
+- Show Claude prompts typed mid-turn in terminal Chat, while keeping task notifications and queue metadata hidden (#1632-ec84).
 - Keep mobile AI Chat within the phone width and use the session composer styles with labelled icon actions (#1625-c04f).
 - Give the mobile update banner AA text contrast in both themes and place it below the header, away from the status edge (#1626-9529).
 - Fix mobile session notification sounds playing outside the visible Sessions list, including delayed completion sounds and hidden PWA documents. Keep muted transitions from replaying on return.
@@ -30,6 +65,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 
 ### Added
+- Add the Automations dialog with backend cadence and Once previews, recent history, atomic pause/resume, Run now and confirmed deletion. Backend API integration is pending (#1618-685b).
 - Add an all-repositories toggle to the Ideas panel header: it lists every repository's ideas for cross-repo work (in memory, resets on reload). The badge and "clear completed" follow the visible list, so clearing in a single-repository view no longer deletes other repositories' completed ideas; ideas added in all-mode stay tagged with the active repository (#1598-c0a0).
 - Add a headless agent capture scenario driver with explicit fixture promotion and ordered replay expectations; record real Codex and pi turns; Claude (expired login) and goose (its banner prints the home directory) stay unverified, and a test rejects fixtures that embed `/Users/` or `/home/` paths.
 
@@ -39,6 +75,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Fix missing older Claude prompts, image/PDF tool-output markers and model-change cards in Chat; validate the parser against sanitized records from real CLI transcripts.
 
 ### Changed
+- Upgrade Mermaid to 12.1.0: diagrams use its new layout and appearance defaults while retaining the renderer's dark theme and strict security setting (#1590-7c6b).
+- Require macOS 12 Monterey or later for the desktop bundle, with Safari 17.4 or later for Mermaid diagrams (#1590-7c6b).
 - **Remote upload credentials** — `POST /remote/update` and `/fs/upload-copy` accept only the `tui-session` cookie; a `?token=` query answers 401 and the update client no longer puts the token in the URL. Older desktops cannot update a daemon of this release. QR pairing and WebSocket authentication are unchanged.
 - Make Compose the default input in terminal Chat: it opens focused and docked, stays open after send or queue, and preserves each tab's CLI Compose state and unsent draft when switching views (#1599-db8a).
 - Space automatic sidebar refresh starts at least five seconds apart per repository, retaining one trailing update during event bursts; explicit repository additions, checkouts and merge cleanup bypass the wait.

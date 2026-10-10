@@ -210,7 +210,7 @@ export function textSpanToCellRanges(
 	const spans: TextCellSpan[] = [];
 	for (const cell of aligned) {
 		if (cell.end <= start || cell.start >= end || cell.start === cell.end) continue;
-		const last = spans[spans.length - 1];
+		const last = spans.at(-1)!;
 		if (last && last.row === cell.row && last.colEnd === cell.col) last.colEnd++;
 		else spans.push({ row: cell.row, colStart: cell.col, colEnd: cell.col + 1 });
 	}

@@ -1,7 +1,9 @@
 import { createSignal, onMount, Show } from "solid-js";
 import { TelegramTab } from "../../components/SettingsPanel/tabs/TelegramTab";
 import { appLogger } from "../../stores/appLogger";
+import { setDesktopUI } from "../../utils/tabletRouting";
 import { loadMobileTheme, mobileTheme, setMobileTheme } from "../mobileTheme";
+import { useMobileVoice } from "../useMobileVoice";
 import styles from "./SettingsScreen.module.css";
 
 const SOUND_KEY = "tuic-mobile-sounds";
@@ -13,7 +15,7 @@ interface SettingsScreenProps {
 /** Convert base64url-encoded VAPID public key to Uint8Array for PushManager.subscribe. */
 function urlBase64ToUint8Array(base64String: string): Uint8Array {
 	const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
-	const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+	const base64 = (base64String + padding).replaceAll("-", "+").replaceAll("_", "/");
 	const raw = atob(base64);
 	return new Uint8Array([...raw].map((c) => c.charCodeAt(0)));
 }
@@ -21,6 +23,10 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 type PushState = "unsupported" | "requires-https" | "requires-install" | "denied" | "default" | "subscribed";
 
 export function SettingsScreen(props: SettingsScreenProps) {
+	const voice = useMobileVoice(
+		() => "",
+		() => props.isConnected,
+	);
 	const [telegramOpen, setTelegramOpen] = createSignal(false);
 	const [soundEnabled, setSoundEnabled] = createSignal(localStorage.getItem(SOUND_KEY) !== "false");
 	const [serverUrl, setServerUrl] = createSignal("");
@@ -222,6 +228,20 @@ export function SettingsScreen(props: SettingsScreenProps) {
 				</div>
 			</section>
 
+			<Show when={voice.available()}>
+				<section class={styles.section}>
+					<h3 class={styles.sectionTitle}>VOICE</h3>
+					<label class={`${styles.row} ${styles.spokenReplies}`}>
+						<span class={styles.label}>Spoken replies</span>
+						<input
+							type="checkbox"
+							checked={voice.spokenReplies()}
+							onChange={(e) => voice.setSpokenReplies(e.currentTarget.checked)}
+						/>
+					</label>
+				</section>
+			</Show>
+
 			<section class={styles.section}>
 				<h3 class={styles.sectionTitle}>APPEARANCE</h3>
 				<label class={styles.row}>
@@ -310,7 +330,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
 
 			<section class={styles.section}>
 				<h3 class={styles.sectionTitle}>ACTIONS</h3>
-				<a href="/" class={styles.link}>
+				<a href="/" class={styles.link} onClick={() => setDesktopUI(true)}>
 					Open Desktop UI
 				</a>
 				<a href="/process/monitor" class={styles.link} target="_blank" rel="noopener">

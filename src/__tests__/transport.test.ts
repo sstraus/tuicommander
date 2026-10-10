@@ -32,7 +32,7 @@ function findNodes<T extends ts.Node>(root: ts.Node, guard: (node: ts.Node) => n
 	return found;
 }
 
-function extractCommandTableCommands(transportSource = readRepoFile("src/transport.ts")): Set<string> {
+function extractCommandTableCommands(transportSource = readRepoFile("src/transport/commandTable.ts")): Set<string> {
 	const sourceFile = ts.createSourceFile("transport.ts", transportSource, ts.ScriptTarget.Latest, true);
 	const declaration = sourceFile.statements
 		.filter(ts.isVariableStatement)
@@ -106,7 +106,7 @@ function extractRegisteredTauriCommands(): Set<string> {
 		.filter((entry) => entry.length > 0)
 		.map((entry) => {
 			const parts = entry.split("::");
-			const rustName = parts[parts.length - 1];
+			const rustName = parts.at(-1)!;
 			const renamedCommand = libSource.match(
 				new RegExp(
 					`#\\[tauri::command\\(rename\\s*=\\s*"([^"]+)"\\)\\]\\s*(?:pub\\(super\\)\\s+)?async\\s+fn\\s+${rustName}\\b`,
@@ -2393,6 +2393,8 @@ describe("transport", () => {
 			// Sentinels from each group in the story 073 spec.
 			for (const cmd of [
 				"open_panel_window",
+				"write_clipboard_text",
+				"read_clipboard_text",
 				"start_native_drag",
 				"block_sleep",
 				"set_global_hotkey",
@@ -2838,7 +2840,7 @@ describe("transport", () => {
 			await Promise.all(resizes);
 
 			expect(sent[0]).toEqual({ rows: 10, cols: 40 });
-			expect(sent[sent.length - 1]).toEqual({ rows: 40, cols: 160 });
+			expect(sent.at(-1)!).toEqual({ rows: 40, cols: 160 });
 			expect(sent).toHaveLength(2);
 		});
 
@@ -3109,7 +3111,7 @@ describe("transport", () => {
 	 * source instead — same rationale as `canvasTerminalMountGuards.test.ts`.
 	 */
 	describe("rpc() desktop short-circuit", () => {
-		const source = ts.createSourceFile("transport.ts", readRepoFile("src/transport.ts"), ts.ScriptTarget.Latest, true);
+		const source = ts.createSourceFile("http.ts", readRepoFile("src/transport/http.ts"), ts.ScriptTarget.Latest, true);
 		const functionNamed = (name: string) =>
 			findNodes(source, ts.isFunctionDeclaration).find((node) => node.name?.text === name);
 		const callNamed = (node: ts.Node, name: string) =>
@@ -3747,7 +3749,7 @@ describe("transport", () => {
 				// Ten failures is MAX_RETRIES; the eleventh close is the one that
 				// finds the budget spent.
 				for (let i = 0; i < 11; i++) {
-					instances[instances.length - 1].onclose?.({ code: 1006 });
+					instances.at(-1)!.onclose?.({ code: 1006 });
 					await vi.advanceTimersByTimeAsync(60_000);
 				}
 				expect(onExit).toHaveBeenCalledTimes(1);
@@ -3944,4 +3946,21 @@ it("add-account polling uses a separate HTTP endpoint", () => {
 	const login = mapCommandToHttp("github_poll_login", { deviceCode: "default" });
 	expect(add).toEqual({ method: "POST", path: "/github/accounts/poll", body: { deviceCode: "additional" } });
 	expect(login).toEqual({ method: "POST", path: "/github/auth/poll", body: { deviceCode: "default" } });
+});
+
+// Catches losing header metadata between desktop IPC and HTTP credential storage.
+it("maps custom header credential metadata on save and delete", () => {
+	const header = { name: "x-api-key", credential_ref: "dcacbdba-e6c1-45aa-83a7-8417484fce0d" };
+	expect(
+		mapCommandToHttp("save_mcp_upstream_credential", {
+			name: "example",
+			token: "DUMMY_TRANSPORT",
+			url: "https://example.com/mcp",
+			header,
+		}).body,
+	).toEqual({ name: "example", token: "DUMMY_TRANSPORT", url: "https://example.com/mcp", header });
+	expect(mapCommandToHttp("delete_mcp_upstream_credential", { name: "example", header }).body).toEqual({
+		name: "example",
+		header,
+	});
 });

@@ -18,6 +18,17 @@ TUICommander detects, monitors, and manages AI coding agents running in your ter
 | Grok | `grok` | `grok --continue` | `grok --resume <discovered id>` |
 | pi | `pi` | `pi --continue` | — |
 
+### Claude MCP profiles
+
+At startup, the primary TUICommander instance repairs its MCP bridge in the
+default Claude config, an existing `~/.claude-private/.claude.json`, and profiles
+selected by inherited `CLAUDE_CONFIG_DIR` or Claude agent/run-config environment
+settings. Use absolute profile paths (or `~/…`). Custom remote transports and
+disabled integrations are preserved. A project `.mcp.json` entry is unnecessary
+when the user profile already contains TUICommander; remove obsolete duplicate
+entries pointing into a build target directory. Startup logs name any configured
+absolute bridge path that is missing or not executable.
+
 ### Native scrollback on launch
 
 **Prevent alternate screen** in Settings → AI → Agents is enabled by default for every agent. TUIC applies Claude Code's `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1` and `CLAUDE_CODE_DISABLE_AGENT_VIEW=1` environment controls when enabled. A terminal that enters the alternate screen within its first seconds raises a warning toast naming the session and the fix. Codex and Grok receive `--no-alt-screen` when their installed CLI advertises it in `--help`; OpenCode receives `--mini` when available. On Windows, the probe selects an executable `.exe` or `.cmd` launcher ahead of an extensionless npm shell shim. TUICommander checks the executable with a two-second deadline and shares concurrent checks. A timed-out check is not retried until that binary changes; a quick inconclusive exit is retried after a short cooldown. Older versions still start without an unsupported option. Existing flags are not duplicated. Rust applies the same policy to structured IPC, HTTP and MCP launches and exports it to new TUIC shells, where zsh, bash and fish wrappers apply it to commands typed manually. `command <agent>` bypasses those wrappers. Reopen an existing shell after changing the setting.

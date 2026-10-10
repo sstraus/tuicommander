@@ -48,10 +48,9 @@ describe("CommandInput delta sync algorithm (computeInputDelta)", () => {
 
 /**
  * PTY echo contract: the PWA textarea is the source of truth.
- * The sync effect accepts a PTY echo ONLY when it is a strict extension
- * of what we've already sent — i.e. tab completion. This simulator
- * mirrors the production effect in CommandInput.tsx so behavior stays
- * verifiable without a DOM.
+ * These cases exercise the shared strict-extension and delta helpers.
+ * Actual completion/history ownership and post-send behavior are tested on
+ * production components in CommandInput.voice/history-regression.test.tsx.
  */
 class InputSimulator {
 	/** Textarea-visible value. */
@@ -77,8 +76,7 @@ class InputSimulator {
 		this.displayed = newText;
 	}
 
-	/** PTY echoes `text` as the current input-line value. Mirrors the
-	 *  production effect: post-send guard first, then strict-extension rule. */
+	/** Exercise the helper policy without simulating interaction ownership. */
 	receivePtyInput(text: string): "accepted" | "ignored" {
 		if (isPostSendGuardActive(this.now, this.lastSendAt)) return "ignored";
 		if (!isSupersetEcho(text, this.syncedText)) return "ignored";
@@ -129,7 +127,7 @@ describe("CommandInput echo handling (PWA textarea is source of truth)", () => {
 
 		// User continues typing, delta is computed from "hell" correctly
 		sim.type("hello");
-		expect(sim.writes[sim.writes.length - 1]).toBe("o");
+		expect(sim.writes.at(-1)!).toBe("o");
 	});
 
 	it("tab completion: PTY-driven strict extension is accepted", () => {
@@ -146,15 +144,7 @@ describe("CommandInput echo handling (PWA textarea is source of truth)", () => {
 
 		// Continued typing deltas from the expanded value
 		sim.type("git status");
-		expect(sim.writes[sim.writes.length - 1]).toBe("status");
-	});
-
-	it("history nav from empty textarea: PTY insert is accepted (empty is prefix of all)", () => {
-		const sim = new InputSimulator();
-
-		// Textarea empty, user presses Up on external keybar
-		expect(sim.receivePtyInput("git log --oneline")).toBe("accepted");
-		expect(sim.displayed).toBe("git log --oneline");
+		expect(sim.writes.at(-1)!).toBe("status");
 	});
 
 	it("history nav while typing: replacement is IGNORED (textarea wins)", () => {
@@ -167,29 +157,6 @@ describe("CommandInput echo handling (PWA textarea is source of truth)", () => {
 		// PTY replaces input line with a historical command — NOT an extension
 		expect(sim.receivePtyInput("ls -la")).toBe("ignored");
 		expect(sim.displayed).toBe("xy");
-	});
-
-	it("post-send guard: ghost echo of just-sent command is suppressed", () => {
-		const sim = new InputSimulator();
-
-		sim.type("ls");
-		sim.pressEnter();
-		expect(sim.displayed).toBe("");
-		expect(sim.syncedText).toBe("");
-
-		// xterm reports prompt as empty again — ignored regardless of guard
-		expect(sim.receivePtyInput("")).toBe("ignored");
-		expect(sim.displayed).toBe("");
-
-		// Ghost "ls" echo arrives while guard is still active — suppressed
-		expect(sim.receivePtyInput("ls")).toBe("ignored");
-		expect(sim.displayed).toBe("");
-		expect(sim.syncedText).toBe("");
-
-		// After the guard window expires, new prompt content can be accepted
-		sim.advance(POST_SEND_GUARD_MS + 1);
-		expect(sim.receivePtyInput("new-prompt> ")).toBe("accepted");
-		expect(sim.displayed).toBe("new-prompt> ");
 	});
 
 	it("post-send guard: typing during guard still works (user wins)", () => {
@@ -224,7 +191,7 @@ describe("CommandInput echo handling (PWA textarea is source of truth)", () => {
 		expect(sim.displayed).toBe("hello");
 
 		sim.type("hello world");
-		expect(sim.writes[sim.writes.length - 1]).toBe(" world");
+		expect(sim.writes.at(-1)!).toBe(" world");
 	});
 });
 
@@ -285,7 +252,7 @@ describe("isSupersetEcho", () => {
 	it("accepts strict supersets", () => {
 		expect(isSupersetEcho("git ", "gi")).toBe(true);
 		expect(isSupersetEcho("abcd", "abc")).toBe(true);
-		expect(isSupersetEcho("hello", "")).toBe(true);
+		expect(isSupersetEcho("hello", "")).toBe(false);
 	});
 
 	it("rejects equal, shorter, and unrelated strings", () => {

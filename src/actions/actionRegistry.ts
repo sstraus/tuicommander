@@ -7,6 +7,7 @@
 
 import type { ShortcutHandlers } from "../hooks/useKeyboardShortcuts";
 import type { ActionName } from "../keybindingDefaults";
+import { automationsUi } from "../stores/automations";
 import { dictationStore } from "../stores/dictation";
 import { keybindingsStore } from "../stores/keybindings";
 import { progressStore } from "../stores/progress";
@@ -118,7 +119,9 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
  * since those aren't useful in a palette.
  */
 export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
-	const entries: ActionEntry[] = [];
+	const entries: ActionEntry[] = [
+		{ id: "automations", label: "Automations", category: "Navigation", keybinding: "", execute: automationsUi.open },
+	];
 
 	const handlerMap: Partial<Record<ActionName, () => void>> = {
 		"new-terminal": handlers.createNewTerminal,

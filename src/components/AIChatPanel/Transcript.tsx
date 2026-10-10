@@ -7,7 +7,18 @@
  * only the shape each kind takes on screen.
  */
 
-import { type Component, createEffect, createMemo, createSignal, For, type JSX, Match, Show, Switch } from "solid-js";
+import {
+	type Component,
+	createEffect,
+	createMemo,
+	createSignal,
+	For,
+	type JSX,
+	Match,
+	onCleanup,
+	Show,
+	Switch,
+} from "solid-js";
 import type { AcpNoticeAction, AcpTranscriptEntry } from "../../stores/acpTranscript";
 import { appLogger } from "../../stores/appLogger";
 import type { AcpToolCall, AcpToolCallContent } from "../../types/acp";
@@ -203,7 +214,14 @@ function activityRows(
 	return { visible, calls, refusals, thoughts };
 }
 
+export interface TranscriptSearchRef {
+	open: () => void;
+	close: () => void;
+}
+
 export interface TranscriptProps {
+	/** Lets a containing terminal route its Find action to this transcript. */
+	onSearchRef?: (ref: TranscriptSearchRef | undefined) => void;
 	/** Constrain intrinsic content to the phone viewport. */
 	mobile?: boolean;
 	entries: () => AcpTranscriptEntry[];
@@ -392,30 +410,115 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 		}
 		props.onNoticeAction?.(action);
 	};
-	const findNext = () => {
+	const clearSearchSelection = () => {
+		const selection = window.getSelection();
+		if (container && selection?.rangeCount && container.contains(selection.getRangeAt(0).commonAncestorContainer)) {
+			selection.removeAllRanges();
+		}
+	};
+	const openSearch = () => {
+		setFinding(true);
+		queueMicrotask(() => {
+			if (!finding() || !searchInput?.isConnected) return;
+			searchInput.focus();
+			searchInput.select();
+		});
+	};
+	const closeSearch = () => {
+		clearSearchSelection();
+		setFinding(false);
+		matchIndex = -1;
+	};
+	props.onSearchRef?.({ open: openSearch, close: closeSearch });
+	onCleanup(() => {
+		clearSearchSelection();
+		props.onSearchRef?.(undefined);
+	});
+	const findNext = (direction = 1) => {
 		if (!container || !query()) return;
-		const needle = query().toLocaleLowerCase();
+		const pattern = new RegExp(query().replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "giu");
 		const matches: Range[] = [];
+		const blocks: {
+			element: Element | null;
+			text: string;
+			offsets: { node: Node; start: number; end: number; endNode?: Node }[];
+		}[] = [];
+		let current: (typeof blocks)[number] | undefined;
 		const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
 		while (walker.nextNode()) {
 			const node = walker.currentNode;
-			if (node.parentElement?.closest("button, input, ." + s.findBar)) continue;
-			const text = node.textContent?.toLocaleLowerCase() ?? "";
-			for (let at = text.indexOf(needle); at >= 0; at = text.indexOf(needle, at + needle.length)) {
+			const parent = node.parentElement;
+			let hidden = false;
+			for (
+				let disclosure = parent?.closest("details:not([open])");
+				disclosure;
+				disclosure = disclosure.parentElement?.closest("details:not([open])")
+			) {
+				if (!disclosure.querySelector(":scope > summary")?.contains(node)) hidden = true;
+			}
+			if (hidden || parent?.closest("button, input, ." + s.findBar)) {
+				current = undefined;
+				continue;
+			}
+			// Inline Markdown belongs to one searchable block, but separate messages,
+			// paragraphs and table cells must never produce a synthetic phrase.
+			const element = parent?.closest("p, h1, h2, h3, h4, h5, h6, pre, li, td, th, div, summary, blockquote") ?? null;
+			if (!current || current.element !== element) {
+				current = { element, text: "", offsets: [] };
+				blocks.push(current);
+			}
+			let preformatted = !!parent?.closest("pre");
+			for (let ancestor = parent; ancestor && !preformatted; ancestor = ancestor.parentElement) {
+				const whitespace = getComputedStyle(ancestor).whiteSpace;
+				preformatted = whitespace.startsWith("pre") || whitespace === "break-spaces";
+			}
+			const text = node.textContent ?? "";
+			for (let offset = 0; offset < text.length; offset++) {
+				// CSS collapses ASCII whitespace across inline nodes in normal prose.
+				const character = !preformatted && /[ \t\r\n\f]/.test(text[offset]) ? " " : text[offset];
+				if (!preformatted && character === " " && current.text.endsWith(" ")) {
+					const previous = current.offsets.at(-1)!;
+					previous.end = offset + 1;
+					// A collapsed run can span nodes; retain its final DOM endpoint.
+					previous.endNode = node;
+					continue;
+				}
+				current.text += character;
+				current.offsets.push({ node, start: offset, end: offset + 1 });
+			}
+		}
+		for (const block of blocks) {
+			for (const match of block.text.matchAll(pattern)) {
+				const first = block.offsets[match.index];
+				const last = block.offsets[match.index + match[0].length - 1];
+				if (!first || !last) continue;
 				const range = document.createRange();
-				range.setStart(node, at);
-				range.setEnd(node, at + needle.length);
+				range.setStart(first.node, first.start);
+				range.setEnd(last.endNode ?? last.node, last.end);
 				matches.push(range);
 			}
 		}
+		clearSearchSelection();
 		if (!matches.length) return;
-		matchIndex = (matchIndex + 1) % matches.length;
+		matchIndex =
+			matchIndex < 0
+				? direction < 0
+					? matches.length - 1
+					: 0
+				: (matchIndex + direction + matches.length) % matches.length;
+		stickToBottom = false;
 		const selection = window.getSelection();
 		selection?.removeAllRanges();
 		selection?.addRange(matches[matchIndex]);
 		matches[matchIndex].startContainer.parentElement?.scrollIntoView?.({ block: "center" });
 	};
 	const onKeyDown = (event: KeyboardEvent) => {
+		if (event.key === "Escape" && finding()) {
+			event.preventDefault();
+			event.stopPropagation();
+			closeSearch();
+			return;
+		}
 		if (!(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return;
 		if (event.target === searchInput) return;
 		const key = event.key.toLowerCase();
@@ -437,8 +540,7 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 		} else if (key === "f") {
 			event.preventDefault();
 			event.stopPropagation();
-			setFinding(true);
-			queueMicrotask(() => searchInput?.focus());
+			openSearch();
 		} else if (key === "k") {
 			event.preventDefault();
 			event.stopPropagation();
@@ -461,21 +563,30 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 						aria-label="Find in chat"
 						value={query()}
 						onInput={(event) => {
+							clearSearchSelection();
 							setQuery(event.currentTarget.value);
 							matchIndex = -1;
 						}}
 						onKeyDown={(event) => {
 							if (event.key === "Enter") {
 								event.preventDefault();
-								findNext();
+								event.stopPropagation();
+								findNext(event.shiftKey ? -1 : 1);
 							}
-							if (event.key === "Escape") setFinding(false);
+							if (event.key === "Escape") {
+								event.preventDefault();
+								event.stopPropagation();
+								closeSearch();
+							}
 						}}
 					/>
-					<button type="button" onClick={findNext}>
+					<button type="button" onClick={() => findNext(-1)}>
+						Previous
+					</button>
+					<button type="button" onClick={() => findNext()}>
 						Next
 					</button>
-					<button type="button" aria-label="Close chat search" onClick={() => setFinding(false)}>
+					<button type="button" aria-label="Close chat search" onClick={closeSearch}>
 						<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
 							<path d="M2.8 2l3.2 3.2L9.2 2l.8.8L6.8 6l3.2 3.2-.8.8L6 6.8 2.8 10l-.8-.8L5.2 6 2 2.8z" />
 						</svg>

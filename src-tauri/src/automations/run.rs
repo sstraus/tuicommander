@@ -29,6 +29,7 @@ pub enum RunStatus {
     SkippedOverlap,
     SkippedConcurrency,
     SkippedExpired,
+    SkippedMissed,
 }
 
 impl RunStatus {
@@ -76,12 +77,21 @@ pub struct AutomationRun {
     pub created_ms: i64,
     pub updated_ms: i64,
     pub finished_ms: Option<i64>,
+    #[serde(default)]
+    pub started_ms: Option<i64>,
+    #[serde(default)]
+    pub deadline_ms: Option<i64>,
     pub task_id: Option<String>,
     pub session_id: Option<String>,
     pub workspace: Option<String>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub stdout: SavedOutput,
     pub stderr: SavedOutput,
     pub precheck: Option<SavedPrecheck>,
+    /// Full pre-dispatch decision, including explicit bypass and absent checks.
+    #[serde(default)]
+    pub precheck_outcome: Option<super::precheck::PrecheckOutcome>,
     pub reason: Option<String>,
 }
 
@@ -91,9 +101,11 @@ pub struct RunDetails {
     pub task_id: Option<String>,
     pub session_id: Option<String>,
     pub workspace: Option<String>,
+    pub workspace_id: Option<String>,
     pub stdout: Option<String>,
     pub stderr: Option<String>,
     pub precheck: Option<SavedPrecheck>,
+    pub precheck_outcome: Option<super::precheck::PrecheckOutcome>,
     pub reason: Option<String>,
 }
 

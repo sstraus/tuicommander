@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 /// MCP config lookup result
@@ -1615,6 +1615,73 @@ fn ensure_spec_entry(spec: &McpConfigSpec, bridge_path: &str, agent_label: &str)
     }
 }
 
+/// Enumerate explicit Claude launch profiles without scanning the home directory.
+/// The default profile keeps its special ~/.claude.json location; an override
+/// stores the same file inside CLAUDE_CONFIG_DIR, including the private profile.
+fn startup_mcp_config_specs(
+    agents: &crate::config::AgentsConfig,
+    claude_config_dir: Option<&str>,
+) -> Vec<(&'static str, McpConfigSpec)> {
+    let mut specs: Vec<_> = SUPPORTED_AGENTS
+        .iter()
+        .filter_map(|agent| get_mcp_config_spec(agent).map(|spec| (*agent, spec)))
+        .collect();
+    let h = home();
+    let private = h.join(".claude-private");
+    let mut roots = Vec::new();
+    if private.join(".claude.json").is_file() {
+        roots.push(private.to_string_lossy().into_owned());
+    }
+    if let Some(root) = claude_config_dir {
+        roots.push(root.to_string());
+    }
+    if let Some(settings) = agents.agents.get("claude") {
+        roots.extend(settings.env_flags.get("CLAUDE_CONFIG_DIR").cloned());
+        roots.extend(
+            settings
+                .run_configs
+                .iter()
+                .filter_map(|run| run.env.get("CLAUDE_CONFIG_DIR").cloned()),
+        );
+    }
+    let mut seen: BTreeSet<_> = specs
+        .iter()
+        .map(|(_, spec)| {
+            spec.config_path
+                .canonicalize()
+                .unwrap_or_else(|_| spec.config_path.clone())
+        })
+        .collect();
+    for root in roots {
+        if root.trim().is_empty() {
+            continue;
+        }
+        let root = if root == "~" {
+            h.clone()
+        } else if let Some(relative) = root.strip_prefix("~/") {
+            h.join(relative)
+        } else {
+            PathBuf::from(root)
+        };
+        if !root.is_absolute() {
+            tracing::warn!(source = "mcp", root = %root.display(),
+                "Cannot migrate relative CLAUDE_CONFIG_DIR at startup; use an absolute launch profile path");
+            continue;
+        }
+        let root = root.canonicalize().unwrap_or(root);
+        let path = root.join(".claude.json");
+        let key = path.canonicalize().unwrap_or_else(|_| path.clone());
+        if seen.insert(key)
+            && let Some(mut spec) = get_mcp_config_spec("claude")
+        {
+            spec.config_path = path;
+            spec.presence_dir = Some(root);
+            specs.push(("claude", spec));
+        }
+    }
+    specs
+}
+
 /// Ensure MCP bridge config is installed and up-to-date in all supported agent configs.
 /// Called on every app launch. Installs missing entries and updates stale paths.
 ///
@@ -1649,9 +1716,10 @@ pub(crate) fn ensure_mcp_configs(disabled: &[String]) {
     ensure_mcp_configs_for(
         disabled,
         bridge.as_deref(),
-        SUPPORTED_AGENTS
-            .iter()
-            .filter_map(|agent| get_mcp_config_spec(agent).map(|spec| (*agent, spec))),
+        startup_mcp_config_specs(
+            &crate::config::load_agents_config(),
+            std::env::var("CLAUDE_CONFIG_DIR").ok().as_deref(),
+        ),
     );
 }
 
@@ -1686,6 +1754,18 @@ fn ensure_mcp_configs_for<'a>(
     bridge: Option<&std::path::Path>,
     agents: impl IntoIterator<Item = (&'a str, McpConfigSpec)>,
 ) {
+    let agents: Vec<_> = agents.into_iter().collect();
+    for (agent, spec) in &agents {
+        if !disabled.iter().any(|disabled| disabled == agent)
+            && !entry_has_custom_transport(spec)
+            && let Some(command) = configured_bridge_command(spec)
+            && std::path::Path::new(&command).is_absolute()
+            && !usable_executable(std::path::Path::new(&command))
+        {
+            tracing::warn!(source = "mcp", agent, config = %spec.config_path.display(), command = %command,
+                "Configured MCP bridge is missing or not executable");
+        }
+    }
     let Some(bridge) = bridge else {
         tracing::warn!(source = "mcp", searched_paths = ?bridge_search_paths(),
             "Skipping agent MCP config updates: no bridge beside this executable");
@@ -2022,28 +2102,28 @@ mod tests {
         std::fs::write(path, serde_json::to_string_pretty(value).unwrap()).unwrap();
     }
 
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct Sink(Arc<Mutex<Vec<u8>>>);
+    impl std::io::Write for Sink {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().unwrap().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Sink {
+        type Writer = Sink;
+        fn make_writer(&'a self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
     #[test]
     fn missing_bridge_warning_names_the_searched_paths() {
-        use std::sync::{Arc, Mutex};
-
-        #[derive(Clone)]
-        struct Sink(Arc<Mutex<Vec<u8>>>);
-        impl std::io::Write for Sink {
-            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
-                self.0.lock().unwrap().extend_from_slice(bytes);
-                Ok(bytes.len())
-            }
-            fn flush(&mut self) -> std::io::Result<()> {
-                Ok(())
-            }
-        }
-        impl<'a> tracing_subscriber::fmt::MakeWriter<'a> for Sink {
-            type Writer = Sink;
-            fn make_writer(&'a self) -> Self::Writer {
-                self.clone()
-            }
-        }
-
         let _config = with_temp_config_dir();
         let dir = TempDir::new().unwrap();
         let spec = spec_at(dir.path().join("mcp.json"));
@@ -2063,6 +2143,69 @@ mod tests {
             let encoded = format!("{path:?}");
             assert!(log.contains(&encoded), "{log}");
         }
+    }
+
+    #[test]
+    fn startup_root_selection_deduplicates_environment_and_run_profiles() {
+        let dir = TempDir::new().unwrap();
+        // Windows canonicalization adds a verbatim prefix to each selected spec.
+        let canonical_root = dir.path().canonicalize().unwrap();
+        let root = dir.path().to_str().unwrap();
+        let config: crate::config::AgentsConfig = serde_json::from_value(serde_json::json!({
+            "agents": {"claude": {
+                "env_flags": {"CLAUDE_CONFIG_DIR": root},
+                "run_configs": [
+                    {"name": "Same", "command": "claude", "env": {"CLAUDE_CONFIG_DIR": format!("{root}/.")}},
+                    {"name": "Empty", "command": "claude", "env": {"CLAUDE_CONFIG_DIR": ""}}
+                ]
+            }}
+        })).unwrap();
+        let profiles: Vec<_> = startup_mcp_config_specs(&config, Some(root))
+            .into_iter()
+            .filter(|(_, spec)| spec.config_path.starts_with(&canonical_root))
+            .collect();
+        assert_eq!(
+            profiles.len(),
+            1,
+            "same Claude root was migrated more than once"
+        );
+        assert_eq!(
+            profiles[0].0, "claude",
+            "private profiles must honor the Claude disabled flag"
+        );
+    }
+
+    #[test]
+    fn missing_configured_bridge_warns_when_startup_cannot_repair_it() {
+        let _config = with_temp_config_dir();
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join(".claude.json");
+        let missing = dir.path().join("target/debug/tuic-bridge");
+        let spec = spec_at(path.clone());
+        write_fixture(
+            &path,
+            &serde_json::json!({"mcpServers": {TUIC_MCP_KEY: {
+                "type": "stdio", "command": missing, "args": [], "env": {}
+            }}}),
+        );
+        let output = Arc::new(Mutex::new(Vec::new()));
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(Sink(output.clone()))
+            .with_ansi(false)
+            .finish();
+        tracing::subscriber::with_default(subscriber, || {
+            ensure_mcp_configs_for(&[], None, [("claude", spec)]);
+        });
+        let log = String::from_utf8(output.lock().unwrap().clone()).unwrap();
+        assert!(log.contains("WARN"), "{log}");
+        assert!(
+            log.contains(path.to_str().unwrap()),
+            "missing affected config: {log}"
+        );
+        assert!(
+            log.contains(missing.to_str().unwrap()),
+            "missing failed command: {log}"
+        );
     }
 
     /// The daemon is unpacked into a directory of its own, so the bridge it
@@ -3657,6 +3800,7 @@ mod tests {
             .env("APPDATA", dir.path().join("AppData"))
             .env("USERPROFILE", dir.path())
             .env_remove("PI_CODING_AGENT_DIR")
+            .env_remove("CLAUDE_CONFIG_DIR")
             .env("TUIC_MCP_TEST_HOME", dir.path())
             .output()
             .unwrap();
@@ -3703,6 +3847,7 @@ mod tests {
         instance: Option<&str>,
         owner_override: Option<&str>,
         disable_claude: bool,
+        claude_config_dir: Option<&std::path::Path>,
     ) {
         let mut command = std::process::Command::new(exe);
         command
@@ -3718,7 +3863,11 @@ mod tests {
             .env_remove("PI_CODING_AGENT_DIR")
             .env_remove("TUIC_APP_INSTANCE")
             .env_remove("TUIC_MCP_CONFIG_OWNER")
-            .env_remove("TUIC_MCP_TEST_DISABLED");
+            .env_remove("TUIC_MCP_TEST_DISABLED")
+            .env_remove("CLAUDE_CONFIG_DIR");
+        if let Some(root) = claude_config_dir {
+            command.env("CLAUDE_CONFIG_DIR", root);
+        }
         if let Some(instance) = instance {
             command.env("TUIC_APP_INSTANCE", instance);
         }
@@ -3734,6 +3883,126 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
+    }
+
+    #[test]
+    fn startup_migrates_private_claude_root() {
+        let scratch = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../.tmp");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let sandbox = tempfile::tempdir_in(scratch).unwrap();
+        let exe = sandbox.path().join(if cfg!(windows) {
+            "tuic-test-runner.exe"
+        } else {
+            "tuic-test-runner"
+        });
+        #[cfg(windows)]
+        std::fs::copy(std::env::current_exe().unwrap(), &exe).unwrap();
+        #[cfg(not(windows))]
+        std::fs::hard_link(std::env::current_exe().unwrap(), &exe).unwrap();
+        fake_bridge(sandbox.path(), b"bridge bytes");
+        let home = sandbox.path().join("home");
+        let inherited = home.join("inherited-profile");
+        let configured = home.join("run-profile");
+        let flags = home.join("flags-profile");
+        let paths = [
+            home.join(".claude.json"),
+            home.join(".claude-private/.claude.json"),
+            inherited.join(".claude.json"),
+            configured.join(".claude.json"),
+            flags.join(".claude.json"),
+        ];
+        std::fs::create_dir_all(home.join("tuic-config")).unwrap();
+        write_fixture(
+            &home.join("tuic-config/agents.json"),
+            &serde_json::json!({
+                "agents": {"claude": {
+                    "env_flags": {"CLAUDE_CONFIG_DIR": flags},
+                    "run_configs": [{"name": "Private", "command": "claude",
+                        "env": {"CLAUDE_CONFIG_DIR": configured}}]
+                }}
+            }),
+        );
+        for path in &paths {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            write_fixture(
+                path,
+                &serde_json::json!({
+                    "unrelated": "keep me",
+                    "mcpServers": {"tuicommander": {
+                        "type": "stdio", "command": sandbox.path().join("target/debug/tuic-bridge"),
+                        "args": [], "env": {}
+                    }}
+                }),
+            );
+        }
+        run_sandboxed_mcp_launch(
+            &exe,
+            &home,
+            sandbox.path(),
+            None,
+            Some("1"),
+            true,
+            Some(&inherited),
+        );
+        for path in &paths {
+            let value: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+            assert_eq!(
+                value["mcpServers"][TUIC_MCP_KEY]["command"],
+                sandbox
+                    .path()
+                    .join("target/debug/tuic-bridge")
+                    .to_string_lossy()
+                    .as_ref(),
+                "disabled Claude profile was changed"
+            );
+        }
+        run_sandboxed_mcp_launch(
+            &exe,
+            &home,
+            sandbox.path(),
+            None,
+            Some("1"),
+            false,
+            Some(&inherited),
+        );
+        let mut commands = Vec::new();
+        for path in &paths {
+            let value: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(path).unwrap()).unwrap();
+            let command = PathBuf::from(
+                value["mcpServers"][TUIC_MCP_KEY]["command"]
+                    .as_str()
+                    .unwrap(),
+            );
+            assert!(
+                command.is_file(),
+                "startup left {} on missing bridge {}",
+                path.display(),
+                command.display()
+            );
+            assert_eq!(value["unrelated"], "keep me");
+            commands.push(command);
+        }
+        assert!(commands.iter().all(|command| command == &commands[0]));
+        // An alternate profile can deliberately use a remote MCP transport.
+        write_fixture(
+            &paths[1],
+            &serde_json::json!({
+                "mcpServers": {"tuicommander": {"type": "http", "url": "http://localhost:9876/mcp"}}
+            }),
+        );
+        let custom = std::fs::read(&paths[1]).unwrap();
+        run_sandboxed_mcp_launch(
+            &exe,
+            &home,
+            sandbox.path(),
+            None,
+            Some("1"),
+            false,
+            Some(&inherited),
+        );
+        assert_eq!(std::fs::read(&paths[1]).unwrap(), custom);
     }
 
     #[test]
@@ -3801,6 +4070,7 @@ mod tests {
                 instance,
                 override_owner.then_some("1"),
                 false,
+                None,
             );
             let after = std::fs::read_to_string(&config).unwrap();
             if should_write {
@@ -3835,7 +4105,15 @@ mod tests {
         std::fs::write(removed_home.join(".claude/installed"), b"present").unwrap();
         let removed_config = removed_home.join(".claude.json");
         for (instance, disabled) in [(None, true), (Some("tuic-test"), false)] {
-            run_sandboxed_mcp_launch(&exe, &removed_home, main_root, instance, None, disabled);
+            run_sandboxed_mcp_launch(
+                &exe,
+                &removed_home,
+                main_root,
+                instance,
+                None,
+                disabled,
+                None,
+            );
             assert!(
                 !removed_config.exists(),
                 "removed integration was reinstalled"
@@ -3856,7 +4134,7 @@ mod tests {
         std::fs::write(home.join(".claude/installed"), b"present").unwrap();
         let config = home.join(".claude.json");
         std::fs::write(&config, &original).unwrap();
-        run_sandboxed_mcp_launch(&worktree_exe, &home, main_root, None, None, false);
+        run_sandboxed_mcp_launch(&worktree_exe, &home, main_root, None, None, false, None);
         assert_eq!(std::fs::read_to_string(&config).unwrap(), original);
     }
 

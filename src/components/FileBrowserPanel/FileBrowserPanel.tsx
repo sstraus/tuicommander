@@ -589,7 +589,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		const raw = searchQuery().trim() ? searchResults() : entries();
 		if (sortBy() === "name") return raw; // already sorted by name from Rust
 		// Sort by date: dirs first, then newest first
-		return [...raw].sort((a, b) => (b.is_dir ? 1 : 0) - (a.is_dir ? 1 : 0) || b.modified_at - a.modified_at);
+		return raw.toSorted((a, b) => (b.is_dir ? 1 : 0) - (a.is_dir ? 1 : 0) || b.modified_at - a.modified_at);
 	});
 
 	/**

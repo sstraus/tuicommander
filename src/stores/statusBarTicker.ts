@@ -182,7 +182,7 @@ function createStatusBarTicker() {
 
 		/** Get all active (non-expired) messages sorted by priority desc (for popover) */
 		getActiveMessages(): TickerMessage[] {
-			return [...activeMessages()].sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt);
+			return activeMessages().toSorted((a, b) => b.priority - a.priority || a.createdAt - b.createdAt);
 		},
 
 		/** Get all active (non-expired) messages */

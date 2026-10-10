@@ -675,9 +675,9 @@ mod tests {
     /// No `mcpServers`: the field is synthesised server-side and a body that
     /// names one is refused, so sending it here would test the refusal on every
     /// row instead of the route.
-    fn authority() -> serde_json::Value {
+    fn authority(cwd: &str) -> serde_json::Value {
         serde_json::json!({
-            "authority": {"cwd": "/tmp", "additionalDirectories": []}
+            "authority": {"cwd": cwd, "additionalDirectories": []}
         })
     }
 
@@ -689,24 +689,30 @@ mod tests {
     /// call the Tauri command makes — the parts a browser could silently get
     /// wrong. `connect` and `reconnect` stop earlier, on the unset executable,
     /// because process authority is checked before anything is looked up.
-    fn table() -> Vec<(
+    fn table(
+        cwd: &str,
+    ) -> Vec<(
         &'static str,
         String,
         Option<serde_json::Value>,
         AcpClientErrorCode,
     )> {
         let session = format!("/acp/connections/{CID}/sessions/{SID}");
+        let query = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("cwd", cwd)
+            .append_pair("cursor", "next")
+            .finish();
         vec![
             (
                 "POST",
                 "/acp/connections".to_string(),
-                Some(serde_json::json!({"root": "/tmp"})),
+                Some(serde_json::json!({"root": cwd})),
                 AcpClientErrorCode::InvalidInput,
             ),
             (
                 "POST",
                 format!("/acp/connections/{CID}/reconnect"),
-                Some(serde_json::json!({"root": "/tmp"})),
+                Some(serde_json::json!({"root": cwd})),
                 AcpClientErrorCode::InvalidInput,
             ),
             (
@@ -730,31 +736,31 @@ mod tests {
             (
                 "POST",
                 format!("/acp/connections/{CID}/sessions"),
-                Some(authority()),
+                Some(authority(cwd)),
                 AcpClientErrorCode::NotFound,
             ),
             (
                 "GET",
-                format!("/acp/connections/{CID}/sessions?cwd=/tmp&cursor=next"),
+                format!("/acp/connections/{CID}/sessions?{query}"),
                 None,
                 AcpClientErrorCode::NotFound,
             ),
             (
                 "POST",
                 format!("{session}/load"),
-                Some(authority()),
+                Some(authority(cwd)),
                 AcpClientErrorCode::NotFound,
             ),
             (
                 "POST",
                 format!("{session}/resume"),
-                Some(authority()),
+                Some(authority(cwd)),
                 AcpClientErrorCode::NotFound,
             ),
             (
                 "POST",
                 format!("{session}/fork"),
-                Some(authority()),
+                Some(authority(cwd)),
                 AcpClientErrorCode::NotFound,
             ),
             (
@@ -828,7 +834,7 @@ mod tests {
             (
                 "POST",
                 "/acp/one-shot".to_string(),
-                Some(serde_json::json!({"root": "/tmp", "prompt": "hi"})),
+                Some(serde_json::json!({"root": cwd, "prompt": "hi"})),
                 AcpClientErrorCode::InvalidInput,
             ),
         ]
@@ -855,7 +861,9 @@ mod tests {
     async fn every_acp_route_answers_its_own_command_with_an_acp_error_body() {
         let state = super::super::tests::test_state();
         let app = super::super::shared_routes().with_state(state);
-        for (method, path, body, expected) in table() {
+        // A rooted Unix literal is not an absolute Windows session authority.
+        let cwd = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        for (method, path, body, expected) in table(cwd.path().to_str().unwrap()) {
             let resp = app
                 .clone()
                 .oneshot(request(method, &path, body))

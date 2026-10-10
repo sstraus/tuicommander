@@ -25,6 +25,7 @@
 
 - [Agent Support](./user-guide/ai-agents.md)
 - [Agent Teams](./user-guide/agent-teams.md)
+- [Automations](./user-guide/automations.md)
 - [Project Progress](./user-guide/project-progress.md)
 - [Progress Reporting Evaluation](./evaluations/progress-reporting.md)
 - [AI Chat](./user-guide/ai-chat.md)

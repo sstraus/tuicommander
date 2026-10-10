@@ -187,3 +187,15 @@ fn claude_compaction_summary_becomes_a_card_without_the_summary_body() {
     assert_eq!(updates[0]["_meta"]["ego"]["salience"], "card");
     assert!(!updates[0].to_string().contains("long summary"));
 }
+
+/// Recorded Claude queued image prompts must not disappear merely because
+/// `attachment.prompt` is block content rather than a string.
+#[test]
+fn queued_human_image_prompt_is_not_silently_dropped() {
+    let (updates, _) = run(include_str!(
+        "../../fixtures/chat_view/recorded/queued-human-image.jsonl"
+    ));
+    assert_eq!(updates.len(), 1, "queued human image prompt disappeared");
+    assert_eq!(updates[0]["sessionUpdate"], "user_message_chunk");
+    assert_eq!(updates[0]["content"]["text"], "xxxxxxxxxx\n[image]");
+}

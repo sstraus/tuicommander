@@ -44,7 +44,7 @@ interface OrphanRow {
 /** Extract display name (last path segment) from a path */
 function displayName(path: string): string {
 	const segments = path.replace(/\/+$/, "").split("/");
-	return segments[segments.length - 1] || path;
+	return segments.at(-1)! || path;
 }
 
 /** Action callbacks for worktree row operations */

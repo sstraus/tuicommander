@@ -47,7 +47,6 @@ all-features = true
 [features]
 default = ["default_tokenizer"]
 default_tokenizer = [
-    "dep:cached",
     "dep:stop-words",
     "dep:rust-stemmers",
     "dep:deunicode",
@@ -72,10 +71,6 @@ harness = false
 name = "search"
 path = "benches/search.rs"
 harness = false
-
-[dependencies.cached]
-version = "0.56.0"
-optional = true
 
 [dependencies.deunicode]
 version = "1.6.2"

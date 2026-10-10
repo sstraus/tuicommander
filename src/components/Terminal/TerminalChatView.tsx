@@ -3,7 +3,7 @@ import { acpTranscript } from "../../stores/acpTranscript";
 import { appLogger } from "../../stores/appLogger";
 import { chatViewAvailability, chatViewKey, chatViewStore } from "../../stores/chatView";
 import { terminalsStore } from "../../stores/terminals";
-import { Transcript } from "../AIChatPanel/Transcript";
+import { Transcript, type TranscriptSearchRef } from "../AIChatPanel/Transcript";
 import s from "./TerminalChatView.module.css";
 
 /** A read keeps the backend tail alive; events alone would let it lapse while the agent is idle. */
@@ -16,7 +16,11 @@ const KEEPALIVE_MS = 5_000;
  * hidden by the caller. Falls back to the grid on its own when the agent goes
  * away or the backend reports the terminal as not bound, and says why.
  */
-export const TerminalChatView: Component<{ terminalId: string; sessionId: string }> = (props) => {
+export const TerminalChatView: Component<{
+	terminalId: string;
+	sessionId: string;
+	onSearchRef?: (ref: TranscriptSearchRef | undefined) => void;
+}> = (props) => {
 	createEffect(() => {
 		const availability = chatViewAvailability(terminalsStore.get(props.terminalId));
 		const reason = availability.available ? chatViewStore.unavailableReason(props.sessionId) : availability.reason;
@@ -53,6 +57,7 @@ export const TerminalChatView: Component<{ terminalId: string; sessionId: string
 	return (
 		<div class={s.chatView} data-testid="terminal-chat-view">
 			<Transcript
+				onSearchRef={props.onSearchRef}
 				entries={() => acpTranscript.entries(chatViewKey(props.sessionId))}
 				busy={() => false}
 				observeToolDuration={false}

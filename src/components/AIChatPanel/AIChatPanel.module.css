@@ -181,6 +181,10 @@
 }
 
 .findBar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  flex-shrink: 0;
   display: flex;
   gap: 4px;
   padding: 4px;
@@ -645,22 +649,6 @@
   opacity: 0.5;
 }
 
-.sendBtn {
-  min-width: 44px;
-  padding: 0 8px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: opacity 0.15s ease;
-}
-
 .parkBtn {
   height: 32px;
   padding: 0 8px;
@@ -680,15 +668,6 @@
 
 .parkBtn:disabled {
   opacity: 0.5;
-  cursor: default;
-}
-
-.sendBtn:hover:not(:disabled) {
-  opacity: 0.85;
-}
-
-.sendBtn:disabled {
-  opacity: 0.3;
   cursor: default;
 }
 
@@ -1456,6 +1435,12 @@
 .mobileComposer .inputBody { flex: 1; min-width: 0; }
 .mobileComposer textarea { min-width: 0; width: 100%; }
 .composerActions { display: contents; }
+
+/* Centre 20px actions against the bottom 36px textarea line. */
+.inputArea:not(.mobileComposer) > button,
+.inputArea:not(.mobileComposer) > .composerActions > button {
+  margin-bottom: 8px;
+}
 .mobileComposerActions {
   display: flex;
   flex-basis: 100%;

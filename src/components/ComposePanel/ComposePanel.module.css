@@ -219,50 +219,6 @@
   border-color: var(--fg-muted);
 }
 
-.pinButton {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-  padding: 0;
-  flex-shrink: 0;
-}
-
-.pinButton:hover {
-  color: var(--fg-primary);
-  border-color: var(--fg-muted);
-}
-
-.pinButtonActive {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.sendButton {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 20px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: var(--accent);
-  color: var(--bg-primary);
-  cursor: pointer;
-  padding: 0;
-  flex-shrink: 0;
-}
-
-.sendButton:hover {
-  opacity: 0.85;
-}
-
 .closeButton {
   display: flex;
   align-items: center;

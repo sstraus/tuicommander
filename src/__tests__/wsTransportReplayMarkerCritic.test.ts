@@ -124,9 +124,9 @@ describe("WsTransport empty-replay marker (critic 1421-733e round 2)", () => {
 		for (let i = 0; i < 3; i++) {
 			await vi.advanceTimersByTimeAsync(15_000);
 			await vi.advanceTimersByTimeAsync(10_000);
-			FakeWs.all[FakeWs.all.length - 1].open();
+			FakeWs.all.at(-1)!.open();
 		}
-		const live = FakeWs.all[FakeWs.all.length - 1];
+		const live = FakeWs.all.at(-1)!;
 		const before = FakeWs.all.length;
 		live.marker();
 		live.onclose?.();
@@ -142,7 +142,7 @@ describe("WsTransport empty-replay marker (critic 1421-733e round 2)", () => {
 		FakeWs.all[0].open();
 		await sub;
 		for (let i = 0; i < 30; i++) {
-			const ws = FakeWs.all[FakeWs.all.length - 1];
+			const ws = FakeWs.all.at(-1)!;
 			ws.open();
 			ws.frame();
 			await vi.advanceTimersByTimeAsync(40_000);

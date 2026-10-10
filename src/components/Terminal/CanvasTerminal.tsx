@@ -13,6 +13,7 @@ import { writeClipboard } from "../../utils/clipboard";
 import { formatRelativeTime } from "../../utils/formatRelativeTime";
 import { ensureKeyboardViewportTracking, keyboardOcclusion } from "../../utils/keyboardViewport";
 import { handleOpenUrl } from "../../utils/openUrl";
+import { isImagePaste } from "../../utils/pastedImage";
 import { isPerfDebug } from "../../utils/perfDebug";
 import { markPerf, noteFrameRequest } from "../../utils/perfTrace";
 import { applyPinchFontDelta } from "../../utils/terminalZoom";
@@ -20,6 +21,7 @@ import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 import { AnswersPanel } from "./AnswersPanel";
 import { type AnswersTurn, newTurnCache, readAnswersHistory, sameAnswersHistory } from "./answersTurn";
 import { createCanvasTerminalBindings } from "./canvasTerminalBindings";
+import { canvasToGrid, sgrMouseSequence } from "./canvasTerminalInputGeometry";
 import {
 	createCanvasLinkController,
 	createLinkPressTracker,
@@ -28,6 +30,7 @@ import {
 	linkCovers,
 	spanAt,
 } from "./canvasTerminalLinks";
+import { paintCursor, paintSearchHighlights, paintSelection, syncImePosition, thumbFor } from "./canvasTerminalPaint";
 import { createCanvasScrollController, ROW_CACHE_CHUNK } from "./canvasTerminalScroll";
 import {
 	commitSelectionCopy,
@@ -38,14 +41,22 @@ import {
 	shouldValidateSelectionSnapshot,
 	viewportRowToSelectionRow,
 } from "./canvasTerminalSelection";
+import {
+	getLocalSelectionText,
+	type HoveredLink,
+	hoverSignature,
+	logicalCellToStringOffset,
+	logicalStringSpanToCells,
+	rowStringSpanToCells,
+	underlinedText,
+	underlinedTextAt,
+} from "./canvasTerminalText";
 import { installTouchHandlers } from "./canvasTerminalTouch";
 import { createTransport, type TerminalTransport, toBinaryPayload } from "./canvasTerminalTransport";
 import {
 	type CellMetrics,
 	type CursorShape,
 	cellText,
-	cellToTextOffset,
-	computeCursorRect,
 	createHiddenAckThrottle,
 	createLeadingThrottle,
 	type DecodedFrame,
@@ -59,12 +70,10 @@ import {
 	installFrameRows,
 	reconcileDelay,
 	rowText,
-	rowTextLayout,
 	type StyledRange,
 	shouldFireReconcile,
 	snapLineHeight,
 	textSpanToCellRanges,
-	utf16SpanToCellRange,
 } from "./canvasTerminalUtils";
 import { installFrameTimingDebugHook, isFrameTimingEnabled, recordFrameTiming, resetFrameTiming } from "./frameTiming";
 import { acquireCache, getSharedMetrics, invalidateGlyphCache, releaseCache } from "./glyphCache";
@@ -72,7 +81,6 @@ import { createGridRenderer, type GridRenderer } from "./gridRenderer";
 import { kittySequenceForKey } from "./kittyKeyboard";
 import { filePathRegex, fileUrlRegex, matchWebUrls } from "./linkProvider";
 import { buildScrollbarMarksHtml } from "./scrollbarMarks";
-import { scrollbarThumb } from "./scrollbarThumb";
 import {
 	ANSWER_MARKER_RE,
 	INTENT_HIGHLIGHT_RE,
@@ -238,15 +246,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	// Link detection
 	const linkController = createCanvasLinkController();
 	const linkCache = linkController.rowCache;
-	type HoveredLink = {
-		row: number;
-		colStart: number;
-		colEnd: number;
-		path: string;
-		line?: number;
-		col?: number;
-		spans?: { row: number; colStart: number; colEnd: number }[];
-	};
 	const STALE = Symbol("stale link lookup");
 	let hoveredLink: HoveredLink | null = null;
 	/** What the hovered link underlined when the probe resolved it; see pressSpanAt. */
@@ -298,16 +297,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			openLink(link);
 		}
 	}
-	/** What a span underlines on screen right now; "" when there is none. */
-	function underlinedText(row: number, span: { colStart: number; colEnd: number } | undefined): string {
-		const decoded = rowMap.get(row);
-		if (!decoded || !span) return "";
-		const { text, utf16Starts } = rowTextLayout(decoded);
-		return text.slice(
-			utf16Starts[Math.min(span.colStart, decoded.count)],
-			utf16Starts[Math.min(span.colEnd, decoded.count)],
-		);
-	}
 	/**
 	 * The span a press at the cell belongs to: the dashed underline, or the link the hover
 	 * probe resolved under the pointer (OSC 8 text, a path wrapped over rows) that the
@@ -317,17 +306,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const underlined = spanAt(detectedLinks.get(row), col);
 		if (underlined || !hoveredLink || !linkCovers(hoveredLink, row, col)) return underlined;
 		// An in-place redraw leaves the hover standing; it only counts while it underlines what it did.
-		if (hoverSignature(hoveredLink) !== hoveredSignature) return undefined;
+		if (hoverSignature(rowMap, hoveredLink) !== hoveredSignature) return undefined;
 		return (hoveredLink.spans ?? [hoveredLink]).find((sp) => sp.row === row && col >= sp.colStart && col < sp.colEnd);
 	}
-	/** The text each span of the link covers on screen now. */
-	function hoverSignature(link: HoveredLink): string {
-		return (link.spans ?? [link]).map((sp) => `${sp.row}:${underlinedText(sp.row, sp)}`).join("\n");
-	}
-	function underlinedTextAt(row: number, col: number): string {
-		return underlinedText(row, pressSpanAt(row, col));
-	}
-
 	const copyLink = (link: LinkTarget) => {
 		const text = link.path.startsWith("file://") ? link.path.slice(7) : link.path;
 		writeClipboard(text).catch(() => {});
@@ -446,29 +427,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			selectionScrollTimer = null;
 			selectionScrollDelta = 0;
 		}
-	}
-
-	function canvasToGrid(e: MouseEvent, cachedRect?: DOMRect): { col: number; row: number } {
-		const m = metrics();
-		if (!m) return { col: 0, row: 0 };
-		const rect = cachedRect ?? canvasRef.getBoundingClientRect();
-		const x = e.clientX - rect.left - GUTTER_PX;
-		const y = e.clientY - rect.top;
-		const maxCol = Math.max(0, Math.floor((rect.width - GUTTER_PX) / m.cellWidth) - 1);
-		const maxRow = Math.max(0, Math.floor(rect.height / m.cellHeight) - 1);
-		return {
-			col: Math.max(0, Math.min(Math.floor(x / m.cellWidth), maxCol)),
-			row: Math.max(0, Math.min(Math.floor(y / m.cellHeight), maxRow)),
-		};
-	}
-
-	function mouseModifiers(e: MouseEvent): number {
-		return (e.shiftKey ? 4 : 0) | (e.altKey ? 8 : 0) | (e.ctrlKey ? 16 : 0);
-	}
-
-	function sgrMouseSequence(button: number, col: number, row: number, press: boolean, e?: MouseEvent): string {
-		const cb = button + (e ? mouseModifiers(e) : 0);
-		return `\x1b[<${cb};${col + 1};${row + 1}${press ? "M" : "m"}`;
 	}
 
 	function viewportRowToAbs(viewportRow: number): number | null {
@@ -625,13 +583,24 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 	function repaintOverlay(frame: DecodedFrame, m: CellMetrics) {
 		octx.clearRect(-GUTTER_PX, 0, overlayCanvasRef.width / m.dpr, overlayCanvasRef.height / m.dpr);
-		paintSelection(m);
-		paintSearchHighlights(m);
+		paintSelection(selection, selectionAbsRowToViewport, overlayScrollOffset, rowCache, rowMap, octx, m);
+		paintSearchHighlights(search, absRowToViewport, octx, m);
 		paintLinkUnderline(frame, m);
 		paintGutterMarkers(m);
 		paintBlockTimestamps(m);
 		paintFoldedBlocks(m);
-		paintCursor(frame, m);
+		paintCursor(
+			focused,
+			cursorBlinkOn,
+			octx,
+			cachedFgDefault,
+			rowMap,
+			gridRenderer,
+			cachedBgDefault,
+			keyInputRef,
+			frame,
+			m,
+		);
 	}
 
 	function paintLinkUnderline(_frame: DecodedFrame, m: CellMetrics) {
@@ -782,25 +751,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		}
 	}
 
-	function paintSearchHighlights(m: CellMetrics) {
-		if (search.matches.length === 0) return;
-		for (let i = 0; i < search.matches.length; i++) {
-			const match = search.matches[i];
-			const vpRow = absRowToViewport(match.row);
-			if (vpRow === null) continue;
-			const isActive = i === search.activeIndex;
-			const x = match.col_start * m.cellWidth;
-			const y = vpRow * m.cellHeight;
-			const w = (match.col_end - match.col_start) * m.cellWidth;
-			octx.fillStyle = "rgba(255, 180, 50, 0.2)";
-			octx.fillRect(x, y, w, m.cellHeight);
-			if (isActive) {
-				octx.fillStyle = "#e8984c";
-				octx.fillRect(x, y + m.cellHeight - 2, w, 2);
-			}
-		}
-	}
-
 	function paintGutterMarkers(m: CellMetrics) {
 		const term = terminalsStore.get(props.terminalId);
 		if (!term) return;
@@ -878,92 +828,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		}
 	}
 
-	function paintSelection(m: CellMetrics) {
-		if (!selection.start || !selection.end) return;
-		const absStartRow = Math.min(selection.start.row, selection.end.row);
-		const absEndRow = Math.max(selection.start.row, selection.end.row);
-
-		octx.fillStyle = "rgba(58, 130, 220, 0.35)";
-
-		for (let absRi = absStartRow; absRi <= absEndRow; absRi++) {
-			const vpRow = selectionAbsRowToViewport(absRi);
-			if (vpRow === null) continue;
-			// During a gesture both the selection and row cache use the same
-			// eviction-stable all-time row index. At rest rowMap is viewport-relative.
-			const row = overlayScrollOffset != null ? rowCache.get(absRi) : rowMap.get(vpRow);
-			if (!row) continue;
-			const y = vpRow * m.cellHeight;
-
-			if (absStartRow === absEndRow) {
-				const c0 = Math.min(selection.start.col, selection.end.col);
-				const c1 = Math.max(selection.start.col, selection.end.col);
-				octx.fillRect(c0 * m.cellWidth, y, (c1 - c0 + 1) * m.cellWidth, m.cellHeight);
-			} else if (absRi === absStartRow) {
-				const isStartFirst = selection.start.row <= selection.end.row;
-				const startCol = isStartFirst ? selection.start.col : selection.end.col;
-				octx.fillRect(startCol * m.cellWidth, y, (row.count - startCol) * m.cellWidth, m.cellHeight);
-			} else if (absRi === absEndRow) {
-				const isStartFirst = selection.start.row <= selection.end.row;
-				const endCol = isStartFirst ? selection.end.col : selection.start.col;
-				octx.fillRect(0, y, (endCol + 1) * m.cellWidth, m.cellHeight);
-			} else {
-				octx.fillRect(0, y, row.count * m.cellWidth, m.cellHeight);
-			}
-		}
-	}
-
-	function getLocalSelectionText(): string {
-		return selection.getLocalText((absRi) => {
-			const vpRow = selectionAbsRowToViewport(absRi);
-			return vpRow !== null ? (rowMap.get(vpRow) ?? null) : null;
-		});
-	}
-
-	function paintCursor(frame: DecodedFrame, m: CellMetrics) {
-		if (frame.displayOffset > 0) return;
-		if (!frame.cursorVisible) return;
-		if (!focused()) return;
-		if (!cursorBlinkOn) return;
-
-		const settingShape: CursorShape =
-			settingsStore.state.cursorStyle === "block"
-				? "block"
-				: settingsStore.state.cursorStyle === "underline"
-					? "underline"
-					: "beam";
-		const shape: CursorShape = frame.cursorShape !== "block" ? frame.cursorShape : settingShape;
-		const rect = computeCursorRect(shape, frame.cursorRow, frame.cursorCol, m);
-
-		octx.fillStyle = cachedFgDefault;
-		octx.fillRect(rect.x, rect.y, rect.w, rect.h);
-
-		if (shape === "block") {
-			const row = rowMap.get(frame.cursorRow);
-			const col = frame.cursorCol;
-			if (row && col < row.count) {
-				const cp = row.codepoints[col];
-				const glyph = cellText(row, col);
-				if (glyph !== "" && (cp !== 0x20 || row.cellExtras?.has(col))) {
-					const fontFamily = settingsStore.getFontFamily();
-					octx.font = gridRenderer.buildFontStyle(row.attrs[col], m.fontSize, fontFamily);
-					octx.fillStyle = cachedBgDefault;
-					octx.fillText(glyph, rect.x, frame.cursorRow * m.cellHeight + m.baseline);
-				}
-			}
-		}
-
-		syncImePosition(frame.cursorRow, frame.cursorCol, m);
-	}
-
-	function syncImePosition(row: number, col: number, m: CellMetrics) {
-		const x = GUTTER_PX + col * m.cellWidth;
-		const y = row * m.cellHeight;
-		keyInputRef.style.left = `${x}px`;
-		keyInputRef.style.top = `${y}px`;
-		keyInputRef.style.height = `${m.cellHeight}px`;
-		keyInputRef.style.fontSize = `${m.fontSize}px`;
-	}
-
 	// --- Scrollbar ---
 
 	function updateScrollbar(frame: DecodedFrame) {
@@ -976,23 +840,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		}
 		scrollbarRef.style.display = "block";
 
-		const thumb = thumbFor(frame);
+		const thumb = thumbFor(scrollbarTrackHeight, lastResizeRows, frame);
 		scrollThumbRef.style.height = `${thumb.height}px`;
 		scrollThumbRef.style.transform = `translateY(${thumb.top}px)`;
 
 		paintScrollbarMarks(total);
-	}
-
-	function thumbFor(frame: DecodedFrame) {
-		return scrollbarThumb({
-			// Track height comes from the resize-time cache, not scrollbarRef.clientHeight;
-			// visible rows = the authoritative resize row count — no per-frame
-			// canvasRef.clientHeight read (layout-forcing).
-			trackH: scrollbarTrackHeight,
-			visibleRows: lastResizeRows || 24,
-			historySize: frame.historySize,
-			displayOffset: frame.displayOffset,
-		});
 	}
 
 	let scrollbarMarksContainer: HTMLDivElement | null = null;
@@ -1023,7 +875,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// left the last-painted marks on screen forever, because the repaint that
 		// would clear them never ran.
 		const showBlocks = blockTimestampsVisible && settingsStore.state.showScrollbarMarks;
-		const key = `${showBlocks ? blocks.length : 0}:${showBlocks ? promptLines.length : 0}:${totalRows}:${historyBase}:${showBlocks ? (blocks[blocks.length - 1]?.exitCode ?? "") : ""}:s${searchCount}:${searchCount > 0 ? search.matches[0].row : ""}`;
+		const key = `${showBlocks ? blocks.length : 0}:${showBlocks ? promptLines.length : 0}:${totalRows}:${historyBase}:${showBlocks ? (blocks.at(-1)?.exitCode ?? "") : ""}:s${searchCount}:${searchCount > 0 ? search.matches[0].row : ""}`;
 		if (key === lastScrollbarMarksKey) return;
 		lastScrollbarMarksKey = key;
 
@@ -1841,7 +1693,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// Only compare content when the selection is fully on-screen — off-screen rows return empty
 		// strings from getLocalSelectionText() causing spurious mismatches that clear the selection.
 		if (shouldValidateSelectionSnapshot(selection, decision.fullReplace, selectionAbsRowToViewport)) {
-			const nowText = getLocalSelectionText();
+			const nowText = getLocalSelectionText(selection, selectionAbsRowToViewport, rowMap);
 			if (nowText !== selection.localSnapshot) selection.clear();
 		}
 
@@ -1859,33 +1711,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	const FILE_LINK_RECHECK_MS = 3_000;
 	const FILE_LINK_CACHE_MAX = 500;
 
-	const rowStringSpanToCells = (rowIndex: number, start: number, end: number): [number, number] | null => {
-		const row = rowMap.get(rowIndex);
-		return row ? utf16SpanToCellRange(row, start, end) : null;
-	};
-
-	const logicalRows = (startRow: number): { index: number; row: DecodedRow }[] => {
-		const rows: { index: number; row: DecodedRow }[] = [];
-		for (let rowIndex = startRow; ; rowIndex++) {
-			const row = rowMap.get(rowIndex);
-			if (!row) return [];
-			rows.push({ index: rowIndex, row });
-			if (!row.wrapped) return rows;
-		}
-	};
-
-	const logicalStringSpanToCells = (
-		startRow: number,
-		text: string,
-		start: number,
-		end: number,
-	): { row: number; colStart: number; colEnd: number }[] => {
-		return textSpanToCellRanges(logicalRows(startRow), text, start, end) ?? [];
-	};
-
-	const logicalCellToStringOffset = (startRow: number, text: string, rowIndex: number, col: number): number | null =>
-		cellToTextOffset(logicalRows(startRow), text, rowIndex, col);
-
 	function scanRowForLinks(rowIndex: number) {
 		const row = rowMap.get(rowIndex);
 		if (!row) {
@@ -1896,7 +1721,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const spans: { colStart: number; colEnd: number }[] = [];
 
 		for (const url of matchWebUrls(text)) {
-			const cells = rowStringSpanToCells(rowIndex, url.index, url.index + url.text.length);
+			const cells = rowStringSpanToCells(rowMap, rowIndex, url.index, url.index + url.text.length);
 			if (cells) spans.push({ colStart: cells[0], colEnd: cells[1] });
 		}
 
@@ -1944,12 +1769,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			let m: RegExpExecArray | null;
 			while ((m = FILE_PATH_RE.exec(text)) !== null) {
 				const idx = text.indexOf(m[1], m.index);
-				const cells = rowStringSpanToCells(i, idx, idx + m[1].length);
+				const cells = rowStringSpanToCells(rowMap, i, idx, idx + m[1].length);
 				if (cells) candidates.push({ colStart: cells[0], colEnd: cells[1], raw: m[1] });
 			}
 			FILE_URL_RE.lastIndex = 0;
 			while ((m = FILE_URL_RE.exec(text)) !== null) {
-				const cells = rowStringSpanToCells(i, m.index, m.index + m[0].length);
+				const cells = rowStringSpanToCells(rowMap, i, m.index, m.index + m[0].length);
 				if (cells) candidates.push({ colStart: cells[0], colEnd: cells[1], raw: m[1] });
 			}
 			if (candidates.length > 0) toCheck.push({ text, candidates });
@@ -2001,14 +1826,14 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		wrappedLinkSpans.clear();
 		// Record a match's per-row spans into wrappedLinkSpans.
 		const recordWrappedSpans = (startRow: number, text: string, matchIndex: number, matchEnd: number) => {
-			for (const span of logicalStringSpanToCells(startRow, text, matchIndex, matchEnd)) {
+			for (const span of logicalStringSpanToCells(rowMap, startRow, text, matchIndex, matchEnd)) {
 				const existing = wrappedLinkSpans.get(span.row) || [];
 				existing.push({ colStart: span.colStart, colEnd: span.colEnd });
 				wrappedLinkSpans.set(span.row, existing);
 			}
 		};
 		const spansMultipleRows = (startRow: number, text: string, matchIndex: number, matchEnd: number) =>
-			logicalStringSpanToCells(startRow, text, matchIndex, matchEnd).length > 1;
+			logicalStringSpanToCells(rowMap, startRow, text, matchIndex, matchEnd).length > 1;
 
 		// Candidate rows: full-width rows that might be part of a soft-wrapped
 		// web/file:// URL. Collected up front (no IPC) so every logical-line
@@ -2115,7 +1940,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const found = await resolveLinkAt(row, col, () => !linkController.isCurrent(gen));
 		if (found === STALE) return;
 		hoveredLink = found;
-		hoveredSignature = found ? hoverSignature(found) : "";
+		hoveredSignature = found ? hoverSignature(rowMap, found) : "";
 		canvasRef.style.cursor = hoveredLink ? "pointer" : "text";
 		if (currentFrame) {
 			const m = metrics();
@@ -2299,7 +2124,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				})) as [number, string];
 				if (!alive || isStale()) return STALE;
 				if (startRow !== row || logicalText !== rowText || rowHasEdgeUrl) {
-					const logicalOffset = logicalCellToStringOffset(startRow, logicalText, row, col);
+					const logicalOffset = logicalCellToStringOffset(rowMap, startRow, logicalText, row, col);
 					const fuRe = FILE_URL_RE;
 					const fpRe = FILE_PATH_RE;
 					const logicalMatches: { text: string; candidate: string; index: number; isUrl: boolean }[] = [];
@@ -2334,7 +2159,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 								if (!r) break;
 								resolvedPath = r.absolute_path;
 							}
-							const spans = logicalStringSpanToCells(startRow, logicalText, lm.index, matchEnd);
+							const spans = logicalStringSpanToCells(rowMap, startRow, logicalText, lm.index, matchEnd);
 							if (spans.length === 0) break;
 							const firstSpan = spans[0];
 							found = {
@@ -2641,7 +2466,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const composition = createCompositionState();
 		bindings.listen(keyInputRef, "compositionstart", () => {
 			const m = metrics();
-			if (currentFrame && m) syncImePosition(currentFrame.cursorRow, currentFrame.cursorCol, m);
+			if (currentFrame && m) syncImePosition(keyInputRef, currentFrame.cursorRow, currentFrame.cursorCol, m);
 		});
 		bindings.listen(keyInputRef, "compositionend", (e) => {
 			const data = composition.onCompositionEnd(e.data);
@@ -2945,15 +2770,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		});
 
 		bindings.listen(keyInputRef, "paste", (e: ClipboardEvent) => {
-			if (e.clipboardData) {
-				const items = e.clipboardData.items;
-				for (let i = 0; i < items.length; i++) {
-					if (items[i].type.startsWith("image/")) {
-						e.preventDefault();
-						writePty("\x16");
-						return;
-					}
-				}
+			if (isImagePaste(e)) {
+				e.preventDefault();
+				writePty("\x16");
+				return;
 			}
 			const text = e.clipboardData?.getData("text");
 			if (text) {
@@ -2983,12 +2803,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			pressSeq++;
 			keyInputRef.focus({ preventScroll: true });
 			{
-				const at = canvasToGrid(e);
+				const at = canvasToGrid(metrics, canvasRef, e);
 				const span = pressSpanAt(at.row, at.col);
-				linkPress.begin(e.button, at.row, span, underlinedText(at.row, span));
+				linkPress.begin(e.button, at.row, span, underlinedText(rowMap, at.row, span));
 			}
 			if (currentFrame && currentFrame.mouseMode > 0 && !e.shiftKey) {
-				const pos = canvasToGrid(e);
+				const pos = canvasToGrid(metrics, canvasRef, e);
 				// A press on a detected link → let the link handlers fire (click opens,
 				// contextmenu shows Open / Copy link), even while an app has mouse
 				// reporting on. The underline promises the click opens, and Claude
@@ -3014,7 +2834,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				return;
 			}
 			if (e.button !== 0) return;
-			const pos = canvasToGrid(e);
+			const pos = canvasToGrid(metrics, canvasRef, e);
 			const absRow = viewportRowToAbs(pos.row);
 			if (absRow === null) return;
 			// cachedText belongs to the last completed/copied range. A new gesture
@@ -3133,7 +2953,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					stopSelectionScroll();
 				}
 			}
-			const pos = canvasToGrid(e, rect);
+			const pos = canvasToGrid(metrics, canvasRef, e, rect);
 			const absRow = viewportRowToAbs(pos.row);
 			if (absRow === null) return;
 			selection.end = { col: pos.col, row: absRow };
@@ -3144,7 +2964,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const scheduleLinkProbe = (e: MouseEvent) => {
 			clearTimeout(linkThrottle);
 			linkThrottle = setTimeout(() => {
-				const pos = canvasToGrid(e);
+				const pos = canvasToGrid(metrics, canvasRef, e);
 				checkLinksAtRow(pos.row, pos.col);
 			}, 100);
 		};
@@ -3161,10 +2981,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				// (mousedown), and the click only opens what this probe found.
 				if (!selection.selecting) scheduleLinkProbe(e);
 				if (currentFrame.mouseMode >= 3) {
-					const pos = canvasToGrid(e, rect);
+					const pos = canvasToGrid(metrics, canvasRef, e, rect);
 					writePtyNoScroll(sgrMouseSequence(35, pos.col, pos.row, true, e));
 				} else if (currentFrame.mouseMode >= 2 && e.buttons > 0 && !linkPress.isClaimed()) {
-					const pos = canvasToGrid(e, rect);
+					const pos = canvasToGrid(metrics, canvasRef, e, rect);
 					const btn = e.buttons & 1 ? 0 : e.buttons & 4 ? 1 : 2;
 					writePtyNoScroll(sgrMouseSequence(32 + btn, pos.col, pos.row, true, e));
 				}
@@ -3202,7 +3022,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				if (!reportUp) return;
 				// canvasToGrid clamps to the grid, so a release outside the canvas
 				// reports the edge cell — what a terminal does for a drag-out.
-				const pos = canvasToGrid(e, rect);
+				const pos = canvasToGrid(metrics, canvasRef, e, rect);
 				if (currentFrame.sgrMouse) {
 					writePtyNoScroll(sgrMouseSequence(e.button, pos.col, pos.row, false, e));
 				}
@@ -3234,8 +3054,8 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		// Link click — plain click opens, skip if user was selecting text
 		bindings.listen(canvasRef, "click", (e: MouseEvent) => {
-			const at = canvasToGrid(e);
-			const claimed = linkPress.release(at.row, at.col, underlinedTextAt(at.row, at.col));
+			const at = canvasToGrid(metrics, canvasRef, e);
+			const claimed = linkPress.release(at.row, at.col, underlinedTextAt(rowMap, pressSpanAt, at.row, at.col));
 			// The first click of a double-click already opened it.
 			if (!claimed || e.detail > 1 || selection.hasRange()) {
 				// Only a click on something the user sees as a link is worth a line.
@@ -3258,7 +3078,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		bindings.listen(canvasRef, "contextmenu", async (e: MouseEvent) => {
 			// Any menu request retires a pending lookup, also one off every link (Menu key, Shift+F10).
 			const seq = ++pressSeq;
-			const pos = canvasToGrid(e);
+			const pos = canvasToGrid(metrics, canvasRef, e);
 			if (!pressSpanAt(pos.row, pos.col)) return;
 			e.preventDefault();
 			// Stop the App-level terminal context menu (#terminal-panes onContextMenu)
@@ -3292,7 +3112,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			// Shift+wheel always scrolls the TUIC scrollback, never the app — the
 			// escape hatch matching the click/motion handlers' `!e.shiftKey` bypass.
 			if (currentFrame && currentFrame.mouseMode > 0 && !e.shiftKey) {
-				const pos = canvasToGrid(e as unknown as MouseEvent);
+				const pos = canvasToGrid(metrics, canvasRef, e as unknown as MouseEvent);
 				const btn = e.deltaY < 0 ? 64 : 65;
 				writePtyNoScroll(sgrMouseSequence(btn, pos.col, pos.row, true, e as unknown as MouseEvent));
 				return;
@@ -3357,7 +3177,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			if (!scrollDragging || !currentFrame) return;
 			const historySize = currentFrame.historySize;
 			if (historySize === 0) return;
-			const scrollRange = thumbFor(currentFrame).range;
+			const scrollRange = thumbFor(scrollbarTrackHeight, lastResizeRows, currentFrame).range;
 			if (scrollRange <= 0) return;
 
 			const dy = e.clientY - scrollDragStartY;
@@ -3601,13 +3421,13 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 						})) as string;
 						// Legacy/empty response fallback; an eviction rejection throws and is
 						// deliberately handled without a local or cached copy below.
-						return text || getLocalSelectionText();
+						return text || getLocalSelectionText(selection, selectionAbsRowToViewport, rowMap);
 					}
-					return selection.cachedText || getLocalSelectionText();
+					return selection.cachedText || getLocalSelectionText(selection, selectionAbsRowToViewport, rowMap);
 				},
 				async (text) => {
 					selection.cachedText = text;
-					selection.localSnapshot = getLocalSelectionText();
+					selection.localSnapshot = getLocalSelectionText(selection, selectionAbsRowToViewport, rowMap);
 					await writeClipboard(text);
 				},
 			);
@@ -3682,7 +3502,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				const path = e.dataTransfer?.getData("application/x-tuic-path");
 				if (!path) return;
 				e.preventDefault();
-				const quoted = `'${path.replace(/'/g, "'\\''")}' `;
+				const quoted = `'${path.replaceAll("'", "'\\''")}' `;
 				writePty(quoted);
 				keyInputRef.focus({ preventScroll: true });
 			}}

@@ -523,7 +523,7 @@ async function lastSync(): Promise<{
 }> {
 	const { invoke } = await import("../../invoke");
 	const calls = vi.mocked(invoke).mock.calls.filter((c) => c[0] === "set_plugin_output_watchers");
-	return calls[calls.length - 1]?.[1] as never;
+	return calls.at(-1)?.[1] as never;
 }
 
 describe("handleWatcherLines", () => {

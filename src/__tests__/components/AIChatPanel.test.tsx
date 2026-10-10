@@ -255,7 +255,9 @@ async function typeAndSend(container: HTMLElement, text: string): Promise<void> 
 	textarea.value = text;
 	textarea.dispatchEvent(new Event("input", { bubbles: true }));
 	(
-		[...container.querySelectorAll("button")].find((button) => button.textContent === "Send") as HTMLButtonElement
+		[...container.querySelectorAll("button")].find(
+			(button) => button.getAttribute("aria-label") === "Send",
+		) as HTMLButtonElement
 	).click();
 	await settle();
 }
@@ -839,7 +841,9 @@ describe("AIChatPanel: one chat across repositories", () => {
 		textarea.value = text;
 		textarea.dispatchEvent(new Event("input", { bubbles: true }));
 		(
-			[...container.querySelectorAll("button")].find((button) => button.textContent === "Send") as HTMLButtonElement
+			[...container.querySelectorAll("button")].find(
+				(button) => button.getAttribute("aria-label") === "Send",
+			) as HTMLButtonElement
 		).click();
 		await settle();
 	}
@@ -1356,7 +1360,7 @@ describe("AIChatPanel: parallel tabs", () => {
 		textarea.dispatchEvent(shortcut);
 		expect(shortcut.defaultPrevented).toBe(true);
 		expect(textarea.value).toBe("");
-		expect(container.textContent).toContain("Parked draft");
+		expect(container.querySelector('button[aria-pressed="true"][aria-label$="parked draft"]')).not.toBeNull();
 		const repeated = new KeyboardEvent("keydown", {
 			key: "s",
 			ctrlKey: true,
@@ -1370,7 +1374,7 @@ describe("AIChatPanel: parallel tabs", () => {
 		await typeAndSend(container, "Quick interruption");
 		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, "Quick interruption", [], ROOT);
 		expect(textarea.value).toBe("Long-running thought");
-		expect(container.textContent).not.toContain("Parked draft");
+		expect(container.querySelector('button[aria-pressed="true"][aria-label$="parked draft"]')).toBeNull();
 	});
 	it("warns when browser storage cannot keep a parked draft across reload", async () => {
 		const { container } = await renderPanel();
@@ -1403,7 +1407,7 @@ describe("AIChatPanel: parallel tabs", () => {
 		first.unmount();
 		const second = render(() => <AIChatPanel visible={true} repoPath={ROOT} onClose={() => {}} />);
 		await settle();
-		expect(second.container.textContent).toContain("Parked draft");
+		expect(second.container.querySelector('button[aria-pressed="true"][aria-label$="parked draft"]')).not.toBeNull();
 		await typeAndSend(second.container, "Describe this image");
 		expect(client.prompt).toHaveBeenCalledWith(
 			CONNECTION,
@@ -1426,15 +1430,17 @@ describe("AIChatPanel: parallel tabs", () => {
 		textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true }));
 		(container.querySelector('button[aria-label="New chat tab"]') as HTMLButtonElement).click();
 		await settle();
-		expect(container.textContent).not.toContain("Parked draft");
+		expect(container.querySelector('button[aria-pressed="true"][aria-label$="parked draft"]')).toBeNull();
 		(container.querySelector(`button[data-chat-session="${SESSION}"]`) as HTMLButtonElement).click();
 		await settle();
-		expect(container.textContent).toContain("Parked draft");
+		expect(container.querySelector('button[aria-pressed="true"][aria-label$="parked draft"]')).not.toBeNull();
 		await typeAndSend(container, "Short detour");
 		const restored = container.querySelector("textarea") as HTMLTextAreaElement;
 		expect(restored.value).toContain("[Pasted text #");
 		(
-			[...container.querySelectorAll("button")].find((button) => button.textContent === "Send") as HTMLButtonElement
+			[...container.querySelectorAll("button")].find(
+				(button) => button.getAttribute("aria-label") === "Send",
+			) as HTMLButtonElement
 		).click();
 		await settle();
 		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, longPaste, [], ROOT);
@@ -1449,7 +1455,9 @@ describe("AIChatPanel: parallel tabs", () => {
 		textarea.value = "Second request";
 		textarea.dispatchEvent(new Event("input", { bubbles: true }));
 		(
-			[...container.querySelectorAll("button")].find((button) => button.textContent === "Send") as HTMLButtonElement
+			[...container.querySelectorAll("button")].find(
+				(button) => button.getAttribute("aria-label") === "Send",
+			) as HTMLButtonElement
 		).click();
 		await settle();
 		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SECOND_SESSION, "Second request", [], ROOT);
@@ -1459,7 +1467,9 @@ describe("AIChatPanel: parallel tabs", () => {
 		textarea.value = "First request";
 		textarea.dispatchEvent(new Event("input", { bubbles: true }));
 		(
-			[...container.querySelectorAll("button")].find((button) => button.textContent === "Send") as HTMLButtonElement
+			[...container.querySelectorAll("button")].find(
+				(button) => button.getAttribute("aria-label") === "Send",
+			) as HTMLButtonElement
 		).click();
 		await settle();
 		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, "First request", [], ROOT);
@@ -1553,7 +1563,7 @@ describe("AIChatPanel: parallel tabs", () => {
 		textarea.dispatchEvent(new Event("input", { bubbles: true }));
 		(
 			[...second.container.querySelectorAll("button")].find(
-				(button) => button.textContent === "Send",
+				(button) => button.getAttribute("aria-label") === "Send",
 			) as HTMLButtonElement
 		).click();
 		await settle();
@@ -1768,7 +1778,7 @@ describe("AIChatPanel: a turn", () => {
 		await settle();
 		expect(event.defaultPrevented).toBe(true);
 		expect(textarea.value).toBe("[Pasted text #1 +201 words]");
-		(container.querySelector("button.sendBtn") as HTMLButtonElement).click();
+		(container.querySelector('button[aria-label="Send"]') as HTMLButtonElement).click();
 		await settle();
 		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, pasted, [], ROOT);
 	});
@@ -1798,7 +1808,7 @@ describe("AIChatPanel: a turn", () => {
 		textarea.dispatchEvent(event);
 		await settle();
 		expect(textarea.value).toBe("Before [Pasted text #1 +201 words]after");
-		(container.querySelector("button.sendBtn") as HTMLButtonElement).click();
+		(container.querySelector('button[aria-label="Send"]') as HTMLButtonElement).click();
 		await settle();
 		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, `Before ${pasted}after`, [], ROOT);
 	});
@@ -2005,7 +2015,9 @@ describe("AIChatPanel: a turn", () => {
 		);
 		await settle();
 		expect(container.textContent).toContain("no capabilities are configured");
-		expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Send")).toBe(true);
+		expect(
+			[...container.querySelectorAll("button")].some((button) => button.getAttribute("aria-label") === "Send"),
+		).toBe(true);
 	});
 
 	it("shows that a normally settled turn without an agent reply ended", async () => {
@@ -2052,7 +2064,7 @@ describe("AIChatPanel: a turn", () => {
 		textarea.value = "desktop next";
 		textarea.dispatchEvent(new Event("input", { bubbles: true }));
 		await settle();
-		[...container.querySelectorAll("button")].find((button) => button.textContent === "Queue")?.click();
+		[...container.querySelectorAll("button")].find((button) => button.getAttribute("aria-label") === "Queue")?.click();
 		await settle();
 		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, "desktop next", [], ROOT);
 	});
@@ -2069,7 +2081,7 @@ describe("AIChatPanel: a turn", () => {
 		await vi.waitFor(() => expect(container.querySelector('img[alt="Pasted image"]')).not.toBeNull());
 
 		expect(event.defaultPrevented).toBe(true);
-		[...container.querySelectorAll("button")].find((button) => button.textContent === "Send")?.click();
+		[...container.querySelectorAll("button")].find((button) => button.getAttribute("aria-label") === "Send")?.click();
 		await settle();
 		expect(client.prompt).toHaveBeenCalledWith(
 			CONNECTION,
@@ -2138,7 +2150,7 @@ describe("AIChatPanel: a turn", () => {
 		textarea.value = "text only";
 		textarea.dispatchEvent(new Event("input", { bubbles: true }));
 		await settle();
-		[...container.querySelectorAll("button")].find((button) => button.textContent === "Send")?.click();
+		[...container.querySelectorAll("button")].find((button) => button.getAttribute("aria-label") === "Send")?.click();
 		await settle();
 		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, "text only", [], ROOT);
 	});
@@ -2170,7 +2182,9 @@ describe("AIChatPanel: a turn", () => {
 		textarea.dispatchEvent(new Event("input", { bubbles: true }));
 		await settle();
 
-		const send = [...container.querySelectorAll("button")].find((button) => button.textContent === "Send");
+		const send = [...container.querySelectorAll("button")].find(
+			(button) => button.getAttribute("aria-label") === "Send",
+		);
 		send?.click();
 		await settle();
 
@@ -2875,7 +2889,9 @@ describe("AIChatPanel: elicitation", () => {
 		feed({ kind: "turnFailed", message: "model unavailable", state: "idle" }, SESSION, "turn-1");
 		await settle();
 		expect(container.textContent).toContain("model unavailable");
-		expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Send")).toBe(true);
+		expect(
+			[...container.querySelectorAll("button")].some((button) => button.getAttribute("aria-label") === "Send"),
+		).toBe(true);
 	});
 
 	it("renders a form and submits the values that were filled in", async () => {
@@ -3747,5 +3763,165 @@ describe("AIChatPanel: new chat during cold saved connection", () => {
 		);
 		await typeAndSend(view.container, "Continue in the fresh conversation");
 		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, "Continue in the fresh conversation", [], ROOT);
+	});
+});
+
+describe("desktop composer icon controls", () => {
+	it("keeps icon actions named and disabled for an empty draft, and marks parked drafts pressed", async () => {
+		// Catches: replacing text with SVG drops accessible names, enables empty sends, or hides parked state.
+		const view = await renderPanel();
+		const send = view.getByRole("button", { name: "Send" }) as HTMLButtonElement;
+		const park = view.getByRole("button", { name: "Park draft" }) as HTMLButtonElement;
+		expect(send.title).toBe("Send");
+		expect(send.disabled).toBe(true);
+		expect(park.disabled).toBe(true);
+		expect(park.getAttribute("aria-pressed")).toBe("false");
+		expect(send.querySelector("svg")).not.toBeNull();
+		expect(park.querySelector("svg")).not.toBeNull();
+		expect(send.textContent).toBe("");
+		expect(park.textContent).toBe("");
+		const textarea = view.container.querySelector("textarea") as HTMLTextAreaElement;
+		textarea.value = "Keep this draft";
+		textarea.dispatchEvent(new Event("input", { bubbles: true }));
+		expect(send.disabled).toBe(false);
+		expect(park.disabled).toBe(false);
+		park.click();
+		expect(park.getAttribute("aria-label")).toBe("Restore parked draft");
+		expect(park.title).toBe("Restore parked draft");
+		expect(park.getAttribute("aria-pressed")).toBe("true");
+		expect(park.disabled).toBe(false);
+		expect(send.disabled).toBe(true);
+		textarea.value = "Next message";
+		textarea.dispatchEvent(new Event("input", { bubbles: true }));
+		expect(park.getAttribute("aria-label")).toBe("Swap parked draft");
+		expect(park.title).toBe("Swap parked draft");
+		expect(park.getAttribute("aria-pressed")).toBe("true");
+		expect(send.disabled).toBe(false);
+		park.click();
+		expect(textarea.value).toBe("Keep this draft");
+	});
+
+	it("names the busy play icon Queue and keeps empty prompts disabled", async () => {
+		// Catches: busy changes remove the icon name or allow an empty queued turn.
+		const view = await renderPanel();
+		acpStore.applySnapshot(
+			snapshot({
+				attachments: [
+					attachment({
+						state: "prompting",
+						activeTurn: {
+							turnId: "running",
+							state: "running",
+							stopReason: null,
+							usage: null,
+						},
+					}),
+				],
+			}),
+		);
+		await settle();
+		const queue = view.getByRole("button", { name: "Queue" }) as HTMLButtonElement;
+		expect(queue.title).toBe("Queue");
+		expect(queue.disabled).toBe(true);
+		expect(queue.querySelector("svg")).not.toBeNull();
+		const park = view.getByRole("button", { name: "Park draft" }) as HTMLButtonElement;
+		expect(park.disabled).toBe(true);
+		expect(park.getAttribute("aria-pressed")).toBe("false");
+		const textarea = view.container.querySelector("textarea") as HTMLTextAreaElement;
+		textarea.value = "Queue this";
+		textarea.dispatchEvent(new Event("input", { bubbles: true }));
+		expect(queue.disabled).toBe(false);
+		expect(park.disabled).toBe(false);
+		queue.click();
+		await settle();
+		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, "Queue this", [], ROOT);
+	});
+});
+
+describe("AI Chat shared image paste", () => {
+	it("connects before checking image support when a PNG is pasted into an unstarted chat", async () => {
+		// Catches: absent pre-connection capabilities are mistaken for explicit image refusal.
+		supportsImages = true;
+		const { container } = renderIdlePanel();
+		await settle();
+		expect(client.connect).not.toHaveBeenCalled();
+		const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+		const event = pasteFile(
+			textarea,
+			new File([Uint8Array.from(atob(PNG_1X1), (byte) => byte.charCodeAt(0))], "clip.png", { type: "image/png" }),
+		);
+		expect(event.defaultPrevented).toBe(true);
+		await vi.waitFor(() => expect(container.querySelector('img[alt="Pasted image"]')).not.toBeNull());
+		expect(client.connect).toHaveBeenCalled();
+		(container.querySelector('button[aria-label="Send"]') as HTMLButtonElement).click();
+		await settle();
+		expect(client.prompt).toHaveBeenCalledWith(
+			CONNECTION,
+			SESSION,
+			"",
+			[{ type: "image", mimeType: "image/png", data: PNG_1X1 }],
+			ROOT,
+		);
+	});
+});
+
+describe("AI Chat clipboard precedence", () => {
+	function mixedPaste(textarea: HTMLTextAreaElement, text: string): Event {
+		const file = new File([Uint8Array.from(atob(PNG_1X1), (byte) => byte.charCodeAt(0))], "clip.png", {
+			type: "image/png",
+		});
+		const event = new Event("paste", { bubbles: true, cancelable: true });
+		Object.defineProperty(event, "clipboardData", {
+			value: {
+				items: [
+					{ type: "text/plain", getAsFile: () => null },
+					{ type: "image/png", getAsFile: () => file },
+				],
+				getData: (type: string) => (type === "text/plain" ? text : ""),
+			},
+		});
+		textarea.dispatchEvent(event);
+		return event;
+	}
+
+	it("attaches Finder image copies instead of sending their file-name text", async () => {
+		// Catches: shared text precedence rejects a Finder file-name plus image clipboard.
+		supportsImages = true;
+		const { container } = await renderPanel();
+		const event = mixedPaste(
+			container.querySelector("textarea") as HTMLTextAreaElement,
+			"/Users/Boss/Pictures/clip.png",
+		);
+		expect(event.defaultPrevented).toBe(true);
+		await vi.waitFor(() => expect(container.querySelector('img[alt="Pasted image"]')).not.toBeNull());
+		(container.querySelector('button[aria-label="Send"]') as HTMLButtonElement).click();
+		await settle();
+		expect(client.prompt).toHaveBeenCalledWith(
+			CONNECTION,
+			SESSION,
+			"",
+			[{ type: "image", mimeType: "image/png", data: PNG_1X1 }],
+			ROOT,
+		);
+	});
+
+	it("preserves normal text paste and gives substantive mixed clipboard text precedence", async () => {
+		// Catches: an incidental rendered image swallows spreadsheet text or bypasses compact-paste handling.
+		supportsImages = true;
+		const { container } = await renderPanel();
+		const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+		const event = mixedPaste(textarea, "copied spreadsheet cells");
+		expect(event.defaultPrevented).toBe(false);
+		await settle();
+		expect(container.querySelector('img[alt="Pasted image"]')).toBeNull();
+		const longText = Array.from({ length: 201 }, (_, index) => `word${index}`).join(" ");
+		const longPaste = new Event("paste", { bubbles: true, cancelable: true });
+		Object.defineProperty(longPaste, "clipboardData", { value: { items: [], getData: () => longText } });
+		textarea.dispatchEvent(longPaste);
+		expect(longPaste.defaultPrevented).toBe(true);
+		expect(textarea.value).toBe("[Pasted text #1 +201 words]");
+		(container.querySelector('button[aria-label="Send"]') as HTMLButtonElement).click();
+		await settle();
+		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, longText, [], ROOT);
 	});
 });

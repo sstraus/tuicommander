@@ -32,6 +32,10 @@
   border-bottom: 1px solid var(--border);
 }
 
+.spokenReplies {
+  min-height: 44px;
+}
+
 .label {
   font-size: 14px;
   color: var(--fg-primary);

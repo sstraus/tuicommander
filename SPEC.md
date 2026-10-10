@@ -629,6 +629,7 @@ Some frontend-only stores persist to localStorage:
 - [x] Font selection setting
 - [x] Tab bar with keyboard navigation
 - [x] Density modes for readability
+- [x] Terminal Find routes to the visible CLI buffer or Chat transcript; Chat supports next/previous selected matches and switching views closes search and clears highlights (#1633-f2cc).
 - [x] Terminal Chat uses focused, docked Compose input with existing send/queue semantics; CLI open/pin preferences and shared unsent drafts survive view switches. Permission prompts remain in CLI.
 - [x] Terminal selection copy unwraps soft-wrapped rows, removes coherent Claude visual gutters and composer margins, and preserves literal block characters, pasted prompt glyphs, and short typed line breaks
 - [x] Status bar with branch and PR info
@@ -668,13 +669,14 @@ Some frontend-only stores persist to localStorage:
 - [x] Connected daemon MCP toasts reach the desktop Messages bell with host attribution, original level/sound and safe remote-terminal navigation; no disconnected replay
 - [x] Remote access / HTTP server
 - [x] SSH-managed remote daemon deployment, idle lifetime, pairing-token vaulting, and systemd/launchd installation
+- [x] Mobile terminal Ctrl menu (Ctrl+C, Ctrl+B, Ctrl+D, agent-aware Ctrl+Enter)
 - [x] Mobile Companion PWA (searchable sessions, live output, question reply including Codex interactive choices, activity feed)
   - [x] Files tree search, hidden-folder ordering, long-path preview, and full-height wrapped editing
   - [x] Repository-relative Markdown images through an authenticated, repository-confined image route
   - [x] Expandable Progress messages, local Activity time and minute durations, version display, and a server-persisted mobile light theme separate from the desktop theme
 - [~] Managed-agent blocked questions alert the mobile PWA through encrypted Web Push when the desktop is away; a phone reply returns through atomic session submission with a receipt (real-phone verification pending)
 - [~] Pending ego permissions and form requests alert a subscribed phone when the desktop is away, linking to the matching mobile Chat conversation with a 30-second limit per conversation (real-phone verification pending; ego card notices await a defined wire shape)
-- [x] MCP Proxy Hub (aggregate upstream MCP servers via HTTP and stdio, tool namespace prefixing, circuit breaker, hot-reload, OS keyring credentials, tool filtering, session-local Grok compatibility through lazy meta-tools)
+- [x] MCP Proxy Hub (aggregate upstream MCP servers via HTTP and stdio, tool namespace prefixing, circuit breaker, hot-reload, origin-bound OS keyring credentials enforced before outgoing requests, tool filtering, session-local Grok compatibility through lazy meta-tools)
 - [x] Copy Path in Markdown panel
 - [x] Claude Usage Dashboard (native SolidJS component with API polling, session analytics, usage timeline)
 - [x] ConfirmDialog component (in-app dark-themed replacement for native OS dialogs)
@@ -686,10 +688,14 @@ Some frontend-only stores persist to localStorage:
 - [x] Inter-Agent Messaging (`messaging` MCP tool: register, list_peers, send, inbox with channel push + polling fallback)
 - [x] Smart Prompts (29 built-in AI prompts with context variable resolution, shell/inject/headless-CLI execution, toolbar dropdown, SmartButtonStrip, Command Palette integration). The `api` execution mode runs one unattended ego turn over ACP (#787-ee50): a session with no MCP server, every question refused, the final text routed to the prompt's output target. Its old executor — a direct provider call from TUICommander — went with the embedded engine (#784-0aec) and did not come back
 - [x] AI Chat panel (`Cmd+Alt+A`) — ego over ACP (#785-58ca), bound to a repository and ACP session rather than a terminal. TUICommander renders the journal, permissions, elicitation forms, plans and session controls while carrying no LLM client or provider API key of its own. The selected session is saved per root and restored after restart; the picker lists ego's durable sessions by title and activity time (#1071-46c9)
+- [x] AI Chat image paste before connection — discover image capability on first paste, and share Finder/text clipboard selection with Ideas and Compose.
+
 - [x] AI Chat image paste — supported images stage removable previews and become ACP image content blocks when the agent advertises image prompts
 - [x] AI Chat session details — ACP title updates rename the header and picker; context-window use and reported cost appear in the footer; a session settings dialog labels every select option and the one-row control bar summarizes the model's short name and mode beside named icon actions
 - [x] AI Chat transcript and tabs — selectable messages, with message Copy on hover or keyboard focus; sent prompts reconciled with ego's chunked echo; copyable code and tool output; trailing `suggest:` tokens rendered as reply buttons; terminal-shared web and file link handlers; parallel ACP sessions with independent drafts and transcripts; only running tool calls pulse
 - [x] AI Chat transcript polish — collapsed tool rows show short names, message Copy keeps its own space, and streaming follows the bottom until the reader scrolls up
+- [x] Desktop AI Chat composer actions reuse the terminal composer pin/play icons and button sizes; tooltips and accessible names distinguish Send, Queue and parked drafts.
+
 - [x] AI Chat composer polish — text grows to a bounded height and pastes over 200 words stay compact until the full text is sent
 - [x] AI Chat prompt parking — Ctrl+S or the composer control parks text and images per chat tab, swaps or restores them, and returns the parked draft after the next Send
 - [~] AI Agent loop (ReAct) — shipped, then deleted in #784-0aec with no TUICommander-side successor. ego runs its own tool loop and reaches terminals from outside, through the `session` MCP tool family, exactly as Claude Code does
@@ -721,6 +727,7 @@ Some frontend-only stores persist to localStorage:
 - [x] Earcons: an 80 ms Web Audio blip on a delivered turn and a softer one on a gate drop, keyed on the monotonic `deliveredTurns`/`droppedTurns` status counters and played only by the audio owner
 - [x] Speech is typed straight into the bound agent's composer through the framed injection write (`pty::write_voice_turn`), even while the agent is busy, and never enters the Compose queue. A confident question/permission dialog or a draft in the composer holds the turn in the hands-free mode, which retries it every tick; there is no other delivery path
 - [x] Spoken replies via local Kokoro (`speech/`), driven over IPC, HTTP and MCP by the same functions; downloadable per-language voice bundles verified by hash
+- [x] Persist Spoken replies in existing dictation settings, default on; mobile and Settings mute the server voice tool without disarming capture. Edge HTTP 401/403 suppresses retries for five minutes and sends one asynchronous outage notice to the bound conversation (#1659-f3cc)
 - [x] The conversation holds one language end to end — Whisper's detection picks the voice and the model is asked to answer in it
 - [x] Barge-in — WebRTC AEC3 (`echo.rs`) keeps our own reply out of the segmenter; the user talking stops playback and opens the next turn (measured: 200 ms stop latency — hush waits for `min_speech_ms` of speech so residual echo cannot stop a reply — 0 false triggers)
 - [x] Download progress and utterance state are pushed on `/events` as well as to the desktop window, from one serialized payload per event; utterance transitions come from the render thread that performs them, through an observer port, so `finished` and `interrupted` reach a client that never polls
@@ -814,3 +821,34 @@ Plans and Stories run history contains a read-only incident projection owned by 
 ### Conversation-specific AI Chat launch (implemented)
 
 Custom conversations snapshot executable/profile/workspace overrides in `ai_chat_launches`, keyed by ego session id, and retain a host-issued peer identity. Each has its own ACP connection; default chats continue on the shared default connection. The header shows saved launch values. `acp_chat_open` and `POST /acp/chat/open` create or reopen the same conversation. MCP inbox reads emit content-free INFO audit events with protocol caller, bound peer/owner and returned message ids.
+
+### Automation Once schedule foundation
+
+The Rust core supports one local date-time in a stored IANA timezone, alongside
+cron. Creation rejects elapsed instants and spring gaps; folds use the earlier
+instant. Once has one scheduled occurrence, a completed state after consumption,
+and a retained definition. The scheduler uses durable occurrence reservation to
+prevent restart/catch-up duplicates. Public API and UI integration follow the
+[Automations plan](plans/automations-scheduler.md).
+## Automations Dialog — Frontend verified, API integration pending (#1618-685b)
+
+The machine-local command-palette dialog edits cron or Once definitions and
+displays backend zone-aware previews and recent run evidence. Pause and Resume
+mutate only enabled by id, preserving concurrent agent edits and unsaved drafts.
+Once keeps `once_local` as a wall time; the backend owns timezone resolution and
+completed-occurrence evidence. One injectable adapter isolates Step 8 envelopes.
+Targeted frontend tests verify this boundary; real scheduler integration remains
+a separate requirement before the feature is available.
+
+The shared backend now starts an owner-guarded Once runtime on desktop and
+headless boot. It claims reservations before effects, rechecks definitions and
+destinations, uses the configured workspace base/profile and literal prompt,
+and saves precheck pass/refusal/manual-bypass/no-check outcomes and launch ids.
+Cron dispatch stays disabled in phase 1. Public execution transports and
+completion/maximum-duration handling remain pending; idle is not success.
+
+Automation completion core (#1616-1882): task, known PTY exit and durable progress
+provide result provenance. Idle is not success; lost completion is unknown.
+Persisted deadlines include precheck and needs-you time, stop only owned sessions,
+and preserve immutable terminal history with 256 KiB output snapshots. Transitions
+use desktop and SSE dual-emission; boot interrupts open runs without retry.

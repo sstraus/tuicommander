@@ -32,6 +32,7 @@ import { keyFor } from "../../utils/hotkey";
 import { isPerfDebug } from "../../utils/perfDebug";
 import { safeUnlisten } from "../../utils/safeUnlisten";
 import { isSuspendingOrSuspended, resumeTerminal } from "../../utils/suspendTerminal";
+import type { TranscriptSearchRef } from "../AIChatPanel/Transcript";
 import { createSearchVisibility } from "../shared/SearchBar";
 import { handleAgentExitCompletion } from "./agentExitCompletion";
 import { getAwaitingInputSound } from "./awaitingInputSound";
@@ -192,6 +193,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
 	const [canvasTerminalRef, setCanvasTerminalRef] = createSignal<CanvasTerminalRef | undefined>();
 	let pendingCanvasFocus = false;
+	let chatSearchRef: TranscriptSearchRef | undefined;
 
 	const {
 		visible: searchVisible,
@@ -211,6 +213,8 @@ export const Terminal: Component<TerminalProps> = (props) => {
 	const composeDocked = () => chatActive() || composePinned();
 	createEffect(
 		on(chatActive, (active) => {
+			closeSearchBar();
+			chatSearchRef?.close();
 			if (active) setComposeFocusRequest((n) => n + 1);
 		}),
 	);
@@ -1073,8 +1077,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
 			else pendingCanvasFocus = true;
 		},
 		getSessionId: () => sessionId,
-		openSearch: () => openSearchBar(),
-		closeSearch: () => closeSearchBar(),
+		openSearch: () => {
+			if (chatActive()) chatSearchRef?.open();
+			else openSearchBar();
+		},
+		closeSearch: () => {
+			closeSearchBar();
+			chatSearchRef?.close();
+		},
 		toggleCompose: () => {
 			if (chatActive()) {
 				setComposeFocusRequest((n) => n + 1);
@@ -1252,7 +1262,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 		const path = e.dataTransfer?.getData("application/x-tuic-path");
 		if (!path || !sessionId) return;
 		e.preventDefault();
-		const quoted = `'${path.replace(/'/g, "'\\''")}' `;
+		const quoted = `'${path.replaceAll("'", "'\\''")}' `;
 		pty.write(sessionId, quoted);
 		canvasTerminalRef()?.focus();
 	};
@@ -1416,7 +1426,15 @@ export const Terminal: Component<TerminalProps> = (props) => {
 				</Show>
 			</div>
 			<Show keyed when={chatActive() ? _currentSessionId() : null}>
-				{(sid) => <TerminalChatView terminalId={props.id} sessionId={sid} />}
+				{(sid) => (
+					<TerminalChatView
+						terminalId={props.id}
+						sessionId={sid}
+						onSearchRef={(ref) => {
+							chatSearchRef = ref;
+						}}
+					/>
+				)}
 			</Show>
 			<Show when={!composeOpen() && !chatActive()}>
 				<div

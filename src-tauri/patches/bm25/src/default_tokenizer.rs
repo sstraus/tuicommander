@@ -1,9 +1,9 @@
-use cached::proc_macro::cached;
 use rust_stemmers::{Algorithm as StemmingAlgorithm, Stemmer};
 use std::{
     borrow::Cow,
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     fmt::{self, Debug},
+    sync::{LazyLock, Mutex},
 };
 use stop_words::LANGUAGE as StopWordLanguage;
 #[cfg(feature = "language_detection")]
@@ -139,9 +139,43 @@ fn normalize(text: &str) -> Cow<'_, str> {
     deunicode::deunicode_with_tofu_cow(text, "[?]")
 }
 
-#[cached(size = 16)]
+// TUICommander patch: retain the bounded stopword LRU without cached's macros.
+#[derive(Default)]
+struct StopwordCache(VecDeque<(Language, bool, HashSet<String>)>);
+
+impl StopwordCache {
+    fn get(&mut self, language: &Language, normalized: bool) -> Option<HashSet<String>> {
+        let index = self
+            .0
+            .iter()
+            .position(|(lang, norm, _)| lang == language && *norm == normalized)?;
+        let entry = self.0.remove(index)?;
+        let words = entry.2.clone();
+        self.0.push_front(entry);
+        Some(words)
+    }
+
+    fn insert(&mut self, language: Language, normalized: bool, words: HashSet<String>) {
+        if let Some(index) = self
+            .0
+            .iter()
+            .position(|(lang, norm, _)| *lang == language && *norm == normalized)
+        {
+            self.0.remove(index);
+        }
+        self.0.push_front((language, normalized, words));
+        self.0.truncate(16);
+    }
+}
+
 fn get_stopwords(language: Language, normalized: bool) -> HashSet<String> {
-    match TryInto::<StopWordLanguage>::try_into(&language) {
+    static CACHE: LazyLock<Mutex<StopwordCache>> =
+        LazyLock::new(|| Mutex::new(StopwordCache::default()));
+    let mut cache = CACHE.lock().expect("stopword cache lock poisoned");
+    if let Some(words) = cache.get(&language, normalized) {
+        return words;
+    }
+    let words = match TryInto::<StopWordLanguage>::try_into(&language) {
         Err(_) => HashSet::new(),
         Ok(lang) => stop_words::get(lang)
             .iter()
@@ -150,7 +184,9 @@ fn get_stopwords(language: Language, normalized: bool) -> HashSet<String> {
                 false => w.to_string(),
             })
             .collect(),
-    }
+    };
+    cache.insert(language, normalized, words.clone());
+    words
 }
 
 fn get_stemmer(language: &Language) -> Stemmer {
@@ -381,11 +417,38 @@ impl DefaultTokenizerBuilder {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_data_loader::tests::{read_recipes, Recipe};
+    use crate::test_data_loader::tests::{Recipe, read_recipes};
 
     use super::*;
 
     use insta::assert_debug_snapshot;
+
+    // Catches cached stopwords leaking across languages or normalization settings.
+    #[test]
+    fn alternating_languages_and_normalization_keep_their_own_stopwords() {
+        // The shipped English lists contain "the"; French contains "été", not "ete".
+        // Literal expected tokens must not be derived from the cache or dictionary helper.
+        let cases = [
+            (Language::French, false, vec!["the", "ete", "nebula"]),
+            (Language::English, true, vec!["ete", "ete", "nebula"]),
+            (Language::French, true, vec!["the", "nebula"]),
+            (Language::English, false, vec!["été", "ete", "nebula"]),
+        ];
+        for _ in 0..2 {
+            for (language, normalization, expected) in &cases {
+                let tokenizer = DefaultTokenizer::builder()
+                    .language_mode(language.clone())
+                    .normalization(*normalization)
+                    .stemming(false)
+                    .build();
+                assert_eq!(
+                    Tokenizer::tokenize(&tokenizer, "the été ete nebula"),
+                    *expected,
+                    "language={language:?}, normalization={normalization}"
+                );
+            }
+        }
+    }
 
     fn tokenize_recipes(recipe_file: &str, language_mode: LanguageMode) -> Vec<Vec<String>> {
         let recipes = read_recipes(recipe_file);
@@ -490,7 +553,9 @@ mod tests {
 
         assert_eq!(
             tokens,
-            vec!["connect", "connect", "connect", "connect", "connect", "connect"]
+            vec![
+                "connect", "connect", "connect", "connect", "connect", "connect"
+            ]
         );
     }
 

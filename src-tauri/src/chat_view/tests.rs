@@ -156,3 +156,53 @@ fn view_restarts_when_the_file_shrinks() {
     let (_, updates) = view.log.since(Some(view.log.epoch), 0);
     assert_eq!(texts(&updates), ["new"]);
 }
+
+// Catches: mid-turn human attachments disappear on attach or live tail, or queue metadata duplicates them.
+#[test]
+fn queued_human_prompts_survive_full_load_and_incremental_tail() {
+    let fixture = include_str!("../fixtures/chat_view/recorded/queued-human.jsonl");
+    let rows: Vec<Value> = fixture
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect();
+    let expected: Vec<Value> = rows.iter().filter_map(|row| {
+        if row["type"] == "assistant" {
+            let text = row["message"]["content"].as_array()?.iter().find(|b| b["type"] == "text")?["text"].as_str()?;
+            Some(json!({"sessionUpdate":"agent_message_chunk", "messageId":row["message"]["id"], "content":{"type":"text","text":text}}))
+        } else if row.pointer("/attachment/origin/kind") == Some(&json!("human")) {
+            Some(json!({"sessionUpdate":"user_message_chunk", "messageId":row["uuid"], "content":{"type":"text","text":row["attachment"]["prompt"]}}))
+        } else { None }
+    }).collect();
+    assert_eq!(
+        expected.len(),
+        3,
+        "two real assistant blocks around the queued human prompt"
+    );
+    let tmp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let path = tmp.path().join("queued.jsonl");
+    std::fs::write(&path, fixture).unwrap();
+    let mut full = View::new(path.clone(), 100, usize::MAX);
+    full.advance(TAIL_WINDOW_BYTES).unwrap();
+    assert_eq!(
+        full.log.since(None, 0).1,
+        expected,
+        "full load lost queued human prompt"
+    );
+    std::fs::write(&path, "").unwrap();
+    let mut tail = View::new(path.clone(), 100, usize::MAX);
+    tail.advance(TAIL_WINDOW_BYTES).unwrap();
+    for line in fixture.lines() {
+        append(&path, line);
+        tail.advance(TAIL_WINDOW_BYTES).unwrap();
+    }
+    assert_eq!(
+        tail.log.since(None, 0).1,
+        expected,
+        "live tail lost or duplicated queued human prompt"
+    );
+    assert!(
+        !tail.advance(TAIL_WINDOW_BYTES).unwrap(),
+        "unchanged file replays no prompts"
+    );
+    assert_eq!(tail.adapter.stats.unknown_rows, 0);
+}

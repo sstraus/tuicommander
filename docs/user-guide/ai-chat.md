@@ -27,6 +27,10 @@ existing warning notices. The repository cannot raise the machine policy.
 A repo selection requires an explicit machine profile and an ego build that
 acknowledges the ceiling. Without a repo selection, launch behavior is unchanged.
 
+Desktop composer actions use the same pin and blue play icons as the terminal Compose panel. The pin parks a draft and highlights when one is parked. Its tooltip offers restore or swap. The play button sends while idle and queues while ego is busy.
+
+Pasting an image starts ego when needed before checking image support. Finder image copies attach the image rather than its filename; mixed clipboard data with substantive text pastes as text, as in Ideas and terminal Compose.
+
 ## Opening it
 
 `Cmd+Alt+A` (macOS) / `Ctrl+Alt+A` toggles the panel; so do the status-bar
@@ -116,7 +120,7 @@ Files open in TUICommander's viewer or editor, while directories open in the
 file browser, including when AI Chat is detached.
 With focus in the transcript, `Cmd/Ctrl+A` selects that transcript,
 `Cmd/Ctrl+F` opens its search, and `Cmd/Ctrl+K` clears the visible history of
-the current tab. Clearing the view does not delete ego's saved conversation.
+the current tab. Search matches displayed prose with collapsed whitespace; code blocks retain literal whitespace. Clearing the view does not delete ego's saved conversation.
 
 Paste a PNG, JPEG, GIF or WebP image into the composer to preview it before
 sending. Remove a preview with its close button if you change your mind. An

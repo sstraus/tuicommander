@@ -98,6 +98,8 @@ pub(crate) mod memory_report;
 #[cfg(feature = "desktop")]
 mod menu;
 #[cfg(feature = "desktop")]
+mod native_clipboard;
+#[cfg(feature = "desktop")]
 mod native_dialog;
 #[cfg(feature = "desktop")]
 mod native_drag;
@@ -1263,6 +1265,18 @@ where
 async fn recheck_tailscale_status(
     state: State<'_, Arc<AppState>>,
 ) -> Result<tailscale::TailscaleState, String> {
+    let new_state = tokio::task::spawn_blocking(tailscale::detect)
+        .await
+        .map_err(|e| format!("detect task failed: {e}"))?;
+    Ok(apply_tailscale_status(&state, new_state))
+}
+
+/// Publish a fresh detection through the same state used by the Host guard.
+fn apply_tailscale_status(
+    state: &Arc<AppState>,
+    new_state: tailscale::TailscaleState,
+) -> tailscale::TailscaleState {
+    #[cfg(feature = "desktop")]
     let old_https = matches!(
         *state.tailscale_state.read(),
         tailscale::TailscaleState::Running {
@@ -1271,10 +1285,7 @@ async fn recheck_tailscale_status(
         }
     );
 
-    let new_state = tokio::task::spawn_blocking(tailscale::detect)
-        .await
-        .map_err(|e| format!("detect task failed: {e}"))?;
-
+    #[cfg(feature = "desktop")]
     let new_https = matches!(
         new_state,
         tailscale::TailscaleState::Running {
@@ -1286,6 +1297,7 @@ async fn recheck_tailscale_status(
     *state.tailscale_state.write() = new_state.clone();
 
     // Restart server if HTTPS availability changed (HTTP→HTTPS or HTTPS→HTTP)
+    #[cfg(feature = "desktop")]
     if old_https != new_https && state.config.read().services.server.enabled {
         tracing::info!(
             source = "tailscale",
@@ -1296,7 +1308,30 @@ async fn recheck_tailscale_status(
         restart_server(&state, "Tailscale HTTPS availability changed");
     }
 
-    Ok(new_state)
+    new_state
+}
+
+#[cfg(any(not(feature = "desktop"), test))]
+/// Retry often enough to recover boot ordering without continuously spawning CLI processes.
+const TAILSCALE_REFRESH_INTERVAL: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Refresh after boot; daemon TLS stays under its explicit manual/off configuration.
+#[cfg(any(not(feature = "desktop"), test))]
+async fn maintain_tailscale_status<D, F>(state: Arc<AppState>, mut detect: D)
+where
+    D: FnMut() -> F,
+    F: std::future::Future<Output = tailscale::TailscaleState>,
+{
+    let mut ticks = tokio::time::interval_at(
+        tokio::time::Instant::now() + TAILSCALE_REFRESH_INTERVAL,
+        TAILSCALE_REFRESH_INTERVAL,
+    );
+    ticks.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    loop {
+        ticks.tick().await;
+        let detected = detect_tailscale_bounded(detect()).await;
+        apply_tailscale_status(&state, detected);
+    }
 }
 
 /// Relay client status (enabled, connected, url, session_id).
@@ -1600,6 +1635,7 @@ pub fn run() {
                 .expect("Failed to create tokio runtime for HTTP server");
             rt.block_on(async move {
                 spawn_background_tasks(&server_state);
+                telegram::start(&server_state);
 
                 tokio::spawn(relay_client::supervise(server_state.clone(), relay_rx));
 
@@ -1762,7 +1798,7 @@ pub fn run() {
             }
         })
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_clipboard_manager::init());
+        .manage(native_clipboard::NativeClipboard::default());
 
     #[cfg(feature = "desktop")]
     let builder = builder.manage(sleep_prevention::SleepBlocker::new());
@@ -1967,6 +2003,8 @@ pub fn run() {
             telegram::settings::telegram_setup,
             generators::generate_value,
             native_dialog::pick_path,
+            native_clipboard::write_clipboard_text,
+            native_clipboard::read_clipboard_text,
             native_drag::start_native_drag,
             remote_connection::list_remote_connections,
             remote_connection::save_remote_connection,
@@ -2516,6 +2554,7 @@ pub fn run() {
                 // streaming thread (which holds an Arc<WhisperContext>), then drops
                 // the transcriber while the process is still alive.
                 tauri::RunEvent::Exit => {
+                    app_handle.state::<native_clipboard::NativeClipboard>().clear();
                     workflows::shutdown_checks();
                     #[cfg(feature = "dictation")]
                     if let Some(dictation) = app_handle.try_state::<dictation::DictationState>() {
@@ -2557,6 +2596,7 @@ fn build_connect_url(scheme: &str, host: &str, port: u16, token: &str) -> String
 /// Spawn background tasks shared by both desktop and headless modes.
 fn spawn_background_tasks(state: &Arc<AppState>) {
     workflows::WorkflowRuntime::spawn(state);
+    automations::runtime::AutomationRuntime::spawn(state);
     AppState::spawn_session_state_accumulator(state.clone());
     idle_close::spawn(state.clone());
     AppState::spawn_acp_notice_pump(state.clone());
@@ -2632,6 +2672,7 @@ pub fn set_password_interactive() -> anyhow::Result<()> {
 #[cfg(not(feature = "desktop"))]
 fn spawn_daemon_background_tasks(state: &Arc<AppState>) {
     workflows::WorkflowRuntime::spawn(state);
+    automations::runtime::AutomationRuntime::spawn(state);
     AppState::spawn_session_state_accumulator(state.clone());
     idle_close::spawn(state.clone());
     AppState::spawn_acp_notice_pump(state.clone());
@@ -2849,12 +2890,18 @@ pub async fn run_remote(mut options: RemoteOptions) -> anyhow::Result<()> {
     let state = Arc::new(app_state);
     // The Host guard trusts the Tailscale FQDN only while the state is Running, so
     // the daemon must detect it like the desktop boot does (#1535).
-    *state.tailscale_state.write() = detect_tailscale_bounded(async {
+    let detected = detect_tailscale_bounded(async {
         tokio::task::spawn_blocking(tailscale::detect)
             .await
             .unwrap_or(tailscale::TailscaleState::NotInstalled)
     })
     .await;
+    apply_tailscale_status(&state, detected);
+    tokio::spawn(maintain_tailscale_status(state.clone(), || async {
+        tokio::task::spawn_blocking(tailscale::detect)
+            .await
+            .unwrap_or(tailscale::TailscaleState::NotInstalled)
+    }));
     state.wire_event_bus();
     crate::github_auth::spawn_deferred_token_resolution(state.clone());
 

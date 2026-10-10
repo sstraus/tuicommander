@@ -7,6 +7,8 @@ import { appLogger } from "../../stores/appLogger";
 import { generateId } from "../../stores/ideas";
 import { cx } from "../../utils";
 import { savePastedImage } from "../../utils/pastedImage";
+import { ComposePinIcon, ComposeSendIcon } from "../shared/ComposeActionIcons";
+import actions from "../shared/ComposeActions.module.css";
 import s from "./ComposePanel.module.css";
 
 const composeTheme = EditorView.theme(
@@ -386,14 +388,12 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 					</Show>
 					<Show when={!props.persistent?.()}>
 						<button
-							class={cx(s.pinButton, props.pinned() && s.pinButtonActive)}
+							class={cx(actions.pinButton, props.pinned() && actions.pinButtonActive)}
 							onClick={() => props.onTogglePin()}
 							title={props.pinned() ? "Unpin from the terminal bottom" : "Pin to the terminal bottom"}
 							aria-pressed={props.pinned()}
 						>
-							<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
-								<path d="M10.5 1.5l4 4-1 1-.8-.3-2.6 2.6.4 2.7-1 1-2.8-2.8L3 13.4l-.4-.4 3.7-3.7-2.8-2.8 1-1 2.7.4 2.6-2.6-.3-.8z" />
-							</svg>
+							<ComposePinIcon />
 						</button>
 						<span class={s.divider} aria-hidden="true" />
 					</Show>
@@ -408,10 +408,8 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 							</svg>
 						</button>
 					</Show>
-					<button class={s.sendButton} onClick={handleSend} title="Send (Ctrl+Enter)">
-						<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
-							<path d="M4 2l10 6-10 6V2z" />
-						</svg>
+					<button class={actions.sendButton} onClick={handleSend} title="Send (Ctrl+Enter)">
+						<ComposeSendIcon />
 					</button>
 					<Show when={!props.persistent?.()}>
 						<span class={s.divider} aria-hidden="true" />

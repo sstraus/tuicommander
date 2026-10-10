@@ -2,6 +2,7 @@ import { createStore, produce } from "solid-js/store";
 import { invoke, listen } from "../invoke";
 import type { AcpSessionUpdate } from "../types/acp";
 import { acpTranscript } from "./acpTranscript";
+import { appLogger } from "./appLogger";
 import type { TerminalData } from "./terminals";
 
 /**
@@ -34,6 +35,7 @@ interface ChatViewState {
 }
 
 const inFlight = new Map<string, { again: boolean }>();
+const watchOwners = new Map<string, symbol>();
 
 const [state, setState] = createStore<ChatViewState>({ cursors: {}, unavailable: {} });
 
@@ -67,9 +69,17 @@ function isNotBound(error: unknown): string | null {
 	return match ? match[1].trim() : null;
 }
 
+function warnRefresh(sessionId: string, error: unknown): void {
+	appLogger.warn("terminal", "Chat view refresh failed", {
+		sessionId,
+		error: error instanceof Error ? error.message : String(error),
+	});
+}
+
 async function readOnce(sessionId: string): Promise<void> {
 	const key = chatViewKey(sessionId);
 	const cursor = state.cursors[sessionId];
+	const owner = watchOwners.get(sessionId);
 	// Not watched: nobody asked for this view, or it was closed.
 	if (!cursor) return;
 	let snapshot: ChatViewSnapshot;
@@ -80,13 +90,15 @@ async function readOnce(sessionId: string): Promise<void> {
 			fromSeq: cursor.nextSeq,
 		});
 	} catch (error) {
+		if (watchOwners.get(sessionId) !== owner) return;
 		const reason = isNotBound(error);
 		if (reason === null) throw error;
+		warnRefresh(sessionId, error);
 		setState("unavailable", sessionId, reason);
 		return;
 	}
 	// A reply that arrives after the view was closed must not resurrect state.
-	if (!state.cursors[sessionId]) return;
+	if (!state.cursors[sessionId] || watchOwners.get(sessionId) !== owner) return;
 	if (snapshot.reset) acpTranscript.clear(key);
 	for (const update of snapshot.updates) {
 		acpTranscript.applyFrame({
@@ -143,6 +155,9 @@ export const chatViewStore = {
 				run.again = false;
 				await readOnce(sessionId);
 			} while (run.again);
+		} catch (error) {
+			warnRefresh(sessionId, error);
+			throw error;
 		} finally {
 			inFlight.delete(sessionId);
 		}
@@ -150,12 +165,19 @@ export const chatViewStore = {
 
 	/** Refresh on every wake for one terminal. Returns the disposer. */
 	async watch(sessionId: string): Promise<() => void> {
+		const owner = Symbol();
+		watchOwners.set(sessionId, owner);
 		setState("cursors", sessionId, { epoch: null, nextSeq: 0 });
 		const unlisten = await listen<{ session_id: string }>("chat-view-changed", (event) => {
-			if (event.payload.session_id === sessionId) void chatViewStore.refresh(sessionId).catch(() => {});
+			if (event.payload.session_id === sessionId && watchOwners.get(sessionId) === owner) {
+				// refresh logs the failure; a later wake/keepalive retries it.
+				void chatViewStore.refresh(sessionId).catch(() => {});
+			}
 		});
 		return () => {
 			unlisten();
+			if (watchOwners.get(sessionId) !== owner) return;
+			watchOwners.delete(sessionId);
 			setState(
 				produce((s) => {
 					delete s.cursors[sessionId];
@@ -168,6 +190,7 @@ export const chatViewStore = {
 	/** Tests only. */
 	reset(): void {
 		inFlight.clear();
+		watchOwners.clear();
 		setState({ cursors: {}, unavailable: {} });
 	},
 };

@@ -124,6 +124,10 @@ Implements the legacy MCP Streamable HTTP transport (revision 2025-11-25):
 4. **`health_check()`** — Pings via `tools/list`. Used by the background health checker.
 5. **`shutdown()`** — Sends `DELETE /mcp` with the session ID to cleanly terminate the upstream session.
 
+Custom HTTP headers are configured as `headers: [{name, credential_ref}]` on each server. The reference is a UUID; each value is stored through the existing upstream credential vault under an upstream-scoped key (`<name>/header/<uuid>`), separate from the Bearer/OAuth entry. No secret read API is exposed to the editor. POST requests and session DELETE resolve values in the backend at request time, so rotation takes effect without caching values in the client. Legacy configs omit `headers` and require no migration.
+
+Header names use HTTP token syntax and are case-insensitively unique. Authorization cannot coexist with Bearer/OAuth; routing, framing and MCP transport headers are reserved. Values are validated without including them in errors and marked sensitive in reqwest. Same-origin redirects retain credentials, while the redirect policy stops cross-origin hops before a request reaches the new origin. Upstream response bodies and authentication challenge parameters are excluded from diagnostics because a server can echo credentials.
+
 The User-Agent header is set to `tuicommander-mcp-proxy/{version}`. Every POST
 also carries `MCP-Protocol-Version: 2025-11-25`; the stdio client offers the
 same revision during initialization.

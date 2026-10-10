@@ -47,12 +47,12 @@ ideas
 .claude
 .aider*
 benchmarks
-CLAUDE.md
 .mdkb
 scripts/*
 !scripts/agent_capture/
 !scripts/replay-oracle.sh
 !scripts/record-chat-fixtures.py
+!scripts/chat-view-follow-proof.mjs
 !scripts/build-docs.sh
 !scripts/dev-install.sh
 !scripts/dev-server.mjs

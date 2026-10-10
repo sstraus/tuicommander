@@ -19,3 +19,9 @@ Cargo normal/build graph: headless 511 packages; desktop 680; desktop+dictation 
 ## Verification limitations
 
 Graph commands inspect feature resolution; they do not prove linking/runtime behavior. Exact matched-load fresh-worktree build-time comparison has not been performed. Prior native baseline from tuic-c-build was 253.01 s on an uncontrolled loaded Mac; it cannot be compared with rb or warm checks. Broad suites/mutation, native macOS/Windows checks, full release packaging and real audio hardware checks belong to the coordinator/Boss. Targeted compile/tests are recorded separately in validation logs.
+
+## Stage A follow-up — 2026-10-09
+
+PKCE now uses the existing sha2, base64 and rand dependencies: 32 random verifier bytes, URL-safe base64 without padding, and an S256 challenge. The RFC 7636 appendix B vector protects the encoding. The BM25 fork keeps its 16-entry stopword LRU, keyed by language and normalization, with standard-library storage. Generated IDs keep 24 lowercase base36 characters and a leading letter, sampled with the existing cryptographic random generator. WebSocket clients share tungstenite 0.29 with axum.
+
+ZIP defaults remain enabled. Plugin archives have no compression-method restriction, so removing codecs would reject previously supported archives. This stage skips that reduction to preserve behavior.

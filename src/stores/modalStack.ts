@@ -26,7 +26,7 @@ let listenerInstalled = false;
 function handleCaptureKeydown(e: KeyboardEvent) {
 	if (e.key !== "Escape") return;
 	if (stack.length === 0) return;
-	const top = stack[stack.length - 1];
+	const top = stack.at(-1)!;
 	// Consume the event before it can reach the terminal (or any other handler):
 	// a modal is open, so Escape belongs to it and nothing else.
 	e.preventDefault();

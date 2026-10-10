@@ -253,7 +253,7 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 
 		if (sortBy() === "date") {
 			// Flat list sorted by modification time (newest first), single group with empty key
-			const sorted = [...allFiles].sort((a, b) => b.modified_at - a.modified_at);
+			const sorted = allFiles.toSorted((a, b) => b.modified_at - a.modified_at);
 			return [["", sorted]] as [string, MdFileEntry[]][];
 		}
 

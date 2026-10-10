@@ -49,7 +49,7 @@ pub fn generate_value(request: GeneratorRequest) -> Result<GeneratorResult, Stri
                 GeneratorRequest::UuidV4 => uuid::Uuid::new_v4().to_string(),
                 GeneratorRequest::UuidV7 => uuid::Uuid::now_v7().to_string(),
                 GeneratorRequest::Ulid => ulid::Ulid::generate().to_string(),
-                GeneratorRequest::Cuid2 => cuid2::create_id(),
+                GeneratorRequest::Cuid2 => gen_cuid2(),
                 GeneratorRequest::JwtSecret => gen_hex_bytes(32),
                 GeneratorRequest::TotpSecret => gen_base32_bytes(20),
                 GeneratorRequest::NanoId { length } => gen_nanoid(length),
@@ -62,6 +62,18 @@ pub fn generate_value(request: GeneratorRequest) -> Result<GeneratorResult, Stri
             })
         }
     }
+}
+
+// Preserve CUID2's public shape with 121 bits of independently sampled entropy.
+fn gen_cuid2() -> String {
+    const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+    let mut rng = rand::rng();
+    let mut id = String::with_capacity(24);
+    id.push(ALPHABET[random_idx(&mut rng, 26)] as char);
+    for _ in 1..24 {
+        id.push(ALPHABET[random_idx(&mut rng, ALPHABET.len())] as char);
+    }
+    id
 }
 
 fn gen_password(
@@ -243,6 +255,30 @@ mod tests {
     fn cuid2_non_empty() {
         let r = genv(GeneratorRequest::Cuid2);
         assert!(!r.value.is_empty());
+    }
+
+    // Catches changing the public 24-character, lowercase base36 ID format.
+    #[test]
+    fn cuid2_replacement_keeps_length_alphabet_and_letter_prefix() {
+        let mut seen = std::collections::HashSet::new();
+        for _ in 0..256 {
+            let id = gen_cuid2();
+            assert_eq!(id.len(), 24);
+            assert!(id.as_bytes()[0].is_ascii_lowercase());
+            assert!(
+                id.bytes()
+                    .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+            );
+            assert!(seen.insert(id));
+        }
+        let public_id = genv(GeneratorRequest::Cuid2).value;
+        assert_eq!(public_id.len(), 24);
+        assert!(public_id.as_bytes()[0].is_ascii_lowercase());
+        assert!(
+            public_id
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit())
+        );
     }
 
     #[test]

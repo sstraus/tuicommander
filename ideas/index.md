@@ -23,6 +23,7 @@ Feature concepts under evaluation for TUICommander. Each idea lives in its own f
 | `moved` | Remote Repo Browser (pick a repo on a `tuic-remote` machine instead of typing its path) | [remote-repo-browser.md](remote-repo-browser.md) |
 | `concept` | Kokoro Neural TTS as a Downloadable Addon (parked behind the `tuic-voice` plugin) | [kokoro-tts-addon.md](kokoro-tts-addon.md) |
 | `moved` | Build Artifacts Cleaner (scan/clean target, node_modules, .venv; threshold alerts) | [build-cleaner-plugin.md](build-cleaner-plugin.md) |
+| `concept` | VM / Computer Use (Linux desktop container an agent drives via Cua MCP, noVNC viewer; parked, from the OpenMausBot study) | [vm-computer-use.md](vm-computer-use.md) |
 | `concept` | MCP Channels (push peer mail + permission relay into agent sessions) | [mcp-channels.md](mcp-channels.md) |
 | `concept` | MCP 2026-07-28 Modern Era (server/discover, stateless identity, tasks/* front door) | [mcp-2026-07-28-modern-era.md](mcp-2026-07-28-modern-era.md) |
 | `concept` | SSH Native Connections (config-aware, managed, remote integration) | [ssh-native-connections.md](ssh-native-connections.md) |

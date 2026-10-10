@@ -499,6 +499,8 @@ Validation and the runtime registry diff use the exact merged pre/post values
 from the locked transaction. The lock is released before asynchronous reconnect
 work starts.
 
+Header metadata uses an explicit empty array when no headers remain, so removing the last header stays a valid config delta. Authenticated HTTP upstreams cannot change origin in place. The locked save compares the latest prior entries by ID or credential-owning name, before persistence and activation, even if the request clears auth/header metadata. Use a separate upstream name for another provider. Same-origin path edits remain allowed.
+
 **Commands:** `load_mcp_upstreams()`, `save_mcp_upstreams(base, config)`
 
 ### Notification Config (`notifications.json`)
@@ -916,6 +918,8 @@ The families that stay local are the ones describing this app rather than a mach
 `repositories.json` — the last definitionally so, since it is the list deciding which
 repository maps to which machine.
 
+The hands_free_spoken_replies boolean defaults to true and persists on the server device. Turning it off cancels the current speech queue and keeps dictation armed.
+
 ### Dictation Config (`dictation-config.json`)
 
 **Type:** `DictationConfig`
@@ -1179,7 +1183,8 @@ Each definition stores:
 | `id`, `name`, `prompt` | Stable id, display name and literal agent prompt |
 | `run_config`, `repository` | Agent run-config name and repository workspace |
 | `workspace` | `{ "mode": "existing" }` or `{ "mode": "new_per_run", "base_branch": "main" }` |
-| `cron`, `timezone` | Five-field schedule text and the per-automation IANA zone |
+| `cron`, `timezone` | Five-field schedule text (empty for Once) and the per-automation IANA zone |
+| `once_local` | Optional ISO local date-time, for example `2099-10-09T10:00:00`; mutually exclusive with nonempty cron |
 | `enabled` | Whether scheduled admission is enabled |
 | `grace_secs`, `max_duration_secs` | Positive grace and execution bounds in seconds |
 | `overlap` | `"skip"`; session reuse and queued overlap are unsupported |
@@ -1191,8 +1196,41 @@ return errors before writing. Unknown fields or malformed JSON cause the strict
 ConfigFile loader to preserve the original bytes in `.corrupt-<uuid>` recovery
 files and abort that operation. Semantic errors leave the original document in
 place. No independent unattended-permission flag exists: the run config owns
-permissions. Step 2 adds cron/IANA validation and the local-zone creation default;
-the storage foundation alone does not make a schedule executable.
+permissions.
+
+`automations/schedule.rs` validates exactly five Vixie fields, with day-of-month
+and day-of-week OR semantics when both day fields are restricted. If either day
+field starts with `*` (including `*/2`), both day fields must match. An explicit
+range such as `1-31/2` remains restricted. Seconds, years, shorthand macros and Quartz
+extensions are rejected. Named months/weekdays, ranges, lists and steps are
+supported. Patterns with no possible calendar occurrence return a bounded error;
+croner 4.0.1 limits its search iterations and years (through year 5000).
+
+At creation an omitted (empty internal) timezone is resolved with the operating
+system's local IANA zone and persisted. Failure to discover a supported zone is
+an error, with no UTC fallback. Loads and edits require a valid stored zone;
+they never reinterpret missing zones using the current host. Schedule evaluation
+uses chrono-tz 0.10.4 and the stored zone. Next occurrences are strictly after
+the supplied UTC instant; latest-due occurrences include that instant and must
+be strictly after an optional scheduled cursor.
+
+Fixed single wall-clock times skip spring gaps and run once, at the earlier
+fall-fold instant. Hourly/wildcard intervals retain both real fold occurrences.
+The wrapper filters croner's shifted gap results rather than dispatching them.
+Backend hourly, daily, weekday and weekly presets validate their controls and
+produce cron text; custom cron uses the same validator. Preview returns 1–20
+UTC occurrences with the cron and zone. These are Rust core functions; public
+HTTP/IPC commands arrive in plan Step 8. This core does not dispatch agents.
+
+Once resolves its stored local date-time in the stored zone. Creation rejects
+instants at or before now and nonexistent spring-gap times. An ambiguous fold
+resolves to the earlier UTC instant. Loads retain elapsed Once definitions.
+The Rust schedule wrapper returns the sole instant before consumption, then no
+next/latest-due occurrence after the scheduled cursor reaches it. Preview returns
+at most that one future instant. A consumed Once definition is completed, remains
+stored, and can still be inspected; manual runs do not consume its schedule.
+Ledger reservation and the scheduler's durable occurrence cursor prevent replay
+on restart and catch-up. Public views use this backend state in plan Step 8.
 
 ### Automation run ledger
 
@@ -1217,7 +1255,8 @@ Retention defaults to 90 days after finalization and never removes open records.
 Notification attempts are deduplicated by run, transition and channel and settle
 as confirmed or unknown independently of execution. Boot marks outstanding
 attempts unknown; it does not replay them. Saved output remains the canonical
-report. Scheduler boot and public transports are wired in later plan steps.
+report. Scheduler boot is wired on desktop and headless hosts. Public execution
+transports remain pending; the existing MCP tool manages definitions only.
 
 ### Precheck execution foundation
 
@@ -1235,5 +1274,45 @@ reports incomplete capture as an error. Manual Run Now returns a persistable
 `bypassed` outcome without spawning; no configured precheck returns
 `not_configured`. Precheck output does not modify the prompt.
 
-This helper is the Step 5 foundation; Step 6 owns run-ledger persistence and
-runtime dispatch integration. No scheduler is started by this module.
+The shared automation runtime acquires the ledger owner lock on both desktop
+and headless boot. It reconciles open runs as interrupted without retrying,
+then admits only Once schedules on a 30-second tick. Recurring cron definitions
+remain stored but are not dispatched in phase 1.
+
+Dispatch atomically claims a reservation before workspace or agent effects,
+then checks the definition again before the precheck and before launch. Deleted,
+paused scheduled runs and changed definitions fail without launching. Manual
+runs can use paused definitions and share the same overlap/concurrency limits.
+Existing mode uses the repository; new-per-run mode uses the shared workspace
+creator with the configured base branch, preserving workflow defaults.
+
+The ledger saves `precheck_outcome` as `not_configured`, `bypassed`, or
+`executed` with termination, capped stdout/stderr, truncation and duration.
+Failed checks finalize as `skipped_precheck` without an agent. Successful checks
+retain their evidence before launch; their stdout never changes the literal
+prompt. The configured saved agent profile must exist; dispatch does not fall
+back to another CLI. Workspace path/id and task/session ids are saved after
+their effects, and errors finalize as failed. A child whose binding cannot be
+saved is stopped through the managed session API. Completion and maximum-duration
+handling remain a separate integration step; idle is not treated as success.
+
+Automation definitions may contain `created_by_session`, the host-issued identity
+of their creating agent. Older definitions omit it. Shared definition actions
+ignore client-supplied creator provenance on creation and preserve the original
+value on update. Pause and resume change only `enabled` under the definition lock.
+
+### Automation completion and deadlines
+
+Runs persist their reservation deadline and dispatch start in the ledger. The
+30-second runtime wake and PTY/progress events reconcile task, session and durable
+progress records, including after broadcast lag. Idle alone leaves a run active;
+reported completion or a known zero process exit confirms success. Failed tasks
+and nonzero exits fail the run; missing or unverifiable completion becomes
+`unknown`. A task completion with no known exit code does not prove success.
+
+`needs_you` stays open and counts toward overlap, capacity and maximum duration.
+The deadline includes dispatch and precheck time. Expiry stops only the session
+bound to that run. Final output is bounded to 256 KiB; final states reject late
+or duplicate evidence. Boot preserves final history and interrupts open runs
+without retry. `automation-run-changed` is dual-emitted to desktop and SSE with
+an identical `{ "run": ... }` payload, including failure and needs-you transitions.

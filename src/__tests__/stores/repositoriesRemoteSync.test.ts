@@ -94,7 +94,7 @@ describe("repositoriesStore remote sync", () => {
 	} | null {
 		const calls = mockInvoke.mock.calls.filter((call: unknown[]) => call[0] === "save_repositories");
 		if (calls.length === 0) return null;
-		return (calls[calls.length - 1][1] as { config: ReturnType<typeof lastSavedMutation> }).config;
+		return (calls.at(-1)![1] as { config: ReturnType<typeof lastSavedMutation> }).config;
 	}
 
 	beforeEach(async () => {
