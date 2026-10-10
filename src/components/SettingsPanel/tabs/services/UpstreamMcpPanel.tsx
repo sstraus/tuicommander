@@ -1,7 +1,13 @@
-import { type Component, createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { type Component, createEffect, createSignal, For, Index, on, onCleanup, Show } from "solid-js";
 import { useConfirmDialog } from "../../../../hooks/useConfirmDialog";
 import { appLogger } from "../../../../stores/appLogger";
-import { rpc, type UpstreamMcpConfig, type UpstreamMcpServer, type UpstreamTransport } from "../../../../transport";
+import {
+	rpc,
+	type UpstreamHeader,
+	type UpstreamMcpConfig,
+	type UpstreamMcpServer,
+	type UpstreamTransport,
+} from "../../../../transport";
 import { handleOpenUrl } from "../../../../utils/openUrl";
 import { ConfirmDialog } from "../../../ConfirmDialog";
 import { MachineSelector } from "../../MachineSelector";
@@ -52,6 +58,102 @@ export function authFromUpstreamForm(
 		...(existingOAuth?.token_endpoint ? { token_endpoint: existingOAuth.token_endpoint } : {}),
 	};
 }
+
+interface HeaderRow extends UpstreamHeader {
+	value: string;
+	saved: boolean;
+}
+
+/** Mirror HTTP token syntax for immediate form feedback; backend is authoritative. */
+export function headerFormError(rows: HeaderRow[], hasBearer: boolean): string {
+	const names = new Set<string>();
+	const reserved = new Set([
+		"host",
+		"content-length",
+		"transfer-encoding",
+		"connection",
+		"content-type",
+		"accept",
+		"mcp-session-id",
+		"mcp-protocol-version",
+		"proxy-authorization",
+		"cookie",
+	]);
+	for (const row of rows) {
+		const name = row.name.toLowerCase();
+		if (!/^[!#$%&'*+.^_`|~0-9a-z-]+$/i.test(row.name) || reserved.has(name))
+			return "Invalid or reserved custom header name";
+		if (names.has(name) || (hasBearer && name === "authorization"))
+			return "Duplicate custom header or Authorization conflicts with Bearer";
+		if (!row.saved && !row.value) return "A secret value is required for each new header";
+		if (/[\r\n]/.test(row.value)) return "Invalid custom header value";
+		names.add(name);
+	}
+	return "";
+}
+
+const HeaderRows: Component<{
+	rows: HeaderRow[];
+	onChange: (rows: HeaderRow[]) => void;
+	onError: (message: string) => void;
+}> = (props) => (
+	<div style={{ display: "grid", gap: "8px" }}>
+		<div style={{ display: "flex", "align-items": "center", "justify-content": "space-between" }}>
+			<span class={s.hint}>Secret headers</span>
+			<button
+				type="button"
+				class={s.copyBtn}
+				title="Add secret header"
+				onClick={() =>
+					props.onChange([...props.rows, { name: "", credential_ref: crypto.randomUUID(), value: "", saved: false }])
+				}
+			>
+				+
+			</button>
+		</div>
+		<Index each={props.rows}>
+			{(row, index) => (
+				<div style={{ display: "grid", "grid-template-columns": "minmax(0, 1fr) minmax(0, 1fr) auto", gap: "8px" }}>
+					<input
+						type="text"
+						class={s.input}
+						aria-label={`Header name ${index + 1}`}
+						placeholder="Header name"
+						onPaste={(e) => {
+							if (/[\r\n]/.test(e.clipboardData?.getData("text") ?? "")) {
+								e.preventDefault();
+								props.onError("Invalid or reserved custom header name");
+							}
+						}}
+						value={row().name}
+						onInput={(e) =>
+							props.onChange(props.rows.map((r, i) => (i === index ? { ...r, name: e.currentTarget.value } : r)))
+						}
+					/>
+					<input
+						type="password"
+						class={s.input}
+						aria-label={`Header secret ${index + 1}`}
+						autocomplete="new-password"
+						placeholder={row().saved ? "Saved secret (leave blank to keep)" : "Secret value"}
+						value={row().value}
+						onInput={(e) =>
+							props.onChange(props.rows.map((r, i) => (i === index ? { ...r, value: e.currentTarget.value } : r)))
+						}
+					/>
+					<button
+						type="button"
+						class={s.textBtn}
+						title={`Remove header ${index + 1}`}
+						onClick={() => props.onChange(props.rows.filter((_, i) => i !== index))}
+					>
+						−
+					</button>
+				</div>
+			)}
+		</Index>
+	</div>
+);
 
 interface StartOAuthResponse {
 	authorization_url: string;
@@ -122,9 +224,8 @@ function emptyForm() {
 		cwd: "",
 		credential: "",
 		timeout: 30,
-		// OAuth is the default: remote MCP servers overwhelmingly speak OAuth, and a
-		// pasted bearer token is the fallback for the few that only take an API key.
-		authMethod: "oauth2" as "bearer" | "oauth2",
+		authMethod: "bearer" as "bearer" | "oauth2",
+		headers: [] as HeaderRow[],
 		oauthClientId: "",
 		oauthClientSecret: "",
 		oauthScopes: "",
@@ -209,8 +310,28 @@ export const UpstreamMcpPanel: Component = () => {
 		}
 	}
 
+	async function saveHeaderRows(name: string, url: string, rows: HeaderRow[]): Promise<UpstreamHeader[]> {
+		const headers: UpstreamHeader[] = [];
+		for (const row of rows) {
+			const header = { name: row.name, credential_ref: row.value ? crypto.randomUUID() : row.credential_ref };
+			if (row.value) await rpc("save_mcp_upstream_credential", { name, url, token: row.value, header }, machine());
+			headers.push(header);
+		}
+		return headers;
+	}
+
+	async function removeHeaderCredentials(name: string, headers: UpstreamHeader[]) {
+		for (const header of headers) await rpc("delete_mcp_upstream_credential", { name, header }, machine());
+	}
+
 	async function addUpstream() {
 		const f = form();
+		const headerError =
+			f.transportType === "http" ? headerFormError(f.headers, f.authMethod === "oauth2" || !!f.credential) : "";
+		if (headerError) {
+			setError(headerError);
+			return;
+		}
 		const name = f.name.trim();
 		if (!name) {
 			setError("Name is required");
@@ -248,13 +369,21 @@ export const UpstreamMcpPanel: Component = () => {
 
 		server.auth = authFromUpstreamForm(f);
 
-		// Save credential before persisting config (ignored if empty)
-		if (f.credential && f.authMethod === "bearer") {
-			try {
-				await rpc("save_mcp_upstream_credential", { name: server.name, token: f.credential }, machine());
-			} catch {
-				// Non-fatal — credential might not be needed
+		try {
+			if (f.transportType === "http") {
+				server.headers = await saveHeaderRows(server.name, f.url.trim(), f.headers);
+				if (f.credential && f.authMethod === "bearer") {
+					await rpc(
+						"save_mcp_upstream_credential",
+						{ name: server.name, url: f.url.trim(), token: f.credential },
+						machine(),
+					);
+					server.auth = { type: "bearer", token: "" };
+				}
 			}
+		} catch {
+			setError("Failed to save upstream credentials");
+			return;
 		}
 
 		const ok = await saveUpstreams([...upstreams(), server]);
@@ -320,6 +449,7 @@ export const UpstreamMcpPanel: Component = () => {
 			args: server.transport.type === "stdio" ? (server.transport.args?.join(" ") ?? "") : "",
 			cwd: server.transport.type === "stdio" ? (server.transport.cwd ?? "") : "",
 			credential: "",
+			headers: (server.headers ?? []).map((header) => ({ ...header, value: "", saved: true })),
 			timeout: server.timeout_secs,
 			authMethod: isOAuth ? "oauth2" : "bearer",
 			oauthClientId: isOAuth ? (server.auth as { client_id: string }).client_id : "",
@@ -330,6 +460,25 @@ export const UpstreamMcpPanel: Component = () => {
 
 	async function saveEdit(server: UpstreamMcpServer) {
 		const f = editForm();
+		if (server.transport.type === "http" && f.transportType === "http" && (server.auth || server.headers?.length)) {
+			try {
+				if (new URL(server.transport.url).origin !== new URL(f.url.trim()).origin) {
+					setError(
+						"Cannot change the origin of an upstream with credentials. Add a new upstream with a different name for a different provider.",
+					);
+					return;
+				}
+			} catch {
+				setError("Enter a valid HTTP URL");
+				return;
+			}
+		}
+		const hasBearer = f.authMethod === "oauth2" || !!f.credential || server.auth?.type === "bearer";
+		const headerError = f.transportType === "http" ? headerFormError(f.headers, hasBearer) : "";
+		if (headerError) {
+			setError(headerError);
+			return;
+		}
 		const transport: UpstreamTransport =
 			f.transportType === "http"
 				? { type: "http", url: f.url.trim() }
@@ -347,26 +496,39 @@ export const UpstreamMcpPanel: Component = () => {
 		};
 
 		updated.auth = authFromUpstreamForm(f, server.auth);
-
-		const ok = await saveUpstreams(upstreams().map((s) => (s.id === server.id ? updated : s)));
-		if (!ok) return;
-
 		const oldMethod = server.auth?.type === "oauth2" ? "oauth2" : "bearer";
 		const methodChanged = oldMethod !== f.authMethod;
+		const replaceBearer = f.transportType === "http" && f.authMethod === "bearer" && !!f.credential;
 		try {
-			if (methodChanged) {
-				await rpc("delete_mcp_upstream_credential", { name: server.name }, machine());
+			updated.headers = f.transportType === "http" ? await saveHeaderRows(server.name, f.url.trim(), f.headers) : [];
+			if (f.transportType === "http" && f.authMethod === "bearer") {
+				if (f.credential || server.auth?.type === "bearer") updated.auth = { type: "bearer", token: "" };
 			}
-			if (f.credential && f.authMethod === "bearer") {
-				await rpc("save_mcp_upstream_credential", { name: server.name, token: f.credential }, machine());
-			}
-			if (methodChanged || f.credential) {
-				await rpc("reconnect_mcp_upstream", { name: server.name }, machine());
-			}
-		} catch (e) {
-			setError(`Authentication settings saved, but credential update failed: ${String(e)}`);
+		} catch {
+			setError("Failed to update upstream credentials");
 			return;
 		}
+		const ok = await saveUpstreams(upstreams().map((s) => (s.id === server.id ? updated : s)));
+		if (!ok) return;
+		try {
+			// Replacing the shared auth slot is destructive too: persist the config first.
+			if (replaceBearer)
+				await rpc(
+					"save_mcp_upstream_credential",
+					{ name: server.name, url: f.url.trim(), token: f.credential },
+					machine(),
+				);
+			else if (methodChanged) await rpc("delete_mcp_upstream_credential", { name: server.name }, machine());
+			await removeHeaderCredentials(
+				server.name,
+				(server.headers ?? []).filter((old) => !updated.headers?.some((h) => h.credential_ref === old.credential_ref)),
+			);
+			await rpc("reconnect_mcp_upstream", { name: server.name }, machine());
+		} catch {
+			setError("Settings saved, but credential cleanup or reconnect failed");
+			return;
+		}
+		setEditForm(emptyForm());
 		setEditingId(null);
 	}
 
@@ -384,10 +546,15 @@ export const UpstreamMcpPanel: Component = () => {
 			confirmed = window.confirm(`Remove upstream "${name}"?`);
 		}
 		if (!confirmed) return;
+		const removed = upstreams().find((server) => server.id === id);
+		const ok = await saveUpstreams(upstreams().filter((s) => s.id !== id));
+		if (!ok) return;
+		await removeHeaderCredentials(name, removed?.headers ?? []).catch(() =>
+			setError("Failed to remove header credentials"),
+		);
 		await rpc("delete_mcp_upstream_credential", { name }, machine()).catch((e) =>
 			appLogger.error("settings", "Failed to delete MCP upstream credential", { error: String(e) }),
 		);
-		await saveUpstreams(upstreams().filter((s) => s.id !== id));
 	}
 
 	async function clearUpstreamCredential(name: string) {
@@ -487,6 +654,11 @@ export const UpstreamMcpPanel: Component = () => {
 									onInput={(e) => setForm((f) => ({ ...f, credential: e.currentTarget.value }))}
 								/>
 							</Show>
+							<HeaderRows
+								onError={setError}
+								rows={form().headers}
+								onChange={(headers) => setForm((f) => ({ ...f, headers }))}
+							/>
 							<Show when={form().authMethod === "oauth2"}>
 								<input
 									type="text"
@@ -818,6 +990,11 @@ export const UpstreamMcpPanel: Component = () => {
 													</button>
 												</div>
 											</Show>
+											<HeaderRows
+												onError={setError}
+												rows={editForm().headers}
+												onChange={(headers) => setEditForm((f) => ({ ...f, headers }))}
+											/>
 											<Show when={editForm().authMethod === "oauth2"}>
 												<div>
 													<label style={{ "font-size": "12px", color: "var(--text-dimmed)" }}>OAuth client ID</label>
@@ -922,6 +1099,7 @@ export const UpstreamMcpPanel: Component = () => {
 												class={s.testBtn}
 												onClick={() => {
 													setEditingId(null);
+													setEditForm(emptyForm());
 													setError("");
 												}}
 											>

@@ -1393,6 +1393,8 @@ concurrently for an otherwise unchanged upstream. Concurrently added servers
 also survive unless the caller independently adds the same ID, which is rejected
 as a conflict.
 
+Bearer, OAuth and secret-header vault entries store the intended MCP origin with the secret in one write. The HTTP credential resolver checks that binding before every request and before OAuth refresh; a mismatch sends no request and reports an origin error. Entries saved before origin binding require re-saving or authorization. Config saves cannot rebind existing credentials, even if auth metadata is cleared or an ID is replaced. The Settings form keeps its early origin-change rejection for a clear message: add an upstream with a different name for a different provider. Same-origin path edits retain auth metadata. OAuth refresh preserves the MCP origin captured at authorization, independently of the authorization server and RFC 8707 resource URLs.
+
 Persistence returns the exact configuration immediately before and after the
 locked mutation. Once the lock is released, `apply_config_diff` uses that exact
 pair to disconnect removed or changed upstreams and connect added or changed
