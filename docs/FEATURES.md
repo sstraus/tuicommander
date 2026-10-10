@@ -2039,6 +2039,7 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 - HTTP and HTTPS links in output open in the phone's external browser; Markdown path controls open the Files editor.
 - Source-width prose rows are rejoined before the phone wraps them; short lines, lists, and box-drawing blocks retain their layout
 - When a mobile output line wraps, its continuation keeps the line's leading spaces or tabs; unindented prose and horizontally scrolling box-drawing blocks retain their layout
+- Claude tool-call status dots reserve one text cell in both visible and blank pulse frames; wrapped continuations retain the same hanging indent through the green completion frame
 - Semantic colorization: log lines are color-coded by type (info, warning, error, diff +/-, file paths) via `classifyLine()` utility
 - Search/filter in output: text search bar filters visible log lines in real time
 - Compact 56 px header: desktop agent logo with a state dot, session display name, repository/branch, state, elapsed activity time, tasks count, and an overflow menu. Tapping the name reveals intent and current task in a transient sheet. Tasks opens current work and intent history; overflow Progress opens this session's filtered journal in a bottom sheet. Files, output search, Ideas, quick commands, usage, copy ID, and terminate remain in overflow. The terminal keeps its height because these panels overlay it.

@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Index, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { appLogger } from "../../stores/appLogger";
 import { type PtySubscription, subscribePty } from "../../transport";
 import {
@@ -252,7 +252,19 @@ export function OutputView(props: OutputViewProps) {
 			if (to > from) {
 				const part = span.text.slice(from - offset, to - offset);
 				const style = spanStyle(span);
-				result.push(style ? <span style={style}>{part}</span> : part);
+				// Claude replaces its leading dot with one space while it pulses.
+				// Font fallback can give even the text-form dot a different advance.
+				const slotLength =
+					from === 0 ? (part.startsWith("⏺") ? (part[1] === "\uFE0E" ? 2 : 1) : part.startsWith(" ") ? 1 : 0) : 0;
+				const content = slotLength ? (
+					<>
+						<span class={styles.dotSlot}>{part.slice(0, slotLength)}</span>
+						{part.slice(slotLength)}
+					</>
+				) : (
+					part
+				);
+				result.push(style ? <span style={style}>{content}</span> : content);
 			}
 			offset += span.text.length;
 		}
@@ -262,7 +274,10 @@ export function OutputView(props: OutputViewProps) {
 	function renderLine(line: LogLine) {
 		const text = line.spans.map((span) => span.text).join("");
 		let indent = 0;
-		for (const char of text) {
+		// Count the dot's cell as indentation in both ON and blank OFF frames,
+		// so their continuations use the same width and start after the dot slot.
+		const indentText = text.replace(/^⏺\uFE0E?(?=[ \t])/, " ");
+		for (const char of indentText) {
 			if (char === " ") indent++;
 			else if (char === "\t") indent += 8 - (indent % 8);
 			else break;
@@ -272,12 +287,7 @@ export function OutputView(props: OutputViewProps) {
 		if (links.length === 0) {
 			return (
 				<div class={styles.line} style={wrapStyle}>
-					<Index each={line.spans}>
-						{(span) => {
-							const style = spanStyle(span());
-							return style ? <span style={style}>{span().text}</span> : span().text;
-						}}
-					</Index>
+					{styledRange(line, 0, text.length)}
 				</div>
 			);
 		}

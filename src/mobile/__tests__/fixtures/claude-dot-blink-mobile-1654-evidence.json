@@ -1,0 +1,98 @@
+{
+  "preFixCommit": "b99b409c7",
+  "red": "[ab-stealth] ERROR: agent-browser failed: \u2717 Evaluation error: Error: Dot pulse moved mobile body: {\"ua\":\"Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1\",\"webdriver\":\"undefined\",\"touch\":0,\"viewport\":[390,844],\"results\":[{\"name\":\"unwrapped\",\"heights\":[22.3984375,22.3984375,22.3984375],\"stable\":false},{\"name\":\"two rows\",\"heights\":[44.796875,44.796875,44.796875],\"stable\":false},{\"name\":\"three rows\",\"heights\":[67.1953125,67.1953125,67.1953125],\"stable\":false},{\"name\":\"recorded tool\",\"heights\":[89.59375,89.59375,89.59375],\"stable\":false}]}\n    at <anonymous>:30:39\n    at <anonymous>:32:3\n",
+  "greenPhone": {
+    "results": [
+      {
+        "heights": [
+          22.3984375,
+          22.3984375,
+          22.3984375
+        ],
+        "name": "unwrapped",
+        "stable": true
+      },
+      {
+        "heights": [
+          89.59375,
+          89.59375,
+          89.59375
+        ],
+        "name": "two rows",
+        "stable": true
+      },
+      {
+        "heights": [
+          89.59375,
+          89.59375,
+          89.59375
+        ],
+        "name": "three rows",
+        "stable": true
+      },
+      {
+        "heights": [
+          89.59375,
+          89.59375,
+          89.59375
+        ],
+        "name": "recorded tool",
+        "stable": true
+      }
+    ],
+    "touch": 0,
+    "ua": "Mozilla/5.0 (iPhone; CPU iPhone OS 14_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0 Mobile/15E148 Safari/604.1",
+    "viewport": [
+      390,
+      844
+    ],
+    "webdriver": "undefined"
+  },
+  "greenTablet": {
+    "results": [
+      {
+        "heights": [
+          22.3984375,
+          22.3984375,
+          22.3984375
+        ],
+        "name": "unwrapped",
+        "stable": true
+      },
+      {
+        "heights": [
+          44.796875,
+          44.796875,
+          44.796875
+        ],
+        "name": "two rows",
+        "stable": true
+      },
+      {
+        "heights": [
+          44.796875,
+          44.796875,
+          44.796875
+        ],
+        "name": "three rows",
+        "stable": true
+      },
+      {
+        "heights": [
+          44.796875,
+          44.796875,
+          44.796875
+        ],
+        "name": "recorded tool",
+        "stable": true
+      }
+    ],
+    "touch": 0,
+    "ua": "Mozilla/5.0 (iPad; CPU OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/604.1",
+    "viewport": [
+      1024,
+      1366
+    ],
+    "webdriver": "undefined"
+  }
+}

@@ -1,3 +1,7 @@
+## Mobile Claude dot pulse (1654-a3d5)
+
+- [ ] On an actual iPhone and iPad installed Safari PWA, run a long Claude Bash tool call; confirm grey ON/OFF pulses and green completion preserve text position and continuation indentation. Real OutputView browser geometry passes in Chromium at 390×844 and 1024×1366; device emulation does not prove Safari fonts or touch behavior.
+
 ## MCP transport import cfgs (1652-4954)
 
 - [x] Import-only change; no runtime behavior to verify after restart. _(verified: src-tauri/src/mcp_http/mcp_transport.rs:12 and mcp_transport_tests.rs:2 imports match test/unix consumers; Rust changes load at Boss's next manual `make dev` restart or `make build`.)_
