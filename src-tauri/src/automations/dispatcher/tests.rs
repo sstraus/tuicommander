@@ -1,5 +1,9 @@
 use super::*;
-use crate::automations::{model::Precheck, precheck::Termination, store::RunOwner};
+use crate::automations::{
+    model::Precheck,
+    precheck::{PrecheckOutcome, Termination},
+    store::RunOwner,
+};
 use crate::test_support::{fail_with_stderr_script, sleep_script, test_temp_root};
 use parking_lot::Mutex;
 use tuic_test_support::{print_file_script, touch_script};

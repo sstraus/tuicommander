@@ -1,5 +1,5 @@
 use super::{native::NativeEffects, *};
-use crate::automations::runtime::AutomationRuntime;
+use crate::automations::{precheck::PrecheckOutcome, runtime::AutomationRuntime};
 use crate::test_support::test_temp_root;
 use std::{path::Path, sync::Arc};
 

@@ -2,8 +2,8 @@
 use super::{
     definitions::DefinitionStore,
     model::{AutomationDefinition, Workspace},
-    precheck::{PrecheckOutcome, Termination, run_precheck},
-    run::{AutomationRun, RunDetails, RunStatus, RunTrigger, SavedOutput, SavedPrecheck},
+    precheck::run_precheck,
+    run::{AutomationRun, RunDetails, RunStatus, RunTrigger},
     scheduler,
     store::RunStore,
 };
@@ -122,25 +122,6 @@ impl<E: DispatchEffects> Dispatcher<E> {
         )
         .await;
         let proceed = outcome.proceeds();
-        let precheck = match &outcome {
-            PrecheckOutcome::Executed(result) => Some(SavedPrecheck {
-                exit_code: if let Termination::Exited(code) = result.termination {
-                    code
-                } else {
-                    None
-                },
-                timed_out: matches!(result.termination, Termination::TimedOut),
-                stdout: SavedOutput {
-                    text: result.stdout.clone(),
-                    truncated: result.stdout_truncated,
-                },
-                stderr: SavedOutput {
-                    text: result.stderr.clone(),
-                    truncated: result.stderr_truncated,
-                },
-            }),
-            _ => None,
-        };
         self.runs.transition(
             &run.id,
             if proceed {
@@ -149,7 +130,6 @@ impl<E: DispatchEffects> Dispatcher<E> {
                 RunStatus::SkippedPrecheck
             },
             RunDetails {
-                precheck,
                 precheck_outcome: Some(outcome),
                 ..Default::default()
             },
