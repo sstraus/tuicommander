@@ -13,7 +13,7 @@ Published story workflows can start in Plans and Stories through the owning daem
 
 Desktop AI Chat uses the terminal composer’s pin and blue play buttons. The pin highlights a parked draft; tooltips identify Park, Restore, Swap, Send and Queue.
 
-AI Chat image paste discovers capabilities on first use and shares clipboard precedence with Ideas and terminal Compose: Finder image filenames allow attachments, while substantive text takes priority.
+AI Chat image paste discovers capabilities on first use and shares clipboard precedence with Ideas, terminal Compose, and terminal input: Finder image filenames allow attachments, while substantive text takes priority.
 
 ## ego Perimeter Settings
 
@@ -245,9 +245,9 @@ The experimental read-only scrollback overlay (`AltScreenHistory`) and its `scro
 
 Terminal output is segmented into command blocks — one per prompt+output cycle. Blocks are detected via OSC 133 shell integration markers (A/C/D sequences) or OSC 7770;block= agent-emitted markers. For Claude Code, heuristic detection synthesizes blocks from tool call headers (`⏺ ToolName(args)`).
 
-- **Scrollbar marks** — Color-coded indicators on the scrollbar for each command block boundary. Provides a visual map of command history at a glance. Toggled by **Show scrollbar marks** in Settings > Terminal (`show_scrollbar_marks`, on by default). The flag covers the history markers — these ticks and the user-prompt ticks below — and deliberately **not** the search-match ticks, which stay visible so a search never silently draws nothing
+- **Scrollbar marks** — Color-coded indicators on the scrollbar for each command block boundary. Provides a visual map of command history at a glance. Toggled by **Show scrollbar marks** in Settings > Terminal (`show_scrollbar_marks`, on by default). History ticks remain visible without holding Ctrl+Cmd. No marks overlay is created when no visible markers exist; zero grid history hides the scrollbar. The flag covers the history markers — these ticks and the user-prompt ticks below — and deliberately **not** the search-match ticks, which stay visible so a search never silently draws nothing
 - **User-prompt scrollbar markers** — A distinct green tick on the scrollbar marks each line where the user submitted a prompt to the agent (recorded from the OSC 7770 `state=prompt` the submit-prompt hook emits; tool-call `state=busy` carries no row via `userPromptLines`). These are separate from command-block boundary marks and help you quickly locate your own prompts in long sessions
-- **Timestamp overlay** — Hold `Ctrl+Cmd` to reveal timestamps showing when each block started, displayed as relative time (e.g. "2m ago")
+- **Timestamp overlay** — Hold `Ctrl+Cmd` to reveal timestamps showing when each block started, displayed as relative time (e.g. "2m ago"). Releasing the modifiers or losing terminal/window focus hides the timestamps without hiding scrollbar history marks
 - **Gutter click** — Click the gutter area to select the entire block output for easy copying
 - **Block folding** — Collapse/expand block output with `Cmd+Shift+.` toggle. Folded blocks show a summary line. Backend stores fold state per session via `set_block_fold` Tauri command
 - **Block-scoped search** — Toggle with `Cmd+Shift+B` to restrict terminal search to the current block only
@@ -491,7 +491,7 @@ Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens t
 - Data persisted to Rust config backend
 
 ### 3.7 Help Panel (`Cmd+?`)
-- Shows app info and links (About, GitHub, docs)
+- Shows app info and links (About, GitHub, Discord Community, docs)
 - Keyboard shortcuts are now in the Settings > Keyboard Shortcuts page (auto-generated from `actionRegistry.ts`)
 
 ### 3.8 Git Panel (`Cmd+Shift+D`)
@@ -1514,7 +1514,7 @@ Three pages under **Integrations**. They were one "Services & MCP" tab; each pag
 - **MCP** — HTTP API server: always active on IPC listener (Unix domain socket on macOS/Linux, named pipe `\\.\pipe\tuicommander-mcp` on Windows). TCP port only for remote access
 - **MCP** — MCP connection info: bridge sidecar auto-installs configs for supported agents (Claude Code, Cursor, etc.)
 - **MCP** — TUIC native tool toggles: enable/disable individual MCP tools (`session`, `agent`, `task`, `remote`, `repo`, `ui`, `plugin_dev_guide`, `config`, `debug`) to restrict what AI agents can access
-- **MCP** — Upstream MCP Servers: add/edit/remove upstream MCP servers (HTTP or stdio with optional `cwd`), per-upstream enable/disable, reconnect, credential storage via OS keyring, live status dots, tool count and metrics. Saved upstreams auto-connect on boot. The MCP popup's "Manage in Settings" opens this page at this section
+- **MCP** — Upstream MCP Servers: add/edit/remove upstream MCP servers (HTTP or stdio with optional `cwd`), per-upstream enable/disable, reconnect, Bearer/OAuth and multiple masked secret header rows backed by the OS credential vault, origin-bound credentials that fail closed on provider changes or unbound old entries, same-origin-only credential redirects, live status dots, tool count and metrics. Saved upstreams auto-connect on boot. The MCP popup's "Manage in Settings" opens this page at this section
 - MCP Per-Repo Scoping: each repo can define which upstream MCP servers are relevant via an allowlist in repo settings (3-layer: per-repo > `.tuic.json` > defaults). Null/empty allowlist = all servers. Quick toggle via **Cmd+Shift+M** popup
 - **Remote Access** — port, username, password (bcrypt hash), URL display, QR code, token duration, IPv6 dual-stack, Tailscale HTTPS, cloud relay
 - **Remote Machines** — `tuic-remote` connections over SSH or a direct URL; the page lists SSH hosts discovered from `~/.ssh/config` and `known_hosts` (hashed entries are only counted), shows the loaded agent keys, probes hosts on demand and prefills the Add form from a click

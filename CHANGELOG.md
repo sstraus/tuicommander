@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Keep terminal scrollbar history marks visible without Ctrl+Cmd, clear timestamp peek on focus loss, and omit empty marks overlays (#1665-ce9b).
+
 - Widen the Activity Dashboard popup by 20%, while keeping it within small windows (#1664-f4ab).
 
 - Add Spoken replies to mobile hands-free and Settings; muting keeps dictation active, and Edge HTTP 401/403 stops repeat requests for five minutes with one text outage notice (#1659-f3cc).
@@ -16,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Accept pasted images in AI Chat before ego connects, retain concurrent pastes while its first session opens, and share Finder/text clipboard rules with Ideas and terminal Compose (#1639-f474).
 - Add the `automations` MCP tool for definition management, with bound creator provenance and atomic pause/resume.
 ### Added
+- Add multiple masked custom authentication headers beside Bearer/OAuth for HTTP MCP upstreams; bind vault secrets to the saved MCP origin before outgoing requests and block cross-origin redirects. Old unbound credentials require re-saving or OAuth authorization (#1657-e1a4).
 - Start the owner-guarded Once automation runtime on desktop and headless hosts, with durable precheck decisions, literal prompts and configured workspace/profile dispatch. Public execution controls and completion handling remain pending (#1615-57cf, #1614-7e8f).
 
 - Mobile terminal Ctrl menu offers Ctrl+C, Ctrl+B, Ctrl+D and Ctrl+Enter from one keybar button. Ctrl+Enter follows the agent registry mapping; verified behavior and conservative fallbacks are recorded with the probe evidence.
@@ -24,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Refresh daemon Tailscale status after startup so a reboot before tailscaled is ready does not leave its MagicDNS name rejected until restart.
+- Paste text into terminals when rich clipboard content also contains an image; keep screenshot and Finder image attachments.
 
 - Keep hands-free PTY echoes out of the mobile composer, including delayed echoes after typing or reconnecting; preserve explicit Tab completion and editable history recall (#1662-c549).
 - Keep mobile Claude tool-call text and wrapped continuations stationary while its status dot pulses or turns green (#1654-a3d5).
