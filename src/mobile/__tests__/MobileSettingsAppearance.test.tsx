@@ -5,6 +5,7 @@ import { SettingsScreen } from "../screens/SettingsScreen";
 
 const { invoke } = vi.hoisted(() => ({ invoke: vi.fn() }));
 vi.mock("../../invoke", () => ({ invoke, listen: vi.fn() }));
+vi.mock("../useMobileVoice", () => ({ useMobileVoice: () => ({ available: () => false }) }));
 vi.mock("../../stores/ideas", () => ({ ideasStore: { hydrate: vi.fn() } }));
 vi.mock("../useSessions", () => ({
 	useSessions: () => ({

@@ -1959,6 +1959,13 @@ the matching `dictation::commands` Tauri command resolves to — a bare string f
 `src/stores/dictation.ts` reads both transports with the same code. Before the app
 handle is up, every state-touching route answers `503`.
 
+The dictation config field hands_free_spoken_replies (default true) is shared
+by IPC and HTTP. Off cancels speech and refuses new replies without disarming
+capture. Speech status reports available=false and unavailableReason. The
+MCP voice tool includes these fields on refused speak requests. Edge HTTP
+401/403 starts a five-minute cool-down across queue rebuilds; status names
+the rejection and the five-minute policy.
+
 ```
 GET  /dictation/status                              -> DictationStatus
 GET  /dictation/models                              -> ModelInfo[]

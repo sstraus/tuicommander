@@ -1,5 +1,5 @@
 /* @refresh reload */
-import { tabletAppDestination } from "./utils/tabletRouting";
+import { prefersDesktopUI, tabletAppDestination } from "./utils/tabletRouting";
 
 const tabletDestination = tabletAppDestination(
 	navigator.userAgent,
@@ -8,6 +8,7 @@ const tabletDestination = tabletAppDestination(
 	window.location.search,
 	window.location.hash,
 	"__TAURI_INTERNALS__" in window && !("__TAURI_SHIM__" in window),
+	prefersDesktopUI(),
 );
 
 const root = document.getElementById("app");

@@ -1,6 +1,20 @@
 ## MCP upstream secret headers (1657-e1a4) — Rust restart required
 
 - [ ] After landing and Boss's planned manual `make dev` restart or `make build`, add an HTTP upstream with Bearer and two custom header rows; confirm masked persistence, rotation and row removal. Targeted tests exercise requests, config isolation and redirects with dummy values. Rust does not hot-reload; this peer does not restart desktop.
+## Mobile hands-free composer ownership (1662-c549)
+
+- [ ] After loading the updated PWA frontend, dictate during a busy Claude turn, including after a dialog/draft hold and while interrupting speech. Confirm the PTY queues the phrase once and the mobile composer keeps only local typing. Toggle spoken-reply mute mid-phrase and confirm the same behavior. Real microphone, speaker, and Safari PWA timing need a device check; component tests cover unsolicited, delayed, and reconnect input echoes plus keyboard/keybar Tab and editable Up/Down history recall. No Rust production change or backend restart is needed for this fix.
+## Once automation dispatch (1615-57cf) — Rust restart required
+
+- [ ] After a manual `make dev` restart (or `make build` for release), verify isolated Once automation dispatch uses the configured workspace/profile, saves precheck outcomes and launch pointers, and does not inject precheck output into the prompt (#1615-57cf, #1614-7e8f). Rust does not hot-reload. Public Run Now transport and completion/deadline handling remain pending.
+
+## Mobile Claude dot pulse (1654-a3d5)
+
+- [ ] On an actual iPhone and iPad installed Safari PWA, run a long Claude Bash tool call; confirm grey ON/OFF pulses and green completion preserve text position and continuation indentation. Real OutputView browser geometry passes in Chromium at 390×844 and 1024×1366; device emulation does not prove Safari fonts or touch behavior.
+## Tablet desktop switch (1658-fb34)
+
+- [x] Browser iPad emulation: Settings → Open Desktop UI reaches `/`, a later root visit stays desktop, and the visible Switch link returns to `/mobile` and clears the preference. _(verified: worktree Vite :14358 via stealth wrapper, iPad UA, five touch points, standalone flag; screenshots `~/Gits/.tmp/tablet-1658-{settings,desktop,return-mobile}.png`; 15 targeted tests passed.)_
+- [ ] [HUMAN] On the already-installed iPad PWA, confirm the updated manifest scope takes effect and both switches stay in the installed app window. Browser emulation proves routing and preference handling but cannot prove iOS updates an existing installation's manifest.
 
 ## MCP transport import cfgs (1652-4954)
 
@@ -55,6 +69,10 @@
 
 - [ ] After Boss chooses to rebuild/restart the backend, launch a new managed peer and open **Inspect Launch Instructions…** from its terminal context menu. Confirm the final brief includes peer context, explicit system instruction sections/file snapshots and served MCP initialization sections have sources/bytes, and secrets are redacted. A shell-launched or restored session must show its launch as unavailable while retaining any MCP initialization instructions actually served; autonomous agent file reads must remain unobservable. The standalone real-component preview was visually checked; live desktop/backend integration waits for the authorized restart. No second desktop instance was launched.
 # To Test
+
+## Hands-free phrase boundaries (1656-eb5e) — Rust restart required
+
+- [ ] After Boss's planned `make dev` restart or `make build`, hold a hands-free turn behind a draft or permission dialog, speak two phrases, then clear the hold. Confirm the phrases reach the agent on separate lines as one submission. The backend does not hot-reload; this peer does not restart desktop.
 
 ## Terminal Chat presentation (1576-6320)
 
@@ -4885,3 +4903,9 @@ Needs an iPhone (iOS 16.4+, 18.4+ preferred), the desktop TUICommander running a
 - [ ] After Boss's next `make dev` restart or `make build`: copy and paste text in the desktop app with the arboard commands; confirm terminal copy still succeeds after an IPC await and macOS paste shows no system Paste pill. Rust changes require the restart to load (#1651-6cbe).
 
 - [ ] #1657-e1a4: After a manual make dev restart, edit an upstream with Bearer/OAuth/custom headers to another URL origin; Save must show the add-new-upstream message and keep the prior config and credentials. Same-origin path edits remain allowed. The Rust request-origin check requires a restart to load. Confirm same-origin path edits retain the displayed auth method, and old unbound credentials show the re-save/authorize error.
+
+### Spoken replies toggle (#1659-f3cc)
+- [x] Capture the mobile conversation and Settings toggles on the worktree Vite. _(verified: docs/evidence/voice-mute-1659/README.md — headless Chrome CDP screenshots and computed on/off state; both labels meet the 44px touch target.)_
+- [ ] After Boss restarts make dev (Rust does not hot reload), arm hands-free on mobile, turn Spoken replies off, dictate, and confirm text answers with no reply audio. Turn it on again and confirm audio returns when the speech service is available.
+- [ ] After an Edge access rejection, confirm the UI reports the cool-down and dictation continues; wait five minutes before retrying speech.
+- [ ] Mobile Ctrl menu (#1660-b7f6): on iPhone/iPad with the real keyboard open, open Ctrl, choose each key, dismiss outside, and check Ctrl+C/Ctrl+D danger colours. Ctrl+Enter submits with Claude CSI-u and ego LF; Codex/OpenCode/Goose/Grok/pi insert a newline. Other mappings and uncertainty are recorded in docs/evidence/ctrl-menu-1660/README.md. Desktop browser verification reserves keyboard space; real iOS keyboard remains to check.

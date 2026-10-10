@@ -222,10 +222,10 @@ describe("mobile terminal controls", () => {
 		));
 		expect(screen.getByText("Session ended")).toBeTruthy();
 		expect((screen.getByPlaceholderText("Type a command...") as HTMLTextAreaElement).disabled).toBe(true);
-		expect((screen.getByRole("button", { name: "Ctrl+C" }) as HTMLButtonElement).disabled).toBe(true);
+		expect((screen.getByRole("button", { name: "Ctrl" }) as HTMLButtonElement).disabled).toBe(true);
 		expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
 		expect(screen.queryByText("Activity")).toBeNull();
-		fireEvent.click(screen.getByRole("button", { name: "Ctrl+C" }));
+		fireEvent.click(screen.getByRole("button", { name: "Ctrl" }));
 		expect(rpc).not.toHaveBeenCalledWith("write_pty", expect.anything());
 	});
 });

@@ -339,6 +339,8 @@ empty answer.
 ### Voice
 
 Dictation, speech recognition, spoken replies, and hands-free conversation.
+
+**Spoken replies** defaults to on. Turn it off to keep hands-free dictation and receive text replies. The toggle is also in the mobile conversation header and mobile Settings. All controls save the same preference on the server device.
 Hands-free conversation uses an accent **Start conversation** action and a distinct **Stop conversation** action. The state row shows a coloured indicator with **Running** or **Stopped**, alongside the backend phase when available.
 The global dictation hotkey and this machine's input devices are desktop-only;
 a browser client shows the rest of the page. See [Voice Dictation](dictation.md)

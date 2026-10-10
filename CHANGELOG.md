@@ -6,15 +6,28 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Widen the Activity Dashboard popup by 20%, while keeping it within small windows (#1664-f4ab).
+
+- Add Spoken replies to mobile hands-free and Settings; muting keeps dictation active, and Edge HTTP 401/403 stops repeat requests for five minutes with one text outage notice (#1659-f3cc).
+- Give mobile toolbar keys enabled primary text and highlight Ctrl while its menu is open (#1663-8c02).
+
 - Use the terminal composer pin and play icon buttons in desktop AI Chat, with named Queue and parked-draft states (#1636-0d08).
 
 - Accept pasted images in AI Chat before ego connects, retain concurrent pastes while its first session opens, and share Finder/text clipboard rules with Ideas and terminal Compose (#1639-f474).
 - Add the `automations` MCP tool for definition management, with bound creator provenance and atomic pause/resume.
 ### Added
 - Add multiple masked custom authentication headers beside Bearer/OAuth for HTTP MCP upstreams; bind vault secrets to the saved MCP origin before outgoing requests and block cross-origin redirects. Old unbound credentials require re-saving or OAuth authorization (#1657-e1a4).
+- Start the owner-guarded Once automation runtime on desktop and headless hosts, with durable precheck decisions, literal prompts and configured workspace/profile dispatch. Public execution controls and completion handling remain pending (#1615-57cf, #1614-7e8f).
+
+- Mobile terminal Ctrl menu offers Ctrl+C, Ctrl+B, Ctrl+D and Ctrl+Enter from one keybar button. Ctrl+Enter follows the agent registry mapping; verified behavior and conservative fallbacks are recorded with the probe evidence.
 - Add the Rust foundation for Once automation schedules with IANA timezone validation, a single preview instant and durable occurrence deduplication (#1629-2262).
 
 ### Fixed
+
+- Keep hands-free PTY echoes out of the mobile composer, including delayed echoes after typing or reconnecting; preserve explicit Tab completion and editable history recall (#1662-c549).
+- Keep mobile Claude tool-call text and wrapped continuations stationary while its status dot pulses or turns green (#1654-a3d5).
+- Preserve line breaks between held hands-free phrases and submit the combined turn once (#1656-eb5e).
+- Honor Open Desktop UI on iPad, remember the device's choice, and keep a visible return link to mobile in the desktop shell (#1658-fb34).
 - Keep terminal Chat following when Claude replaces a transcript at the same path, when it has no subagents, or after a rapid CLI/Chat remount; log failed refreshes or stopped transcript tickers (#1635-3db2).
 - Repair stale TUIC MCP bridge paths in Claude private and configured launch profiles, and warn when a missing configured bridge cannot be repaired (#1637-d6e1).
 - Search the visible Claude Chat transcript with Cmd/Ctrl+F; matches span inline Markdown and skip collapsed thinking; Enter and Shift+Enter navigate matches, and switching CLI/Chat closes search and clears its highlight (#1633-f2cc).

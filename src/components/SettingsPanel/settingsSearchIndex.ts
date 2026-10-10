@@ -420,6 +420,12 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 		expert: true,
 		configKey: "dictation.hands_free_hold_back_ms",
 	},
+	{
+		tab: "dictation",
+		section: "Hands-free conversation",
+		label: "Spoken replies",
+		labelKey: "dictation.spokenRepliesLabel",
+	},
 	{ tab: "dictation", section: "Hands-free conversation", label: "Earcons", labelKey: "dictation.earconsLabel" },
 	{
 		tab: "dictation",

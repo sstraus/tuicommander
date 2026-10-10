@@ -1,0 +1,402 @@
+{
+  "date": "2026-10-10",
+  "cli": "Claude Code 2.1.286",
+  "model": "claude-sonnet-5-5",
+  "scope": "Sanitized extract of agent-cache-ttl results.json and allowlisted wire request summaries. Not a subscription bill or end-to-end TUICommander benchmark.",
+  "native_child_30_minute_status": "pending",
+  "prices_per_million_usd": {
+    "input": 2.0,
+    "write_5m": 2.5,
+    "write_1h": 4.0,
+    "read": 0.1,
+    "output": 10.0
+  },
+  "requests": [
+    {
+      "flow": "bca1a285-a6f6-4b61-ad63-c3f7c71a37eb",
+      "model": "claude-sonnet-5-5",
+      "body_bytes": 18620,
+      "controls": [
+        {
+          "path": "/messages/1/content/0/cache_control",
+          "type": "ephemeral",
+          "ttl": "omitted"
+        },
+        {
+          "path": "/system/1/cache_control",
+          "type": "ephemeral",
+          "ttl": "omitted"
+        },
+        {
+          "path": "/system/2/cache_control",
+          "type": "ephemeral",
+          "ttl": "omitted"
+        }
+      ]
+    },
+    {
+      "flow": "b025636d-f341-4675-a927-a43d33863576",
+      "model": "claude-sonnet-5-5",
+      "body_bytes": 16637,
+      "controls": [
+        {
+          "path": "/messages/7/content/0/cache_control",
+          "type": "ephemeral",
+          "ttl": "1h"
+        },
+        {
+          "path": "/system/1/cache_control",
+          "type": "ephemeral",
+          "ttl": "1h"
+        },
+        {
+          "path": "/system/2/cache_control",
+          "type": "ephemeral",
+          "ttl": "1h"
+        }
+      ]
+    },
+    {
+      "flow": "341b01c9-66ba-47f2-bfa0-778e4b8c9207",
+      "model": "claude-sonnet-5-5",
+      "body_bytes": 18492,
+      "controls": [
+        {
+          "path": "/messages/10/content/0/cache_control",
+          "type": "ephemeral",
+          "ttl": "1h"
+        },
+        {
+          "path": "/system/1/cache_control",
+          "type": "ephemeral",
+          "ttl": "1h"
+        },
+        {
+          "path": "/system/2/cache_control",
+          "type": "ephemeral",
+          "ttl": "1h"
+        }
+      ]
+    },
+    {
+      "flow": "4abfb464-1fe9-4f9e-9b2b-d67477b30ea2",
+      "model": "claude-sonnet-5-5",
+      "body_bytes": 20295,
+      "controls": [
+        {
+          "path": "/messages/13/content/0/cache_control",
+          "type": "ephemeral",
+          "ttl": "1h"
+        },
+        {
+          "path": "/system/1/cache_control",
+          "type": "ephemeral",
+          "ttl": "1h"
+        },
+        {
+          "path": "/system/2/cache_control",
+          "type": "ephemeral",
+          "ttl": "1h"
+        }
+      ]
+    },
+    {
+      "flow": "cf93776e-ddee-411a-b30c-d25b2b1626fc",
+      "model": "claude-sonnet-5-5",
+      "body_bytes": 17177,
+      "controls": [
+        {
+          "path": "/messages/1/content/0/cache_control",
+          "type": "ephemeral",
+          "ttl": "1h"
+        },
+        {
+          "path": "/system/1/cache_control",
+          "type": "ephemeral",
+          "ttl": "1h"
+        },
+        {
+          "path": "/system/2/cache_control",
+          "type": "ephemeral",
+          "ttl": "1h"
+        }
+      ]
+    },
+    {
+      "flow": "d52a70b4-8b7c-48e7-ba5e-ead647b04e5a",
+      "model": "claude-sonnet-5-5",
+      "body_bytes": 22550,
+      "controls": [
+        {
+          "path": "/messages/1/content/0/cache_control",
+          "type": "ephemeral",
+          "ttl": "omitted"
+        },
+        {
+          "path": "/system/1/cache_control",
+          "type": "ephemeral",
+          "ttl": "omitted"
+        },
+        {
+          "path": "/system/2/cache_control",
+          "type": "ephemeral",
+          "ttl": "omitted"
+        }
+      ]
+    },
+    {
+      "flow": "d3d653bb-8b6a-4210-b908-4b1ceff479e2",
+      "model": "claude-sonnet-5-5",
+      "body_bytes": 25100,
+      "controls": [
+        {
+          "path": "/messages/4/content/0/cache_control",
+          "type": "ephemeral",
+          "ttl": "omitted"
+        },
+        {
+          "path": "/system/1/cache_control",
+          "type": "ephemeral",
+          "ttl": "omitted"
+        },
+        {
+          "path": "/system/2/cache_control",
+          "type": "ephemeral",
+          "ttl": "omitted"
+        }
+      ]
+    },
+    {
+      "flow": "62bb8c9b-4d1b-44d0-9eb6-0db5daafaf66",
+      "model": "claude-sonnet-5-5",
+      "body_bytes": 26153,
+      "controls": [
+        {
+          "path": "/messages/7/content/0/cache_control",
+          "type": "ephemeral",
+          "ttl": "omitted"
+        },
+        {
+          "path": "/system/1/cache_control",
+          "type": "ephemeral",
+          "ttl": "omitted"
+        },
+        {
+          "path": "/system/2/cache_control",
+          "type": "ephemeral",
+          "ttl": "omitted"
+        }
+      ]
+    }
+  ],
+  "turns": [
+    {
+      "capture": "20261010-103026",
+      "case": "claude-native-subagent",
+      "role": "native-subagent",
+      "flow": "bca1a285-a6f6-4b61-ad63-c3f7c71a37eb",
+      "status": 200,
+      "idle_seconds_since_same_role_response": null,
+      "request_body_bytes": 18620,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 4251,
+        "cache_read_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 4251,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_tokens": 62,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        }
+      },
+      "total_input_tokens": 4253,
+      "input_api_list_cost_usd": 0.0106315,
+      "same_input_with_writes_as_reads_usd": 0.0004291,
+      "input_cost_ratio_to_warm": 24.776275926357492
+    },
+    {
+      "capture": "20261010-103218",
+      "case": "claude-gap-240",
+      "role": "main",
+      "flow": "b025636d-f341-4675-a927-a43d33863576",
+      "status": 200,
+      "idle_seconds_since_same_role_response": 240.115,
+      "request_body_bytes": 16637,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 159,
+        "cache_read_input_tokens": 3073,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 159
+        },
+        "output_tokens": 182,
+        "output_tokens_details": {
+          "thinking_tokens": 68
+        }
+      },
+      "total_input_tokens": 3234,
+      "input_api_list_cost_usd": 0.0009473,
+      "same_input_with_writes_as_reads_usd": 0.00032720000000000004,
+      "input_cost_ratio_to_warm": 2.8951711491442538
+    },
+    {
+      "capture": "20261010-103218",
+      "case": "claude-gap-360",
+      "role": "main",
+      "flow": "341b01c9-66ba-47f2-bfa0-778e4b8c9207",
+      "status": 200,
+      "idle_seconds_since_same_role_response": 360.613,
+      "request_body_bytes": 18492,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 282,
+        "cache_read_input_tokens": 3232,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 282
+        },
+        "output_tokens": 150,
+        "output_tokens_details": {
+          "thinking_tokens": 18
+        }
+      },
+      "total_input_tokens": 3516,
+      "input_api_list_cost_usd": 0.0014552,
+      "same_input_with_writes_as_reads_usd": 0.0003554,
+      "input_cost_ratio_to_warm": 4.094541361845807
+    },
+    {
+      "capture": "20261010-103218",
+      "case": "claude-gap-1800",
+      "role": "main",
+      "flow": "4abfb464-1fe9-4f9e-9b2b-d67477b30ea2",
+      "status": 200,
+      "idle_seconds_since_same_role_response": 1800.314,
+      "request_body_bytes": 20295,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 250,
+        "cache_read_input_tokens": 3514,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 250
+        },
+        "output_tokens": 150,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        }
+      },
+      "total_input_tokens": 3766,
+      "input_api_list_cost_usd": 0.0013554,
+      "same_input_with_writes_as_reads_usd": 0.00038040000000000003,
+      "input_cost_ratio_to_warm": 3.5630914826498423
+    },
+    {
+      "capture": "20261010-111156",
+      "case": "claude-native-idle-chain",
+      "role": "main",
+      "flow": "cf93776e-ddee-411a-b30c-d25b2b1626fc",
+      "status": 200,
+      "idle_seconds_since_same_role_response": null,
+      "request_body_bytes": 17177,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 3723,
+        "cache_read_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 0,
+          "ephemeral_1h_input_tokens": 3723
+        },
+        "output_tokens": 329,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        }
+      },
+      "total_input_tokens": 3725,
+      "input_api_list_cost_usd": 0.014896,
+      "same_input_with_writes_as_reads_usd": 0.0003763,
+      "input_cost_ratio_to_warm": 39.58543715120914
+    },
+    {
+      "capture": "20261010-111156",
+      "case": "claude-native-idle-chain",
+      "role": "native-subagent",
+      "flow": "d52a70b4-8b7c-48e7-ba5e-ead647b04e5a",
+      "status": 200,
+      "idle_seconds_since_same_role_response": null,
+      "request_body_bytes": 22550,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 5686,
+        "cache_read_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 5686,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_tokens": 100,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        }
+      },
+      "total_input_tokens": 5688,
+      "input_api_list_cost_usd": 0.014219,
+      "same_input_with_writes_as_reads_usd": 0.0005726,
+      "input_cost_ratio_to_warm": 24.83234369542438
+    },
+    {
+      "capture": "20261010-111156",
+      "case": "claude-native-idle-chain",
+      "role": "native-subagent",
+      "flow": "d3d653bb-8b6a-4210-b908-4b1ceff479e2",
+      "status": 200,
+      "idle_seconds_since_same_role_response": 244.135,
+      "request_body_bytes": 25100,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 611,
+        "cache_read_input_tokens": 5686,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 611,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_tokens": 100,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        }
+      },
+      "total_input_tokens": 6299,
+      "input_api_list_cost_usd": 0.0021000999999999997,
+      "same_input_with_writes_as_reads_usd": 0.0006337000000000001,
+      "input_cost_ratio_to_warm": 3.314028720214612
+    },
+    {
+      "capture": "20261010-111156",
+      "case": "claude-native-idle-chain",
+      "role": "native-subagent",
+      "flow": "62bb8c9b-4d1b-44d0-9eb6-0db5daafaf66",
+      "status": 200,
+      "idle_seconds_since_same_role_response": 360.296,
+      "request_body_bytes": 26153,
+      "usage": {
+        "input_tokens": 2,
+        "cache_creation_input_tokens": 6436,
+        "cache_read_input_tokens": 0,
+        "cache_creation": {
+          "ephemeral_5m_input_tokens": 6436,
+          "ephemeral_1h_input_tokens": 0
+        },
+        "output_tokens": 102,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        }
+      },
+      "total_input_tokens": 6438,
+      "input_api_list_cost_usd": 0.016094,
+      "same_input_with_writes_as_reads_usd": 0.0006476,
+      "input_cost_ratio_to_warm": 24.851760345892526
+    }
+  ]
+}

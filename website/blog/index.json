@@ -12,6 +12,15 @@
       ]
     },
     {
+      "slug": "claude-cache-tiers",
+      "title": "One hour for the parent, five minutes for the child",
+      "date": "2026-10-10",
+      "status": "published",
+      "feature": "Claude Code prompt caching / Independent agent sessions",
+      "summary": "We measured Claude Code’s cache directives and idle-gap behavior. The main session gets an hour; its native subagent gets five minutes. That difference matters when agents spend time waiting.",
+      "screenshots": []
+    },
+    {
       "slug": "keyboard-shortcuts",
       "title": "The shortcuts that matter when twelve agents are working",
       "date": "2026-08-09",

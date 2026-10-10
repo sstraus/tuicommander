@@ -1,0 +1,381 @@
+[
+  {
+    "agent": "claude",
+    "date": "2026-10-10",
+    "version": "2.1.286 (Claude Code)",
+    "selectedSequence": "\u001b[13;5u",
+    "status": "live-tuic-http-pty",
+    "observations": [
+      {
+        "sequence": "csi-u",
+        "hex": "1b5b31333b3575",
+        "effect": "submit",
+        "requestsAfterCandidate": 4,
+        "markers": [
+          "first-probe"
+        ]
+      },
+      {
+        "sequence": "modify-other-keys",
+        "hex": "1b5b32373b353b31337e",
+        "effect": "submit",
+        "requestsAfterCandidate": 4,
+        "markers": [
+          "first-probe"
+        ]
+      },
+      {
+        "sequence": "lf",
+        "hex": "0a",
+        "effect": "newline",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probe\nsecond-probe"
+        ]
+      },
+      {
+        "sequence": "cr",
+        "hex": "0d",
+        "effect": "submit",
+        "requestsAfterCandidate": 4,
+        "markers": [
+          "first-probe"
+        ]
+      }
+    ]
+  },
+  {
+    "agent": "gemini",
+    "date": "2026-10-10",
+    "version": null,
+    "selectedSequence": "\u001b[13;5u",
+    "status": "not-installed",
+    "observations": []
+  },
+  {
+    "agent": "opencode",
+    "date": "2026-10-10",
+    "version": "1.18.30",
+    "selectedSequence": "\u001b[13;5u",
+    "status": "live-tuic-http-pty",
+    "observations": [
+      {
+        "sequence": "csi-u",
+        "hex": "1b5b31333b3575",
+        "effect": "newline",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probe\nsecond-probe"
+        ]
+      },
+      {
+        "sequence": "modify-other-keys",
+        "hex": "1b5b32373b353b31337e",
+        "effect": "newline",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probe\nsecond-probe"
+        ]
+      },
+      {
+        "sequence": "lf",
+        "hex": "0a",
+        "effect": "newline",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probe\nsecond-probe"
+        ]
+      },
+      {
+        "sequence": "cr",
+        "hex": "0d",
+        "effect": "submit",
+        "requestsAfterCandidate": 2,
+        "markers": [
+          "first-probe",
+          "second-probe"
+        ]
+      }
+    ]
+  },
+  {
+    "agent": "aider",
+    "date": "2026-10-10",
+    "version": null,
+    "selectedSequence": "\u001b[13;5u",
+    "status": "not-installed",
+    "observations": []
+  },
+  {
+    "agent": "codex",
+    "date": "2026-10-10",
+    "version": "codex-cli 0.162.0",
+    "selectedSequence": "\n",
+    "status": "live-tuic-http-pty",
+    "observations": [
+      {
+        "sequence": "csi-u",
+        "hex": "1b5b31333b3575",
+        "effect": "ignored",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probesecond-probe"
+        ]
+      },
+      {
+        "sequence": "modify-other-keys",
+        "hex": "1b5b32373b353b31337e",
+        "effect": "ignored",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probesecond-probe"
+        ]
+      },
+      {
+        "sequence": "lf",
+        "hex": "0a",
+        "effect": "newline",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probe\nsecond-probe"
+        ]
+      },
+      {
+        "sequence": "cr",
+        "hex": "0d",
+        "effect": "submit",
+        "requestsAfterCandidate": 2,
+        "markers": [
+          "first-probe",
+          "second-probe"
+        ]
+      }
+    ]
+  },
+  {
+    "agent": "amp",
+    "date": "2026-10-10",
+    "version": null,
+    "selectedSequence": "\n",
+    "status": "not-installed",
+    "observations": []
+  },
+  {
+    "agent": "cursor",
+    "date": "2026-10-10",
+    "version": null,
+    "selectedSequence": "\n",
+    "status": "not-installed",
+    "observations": []
+  },
+  {
+    "agent": "goose",
+    "date": "2026-10-10",
+    "version": "1.49.0",
+    "selectedSequence": "\n",
+    "status": "live-tuic-http-pty",
+    "observations": [
+      {
+        "sequence": "csi-u",
+        "hex": "1b5b31333b3575",
+        "effect": "ignored",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probesecond-probe"
+        ]
+      },
+      {
+        "sequence": "modify-other-keys",
+        "hex": "1b5b32373b353b31337e",
+        "effect": "corrupt",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probe13~second-probe"
+        ]
+      },
+      {
+        "sequence": "lf",
+        "hex": "0a",
+        "effect": "newline",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probe\nsecond-probe"
+        ]
+      },
+      {
+        "sequence": "cr",
+        "hex": "0d",
+        "effect": "submit",
+        "requestsAfterCandidate": 2,
+        "markers": [
+          "first-probe",
+          "first-probe\nsecond-probe",
+          "second-probe"
+        ]
+      }
+    ]
+  },
+  {
+    "agent": "grok",
+    "date": "2026-10-10",
+    "version": "grok 1.0.50 (c58f321264ba)",
+    "selectedSequence": "\n",
+    "status": "live-tuic-http-pty",
+    "observations": [
+      {
+        "sequence": "csi-u",
+        "hex": "1b5b31333b3575",
+        "effect": "ignored",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probesecond-probe"
+        ]
+      },
+      {
+        "sequence": "modify-other-keys",
+        "hex": "1b5b32373b353b31337e",
+        "effect": "ignored",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probesecond-probe"
+        ]
+      },
+      {
+        "sequence": "lf",
+        "hex": "0a",
+        "effect": "newline",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probe\nsecond-probe"
+        ]
+      },
+      {
+        "sequence": "cr",
+        "hex": "0d",
+        "effect": "submit",
+        "requestsAfterCandidate": 1,
+        "markers": [
+          "first-probe",
+          "second-probe"
+        ]
+      }
+    ]
+  },
+  {
+    "agent": "droid",
+    "date": "2026-10-10",
+    "version": null,
+    "selectedSequence": "\u001b[13;5u",
+    "status": "not-installed",
+    "observations": []
+  },
+  {
+    "agent": "pi",
+    "date": "2026-10-10",
+    "version": "0.84.2",
+    "selectedSequence": "\n",
+    "status": "live-tuic-http-pty",
+    "observations": [
+      {
+        "sequence": "csi-u",
+        "hex": "1b5b31333b3575",
+        "effect": "ignored",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probesecond-probe"
+        ]
+      },
+      {
+        "sequence": "modify-other-keys",
+        "hex": "1b5b32373b353b31337e",
+        "effect": "ignored",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probesecond-probe"
+        ]
+      },
+      {
+        "sequence": "lf",
+        "hex": "0a",
+        "effect": "newline",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probe\nsecond-probe"
+        ]
+      },
+      {
+        "sequence": "cr",
+        "hex": "0d",
+        "effect": "submit",
+        "requestsAfterCandidate": 1,
+        "markers": [
+          "first-probe",
+          "second-probe"
+        ]
+      }
+    ]
+  },
+  {
+    "agent": "ego",
+    "date": "2026-10-10",
+    "version": "ego 0.1.0",
+    "selectedSequence": "\n",
+    "status": "live-tuic-http-pty",
+    "observations": [
+      {
+        "sequence": "csi-u",
+        "hex": "1b5b31333b3575",
+        "effect": "ignored",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probesecond-probe"
+        ]
+      },
+      {
+        "sequence": "modify-other-keys",
+        "hex": "1b5b32373b353b31337e",
+        "effect": "ignored",
+        "requestsAfterCandidate": 0,
+        "markers": [
+          "first-probesecond-probe"
+        ]
+      },
+      {
+        "sequence": "lf",
+        "hex": "0a",
+        "effect": "submit",
+        "requestsAfterCandidate": 1,
+        "markers": [
+          "first-probe",
+          "second-probe"
+        ]
+      },
+      {
+        "sequence": "cr",
+        "hex": "0d",
+        "effect": "submit",
+        "requestsAfterCandidate": 1,
+        "markers": [
+          "first-probe",
+          "second-probe"
+        ]
+      }
+    ]
+  },
+  {
+    "agent": "git",
+    "date": "2026-10-10",
+    "version": null,
+    "selectedSequence": "\u001b[13;5u",
+    "status": "non-composer",
+    "observations": []
+  },
+  {
+    "agent": "api",
+    "date": "2026-10-10",
+    "version": null,
+    "selectedSequence": "\u001b[13;5u",
+    "status": "non-composer",
+    "observations": []
+  }
+]

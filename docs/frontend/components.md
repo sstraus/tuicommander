@@ -4,6 +4,8 @@ Slice F exposes `start_graph {target:{type:story|plan,id},expected_revision?,def
 
 All components are SolidJS functional components in `src/components/`.
 
+`MobileViewBanner` offers browser clients a link to `/mobile`. On tablets it remains visible, even if previously dismissed on a phone, so users who chose desktop in mobile Settings can return. Switching clears the device-local desktop preference; native Tauri never renders the banner.
+
 ## Component Tree
 
 ```
@@ -209,6 +211,17 @@ PTY delta, and shows the agent parser menu with navigation. Picking a command
 updates the input; closing the menu clears the input through the same sync path.
 A vanished session keeps its output visible but disables both input controls.
 
+The mobile composer owns its draft. PTY prompt snapshots do not create a draft
+or extend it on their own: a hands-free paste can be visible before Enter, and
+a queued agent message can look like prompt input. A Tab request from the
+composer or keybar accepts one strict extension of a nonempty local draft.
+Explicit keybar Up/Down accepts one history replacement after its PTY write is
+acknowledged, including an empty line, and updates the edit delta baseline.
+Typing, sending, Escape, or a failed write cancels the request. A history response
+arriving before the HTTP acknowledgement is dropped, causing a missed recall.
+Because snapshots have no causal request ID, an unrelated delayed snapshot after
+the acknowledgement can still be mistaken for history.
+
 ## Core Components
 
 ### PluginPanel (`PluginPanel/`)
@@ -358,6 +371,10 @@ are therefore two `SettingToggle` rows, each in its own `ExpertSetting`, and not
 one group under a shared label.
 
 #### DictationSettings (`SettingsPanel/DictationSettings.tsx`)
+
+Spoken replies is a standard toggle, also available in the mobile conversation
+header and mobile Settings. It stays visible in browser mode and saves the
+backend device preference; it does not stop microphone dictation.
 
 The **Voice** page (nav key `dictation`). One `<h3>` per section. Speech-to-text and
 text-to-speech are separate sections, and each keeps its own advanced controls
