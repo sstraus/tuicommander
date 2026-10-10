@@ -44,7 +44,7 @@
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   background: var(--bg-tertiary);
-  color: var(--fg-secondary);
+  color: var(--fg-primary);
   font-size: 13px;
   font-family: var(--font-mono);
   cursor: pointer;
@@ -53,6 +53,12 @@
 
 .key:active {
   opacity: 0.6;
+}
+
+.key[aria-expanded="true"] {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--bg-highlight);
 }
 
 .confirm {
