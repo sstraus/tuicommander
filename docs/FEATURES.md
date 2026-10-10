@@ -1684,6 +1684,7 @@ Buffer eviction is reported; it does not create another output store.
 
 ### 14.9 Tailscale HTTPS
 - Auto-detects Tailscale daemon and FQDN via `tailscale status --json` (cross-platform)
+- Headless daemon refreshes Tailscale Host trust every 30 seconds, recovering late startup and removing stale names after rename or stop
 - Provisions TLS certificates from Tailscale Local API (Unix socket on macOS/Linux, CLI on Windows)
 - HTTP+HTTPS dual-protocol on same port via `axum-server-dual-protocol`
 - Graceful fallback: HTTP-only when Tailscale unavailable or HTTPS not enabled

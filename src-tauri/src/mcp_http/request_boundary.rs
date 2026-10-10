@@ -568,6 +568,60 @@ mod tests {
         }
     }
 
+    /// Catches boot before tailscaled permanently rejecting MagicDNS, stale
+    /// names surviving a rename/stop, and foreign names gaining trust on refresh.
+    #[tokio::test(start_paused = true)]
+    async fn daemon_refresh_recovers_tailscale_host_trust_after_late_start() {
+        use crate::tailscale::TailscaleState;
+        let state = state();
+        let initially_detected =
+            crate::detect_tailscale_bounded(std::future::ready(TailscaleState::NotRunning)).await;
+        crate::apply_tailscale_status(&state, initially_detected);
+        let app = super::super::build_remote_router(state.clone());
+        let mut detections = std::collections::VecDeque::from([
+            TailscaleState::Running {
+                fqdn: "late-node.tail1.ts.net".into(),
+                https_enabled: false,
+            },
+            TailscaleState::Running {
+                fqdn: "renamed-node.tail1.ts.net".into(),
+                https_enabled: false,
+            },
+            TailscaleState::NotRunning,
+        ]);
+        let refresh = tokio::spawn(crate::maintain_tailscale_status(state, move || {
+            std::future::ready(detections.pop_front().unwrap_or(TailscaleState::NotRunning))
+        }));
+        tokio::task::yield_now().await;
+        for (step, trusted) in [None, Some("late-node"), Some("renamed-node"), None]
+            .into_iter()
+            .enumerate()
+        {
+            if step > 0 {
+                tokio::time::advance(std::time::Duration::from_secs(30)).await;
+                tokio::task::yield_now().await;
+            }
+            for name in ["late-node", "renamed-node", "foreign-node"] {
+                let req = Request::get("/health")
+                    .header(header::HOST, format!("{name}.tail1.ts.net:9877"))
+                    .extension(ConnectInfo(SocketAddr::from(([100, 64, 0, 3], 12345))))
+                    .body(Body::empty())
+                    .unwrap();
+                let status = app.clone().oneshot(req).await.unwrap().status();
+                assert_eq!(
+                    status,
+                    if trusted == Some(name) {
+                        StatusCode::OK
+                    } else {
+                        StatusCode::FORBIDDEN
+                    },
+                    "refresh {step}: {name}"
+                );
+            }
+        }
+        refresh.abort();
+    }
+
     #[derive(Clone, Default)]
     struct LogSink(Arc<parking_lot::Mutex<Vec<u8>>>);
 

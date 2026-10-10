@@ -24,6 +24,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Refresh daemon Tailscale status after startup so a reboot before tailscaled is ready does not leave its MagicDNS name rejected until restart.
 - Paste text into terminals when rich clipboard content also contains an image; keep screenshot and Finder image attachments.
 
 - Keep hands-free PTY echoes out of the mobile composer, including delayed echoes after typing or reconnecting; preserve explicit Tab completion and editable history recall (#1662-c549).
