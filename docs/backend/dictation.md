@@ -151,7 +151,7 @@ The HTTP body of the import uses the same camelCase key as the IPC argument
 
 **Spoken replies** is on by default. The persisted hands_free_spoken_replies preference applies to the backend device and its armed conversation, shared by mobile and Settings. Turning it off cancels queued speech, refuses new replies before engine access, and makes the arming notice request text replies. Dictation continues.
 
-An Edge HTTP 401/403 rejection starts a five-minute backend speech-library cool-down measured with a monotonic clock. Queued and new replies skip the service during it; voice status reports the rejection and the five-minute policy. Voice or language changes do not reset it. Other network errors do not start this cool-down. An asynchronous queued rejection sends one outage notice through the hands-free notice sink, asking the model to tell the user in text. A composer hold defers that notice; it cannot cross into a newly armed conversation.
+An Edge HTTP 401/403 rejection starts a five-minute backend speech-library cool-down measured with a monotonic clock. Queued and new replies skip the service during it; voice status reports the rejection and the five-minute policy. Voice or language changes do not reset it. Other network errors do not start this cool-down. An asynchronous queued rejection sends one outage notice through the hands-free notice sink, asking the model to tell the user in text. Barge-in cancels a reply but still delivers the outage notice to the active conversation. A composer hold defers that notice; it cannot cross into a newly armed conversation.
 
 Available only while hands-free is armed **and** the conversation opened with a
 working voice. Every one of them answers `available: false` with a reason rather

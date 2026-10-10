@@ -769,15 +769,32 @@ mod tests {
     const SENTENCE: &str = "Ciao Boss, il pannello è su main.";
 
     #[test]
-    fn only_auth_http_rejections_trigger_cooldown_without_clock_advice() {
-        // catches: 403 blames the clock, or a transient server failure disables speech.
-        for status in [401, 403] {
-            let error = rejected(status);
-            assert!(matches!(error, SpeechError::Rejected { .. }));
-            assert!(error.to_string().contains(&format!("HTTP {status}")));
-            assert!(!error.to_string().contains("clock"));
+    fn auth_rejection_from_the_dial_stops_subsequent_synthesis_without_clock_advice() {
+        // catches: a public synthesis failure is not suppressed after an auth rejection.
+        use super::super::rejection::{GuardedSpeech, Rejections};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        for status in [401, 403, 500] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let counted = calls.clone();
+            let edge = EdgeSpeech::with_dial(Box::new(move || {
+                counted.fetch_add(1, Ordering::SeqCst);
+                Err(rejected(status))
+            }));
+            let health = Arc::new(Rejections::default());
+            let engine = GuardedSpeech::new(Arc::new(edge), health.clone(), "Microsoft Edge", None);
+            for _ in 0..2 {
+                let error = engine
+                    .synthesize("hello", "it-IT-IsabellaNeural", &SpeechCancel::new())
+                    .unwrap_err();
+                assert!(error.to_string().contains(&format!("HTTP {status}")));
+                assert!(!error.to_string().contains("clock"));
+            }
+            assert_eq!(
+                calls.load(Ordering::SeqCst),
+                if status == 500 { 2 } else { 1 }
+            );
+            assert_eq!(health.reason("Microsoft Edge").is_some(), status != 500);
         }
-        assert!(matches!(rejected(500), SpeechError::Failed(_)));
     }
 
     #[test]

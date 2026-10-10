@@ -92,10 +92,7 @@ impl Speech for GuardedSpeech {
         match self.engine.synthesize(text, voice, cancel) {
             Err(SpeechError::Rejected { status }) => {
                 let (reason, first) = self.rejections.rejected(self.service, status);
-                if first
-                    && !cancel.is_cancelled()
-                    && let Some(notice) = &self.notice
-                {
+                if first && let Some(notice) = &self.notice {
                     notice(reason.clone());
                 }
                 Err(SpeechError::Failed(reason))

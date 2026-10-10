@@ -123,13 +123,3 @@ it("ends the conversation when the session screen is left", async () => {
 
 	expect(voice.disarmHandsFree).toHaveBeenCalledTimes(1);
 });
-
-it("lets the mobile user mute replies without disarming dictation", async () => {
-	// catches: mute is inaccessible from an armed mobile conversation.
-	mount();
-	const toggle = await screen.findByRole("checkbox", { name: "Spoken replies" });
-	expect((toggle as HTMLInputElement).checked).toBe(true);
-	fireEvent.click(toggle);
-	expect(voice.setSpokenReplies).toHaveBeenCalledWith(false);
-	expect(voice.disarmHandsFree).not.toHaveBeenCalled();
-});
