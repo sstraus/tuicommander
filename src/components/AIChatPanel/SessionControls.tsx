@@ -48,7 +48,7 @@ function choiceName(option: SelectOption): string {
 	return choices(option).find((choice) => choice.value === option.currentValue)?.name ?? option.currentValue;
 }
 
-function conversationLabel(session: AcpListedSession): string {
+export function conversationLabel(session: Pick<AcpListedSession, "sessionId" | "title" | "updatedAt">): string {
 	const title = acpTranscript.title(session.sessionId) || session.title;
 	if (title?.trim() && !/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(title.trim())) return title.trim();
 	const firstPrompt = acpTranscript.entries(session.sessionId).find((entry) => entry.kind === "user");
@@ -162,10 +162,17 @@ export const SessionControls: Component<{ chat: AcpChat }> = (props) => {
 			{/* A boolean option is deliberately absent: the client does not advertise
 			    `clientBooleanConfig`, so one cannot arrive, and drawing a control for
 			    it would offer a switch the agent never said it would read. */}
+			<Show
+				when={summary()}
+				fallback={
+					<span class={s.sessionSettingsSummary} role="status">
+						Model: pending · Mode: pending
+					</span>
+				}
+			>
+				<span class={s.sessionSettingsSummary}>{summary()}</span>
+			</Show>
 			<Show when={selectOptions().length > 0}>
-				<Show when={summary()}>
-					<span class={s.sessionSettingsSummary}>{summary()}</span>
-				</Show>
 				<button
 					type="button"
 					class={s.headerBtn}

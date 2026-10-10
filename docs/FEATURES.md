@@ -927,6 +927,9 @@ one configured ego binary and speaks ACP to it, per
 - Multiple chat tabs keep separate ACP sessions, transcripts and composer drafts
   within one panel. Open tabs and the selected tab survive hide/show and detach;
   closing a tab leaves its durable ego conversation available in the picker.
+  Selecting a saved tab attaches or replays it without sending a message, with
+  connecting status or a failure reason and Retry. Tabs use conversation titles
+  or prompts; model/mode controls show pending values until options arrive.
   The focused panel uses `Cmd/Ctrl+T` for a new tab (`Cmd/Ctrl+Alt+T` in browser
   mode) and `Cmd/Ctrl+W` to close one (`Cmd/Ctrl+Alt+W` in browser mode)
 - Transcript text and tool output are selectable. User and assistant messages,
