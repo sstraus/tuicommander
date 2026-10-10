@@ -1,3 +1,7 @@
+## MCP transport import cfgs (1652-4954)
+
+- [x] Import-only change; no runtime behavior to verify after restart. _(verified: src-tauri/src/mcp_http/mcp_transport.rs:12 and mcp_transport_tests.rs:2 imports match test/unix consumers; Rust changes load at Boss's next manual `make dev` restart or `make build`.)_
+
 ## Crate diet stage B (1648-2c54) — Rust restart required
 
 - [ ] After landing and Boss's planned `make dev` restart or `make build`, confirm relay traffic still reaches a paired browser and a Web Push reaches an existing subscription with the stored VAPID key. Fixed vectors cover relay/HKDF bytes and RFC8291 ciphertext; independent verifiers cover VAPID signatures. Rust does not hot-reload; this peer does not restart desktop.

@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 #[cfg(feature = "desktop")]
 use tauri::Emitter;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 use uuid::Uuid;
 
 #[cfg(test)]
@@ -48,7 +48,7 @@ use super::mcp_transport_ancillary::queue_workflow_coordinator_wake;
 pub(crate) use super::mcp_transport_ancillary::report_progress;
 #[cfg(test)]
 use super::mcp_transport_ancillary::resolve_mcp_origin_pty;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 use super::mcp_transport_ancillary::resolve_mcp_origin_repo_path;
 use super::mcp_transport_ancillary::resolve_mcp_origin_session;
 #[cfg(test)]
@@ -75,7 +75,7 @@ use super::mcp_transport_catalogue::SESSION_ACTIONS;
 use super::mcp_transport_catalogue::TASK_ACTIONS;
 #[cfg(test)]
 use super::mcp_transport_catalogue::UI_ACTIONS;
-#[cfg(any(feature = "dictation", test))]
+#[cfg(test)]
 use super::mcp_transport_catalogue::VOICE_ACTIONS;
 use super::mcp_transport_catalogue::build_mcp_instructions;
 use super::mcp_transport_catalogue::build_mcp_instructions_for_mode;
@@ -146,7 +146,7 @@ use super::mcp_transport_session_agent::INFERRED_PTY_DESCRIPTION_MAX_CHARS;
 use super::mcp_transport_session_agent::McpSpawnArgs;
 #[cfg(test)]
 use super::mcp_transport_session_agent::PtyDescriptionUpdate;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 use super::mcp_transport_session_agent::SUBMIT_ACK_MIN_MS;
 #[cfg(test)]
 use super::mcp_transport_session_agent::WAIT_DEFAULT_MS;
@@ -183,7 +183,7 @@ use super::mcp_transport_session_agent::is_direct_codex_executable;
 use super::mcp_transport_session_agent::merge_mcp_params_into_args;
 #[cfg(test)]
 use super::mcp_transport_session_agent::parse_pty_description;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 use super::mcp_transport_session_agent::resolve_effective_spawn_cwd;
 #[cfg(test)]
 use super::mcp_transport_session_agent::resolve_run_config;
