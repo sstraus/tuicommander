@@ -869,3 +869,16 @@ requires a bound managed caller, which window IPC does not supply. Call it via
 HTTP `POST /mcp`. Its `session-worktree-declared` push is also emitted to Tauri;
 `list_active_sessions` and HTTP `GET /sessions` report the persisted declaration
 in their existing worktree fields. See [MCP backend](../backend/mcp-http.md).
+
+### Desktop text clipboard
+
+| Command | Parameters | Returns | Description |
+|---------|------------|---------|-------------|
+| `write_clipboard_text` | `text: String` | `()` | Write UTF-8 text to the local OS clipboard through arboard. Errors reject the call so copy actions show failure. |
+| `read_clipboard_text` | — | `String` | Read UTF-8 text directly from the local OS clipboard without the macOS Web Clipboard Paste pill. |
+
+Both commands require the `desktop` feature and run blocking clipboard operations
+on worker threads. They have no focus or user-gesture requirement. The clipboard
+owner stays alive between calls and is released on application exit. They are
+`INTENTIONALLY_UNMAPPED`: browser clients use `navigator.clipboard` on their own
+machine; HTTP clients cannot read or write the host pasteboard.

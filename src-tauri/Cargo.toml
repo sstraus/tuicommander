@@ -253,7 +253,8 @@ keepawake = "0.6"
 tauri-plugin-updater = { version = "~2.11.0", optional = true }
 tauri-plugin-process = { version = "2", optional = true }
 tauri-plugin-deep-link = { version = "2", optional = true }
-tauri-plugin-clipboard-manager = { version = "2", optional = true }
+# Text only; preserve the plugin's native Wayland clipboard support.
+arboard = { version = "3.6.1", default-features = false, features = ["wayland-data-control"], optional = true }
 tauri-plugin-global-shortcut = { version = "2", optional = true }
 drag = { version = "2.1", features = ["serde"], optional = true }
 # DEFERRED (2026-10-09) — trimming ZIP codecs would reject previously supported plugin archives.
@@ -315,7 +316,7 @@ desktop = [
     "dep:tauri-plugin-updater",
     "dep:tauri-plugin-process",
     "dep:tauri-plugin-deep-link",
-    "dep:tauri-plugin-clipboard-manager",
+    "dep:arboard",
     "dep:tauri-plugin-global-shortcut",
     "dep:drag",
     "dep:rodio",

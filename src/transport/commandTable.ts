@@ -2201,6 +2201,9 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
  * This is NOT a feature gap — these commands have no meaning off the host machine.
  */
 export const INTENTIONALLY_UNMAPPED: ReadonlySet<string> = new Set<string>([
+	// Browser clients use their own navigator.clipboard, never the host pasteboard.
+	"write_clipboard_text",
+	"read_clipboard_text",
 	// A native window identity grants nonce bootstrap. HTTP clients use the
 	// capability link shown only in that window, never a discoverable bootstrap.
 	"secret_form_bootstrap",

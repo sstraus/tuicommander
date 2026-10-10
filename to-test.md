@@ -4869,3 +4869,5 @@ Needs an iPhone (iOS 16.4+, 18.4+ preferred), the desktop TUICommander running a
 
 - [x] Render flowchart, sequence, class, state, gantt and KaTeX math through the real ContentRenderer in headless Chrome before and after upgrading. All six render; Mermaid 12 changes layout and shadows while keeping content and the dark theme. Evidence: `~/Gits/.tmp/tuic-deps/night-c3/before/` and `after/`.
 - [ ] After Boss's next packaged `make build`, confirm the macOS bundle declares `LSMinimumSystemVersion` 12.0. Mermaid diagrams require system WebKit updated to Safari 17.4+; the OS version alone does not guarantee that update. No desktop instance was launched in this lane.
+
+- [ ] After Boss's next `make dev` restart or `make build`: copy and paste text in the desktop app with the arboard commands; confirm terminal copy still succeeds after an IPC await and macOS paste shows no system Paste pill. Rust changes require the restart to load (#1651-6cbe).
