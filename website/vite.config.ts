@@ -1,6 +1,7 @@
 import { defineConfig } from "vite";
 import { resolve } from "path";
 import { readdirSync } from "fs";
+import { DISCORD_URL } from "../src/community";
 
 // Collect all HTML files in blog/ as additional entry points
 const blogDir = resolve(__dirname, "blog");
@@ -12,6 +13,15 @@ const blogEntries = Object.fromEntries(
 
 export default defineConfig({
   base: "/",
+  plugins: [
+    {
+      name: "community-link",
+      transformIndexHtml: {
+        order: "pre",
+        handler: (html) => html.replaceAll("%DISCORD_URL%", DISCORD_URL),
+      },
+    },
+  ],
   build: {
     outDir: "dist",
     rollupOptions: {
