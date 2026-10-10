@@ -624,7 +624,7 @@ Tabbed side panel with four tabs: Changes, Log, Stashes, Branches. Replaces the 
 - **Reload:** when a web or HTML-preview tab is active, `Cmd/Ctrl+R` reloads its content instead of opening the Run Command dialog
 - File content auto-refreshes on repository revision bumps (git change detection)
 - Uses Tauri's `convertFileSrc()` asset protocol for binary files, `read_external_file` IPC for text content
-- CSP allows `asset:` and `http://asset.localhost` in `frame-src` and `media-src`
+- The permissive `default-src` CSP allows `asset:` and `http://asset.localhost` for frames and media; no per-directive CSP overrides it
 
 ### 3.16 Focus Mode (`Cmd+Alt+Enter`)
 - Hides sidebar, tab bar, and all side panels to maximize the active tab's content area
@@ -1902,6 +1902,7 @@ shortcuts and the Global Hotkey. Keys macOS itself claims before the process
 - HTTP API: outbound requests scoped to manifest-declared URL patterns (SSRF prevention)
 - Credential API: cross-platform credential reading (macOS Keychain, Linux/Windows JSON file) with user consent
 - Panel API: rich HTML panels in sandboxed iframes (`sandbox="allow-scripts allow-same-origin"`) with structured message bridge (`onMessage`/`send`), transferable buffer ownership, and automatic CSS theme variable injection
+- URL tabs support external HTTPS and localhost HTTP in sandboxed frames through the permissive `default-src` CSP. Sites can still refuse embedding through their own frame policy.
 - Hidden plugin and URL tab iframes unload and reload when shown again, preventing background pages from blocking terminal input on the shared WebContent main thread
 - Explicit `http`/`https`/`mailto` clicks in inline plugin panels and HTML previews open outside the app; blocked navigation from cross-origin dashboard frames shows a toast directing users to the tab's Open in Browser action
 - Shared ticker system: `setTicker`/`clearTicker` API with source labels, priority tiers (low <10, normal 10-99, urgent >=100), counter badge, click-to-cycle, right-click popover
