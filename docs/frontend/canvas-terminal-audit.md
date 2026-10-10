@@ -11,8 +11,6 @@ Answers-only history includes a retained prompt-less prefix before the first tra
 
 Submitted prompts are not tinted in the terminal grid. Recorded `userPromptLines` still drive scrollbar ticks and answers-only turn grouping; Chat user messages retain the theme prompt tint and gutter.
 
-Scrollbar history and user-prompt ticks depend only on `showScrollbarMarks`; Ctrl+Cmd controls timestamp text independently. Input/window blur clears the timestamp peek even if keyup is missed. Empty marks overlays are omitted, and zero grid history hides the scrollbar. Search ticks remain independent of the history setting.
-
 ## Architecture
 
 ```
