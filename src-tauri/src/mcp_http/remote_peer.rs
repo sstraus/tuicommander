@@ -2,6 +2,9 @@
 //! daemons keep local delivery independent of that link. No process-control
 //! actions cross this protocol.
 
+#[cfg(test)]
+use super::{build_remote_router, mcp_transport, remote_mcp_sessions};
+
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
@@ -1555,16 +1558,596 @@ mod tests {
         .unwrap();
         assert!(missing["error"].as_str().unwrap().contains("missing"));
     }
+    mod authentication_and_routing {
+        //! Critic tests for story 1419-ab18: authentication, provenance, replay and
+        //! head-of-line behaviour of the authenticated /mcp/peer star.
+
+        use super::*;
+        use crate::mcp_http::tests::test_state;
+        use std::net::SocketAddr;
+
+        fn peer(state: &Arc<AppState>, id: &str) {
+            state.peer_agents.insert(
+                id.to_string(),
+                crate::state::PeerAgent {
+                    tuic_session: id.to_string(),
+                    mcp_session_id: format!("sid-{id}"),
+                    name: id.to_string(),
+                    project: None,
+                    registered_at: 0,
+                },
+            );
+            state
+                .mcp
+                .to_session
+                .insert(format!("sid-{id}"), id.to_string());
+        }
+
+        async fn serve(state: Arc<AppState>) -> SocketAddr {
+            let router = axum::Router::new()
+                .route("/mcp/peer", axum::routing::get(endpoint))
+                .with_state(state);
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+            addr
+        }
+
+        async fn open(
+            addr: SocketAddr,
+            query: &str,
+        ) -> Result<
+            tokio_tungstenite::WebSocketStream<
+                tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
+            >,
+            tokio_tungstenite::tungstenite::Error,
+        > {
+            tokio_tungstenite::connect_async(format!("ws://{addr}/mcp/peer?{query}"))
+                .await
+                .map(|(socket, _)| socket)
+        }
+
+        // Catches: an endpoint that upgrades without the daemon token, with a wrong
+        // token, or with an empty configured token equal to an empty `token=` param,
+        // or that accepts a connection qualifier the hub could confuse with "local".
+        #[tokio::test]
+        async fn peer_endpoint_rejects_missing_wrong_empty_token_and_bad_qualifier() {
+            let state = test_state();
+            *state.session_token.write() = "secret-token".into();
+            let addr = serve(state.clone()).await;
+            assert!(open(addr, "connection_id=mint").await.is_err(), "no token");
+            assert!(
+                open(addr, "connection_id=mint&token=wrong").await.is_err(),
+                "wrong token"
+            );
+            assert!(
+                open(addr, "connection_id=local&token=secret-token")
+                    .await
+                    .is_err(),
+                "qualifier local"
+            );
+            assert!(
+                open(addr, "connection_id=a%2Fb&token=secret-token")
+                    .await
+                    .is_err(),
+                "qualifier with slash"
+            );
+            let _good = open(addr, "connection_id=mint&token=secret-token")
+                .await
+                .expect("the correct token must open, or the rejections above prove nothing");
+            assert!(
+                open(addr, "connection_id=other&token=secret-token")
+                    .await
+                    .is_err(),
+                "a second hub must not replace the live one"
+            );
+
+            let empty = test_state();
+            *empty.session_token.write() = String::new();
+            let addr = serve(empty).await;
+            assert!(
+                open(addr, "connection_id=mint&token=").await.is_err(),
+                "empty configured token must not authenticate an empty token param"
+            );
+        }
+
+        // Catches: a spoke supplying `sender.host` of its own choosing ("local" or a
+        // foreign host) and mail arriving attributed to a desktop-local or other-host peer.
+        #[tokio::test]
+        async fn spoke_supplied_sender_host_is_overwritten_by_the_connection() {
+            let state = test_state();
+            peer(&state, "b");
+            let result = process(
+                state.clone(),
+                &Role::Hub("mint".into()),
+                Some(Sender {
+                    host: "local".into(),
+                    id: "x".into(),
+                    name: "x".into(),
+                }),
+                json!({"action": "send", "to": "local/b", "message": "hi"}),
+                None,
+            )
+            .await;
+            assert!(result.get("error").is_none(), "{result}");
+            let inbox = state.agent_inbox.get("b").expect("mail filed under b");
+            assert_eq!(inbox[0].from_tuic_session, "mint/x");
+        }
+
+        // Catches: a spoke reading, waiting on or registering as a peer of another host
+        // through the hub (only send/list_peers may arrive daemon-to-hub).
+        #[tokio::test]
+        async fn spoke_cannot_read_wait_or_register_through_the_hub() {
+            let state = test_state();
+            peer(&state, "b");
+            for action in ["inbox", "wait", "register", "spawn", "kill"] {
+                let result = process(
+                    state.clone(),
+                    &Role::Hub("mint".into()),
+                    Some(Sender {
+                        host: "mint".into(),
+                        id: "b".into(),
+                        name: "b".into(),
+                    }),
+                    json!({"action": action, "timeout_ms": 1}),
+                    None,
+                )
+                .await;
+                assert!(result.get("error").is_some(), "{action}: {result}");
+            }
+        }
+
+        // Catches: an empty session_id resolving, via `starts_with("")`, to the only
+        // remote PTY, so a missing target submits to a remote agent.
+        #[tokio::test]
+        async fn empty_session_id_never_selects_a_remote_pty() {
+            let state = test_state();
+            crate::remote_mirror::store_seed_for_test(
+                &state,
+                "mint",
+                vec![crate::mcp_http::types::SessionInfo {
+                    session_id: "remote-pty".into(),
+                    ..Default::default()
+                }],
+            );
+            for args in [
+                json!({"action": "submit", "session_id": "", "input": "x"}),
+                json!({"action": "submit", "session_id": "", "connection_id": "mint", "input": "x"}),
+                json!({"action": "submit", "session_id": "mint/", "input": "x"}),
+            ] {
+                let resolved = super::super::remote_mcp_sessions::resolve(&state, &args);
+                assert!(
+                    !matches!(resolved, Some(Ok(_))),
+                    "{args} resolved to a remote PTY"
+                );
+            }
+        }
+
+        // Catches: lifecycle outbox replay after a lost acknowledgement re-delivering a
+        // message the recipient already read (dedupe only while still in the inbox).
+        #[tokio::test]
+        async fn replayed_message_id_is_not_redelivered_after_the_recipient_read_it() {
+            let state = test_state();
+            peer(&state, "a");
+            peer(&state, "b");
+            let args = json!({"action": "send", "to": "b", "message": "hi"});
+            let first = super::super::mcp_transport::local_peer_call_with_message_id(
+                &state,
+                &args,
+                Some("sid-a"),
+                Some("m1".into()),
+            )
+            .await;
+            assert!(first.get("error").is_none(), "{first}");
+            state.agent_inbox.get_mut("b").unwrap().clear(); // recipient read it
+            let _ = super::super::mcp_transport::local_peer_call_with_message_id(
+                &state,
+                &args,
+                Some("sid-a"),
+                Some("m1".into()),
+            )
+            .await;
+            assert!(
+                state
+                    .agent_inbox
+                    .get("b")
+                    .is_none_or(|inbox| inbox.is_empty()),
+                "same forwarded message id was delivered twice"
+            );
+        }
+
+        // Catches: one silent (blackholed) connection holding the global connect lock
+        // for its whole 20 s handshake budget and starving mail to every other host.
+        #[tokio::test]
+        async fn a_stalled_connection_does_not_block_calls_to_other_connections() {
+            let state = test_state();
+            peer(&state, "a");
+            let stall = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}", stall.local_addr().unwrap());
+            state
+                .remote
+                .force_connected_for_test("stall", &url, Some("t"));
+            let slow_state = state.clone();
+            let slow = tokio::spawn(async move {
+                dispatch(
+                    &slow_state,
+                    &json!({"action": "send", "to": "stall/x", "message": "m"}),
+                    Some("sid-a"),
+                )
+                .await
+            });
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let other = tokio::time::timeout(
+                Duration::from_secs(3),
+                dispatch(
+                    &state,
+                    &json!({"action": "send", "to": "ghost/x", "message": "m"}),
+                    Some("sid-a"),
+                ),
+            )
+            .await;
+            slow.abort();
+            assert!(
+                other.is_ok(),
+                "a call to an unrelated connection waited behind another host's handshake"
+            );
+        }
+    }
+
+    mod replay_and_teardown {
+        //! Round 2 critic tests for story 1419-ab18: dedup horizon, session address
+        //! ownership, teardown cleanup and secrets in errors.
+
+        use super::*;
+        use crate::mcp_http::tests::test_state;
+
+        fn message(id: &str, from: &str, content: &str) -> crate::state::AgentMessage {
+            crate::state::AgentMessage {
+                id: id.to_string(),
+                from_tuic_session: from.to_string(),
+                from_name: from.to_string(),
+                content: content.to_string(),
+                timestamp: 0,
+                delivered_via_channel: false,
+            }
+        }
+
+        // Catches: the 1024-recipient cap evicting the oldest recipient wholesale, so
+        // traffic to 1024 other recipients erases the dedup history of the first one.
+        #[test]
+        fn recipient_cap_eviction_does_not_reopen_replay_for_an_old_recipient() {
+            let state = test_state();
+            let first = message("m1", "mint/a", "once");
+            assert_eq!(record_forwarded(&state, "r0", &first), Ok(true));
+            for n in 1..=1024 {
+                let other = message(&format!("o-{n}"), &format!("other-{n}/a"), "x");
+                assert_eq!(record_forwarded(&state, &format!("r{n}"), &other), Ok(true));
+            }
+            assert_eq!(
+                record_forwarded(&state, "r0", &first),
+                Ok(false),
+                "recipient eviction let a replayed id through"
+            );
+        }
+
+        // Catches: an empty or whitespace id/sender/content boundary hashing to the
+        // same fingerprint (ambiguous concatenation) and a changed body under the same
+        // id being accepted as a duplicate.
+        #[test]
+        fn same_id_with_shifted_sender_content_boundary_is_a_collision() {
+            let state = test_state();
+            assert_eq!(
+                record_forwarded(&state, "r", &message("m", "ab", "c")),
+                Ok(true)
+            );
+            assert_eq!(
+                record_forwarded(&state, "r", &message("m", "a", "bc")),
+                Err("Forwarded message identity collision".into())
+            );
+        }
+
+        // Catches: an ambiguous LOCAL address ("matches two desktop sessions") falling
+        // through to remote prefix matching, so a submit/read meant for a local session
+        // silently lands on the one remote row that shares the prefix.
+        #[test]
+        #[cfg(unix)]
+        fn ambiguous_local_address_never_selects_a_remote_session() {
+            let state = test_state();
+            for id in [
+                "11111111-89ab-cdef-0123-456789abcdef",
+                "11111111-89ab-cdef-0123-456789abcdef0",
+            ] {
+                crate::state::tests_support::insert_dummy_session(&state, id);
+            }
+            crate::remote_mirror::store_seed_for_test(
+                &state,
+                "mint",
+                vec![crate::mcp_http::types::SessionInfo {
+                    session_id: "11111111-remote".into(),
+                    ..Default::default()
+                }],
+            );
+            let resolved = super::super::remote_mcp_sessions::resolve(
+                &state,
+                &json!({"action":"submit","session_id":"11111111","input":"x"}),
+            );
+            assert!(
+                !matches!(resolved, Some(Ok(_))),
+                "ambiguous local address was routed to a remote host: {resolved:?}"
+            );
+        }
+
+        // Catches: probes for unknown hosts leaving permanent entries in connect_locks.
+        #[tokio::test]
+        async fn unknown_host_probes_do_not_accumulate_connect_locks() {
+            let state = test_state();
+            for n in 0..50 {
+                let _ = connection(&state, &format!("ghost-{n}")).await;
+            }
+            assert!(
+                state.remote_mail.connect_locks.lock().len() <= 1,
+                "connect_locks leaked {} entries",
+                state.remote_mail.connect_locks.lock().len()
+            );
+        }
+
+        // Catches: a failed peer handshake echoing the connection token (it travels in
+        // the websocket query string) in the error returned to the MCP caller.
+        #[tokio::test]
+        async fn failed_handshake_error_does_not_contain_the_token() {
+            let state = test_state();
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            drop(listener);
+            state
+                .remote
+                .force_connected_for_test("mint", &url, Some("SECRET-TOKEN-1419"));
+            let error = connection(&state, "mint").await.err().expect("must fail");
+            assert!(!error.to_string().contains("SECRET-TOKEN-1419"), "{error}");
+        }
+
+        // Catches: `disconnect` removing the link itself, so the teardown task's
+        // `remove_if(..).is_some()` is false and the daemon's shadow identities stay
+        // registered (addressable, listed) after the configured connection is gone.
+        #[tokio::test]
+        async fn disconnect_removes_the_shadow_identities_of_that_host() {
+            let hub = test_state();
+            let mint = test_state();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            let token = mint.session_token.read().clone();
+            hub.remote
+                .force_connected_for_test("mint", &url, Some(&token));
+            let server = tokio::spawn(async move {
+                axum::serve(
+                    listener,
+                    super::super::build_remote_router(mint)
+                        .into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                )
+                .await
+                .unwrap();
+            });
+            hub.peer_agents.insert(
+                "mint/ghost".into(),
+                crate::state::PeerAgent {
+                    tuic_session: "mint/ghost".into(),
+                    mcp_session_id: "remote-mail:test:ghost".into(),
+                    name: "ghost".into(),
+                    project: None,
+                    registered_at: 0,
+                },
+            );
+            connection(&hub, "mint").await.expect("link opens");
+            assert!(hub.remote_mail.connections.contains_key("mint"));
+            disconnect(&hub, "mint");
+            let mut cleaned = false;
+            for _ in 0..40 {
+                if !hub.peer_agents.contains_key("mint/ghost") {
+                    cleaned = true;
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            server.abort();
+            assert!(cleaned, "shadow identity survived disconnect of its host");
+        }
+    }
+
+    mod retirement_races {
+        //! Round 3 security critic tests for story 1419-ab18: replay budget fairness and
+        //! accounting, concurrent retirement, and disconnect racing a handshake.
+
+        use super::*;
+        use crate::mcp_http::tests::test_state;
+
+        fn message(id: &str, from: &str) -> crate::state::AgentMessage {
+            crate::state::AgentMessage {
+                id: id.to_string(),
+                from_tuic_session: from.to_string(),
+                from_name: from.to_string(),
+                content: "one lifecycle notice".to_string(),
+                timestamp: 0,
+                delivered_via_channel: false,
+            }
+        }
+
+        // Catches: a sender's retirement (host disconnect) purges its windows, so a
+        // lost-ack retry after reconnect is delivered twice.
+        #[test]
+        fn dedupe_survives_the_senders_own_retirement() {
+            let state = test_state();
+            assert_eq!(
+                record_forwarded(&state, "r", &message("n1", "mint/s")),
+                Ok(true)
+            );
+            unregister_peer(&state, "mint/s");
+            assert_eq!(
+                record_forwarded(&state, "r", &message("n1", "mint/s")),
+                Ok(false)
+            );
+        }
+
+        // Catches: checking registration before the history lock lets retirement finish
+        // before an already-admitted enqueue recreates an unregistered recipient's ring.
+        #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+        async fn concurrent_enqueue_and_retirement_keep_history_consistent() {
+            let state = test_state();
+            let (registered, registrations) = std::sync::mpsc::channel();
+            let (retired, retirements) = std::sync::mpsc::channel();
+            let producer = {
+                let state = state.clone();
+                tokio::task::spawn_blocking(move || {
+                    for i in 0..3000 {
+                        state.peer_agents.insert(
+                            "R".into(),
+                            crate::state::PeerAgent {
+                                tuic_session: "R".into(),
+                                mcp_session_id: "sid-R".into(),
+                                name: "R".into(),
+                                project: None,
+                                registered_at: 0,
+                            },
+                        );
+                        registered.send(()).unwrap();
+                        let _ =
+                            enqueue_forwarded(&state, "R", message(&format!("id-{i}"), "mint/s"));
+                        retirements.recv().unwrap();
+                        // Both operations finished; check before another registration can
+                        // hide an orphan behind a live peer or another retirement clears it.
+                        assert!(
+                            !state
+                                .remote_mail
+                                .forwarded_history
+                                .lock()
+                                .recipients
+                                .contains_key("R"),
+                            "orphan replay state for an unregistered peer at interleaving {i}"
+                        );
+                    }
+                })
+            };
+            let retirer = {
+                let state = state.clone();
+                tokio::task::spawn_blocking(move || {
+                    while registrations.recv().is_ok() {
+                        unregister_peer(&state, "R");
+                        state.agent_inbox.remove("R");
+                        if retired.send(()).is_err() {
+                            break;
+                        }
+                    }
+                })
+            };
+            let produced = producer.await;
+            retirer.await.unwrap();
+            produced.unwrap();
+            if !state.peer_agents.contains_key("R") {
+                assert!(
+                    !state
+                        .remote_mail
+                        .forwarded_history
+                        .lock()
+                        .recipients
+                        .contains_key("R"),
+                    "orphan replay state for an unregistered peer"
+                );
+            }
+        }
+
+        async fn held_daemon(
+            hub: &Arc<AppState>,
+        ) -> (
+            tokio::task::JoinHandle<()>,
+            tokio::sync::oneshot::Receiver<()>,
+            Arc<tokio::sync::Notify>,
+        ) {
+            let remote = test_state();
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let url = format!("http://{}", listener.local_addr().unwrap());
+            hub.remote.force_connected_for_test(
+                "mint",
+                &url,
+                Some(&remote.session_token.read().clone()),
+            );
+            let (tx, entered) = tokio::sync::oneshot::channel();
+            let signal = Arc::new(parking_lot::Mutex::new(Some(tx)));
+            let release = Arc::new(tokio::sync::Notify::new());
+            let router =
+                super::super::build_remote_router(remote).layer(axum::middleware::from_fn({
+                    let release = release.clone();
+                    move |request: axum::extract::Request, next: axum::middleware::Next| {
+                        let release = release.clone();
+                        let signal = signal.clone();
+                        async move {
+                            if request.uri().path() == "/mcp/peer" {
+                                if let Some(tx) = signal.lock().take() {
+                                    let _ = tx.send(());
+                                }
+                                release.notified().await;
+                            }
+                            next.run(request).await
+                        }
+                    }
+                }));
+            let server = tokio::spawn(async move {
+                axum::serve(
+                    listener,
+                    router.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+                )
+                .await
+                .unwrap();
+            });
+            (server, entered, release)
+        }
+
+        // Catches: disconnect + immediate reconnect while a handshake holds the host
+        // lock skips the deferred retirement (generation moved on), so the old link's
+        // shadow peers survive although the identical sequence without a racing
+        // handshake retires them synchronously.
+        #[tokio::test]
+        async fn disconnect_then_reconnect_during_a_handshake_still_retires_old_shadows() {
+            let hub = test_state();
+            let (server, entered, release) = held_daemon(&hub).await;
+            hub.peer_agents.insert(
+                "mint/ghost".into(),
+                crate::state::PeerAgent {
+                    tuic_session: "mint/ghost".into(),
+                    mcp_session_id: "remote-mail:test:ghost".into(),
+                    name: "ghost".into(),
+                    project: None,
+                    registered_at: 0,
+                },
+            );
+            let opening = {
+                let hub = hub.clone();
+                tokio::spawn(async move { connection(&hub, "mint").await })
+            };
+            entered.await.unwrap();
+            disconnect(&hub, "mint");
+            connect_configured(&hub, "mint".into());
+            let mut relinked = false;
+            for _ in 0..100 {
+                release.notify_one();
+                if hub.remote_mail.connections.contains_key("mint") {
+                    relinked = true;
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+            let first = opening.await.unwrap();
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            let survived = hub.peer_agents.contains_key("mint/ghost");
+            disconnect(&hub, "mint");
+            server.abort();
+            assert!(
+                first.is_err(),
+                "the pre-disconnect handshake must not publish"
+            );
+            assert!(relinked, "the reconnect must still establish its own link");
+            assert!(
+                !survived,
+                "shadow peer of the disconnected link survived the race"
+            );
+        }
+    }
 }
-
-#[cfg(test)]
-#[path = "remote_peer_critic1419.rs"]
-mod critic1419;
-
-#[cfg(test)]
-#[path = "remote_peer_critic1419r2.rs"]
-mod critic1419r2;
-
-#[cfg(test)]
-#[path = "remote_peer_critic1419r3.rs"]
-mod critic1419r3;
