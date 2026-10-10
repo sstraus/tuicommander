@@ -26,6 +26,11 @@ export type UpstreamAuth =
 			token_endpoint?: string;
 	  };
 
+export interface UpstreamHeader {
+	name: string;
+	credential_ref: string;
+}
+
 export interface UpstreamMcpServer {
 	id: string;
 	name: string;
@@ -34,6 +39,7 @@ export interface UpstreamMcpServer {
 	timeout_secs: number;
 	tool_filter?: ToolFilter;
 	auth?: UpstreamAuth;
+	headers?: UpstreamHeader[];
 }
 
 export interface UpstreamMcpConfig {

@@ -169,11 +169,15 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 		map: (args) => ({
 			method: "POST",
 			path: "/mcp/upstreams/credential",
-			body: { name: args.name, token: args.token },
+			body: { name: args.name, token: args.token, url: args.url, ...(args.header ? { header: args.header } : {}) },
 		}),
 	},
 	delete_mcp_upstream_credential: {
-		map: (args) => ({ method: "DELETE", path: "/mcp/upstreams/credential", body: { name: args.name } }),
+		map: (args) => ({
+			method: "DELETE",
+			path: "/mcp/upstreams/credential",
+			body: { name: args.name, ...(args.header ? { header: args.header } : {}) },
+		}),
 	},
 
 	// --- ACP (ego) ---

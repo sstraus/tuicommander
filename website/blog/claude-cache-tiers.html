@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>One hour for the parent, five minutes for the child — TUICommander Blog</title>
+  <meta name="description" content="We measured Claude Code’s cache directives and idle-gap behavior. The main session gets an hour; its native subagent gets five minutes. That difference matters when agents spend time waiting." />
+
+  <meta property="og:title" content="One hour for the parent, five minutes for the child — TUICommander" />
+  <meta property="og:description" content="We measured Claude Code’s cache directives and idle-gap behavior. The main session gets an hour; its native subagent gets five minutes. That difference matters when agents spend time waiting." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+  <style>
+    .cache-chart svg { display: block; width: 100%; height: auto; }
+    .blog-post .comparison-table { font-size: 0.85rem; }
+    .blog-post .comparison-table caption { text-align: left; color: var(--fg-secondary); padding-bottom: 12px; }
+    .blog-post .comparison-table th[scope="row"] { color: var(--fg-primary); font-weight: 400; }
+  </style>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time datetime="2026-10-10">October 10, 2026</time>
+      <h1>One hour for the parent, five minutes for the child</h1>
+      <p class="blog-post-summary">We measured Claude Code’s cache directives and idle-gap behavior. The main session gets an hour; its native subagent gets five minutes. That difference matters when agents spend time waiting.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>The quiet part of a multi-agent workflow</h2>
+      <p>An agent finishes a patch, starts a test run, and waits. Another sends work to a reviewer. A third asks you a question while you are reading a diff. Nothing unusual is happening. But the next model request may have to write a prompt prefix that was already cached a few minutes ago.</p>
+      <p>We wanted to know whether the way you launch an agent changes that behavior. On October 10, 2026, we measured <strong>Claude Code 2.1.286 with <code>claude-sonnet-5-5</code></strong>. The main session explicitly requested a one-hour prompt cache. Its native <code>Agent</code> subagent omitted the TTL, and the response assigned its writes to the five-minute tier.</p>
+      <p>That is relevant to TUICommander: every agent it launches runs as a top-level CLI session in its own PTY. A worker can be a child in our coordination graph while remaining a main session from Claude Code’s point of view. Under the measured behavior, that puts each Claude worker on the one-hour path.</p>
+      <p>A <a href="https://x.com/diegohaz/status/2108662928501035481" rel="noopener noreferrer">post by Haz</a> prompted the experiment. We could not retrieve it independently, so we are crediting the prompt for the investigation, without quoting or treating its claims as evidence. The numbers below come from our captures.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Watch the request, then check the response</h2>
+      <p>We used a loopback-only mitmdump 12.2.3 proxy on macOS arm64, with a certificate authority trusted by the CLI process alone. The CLI handled its existing login. Our scripts did not read credential stores, copy credentials, or install a system trust entry.</p>
+      <p>The capture addon saved an allowlist of fields: timestamps, host, request byte count, model, cache directives, numeric usage, tool schema property names, and tool-call names and hashes. It did not save headers, cookies, prompt or response text, account metadata, or raw flows. Native runtime state stays out of the published evidence.</p>
+      <p>A filesystem sandbox constrained experiment writes. Requests over 45,000 serialized bytes were stopped before forwarding; that is a byte guard, not a token measurement. Prompts asked for short fixed replies. We counted usage from individual wire responses, merging repeated streaming usage updates instead of summing them.</p>
+      <p>The first useful distinction was visible directly in the request:</p>
+      <pre><code>Main session:   {"type": "ephemeral", "ttl": "1h"}
+Native child:   {"type": "ephemeral"}</code></pre>
+      <p>A requested TTL alone would be weak evidence. The initial native child also returned <strong>4,251 cache-write tokens</strong>, all in <code>ephemeral_5m_input_tokens</code>, with 2 fresh input tokens and zero cache-read tokens. Parent requests on either side requested and wrote into the one-hour tier.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The main session stayed warm after half an hour</h2>
+      <p>We kept the main process alive and inserted separate 4-, 6-, and 30-minute waits. Each gap is measured from the preceding response to the next request by the same role. These are sequential gaps; a cache read refreshes retention, so the final row is not a clock running from the first write.</p>
+      <div class="comparison-table-wrap">
+        <table class="comparison-table">
+          <caption>Main-session wire usage, in tokens</caption>
+          <thead><tr><th scope="col">Idle gap</th><th scope="col">Actual seconds</th><th scope="col">Fresh input</th><th scope="col">Cache read</th><th scope="col">1h write</th></tr></thead>
+          <tbody>
+            <tr><th scope="row">4 minutes</th><td>240.115</td><td>2</td><td>3,073</td><td>159</td></tr>
+            <tr><th scope="row">6 minutes</th><td>360.613</td><td>2</td><td>3,232</td><td>282</td></tr>
+            <tr><th scope="row">30 minutes</th><td>1800.314</td><td>2</td><td>3,514</td><td>250</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>All three turns reused cached input. The extra writes are new conversation suffixes: a cache hit does not mean that the whole growing request came from cache. A smaller initial probe had only 287 input tokens and neither read nor wrote cache, despite requesting one hour. Tiny prompts cannot prove retention.</p>
+    </div>
+
+    <figure class="blog-figure cache-chart">
+      <svg viewBox="0 0 720 260" role="img" aria-labelledby="cache-chart-title cache-chart-desc">
+        <title id="cache-chart-title">Cache reads after separate idle gaps</title>
+        <desc id="cache-chart-desc">Main session, one-hour tier: hits after 4, 6 and 30 minutes. Native child, five-minute tier: hit after 4 minutes, miss after 6 minutes, 30-minute result pending. Columns are categorical, not a linear time axis.</desc>
+        <rect x="1" y="1" width="718" height="258" rx="12" fill="var(--bg-card)" stroke="var(--border)" />
+        <g fill="var(--fg-primary)" font-family="sans-serif" font-size="18">
+          <text x="24" y="38">Same CLI. Different cache tiers.</text>
+          <text x="330" y="80" text-anchor="middle">4 min</text><text x="470" y="80" text-anchor="middle">6 min</text><text x="610" y="80" text-anchor="middle">30 min</text>
+          <text x="24" y="126">Main · 1h</text><text x="24" y="188">Native child · 5m</text>
+        </g>
+        <g font-family="sans-serif" font-size="17" text-anchor="middle">
+          <g fill="var(--success)"><text x="330" y="126">HIT</text><text x="470" y="126">HIT</text><text x="610" y="126">HIT</text><text x="330" y="188">HIT</text></g>
+          <text x="470" y="188" fill="var(--error)">MISS</text><text x="610" y="188" fill="var(--warning)">PENDING</text>
+        </g>
+        <text x="24" y="234" fill="var(--fg-secondary)" font-family="sans-serif" font-size="14">Observed reads · independent idle gaps · October 10, 2026</text>
+      </svg>
+      <figcaption>The main and child runs used different prompt sizes. This compares cache-hit behavior, not equal-work costs.</figcaption>
+    </figure>
+
+    <div class="blog-section">
+      <h2>The child crossed the five-minute boundary</h2>
+      <p>The first timing attempt asked the parent to resume its child. The later requests were actually main-session requests. Inspecting the captured <code>Agent</code> schema showed no <code>resume</code> property, so those turns cannot establish anything about child retention.</p>
+      <p>The separate child run keeps one native child alive through synchronous shell sleeps. Its available responses show a hit after <strong>244.135 seconds</strong>: 5,686 cache-read tokens and 611 new five-minute write tokens. After <strong>360.296 seconds</strong>, it returned zero cache-read tokens and <strong>6,436 five-minute write tokens</strong>. Both turns had 2 fresh input tokens.</p>
+      <p>The native-child 30-minute check is still pending at this writing. We are not filling that cell from the requested TTL. The six-minute miss is a measured event in this run; one run does not locate an exact eviction boundary.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Why a terminal per worker matters</h2>
+      <p>TUICommander coordinates independent agent processes. Each gets its own terminal, working context, and session. The parent assigns work and receives results through <a href="/blog/agent-messaging.html">agent messaging</a>; Claude Code does not have to create that worker through its native <code>Agent</code> tool.</p>
+      <p>That separation has an interesting consequence. The worker inherits the main-session cache policy observed here: one hour. A review, a build, or a human answer can take longer than five minutes without crossing that requested retention window. The measured main-session hits after six and thirty minutes support why this can help a workflow with long pauses.</p>
+      <p>This is an architectural advantage supported by the CLI experiment. We did not run a controlled, end-to-end comparison of the same workload inside TUICommander and through native delegation. Launching more top-level sessions also creates separate contexts; it does not make their prompts identical or guarantee a shared cache between workers.</p>
+      <p>It suggests a useful scheduling principle: keep a worker’s session alive when you expect to return to it, and send it the next bounded assignment. A short task that finishes before any long pause may see little benefit from the longer tier. The pause pattern matters as much as the agent count.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What 25× means, and what it does not</h2>
+      <p>At <a href="https://platform.claude.com/docs/en/about-claude/pricing" rel="noopener noreferrer">Anthropic’s API list prices</a>, checked October 10, 2026, Sonnet 5.5 costs $2 per million fresh input tokens, $2.50 per million five-minute cache-write tokens, $4 per million one-hour cache-write tokens, and $0.10 per million cache-read tokens. The five-minute write/read ratio is <strong>25×</strong>.</p>
+      <p>Here is an <strong>API list-price counterfactual</strong>: if an unchanged 100,000-token prefix must be written again into the five-minute tier after a six-minute pause, that write costs $0.25. Reading those same tokens from a surviving cache costs $0.01. This isolates one input operation; it excludes initial writes, new suffixes, output tokens, and any other work.</p>
+      <p>The longer tier has an upfront premium: $4 rather than $2.50 per million write tokens. A longer lifetime is therefore not automatically cheaper for every workload. Nor does 25× describe a whole request: the observed initial child’s input-only counterfactual ratio was about 24.78× once its 2 fresh tokens were included.</p>
+      <p><strong>We have not measured subscription savings, subscription quota accounting, or a TUICommander bill reduction.</strong> The experiment used an existing personal login. API list-price arithmetic explains the magnitude of the token-category difference; it cannot tell us how a subscription meters those categories.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>How to reproduce the useful part</h2>
+      <p>The <a href="/blog/claude-cache-tiers/evidence.json">sanitized evidence extract</a> contains the request directives, per-turn usage, measured gaps, and price inputs used here. It includes no prompt bodies or native login state. To repeat the measurement in your own environment:</p>
+      <ol>
+        <li>Record the exact CLI version, model, date, and login tier. Start with an already authenticated CLI; let it handle authentication.</li>
+        <li>Run a loopback interception proxy with per-process CA trust. Save only an explicit allowlist of cache directives and numeric usage. Apply a request-size guard before forwarding.</li>
+        <li>Send a short task with enough stable input to produce a real cache write. Confirm the response’s five-minute and one-hour write counters before testing retention.</li>
+        <li>Keep the same main process alive. Insert separate 240-, 360-, and 1800-second waits, recording the actual response-to-request gaps and the usage after each.</li>
+        <li>Repeat with one native child kept alive through synchronous waits. Verify that the later requests really belong to that child; do not infer it from the parent’s reply or assume a resume parameter exists.</li>
+        <li>Merge streaming usage updates by field rather than adding repeated counters. Compare cached reads and tier-specific writes, then calculate costs separately.</li>
+      </ol>
+      <p>The timed sequences take roughly forty minutes each and make real inference requests. An independent rerun should preserve the same model and login tier, and report any sandbox or startup failure before drawing conclusions about caching.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>The boundary of the result</h2>
+      <p>This is one CLI version, one model, and one environment. We did not test all account tiers, regions, context sizes, or eviction conditions. We did not observe a 500,000-token rewrite. Changing a prompt prefix, restarting a session, or using another CLI release can change the outcome.</p>
+      <p><strong>Codex and Grok were not measured.</strong> The experiment’s isolation broke their probes; reruns are in progress. We make no claim about their cache policies or comparative costs.</p>
+      <p>What we can say is concrete: this Claude main session requested one hour and reused cached input after a half-hour pause. Its native child wrote into the five-minute tier and missed after six minutes. TUICommander’s independent-terminal architecture keeps Claude workers on the main-session side of that distinction. That is a useful property for agents whose work includes waiting.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>Apache License 2.0 &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>
