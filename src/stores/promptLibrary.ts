@@ -416,7 +416,7 @@ function createPromptLibraryStore() {
 			}
 
 			// Sort by most recently used/updated
-			return [...prompts].sort((a, b) => {
+			return prompts.toSorted((a, b) => {
 				const aTime = a.lastUsed || a.updatedAt;
 				const bTime = b.lastUsed || b.updatedAt;
 				return bTime - aTime;

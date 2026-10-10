@@ -158,6 +158,7 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
 		// Use the last client rect so multi-line selections anchor the icon
 		// at the true end of the selection (not the bounding box corner).
 		const rects = range.getClientRects();
+		// biome-ignore lint/style/useAtIndex: DOMRectList has indexed access but no at method.
 		const rect = rects.length > 0 ? rects[rects.length - 1] : range.getBoundingClientRect();
 		const BTN_SIZE = 28;
 		clearBlockTarget();
@@ -309,6 +310,7 @@ export const CommentOverlay: Component<CommentOverlayProps> = (props) => {
 		const range = sel.getRangeAt(0);
 		const rects = range.getClientRects();
 		const firstRect = rects.length > 0 ? rects[0] : range.getBoundingClientRect();
+		// biome-ignore lint/style/useAtIndex: DOMRectList has indexed access but no at method.
 		const lastRect = rects.length > 0 ? rects[rects.length - 1] : firstRect;
 
 		// Snapshot the selection text + its occurrence ordinal before clearing.

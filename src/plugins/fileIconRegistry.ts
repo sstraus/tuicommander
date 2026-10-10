@@ -44,7 +44,7 @@ function createFileIconRegistry() {
 	}
 
 	function resolve(name: string, isDir: boolean): string | null {
-		const activeProvider = providers[providers.length - 1];
+		const activeProvider = providers.at(-1)!;
 		if (!activeProvider) return null;
 		const key = `${isDir ? "d" : "f"}:${name}`;
 		if (resolved.has(key)) return resolved.get(key) ?? null;

@@ -249,14 +249,14 @@ export function addTweakCommentAtSelection(view: EditorView, comment: Omit<Tweak
 	// Diff in CodeMirror's coordinates (one character per line break, whatever the file uses).
 	const crlf = view.state.lineBreak === "\r\n";
 	const before = view.state.doc.toString();
-	const after = updated.replace(/\r\n/g, "\n");
+	const after = updated.replaceAll("\r\n", "\n");
 	let start = 0;
 	while (start < before.length && before[start] === after[start]) start++;
 	let end = 0;
-	while (end < before.length - start && before[before.length - 1 - end] === after[after.length - 1 - end]) end++;
+	while (end < before.length - start && before.at(-1 - end)! === after.at(-1 - end)!) end++;
 	const insert = after.slice(start, after.length - end);
 	view.dispatch({
-		changes: { from: start, to: before.length - end, insert: crlf ? insert.replace(/\n/g, "\r\n") : insert },
+		changes: { from: start, to: before.length - end, insert: crlf ? insert.replaceAll("\n", "\r\n") : insert },
 		annotations: [trusted.of(true), Transaction.userEvent.of("input.tweak")],
 	});
 }

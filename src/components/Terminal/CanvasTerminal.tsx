@@ -874,7 +874,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// left the last-painted marks on screen forever, because the repaint that
 		// would clear them never ran.
 		const showBlocks = blockTimestampsVisible && settingsStore.state.showScrollbarMarks;
-		const key = `${showBlocks ? blocks.length : 0}:${showBlocks ? promptLines.length : 0}:${totalRows}:${historyBase}:${showBlocks ? (blocks[blocks.length - 1]?.exitCode ?? "") : ""}:s${searchCount}:${searchCount > 0 ? search.matches[0].row : ""}`;
+		const key = `${showBlocks ? blocks.length : 0}:${showBlocks ? promptLines.length : 0}:${totalRows}:${historyBase}:${showBlocks ? (blocks.at(-1)?.exitCode ?? "") : ""}:s${searchCount}:${searchCount > 0 ? search.matches[0].row : ""}`;
 		if (key === lastScrollbarMarksKey) return;
 		lastScrollbarMarksKey = key;
 
@@ -3506,7 +3506,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				const path = e.dataTransfer?.getData("application/x-tuic-path");
 				if (!path) return;
 				e.preventDefault();
-				const quoted = `'${path.replace(/'/g, "'\\''")}' `;
+				const quoted = `'${path.replaceAll("'", "'\\''")}' `;
 				writePty(quoted);
 				keyInputRef.focus({ preventScroll: true });
 			}}

@@ -67,7 +67,7 @@ export function extractSelectedLines(
 	const hunkHeader = allLines[hunkLineIdx];
 	const bodyLines = allLines.slice(hunkLineIdx + 1, hunkEndIdx);
 
-	if (bodyLines.length > 0 && bodyLines[bodyLines.length - 1] === "") bodyLines.pop();
+	if (bodyLines.length > 0 && bodyLines.at(-1)! === "") bodyLines.pop();
 
 	const headerMatch = hunkHeader.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
 	let oldLine = headerMatch ? parseInt(headerMatch[1], 10) : 1;
@@ -130,7 +130,7 @@ export function buildPartialPatch(fullDiff: string, hunkIdx: number, selectedLin
 	const bodyLines = allLines.slice(hunkLineIdx + 1, hunkEndIdx);
 
 	// Remove trailing empty line if present (artifact of split)
-	if (bodyLines.length > 0 && bodyLines[bodyLines.length - 1] === "") {
+	if (bodyLines.length > 0 && bodyLines.at(-1)! === "") {
 		bodyLines.pop();
 	}
 

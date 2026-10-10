@@ -264,7 +264,7 @@ describe("mcpPopupStore", () => {
 				await store.loadConfig();
 				await store.toggleServer("alpha");
 
-				const toast = toastsStore.toasts[toastsStore.toasts.length - 1]!;
+				const toast = toastsStore.toasts.at(-1)!;
 				expect(toast.title).toBe("MCP servers changed");
 				expect(toast.message).toContain("Compatible clients refresh automatically");
 				expect(toast.message).not.toContain("until restarted");

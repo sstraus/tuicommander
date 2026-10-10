@@ -140,7 +140,7 @@ export function createMinuteClock(active: Accessor<boolean> = () => true): Acces
 
 /** Trailing separators and backslashes differ between how git and the store spell one checkout. */
 export function normalizePath(path: string): string {
-	return path.replace(/\\/g, "/").replace(/\/+$/, "");
+	return path.replaceAll("\\", "/").replace(/\/+$/, "");
 }
 
 /**

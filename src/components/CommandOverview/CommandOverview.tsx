@@ -54,7 +54,7 @@ export const CommandOverview: Component = () => {
 				const term = terminalsStore.get(id);
 				if (!term) return null;
 				const blocks = term.commandBlocks;
-				const lastBlock = blocks.length > 0 ? blocks[blocks.length - 1] : null;
+				const lastBlock = blocks.length > 0 ? blocks.at(-1)! : null;
 				return {
 					termId: id,
 					name: term.name || id.slice(0, 6),

@@ -22,28 +22,17 @@ function groupByTime(items: ActivityItemData[]): TimeGroup[] {
 	startOfDay.setHours(0, 0, 0, 0);
 	const dayStart = startOfDay.getTime();
 
+	const buckets = Object.groupBy(items, (item) => {
+		if (item.createdAt >= fiveMinAgo) return "NOW";
+		if (item.createdAt >= oneHourAgo) return "EARLIER";
+		if (item.createdAt >= dayStart) return "TODAY";
+		return "OLDER";
+	});
 	const groups: TimeGroup[] = [];
-	const recent: ActivityItemData[] = [];
-	const earlier: ActivityItemData[] = [];
-	const today: ActivityItemData[] = [];
-	const older: ActivityItemData[] = [];
-
-	for (const item of items) {
-		if (item.createdAt >= fiveMinAgo) {
-			recent.push(item);
-		} else if (item.createdAt >= oneHourAgo) {
-			earlier.push(item);
-		} else if (item.createdAt >= dayStart) {
-			today.push(item);
-		} else {
-			older.push(item);
-		}
+	for (const label of ["NOW", "EARLIER", "TODAY", "OLDER"] as const) {
+		const bucket = buckets[label];
+		if (bucket) groups.push({ label, items: bucket });
 	}
-
-	if (recent.length > 0) groups.push({ label: "NOW", items: recent });
-	if (earlier.length > 0) groups.push({ label: "EARLIER", items: earlier });
-	if (today.length > 0) groups.push({ label: "TODAY", items: today });
-	if (older.length > 0) groups.push({ label: "OLDER", items: older });
 
 	return groups;
 }
@@ -54,7 +43,7 @@ export function ActivityScreen(props: ActivityScreenProps) {
 	});
 	const activeItems = createMemo(() => {
 		const items = activityStore.getActive();
-		return [...items].sort((a, b) => b.createdAt - a.createdAt);
+		return items.toSorted((a, b) => b.createdAt - a.createdAt);
 	});
 
 	// Snapshot items every 10s so time-group buckets don't reshuffle

@@ -211,7 +211,7 @@ export function planSuggestOverlay(
 				blocks.push({ row: contRow, kind: "continuation" });
 				parts.push(`c${contRow}`);
 			}
-			if (hiddenRows.length > 0) row = hiddenRows[hiddenRows.length - 1];
+			if (hiddenRows.length > 0) row = hiddenRows.at(-1)!;
 		} else if (!snapshot.isWrapped && ANSWER_MARKER_RE.test(text)) {
 			// The whole answer, not only its marker row. A wrapped row is never a
 			// line start, so an emoji the wrap happens to land on is not a marker.

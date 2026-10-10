@@ -129,7 +129,7 @@ describe("CommandInput echo handling (PWA textarea is source of truth)", () => {
 
 		// User continues typing, delta is computed from "hell" correctly
 		sim.type("hello");
-		expect(sim.writes[sim.writes.length - 1]).toBe("o");
+		expect(sim.writes.at(-1)!).toBe("o");
 	});
 
 	it("tab completion: PTY-driven strict extension is accepted", () => {
@@ -146,7 +146,7 @@ describe("CommandInput echo handling (PWA textarea is source of truth)", () => {
 
 		// Continued typing deltas from the expanded value
 		sim.type("git status");
-		expect(sim.writes[sim.writes.length - 1]).toBe("status");
+		expect(sim.writes.at(-1)!).toBe("status");
 	});
 
 	it("history nav from empty textarea: PTY insert is accepted (empty is prefix of all)", () => {
@@ -224,7 +224,7 @@ describe("CommandInput echo handling (PWA textarea is source of truth)", () => {
 		expect(sim.displayed).toBe("hello");
 
 		sim.type("hello world");
-		expect(sim.writes[sim.writes.length - 1]).toBe(" world");
+		expect(sim.writes.at(-1)!).toBe(" world");
 	});
 });
 

@@ -112,7 +112,7 @@ describe("useAutoDeleteBranch", () => {
 		dispose?.();
 		// Last call should be null (cleanup)
 		const calls = mockSetOnPrTerminal.mock.calls;
-		expect(calls[calls.length - 1][0]).toBeNull();
+		expect(calls.at(-1)![0]).toBeNull();
 	});
 
 	it("does nothing when setting is off", async () => {

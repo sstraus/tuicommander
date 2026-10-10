@@ -36,4 +36,16 @@ describe("updateAppConfig", () => {
 			"save_config",
 		]);
 	});
+	it("keeps nested saved baselines isolated from the next config mutation", async () => {
+		mockInvoke.mockImplementation(async (command: string) =>
+			command === "load_config" ? { nested: { values: ["original"] } } : undefined,
+		);
+		await updateAppConfig<{ nested: { values: string[] } }>((config) => {
+			config.nested.values.push("edited");
+		});
+		expect(mockInvoke).toHaveBeenCalledWith("save_config", {
+			base: { nested: { values: ["original"] } },
+			config: { nested: { values: ["original", "edited"] } },
+		});
+	});
 });

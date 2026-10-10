@@ -268,7 +268,7 @@ function firstLeaf(node: PaneNode): string {
 /** Get the last (rightmost/bottommost) leaf ID in a subtree */
 function lastLeaf(node: PaneNode): string {
 	if (node.type === "leaf") return node.id;
-	return lastLeaf(node.children[node.children.length - 1]);
+	return lastLeaf(node.children.at(-1)!);
 }
 
 // ---- Store ----
@@ -452,7 +452,7 @@ function createPaneLayoutStore() {
 					if (!group) return;
 					group.tabs = group.tabs.filter((t) => t.id !== tabId);
 					if (group.activeTabId === tabId) {
-						group.activeTabId = group.tabs.length > 0 ? group.tabs[group.tabs.length - 1].id : null;
+						group.activeTabId = group.tabs.length > 0 ? group.tabs.at(-1)!.id : null;
 					}
 				}),
 			);
@@ -472,7 +472,7 @@ function createPaneLayoutStore() {
 					const from = s.groups[fromGroupId];
 					from.tabs = from.tabs.filter((t) => t.id !== tabId);
 					if (from.activeTabId === tabId) {
-						from.activeTabId = from.tabs.length > 0 ? from.tabs[from.tabs.length - 1].id : null;
+						from.activeTabId = from.tabs.length > 0 ? from.tabs.at(-1)!.id : null;
 					}
 					const to = s.groups[toGroupId];
 					if (!to.tabs.some((t) => t.id === tab.id && t.type === tab.type)) {

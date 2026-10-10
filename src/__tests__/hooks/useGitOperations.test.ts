@@ -3212,7 +3212,7 @@ describe("useGitOperations", () => {
 
 			// Simulate session becoming available
 			const ids = terminalsStore.getIds();
-			terminalsStore.update(ids[ids.length - 1], { sessionId: "sess-run" });
+			terminalsStore.update(ids.at(-1)!, { sessionId: "sess-run" });
 
 			await vi.advanceTimersByTimeAsync(500);
 
@@ -3246,7 +3246,7 @@ describe("useGitOperations", () => {
 			await gitOps.executeRunCommand("npm run test:integration:coverage --verbose");
 
 			const ids = terminalsStore.getIds();
-			const t = terminalsStore.get(ids[ids.length - 1]);
+			const t = terminalsStore.get(ids.at(-1)!);
 			expect(t?.name.length).toBeLessThanOrEqual(28); // 25 + "..."
 		});
 
@@ -3274,7 +3274,7 @@ describe("useGitOperations", () => {
 			await customGitOps.executeRunCommand("npm run test:integration");
 
 			const ids = terminalsStore.getIds();
-			const t = terminalsStore.get(ids[ids.length - 1]);
+			const t = terminalsStore.get(ids.at(-1)!);
 			expect(t?.name).toBe("npm run te...");
 		});
 	});
@@ -4647,7 +4647,7 @@ describe("useGitOperations", () => {
 			await gitOps.executeRunCommand("failing-cmd");
 
 			const ids = terminalsStore.getIds();
-			terminalsStore.update(ids[ids.length - 1], { sessionId: "sess-fail" });
+			terminalsStore.update(ids.at(-1)!, { sessionId: "sess-fail" });
 
 			await vi.advanceTimersByTimeAsync(500);
 

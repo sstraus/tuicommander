@@ -65,7 +65,7 @@ export function globToRegExp(pattern: string): RegExp {
 			if (end === -1) re += "\\[";
 			else {
 				const cls = body.slice(i + 1, end);
-				re += cls.startsWith("!") ? `[^${cls.slice(1).replace(/\\/g, "\\\\")}]` : `[${cls.replace(/\\/g, "\\\\")}]`;
+				re += cls.startsWith("!") ? `[^${cls.slice(1).replaceAll("\\", "\\\\")}]` : `[${cls.replaceAll("\\", "\\\\")}]`;
 				i = end;
 			}
 		} else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");

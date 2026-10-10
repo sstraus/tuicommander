@@ -35,7 +35,7 @@ export function resolveTuicPath(path: string, repoPaths: string[], baseRepoPath:
 	if (!path) return null;
 
 	if (isAbsolutePath(path)) {
-		const sorted = [...repoPaths].sort((a, b) => b.length - a.length);
+		const sorted = repoPaths.toSorted((a, b) => b.length - a.length);
 		const repo = sorted.find((rp) => pathStartsWith(path, rp));
 		if (!repo) return null;
 		return { repoPath: repo, relPath: pathStripPrefix(path, repo)! };

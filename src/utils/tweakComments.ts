@@ -75,12 +75,12 @@ const ITEM_RE = /^([ \t]*)<!--tweak:item:([A-Za-z0-9_-]+) @(\S+)( eof)?\r?\n([\s
 
 /** Escape the only sequence that would break the enclosing HTML comment. */
 function escapeBody(body: string): string {
-	return body.replace(/-->/g, "--&gt;");
+	return body.replaceAll("-->", "--&gt;");
 }
 
 /** Reverse escapeBody. */
 function unescapeBody(body: string): string {
-	return body.replace(/--&gt;/g, "-->");
+	return body.replaceAll("--&gt;", "-->");
 }
 
 /** Serialize a comment into its inline marker form (does not insert into source). */

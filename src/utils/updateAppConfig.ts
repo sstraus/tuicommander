@@ -17,7 +17,7 @@ export function updateAppConfig<T extends object>(mutate: (config: T) => void): 
 	return runSerializedConfigWrite(async () => {
 		const loaded = await invoke<T>("load_config");
 		const config = loaded ?? ({} as T);
-		const base = JSON.parse(JSON.stringify(config)) as T;
+		const base = structuredClone(config);
 		mutate(config);
 		await invoke("save_config", { base, config });
 		return config;

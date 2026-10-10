@@ -313,7 +313,7 @@ const BrowseRow: Component<{ entry: RegistryEntry }> = (props) => {
  */
 export function sortPlugins(plugins: readonly PluginState[]): PluginState[] {
 	const name = (p: PluginState) => (p.manifest?.name ?? p.id).toLowerCase();
-	return [...plugins].sort((a, b) => {
+	return plugins.toSorted((a, b) => {
 		if (a.builtIn !== b.builtIn) return a.builtIn ? -1 : 1;
 		if (a.enabled !== b.enabled) return a.enabled ? -1 : 1;
 		return name(a).localeCompare(name(b));

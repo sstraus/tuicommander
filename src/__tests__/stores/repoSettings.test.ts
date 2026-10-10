@@ -28,7 +28,7 @@ vi.mock("../../stores/repoDefaults", () => ({
 /** The entry for `path` in the most recent `save_repo_settings` call. */
 function lastSavedEntry(path: string): Record<string, unknown> {
 	const calls = mockInvoke.mock.calls.filter(([name]) => name === "save_repo_settings");
-	const call = calls[calls.length - 1];
+	const call = calls.at(-1)!;
 	if (!call) throw new Error("save_repo_settings was never called");
 	const repos = (call[1] as { config: { repos: Record<string, Record<string, unknown>> } }).config.repos;
 	return repos[path];

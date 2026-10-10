@@ -29,7 +29,7 @@ export default function TipOfTheDay() {
 		const pos = dots.indexOf(i);
 		if (pos === -1) return 0;
 		if (pos === 0 && dots[0] > 0) return 0.6;
-		if (pos === dots.length - 1 && dots[dots.length - 1] < TIPS.length - 1) return 0.6;
+		if (pos === dots.length - 1 && dots.at(-1)! < TIPS.length - 1) return 0.6;
 		return 1;
 	};
 

@@ -829,7 +829,7 @@ function createTerminalsStore() {
 		addUserPromptLine(id: string, line: number): void {
 			if (!has(id) || line < 0) return;
 			setState("terminals", id, "userPromptLines", (prev) => {
-				if (prev[prev.length - 1] === line) return prev;
+				if (prev.at(-1)! === line) return prev;
 				const next = [...prev, line];
 				return next.length > MAX_BLOCKS ? next.slice(-MAX_BLOCKS) : next;
 			});

@@ -180,7 +180,7 @@ export const CommandPalette: Component<CommandPaletteProps> = (props) => {
 		};
 
 		if (!query.trim()) {
-			return [...availableActions()].sort(baseSort);
+			return availableActions().toSorted(baseSort);
 		}
 
 		const ranked = bm25Index().score(query);

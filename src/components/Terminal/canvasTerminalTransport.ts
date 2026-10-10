@@ -339,7 +339,7 @@ export class WsTransport implements TerminalTransport {
 		// Set in onopen, which the WebSocket spec fires before any message event
 		// on the same socket — so no frame is ever read against the wrong framing.
 		let compressed = false;
-		let rejectConnect: (error: Error) => void = () => {};
+		const { promise: connected, resolve: resolveConnect, reject: rejectConnect } = Promise.withResolvers<void>();
 		this.initialFrameTimer = setTimeout(() => {
 			if (this.closed || this.ws !== ws) return;
 			const error = new Error("Timed out waiting for the initial terminal frame");
@@ -393,24 +393,22 @@ export class WsTransport implements TerminalTransport {
 			this.reportStreamError(error);
 			this.scheduleReconnect();
 		};
-		await new Promise<void>((resolve, reject) => {
-			rejectConnect = reject;
-			ws.onopen = () => {
-				compressed = ws.protocol === DEFLATE_SUBPROTOCOL;
-				if (asksForCompression && !compressed) {
-					appLogger.debug("terminal", "WsTransport asked for compression and the server did not take it", {
-						sessionId: this.sessionId,
-					});
-				}
-				resolve();
-			};
-			ws.onerror = () => {
-				if (this.closed || this.ws !== ws) return;
-				const error = new Error("WebSocket connection failed");
-				this.reportStreamError(error);
-				reject(error);
-			};
-		});
+		ws.onopen = () => {
+			compressed = ws.protocol === DEFLATE_SUBPROTOCOL;
+			if (asksForCompression && !compressed) {
+				appLogger.debug("terminal", "WsTransport asked for compression and the server did not take it", {
+					sessionId: this.sessionId,
+				});
+			}
+			resolveConnect();
+		};
+		ws.onerror = () => {
+			if (this.closed || this.ws !== ws) return;
+			const error = new Error("WebSocket connection failed");
+			this.reportStreamError(error);
+			rejectConnect(error);
+		};
+		await connected;
 	}
 
 	unsubscribe(): void {

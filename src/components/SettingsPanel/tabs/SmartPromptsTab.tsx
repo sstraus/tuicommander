@@ -151,14 +151,7 @@ function getAllSmartPrompts(): SavedPrompt[] {
 
 /** Group prompts by category */
 function groupByCategory(prompts: SavedPrompt[]): Map<string, SavedPrompt[]> {
-	const groups = new Map<string, SavedPrompt[]>();
-	for (const p of prompts) {
-		const cat = promptCategory(p);
-		const list = groups.get(cat) ?? [];
-		list.push(p);
-		groups.set(cat, list);
-	}
-	return groups;
+	return Map.groupBy(prompts, promptCategory);
 }
 
 // ---------------------------------------------------------------------------
@@ -172,15 +165,7 @@ const VariableDropdown: Component<{
 	const [open, setOpen] = createSignal(false);
 
 	// Group variables
-	const groups = createMemo(() => {
-		const map = new Map<string, VarDef[]>();
-		for (const v of CONTEXT_VARIABLES) {
-			const list = map.get(v.group) ?? [];
-			list.push(v);
-			map.set(v.group, list);
-		}
-		return map;
-	});
+	const groups = createMemo(() => Map.groupBy(CONTEXT_VARIABLES, (v) => v.group));
 
 	return (
 		<div class={sp.varDropdownWrap}>

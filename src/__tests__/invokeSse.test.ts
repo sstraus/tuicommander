@@ -39,7 +39,7 @@ class MockEventSource {
 
 /** The most recently opened stream. */
 function last(): MockEventSource | undefined {
-	return MockEventSource.instances[MockEventSource.instances.length - 1];
+	return MockEventSource.instances.at(-1)!;
 }
 
 /** Opens are coalesced onto a macrotask, so drain one. */

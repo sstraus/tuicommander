@@ -14,7 +14,7 @@ describe("repositoriesStore", () => {
 
 	function lastRepositoryMutation() {
 		const calls = mockInvoke.mock.calls.filter((call: unknown[]) => call[0] === "save_repositories");
-		const last = calls[calls.length - 1];
+		const last = calls.at(-1)!;
 		return (
 			last[1] as {
 				config: {

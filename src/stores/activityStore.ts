@@ -96,7 +96,7 @@ function createActivityStore() {
 	}
 
 	function getSections(): ActivitySection[] {
-		return [...state.sections].sort((a, b) => a.priority - b.priority);
+		return state.sections.toSorted((a, b) => a.priority - b.priority);
 	}
 
 	// -------------------------------------------------------------------------

@@ -106,7 +106,7 @@ function extractRegisteredTauriCommands(): Set<string> {
 		.filter((entry) => entry.length > 0)
 		.map((entry) => {
 			const parts = entry.split("::");
-			const rustName = parts[parts.length - 1];
+			const rustName = parts.at(-1)!;
 			const renamedCommand = libSource.match(
 				new RegExp(
 					`#\\[tauri::command\\(rename\\s*=\\s*"([^"]+)"\\)\\]\\s*(?:pub\\(super\\)\\s+)?async\\s+fn\\s+${rustName}\\b`,
@@ -2838,7 +2838,7 @@ describe("transport", () => {
 			await Promise.all(resizes);
 
 			expect(sent[0]).toEqual({ rows: 10, cols: 40 });
-			expect(sent[sent.length - 1]).toEqual({ rows: 40, cols: 160 });
+			expect(sent.at(-1)!).toEqual({ rows: 40, cols: 160 });
 			expect(sent).toHaveLength(2);
 		});
 
@@ -3747,7 +3747,7 @@ describe("transport", () => {
 				// Ten failures is MAX_RETRIES; the eleventh close is the one that
 				// finds the budget spent.
 				for (let i = 0; i < 11; i++) {
-					instances[instances.length - 1].onclose?.({ code: 1006 });
+					instances.at(-1)!.onclose?.({ code: 1006 });
 					await vi.advanceTimersByTimeAsync(60_000);
 				}
 				expect(onExit).toHaveBeenCalledTimes(1);

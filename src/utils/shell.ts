@@ -13,7 +13,7 @@ export function escapeShellArg(arg: string): string {
 	if (isWindows()) {
 		// cmd.exe: wrap in double quotes, escape internal double quotes and special chars
 		// Caret (^) is the cmd.exe escape character; double quotes need doubling
-		const escaped = arg.replace(/"/g, '""').replace(/([%^&<>|])/g, "^$1");
+		const escaped = arg.replaceAll('"', '""').replace(/([%^&<>|])/g, "^$1");
 		return `"${escaped}"`;
 	}
 	return escapePosixShellArg(arg);
@@ -21,7 +21,7 @@ export function escapeShellArg(arg: string): string {
 
 /** Quote one argument for a POSIX shell, including fish and POSIX shells on Windows. */
 export function escapePosixShellArg(arg: string): string {
-	return `'${arg.replace(/'/g, "'\\''")}'`;
+	return `'${arg.replaceAll("'", "'\\''")}'`;
 }
 
 /**

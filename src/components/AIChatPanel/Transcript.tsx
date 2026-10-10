@@ -477,7 +477,7 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 				// CSS collapses ASCII whitespace across inline nodes in normal prose.
 				const character = !preformatted && /[ \t\r\n\f]/.test(text[offset]) ? " " : text[offset];
 				if (!preformatted && character === " " && current.text.endsWith(" ")) {
-					const previous = current.offsets[current.offsets.length - 1];
+					const previous = current.offsets.at(-1)!;
 					previous.end = offset + 1;
 					// A collapsed run can span nodes; retain its final DOM endpoint.
 					previous.endNode = node;

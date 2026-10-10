@@ -53,7 +53,7 @@ export const BranchSwitcher: Component<BranchSwitcherProps> = (props) => {
 		}
 
 		// Sort: current first, then main, then locals alphabetical, then remotes alphabetical
-		return [...items].sort((a, b) => {
+		return items.toSorted((a, b) => {
 			if (a.is_current && !b.is_current) return -1;
 			if (!a.is_current && b.is_current) return 1;
 			if (a.is_main && !b.is_main) return -1;

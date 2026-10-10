@@ -195,7 +195,7 @@ export function createCanvasSelectionController(): CanvasSelectionController {
 				lines.push(text.replace(/\s+$/, ""));
 			}
 
-			while (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+			while (lines.length > 0 && lines.at(-1)! === "") lines.pop();
 			return lines.join("\n");
 		},
 	};

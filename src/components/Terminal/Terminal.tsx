@@ -1262,7 +1262,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 		const path = e.dataTransfer?.getData("application/x-tuic-path");
 		if (!path || !sessionId) return;
 		e.preventDefault();
-		const quoted = `'${path.replace(/'/g, "'\\''")}' `;
+		const quoted = `'${path.replaceAll("'", "'\\''")}' `;
 		pty.write(sessionId, quoted);
 		canvasTerminalRef()?.focus();
 	};

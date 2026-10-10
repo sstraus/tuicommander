@@ -13,6 +13,11 @@ mod github_routes;
 mod guards;
 mod log_routes;
 pub(crate) mod mcp_transport;
+mod mcp_transport_ancillary;
+mod mcp_transport_catalogue;
+mod mcp_transport_peer;
+mod mcp_transport_session_agent;
+
 mod plugin_docs;
 mod plugin_routes;
 mod remote_mcp_sessions;

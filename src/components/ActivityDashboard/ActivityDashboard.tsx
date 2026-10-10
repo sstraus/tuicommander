@@ -31,7 +31,7 @@ export const statusClasses = {
 
 /** Truncate a string to a single line for display */
 function truncate(text: string, maxLen = 80): string {
-	const oneLine = text.replace(/\n/g, " ").trim();
+	const oneLine = text.replaceAll("\n", " ").trim();
 	if (oneLine.length <= maxLen) return oneLine;
 	return oneLine.slice(0, maxLen - 1) + "\u2026";
 }

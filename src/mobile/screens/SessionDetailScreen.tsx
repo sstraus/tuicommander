@@ -31,7 +31,7 @@ interface SessionDetailScreenProps {
 function projectName(cwd: string | null): string {
 	if (!cwd) return "unknown";
 	const parts = cwd.replaceAll("\\", "/").split("/");
-	return parts[parts.length - 1] || "unknown";
+	return parts.at(-1)! || "unknown";
 }
 
 function elapsedTime(ms: number): string {

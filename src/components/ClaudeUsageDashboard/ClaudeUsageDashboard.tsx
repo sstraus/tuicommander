@@ -203,7 +203,7 @@ function svgPath(points: { x: number; y: number }[]): string {
 function svgAreaPath(points: { x: number; y: number }[]): string {
 	if (points.length === 0) return "";
 	const line = svgPath(points);
-	const lastX = points[points.length - 1].x;
+	const lastX = points.at(-1)!.x;
 	const firstX = points[0].x;
 	return `${line} L${lastX.toFixed(1)},${PLOT_H.toFixed(1)} L${firstX.toFixed(1)},${PLOT_H.toFixed(1)} Z`;
 }
@@ -579,7 +579,7 @@ export const ClaudeUsageDashboard: Component<{ sessionId?: string | (() => strin
 	/** Pretty-print a claim key like "seven_day_sonnet" → "7-Day Sonnet". */
 	const claimLabel = (key: string): string => {
 		const match = rateBuckets().find((b) => b.key === key);
-		return match ? match.label : key.replace(/_/g, " ");
+		return match ? match.label : key.replaceAll("_", " ");
 	};
 
 	/** Format a number with thousand separators (no decimal for integers). */

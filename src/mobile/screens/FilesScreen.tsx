@@ -346,7 +346,7 @@ export function FilesScreen(props: FilesScreenProps) {
 	const visibleEntries = () =>
 		searchQuery().trim()
 			? searchResults()
-			: [...entries()].sort((a, b) => {
+			: entries().toSorted((a, b) => {
 					const hidden = Number(a.name.startsWith(".")) - Number(b.name.startsWith("."));
 					return hidden || Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name);
 				});

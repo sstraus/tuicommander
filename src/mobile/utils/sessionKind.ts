@@ -38,5 +38,5 @@ export function isPtySession(session: SessionInfo): boolean {
 export function ptysLast(sessions: SessionInfo[]): SessionInfo[] {
 	// Stable per spec, so equal keys keep the backend's ordering.
 	const priority = (session: SessionInfo) => (session.state?.awaiting_input ? 0 : isPtySession(session) ? 2 : 1);
-	return [...sessions].sort((a, b) => priority(a) - priority(b));
+	return sessions.toSorted((a, b) => priority(a) - priority(b));
 }

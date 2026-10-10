@@ -90,7 +90,7 @@ describe("WsTransport stall handling (critic 1421-733e)", () => {
 		await sub;
 		await vi.advanceTimersByTimeAsync(15_000); // stall -> error 1, reconnect
 		await vi.advanceTimersByTimeAsync(2_000);
-		const second = FakeWs.all[FakeWs.all.length - 1];
+		const second = FakeWs.all.at(-1)!;
 		second.open();
 		second.frame(); // recovered
 		second.onclose?.(); // drops again
@@ -104,7 +104,7 @@ describe("WsTransport stall handling (critic 1421-733e)", () => {
 		await sub;
 		for (let i = 0; i < 25; i++) {
 			await vi.advanceTimersByTimeAsync(60_000);
-			const last = FakeWs.all[FakeWs.all.length - 1];
+			const last = FakeWs.all.at(-1)!;
 			// Each reconnect socket opens and then stalls without a frame.
 			last.open();
 		}
@@ -131,7 +131,7 @@ describe("WsTransport stall handling (critic 1421-733e)", () => {
 		await sub;
 		await vi.advanceTimersByTimeAsync(10_000);
 		const re = t.resubscribe();
-		const fresh = FakeWs.all[FakeWs.all.length - 1];
+		const fresh = FakeWs.all.at(-1)!;
 		fresh.open();
 		await re;
 		fresh.frame();

@@ -227,5 +227,5 @@ export function useWorktreeSwitchPrompt(deps: WorktreeSwitchDeps): void {
 /** Minimal shell escaping — wrap in single quotes, escape existing quotes */
 function shellEscape(path: string): string {
 	if (!/[^a-zA-Z0-9_./-]/.test(path)) return path;
-	return `'${path.replace(/'/g, "'\\''")}'`;
+	return `'${path.replaceAll("'", "'\\''")}'`;
 }
