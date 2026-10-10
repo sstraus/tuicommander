@@ -1,3 +1,6 @@
+## MCP upstream secret headers (1657-e1a4) — Rust restart required
+
+- [ ] After landing and Boss's planned manual `make dev` restart or `make build`, add an HTTP upstream with Bearer and two custom header rows; confirm masked persistence, rotation and row removal. Targeted tests exercise requests, config isolation and redirects with dummy values. Rust does not hot-reload; this peer does not restart desktop.
 ## Mobile hands-free composer ownership (1662-c549)
 
 - [ ] After loading the updated PWA frontend, dictate during a busy Claude turn, including after a dialog/draft hold and while interrupting speech. Confirm the PTY queues the phrase once and the mobile composer keeps only local typing. Toggle spoken-reply mute mid-phrase and confirm the same behavior. Real microphone, speaker, and Safari PWA timing need a device check; component tests cover unsolicited, delayed, and reconnect input echoes plus keyboard/keybar Tab and editable Up/Down history recall. No Rust production change or backend restart is needed for this fix.
@@ -4899,6 +4902,7 @@ Needs an iPhone (iOS 16.4+, 18.4+ preferred), the desktop TUICommander running a
 
 - [ ] After Boss's next `make dev` restart or `make build`: copy and paste text in the desktop app with the arboard commands; confirm terminal copy still succeeds after an IPC await and macOS paste shows no system Paste pill. Rust changes require the restart to load (#1651-6cbe).
 
+- [ ] #1657-e1a4: After a manual make dev restart, edit an upstream with Bearer/OAuth/custom headers to another URL origin; Save must show the add-new-upstream message and keep the prior config and credentials. Same-origin path edits remain allowed. The Rust request-origin check requires a restart to load. Confirm same-origin path edits retain the displayed auth method, and old unbound credentials show the re-save/authorize error.
 
 ### Spoken replies toggle (#1659-f3cc)
 - [x] Capture the mobile conversation and Settings toggles on the worktree Vite. _(verified: docs/evidence/voice-mute-1659/README.md — headless Chrome CDP screenshots and computed on/off state; both labels meet the 44px touch target.)_
