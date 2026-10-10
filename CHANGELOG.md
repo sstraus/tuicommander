@@ -28,6 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Keep enforcing other automation runs' deadlines when stopping one owned process fails (#1616-1882).
+
 - Keep hands-free PTY echoes out of the mobile composer, including delayed echoes after typing or reconnecting; preserve explicit Tab completion and editable history recall (#1662-c549).
 - Keep mobile Claude tool-call text and wrapped continuations stationary while its status dot pulses or turns green (#1654-a3d5).
 - Preserve line breaks between held hands-free phrases and submit the combined turn once (#1656-eb5e).

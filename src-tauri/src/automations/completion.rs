@@ -32,11 +32,15 @@ pub(crate) fn reconcile(
     effects: &impl CompletionEffects,
     now: i64,
 ) -> Result<(), String> {
+    let mut stop_errors = Vec::new();
     for run in runs.open_runs()? {
         let observed = effects.observe(&run);
         let expired = now >= run.deadline_ms.unwrap_or_else(|| deadline(&run));
         let next = if expired {
-            effects.stop(&run)?;
+            if let Err(error) = effects.stop(&run) {
+                stop_errors.push(format!("Run {}: {error}", run.id));
+                continue;
+            }
             Some(RunStatus::TimedOut)
         } else if !matches!(run.status, RunStatus::Running | RunStatus::NeedsYou) {
             None
@@ -73,7 +77,11 @@ pub(crate) fn reconcile(
         )?;
         effects.publish(&saved);
     }
-    Ok(())
+    if stop_errors.is_empty() {
+        Ok(())
+    } else {
+        Err(stop_errors.join("; "))
+    }
 }
 
 fn deadline(run: &AutomationRun) -> i64 {

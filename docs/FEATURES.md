@@ -2743,4 +2743,6 @@ Step 8 API integration is required before use; see [Automations](user-guide/auto
 
 Automation execution now reconciles task, PTY and progress completion evidence,
 retains bounded final output, and expires active runs at their persisted deadline.
+If stopping one run fails, it stays active while other runs still enforce their
+deadlines. Reconciliation reports the stop errors after processing those runs.
 Blocked runs remain active; idle alone does not prove success. Rust restart required.
