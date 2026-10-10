@@ -234,6 +234,10 @@ use std::collections::HashMap;
 use std::io::Write;
 use std::path::PathBuf;
 
+#[path = "config_repository_registration.rs"]
+mod repository_registration;
+pub(crate) use repository_registration::register_repository;
+
 #[cfg(test)]
 pub(crate) use tuic_core::config_dir::{
     set_override as set_config_dir_override, without_override as without_config_dir_override,

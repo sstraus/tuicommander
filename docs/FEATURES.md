@@ -1929,7 +1929,8 @@ shortcuts and the Global Hotkey. Keys macOS itself claims before the process
 
 ### 17.4 Deep Links (`tuic://`)
 - `tuic://install-plugin?url=https://...` — Download and install plugin (HTTPS only, confirmation dialog)
-- `tuic://open-repo?path=/path` — Activate a repo already in the sidebar; a folder that is not in it yet is added after one confirmation (this is what `tuic <dir>` sends)
+- CLI `tuic <dir>` / `tuic open <dir>` and MCP `repo action=add` register and activate directories through the running server, without an OS URL handler; repeat adds preserve existing workspaces and terminals. MCP `ui tab` rejects `tuic://open-repo` and directs callers to `repo add`.
+- `tuic://open-repo?path=/path` — Activate a repo already in the sidebar; a folder that is not in it yet is added after one confirmation (native deep-link flow)
 - `tuic://settings?tab=plugins` — Open Settings to specific tab
 - `tuic://open/<path>` — Open a Markdown file in a native tab. MCP `ui action=tab` also accepts absolute Markdown paths outside registered repositories; the iframe SDK keeps its repository path validation.
 - Focused absolute `tuic://open`/`tuic://edit` targets switch to their owning registered repository so the native file tab remains visible; background opens preserve the current repository

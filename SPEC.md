@@ -846,3 +846,5 @@ destinations, uses the configured workspace base/profile and literal prompt,
 and saves precheck pass/refusal/manual-bypass/no-check outcomes and launch ids.
 Cron dispatch stays disabled in phase 1. Public execution transports and
 completion/maximum-duration handling remain pending; idle is not success.
+
+CLI directory opens and MCP `repo action=add` share server-owned repository registration over local IPC. They persist and activate canonical Git or shell directories without an OS URL handler, preserve existing workspace and terminal state on repeated calls, and broadcast configuration changes. MCP `ui tab` rejects `tuic://open-repo` URLs and directs callers to `repo add`.

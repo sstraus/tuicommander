@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Register directories from `tuic` through the running server; add MCP `repo add` and reject unsupported `ui tab` deep links instead of reporting silent success (#1668-9b59).
+
 - Keep terminal scrollbar history marks visible without Ctrl+Cmd, clear timestamp peek on focus loss, and omit empty marks overlays (#1665-ce9b).
 
 - Widen the Activity Dashboard popup by 20%, while keeping it within small windows (#1664-f4ab).
