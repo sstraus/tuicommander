@@ -13,7 +13,7 @@ Published story workflows can start in Plans and Stories through the owning daem
 
 Desktop AI Chat uses the terminal composer’s pin and blue play buttons. The pin highlights a parked draft; tooltips identify Park, Restore, Swap, Send and Queue.
 
-AI Chat image paste discovers capabilities on first use and shares clipboard precedence with Ideas and terminal Compose: Finder image filenames allow attachments, while substantive text takes priority.
+AI Chat image paste discovers capabilities on first use and shares clipboard precedence with Ideas, terminal Compose, and terminal input: Finder image filenames allow attachments, while substantive text takes priority.
 
 ## ego Perimeter Settings
 

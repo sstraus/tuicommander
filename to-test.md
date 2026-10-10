@@ -1,3 +1,6 @@
+## Terminal paste text precedence
+
+- [ ] After loading the updated frontend, copy a text line by selection in terminal Chat and paste into Claude Code; confirm text appears rather than an image attachment. Capture the paste event's MIME types to identify the original WebView clipboard payload. Also check a screenshot-only paste and a Finder image copy still attach. Component tests cover the mixed text/image precedence; this peer did not access Boss's running WebView or clipboard.
 ## Scrollbar history marks (1665-ce9b)
 
 - [x] Command and user-prompt ticks remain visible without Ctrl+Cmd; disabling history marks retains search ticks; missing metadata creates no empty overlay, and zero history hides the scrollbar. _(verified: src/components/Terminal/CanvasTerminal.tsx:881 setting-only gate; real component integration tests, 99 targeted tests and 8749 full rb tests passed.)_

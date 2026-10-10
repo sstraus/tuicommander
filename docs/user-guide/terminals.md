@@ -264,7 +264,7 @@ Also accessible via the "Search Terminals" command in the palette.
 
 - **Copy:** Select text in the terminal, then `Cmd+C`. A "Copied to clipboard" confirmation appears in the status bar. Multi-line Claude messages paste as clean text: the repeated `▎` visual gutter is removed while bullets, numbering, and indentation are preserved. Inside such a quote, rows that Claude broke only to fit the terminal width are joined back into one paragraph, so pasting into Slack or an email keeps whole sentences. Blank rows, list items and deeper indents keep their own line, and a quote that never reaches the terminal edge is copied exactly as shown.
   Claude prompt selections also remove the first `❯ ` marker and the two-column continuation margin. Width-supported wraps join, while short typed lines and additional content indentation remain. A glyph pasted inside the prompt remains part of the text. Composer cleanup applies only when the selection starts at column zero of the first composer row. Selecting body text or a VT soft-wrap continuation preserves literal markers and indentation.
-- **Paste:** `Cmd+V` writes clipboard content to the active terminal
+- **Paste:** `Cmd+V` writes clipboard content to the active terminal. Text takes priority when a copied Chat selection or other rich content also includes an image. Screenshot-only pastes and copied image filenames from Finder still send Ctrl+V so terminal agents can attach the image.
 
 ### Copy on Select
 

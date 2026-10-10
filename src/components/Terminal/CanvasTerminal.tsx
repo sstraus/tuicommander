@@ -13,6 +13,7 @@ import { writeClipboard } from "../../utils/clipboard";
 import { formatRelativeTime } from "../../utils/formatRelativeTime";
 import { ensureKeyboardViewportTracking, keyboardOcclusion } from "../../utils/keyboardViewport";
 import { handleOpenUrl } from "../../utils/openUrl";
+import { isImagePaste } from "../../utils/pastedImage";
 import { isPerfDebug } from "../../utils/perfDebug";
 import { markPerf, noteFrameRequest } from "../../utils/perfTrace";
 import { applyPinchFontDelta } from "../../utils/terminalZoom";
@@ -2780,15 +2781,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		});
 
 		bindings.listen(keyInputRef, "paste", (e: ClipboardEvent) => {
-			if (e.clipboardData) {
-				const items = e.clipboardData.items;
-				for (let i = 0; i < items.length; i++) {
-					if (items[i].type.startsWith("image/")) {
-						e.preventDefault();
-						writePty("\x16");
-						return;
-					}
-				}
+			if (isImagePaste(e)) {
+				e.preventDefault();
+				writePty("\x16");
+				return;
 			}
 			const text = e.clipboardData?.getData("text");
 			if (text) {
