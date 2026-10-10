@@ -317,6 +317,7 @@ fn event_type_name(event: &AppEvent) -> &str {
         AppEvent::ConflictAssistStatus { .. } => "conflict-assist-status",
         AppEvent::ProgressRecorded { .. } => "progress-recorded",
         AppEvent::WorkflowRunChanged { .. } => "workflow-run-changed",
+        AppEvent::AutomationRunChanged { .. } => "automation-run-changed",
         AppEvent::ReviewProgress { .. } => "review-progress",
         AppEvent::ProposalsReady { .. } => "proposals-ready",
         AppEvent::SessionStateChanged { .. } => "session-state-changed",
@@ -554,6 +555,7 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         AppEvent::RemoteConnectionStatusChanged { payload } => payload.clone(),
         // The daemon's own body, untouched.
         AppEvent::RemoteMirrored { payload, .. } => payload.clone(),
+        AppEvent::AutomationRunChanged { payload } => payload.clone(),
         // Built once by the producer and handed to both transports, for the
         // same reason as `SessionStateChanged` above: the frontend applies one
         // shape, and a pair built from separate code in separate files drifts.

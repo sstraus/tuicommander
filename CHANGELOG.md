@@ -7,8 +7,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ## [Unreleased]
 
 - Register directories from `tuic` through the running server; add MCP `repo add` and reject unsupported `ui tab` deep links instead of reporting silent success (#1668-9b59).
+- Add automation completion reconciliation, bounded final output and persisted maximum-duration enforcement, including blocked runs (#1616-1882).
 
 - Keep terminal scrollbar history marks visible without Ctrl+Cmd, clear timestamp peek on focus loss, and omit empty marks overlays (#1665-ce9b).
+- Start Telegram polling in the desktop app through the shared owner lock, identify the connected owner in Settings, and gate chat pairing on connectivity.
 
 - Widen the Activity Dashboard popup by 20%, while keeping it within small windows (#1664-f4ab).
 
@@ -28,6 +30,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Keep enforcing other automation runs' deadlines when stopping one owned process fails (#1616-1882).
+- Restore external URL tabs by removing the restrictive `frame-src` CSP so frames inherit the permissive `default-src`.
+- Refresh daemon Tailscale status after startup so a reboot before tailscaled is ready does not leave its MagicDNS name rejected until restart.
 - Paste text into terminals when rich clipboard content also contains an image; keep screenshot and Finder image attachments.
 
 - Keep hands-free PTY echoes out of the mobile composer, including delayed echoes after typing or reconnecting; preserve explicit Tab completion and editable history recall (#1662-c549).

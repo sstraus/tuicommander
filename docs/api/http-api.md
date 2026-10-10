@@ -2843,7 +2843,7 @@ OSC 133 event `line` and hook-generated `UserInput.line` are eviction-stable all
 
 ### Telegram Settings
 
-`GET /config/telegram` mirrors `telegram_settings`. `PUT /config/telegram` accepts `{ "change": { "action": "..." } }` and mirrors `telegram_setup`, including token replacement/check, one-use pairing, typed chat IDs and enable/target updates. Both routes require local access or the existing authenticated remote session. The read response contains only `token_set`, never the token. Chat IDs are decimal strings.
+`GET /config/telegram` mirrors `telegram_settings`. `PUT /config/telegram` accepts `{ "change": { "action": "..." } }` and mirrors `telegram_setup`, including token replacement/check, one-use pairing, typed chat IDs and enable/target updates. Both routes require local access or the existing authenticated remote session. The read response contains only `token_set`, never the token. Chat IDs are decimal strings. `polling_owner` is `this_app`, `tuic_remote`, `desktop`, `another_process` (an older owner), or null when disconnected; the name is relative to the process serving the snapshot.
 
 Workflow run snapshots add `eventContractVersion` and default-empty `graphExecutions`. Graph events use the existing paged history shape. Internal graph transition commands are rejected by public `workflow_run_action`; no autonomous-start action is added in slice A. Pre-contract runs can be inspected and cancelled but cannot resume.
 
@@ -2923,3 +2923,9 @@ Raw, text and log `/sessions/{id}/stream` WebSockets carry OSC titles as
 presentation events, independent of `activity` pulses and semantic lifecycle.
 Grid clients continue to receive binary rendering frames; terminal metadata
 consumers use the separate session event subscription.
+
+Automation runtime transitions are streamed on `/events` as
+`automation-run-changed`, with payload `{ "run": <AutomationRun> }`, identical
+to the desktop event. This includes failure and needs-you changes. Final runs
+retain bounded output; missed live events are reconciled from host state rather
+than replaying or restarting execution.
