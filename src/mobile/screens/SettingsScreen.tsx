@@ -1,6 +1,7 @@
 import { createSignal, onMount, Show } from "solid-js";
 import { TelegramTab } from "../../components/SettingsPanel/tabs/TelegramTab";
 import { appLogger } from "../../stores/appLogger";
+import { setDesktopUI } from "../../utils/tabletRouting";
 import { loadMobileTheme, mobileTheme, setMobileTheme } from "../mobileTheme";
 import styles from "./SettingsScreen.module.css";
 
@@ -310,7 +311,7 @@ export function SettingsScreen(props: SettingsScreenProps) {
 
 			<section class={styles.section}>
 				<h3 class={styles.sectionTitle}>ACTIONS</h3>
-				<a href="/" class={styles.link}>
+				<a href="/" class={styles.link} onClick={() => setDesktopUI(true)}>
 					Open Desktop UI
 				</a>
 				<a href="/process/monitor" class={styles.link} target="_blank" rel="noopener">
