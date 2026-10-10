@@ -1821,6 +1821,65 @@ mod tests {
         );
     }
 
+    // Catches: a same-origin path edit clears auth metadata while keeping the
+    // vault token, letting a later provider edit reuse that old token.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn same_origin_path_edit_must_not_unlock_cross_provider_credential_reuse() {
+        let tmp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+        let name = "critic3-origin-path";
+        let mut server = disabled_http_server(name, "https://old.example/mcp");
+        server.auth = Some(UpstreamAuth::Bearer {
+            token: String::new(),
+        });
+        crate::mcp_upstream_credentials::save_mcp_upstream_credential(
+            name.into(),
+            "DUMMY_OLD_PROVIDER_SECRET".into(),
+            None,
+        )
+        .unwrap();
+        let original = UpstreamMcpConfig {
+            servers: vec![server],
+        };
+        ConfigFile::<UpstreamMcpConfig>::new(UPSTREAMS_FILE)
+            .save(&original)
+            .unwrap();
+        let mut path_edit = original.clone();
+        path_edit.servers[0].transport = UpstreamTransport::Http {
+            url: "https://old.example/updated-mcp".into(),
+        };
+        let registry = crate::mcp_proxy::registry::UpstreamRegistry::new();
+        persist_and_apply_upstream_delta(original, path_edit, 3845, &registry, || {
+            std::future::ready(())
+        })
+        .await
+        .unwrap();
+        // Reload as the settings panel does after reopening. The old token is
+        // still in the vault; a replacement token is written only after save.
+        let reloaded = load_mcp_upstreams();
+        assert_eq!(
+            crate::mcp_upstream_credentials::read_upstream_credential(name)
+                .unwrap()
+                .as_deref(),
+            Some("DUMMY_OLD_PROVIDER_SECRET")
+        );
+        let mut provider_edit = reloaded.clone();
+        provider_edit.servers[0].transport = UpstreamTransport::Http {
+            url: "https://new.example/mcp".into(),
+        };
+        provider_edit.servers[0].auth = Some(UpstreamAuth::Bearer {
+            token: String::new(),
+        });
+        let result = persist_upstream_delta(&reloaded, &provider_edit, 3845);
+        crate::mcp_upstream_credentials::delete_mcp_upstream_credential(name.into(), None).unwrap();
+        assert!(
+            result.is_err(),
+            "provider edit accepted while the previous provider token remains available"
+        );
+        assert_eq!(load_mcp_upstreams(), reloaded);
+    }
+
     // -- update_upstream_auth --
 
     #[test]
