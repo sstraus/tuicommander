@@ -271,6 +271,7 @@ impl UpstreamRegistry {
             },
             enabled: true,
             timeout_secs: 10,
+            headers: vec![],
             tool_filter: None,
             auth: None,
         };
@@ -987,7 +988,8 @@ fn build_client(name: &str, config: &UpstreamMcpServer) -> Result<UpstreamClient
                 config.timeout_secs,
                 config.auth.is_some(),
             )
-            .ok_or_else(|| format!("Failed to build HTTP client for '{name}'"))?;
+            .ok_or_else(|| format!("Failed to build HTTP client for '{name}'"))?
+            .with_headers(config.headers.clone());
             Ok(UpstreamClient::Http(Box::new(tokio::sync::RwLock::new(
                 client,
             ))))
@@ -1398,6 +1400,7 @@ mod tests {
             },
             enabled: true,
             timeout_secs: 10,
+            headers: vec![],
             tool_filter: None,
             auth: None,
         }
@@ -1446,6 +1449,7 @@ mod tests {
             },
             enabled: true,
             timeout_secs: 10,
+            headers: vec![],
             tool_filter: Some(ToolFilter {
                 mode,
                 patterns: patterns.iter().map(|s| s.to_string()).collect(),

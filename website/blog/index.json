@@ -1,6 +1,17 @@
 {
   "posts": [
     {
+      "slug": "composio-mcp-headers",
+      "title": "Composio through TUICommander: one app, a small tool set",
+      "date": "2026-10-10",
+      "status": "published",
+      "feature": "Generic HTTP upstream secret headers",
+      "summary": "Connect a Composio session MCP URL with secret header rows, then narrow access by repository and tool name. Start with a read-only pilot and keep the account boundary explicit.",
+      "screenshots": [
+        "/blog/composio-mcp-headers/secret-header-rows.png"
+      ]
+    },
+    {
       "slug": "keyboard-shortcuts",
       "title": "The shortcuts that matter when twelve agents are working",
       "date": "2026-08-09",

@@ -57,6 +57,47 @@ pub(crate) struct UpstreamMcpServer {
     /// Optional authentication configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) auth: Option<UpstreamAuth>,
+    /// Secret header metadata only; values live in the upstream credential vault.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) headers: Vec<UpstreamHeader>,
+}
+
+/// A secret header and its opaque, upstream-scoped credential reference.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct UpstreamHeader {
+    pub(crate) name: String,
+    pub(crate) credential_ref: String,
+}
+
+impl UpstreamHeader {
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        let name = reqwest::header::HeaderName::from_bytes(self.name.as_bytes())
+            .map_err(|_| "Invalid custom header name".to_string())?;
+        // These names control routing, framing or the MCP transport itself.
+        if matches!(
+            name.as_str(),
+            "host"
+                | "content-length"
+                | "transfer-encoding"
+                | "connection"
+                | "content-type"
+                | "accept"
+                | "mcp-session-id"
+                | "mcp-protocol-version"
+                | "proxy-authorization"
+                | "cookie"
+        ) {
+            return Err("Custom header name is reserved".into());
+        }
+        uuid::Uuid::parse_str(&self.credential_ref)
+            .map_err(|_| "Invalid header credential reference".to_string())?;
+        Ok(())
+    }
+
+    pub(crate) fn credential_key(&self, upstream: &str) -> String {
+        format!("{upstream}/header/{}", self.credential_ref)
+    }
 }
 
 /// Transport type for connecting to an upstream MCP server.
@@ -146,11 +187,13 @@ pub(crate) enum UpstreamConfigError {
     EmptyUrl(String),
     EmptyCommand(String),
     EmptyOAuthClientId(String),
+    InvalidHeaders,
 }
 
 impl std::fmt::Display for UpstreamConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::InvalidHeaders => f.write_str("Invalid or duplicate custom headers"),
             Self::EmptyName(id) => write!(f, "Server '{id}' has an empty name"),
             Self::InvalidName(name) => write!(
                 f,
@@ -216,6 +259,19 @@ pub(crate) fn validate_upstream_config(
                 if command.is_empty() {
                     errors.push(UpstreamConfigError::EmptyCommand(server.id.clone()));
                 }
+            }
+        }
+
+        let mut header_names = HashSet::new();
+        let mut header_refs = HashSet::new();
+        for header in &server.headers {
+            if header.validate().is_err()
+                || !matches!(server.transport, UpstreamTransport::Http { .. })
+                || !header_names.insert(header.name.to_ascii_lowercase())
+                || !header_refs.insert(&header.credential_ref)
+                || (header.name.eq_ignore_ascii_case("authorization") && server.auth.is_some())
+            {
+                errors.push(UpstreamConfigError::InvalidHeaders);
             }
         }
 
@@ -648,6 +704,120 @@ pub(crate) fn get_mcp_upstream_status(
 mod tests {
     use super::*;
 
+    #[test]
+    fn secret_headers_reject_injection_duplicates_and_bearer_collision() {
+        for names in [
+            vec![""],
+            vec!["x key"],
+            vec!["x\r\nkey"],
+            vec!["x-key", "X-Key"],
+            vec!["Authorization"],
+            vec!["Host"],
+            vec!["Mcp-Session-Id"],
+        ] {
+            let mut server = http_server("headers", "https://example.com/mcp");
+            server.auth = Some(UpstreamAuth::Bearer {
+                token: String::new(),
+            });
+            server.headers = names
+                .into_iter()
+                .map(|name| UpstreamHeader {
+                    name: name.into(),
+                    credential_ref: uuid::Uuid::new_v4().to_string(),
+                })
+                .collect();
+            assert!(
+                !validate_upstream_config(
+                    &UpstreamMcpConfig {
+                        servers: vec![server]
+                    },
+                    9876
+                )
+                .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_bearer_and_oauth_configs_need_no_header_migration() {
+        for auth in [
+            serde_json::json!({"type":"bearer","token":""}),
+            serde_json::json!({"type":"oauth2","client_id":"public"}),
+        ] {
+            let server: UpstreamMcpServer = serde_json::from_value(serde_json::json!({"id":"legacy", "name":"legacy", "transport":{"type":"http","url":"https://example.com/mcp"}, "auth":auth})).unwrap();
+            assert!(server.headers.is_empty());
+            assert!(
+                validate_upstream_config(
+                    &UpstreamMcpConfig {
+                        servers: vec![server]
+                    },
+                    9876
+                )
+                .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn secret_header_values_never_enter_persisted_config_or_validation_errors() {
+        let tmp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+        let header = UpstreamHeader {
+            name: "x-api-key".into(),
+            credential_ref: uuid::Uuid::new_v4().to_string(),
+        };
+        let sentinel = "DUMMY_PERSISTENCE_SENTINEL";
+        crate::mcp_upstream_credentials::save_mcp_upstream_credential(
+            "header-persistence".into(),
+            sentinel.into(),
+            Some(header.clone()),
+        )
+        .unwrap();
+        let mut server = http_server("header-persistence", "https://example.com/mcp");
+        server.enabled = false;
+        server.headers = vec![header.clone()];
+        persist_upstream_delta(
+            &UpstreamMcpConfig::default(),
+            &UpstreamMcpConfig {
+                servers: vec![server],
+            },
+            9876,
+        )
+        .unwrap();
+        let disk = std::fs::read_to_string(tmp.path().join(UPSTREAMS_FILE)).unwrap();
+        assert!(!disk.contains(sentinel));
+        assert!(disk.contains("x-api-key"));
+        assert!(disk.contains(&header.credential_ref));
+        assert_eq!(
+            crate::mcp_upstream_credentials::read_upstream_credential(
+                &header.credential_key("header-persistence")
+            )
+            .unwrap()
+            .as_deref(),
+            Some(sentinel)
+        );
+        let error = crate::mcp_upstream_credentials::save_mcp_upstream_credential(
+            "header-persistence".into(),
+            format!("{sentinel}\r\ninjected"),
+            Some(header.clone()),
+        )
+        .unwrap_err();
+        assert!(!error.contains(sentinel));
+        crate::mcp_upstream_credentials::delete_mcp_upstream_credential(
+            "header-persistence".into(),
+            Some(header.clone()),
+        )
+        .unwrap();
+        assert!(
+            crate::mcp_upstream_credentials::read_upstream_credential(
+                &header.credential_key("header-persistence")
+            )
+            .unwrap()
+            .is_none()
+        );
+    }
+
     fn http_server(name: &str, url: &str) -> UpstreamMcpServer {
         UpstreamMcpServer {
             id: format!("id-{name}"),
@@ -657,6 +827,7 @@ mod tests {
             },
             enabled: true,
             timeout_secs: 30,
+            headers: vec![],
             tool_filter: None,
             auth: None,
         }
@@ -677,6 +848,7 @@ mod tests {
             },
             enabled: true,
             timeout_secs: 30,
+            headers: vec![],
             tool_filter: None,
             auth: None,
         }
@@ -747,6 +919,7 @@ mod tests {
             },
             enabled: true,
             timeout_secs: 60,
+            headers: vec![],
             tool_filter: Some(ToolFilter {
                 mode: FilterMode::Deny,
                 patterns: vec!["dangerous_*".to_string(), "admin_*".to_string()],

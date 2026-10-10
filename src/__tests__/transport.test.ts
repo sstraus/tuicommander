@@ -3947,3 +3947,15 @@ it("add-account polling uses a separate HTTP endpoint", () => {
 	expect(add).toEqual({ method: "POST", path: "/github/accounts/poll", body: { deviceCode: "additional" } });
 	expect(login).toEqual({ method: "POST", path: "/github/auth/poll", body: { deviceCode: "default" } });
 });
+
+// Catches losing header metadata between desktop IPC and HTTP credential storage.
+it("maps custom header credential metadata on save and delete", () => {
+	const header = { name: "x-api-key", credential_ref: "dcacbdba-e6c1-45aa-83a7-8417484fce0d" };
+	expect(
+		mapCommandToHttp("save_mcp_upstream_credential", { name: "example", token: "DUMMY_TRANSPORT", header }).body,
+	).toEqual({ name: "example", token: "DUMMY_TRANSPORT", header });
+	expect(mapCommandToHttp("delete_mcp_upstream_credential", { name: "example", header }).body).toEqual({
+		name: "example",
+		header,
+	});
+});

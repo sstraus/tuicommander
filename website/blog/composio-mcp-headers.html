@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Composio through TUICommander: one app, a small tool set — TUICommander Blog</title>
+  <meta name="description" content="Connect a Composio session MCP URL with secret header rows, then narrow access by repository and tool name. Start with a read-only pilot and keep the account boundary explicit." />
+
+  <meta property="og:title" content="Composio through TUICommander: one app, a small tool set" />
+  <meta property="og:description" content="Connect a Composio session MCP URL with secret header rows, then narrow access by repository and tool name. Start with a read-only pilot and keep the account boundary explicit." />
+  <meta property="og:type" content="article" />
+
+  <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+  <link rel="icon" type="image/png" sizes="512x512" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+  <link rel="stylesheet" href="/style.css" />
+
+  <script async src="https://www.googletagmanager.com/gtag/js?id=G-PCXPSMR9JZ"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', 'G-PCXPSMR9JZ');
+  </script>
+</head>
+<body>
+
+  <nav class="nav">
+    <div class="container nav-inner">
+      <a href="/" class="nav-logo">
+        <img src="/logo.png" alt="TUICommander" width="28" height="28" />
+        <span>TUICommander</span>
+      </a>
+      <div class="nav-links">
+        <a href="/#features">Features</a>
+        <a href="/blog.html" class="nav-active">Blog</a>
+        <a href="/#faq">FAQ</a>
+        <a href="https://github.com/sstraus/tuicommander/releases/latest" class="btn btn-primary btn-sm" rel="noopener noreferrer">Download</a>
+      </div>
+    </div>
+  </nav>
+
+  <article class="blog-post">
+    <header class="blog-post-header">
+      <a href="/blog.html" class="blog-back">&larr; Blog</a>
+      <time datetime="2026-10-10">10 October 2026</time>
+      <h1>Composio through TUICommander: one app, a small tool set</h1>
+      <p class="blog-post-summary">Connect a Composio session MCP URL with secret header rows, then narrow access by repository and tool name. Start with a read-only pilot and keep the account boundary explicit.</p>
+    </header>
+
+    <div class="blog-section">
+      <h2>A header should not require an integration</h2>
+      <p>Hosted MCP servers do not all accept a Bearer token. Some expect an API key in a named HTTP header. TUICommander now lets you add several secret header rows to an HTTP upstream. Bearer remains the default field; use the extra rows when the server requires them.</p>
+      <p>The proxy is generic. It does not create Composio accounts, choose app permissions or manage Composio sessions. You prepare that session outside TUICommander, then give the upstream its URL and required headers.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Start with one app and direct tools</h2>
+      <p>For a first pilot, use a dedicated test account and a Composio session limited to Gmail fetching. Follow the <a href="https://docs.composio.dev/docs/sessions-via-mcp" rel="noopener noreferrer">official session MCP instructions</a>: select Gmail, enable only <code>GMAIL_FETCH_EMAILS</code>, choose the direct-tools preset and request MCP output. Keep drafting, sending, deletion and remote execution outside the pilot.</p>
+      <p>Use the returned <code>session.mcp.url</code> and every entry in <code>session.mcp.headers</code>. A project-backed session typically supplies <code>x-api-key</code>; copy the returned names rather than guessing the authentication scheme. Prefer a project-scoped credential over a user key that reaches several projects. Verify the app's granted OAuth scopes separately: a tool selection does not reduce an existing provider grant.</p>
+      <p>Composio also documents a shared Connect endpoint, <code>https://connect.composio.dev/mcp</code>, with consumer authentication. Its <code>x-consumer-api-key</code> is a different credential from a developer project key. See <a href="https://docs.composio.dev/kb/guide/consumer-project-boundaries-and-auth-selection" rel="noopener noreferrer">Composio's account and credential boundaries</a> before choosing that path.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Add the session as an HTTP upstream</h2>
+      <ol>
+        <li>Open <strong>Settings → MCP → Upstream MCP Servers</strong> and add an upstream named <code>gmail-read</code>.</li>
+        <li>Choose HTTP and paste the session MCP URL. Keep credentials out of the URL.</li>
+        <li>Leave Bearer empty when the returned headers supply authentication. Press <strong>+</strong> beside <strong>Secret headers</strong> for each required header.</li>
+        <li>Enter each name in its name field and its value in the masked secret field. Save, then inspect the upstream's connection status and discovered tools.</li>
+      </ol>
+      <figure class="blog-figure">
+        <img src="/blog/composio-mcp-headers/secret-header-rows.png" alt="TUICommander HTTP upstream editor with the default Bearer field and two separate masked secret header rows" loading="lazy" />
+        <figcaption>The real upstream form from an isolated worktree preview. All entered values are dummy sentinels; the two rows illustrate the generic editor, not a required Composio header pair.</figcaption>
+      </figure>
+      <p>Values go to the existing OS credential vault. The upstream configuration stores names and opaque credential references. Editing a saved row shows an empty masked field: leave it blank to retain the secret or enter a replacement. Remove a row with <strong>−</strong>. Invalid or duplicate names, transport control headers and an Authorization header that conflicts with Bearer or OAuth are rejected.</p>
+      <p>The backend reads header values when it sends a request. Same-origin redirects are allowed; a redirect to a different scheme, host or port stops before contacting that destination. If a service redirects to another host, configure its final documented endpoint instead.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Restrict repositories and tool names</h2>
+      <p>Enabled upstreams are shared by default. In each repository's MCP popup or settings, choose an explicit upstream allowlist. An empty or unset list means <em>all enabled upstreams</em>, so clearing the list does not deny access. Review other connected clients as well: repository scoping is not per-agent or per-user account isolation, and clients sharing this upstream use the same Composio identity.</p>
+      <p>For a second restriction, set the upstream's <code>tool_filter</code> in <code>mcp-upstreams.json</code> to allow only the exact direct tool names returned by discovery. For a session that exposes <code>GMAIL_FETCH_EMAILS</code>, the filter is:</p>
+      <pre><code>"tool_filter": {
+  "mode": "allow",
+  "patterns": ["GMAIL_FETCH_EMAILS"]
+}</code></pre>
+      <p>Filters use original upstream names, before TUICommander adds the <code>gmail-read__</code> prefix. They apply to listing and calls. Preserve the rest of the server metadata when editing configuration and restart TUICommander after an external configuration edit.</p>
+      <p>A filter on an outer executor such as <code>COMPOSIO_MULTI_EXECUTE_TOOL</code> cannot distinguish reading mail from sending it. For a narrow pilot, keep fixed direct tools and exclude general executors, bash and workbench tools. Do not describe an outer tool-name filter as an app permission system.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>Keep authority outside tool output</h2>
+      <p>The proxy checks repository access and tool filters, then forwards permitted calls. It adds no generic human approval prompt for each upstream action. Review your MCP client's approval rules, including calls through collapsed tool discovery, and avoid blanket approval for Composio actions.</p>
+      <p>Mail, documents, tool descriptions and suggested commands are external data. They cannot authorize a message, shell command, credential read or broader access. Require explicit task authority for writes and outbound actions, request minimal app scopes, and revoke unused connections. Composio receives the requests and app data: passing through a local proxy does not keep those operations local.</p>
+      <p>Never put a key into process arguments, a persisted environment map, a chat message or a report. Rotate or revoke it through the service that issued it, update the masked row and verify the old credential no longer works.</p>
+    </div>
+
+    <div class="blog-section">
+      <h2>What was verified</h2>
+      <p>Local automated tests cover multiple header values on MCP requests, request-time rotation, same-origin redirects, rejection before a foreign origin receives any request, configuration without secret values, redacted diagnostics, legacy Bearer and OAuth configuration, HTTP credential endpoints and the masked editor. The screenshot uses the actual component with an isolated preview and dummy data.</p>
+      <p>No authenticated Composio account or live Composio tool call was used for this change. The session setup above follows Composio's documentation; account consent, entitlements, provider scopes, real tool names and a successful harmless read still need verification with your own test account. This is a setup guide, not a claim of end-to-end service compatibility.</p>
+    </div>
+  </article>
+
+  <footer class="footer">
+    <div class="container">
+      <div class="footer-links">
+        <a href="https://github.com/sstraus/tuicommander" rel="noopener noreferrer">GitHub</a>
+        <a href="https://github.com/sstraus/tuicommander/releases" rel="noopener noreferrer">Releases</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/FEATURES.md" rel="noopener noreferrer">Docs</a>
+        <a href="https://github.com/sstraus/tuicommander/blob/main/docs/plugins.md" rel="noopener noreferrer">Plugin API</a>
+      </div>
+      <p>Apache License 2.0 &copy; 2026 Stefano Straus</p>
+      <p class="footer-tech">Built with Rust, Tauri v2, SolidJS</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/main.js"></script>
+</body>
+</html>

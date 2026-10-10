@@ -178,15 +178,37 @@ pub(crate) fn delete_upstream_credential(upstream_name: &str) -> Result<(), Stri
 // ---------------------------------------------------------------------------
 
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) fn save_mcp_upstream_credential(name: String, token: String) -> Result<(), String> {
+pub(crate) fn save_mcp_upstream_credential(
+    name: String,
+    token: String,
+    header: Option<crate::mcp_upstream_config::UpstreamHeader>,
+) -> Result<(), String> {
     validate_keyring_name(&name)?;
-    save_upstream_credential(&name, &token)
+    let key = if let Some(header) = header {
+        header.validate()?;
+        reqwest::header::HeaderValue::from_str(&token)
+            .map_err(|_| "Invalid custom header value".to_string())?;
+        header.credential_key(&name)
+    } else {
+        name
+    };
+    save_upstream_credential(&key, &token)
+        .map_err(|_| "Failed to save upstream credential".to_string())
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) fn delete_mcp_upstream_credential(name: String) -> Result<(), String> {
+pub(crate) fn delete_mcp_upstream_credential(
+    name: String,
+    header: Option<crate::mcp_upstream_config::UpstreamHeader>,
+) -> Result<(), String> {
     validate_keyring_name(&name)?;
-    delete_upstream_credential(&name)
+    let key = if let Some(header) = header {
+        header.validate()?;
+        header.credential_key(&name)
+    } else {
+        name
+    };
+    delete_upstream_credential(&key).map_err(|_| "Failed to delete upstream credential".to_string())
 }
 
 // ---------------------------------------------------------------------------

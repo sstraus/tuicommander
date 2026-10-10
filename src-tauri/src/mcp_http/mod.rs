@@ -297,7 +297,7 @@ async fn save_mcp_upstreams_http(
     match crate::mcp_upstream_config::save_mcp_upstreams_inner(request.base, request.config, &state)
         .await
     {
-        Ok(()) => StatusCode::OK.into_response(),
+        Ok(()) => Json(()).into_response(),
         Err(e)
             if e.starts_with("Invalid upstream config")
                 || e.starts_with("Duplicate upstream id") =>
@@ -336,7 +336,7 @@ async fn reconnect_mcp_upstream_http(
         tracing::warn!(source = "mcp_http", upstream = %name, error = %e, "Failed to disconnect upstream before reconnect");
     }
     match registry.connect_upstream(server, Some(self_port)).await {
-        Ok(()) => StatusCode::OK.into_response(),
+        Ok(()) => Json(()).into_response(),
         Err(e) => err_500(&e),
     }
 }
@@ -351,8 +351,17 @@ async fn save_mcp_upstream_credential_http(Json(body): Json<serde_json::Value>) 
         Some(t) => t.to_string(),
         None => return (StatusCode::BAD_REQUEST, "missing 'token'").into_response(),
     };
-    match crate::mcp_upstream_credentials::save_mcp_upstream_credential(name, token) {
-        Ok(()) => StatusCode::OK.into_response(),
+    let header = match body
+        .get("header")
+        .filter(|v| !v.is_null())
+        .map(|v| serde_json::from_value(v.clone()))
+        .transpose()
+    {
+        Ok(header) => header,
+        Err(_) => return (StatusCode::BAD_REQUEST, "invalid header metadata").into_response(),
+    };
+    match crate::mcp_upstream_credentials::save_mcp_upstream_credential(name, token, header) {
+        Ok(()) => Json(()).into_response(),
         Err(e) => err_500(&e),
     }
 }
@@ -363,8 +372,17 @@ async fn delete_mcp_upstream_credential_http(Json(body): Json<serde_json::Value>
         Some(n) => n.to_string(),
         None => return (StatusCode::BAD_REQUEST, "missing 'name'").into_response(),
     };
-    match crate::mcp_upstream_credentials::delete_mcp_upstream_credential(name) {
-        Ok(()) => StatusCode::OK.into_response(),
+    let header = match body
+        .get("header")
+        .filter(|v| !v.is_null())
+        .map(|v| serde_json::from_value(v.clone()))
+        .transpose()
+    {
+        Ok(header) => header,
+        Err(_) => return (StatusCode::BAD_REQUEST, "invalid header metadata").into_response(),
+    };
+    match crate::mcp_upstream_credentials::delete_mcp_upstream_credential(name, header) {
+        Ok(()) => Json(()).into_response(),
         Err(e) => err_500(&e),
     }
 }
@@ -4595,6 +4613,7 @@ mod tests {
                 },
                 enabled: false,
                 timeout_secs: 30,
+                headers: vec![],
                 tool_filter: None,
                 auth: None,
             }],
@@ -4641,6 +4660,54 @@ mod tests {
                 .is_some_and(|message| message.contains("was added concurrently"))
         );
         assert_eq!(crate::mcp_upstream_config::load_mcp_upstreams(), current);
+    }
+
+    #[tokio::test]
+    async fn secret_header_http_credentials_preserve_metadata_and_return_json_unit() {
+        let name = "secret-header-http";
+        let header = serde_json::json!({"name":"x-api-key", "credential_ref":uuid::Uuid::new_v4().to_string()});
+        let response = save_mcp_upstream_credential_http(Json(
+            serde_json::json!({"name":name,"token":"DUMMY_HTTP_SENTINEL","header":header}),
+        ))
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert_eq!(
+            body.as_ref(),
+            b"null",
+            "browser RPC rejects empty success bodies"
+        );
+        let metadata: crate::mcp_upstream_config::UpstreamHeader =
+            serde_json::from_value(header.clone()).unwrap();
+        assert_eq!(
+            crate::mcp_upstream_credentials::read_upstream_credential(
+                &metadata.credential_key(name)
+            )
+            .unwrap()
+            .as_deref(),
+            Some("DUMMY_HTTP_SENTINEL")
+        );
+        let response = delete_mcp_upstream_credential_http(Json(
+            serde_json::json!({"name":name,"header":header}),
+        ))
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap()
+                .as_ref(),
+            b"null"
+        );
+        assert!(
+            crate::mcp_upstream_credentials::read_upstream_credential(
+                &metadata.credential_key(name)
+            )
+            .unwrap()
+            .is_none()
+        );
     }
 
     // Catches: omitting the maintenance task leaves expired protocol sessions and orphan inboxes live.
