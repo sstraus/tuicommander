@@ -846,3 +846,13 @@ destinations, uses the configured workspace base/profile and literal prompt,
 and saves precheck pass/refusal/manual-bypass/no-check outcomes and launch ids.
 Cron dispatch stays disabled in phase 1. Public execution transports and
 completion/maximum-duration handling remain pending; idle is not success.
+
+### Automation HTTP and IPC parity
+
+Desktop IPC `automation_action` and desktop/headless HTTP `/automations/action`
+share one Rust action API for list/get/create/update/delete, atomic pause/resume,
+Run Now, paginated retained run history, previews/presets and `24h`/`7d` aggregates.
+The Automations dialog uses the registered command mapping in browser/PWA mode.
+Definitions and immutable run snapshots belong to the addressed instance. Run
+Now requires its runtime owner with no remote fallback. Execution remains
+Once-only in phase 1; previews and storage also support recurring cron.

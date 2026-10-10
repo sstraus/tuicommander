@@ -1,4 +1,4 @@
-/** Provisional Step 8 boundary. Rust model fields retain their serde spelling.
+/** Shared backend boundary. Rust model fields retain their serde spelling.
  * Keep API integration changes in transportAdapter.ts; UI never interprets cron.
  */
 export interface AutomationDefinition {
@@ -85,10 +85,13 @@ export interface AutomationAdapter {
 	preset(preset: SchedulePreset): Promise<{ cron: string }>;
 }
 
-/** Proposed request contract for Step 8; serde model payloads are unchanged. */
+/** Request contract for automation_action; serde model payloads are unchanged. */
 export type AutomationAction =
 	| { action: "list" }
 	| { action: "create" | "update"; definition: AutomationDefinition }
+	| { action: "update"; id: string; enabled: boolean }
+	| { action: "get"; id: string }
+	| { action: "summary"; window: "24h" | "7d" }
 	| { action: "delete" | "run_now" | "pause" | "resume"; id: string }
 	| { action: "list_runs"; id: string; limit: number }
 	| { action: "preview"; cron: string; timezone: string | null; count: number }

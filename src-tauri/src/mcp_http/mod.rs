@@ -2,6 +2,7 @@ pub(crate) mod acp_mcp;
 mod acp_routes;
 mod agent_routes;
 pub(crate) mod auth;
+mod automation_routes;
 mod claude_routes;
 mod config_routes;
 #[cfg(feature = "dictation")]
@@ -979,6 +980,7 @@ fn shared_routes() -> Router<Arc<AppState>> {
             "/workflows/definition/action",
             post(post_workflow_definition_action),
         )
+        .route("/automations/action", post(automation_routes::post_action))
         .route("/workflows/run/action", post(post_workflow_run_action))
         // Session lifecycle
         .route(

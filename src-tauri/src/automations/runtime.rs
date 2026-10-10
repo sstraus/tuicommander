@@ -91,13 +91,6 @@ impl AutomationRuntime {
     }
 
     /// Step 8 exposes this same owner-guarded boundary through HTTP and IPC.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Public automation transports are implemented in story 1617"
-        )
-    )]
     pub(crate) async fn run_now(state: &Arc<AppState>, id: &str) -> Result<AutomationRun, String> {
         let runs = state
             .automation_runtime

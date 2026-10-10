@@ -2740,3 +2740,12 @@ Machine-local scheduled-run editor with search, backend cadence/zone preview,
 prechecks, workspace and duration controls, pause/resume, Run now, confirmed
 delete and recent status history. Open **Automations** from the command palette.
 Step 8 API integration is required before use; see [Automations](user-guide/automations.md).
+
+### Automation transport availability
+
+Automations definition management, pause/resume, schedule previews/presets,
+retained run history and UTC aggregates are available through matching Tauri IPC
+and HTTP on desktop/headless hosts. Browser/PWA uses the same command mapping.
+Run Now uses the addressed machine's runtime owner and supports paused Once
+schedules; recurring execution remains outside phase 1. Full run replies retain
+output, workspace and task/session evidence.

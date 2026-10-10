@@ -552,6 +552,15 @@ async fn story_action_command_for_state(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
+async fn automation_action(
+    state: State<'_, Arc<AppState>>,
+    input: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    automations::api::execute(input, state.inner().clone()).await
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
 async fn workflow_definition_action(
     project: String,
     action: workflows::WorkflowAction,
@@ -2197,6 +2206,7 @@ pub fn run() {
             chat_view_snapshot,
             story_action_command,
             story_capabilities,
+            automation_action,
             workflow_definition_action,
             workflow_run_action,
             get_local_ip,
