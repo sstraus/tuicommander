@@ -916,6 +916,8 @@ The families that stay local are the ones describing this app rather than a mach
 `repositories.json` — the last definitionally so, since it is the list deciding which
 repository maps to which machine.
 
+The hands_free_spoken_replies boolean defaults to true and persists on the server device. Turning it off cancels the current speech queue and keeps dictation armed.
+
 ### Dictation Config (`dictation-config.json`)
 
 **Type:** `DictationConfig`

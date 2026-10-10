@@ -153,6 +153,25 @@ describe("dictationStore", () => {
 		});
 	});
 
+	describe("spoken replies preference", () => {
+		it("keeps persisted mute and saves it without overwriting unrelated voice settings", async () => {
+			// catches: refresh re-enables mute, or saving it clobbers the stored voice.
+			mockInvoke.mockResolvedValueOnce({ hands_free_spoken_replies: false });
+			await testInScopeAsync(async () => {
+				await store.refreshConfig();
+				expect(store.state.spokenReplies).toBe(false);
+				const stored = { hands_free_spoken_replies: false, speech_edge_voice: "it-IT-IsabellaNeural" };
+				mockInvoke.mockResolvedValueOnce(stored).mockResolvedValueOnce(undefined);
+				await store.saveConfig({ hands_free_spoken_replies: true });
+				expect(mockInvoke).toHaveBeenLastCalledWith("set_dictation_config", {
+					base: stored,
+					config: { ...stored, hands_free_spoken_replies: true },
+				});
+				expect(store.state.spokenReplies).toBe(true);
+			});
+		});
+	});
+
 	describe("refreshConfig()", () => {
 		it("loads config including model and device fields from backend", async () => {
 			mockInvoke.mockResolvedValueOnce({

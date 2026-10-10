@@ -2,6 +2,9 @@
 
 - [ ] After a manual `make dev` restart (or `make build` for release), verify isolated Once automation dispatch uses the configured workspace/profile, saves precheck outcomes and launch pointers, and does not inject precheck output into the prompt (#1615-57cf, #1614-7e8f). Rust does not hot-reload. Public Run Now transport and completion/deadline handling remain pending.
 
+## Mobile Claude dot pulse (1654-a3d5)
+
+- [ ] On an actual iPhone and iPad installed Safari PWA, run a long Claude Bash tool call; confirm grey ON/OFF pulses and green completion preserve text position and continuation indentation. Real OutputView browser geometry passes in Chromium at 390×844 and 1024×1366; device emulation does not prove Safari fonts or touch behavior.
 ## Tablet desktop switch (1658-fb34)
 
 - [x] Browser iPad emulation: Settings → Open Desktop UI reaches `/`, a later root visit stays desktop, and the visible Switch link returns to `/mobile` and clears the preference. _(verified: worktree Vite :14358 via stealth wrapper, iPad UA, five touch points, standalone flag; screenshots `~/Gits/.tmp/tablet-1658-{settings,desktop,return-mobile}.png`; 15 targeted tests passed.)_
@@ -4892,3 +4895,10 @@ Needs an iPhone (iOS 16.4+, 18.4+ preferred), the desktop TUICommander running a
 - [ ] After Boss's next packaged `make build`, confirm the macOS bundle declares `LSMinimumSystemVersion` 12.0. Mermaid diagrams require system WebKit updated to Safari 17.4+; the OS version alone does not guarantee that update. No desktop instance was launched in this lane.
 
 - [ ] After Boss's next `make dev` restart or `make build`: copy and paste text in the desktop app with the arboard commands; confirm terminal copy still succeeds after an IPC await and macOS paste shows no system Paste pill. Rust changes require the restart to load (#1651-6cbe).
+
+
+### Spoken replies toggle (#1659-f3cc)
+- [x] Capture the mobile conversation and Settings toggles on the worktree Vite. _(verified: docs/evidence/voice-mute-1659/README.md — headless Chrome CDP screenshots and computed on/off state; both labels meet the 44px touch target.)_
+- [ ] After Boss restarts make dev (Rust does not hot reload), arm hands-free on mobile, turn Spoken replies off, dictate, and confirm text answers with no reply audio. Turn it on again and confirm audio returns when the speech service is available.
+- [ ] After an Edge access rejection, confirm the UI reports the cool-down and dictation continues; wait five minutes before retrying speech.
+- [ ] Mobile Ctrl menu (#1660-b7f6): on iPhone/iPad with the real keyboard open, open Ctrl, choose each key, dismiss outside, and check Ctrl+C/Ctrl+D danger colours. Ctrl+Enter submits with Claude CSI-u and ego LF; Codex/OpenCode/Goose/Grok/pi insert a newline. Other mappings and uncertainty are recorded in docs/evidence/ctrl-menu-1660/README.md. Desktop browser verification reserves keyboard space; real iOS keyboard remains to check.
