@@ -40,7 +40,7 @@ tuic open --wait file.rs
 tuic diff old.rs new.rs
 ```
 
-A directory is treated as a **repo**, not as a terminal: it lands in the sidebar and becomes the active repo. A folder TUICommander does not know yet is confirmed once in the app before it is added — after that, `tuic .` activates it silently. Use `tuic new` when what you want is a shell.
+A directory lands in the sidebar and becomes the active repo. `tuic <dir>` and `tuic open <dir>` call the selected running server over local IPC through MCP `repo action=add`; development builds need no registered OS URL handler. Registration is explicit and takes effect immediately, without a confirmation dialog or a connected desktop window. Reopening preserves existing workspaces, terminals, names and groups. Registration does not create a terminal; use `tuic new` for a shell. Server errors produce a nonzero exit code.
 
 ### Temporary directories are refused
 
@@ -136,6 +136,17 @@ Tool and protocol errors go to stderr with exit code 1. Invalid JSON or CLI
 arguments exit 2 before connecting. Managed callers send `$TUIC_SESSION` for
 peer binding; callers outside TUICommander register an external identity for
 that invocation.
+
+Register an existing local directory directly through MCP:
+
+```bash
+tuic mcp repo '{"action":"add","path":"/absolute/path/to/project"}'
+```
+
+Both forms use the same backend registration operation. Git directories get a
+workspace for their checked-out branch; plain directories get a shell workspace.
+`ui action=tab` with a `tuic://open-repo` URL returns an error directing the caller
+to `repo action=add`.
 
 ### Detached commands
 

@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Name iPhone Now Playing controls “TUICommander hands-free”; Play/Pause control spoken replies and Stop ends the conversation. Release controls when hands-free ends (#1670-fdc8).
 
+- Register directories from `tuic` through the running server; add MCP `repo add` and reject unsupported `ui tab` deep links instead of reporting silent success (#1668-9b59).
 - Expose matching automation IPC/HTTP actions for definitions, pause/resume, Once Run Now, retained history, schedule previews/presets and UTC summaries (#1617-290d).
 - Preserve rejected-host diagnostics across HTTP response chunks.
 - Explain remote host DNS, connection, TLS, authentication, and rejected-name failures; suggest known Tailscale peer names and show retry delays without stale errors during connection attempts.
@@ -18,7 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Widen the Activity Dashboard popup by 20%, while keeping it within small windows (#1664-f4ab).
 
-- Add Spoken replies to mobile hands-free and Settings; muting keeps dictation active, and Edge HTTP 401/403 stops repeat requests for five minutes with one text outage notice (#1659-f3cc).
+- Keep the mobile Spoken replies toggle in Settings, without a duplicate row on the session screen; muting keeps dictation active, and Edge HTTP 401/403 stops repeat requests for five minutes with one text outage notice (#1659-f3cc).
 - Give mobile toolbar keys enabled primary text and highlight Ctrl while its menu is open (#1663-8c02).
 
 - Use the terminal composer pin and play icon buttons in desktop AI Chat, with named Queue and parked-draft states (#1636-0d08).

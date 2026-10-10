@@ -279,23 +279,3 @@
   -webkit-tap-highlight-color: transparent;
   padding: 0;
 }
-
-
-.spokenReplies {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 44px;
-  padding: 0 16px;
-  flex-shrink: 0;
-  color: var(--fg-primary);
-  background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-}
-
-.spokenReplies input {
-  width: 20px;
-  height: 20px;
-  accent-color: var(--accent);
-}

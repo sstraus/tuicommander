@@ -123,3 +123,11 @@ it("ends the conversation when the session screen is left", async () => {
 
 	expect(voice.disarmHandsFree).toHaveBeenCalledTimes(1);
 });
+
+it("keeps Spoken replies out of the session screen when voice is available", async () => {
+	// catches: the redundant Spoken replies row returning beneath the session header.
+	mount();
+	await screen.findByRole("button", { name: "Start voice conversation" });
+	expect(screen.queryByRole("checkbox", { name: "Spoken replies" })).toBeNull();
+	expect(screen.queryByText("Spoken replies")).toBeNull();
+});
