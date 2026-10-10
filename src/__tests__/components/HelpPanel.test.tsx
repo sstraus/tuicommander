@@ -82,11 +82,8 @@ describe("HelpPanel", () => {
 
 		fireEvent.click(copyBtn!);
 
-		// writeClipboard routes through the native clipboard-manager plugin in Tauri.
-		expect(mockInvoke).toHaveBeenCalledWith(
-			"plugin:clipboard-manager|write_text",
-			expect.objectContaining({ text: __APP_VERSION__ }),
-		);
+		// writeClipboard routes through the native clipboard command in Tauri.
+		expect(mockInvoke).toHaveBeenCalledWith("write_clipboard_text", expect.objectContaining({ text: __APP_VERSION__ }));
 	});
 
 	it("displays license and credits", () => {

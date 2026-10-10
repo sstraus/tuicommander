@@ -841,16 +841,15 @@ describe("useTerminalLifecycle", () => {
 
 	describe("copyFromTerminal", () => {
 		it("copies selection to clipboard", async () => {
-			// In Tauri mode the copy routes through the native clipboard-manager plugin
+			// In Tauri mode the copy routes through the native clipboard command
 			// (see utils/clipboard.ts) rather than navigator.clipboard, which WKWebView
 			// rejects when the document isn't focused / user activation has lapsed.
 			vi.spyOn(window, "getSelection").mockReturnValue({ toString: () => "selected text" } as Selection);
 
 			await lifecycle.copyFromTerminal();
 
-			expect(mockInvoke).toHaveBeenCalledWith("plugin:clipboard-manager|write_text", {
+			expect(mockInvoke).toHaveBeenCalledWith("write_clipboard_text", {
 				text: "selected text",
-				label: undefined,
 			});
 			expect(mockSetStatusInfo).toHaveBeenCalledWith("Copied to clipboard");
 		});
@@ -893,7 +892,7 @@ describe("useTerminalLifecycle", () => {
 
 		it("delegates to ref.paste(), not ref.write()", async () => {
 			const ref = makeRef();
-			// In Tauri mode the read routes through the native clipboard-manager plugin
+			// In Tauri mode the read routes through the native clipboard command
 			// (see utils/clipboard.ts) rather than navigator.clipboard.readText(), which on
 			// macOS Sequoia surfaces a floating "Paste" system pill over our context menu.
 			mockInvoke.mockResolvedValue("pasted text");
@@ -904,7 +903,7 @@ describe("useTerminalLifecycle", () => {
 
 			await lifecycle.pasteToTerminal();
 
-			expect(mockInvoke).toHaveBeenCalledWith("plugin:clipboard-manager|read_text");
+			expect(mockInvoke).toHaveBeenCalledWith("read_clipboard_text");
 			expect(ref.paste).toHaveBeenCalledWith("pasted text");
 			expect(ref.write).not.toHaveBeenCalled();
 		});

@@ -2393,6 +2393,8 @@ describe("transport", () => {
 			// Sentinels from each group in the story 073 spec.
 			for (const cmd of [
 				"open_panel_window",
+				"write_clipboard_text",
+				"read_clipboard_text",
 				"start_native_drag",
 				"block_sleep",
 				"set_global_hotkey",

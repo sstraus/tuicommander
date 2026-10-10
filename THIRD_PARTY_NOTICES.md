@@ -12,6 +12,7 @@ authors and communities behind each project.
 |-------|---------|---------|
 | agent-client-protocol | 2.0.0 | Apache-2.0 |
 | anyhow | 1.0.104 | MIT OR Apache-2.0 |
+| arboard | 3.6.1 | MIT OR Apache-2.0 |
 | arrayvec | 0.7.8 | MIT OR Apache-2.0 |
 | async-stream | 0.3.6 | MIT |
 | axum | 0.8.9 | MIT |
@@ -91,7 +92,6 @@ authors and communities behind each project.
 | tar | 0.4.46 | MIT OR Apache-2.0 |
 | tauri | 2.12.1 | Apache-2.0 OR MIT |
 | tauri-build | 2.7.1 | Apache-2.0 OR MIT |
-| tauri-plugin-clipboard-manager | 2.4.1 | Apache-2.0 OR MIT |
 | tauri-plugin-deep-link | 2.6.1 | Apache-2.0 OR MIT |
 | tauri-plugin-dialog | 2.8.1 | Apache-2.0 OR MIT |
 | tauri-plugin-global-shortcut | 2.4.0 | Apache-2.0 OR MIT |

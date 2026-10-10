@@ -3240,8 +3240,8 @@ describe("Sidebar", () => {
 		});
 
 		it("context menu Copy Path action copies worktreePath to clipboard", async () => {
-			// In Tauri mode writeClipboard() routes through the native clipboard-manager
-			// plugin (WKWebView rejects navigator.clipboard.writeText), so assert on the invoke.
+			// In Tauri mode writeClipboard() routes through the native clipboard
+			// command (WKWebView rejects navigator.clipboard.writeText), so assert on the invoke.
 			mockInvoke.mockClear();
 
 			setRepos({
@@ -3269,11 +3269,10 @@ describe("Sidebar", () => {
 			const copyPathItem = Array.from(items).find((i) => i.querySelector(".label")?.textContent === "Copy Path")!;
 			fireEvent.click(copyPathItem);
 
-			// The action is async (writeClipboard → native clipboard-manager plugin)
+			// The action is async (writeClipboard → native clipboard command)
 			await vi.waitFor(() => {
-				expect(mockInvoke).toHaveBeenCalledWith("plugin:clipboard-manager|write_text", {
+				expect(mockInvoke).toHaveBeenCalledWith("write_clipboard_text", {
 					text: "/path/to/repo",
-					label: undefined,
 				});
 			});
 		});
