@@ -625,42 +625,52 @@ export function createAcpChat(
 
 		/** Open another conversation tab, starting ego when none is running. */
 		async startSession(options?: ChatOpenRequest): Promise<void> {
-			if (options && Object.keys(options).length > 0) {
-				setConnecting(true);
-				try {
-					await openCustom(options);
-				} finally {
-					setConnecting(false);
+			const request = ++selection;
+			const isCurrent = () => request === selection;
+			setConnecting(true);
+			try {
+				if (options && Object.keys(options).length > 0) {
+					if (await openCustom(options, isCurrent)) failedSession = null;
+					return;
 				}
-				return;
-			}
-			if (binding?.launch) {
-				binding = defaultBinding;
-				setConnectionId(binding?.connectionId ?? null);
-				setSessionId(binding?.sessionId ?? null);
-				setRoot(await chatRoot());
-				// A default new chat must not restore the currently selected custom chat.
-				if (!binding) {
+				if (binding?.launch) {
+					binding = defaultBinding;
+					setConnectionId(binding?.connectionId ?? null);
+					setSessionId(binding?.sessionId ?? null);
 					const target = await chatRoot();
-					binding = await guard("connecting to ego", () => connectDefault(target));
-					if (!binding) return;
-					setConnectionId(binding.connectionId);
+					if (!isCurrent()) return;
+					setRoot(target);
+					// A default new chat must not restore the currently selected custom chat.
+					if (!binding) {
+						const current = await guard("connecting to ego", () => connectDefault(target), isCurrent);
+						if (!current || !isCurrent()) return;
+						binding = current;
+						setConnectionId(current.connectionId);
+					}
 				}
+				if (!pair() && !binding) {
+					const started = await start();
+					if (!started || !isCurrent()) return;
+					if (started.fresh) {
+						failedSession = null;
+						return;
+					}
+				}
+				const id = connectionId();
+				const target = root();
+				if (!id || !target) return;
+				const session = await guard("opening a session", () => client.newSession(id, target), isCurrent);
+				if (!session || !isCurrent()) return;
+				if (binding) binding.sessionId = session;
+				aiChatTabs.add(TABS, session);
+				setSessionId(session);
+				failedSession = null;
+				await guard("saving conversation", () => remember(session), isCurrent);
+				if (isCurrent() && connection()?.capabilities?.list)
+					await guard("listing conversations", () => refreshSessions(id, target), isCurrent);
+			} finally {
+				if (isCurrent()) setConnecting(false);
 			}
-			if (!pair() && !binding) {
-				const started = await start();
-				if (!started || started.fresh) return;
-			}
-			const id = connectionId();
-			const target = root();
-			if (!id || !target) return;
-			const session = await guard("opening a session", () => client.newSession(id, target));
-			if (!session) return;
-			if (binding) binding.sessionId = session;
-			aiChatTabs.add(TABS, session);
-			setSessionId(session);
-			await guard("saving conversation", () => remember(session));
-			if (connection()?.capabilities?.list) await guard("listing conversations", () => refreshSessions(id, target));
 		},
 
 		selectSession,
