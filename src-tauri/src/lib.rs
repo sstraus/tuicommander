@@ -98,6 +98,8 @@ pub(crate) mod memory_report;
 #[cfg(feature = "desktop")]
 mod menu;
 #[cfg(feature = "desktop")]
+mod native_clipboard;
+#[cfg(feature = "desktop")]
 mod native_dialog;
 #[cfg(feature = "desktop")]
 mod native_drag;
@@ -1762,7 +1764,7 @@ pub fn run() {
             }
         })
         .plugin(tauri_plugin_deep_link::init())
-        .plugin(tauri_plugin_clipboard_manager::init());
+        .manage(native_clipboard::NativeClipboard::default());
 
     #[cfg(feature = "desktop")]
     let builder = builder.manage(sleep_prevention::SleepBlocker::new());
@@ -1967,6 +1969,8 @@ pub fn run() {
             telegram::settings::telegram_setup,
             generators::generate_value,
             native_dialog::pick_path,
+            native_clipboard::write_clipboard_text,
+            native_clipboard::read_clipboard_text,
             native_drag::start_native_drag,
             remote_connection::list_remote_connections,
             remote_connection::save_remote_connection,
@@ -2516,6 +2520,7 @@ pub fn run() {
                 // streaming thread (which holds an Arc<WhisperContext>), then drops
                 // the transcriber while the process is still alive.
                 tauri::RunEvent::Exit => {
+                    app_handle.state::<native_clipboard::NativeClipboard>().clear();
                     workflows::shutdown_checks();
                     #[cfg(feature = "dictation")]
                     if let Some(dictation) = app_handle.try_state::<dictation::DictationState>() {
