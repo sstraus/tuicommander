@@ -2550,6 +2550,8 @@ TUICommander aggregates upstream MCP servers and exposes them through its own `/
 
 ---
 
+Remote host cards name DNS, refused connections, timeout, TLS, and authentication failures. A 403 Untrusted Host explains that the daemon rejected the host name. When a short name cannot resolve, a matching running Tailscale peer supplies its advertised full DNS name. Failed connections show the automatic retry delay; active attempts clear the previous failure.
+
 ## 25. Generators
 
 Secure value generators accessible from the command palette (`open-generators` action).

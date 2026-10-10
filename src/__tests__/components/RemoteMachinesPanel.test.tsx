@@ -111,6 +111,32 @@ describe("RemoteMachinesPanel", () => {
 		vi.unstubAllGlobals();
 	});
 
+	it("never renders a stale unreachable error alongside connecting progress", () => {
+		connections["machine-1"] = {
+			...sshConnection(),
+			status: "connecting",
+			error: "Unreachable: old error",
+			retryAfterSecs: 3,
+		};
+		const view = render(() => <RemoteMachinesPanel />);
+		expect(view.getByText("Connecting...")).toBeTruthy();
+		expect(view.queryByText("Unreachable: old error")).toBeNull();
+		expect(view.queryByText("Retry delay: 3s")).toBeNull();
+	});
+
+	it("renders the backend retry delay with the failed host cause", () => {
+		connections["machine-1"] = {
+			...sshConnection(),
+			status: "error",
+			error: "Cannot resolve mac-mint",
+			retryAfterSecs: 3,
+		};
+		const view = render(() => <RemoteMachinesPanel />);
+		expect(view.getByText("Cannot resolve mac-mint")).toBeTruthy();
+		expect(view.getByText("Retry delay: 3s")).toBeTruthy();
+		expect(view.queryByText("Connecting...")).toBeNull();
+	});
+
 	it("confirms the live session loss before an update of a Direct remote", async () => {
 		connections["machine-1"] = {
 			...sshConnection(),

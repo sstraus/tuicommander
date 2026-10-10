@@ -79,6 +79,7 @@ export interface ConnectionState {
 	updateNotice?: string;
 	updateInProgress?: boolean;
 	error?: string;
+	retryAfterSecs?: number;
 	deployStep?: string;
 }
 
@@ -94,6 +95,7 @@ interface RemoteConnectionStatusPayload {
 	update_notice?: string;
 	update_in_progress?: boolean;
 	error?: string;
+	retry_after_secs?: number;
 	step?: string;
 }
 
@@ -195,6 +197,7 @@ function createRemoteConnectionsStore() {
 			updateNotice: payload.update_notice,
 			updateInProgress: payload.update_in_progress,
 			error: payload.error,
+			retryAfterSecs: payload.retry_after_secs,
 			deployStep: payload.step,
 		});
 

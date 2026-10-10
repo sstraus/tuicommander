@@ -708,9 +708,21 @@ export const RemoteMachinesPanel: Component = () => {
 									>
 										{transportSummary(conn().transport)}
 									</div>
-									<Show when={connState.error}>
+									<Show
+										when={(connState.status === "error" || connState.status === "unauthenticated") && connState.error}
+									>
 										<div class={s.hint} style={{ margin: 0, "font-size": "11px", color: "var(--error)" }}>
 											{connState.error}
+										</div>
+									</Show>
+									<Show
+										when={
+											connState.retryAfterSecs !== undefined &&
+											(connState.status === "error" || connState.status === "disconnected")
+										}
+									>
+										<div class={s.hint} role="status">
+											Retry delay: {connState.retryAfterSecs}s
 										</div>
 									</Show>
 									<Show when={connState.updateNotice}>

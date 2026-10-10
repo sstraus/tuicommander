@@ -135,6 +135,8 @@ pub(crate) struct RemoteConnectionStatus {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) retry_after_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) step: Option<String>,
 }
 
@@ -153,6 +155,7 @@ struct Entry {
     update_notice: Option<String>,
     update_in_progress: Option<u64>,
     error: Option<String>,
+    retry_after_secs: Option<u64>,
     tunnel_id: Option<String>,
     /// The task that owns this connection's whole lifecycle: bring it up, keep
     /// it up, retry while it is down. Its presence IS the desired state — there
@@ -184,7 +187,7 @@ impl Entry {
         };
         RemoteConnectionStatus {
             id: id.to_string(),
-            status,
+            status: status.clone(),
             base_url: connected.then(|| self.base_url.clone()).flatten(),
             token: connected.then(|| self.token.clone()).flatten(),
             protocol_version: connected.then_some(self.protocol_version).flatten(),
@@ -193,7 +196,12 @@ impl Entry {
             live_sessions: connected.then_some(self.live_sessions).flatten(),
             update_notice: connected.then(|| self.update_notice.clone()).flatten(),
             update_in_progress: (connected && self.update_in_progress.is_some()).then_some(true),
-            error: self.error.clone(),
+            error: matches!(status, RemoteStatus::Error | RemoteStatus::Unauthenticated)
+                .then(|| self.error.clone())
+                .flatten(),
+            retry_after_secs: matches!(status, RemoteStatus::Error | RemoteStatus::Disconnected)
+                .then_some(self.retry_after_secs)
+                .flatten(),
             step,
         }
     }
@@ -656,6 +664,102 @@ pub(crate) struct Health {
     pub(crate) build: Option<crate::remote_deploy::assets::BuildIdentity>,
 }
 
+/// reqwest's outer message hides the resolver, TCP and TLS cause.
+async fn request_error(error: reqwest::Error, base_url: &str) -> String {
+    use std::error::Error;
+    let host = reqwest::Url::parse(base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .unwrap_or_else(|| "remote host".into());
+    let (dns, refused, tls) = {
+        let mut cause: Option<&(dyn Error + 'static)> = Some(&error);
+        let mut dns = false;
+        let mut refused = false;
+        let mut tls = false;
+        while let Some(source) = cause {
+            let text = source.to_string().to_ascii_lowercase();
+            dns |= [
+                "dns error",
+                "failed to lookup address",
+                "name or service not known",
+                "nodename nor servname",
+                "no such host",
+                "name resolution",
+            ]
+            .iter()
+            .any(|needle| text.contains(needle));
+            if let Some(io) = source.downcast_ref::<std::io::Error>() {
+                refused |= io.kind() == std::io::ErrorKind::ConnectionRefused;
+                // io::Error::source skips its wrapped error and returns that
+                // error's source, so inspect the payload before continuing.
+                tls |= io
+                    .get_ref()
+                    .is_some_and(|inner| inner.is::<rustls::Error>());
+            }
+            tls |= source.downcast_ref::<rustls::Error>().is_some()
+                || text.contains("certificate")
+                || text.contains("tls handshake");
+            // hyper-rustls nests io::Error around tokio-rustls's io::Error.
+            // Follow each payload: source() alone can skip the TLS error.
+            cause = source
+                .downcast_ref::<std::io::Error>()
+                .and_then(std::io::Error::get_ref)
+                .map(|inner| inner as &(dyn Error + 'static))
+                .or_else(|| source.source());
+        }
+        (dns, refused, tls)
+    };
+    let message = if error.is_timeout() {
+        format!("Connection to {host} timed out")
+    } else if dns {
+        let advice = if !host.contains('.') && host.parse::<std::net::IpAddr>().is_err() {
+            match crate::tailscale::peer_fqdn(&host).await {
+                Some(fqdn) => format!("use the full Tailscale name ({fqdn}) or the IP"),
+                None => "use the full host name or the IP".into(),
+            }
+        } else {
+            "check the host name or use the IP".into()
+        };
+        format!("Cannot resolve {host} — {advice}")
+    } else if refused {
+        format!("Connection refused by {host} — check the daemon and port")
+    } else if tls {
+        format!("TLS connection to {host} failed — check the certificate and HTTPS settings")
+    } else {
+        format!("Cannot connect to {host} — check the address and network")
+    };
+    // Never include source strings: they can carry a URL with a token/password.
+    format!("Unreachable: {message}")
+}
+
+async fn response_error(mut response: reqwest::Response, base_url: &str) -> String {
+    let host = reqwest::Url::parse(base_url)
+        .ok()
+        .and_then(|url| url.host_str().map(str::to_owned))
+        .unwrap_or_else(|| "remote host".into());
+    let status = response.status();
+    if status == reqwest::StatusCode::FORBIDDEN {
+        let mut prefix = Vec::with_capacity(1024);
+        while prefix.len() < 1024 {
+            let Ok(Some(bytes)) = response.chunk().await else {
+                break;
+            };
+            prefix.extend_from_slice(&bytes[..bytes.len().min(1024 - prefix.len())]);
+        }
+        let text = String::from_utf8_lossy(&prefix);
+        if text.to_ascii_lowercase().contains("untrusted host") {
+            return format!(
+                "{host} rejected this name (HTTP 403 Untrusted Host) — use a name trusted by the daemon"
+            );
+        }
+        return format!("Access denied by {host} (HTTP 403) — check permissions");
+    }
+    if status == reqwest::StatusCode::UNAUTHORIZED {
+        return format!("Authentication required by {host} (HTTP 401) — check the password");
+    }
+    format!("Request to {host} failed: {status}")
+}
+
 /// Read `/health` — the one route served without a credential — to learn the
 /// protocol version and prove the daemon is reachable at all.
 pub(crate) async fn read_health(
@@ -663,14 +767,13 @@ pub(crate) async fn read_health(
     base_url: &str,
 ) -> Result<Health, String> {
     let url = format!("{}/health", base_url.trim_end_matches('/'));
-    let response = client
-        .get(&url)
-        .timeout(PROBE_TIMEOUT)
-        .send()
-        .await
-        .map_err(|e| format!("Unreachable: {}", e.without_url()))?;
+    let response = client.get(&url).timeout(PROBE_TIMEOUT).send().await;
+    let response = match response {
+        Ok(response) => response,
+        Err(error) => return Err(request_error(error, base_url).await),
+    };
     if !response.status().is_success() {
-        return Err(format!("Health check failed: {}", response.status()));
+        return Err(response_error(response, base_url).await);
     }
     let body: serde_json::Value = response
         .json()
@@ -719,8 +822,8 @@ async fn probe_authenticated(
     match request.send().await {
         Ok(response) if response.status().is_success() => Probe::Ok,
         Ok(response) if response.status() == reqwest::StatusCode::UNAUTHORIZED => Probe::Rejected,
-        Ok(response) => Probe::Failed(format!("Status check failed: {}", response.status())),
-        Err(e) => Probe::Failed(format!("Unreachable: {}", e.without_url())),
+        Ok(response) => Probe::Failed(response_error(response, base_url).await),
+        Err(e) => Probe::Failed(request_error(e, base_url).await),
     }
 }
 
@@ -950,6 +1053,7 @@ fn claim_and_supervise(
         } else {
             entry.status = Some(RemoteStatus::Connecting);
             entry.error = None;
+            entry.retry_after_secs = None;
             Some(entry.snapshot(id))
         }
     };
@@ -1477,8 +1581,21 @@ fn spawn_supervisor(state: &Arc<AppState>, id: String) {
                 // state `autoconnect_all` spawns into.
                 _ => {
                     let _ = connect_inner(&task_state, &task_id, generation).await;
-                    if task_state.remote.status_of(&task_id) != RemoteStatus::Connected {
-                        tokio::time::sleep(jittered(backoff)).await;
+                    if matches!(
+                        task_state.remote.status_of(&task_id),
+                        RemoteStatus::Error | RemoteStatus::Disconnected
+                    ) {
+                        let delay = jittered(backoff);
+                        {
+                            let _lifecycle = task_state.remote.lifecycle();
+                            if task_state.remote.generation(&task_id) != generation {
+                                return;
+                            }
+                            update(&task_state, &task_id, |entry| {
+                                entry.retry_after_secs = Some(delay.as_secs_f64().ceil() as u64);
+                            });
+                        }
+                        tokio::time::sleep(delay).await;
                         backoff = next_backoff(backoff);
                     }
                 }
@@ -1670,6 +1787,37 @@ mod tests {
     use super::*;
     use axum::http::StatusCode;
     use std::future::Future;
+
+    // Catches: a chunk boundary inside the daemon's "Untrusted Host" response
+    // misdirects the user to permissions instead of the rejected host name.
+    #[tokio::test]
+    async fn health_untrusted_host_split_across_chunks_still_explains_the_rejected_name() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            assert!(socket.read(&mut request).await.unwrap() > 0);
+            // Same body as request_boundary::check, with valid HTTP
+            // chunking that an intermediary may use independently of the text.
+            socket
+                .write_all(
+                    b"HTTP/1.1 403 Forbidden\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n9\r\nUntrusted\r\n5\r\n Host\r\n0\r\n\r\n",
+                )
+                .await
+                .unwrap();
+        });
+        let error = read_health(&test_client(), &format!("http://{address}"))
+            .await
+            .unwrap_err();
+        server.await.unwrap();
+        assert!(
+            error.contains("rejected this name"),
+            "chunked Untrusted Host response lost its cause: {error}"
+        );
+    }
 
     /// A client for the probe tests, which have no `AppState` to borrow one
     /// from. The same builder the runtime uses, so a test cannot pass against a
@@ -2571,6 +2719,7 @@ mod tests {
             update_notice: None,
             update_in_progress: None,
             error: None,
+            retry_after_secs: None,
             step: Some("asset".into()),
         });
 
@@ -2632,6 +2781,127 @@ mod tests {
         let json = serde_json::to_string(&status).unwrap();
         assert!(!json.contains("token"), "token leaked into {json}");
         assert!(!json.contains("base_url"), "base_url leaked into {json}");
+    }
+
+    #[tokio::test]
+    async fn health_connection_refused_names_the_host_and_cause() {
+        // Catches: reqwest's top-level "error sending request" hiding TCP refusal.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        drop(listener);
+        let error = read_health(&test_client(), &base).await.unwrap_err();
+        assert!(error.contains("Connection refused by 127.0.0.1"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn dns_failure_names_the_host_instead_of_outer_reqwest_error() {
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let error = read_health(&client, "http://no-such-host.invalid:9877")
+            .await
+            .unwrap_err();
+        assert!(
+            error.contains("Cannot resolve no-such-host.invalid"),
+            "{error}"
+        );
+    }
+
+    #[tokio::test]
+    async fn timeout_and_tls_failures_are_not_generic_network_errors() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let error = client
+            .get(&base)
+            .timeout(Duration::from_millis(50))
+            .send()
+            .await
+            .unwrap_err();
+        let message = request_error(error, &base).await;
+        assert!(
+            message.contains("Connection to 127.0.0.1 timed out"),
+            "{message}"
+        );
+        let server = mockito::Server::new_async().await;
+        let https = server.url().replacen("http:", "https:", 1);
+        let error = client
+            .get(&https)
+            .timeout(PROBE_TIMEOUT)
+            .send()
+            .await
+            .unwrap_err();
+        let details = format!("{error:?}");
+        let message = request_error(error, &https).await;
+        assert!(
+            message.contains("TLS connection to 127.0.0.1 failed"),
+            "{message}: {details}"
+        );
+    }
+
+    #[tokio::test]
+    async fn forbidden_host_and_auth_failures_are_not_misreported_as_unreachable() {
+        for (status, body, expected) in [
+            (
+                403,
+                "Untrusted Host",
+                "rejected this name (HTTP 403 Untrusted Host)",
+            ),
+            (403, "Forbidden", "Access denied by 127.0.0.1 (HTTP 403)"),
+            (
+                401,
+                "Unauthorized",
+                "Authentication required by 127.0.0.1 (HTTP 401)",
+            ),
+        ] {
+            let mut server = mockito::Server::new_async().await;
+            let _health = server
+                .mock("GET", "/health")
+                .with_status(status)
+                .with_body(body)
+                .create_async()
+                .await;
+            let error = read_health(&test_client(), &server.url())
+                .await
+                .unwrap_err();
+            assert!(error.contains(expected), "{error}");
+            let _version = server
+                .mock("GET", "/api/version")
+                .with_status(status)
+                .with_body(body)
+                .create_async()
+                .await;
+            match probe_authenticated(&test_client(), &server.url(), None).await {
+                Probe::Rejected if status == 401 => {}
+                Probe::Failed(message) if status == 403 => {
+                    assert!(message.contains(expected), "{message}")
+                }
+                other => panic!("unexpected probe: {other:?}"),
+            }
+        }
+    }
+
+    #[test]
+    fn active_attempt_snapshots_never_mix_old_failure_or_retry_with_progress() {
+        let mut entry = Entry {
+            error: Some("Unreachable: old error".into()),
+            retry_after_secs: Some(3),
+            ..Entry::default()
+        };
+        for status in [
+            RemoteStatus::Connecting,
+            RemoteStatus::Deploying {
+                step: "asset".into(),
+            },
+            RemoteStatus::Connected,
+        ] {
+            entry.status = Some(status);
+            let snapshot = entry.snapshot("id");
+            assert_eq!(snapshot.error, None);
+            assert_eq!(snapshot.retry_after_secs, None);
+        }
+        entry.status = Some(RemoteStatus::Error);
+        let payload = remote_connection_status_payload(&entry.snapshot("id"));
+        assert_eq!(payload["error"], "Unreachable: old error");
+        assert_eq!(payload["retry_after_secs"], 3);
     }
 
     #[tokio::test]
@@ -3807,6 +4077,7 @@ mod tests {
                 update_notice: None,
                 update_in_progress: None,
                 error: None,
+                retry_after_secs: None,
                 step: None,
             });
             assert_eq!(payload["id"], "abc");
