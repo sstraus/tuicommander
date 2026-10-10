@@ -26,6 +26,7 @@ use crate::mcp_upstream_credentials::{OAuthTokenSet, is_token_valid, save_oauth_
 pub(crate) struct TokenManager {
     /// Upstream name (used as keyring key).
     upstream_name: String,
+    upstream_url: String,
     /// OAuth client ID.
     client_id: String,
     /// OAuth client secret (confidential clients only).
@@ -55,6 +56,7 @@ fn pkce_s256(verifier: &str) -> String {
 impl TokenManager {
     pub(crate) fn new(
         upstream_name: String,
+        upstream_url: String,
         client_id: String,
         client_secret: Option<String>,
         token_endpoint: String,
@@ -62,6 +64,7 @@ impl TokenManager {
     ) -> Self {
         Self {
             upstream_name,
+            upstream_url,
             client_id,
             client_secret,
             token_endpoint,
@@ -128,7 +131,8 @@ impl TokenManager {
             .context("Failed to parse token exchange response")?;
 
         let token_set = self.token_response_to_set(token_resp);
-        save_oauth_tokens(&self.upstream_name, &token_set).map_err(|e| anyhow::anyhow!("{e}"))?;
+        save_oauth_tokens(&self.upstream_name, &token_set, &self.upstream_url)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
         Ok(token_set)
     }
 
@@ -160,9 +164,10 @@ impl TokenManager {
         let _guard = self.refresh_lock.lock().await;
 
         // Double-check: re-read from keyring in case another caller refreshed
-        if let Ok(Some(cred)) =
-            crate::mcp_upstream_credentials::read_stored_credential(&self.upstream_name)
-            && let crate::mcp_upstream_credentials::StoredCredential::Oauth2(ref fresh) = cred
+        if let Ok(Some(cred)) = crate::mcp_upstream_credentials::read_stored_credential_for_url(
+            &self.upstream_name,
+            &self.upstream_url,
+        ) && let crate::mcp_upstream_credentials::StoredCredential::Oauth2(ref fresh) = cred
             && fresh.access_token != current.access_token
             && is_token_valid(fresh)
         {
@@ -216,7 +221,8 @@ impl TokenManager {
             token_set.refresh_token = current.refresh_token.clone();
         }
 
-        save_oauth_tokens(&self.upstream_name, &token_set).map_err(|e| anyhow::anyhow!("{e}"))?;
+        save_oauth_tokens(&self.upstream_name, &token_set, &self.upstream_url)
+            .map_err(|e| anyhow::anyhow!("{e}"))?;
         Ok(Some(token_set))
     }
 
@@ -332,6 +338,7 @@ mod tests {
     fn token_response_to_set_with_all_fields() {
         let mgr = TokenManager::new(
             "test".into(),
+            "https://api.example.com/mcp".into(),
             "client-1".into(),
             None,
             "https://auth.example.com/token".into(),
@@ -357,6 +364,7 @@ mod tests {
     fn token_response_to_set_without_optionals() {
         let mgr = TokenManager::new(
             "test".into(),
+            "https://api.example.com/mcp".into(),
             "client-1".into(),
             None,
             "https://auth.example.com/token".into(),
@@ -387,6 +395,7 @@ mod tests {
 
         let mgr = TokenManager::new(
             "test-exchange".into(),
+            "https://api.example.com/mcp".into(),
             "client".into(),
             None,
             format!("{}/token", server.url()),
@@ -427,6 +436,7 @@ mod tests {
 
         let mgr = TokenManager::new(
             "test-exchange-happy".into(),
+            "https://api.example.com/mcp".into(),
             "my-client".into(),
             None,
             format!("{}/token", server.url()),
@@ -469,6 +479,7 @@ mod tests {
 
         let mgr = TokenManager::new(
             "test-resource".into(),
+            "https://api.example.com/mcp".into(),
             "client".into(),
             None,
             format!("{}/token", server.url()),
@@ -506,6 +517,7 @@ mod tests {
 
         let mgr = TokenManager::new(
             "test-confidential".into(),
+            "https://api.example.com/mcp".into(),
             "conf-client".into(),
             Some("s3cret".into()),
             format!("{}/token", server.url()),
@@ -524,6 +536,7 @@ mod tests {
     async fn refresh_if_needed_skips_when_valid() {
         let mgr = TokenManager::new(
             "test-refresh-skip".into(),
+            "https://api.example.com/mcp".into(),
             "client".into(),
             None,
             "https://unused/token".into(),
@@ -556,6 +569,7 @@ mod tests {
         // is held, as is the case here). #1269-99f2.
         let mgr = TokenManager::new(
             "test-refresh-none-expiry".into(),
+            "https://api.example.com/mcp".into(),
             "client".into(),
             None,
             "https://unused/token".into(),
@@ -586,6 +600,7 @@ mod tests {
     async fn refresh_if_needed_errors_without_refresh_token() {
         let mgr = TokenManager::new(
             "test-refresh-notoken".into(),
+            "https://api.example.com/mcp".into(),
             "client".into(),
             None,
             "https://unused/token".into(),
@@ -635,6 +650,7 @@ mod tests {
 
         let mgr = Arc::new(TokenManager::new(
             "test-concurrent-refresh".into(),
+            "https://api.example.com/mcp".into(),
             "client".into(),
             None,
             format!("{}/token", server.url()),
@@ -717,9 +733,21 @@ mod tests {
             scope: None,
             resource: None,
         };
-        crate::mcp_upstream_credentials::save_oauth_tokens(name, &stored).unwrap();
+        crate::mcp_upstream_credentials::save_oauth_tokens(
+            name,
+            &stored,
+            "https://api.example.com/mcp",
+        )
+        .unwrap();
 
-        let mgr = TokenManager::new(name.into(), "client".into(), None, endpoint, None);
+        let mgr = TokenManager::new(
+            name.into(),
+            "https://api.example.com/mcp".into(),
+            "client".into(),
+            None,
+            endpoint,
+            None,
+        );
         let refreshed = mgr
             .refresh_after_rejection(&stored, "revoked-but-unexpired")
             .await
@@ -755,9 +783,21 @@ mod tests {
             scope: None,
             resource: None,
         };
-        crate::mcp_upstream_credentials::save_oauth_tokens(name, &rotated).unwrap();
+        crate::mcp_upstream_credentials::save_oauth_tokens(
+            name,
+            &rotated,
+            "https://api.example.com/mcp",
+        )
+        .unwrap();
 
-        let mgr = TokenManager::new(name.into(), "client".into(), None, endpoint, None);
+        let mgr = TokenManager::new(
+            name.into(),
+            "https://api.example.com/mcp".into(),
+            "client".into(),
+            None,
+            endpoint,
+            None,
+        );
         let result = mgr
             .refresh_after_rejection(&rotated, "the-one-we-got-401-on")
             .await

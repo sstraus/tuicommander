@@ -19,6 +19,7 @@ export type {
 	ToolFilter,
 	Unsubscribe,
 	UpstreamAuth,
+	UpstreamHeader,
 	UpstreamMcpConfig,
 	UpstreamMcpSaveRequest,
 	UpstreamMcpServer,
