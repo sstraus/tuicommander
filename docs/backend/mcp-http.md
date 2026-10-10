@@ -1390,6 +1390,8 @@ concurrently for an otherwise unchanged upstream. Concurrently added servers
 also survive unless the caller independently adds the same ID, which is rejected
 as a conflict.
 
+Before persistence or reconnect, the locked pre/post comparison rejects HTTP origin changes for entries with auth or custom headers. Matching by ID or credential-owning name prevents clearing metadata or replacing an ID from bypassing this guard. Use a new upstream name for a different provider; same-origin path edits are allowed. IPC and HTTP share this check.
+
 Persistence returns the exact configuration immediately before and after the
 locked mutation. Once the lock is released, `apply_config_diff` uses that exact
 pair to disconnect removed or changed upstreams and connect added or changed

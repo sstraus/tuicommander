@@ -58,7 +58,9 @@ pub(crate) struct UpstreamMcpServer {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) auth: Option<UpstreamAuth>,
     /// Secret header metadata only; values live in the upstream credential vault.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    // Keep an explicit empty array so a delta removing the final header does not
+    // turn the omitted field into null (which cannot deserialize as a Vec).
+    #[serde(default)]
     pub(crate) headers: Vec<UpstreamHeader>,
 }
 
@@ -506,6 +508,31 @@ fn persist_upstream_delta(
         index_servers(latest, "current")?;
         let old = latest.clone();
         delta.apply(latest)?;
+        // Credentials are keyed by upstream name. Check the locked pre-save state,
+        // even if a caller clears auth/headers or replaces the ID in this save.
+        for previous in &old.servers {
+            if previous.auth.is_none() && previous.headers.is_empty() {
+                continue;
+            }
+            let UpstreamTransport::Http { url: old_url } = &previous.transport else {
+                continue;
+            };
+            for updated in &latest.servers {
+                if updated.id != previous.id && updated.name != previous.name {
+                    continue;
+                }
+                let UpstreamTransport::Http { url: new_url } = &updated.transport else {
+                    continue;
+                };
+                let same_origin = reqwest::Url::parse(old_url)
+                    .ok()
+                    .zip(reqwest::Url::parse(new_url).ok())
+                    .is_some_and(|(old, new)| old.origin() == new.origin());
+                if !same_origin {
+                    return Err("Cannot change the origin of an upstream with credentials. Add a new upstream with a different name for a different provider.".into());
+                }
+            }
+        }
         let errors = validate_upstream_config(latest, self_port);
         if !errors.is_empty() {
             return Err(format!(
@@ -1516,6 +1543,87 @@ mod tests {
         let content = std::fs::read_to_string(&path).unwrap();
         let loaded: UpstreamMcpConfig = serde_json::from_str(&content).unwrap();
         assert_eq!(config, loaded);
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn origin_edits_cannot_reuse_another_providers_credentials() {
+        let tmp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+        for method in ["bearer", "oauth", "header", "none"] {
+            let mut original = http_server("provider", "https://old.example/mcp");
+            match method {
+                "bearer" => {
+                    original.auth = Some(UpstreamAuth::Bearer {
+                        token: String::new(),
+                    })
+                }
+                "oauth" => {
+                    original.auth = Some(UpstreamAuth::OAuth2 {
+                        client_id: "public".into(),
+                        client_secret: None,
+                        scopes: vec![],
+                        authorization_endpoint: None,
+                        token_endpoint: None,
+                    })
+                }
+                "header" => {
+                    original.headers = vec![UpstreamHeader {
+                        name: "x-api-key".into(),
+                        credential_ref: uuid::Uuid::new_v4().to_string(),
+                    }]
+                }
+                _ => {}
+            }
+            let base = UpstreamMcpConfig {
+                servers: vec![original],
+            };
+            // Path, default port and hostname case changes stay within the origin.
+            // Scheme, hostname and effective port changes must fail, even when
+            // auth metadata is cleared or the ID is replaced under the same name.
+            for (url, cross_origin) in [
+                ("https://OLD.example:443/other", false),
+                ("https://new.example/mcp", true),
+                ("http://old.example/mcp", true),
+                ("https://old.example:444/mcp", true),
+            ] {
+                for (replace_id, stale) in [(false, false), (true, false), (false, true)] {
+                    ConfigFile::<UpstreamMcpConfig>::new(UPSTREAMS_FILE)
+                        .save(&base)
+                        .unwrap();
+                    let mut desired = base.clone();
+                    desired.servers[0].transport = UpstreamTransport::Http { url: url.into() };
+                    desired.servers[0].auth = None;
+                    desired.servers[0].headers.clear();
+                    if replace_id {
+                        desired.servers[0].id = uuid::Uuid::new_v4().to_string();
+                    }
+                    // A stale caller that never saw credentials must still be rejected.
+                    let mut stale_base = base.clone();
+                    stale_base.servers[0].auth = None;
+                    stale_base.servers[0].headers.clear();
+                    let request_base = if stale { &stale_base } else { &base };
+                    let result = persist_upstream_delta(request_base, &desired, 3845);
+                    if cross_origin && method != "none" {
+                        assert!(
+                            result.unwrap_err().contains("Add a new upstream"),
+                            "{method} {url}"
+                        );
+                        assert_eq!(
+                            load_mcp_upstreams(),
+                            base,
+                            "rejected edit changed disk config"
+                        );
+                    } else {
+                        result.unwrap();
+                        assert_eq!(
+                            load_mcp_upstreams().servers[0].transport,
+                            desired.servers[0].transport
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]

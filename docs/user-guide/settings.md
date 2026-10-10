@@ -388,6 +388,7 @@ Proxy external MCP servers through TUICommander. Their tools appear prefixed as 
 - HTTP authentication starts with a masked Bearer field. Choose OAuth 2.1 when the upstream supports it.
 - Use **+** beside **Secret headers** to add multiple name/value rows, and **−** to remove a row. Every value is masked and stored in the OS credential vault. Saved rows show an empty secret field: leave it blank to keep the current value, or enter a replacement.
 - Header names and credential references are saved in `mcp-upstreams.json`; values are never saved there. Invalid names, duplicate names and Authorization beside Bearer/OAuth are rejected. Routing, framing and MCP protocol headers are reserved.
+- An upstream with Bearer, OAuth or secret headers cannot change to another URL origin (scheme, host or port). Add a new upstream with a different name for a different provider. Same-origin path edits remain allowed.
 - Credentials are sent only to the configured origin. Same-origin redirects work; a redirect to another scheme, host or port stops with an upstream error.
 - Live status (connecting, ready, circuit open, failed) with tool count and call metrics
 - Reconnect and remove controls per upstream

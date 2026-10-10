@@ -499,6 +499,8 @@ Validation and the runtime registry diff use the exact merged pre/post values
 from the locked transaction. The lock is released before asynchronous reconnect
 work starts.
 
+Header metadata uses an explicit empty array when no headers remain, so removing the last header stays a valid config delta. Authenticated HTTP upstreams cannot change origin in place. The locked save compares the latest prior entries by ID or credential-owning name, before persistence and activation, even if the request clears auth/header metadata. Use a separate upstream name for another provider. Same-origin path edits remain allowed.
+
 **Commands:** `load_mcp_upstreams()`, `save_mcp_upstreams(base, config)`
 
 ### Notification Config (`notifications.json`)

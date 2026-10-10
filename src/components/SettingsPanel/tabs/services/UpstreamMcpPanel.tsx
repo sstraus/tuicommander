@@ -456,6 +456,19 @@ export const UpstreamMcpPanel: Component = () => {
 
 	async function saveEdit(server: UpstreamMcpServer) {
 		const f = editForm();
+		if (server.transport.type === "http" && f.transportType === "http" && (server.auth || server.headers?.length)) {
+			try {
+				if (new URL(server.transport.url).origin !== new URL(f.url.trim()).origin) {
+					setError(
+						"Cannot change the origin of an upstream with credentials. Add a new upstream with a different name for a different provider.",
+					);
+					return;
+				}
+			} catch {
+				setError("Enter a valid HTTP URL");
+				return;
+			}
+		}
 		const hasBearer = f.authMethod === "oauth2" || !!f.credential || server.auth?.type === "bearer";
 		const headerError = f.transportType === "http" ? headerFormError(f.headers, hasBearer) : "";
 		if (headerError) {
