@@ -3952,8 +3952,13 @@ it("add-account polling uses a separate HTTP endpoint", () => {
 it("maps custom header credential metadata on save and delete", () => {
 	const header = { name: "x-api-key", credential_ref: "dcacbdba-e6c1-45aa-83a7-8417484fce0d" };
 	expect(
-		mapCommandToHttp("save_mcp_upstream_credential", { name: "example", token: "DUMMY_TRANSPORT", header }).body,
-	).toEqual({ name: "example", token: "DUMMY_TRANSPORT", header });
+		mapCommandToHttp("save_mcp_upstream_credential", {
+			name: "example",
+			token: "DUMMY_TRANSPORT",
+			url: "https://example.com/mcp",
+			header,
+		}).body,
+	).toEqual({ name: "example", token: "DUMMY_TRANSPORT", url: "https://example.com/mcp", header });
 	expect(mapCommandToHttp("delete_mcp_upstream_credential", { name: "example", header }).body).toEqual({
 		name: "example",
 		header,

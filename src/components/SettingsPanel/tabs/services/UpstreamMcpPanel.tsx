@@ -310,11 +310,11 @@ export const UpstreamMcpPanel: Component = () => {
 		}
 	}
 
-	async function saveHeaderRows(name: string, rows: HeaderRow[]): Promise<UpstreamHeader[]> {
+	async function saveHeaderRows(name: string, url: string, rows: HeaderRow[]): Promise<UpstreamHeader[]> {
 		const headers: UpstreamHeader[] = [];
 		for (const row of rows) {
 			const header = { name: row.name, credential_ref: row.value ? crypto.randomUUID() : row.credential_ref };
-			if (row.value) await rpc("save_mcp_upstream_credential", { name, token: row.value, header }, machine());
+			if (row.value) await rpc("save_mcp_upstream_credential", { name, url, token: row.value, header }, machine());
 			headers.push(header);
 		}
 		return headers;
@@ -371,9 +371,13 @@ export const UpstreamMcpPanel: Component = () => {
 
 		try {
 			if (f.transportType === "http") {
-				server.headers = await saveHeaderRows(server.name, f.headers);
+				server.headers = await saveHeaderRows(server.name, f.url.trim(), f.headers);
 				if (f.credential && f.authMethod === "bearer") {
-					await rpc("save_mcp_upstream_credential", { name: server.name, token: f.credential }, machine());
+					await rpc(
+						"save_mcp_upstream_credential",
+						{ name: server.name, url: f.url.trim(), token: f.credential },
+						machine(),
+					);
 					server.auth = { type: "bearer", token: "" };
 				}
 			}
@@ -496,7 +500,7 @@ export const UpstreamMcpPanel: Component = () => {
 		const methodChanged = oldMethod !== f.authMethod;
 		const replaceBearer = f.transportType === "http" && f.authMethod === "bearer" && !!f.credential;
 		try {
-			updated.headers = f.transportType === "http" ? await saveHeaderRows(server.name, f.headers) : [];
+			updated.headers = f.transportType === "http" ? await saveHeaderRows(server.name, f.url.trim(), f.headers) : [];
 			if (f.transportType === "http" && f.authMethod === "bearer") {
 				if (f.credential || server.auth?.type === "bearer") updated.auth = { type: "bearer", token: "" };
 			}
@@ -509,7 +513,11 @@ export const UpstreamMcpPanel: Component = () => {
 		try {
 			// Replacing the shared auth slot is destructive too: persist the config first.
 			if (replaceBearer)
-				await rpc("save_mcp_upstream_credential", { name: server.name, token: f.credential }, machine());
+				await rpc(
+					"save_mcp_upstream_credential",
+					{ name: server.name, url: f.url.trim(), token: f.credential },
+					machine(),
+				);
 			else if (methodChanged) await rpc("delete_mcp_upstream_credential", { name: server.name }, machine());
 			await removeHeaderCredentials(
 				server.name,

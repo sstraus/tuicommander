@@ -52,6 +52,7 @@ const CLEANUP_INTERVAL: Duration = Duration::from_secs(30);
 struct PendingFlow {
     /// Upstream name this flow is for.
     upstream_name: String,
+    upstream_url: String,
     /// Full `state` nonce (also the DashMap key for this entry).
     state: String,
     /// PKCE verifier used when exchanging the code.
@@ -208,6 +209,7 @@ impl OAuthFlowManager {
         // Store pending flow.
         let flow = PendingFlow {
             upstream_name: upstream_name.to_string(),
+            upstream_url: server_url.to_string(),
             state: state.clone(),
             pkce_verifier: pkce.verifier.clone(),
             redirect_uri: redirect_uri.to_string(),
@@ -252,6 +254,7 @@ impl OAuthFlowManager {
         // Exchange code for tokens.
         let token_mgr = TokenManager::new(
             flow.upstream_name.clone(),
+            flow.upstream_url.clone(),
             flow.client_id.clone(),
             flow.client_secret.clone(),
             flow.token_endpoint.clone(),

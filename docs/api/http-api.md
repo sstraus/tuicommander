@@ -1578,7 +1578,7 @@ The tab's verdict on a `session action=suspend` request announced by the `sessio
 
 ### MCP Upstream Credentials
 
-`POST /mcp/upstreams/credential` accepts `{name, token, header?}`. Without `header`, it saves the existing Bearer credential. With `header: {name, credential_ref}`, it saves a secret header value in the upstream-scoped OS credential vault. `credential_ref` must be a UUID. Names and values are validated without echoing values in errors.
+`POST /mcp/upstreams/credential` accepts `{name, token, url, header?}`. Without `header`, it saves the existing Bearer credential. With `header: {name, credential_ref}`, it saves a secret header value in the upstream-scoped OS credential vault. `credential_ref` must be a UUID. `url` is required and must be HTTP or HTTPS. The vault entry binds the secret to that URL origin; requests to a different origin fail before sending. Old unbound credentials require re-saving or authorization. Names and values are validated without echoing values in errors.
 
 `DELETE /mcp/upstreams/credential` accepts `{name, header?}` and removes that credential. Both return JSON `null` on success, matching IPC unit results. `POST /mcp/upstreams/reconnect` also returns JSON `null` on success. Config entries carry only `headers: [{name, credential_ref}]`; the API never returns header values.
 

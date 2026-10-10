@@ -6,7 +6,7 @@
 //! - Linux: keyutils / Secret Service
 //!
 //! The config file (`mcp-upstreams.json`) never contains secrets — only the
-//! upstream name is needed to look up the credential at runtime.
+//! upstream name identifies a vault entry containing the secret and its saved origin.
 //!
 //! ## Storage format
 //!
@@ -120,26 +120,69 @@ pub(crate) fn parse_credential(raw: &str) -> StoredCredential {
     }
 }
 
-/// Read and parse a credential for an upstream MCP server.
-/// Returns `None` if no credential is stored (not an error).
-pub(crate) fn read_stored_credential(
-    upstream_name: &str,
-) -> Result<Option<StoredCredential>, String> {
-    match read_upstream_credential(upstream_name)? {
-        Some(raw) => Ok(Some(parse_credential(&raw))),
-        None => Ok(None),
+/// The origin and secret are one vault write: config edits cannot rebind it.
+#[derive(Serialize, Deserialize)]
+struct OriginBoundCredential {
+    origin: String,
+    value: String,
+}
+
+fn credential_origin(url: &str) -> Result<String, String> {
+    let url = reqwest::Url::parse(url).map_err(|_| "Invalid credential origin URL")?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return Err("Credential origin must be HTTP or HTTPS".into());
     }
+    Ok(url.origin().ascii_serialization())
+}
+
+/// Resolve a secret only for the origin selected when the secret was saved.
+/// Old unbound entries require re-saving or re-authorization, never lazy binding.
+pub(crate) fn read_credential_for_url(name: &str, url: &str) -> Result<Option<String>, String> {
+    let Some(raw) = crate::credentials::get(Credential::McpUpstream(name))? else {
+        return Ok(None);
+    };
+    let bound: OriginBoundCredential = serde_json::from_str(&raw).map_err(
+        |_| "Stored credential has no origin binding. Save the credential or authorize again.",
+    )?;
+    if bound.origin != credential_origin(url)? {
+        return Err("Stored credential origin differs from the upstream URL. Save a credential for this provider or authorize again.".into());
+    }
+    Ok(Some(bound.value))
+}
+
+pub(crate) fn save_credential_for_url(name: &str, value: &str, url: &str) -> Result<(), String> {
+    let bound = OriginBoundCredential {
+        origin: credential_origin(url)?,
+        value: value.into(),
+    };
+    let raw =
+        serde_json::to_string(&bound).map_err(|_| "Failed to serialize upstream credential")?;
+    save_upstream_credential(name, &raw)
+}
+
+pub(crate) fn read_stored_credential_for_url(
+    name: &str,
+    url: &str,
+) -> Result<Option<StoredCredential>, String> {
+    Ok(read_credential_for_url(name, url)?.map(|raw| parse_credential(&raw)))
+}
+
+/// Presence check used to enable OAuth discovered during the handshake.
+/// Resolution and origin validation still happen in HttpMcpClient.
+pub(crate) fn has_upstream_credential(name: &str) -> Result<bool, String> {
+    Ok(crate::credentials::get(Credential::McpUpstream(name))?.is_some())
 }
 
 /// Save an [`OAuthTokenSet`] to the keyring as a structured JSON blob.
 pub(crate) fn save_oauth_tokens(
     upstream_name: &str,
     token_set: &OAuthTokenSet,
+    upstream_url: &str,
 ) -> Result<(), String> {
     let cred = StoredCredential::Oauth2(token_set.clone());
     let json = serde_json::to_string(&cred)
         .map_err(|e| format!("Failed to serialize OAuth tokens: {e}"))?;
-    save_upstream_credential(upstream_name, &json)
+    save_credential_for_url(upstream_name, &json, upstream_url)
 }
 
 /// Validate that an upstream name is safe for use as a keyring key.
@@ -161,8 +204,15 @@ fn validate_keyring_name(name: &str) -> Result<(), String> {
 
 /// Read a credential for an upstream MCP server.
 /// Returns `None` if no credential is stored (not an error).
+#[cfg(test)]
 pub(crate) fn read_upstream_credential(upstream_name: &str) -> Result<Option<String>, String> {
-    crate::credentials::get(Credential::McpUpstream(upstream_name))
+    Ok(
+        crate::credentials::get(Credential::McpUpstream(upstream_name))?.map(|raw| {
+            serde_json::from_str::<OriginBoundCredential>(&raw)
+                .map(|bound| bound.value)
+                .unwrap_or(raw)
+        }),
+    )
 }
 
 pub(crate) fn save_upstream_credential(upstream_name: &str, token: &str) -> Result<(), String> {
@@ -182,6 +232,7 @@ pub(crate) fn save_mcp_upstream_credential(
     name: String,
     token: String,
     header: Option<crate::mcp_upstream_config::UpstreamHeader>,
+    url: String,
 ) -> Result<(), String> {
     validate_keyring_name(&name)?;
     let key = if let Some(header) = header {
@@ -192,7 +243,7 @@ pub(crate) fn save_mcp_upstream_credential(
     } else {
         name
     };
-    save_upstream_credential(&key, &token)
+    save_credential_for_url(&key, &token, &url)
         .map_err(|_| "Failed to save upstream credential".to_string())
 }
 

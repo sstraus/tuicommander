@@ -360,7 +360,11 @@ async fn save_mcp_upstream_credential_http(Json(body): Json<serde_json::Value>) 
         Ok(header) => header,
         Err(_) => return (StatusCode::BAD_REQUEST, "invalid header metadata").into_response(),
     };
-    match crate::mcp_upstream_credentials::save_mcp_upstream_credential(name, token, header) {
+    let url = match body.get("url").and_then(|v| v.as_str()) {
+        Some(url) => url.to_string(),
+        None => return (StatusCode::BAD_REQUEST, "missing 'url'").into_response(),
+    };
+    match crate::mcp_upstream_credentials::save_mcp_upstream_credential(name, token, header, url) {
         Ok(()) => Json(()).into_response(),
         Err(e) => err_500(&e),
     }
@@ -4667,7 +4671,7 @@ mod tests {
         let name = "secret-header-http";
         let header = serde_json::json!({"name":"x-api-key", "credential_ref":uuid::Uuid::new_v4().to_string()});
         let response = save_mcp_upstream_credential_http(Json(
-            serde_json::json!({"name":name,"token":"DUMMY_HTTP_SENTINEL","header":header}),
+            serde_json::json!({"name":name,"token":"DUMMY_HTTP_SENTINEL","header":header,"url":"https://example.com/mcp"}),
         ))
         .await;
         assert_eq!(response.status(), StatusCode::OK);

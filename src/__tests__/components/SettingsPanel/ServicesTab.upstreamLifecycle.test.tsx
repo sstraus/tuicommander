@@ -79,6 +79,7 @@ describe("UpstreamMcpPanel lifecycle", () => {
 		expect(credentials).toHaveLength(1);
 		expect(credentials[0][1]).toMatchObject({
 			name: "example",
+			url: "https://example.com/mcp",
 			token: "DUMMY_UI_SENTINEL",
 			header: { name: "x-api-key" },
 		});

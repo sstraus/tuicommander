@@ -12,7 +12,7 @@
 use crate::mcp_oauth::token::TokenManager;
 use crate::mcp_upstream_config::{UpstreamHeader, UpstreamTransport};
 use crate::mcp_upstream_credentials::{
-    OAuthTokenSet, StoredCredential, is_token_valid, read_stored_credential,
+    OAuthTokenSet, StoredCredential, is_token_valid, read_stored_credential_for_url,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -178,10 +178,11 @@ impl HttpMcpClient {
             if has_bearer && header.name.eq_ignore_ascii_case("authorization") {
                 return Err("Custom Authorization conflicts with Bearer authentication".into());
             }
-            let token = crate::mcp_upstream_credentials::read_upstream_credential(
+            let token = crate::mcp_upstream_credentials::read_credential_for_url(
                 &header.credential_key(&self.name),
+                &self.url,
             )
-            .map_err(|_| UpstreamError::from("Failed to read custom header credential"))?
+            .map_err(UpstreamError::from)?
             .ok_or_else(|| UpstreamError::from("Custom header credential is missing"))?;
             let mut value = reqwest::header::HeaderValue::from_str(&token)
                 .map_err(|_| UpstreamError::from("Invalid custom header value"))?;
@@ -230,7 +231,7 @@ impl HttpMcpClient {
         if !self.has_auth {
             return Ok(None);
         }
-        let cred = read_stored_credential(&self.name)
+        let cred = read_stored_credential_for_url(&self.name, &self.url)
             .map_err(|e| UpstreamError::Other(format!("keyring read failed: {e}")))?;
         let Some(cred) = cred else { return Ok(None) };
 
@@ -277,6 +278,7 @@ impl HttpMcpClient {
                 let resource = set.resource.clone().or_else(|| Some(self.url.clone()));
                 Arc::new(TokenManager::new(
                     self.name.clone(),
+                    self.url.clone(),
                     set.client_id.clone(),
                     set.client_secret.clone(),
                     set.token_endpoint.clone(),
@@ -299,7 +301,7 @@ impl HttpMcpClient {
         let Some(rejected_bearer) = rejected_bearer else {
             return Ok(None);
         };
-        let cred = read_stored_credential(&self.name)
+        let cred = read_stored_credential_for_url(&self.name, &self.url)
             .map_err(|e| UpstreamError::Other(format!("keyring read failed: {e}")))?;
         let Some(StoredCredential::Oauth2(set)) = cred else {
             return Ok(None);
@@ -456,7 +458,9 @@ impl HttpMcpClient {
     #[allow(dead_code)]
     pub(crate) async fn shutdown(&self) {
         if let Some(sid) = &self.session_id {
-            let auth_token = self.resolve_bearer().await.ok().flatten();
+            let Ok(auth_token) = self.resolve_bearer().await else {
+                return;
+            };
             let mut req = self
                 .client
                 .delete(&self.url)
@@ -769,11 +773,16 @@ mod tests {
                 name.into(),
                 "DUMMY_HEADER_SENTINEL".into(),
                 Some(header.clone()),
+                url.clone(),
             )
             .unwrap();
         }
-        crate::mcp_upstream_credentials::save_upstream_credential(name, "DUMMY_BEARER_SENTINEL")
-            .unwrap();
+        crate::mcp_upstream_credentials::save_credential_for_url(
+            name,
+            "DUMMY_BEARER_SENTINEL",
+            &url,
+        )
+        .unwrap();
         let mut client =
             HttpMcpClient::new(name.into(), url, 30, true).with_headers(headers.to_vec());
         client.initialize().await.unwrap();
@@ -808,6 +817,7 @@ mod tests {
             name.into(),
             "DUMMY_ROTATED_SENTINEL".into(),
             Some(headers[0].clone()),
+            client.url.clone(),
         )
         .unwrap();
         client.health_check().await.unwrap();
@@ -840,9 +850,10 @@ mod tests {
         .with_headers(vec![header.clone()]);
         let error = client.health_check().await.unwrap_err().to_string();
         assert_eq!(error, "Custom header credential is missing");
-        crate::mcp_upstream_credentials::save_upstream_credential(
+        crate::mcp_upstream_credentials::save_credential_for_url(
             &header.credential_key("secret-header-errors"),
             "DUMMY_INVALID_SENTINEL\r\ninjected",
+            &client.url,
         )
         .unwrap();
         let error = client.health_check().await.unwrap_err().to_string();
@@ -894,11 +905,13 @@ mod tests {
             "secret-redirect".into(),
             "DUMMY_REDIRECT_SENTINEL".into(),
             Some(header.clone()),
+            url.clone(),
         )
         .unwrap();
-        crate::mcp_upstream_credentials::save_upstream_credential(
+        crate::mcp_upstream_credentials::save_credential_for_url(
             "secret-redirect",
             "DUMMY_BEARER_SENTINEL",
+            &url,
         )
         .unwrap();
         let mut client =
@@ -912,6 +925,76 @@ mod tests {
         assert_eq!(seen[0]["authorization"], "Bearer DUMMY_BEARER_SENTINEL");
         task.abort();
         foreign_task.abort();
+    }
+    // Catches: a config edit reuses a name-keyed token at a different origin.
+    #[tokio::test]
+    async fn saved_credentials_never_contact_a_different_origin() {
+        let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let captured = hits.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let foreign_url = format!("http://{}/mcp", listener.local_addr().unwrap());
+        let router = axum::Router::new().fallback(move || {
+            let captured = captured.clone();
+            async move {
+                captured.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                "unexpected request"
+            }
+        });
+        let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let header = UpstreamHeader {
+            name: "x-api-key".into(),
+            credential_ref: uuid::Uuid::new_v4().to_string(),
+        };
+        for method in ["bearer", "oauth", "header", "unbound"] {
+            let name = format!("origin-bound-{method}");
+            if method == "unbound" {
+                crate::mcp_upstream_credentials::save_upstream_credential(
+                    &name,
+                    "DUMMY_UNBOUND_SECRET",
+                )
+                .unwrap();
+            } else if method == "oauth" {
+                let set = OAuthTokenSet {
+                    access_token: "DUMMY_OLD_PROVIDER_SECRET".into(),
+                    refresh_token: None,
+                    expires_at: None,
+                    token_endpoint: "https://old.example/token".into(),
+                    client_id: "client".into(),
+                    client_secret: None,
+                    scope: None,
+                    resource: None,
+                };
+                crate::mcp_upstream_credentials::save_oauth_tokens(
+                    &name,
+                    &set,
+                    "https://old.example/mcp",
+                )
+                .unwrap();
+            } else {
+                crate::mcp_upstream_credentials::save_mcp_upstream_credential(
+                    name.clone(),
+                    "DUMMY_OLD_PROVIDER_SECRET".into(),
+                    (method == "header").then(|| header.clone()),
+                    "https://old.example/mcp".into(),
+                )
+                .unwrap();
+            }
+            let mut client = HttpMcpClient::new(name, foreign_url.clone(), 5, method != "header")
+                .with_headers(if method == "header" {
+                    vec![header.clone()]
+                } else {
+                    vec![]
+                });
+            let error = client.initialize().await.unwrap_err().to_string();
+            assert!(error.contains("origin"), "{method}: {error}");
+            assert!(!error.contains("DUMMY_"));
+        }
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "origin mismatch must fail before any request is sent"
+        );
+        task.abort();
     }
     use std::sync::Arc;
 
@@ -989,7 +1072,12 @@ mod tests {
         {
             let replacement = state.credential_replacement.lock().unwrap().take();
             if let Some((name, set)) = replacement {
-                crate::mcp_upstream_credentials::save_oauth_tokens(&name, &set).unwrap();
+                crate::mcp_upstream_credentials::save_oauth_tokens(
+                    &name,
+                    &set,
+                    set.resource.as_deref().unwrap(),
+                )
+                .unwrap();
             }
             return oauth_challenge_response();
         }
@@ -1315,8 +1403,9 @@ mod tests {
         let state = MockState::default();
         let url = spawn_mock_server(state.clone()).await;
 
-        crate::mcp_upstream_credentials::save_upstream_credential(name, "stale-token").unwrap();
-        let mut client = HttpMcpClient::new(name.to_string(), url, 5, true);
+        crate::mcp_upstream_credentials::save_credential_for_url(name, "stale-token", &url)
+            .unwrap();
+        let mut client = HttpMcpClient::new(name.to_string(), url.clone(), 5, true);
         client.initialize().await.unwrap();
         assert_eq!(
             state.seen_bearer.lock().unwrap().as_deref(),
@@ -1324,7 +1413,8 @@ mod tests {
         );
 
         // A completed OAuth flow persists a new token for the same upstream.
-        crate::mcp_upstream_credentials::save_upstream_credential(name, "fresh-token").unwrap();
+        crate::mcp_upstream_credentials::save_credential_for_url(name, "fresh-token", &url)
+            .unwrap();
 
         client.initialize().await.unwrap();
         assert_eq!(
@@ -1342,11 +1432,13 @@ mod tests {
         let state = MockState::default();
         let url = spawn_mock_server(state.clone()).await;
 
-        crate::mcp_upstream_credentials::save_upstream_credential(name, "stale-token").unwrap();
-        let mut client = HttpMcpClient::new(name.to_string(), url, 5, true);
+        crate::mcp_upstream_credentials::save_credential_for_url(name, "stale-token", &url)
+            .unwrap();
+        let mut client = HttpMcpClient::new(name.to_string(), url.clone(), 5, true);
         client.initialize().await.unwrap();
 
-        crate::mcp_upstream_credentials::save_upstream_credential(name, "fresh-token").unwrap();
+        crate::mcp_upstream_credentials::save_credential_for_url(name, "fresh-token", &url)
+            .unwrap();
 
         client.health_check().await.unwrap();
         assert_eq!(
@@ -1389,9 +1481,9 @@ mod tests {
             scope: None,
             resource: None,
         };
-        crate::mcp_upstream_credentials::save_oauth_tokens(name, &set).unwrap();
+        crate::mcp_upstream_credentials::save_oauth_tokens(name, &set, &url).unwrap();
 
-        let mut client = HttpMcpClient::new(name.to_string(), url, 5, true);
+        let mut client = HttpMcpClient::new(name.to_string(), url.clone(), 5, true);
         let tools = client.initialize().await.unwrap();
 
         assert_eq!(tools.len(), 2);
@@ -1424,10 +1516,10 @@ mod tests {
             scope: None,
             resource: None,
         };
-        crate::mcp_upstream_credentials::save_oauth_tokens(name, &rejected).unwrap();
+        crate::mcp_upstream_credentials::save_oauth_tokens(name, &rejected, &url).unwrap();
         *state.only_accept_bearer.lock().unwrap() = Some("rejected-token".to_string());
 
-        let mut client = HttpMcpClient::new(name.to_string(), url, 5, true);
+        let mut client = HttpMcpClient::new(name.to_string(), url.clone(), 5, true);
         client.initialize().await.unwrap();
 
         let replacement = OAuthTokenSet {
@@ -1438,7 +1530,7 @@ mod tests {
             client_id: "client".to_string(),
             client_secret: None,
             scope: None,
-            resource: None,
+            resource: Some(url.clone()),
         };
         *state.only_accept_bearer.lock().unwrap() = Some("reauthorized-token".to_string());
         *state.credential_replacement.lock().unwrap() = Some((name.to_string(), replacement));
@@ -1470,12 +1562,13 @@ mod tests {
         let state = MockState::default();
         let url = spawn_mock_server(state.clone()).await;
 
-        crate::mcp_upstream_credentials::save_upstream_credential(name, "static-bearer").unwrap();
+        crate::mcp_upstream_credentials::save_credential_for_url(name, "static-bearer", &url)
+            .unwrap();
         state
             .return_401_with_challenge
             .store(true, std::sync::atomic::Ordering::SeqCst);
 
-        let mut client = HttpMcpClient::new(name.to_string(), url, 5, true);
+        let mut client = HttpMcpClient::new(name.to_string(), url.clone(), 5, true);
         let err = client.initialize().await.unwrap_err();
         assert!(
             matches!(err, UpstreamError::NeedsOAuth { .. }),

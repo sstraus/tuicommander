@@ -909,17 +909,6 @@ impl UpstreamRegistry {
                 }
             };
             if should_disconnect {
-                // When only the transport URL changed, any DCR-obtained client_id
-                // is bound to the old AS and must not survive the reconnect.
-                if let Some(new_server) = new_by_id.get(id)
-                    && old_server.transport != new_server.transport
-                    && new_server.auth == old_server.auth
-                    && old_server.auth.is_some()
-                    && let Err(e) =
-                        crate::mcp_upstream_config::clear_upstream_auth(&new_server.name)
-                {
-                    tracing::warn!(source = "mcp_registry", name = %new_server.name, "Failed to clear stale auth: {e}");
-                }
                 let _ = self.disconnect_upstream(&old_server.name);
             }
         }
@@ -1143,11 +1132,7 @@ async fn initialize_entry_with_oauth(
             // flow), ensure the client knows to include it. The client may have
             // been built with has_auth=false when the upstream config had no
             // explicit `auth` section (OAuth was discovered via 401 challenge).
-            if crate::mcp_upstream_credentials::read_stored_credential(name)
-                .ok()
-                .flatten()
-                .is_some()
-            {
+            if crate::mcp_upstream_credentials::has_upstream_credential(name).unwrap_or(false) {
                 guard.enable_auth();
             }
             guard.initialize().await

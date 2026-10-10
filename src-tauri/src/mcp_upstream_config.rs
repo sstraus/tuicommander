@@ -508,31 +508,6 @@ fn persist_upstream_delta(
         index_servers(latest, "current")?;
         let old = latest.clone();
         delta.apply(latest)?;
-        // Credentials are keyed by upstream name. Check the locked pre-save state,
-        // even if a caller clears auth/headers or replaces the ID in this save.
-        for previous in &old.servers {
-            if previous.auth.is_none() && previous.headers.is_empty() {
-                continue;
-            }
-            let UpstreamTransport::Http { url: old_url } = &previous.transport else {
-                continue;
-            };
-            for updated in &latest.servers {
-                if updated.id != previous.id && updated.name != previous.name {
-                    continue;
-                }
-                let UpstreamTransport::Http { url: new_url } = &updated.transport else {
-                    continue;
-                };
-                let same_origin = reqwest::Url::parse(old_url)
-                    .ok()
-                    .zip(reqwest::Url::parse(new_url).ok())
-                    .is_some_and(|(old, new)| old.origin() == new.origin());
-                if !same_origin {
-                    return Err("Cannot change the origin of an upstream with credentials. Add a new upstream with a different name for a different provider.".into());
-                }
-            }
-        }
         let errors = validate_upstream_config(latest, self_port);
         if !errors.is_empty() {
             return Err(format!(
@@ -617,12 +592,6 @@ where
 /// atomically. Other upstreams are left untouched.
 pub(crate) fn update_upstream_auth(name: &str, auth: UpstreamAuth) -> Result<(), String> {
     set_upstream_auth(name, Some(auth))
-}
-
-/// Clear persisted auth for a single upstream (e.g. when transport URL changes
-/// and a DCR-obtained client_id is stale).
-pub(crate) fn clear_upstream_auth(name: &str) -> Result<(), String> {
-    set_upstream_auth(name, None)
 }
 
 fn set_upstream_auth(name: &str, auth: Option<UpstreamAuth>) -> Result<(), String> {
@@ -799,6 +768,7 @@ mod tests {
             "header-persistence".into(),
             sentinel.into(),
             Some(header.clone()),
+            "https://example.com/mcp".into(),
         )
         .unwrap();
         let mut server = http_server("header-persistence", "https://example.com/mcp");
@@ -828,6 +798,7 @@ mod tests {
             "header-persistence".into(),
             format!("{sentinel}\r\ninjected"),
             Some(header.clone()),
+            "https://example.com/mcp".into(),
         )
         .unwrap_err();
         assert!(!error.contains(sentinel));
@@ -1547,7 +1518,7 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
-    fn origin_edits_cannot_reuse_another_providers_credentials() {
+    fn config_edits_do_not_rebind_vault_credentials() {
         let tmp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
         for method in ["bearer", "oauth", "header", "none"] {
@@ -1575,17 +1546,29 @@ mod tests {
                 }
                 _ => {}
             }
+            let key = original
+                .headers
+                .first()
+                .map(|h| h.credential_key("provider"))
+                .unwrap_or_else(|| "provider".into());
+            crate::mcp_upstream_credentials::save_credential_for_url(
+                &key,
+                "DUMMY_ORIGIN_BINDING",
+                "https://old.example/mcp",
+            )
+            .unwrap();
+            let saved_vault_entry =
+                crate::credentials::get(crate::credentials::Credential::McpUpstream(&key)).unwrap();
             let base = UpstreamMcpConfig {
                 servers: vec![original],
             };
-            // Path, default port and hostname case changes stay within the origin.
-            // Scheme, hostname and effective port changes must fail, even when
-            // auth metadata is cleared or the ID is replaced under the same name.
-            for (url, cross_origin) in [
-                ("https://OLD.example:443/other", false),
-                ("https://new.example/mcp", true),
-                ("http://old.example/mcp", true),
-                ("https://old.example:444/mcp", true),
+            // Config edits are allowed at the API. Credential reuse is checked
+            // at the request boundary, including stale and replacement-ID saves.
+            for url in [
+                "https://OLD.example:443/other",
+                "https://new.example/mcp",
+                "http://old.example/mcp",
+                "https://old.example:444/mcp",
             ] {
                 for (replace_id, stale) in [(false, false), (true, false), (false, true)] {
                     ConfigFile::<UpstreamMcpConfig>::new(UPSTREAMS_FILE)
@@ -1598,29 +1581,23 @@ mod tests {
                     if replace_id {
                         desired.servers[0].id = uuid::Uuid::new_v4().to_string();
                     }
-                    // A stale caller that never saw credentials must still be rejected.
+                    // A stale caller must not change the vault binding either.
                     let mut stale_base = base.clone();
                     stale_base.servers[0].auth = None;
                     stale_base.servers[0].headers.clear();
                     let request_base = if stale { &stale_base } else { &base };
                     let result = persist_upstream_delta(request_base, &desired, 3845);
-                    if cross_origin && method != "none" {
-                        assert!(
-                            result.unwrap_err().contains("Add a new upstream"),
-                            "{method} {url}"
-                        );
-                        assert_eq!(
-                            load_mcp_upstreams(),
-                            base,
-                            "rejected edit changed disk config"
-                        );
-                    } else {
-                        result.unwrap();
-                        assert_eq!(
-                            load_mcp_upstreams().servers[0].transport,
-                            desired.servers[0].transport
-                        );
-                    }
+                    result.unwrap();
+                    assert_eq!(
+                        crate::credentials::get(crate::credentials::Credential::McpUpstream(&key))
+                            .unwrap(),
+                        saved_vault_entry,
+                        "config edits must not alter the saved credential origin"
+                    );
+                    assert_eq!(
+                        load_mcp_upstreams().servers[0].transport,
+                        desired.servers[0].transport
+                    );
                 }
             }
         }
@@ -1837,6 +1814,7 @@ mod tests {
             name.into(),
             "DUMMY_OLD_PROVIDER_SECRET".into(),
             None,
+            "https://old.example/mcp".into(),
         )
         .unwrap();
         let original = UpstreamMcpConfig {
@@ -1871,13 +1849,26 @@ mod tests {
         provider_edit.servers[0].auth = Some(UpstreamAuth::Bearer {
             token: String::new(),
         });
-        let result = persist_upstream_delta(&reloaded, &provider_edit, 3845);
+        assert_eq!(
+            reloaded.servers[0].auth,
+            Some(UpstreamAuth::Bearer {
+                token: String::new()
+            }),
+            "path edit must retain auth in settings"
+        );
+        persist_upstream_delta(&reloaded, &provider_edit, 3845).unwrap();
+        let mut client = crate::mcp_proxy::http_client::HttpMcpClient::new(
+            name.into(),
+            "https://new.example/mcp".into(),
+            5,
+            true,
+        );
+        let error = client.initialize().await.unwrap_err().to_string();
         crate::mcp_upstream_credentials::delete_mcp_upstream_credential(name.into(), None).unwrap();
         assert!(
-            result.is_err(),
-            "provider edit accepted while the previous provider token remains available"
+            error.contains("origin differs"),
+            "old credential must never reach the new provider: {error}"
         );
-        assert_eq!(load_mcp_upstreams(), reloaded);
     }
 
     // -- update_upstream_auth --
@@ -1945,34 +1936,6 @@ mod tests {
         let result = update_upstream_auth("nonexistent", auth);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn clear_upstream_auth_removes_auth() {
-        let tmp = tempfile::tempdir().unwrap();
-        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
-
-        let mut server = http_server("delta", "https://d.example.com/mcp");
-        server.auth = Some(UpstreamAuth::OAuth2 {
-            client_id: "stale-id".into(),
-            client_secret: None,
-            scopes: vec![],
-            authorization_endpoint: None,
-            token_endpoint: None,
-        });
-        let config = UpstreamMcpConfig {
-            servers: vec![server],
-        };
-        ConfigFile::<UpstreamMcpConfig>::new(UPSTREAMS_FILE)
-            .save(&config)
-            .unwrap();
-
-        clear_upstream_auth("delta").unwrap();
-
-        let reloaded: UpstreamMcpConfig = load_json_config(UPSTREAMS_FILE);
-        let delta = reloaded.servers.iter().find(|s| s.name == "delta").unwrap();
-        assert!(delta.auth.is_none());
     }
 
     #[test]

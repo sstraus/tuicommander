@@ -74,7 +74,7 @@
         <figcaption>The real upstream form from an isolated worktree preview. All entered values are dummy sentinels; the two rows illustrate the generic editor, not a required Composio header pair.</figcaption>
       </figure>
       <p>Values go to the existing OS credential vault. The upstream configuration stores names and opaque credential references. Editing a saved row shows an empty masked field: leave it blank to retain the secret or enter a replacement. Remove a row with <strong>−</strong>. Invalid or duplicate names, transport control headers and an Authorization header that conflicts with Bearer or OAuth are rejected.</p>
-      <p>The backend reads header values when it sends a request. Same-origin redirects are allowed; a redirect to a different scheme, host or port stops before contacting that destination. If a service redirects to another host, configure its final documented endpoint instead.</p>
+      <p>The backend reads header values when it sends a request and checks their saved origin first. Bearer, OAuth and header credentials saved before origin binding must be entered or authorized again; the connection error explains this. Same-origin path edits keep the saved auth settings. Same-origin redirects are allowed; a redirect to a different scheme, host or port stops before contacting that destination. If a service redirects to another host, configure its final documented endpoint instead.</p>
     </div>
 
     <div class="blog-section">
@@ -98,7 +98,7 @@
 
     <div class="blog-section">
       <h2>What was verified</h2>
-      <p>Local automated tests cover multiple header values on MCP requests, request-time rotation, same-origin redirects, rejection before a foreign origin receives any request, configuration without secret values, redacted diagnostics, legacy Bearer and OAuth configuration, HTTP credential endpoints and the masked editor. The screenshot uses the actual component with an isolated preview and dummy data.</p>
+      <p>Local automated tests cover multiple header values on MCP requests, request-time rotation, same-origin redirects, rejection before a foreign origin receives any request, configuration without secret values, redacted diagnostics, Bearer and OAuth configuration with saved origin bindings, HTTP credential endpoints and the masked editor. The screenshot uses the actual component with an isolated preview and dummy data.</p>
       <p>No authenticated Composio account or live Composio tool call was used for this change. The session setup above follows Composio's documentation; account consent, entitlements, provider scopes, real tool names and a successful harmless read still need verification with your own test account. This is a setup guide, not a claim of end-to-end service compatibility.</p>
     </div>
   </article>

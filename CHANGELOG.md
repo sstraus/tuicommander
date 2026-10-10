@@ -11,7 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Accept pasted images in AI Chat before ego connects, retain concurrent pastes while its first session opens, and share Finder/text clipboard rules with Ideas and terminal Compose (#1639-f474).
 - Add the `automations` MCP tool for definition management, with bound creator provenance and atomic pause/resume.
 ### Added
-- Add multiple masked custom authentication headers beside Bearer/OAuth for HTTP MCP upstreams; keep values in the OS credential vault and block cross-origin redirects (#1657-e1a4).
+- Add multiple masked custom authentication headers beside Bearer/OAuth for HTTP MCP upstreams; bind vault secrets to the saved MCP origin before outgoing requests and block cross-origin redirects. Old unbound credentials require re-saving or OAuth authorization (#1657-e1a4).
 - Add the Rust foundation for Once automation schedules with IANA timezone validation, a single preview instant and durable occurrence deduplication (#1629-2262).
 
 ### Fixed
