@@ -66,6 +66,9 @@ mod dictation_config {
         /// either way (`HandsFreeStatus::delivered_turns`).
         #[serde(default = "default_earcons")]
         pub hands_free_earcons: bool,
+        /// Allow spoken replies for this device's hands-free conversation.
+        #[serde(default = "default_true")]
+        pub hands_free_spoken_replies: bool,
         /// A speech engine the user supplies, as argv rather than a shell line.
         /// Used when `speech_engine` is `external`. See
         /// [`crate::dictation::speech::external`](crate::dictation::speech::external) for the
@@ -208,6 +211,7 @@ mod dictation_config {
                 hands_free_notify_model: default_notify_model(),
                 hands_free_start_notice: String::new(),
                 hands_free_earcons: default_earcons(),
+                hands_free_spoken_replies: true,
                 speech_command: Vec::new(),
                 speech_engine: String::new(),
                 speech_edge_voice: String::new(),

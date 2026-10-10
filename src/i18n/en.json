@@ -123,6 +123,8 @@
 	"dictation.download": "Download",
 	"dictation.downloaded": "Downloaded",
 	"dictation.earconsHint": "Play a short sound when a turn is sent to the agent, and a lower one when a turn without the activation phrase is dropped. Only the device you talk into plays them.",
+	"dictation.spokenRepliesLabel": "Spoken replies",
+	"dictation.spokenRepliesHint": "Let the agent answer out loud. Turn off to keep dictation and receive text replies.",
 	"dictation.earconsLabel": "Earcons",
 	"dictation.enableHint": "Enable voice-to-text dictation",
 	"dictation.enableLabel": "Enable Dictation",

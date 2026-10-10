@@ -463,6 +463,11 @@ transcription; blur releases a held hotkey if its key-up event was lost.
 `useDictation` shows that reason in the status. A final transcription gate's
 specific reason reaches both; an empty successful pass shows `no speech detected`.
 
+spokenReplies reads and saves hands_free_spoken_replies through the existing
+load/base/delta configuration path. Browser clients refresh configuration when
+voice controls load; mobile Settings and conversation controls use the same
+store action. Rust owns enforcement and cool-down decisions.
+
 - `speechAssets` / `speechDownloads` — the installable languages and ONNX
   runtime, and a percent per asset **keyed by asset id**, because the runtime
   library and a language are separate downloads a user can start together.
@@ -494,8 +499,7 @@ specific reason reaches both; an empty successful pass shows `no speech detected
   moved since the last stored status. Only the client that owns the audio plays
   it, and the first status a client reads is only a baseline. `armHandsFree`
   primes the audio context inside the user's gesture, and reads
-  `hands_free_earcons` into `handsFreeEarcons` there, because `refreshConfig` is
-  desktop-only. `setHandsFreeEarcons(value)` saves it; off, nothing plays.
+  `hands_free_earcons` into `handsFreeEarcons` at each arm, including after another client saves. `setHandsFreeEarcons(value)` saves it; off, nothing plays.
 - `armHandsFree(sessionId)` sends `DESKTOP_AUDIO_OWNER` on the desktop and
   `browserAudioOwner` — a per-tab random id — in a browser. In browser mode it
   opens the audio socket (`utils/browserVoice.ts`) **before** arming, because

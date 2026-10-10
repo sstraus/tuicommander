@@ -37,6 +37,7 @@ export function useMobileVoice(sessionId: Accessor<string>, enabled: Accessor<bo
 				if (cancelled) return;
 				module = loaded;
 				setStore(loaded.dictationStore);
+				void loaded.dictationStore.refreshConfig();
 				setAvailable(true);
 			})
 			.catch((err) => appLogger.info("dictation", "Voice control hidden: hands-free unavailable", err));
@@ -83,5 +84,12 @@ export function useMobileVoice(sessionId: Accessor<string>, enabled: Accessor<bo
 		if (armed()) void store()?.disarmHandsFree();
 	});
 
-	return { available, armed, phase, toggle };
+	return {
+		available,
+		armed,
+		phase,
+		toggle,
+		spokenReplies: () => store()?.state.spokenReplies ?? true,
+		setSpokenReplies: (value: boolean) => store()?.setSpokenReplies(value),
+	};
 }
