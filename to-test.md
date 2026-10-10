@@ -1,3 +1,6 @@
+## Saved AI Chat tabs (1628-4459)
+
+- [ ] Check saved-tab connecting, failure/Retry, and pending model/mode rows at the normal panel width. An isolated worktree Vite preview reached the saved-tab click with `navigator.webdriver` undefined; the mandatory stealth wrapper then stalled on the shared browser attachment lock and timed out before producing a screenshot. A subsequent bundled headless Chrome capture also timed out after 120 seconds without producing an image (the preview port was still occupied). Visual verification is owed. No desktop instance was launched.
 ## Terminal paste text precedence
 
 - [ ] After loading the updated frontend, copy a text line by selection in terminal Chat and paste into Claude Code; confirm text appears rather than an image attachment. Capture the paste event's MIME types to identify the original WebView clipboard payload. Also check a screenshot-only paste and a Finder image copy still attach. Component tests cover the mixed text/image precedence; this peer did not access Boss's running WebView or clipboard.

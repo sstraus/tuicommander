@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Add the Rust foundation for Once automation schedules with IANA timezone validation, a single preview instant and durable occurrence deduplication (#1629-2262).
 
 ### Fixed
+- Attach saved AI Chat tabs when selected, show connection failures with Retry and pending model controls, and name tabs from conversation titles or prompts (#1628-4459).
 
 - Keep enforcing other automation runs' deadlines when stopping one owned process fails (#1616-1882).
 - Restore external URL tabs by removing the restrictive `frame-src` CSP so frames inherit the permissive `default-src`.

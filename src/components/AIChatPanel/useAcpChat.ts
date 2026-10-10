@@ -6,7 +6,7 @@
  * at the workspace (`~/Gits`) rather than at one repository. The repository
  * being viewed travels with each prompt as a context hint, never as the scope.
  *
- * Nothing starts until a person sends a message or opens a tab. Opening the
+ * Nothing starts until a person sends a message or opens/selects a tab. Opening the
  * panel or switching repository starts no process and loads no session: the
  * per-repository binding this replaced did both, and a webview reload that
  * lost it launched a fresh ego for every repository visited — 26 at once.
@@ -49,6 +49,7 @@ const [launches, setLaunches] = createSignal<Record<string, ChatLaunch>>({});
 
 /** The start in flight, so a second send while ego launches waits for it. */
 let starting: Promise<Started | null> | null = null;
+let connectingDefault: Promise<Binding> | null = null;
 
 /** Where every chat runs, asked of the backend once. */
 let workspaceRoot: Promise<string> | null = null;
@@ -58,11 +59,11 @@ const TABS = "global";
 
 /** `session/load` calls in flight, keyed by connection and session. Each load
  *  makes ego admit every MCP server again, so one tab gets one load at a time. */
-const replaying = new Set<string>();
+const replaying = new Map<string, Promise<boolean>>();
 
 /** Loads that failed. Only an explicit action retries them: a reactive re-run
  *  that retried would turn one refusal into a storm of MCP initializes. */
-const refused = new Set<string>();
+const refused = new Map<string, string>();
 
 /** What a start produced: the session to use, and whether it was just created. */
 interface Started {
@@ -77,6 +78,7 @@ export function resetAcpChatBindings(): void {
 	defaultBinding = null;
 	setLaunches({});
 	starting = null;
+	connectingDefault = null;
 	workspaceRoot = null;
 	replaying.clear();
 	refused.clear();
@@ -139,6 +141,8 @@ export function createAcpChat(
 	const [connecting, setConnecting] = createSignal(false);
 	const [error, setError] = createSignal<string | null>(null);
 	const [listedSessions, setListedSessions] = createSignal<AcpListedSession[]>([]);
+	let selection = 0;
+	let failedSession: AcpSessionId | null = null;
 
 	aiChatTabs.refresh();
 	async function readLaunches(): Promise<void> {
@@ -149,9 +153,9 @@ export function createAcpChat(
 		appLogger.error("ai-chat", "reading conversation launches failed", failure),
 	);
 
-	async function openCustom(request: ChatOpenRequest): Promise<boolean> {
-		const opened = await guard("opening configured conversation", () => client.openConversation(request));
-		if (!opened) return false;
+	async function openCustom(request: ChatOpenRequest, isCurrent = () => true): Promise<boolean> {
+		const opened = await guard("opening configured conversation", () => client.openConversation(request), isCurrent);
+		if (!opened || !isCurrent()) return false;
 		binding = { connectionId: opened.connection.connectionId, sessionId: opened.sessionId, launch: opened.launch };
 		setLaunches((current) => ({ ...current, [opened.sessionId]: opened.launch }));
 		aiChatTabs.add(TABS, opened.sessionId);
@@ -179,40 +183,77 @@ export function createAcpChat(
 		setListedSessions(rows);
 	}
 
-	/** Show a tab or listed session. Only one not already attached needs a
-	 *  replay, and only while ego runs: before that, the first message loads it. */
+	/** Share the default connection even when several tab selections start it. */
+	function connectDefault(target: string): Promise<Binding> {
+		if (defaultBinding) return Promise.resolve(defaultBinding);
+		connectingDefault ??= (async () => {
+			const snapshot = await client.connect(target);
+			defaultBinding = { connectionId: snapshot.connectionId, sessionId: null };
+			return defaultBinding;
+		})().finally(() => {
+			connectingDefault = null;
+		});
+		return connectingDefault;
+	}
+
+	/** Selecting a saved tab is an explicit request to attach, even before
+	 *  the first message. Only the latest selection may change the visible tab. */
 	async function selectSession(session: AcpSessionId): Promise<void> {
-		if (session === sessionId() && connectionId()) return;
-		if ((await guard("reading conversation launches", readLaunches)) === null) return;
-		if (launches()[session]) {
-			await openCustom({ sessionId: session });
-			return;
+		if (session === sessionId() && attachment() && !connecting() && !failedSession) return;
+		const request = ++selection;
+		const isCurrent = () => request === selection;
+		failedSession = session;
+		setConnecting(true);
+		if (aiChatTabs.ids(TABS).includes(session)) {
+			aiChatTabs.add(TABS, session);
+			setSessionId(session);
+			setConnectionId(null);
 		}
-		if (binding?.launch) {
-			binding = defaultBinding;
-			setConnectionId(binding?.connectionId ?? null);
-			setRoot(await chatRoot());
+		try {
+			if ((await guard("reading conversation launches", readLaunches, isCurrent)) === null || !isCurrent()) return;
+			if (launches()[session]) {
+				if (await openCustom({ sessionId: session }, isCurrent)) failedSession = null;
+				return;
+			}
+			const target = await guard("finding the workspace", chatRoot, isCurrent);
+			if (!target || !isCurrent()) return;
+			const current = await guard("connecting to ego", () => connectDefault(target), isCurrent);
+			if (!current || !isCurrent()) return;
+			setRoot(target);
+			setConnectionId(current.connectionId);
+			if (!acpStore.attachment(current.connectionId, session)) {
+				if (!acpStore.connection(current.connectionId)?.capabilities?.load) {
+					setError("This agent cannot load saved conversations.");
+					return;
+				}
+				if (
+					!(await replay("loading conversation", current.connectionId, session, target, true, isCurrent)) ||
+					!isCurrent()
+				)
+					return;
+			}
+			binding = current;
+			current.sessionId = session;
+			aiChatTabs.add(TABS, session);
+			setSessionId(session);
+			failedSession = null;
+			await guard("saving conversation", () => remember(session), isCurrent);
+			if (isCurrent() && connection()?.capabilities?.list)
+				await guard("listing conversations", () => refreshSessions(current.connectionId, target), isCurrent);
+		} finally {
+			if (isCurrent()) setConnecting(false);
 		}
-		const id = connectionId();
-		const target = root();
-		if (id && target && !acpStore.attachment(id, session)) {
-			if (!(await replay("loading conversation", id, session, target, true))) return;
-		}
-		if (binding) binding.sessionId = session;
-		aiChatTabs.add(TABS, session);
-		setSessionId(session);
-		await guard("saving conversation", () => remember(session));
 	}
 
 	/** Run one action, holding what it refused rather than throwing at the panel. */
-	async function guard<T>(what: string, action: () => Promise<T>): Promise<T | null> {
+	async function guard<T>(what: string, action: () => Promise<T>, isCurrent = () => true): Promise<T | null> {
 		try {
 			const result = await action();
-			setError(null);
+			if (isCurrent()) setError(null);
 			return result;
 		} catch (failure) {
 			appLogger.error("ai-chat", `${what} failed`, failure);
-			setError(describe(failure));
+			if (isCurrent()) setError(describe(failure));
 			return null;
 		}
 	}
@@ -226,22 +267,35 @@ export function createAcpChat(
 		session: AcpSessionId,
 		target: string,
 		explicit = false,
+		isCurrent = () => true,
 	): Promise<boolean> {
 		// A connection taken back after a reload still holds its attachments,
 		// and a second load of one is refused.
 		if (acpStore.attachment(id, session)) return true;
 		const key = `${id}/${session}`;
-		if (replaying.has(key)) return true;
-		if (refused.has(key) && !explicit) return false;
-		replaying.add(key);
-		refused.delete(key);
-		try {
-			const loaded = await guard(what, () => client.loadSession(id, session, target));
-			if (loaded === null) refused.add(key);
-			return loaded !== null;
-		} finally {
-			replaying.delete(key);
+		let loading = replaying.get(key);
+		if (!loading) {
+			if (refused.has(key) && !explicit) {
+				if (isCurrent()) setError(refused.get(key) ?? null);
+				return false;
+			}
+			refused.delete(key);
+			loading = (async () => {
+				try {
+					await client.loadSession(id, session, target);
+					return true;
+				} catch (failure) {
+					appLogger.error("ai-chat", `${what} failed`, failure);
+					refused.set(key, describe(failure));
+					return false;
+				}
+			})();
+			replaying.set(key, loading);
 		}
+		const shown = await loading;
+		replaying.delete(key);
+		if (!shown && isCurrent()) setError(refused.get(key) ?? null);
+		return shown;
 	}
 
 	/** The session to talk to, starting ego for it on first use. One start at a
@@ -273,21 +327,22 @@ export function createAcpChat(
 			if (!target) return null;
 			setRoot(target);
 			if (!binding) {
-				const snapshot = await guard("connecting to ego", () => client.connect(target));
-				if (!snapshot) return null;
-				binding = { connectionId: snapshot.connectionId, sessionId: null };
-				defaultBinding = binding;
-				setConnectionId(snapshot.connectionId);
-				if (snapshot.capabilities?.list)
-					await guard("listing conversations", () => refreshSessions(snapshot.connectionId, target));
+				binding = await guard("connecting to ego", () => connectDefault(target));
+				if (!binding) return null;
 			}
 			const current = binding;
+			setConnectionId(current.connectionId);
 			const capabilities = acpStore.connection(current.connectionId)?.capabilities;
+			if (capabilities?.list) await guard("listing conversations", () => refreshSessions(current.connectionId, target));
 			const config = await guard("reading saved conversation", () =>
 				invoke<{ ai_chat_sessions?: Record<string, string> }>("load_config"),
 			);
 			if (!config) return null;
 			const saved = aiChatTabs.active(TABS) ?? config.ai_chat_sessions?.[target];
+			if (saved && !capabilities?.load) {
+				setError("This agent cannot load saved conversations.");
+				return null;
+			}
 			if (saved && capabilities?.load) {
 				aiChatTabs.ensure(TABS, saved);
 				current.sessionId = saved;
@@ -374,7 +429,8 @@ export function createAcpChat(
 	const phase = (): AcpChatPhase => {
 		if (!settingsStore.isAcpConfigured() && !launches()[sessionId() ?? ""]?.executable) return "unconfigured";
 		if (connecting()) return "starting";
-		if (!connectionId() || !sessionId()) return error() ? "failed" : "ready";
+		if (error()) return "failed";
+		if (!connectionId() || !sessionId()) return "ready";
 		return "live";
 	};
 
@@ -427,6 +483,10 @@ export function createAcpChat(
 
 		capabilities: () => connection()?.capabilities ?? null,
 		ensureStarted: async () => {
+			if (failedSession) {
+				await selectSession(failedSession);
+				if (failedSession) return null;
+			}
 			const current = pair();
 			return current ? current.session : ((await start())?.sessionId ?? null);
 		},
@@ -448,7 +508,6 @@ export function createAcpChat(
 				.map(([sessionId, launch]) => ({
 					sessionId,
 					cwd: launch.workspace,
-					title: launch.profile || "Custom conversation",
 				})),
 		],
 		tabs: () => aiChatTabs.ids(TABS),
@@ -466,6 +525,10 @@ export function createAcpChat(
 			files: { name: string; path: string }[] = [],
 		): Promise<void> {
 			if (!text.trim() && images.length === 0 && files.length === 0) return;
+			if (failedSession) {
+				await selectSession(failedSession);
+				if (failedSession) return;
+			}
 			let current = pair();
 			if (!current) {
 				const started = await start();
@@ -566,44 +629,52 @@ export function createAcpChat(
 
 		/** Open another conversation tab, starting ego when none is running. */
 		async startSession(options?: ChatOpenRequest): Promise<void> {
-			if (options && Object.keys(options).length > 0) {
-				setConnecting(true);
-				try {
-					await openCustom(options);
-				} finally {
-					setConnecting(false);
+			const request = ++selection;
+			const isCurrent = () => request === selection;
+			setConnecting(true);
+			try {
+				if (options && Object.keys(options).length > 0) {
+					if (await openCustom(options, isCurrent)) failedSession = null;
+					return;
 				}
-				return;
-			}
-			if (binding?.launch) {
-				binding = defaultBinding;
-				setConnectionId(binding?.connectionId ?? null);
-				setSessionId(binding?.sessionId ?? null);
-				setRoot(await chatRoot());
-				// A default new chat must not restore the currently selected custom chat.
-				if (!binding) {
+				if (binding?.launch || (!binding && failedSession)) {
+					binding = defaultBinding;
+					setConnectionId(binding?.connectionId ?? null);
+					setSessionId(binding?.sessionId ?? null);
 					const target = await chatRoot();
-					const snapshot = await guard("connecting to ego", () => client.connect(target));
-					if (!snapshot) return;
-					binding = { connectionId: snapshot.connectionId, sessionId: null };
-					defaultBinding = binding;
-					setConnectionId(snapshot.connectionId);
+					if (!isCurrent()) return;
+					setRoot(target);
+					// A default new chat must not restore the currently selected custom chat.
+					if (!binding) {
+						const current = await guard("connecting to ego", () => connectDefault(target), isCurrent);
+						if (!current || !isCurrent()) return;
+						binding = current;
+						setConnectionId(current.connectionId);
+					}
 				}
+				if (!pair() && !binding) {
+					const started = await start();
+					if (!started || !isCurrent()) return;
+					if (started.fresh) {
+						failedSession = null;
+						return;
+					}
+				}
+				const id = connectionId();
+				const target = root();
+				if (!id || !target) return;
+				const session = await guard("opening a session", () => client.newSession(id, target), isCurrent);
+				if (!session || !isCurrent()) return;
+				if (binding) binding.sessionId = session;
+				aiChatTabs.add(TABS, session);
+				setSessionId(session);
+				failedSession = null;
+				await guard("saving conversation", () => remember(session), isCurrent);
+				if (isCurrent() && connection()?.capabilities?.list)
+					await guard("listing conversations", () => refreshSessions(id, target), isCurrent);
+			} finally {
+				if (isCurrent()) setConnecting(false);
 			}
-			if (!pair() && !binding) {
-				const started = await start();
-				if (!started || started.fresh) return;
-			}
-			const id = connectionId();
-			const target = root();
-			if (!id || !target) return;
-			const session = await guard("opening a session", () => client.newSession(id, target));
-			if (!session) return;
-			if (binding) binding.sessionId = session;
-			aiChatTabs.add(TABS, session);
-			setSessionId(session);
-			await guard("saving conversation", () => remember(session));
-			if (connection()?.capabilities?.list) await guard("listing conversations", () => refreshSessions(id, target));
 		},
 
 		selectSession,
@@ -617,6 +688,12 @@ export function createAcpChat(
 		 * a new session — an empty panel is honest, a silently truncated one is not.
 		 */
 		async recover(): Promise<void> {
+			if (failedSession || !connectionId()) {
+				const session = failedSession ?? sessionId();
+				if (session) await selectSession(session);
+				else setError(null);
+				return;
+			}
 			const target = root();
 			const id = connectionId();
 			// Nothing was started, so there is nothing to replace: the refusal is

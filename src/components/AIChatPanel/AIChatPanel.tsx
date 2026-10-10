@@ -17,7 +17,7 @@ import { aiChatDraft } from "./draft";
 import { Interactions } from "./Interactions";
 import { NewConversationDialog } from "./NewConversationDialog";
 import { RemoteInteractions } from "./RemoteInteractions";
-import { SessionControls } from "./SessionControls";
+import { conversationLabel, SessionControls } from "./SessionControls";
 import { Transcript } from "./Transcript";
 import { trackPanelWidth } from "./trackPanelWidth";
 import { createAcpChat } from "./useAcpChat";
@@ -131,8 +131,11 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 			case "unconfigured":
 				return "AI Chat is inactive because the ego executable is not configured. Select it in Settings → General, then configure your provider and model in Settings → AI Chat.";
 			case "starting":
-				return "Starting ego…";
+				return "Connecting conversation…";
+			case "failed":
+				return "The conversation could not be opened. Use Retry to try again.";
 			default:
+				if (chat.phase() === "ready" && chat.sessionId()) return "Select a saved tab to load its conversation.";
 				return "Ask ego about any repository. The one on screen is sent as context.";
 		}
 	};
@@ -179,18 +182,19 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 			{/* Shown before ego runs too: "+" is one of the two ways a chat starts. */}
 			<div class={s.chatTabs} role="tablist" aria-label="AI Chat tabs">
 				<For each={chat.tabs()}>
-					{(session, index) => (
+					{(session) => (
 						<div class={cx(s.chatTab, chat.sessionId() === session && s.chatTabActive)}>
 							<button
 								type="button"
 								role="tab"
 								data-chat-session={session}
+								title={session}
 								aria-selected={chat.sessionId() === session}
 								onClick={() => void chat.selectSession(session)}
 							>
-								{acpTranscript.title(session) ||
-									chat.sessions().find((item) => item.sessionId === session)?.title ||
-									`Chat ${index() + 1}`}
+								{conversationLabel(
+									chat.sessions().find((item) => item.sessionId === session) ?? { sessionId: session },
+								)}
 							</button>
 							<Show when={chat.tabs().length > 1}>
 								<button
@@ -271,7 +275,13 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 				<div class={s.frozenBanner}>Not receiving updates.</div>
 			</Show>
 
-			<Show when={chat.phase() === "live"}>
+			<Show when={chat.phase() === "starting"}>
+				<div class={s.frozenBanner} role="status">
+					Connecting conversation…
+				</div>
+			</Show>
+
+			<Show when={chat.sessionId()}>
 				<SessionControls chat={chat} />
 			</Show>
 
