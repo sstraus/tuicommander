@@ -1,0 +1,459 @@
+{
+  "method": "Native macOS headless Chrome 149 CDP; worktree Vite; real UI/store; owned HTTP fixtures only",
+  "sourceCommit": "2e0041fef9c694fb44bfc8cf92d409b09428b726",
+  "measurements": [
+    {
+      "name": "phone-spoken-replies-on",
+      "checked": true,
+      "disabled": false,
+      "inputWidth": "20px",
+      "inputHeight": "20px",
+      "label": "Spoken replies",
+      "bounds": {
+        "x": 0,
+        "y": 56,
+        "width": 390,
+        "height": 44,
+        "right": 390,
+        "bottom": 100
+      },
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "spokenReplies": true,
+      "persisted": true,
+      "armed": true,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/sessions/owned-voice-preview/output"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        }
+      ]
+    },
+    {
+      "name": "phone-spoken-replies-off",
+      "checked": false,
+      "disabled": false,
+      "inputWidth": "20px",
+      "inputHeight": "20px",
+      "label": "Spoken replies",
+      "bounds": {
+        "x": 0,
+        "y": 56,
+        "width": 390,
+        "height": 44,
+        "right": 390,
+        "bottom": 100
+      },
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "spokenReplies": false,
+      "persisted": false,
+      "armed": true,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/sessions/owned-voice-preview/output"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "PUT",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        }
+      ]
+    },
+    {
+      "name": "phone-spoken-replies-restored",
+      "checked": true,
+      "disabled": false,
+      "inputWidth": "20px",
+      "inputHeight": "20px",
+      "label": "Spoken replies",
+      "bounds": {
+        "x": 0,
+        "y": 56,
+        "width": 390,
+        "height": 44,
+        "right": 390,
+        "bottom": 100
+      },
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "spokenReplies": true,
+      "persisted": true,
+      "armed": true,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/sessions/owned-voice-preview/output"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "PUT",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "PUT",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/speech/status"
+        }
+      ]
+    },
+    {
+      "name": "phone-settings-on",
+      "checked": true,
+      "disabled": false,
+      "inputWidth": "13px",
+      "inputHeight": "13px",
+      "label": "Spoken replies",
+      "bounds": {
+        "x": 16,
+        "y": 232,
+        "width": 358,
+        "height": 38,
+        "right": 374,
+        "bottom": 270
+      },
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "spokenReplies": true,
+      "persisted": true,
+      "armed": false,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/sessions/owned-voice-preview/output"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "PUT",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "PUT",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/speech/status"
+        },
+        {
+          "method": "POST",
+          "path": "/dictation/hands-free/disarm"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/config/ui-prefs"
+        },
+        {
+          "method": "GET",
+          "path": "/config/themes"
+        },
+        {
+          "method": "GET",
+          "path": "/api/version"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/speech/status"
+        },
+        {
+          "method": "POST",
+          "path": "/logs"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        }
+      ]
+    },
+    {
+      "name": "phone-settings-off",
+      "checked": false,
+      "disabled": false,
+      "inputWidth": "13px",
+      "inputHeight": "13px",
+      "label": "Spoken replies",
+      "bounds": {
+        "x": 16,
+        "y": 232,
+        "width": 358,
+        "height": 38,
+        "right": 374,
+        "bottom": 270
+      },
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "spokenReplies": false,
+      "persisted": false,
+      "armed": false,
+      "requests": [
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/sessions/owned-voice-preview/output"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "PUT",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "PUT",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/status"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/speech/status"
+        },
+        {
+          "method": "POST",
+          "path": "/dictation/hands-free/disarm"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/hands-free"
+        },
+        {
+          "method": "GET",
+          "path": "/config/ui-prefs"
+        },
+        {
+          "method": "GET",
+          "path": "/config/themes"
+        },
+        {
+          "method": "GET",
+          "path": "/api/version"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/speech/status"
+        },
+        {
+          "method": "POST",
+          "path": "/logs"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "GET",
+          "path": "/dictation/config"
+        },
+        {
+          "method": "PUT",
+          "path": "/dictation/config"
+        }
+      ]
+    }
+  ]
+}
