@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Add automation completion reconciliation, bounded final output and persisted maximum-duration enforcement, including blocked runs (#1616-1882).
+
 - Keep terminal scrollbar history marks visible without Ctrl+Cmd, clear timestamp peek on focus loss, and omit empty marks overlays (#1665-ce9b).
 
 - Widen the Activity Dashboard popup by 20%, while keeping it within small windows (#1664-f4ab).

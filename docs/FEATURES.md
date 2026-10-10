@@ -2740,3 +2740,7 @@ Machine-local scheduled-run editor with search, backend cadence/zone preview,
 prechecks, workspace and duration controls, pause/resume, Run now, confirmed
 delete and recent status history. Open **Automations** from the command palette.
 Step 8 API integration is required before use; see [Automations](user-guide/automations.md).
+
+Automation execution now reconciles task, PTY and progress completion evidence,
+retains bounded final output, and expires active runs at their persisted deadline.
+Blocked runs remain active; idle alone does not prove success. Rust restart required.
