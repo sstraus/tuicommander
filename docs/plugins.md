@@ -1430,6 +1430,37 @@ my-plugin/
   main.js
 ```
 
+## Core-rendered plugin UX
+
+
+Core renders the following Solid components. Plugins supply manifest metadata and host registrations; they do not import or mount these components.
+
+### Manifest UX field inventory
+`agentTypes`, `allowedUrls`, `author`, `binaries`, `capabilities`, `description`, `id`, `main`, `minAppVersion`, `name`, `version`.
+
+### Core UX component inventory
+`BrowseRow`, `PluginLogViewer`, `PluginRow`, `PluginsTab`.
+
+#### PluginsTab
+
+Settings > Plugins has Installed and Browse views. Installed lists loaded/discovered plugin state. Browse reads community registry entries and offers install, update and refresh actions. Installation accepts ZIP archives. The manifest `id` identifies the package, `main` selects its module, and `minAppVersion` controls compatibility. `author` is optional metadata. `allowedUrls`, `agentTypes` and `binaries` drive host access/event routing, not editable settings controls.
+
+#### PluginRow
+
+The Installed row shows manifest `name` (falls back to `id`), `version`, `description` and `capabilities`. It shows load errors, error counts and available updates. Its toggle persists enabled state; Logs expands PluginLogViewer; external packages can be uninstalled. A README.md adds a documentation button. `host.registerDashboard({ label?, icon?, open })` adds a dashboard button: core closes Settings before calling `open`. Register only one dashboard per plugin. `host.registerCommand({ id, title, defaultShortcut?, run })` adds a rebindable entry under Settings > Keyboard Shortcuts > Plugin Commands.
+
+#### PluginLogViewer
+
+The expanded Logs view shows the plugin ring buffer's timestamp, level and message, or an empty state. Use `host.log(level, message, data?)`; host boundary errors are captured automatically.
+
+#### BrowseRow
+
+The Browse row shows registry name, version, description, author, tags and minimum app version. It offers Install for an absent package, Update when a newer version is available, or Installed for the current version. Registry metadata is separate from the installed manifest.
+
+### Settings schema and Tasks views
+
+The current PluginManifest has no settings schema, field-kind union or generic Tasks-view declaration. Core does not render schema-driven plugin settings or generic plugin Tasks views. Do not invent manifest fields or import core Settings components. Plugins can open their own UI with `host.openPanel` or `host.openMarkdownPanel`. When a settings schema or Tasks-view API is added, document its fields, kinds and core-rendered controls here and extend the source-derived UX drift check to its real schema/renderer. The manifest field and host method inventories fail on new API entries until the guide is updated.
+
 ## Plugin Management (Settings > Plugins)
 
 The Settings panel has a **Plugins** tab with two sub-tabs:
