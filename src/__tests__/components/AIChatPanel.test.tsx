@@ -3653,3 +3653,66 @@ describe("conversation launch overrides", () => {
 		expect(view.container.textContent).toContain("coordinator · /srv/observer · /opt/observer/ego");
 	});
 });
+
+describe("AIChatPanel: new chat after saved-tab selection", () => {
+	// Catches a failed saved selection swallowing the first prompt in a newly opened chat.
+	it("sends to the new chat after a saved tab fails to load", async () => {
+		const view = await renderPanel();
+		aiChatTabs.add("global", SECOND_SESSION);
+		client.loadSession.mockRejectedValue(new Error("Saved conversation unavailable"));
+		(view.container.querySelector(`[data-chat-session="${SECOND_SESSION}"]`) as HTMLButtonElement).click();
+		await settle();
+		expect(view.container.textContent).toContain("Saved conversation unavailable");
+
+		client.newSession.mockImplementation(async () => {
+			acpStore.applySnapshot(snapshot({ attachments: [attachment(), attachment({ sessionId: CHILD_SESSION })] }));
+			return CHILD_SESSION;
+		});
+		(view.container.querySelector('button[aria-label="New chat tab"]') as HTMLButtonElement).click();
+		await settle();
+		expect(view.container.querySelector(`[data-chat-session="${CHILD_SESSION}"]`)?.getAttribute("aria-selected")).toBe(
+			"true",
+		);
+		await typeAndSend(view.container, "Work in this new conversation");
+		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, CHILD_SESSION, "Work in this new conversation", [], ROOT);
+	});
+
+	// Catches an older saved-tab replay replacing the chat the user opened while it was loading.
+	it("keeps the new chat selected when the previous saved-tab replay completes", async () => {
+		const view = await renderPanel();
+		aiChatTabs.add("global", SECOND_SESSION);
+		let completeReplay!: () => void;
+		client.loadSession.mockImplementation(
+			() =>
+				new Promise<void>((resolve) => {
+					completeReplay = resolve;
+				}),
+		);
+		(view.container.querySelector(`[data-chat-session="${SECOND_SESSION}"]`) as HTMLButtonElement).click();
+		await settle();
+		expect(view.container.textContent).toContain("Connecting conversation");
+		client.newSession.mockImplementation(async () => {
+			acpStore.applySnapshot(snapshot({ attachments: [attachment(), attachment({ sessionId: CHILD_SESSION })] }));
+			return CHILD_SESSION;
+		});
+		(view.container.querySelector('button[aria-label="New chat tab"]') as HTMLButtonElement).click();
+		await settle();
+		expect(view.container.querySelector(`[data-chat-session="${CHILD_SESSION}"]`)?.getAttribute("aria-selected")).toBe(
+			"true",
+		);
+		acpStore.applySnapshot(
+			snapshot({
+				attachments: [
+					attachment(),
+					attachment({ sessionId: SECOND_SESSION }),
+					attachment({ sessionId: CHILD_SESSION }),
+				],
+			}),
+		);
+		completeReplay();
+		await settle();
+		expect(view.container.querySelector(`[data-chat-session="${CHILD_SESSION}"]`)?.getAttribute("aria-selected")).toBe(
+			"true",
+		);
+	});
+});
