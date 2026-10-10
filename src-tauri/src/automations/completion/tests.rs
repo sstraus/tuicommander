@@ -2,6 +2,8 @@ use super::*;
 use crate::automations::{model::AutomationDefinition, run::RunTrigger, store::RunOwner};
 use std::cell::{Cell, RefCell};
 
+mod critic;
+
 struct Effects {
     observation: RefCell<Observation>,
     stopped: RefCell<Vec<String>>,
