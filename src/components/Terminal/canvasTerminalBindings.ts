@@ -11,12 +11,6 @@ export interface CanvasTerminalBindings {
 		listener: (event: DocumentEventMap[K]) => void,
 		options?: boolean | AddEventListenerOptions,
 	): void;
-	listen<K extends keyof WindowEventMap>(
-		target: Window,
-		type: K,
-		listener: (event: WindowEventMap[K]) => void,
-		options?: boolean | AddEventListenerOptions,
-	): void;
 	dispose(): void;
 }
 

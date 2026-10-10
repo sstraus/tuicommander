@@ -2,10 +2,6 @@
 
 Remote terminals replay their current viewport when attached or reconnected. A stream failure or stalled initial replay shows a persistent error toast; the client retries without requiring new terminal output. See [Remote Access](remote-access.md).
 
-## Scrollbar History Marks
-
-**Show scrollbar marks** in Settings > Terminal controls command-boundary and green submitted-prompt ticks. They remain visible without Ctrl+Cmd. Hold Ctrl+Cmd to peek at timestamp text; releasing the keys or leaving the terminal/window hides that text. Search-match ticks remain visible independently of the history setting. With no grid history the scrollbar stays hidden; with no visible metadata or search hits, only its thumb is shown.
-
 ## Tablet Keyboard
 
 Tap the terminal to focus its keyboard input. Touch and mouse input use the same field, including soft-keyboard text entry and repeated deletion. Primary mouse presses keep focus on that input without a temporary canvas focus change.

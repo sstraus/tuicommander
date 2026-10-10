@@ -1,9 +1,3 @@
-## Scrollbar history marks (1665-ce9b)
-
-- [x] Command and user-prompt ticks remain visible without Ctrl+Cmd; disabling history marks retains search ticks; missing metadata creates no empty overlay, and zero history hides the scrollbar. _(verified: src/components/Terminal/CanvasTerminal.tsx:881 setting-only gate; real component integration tests, 99 targeted tests and 8749 full rb tests passed.)_
-- [x] Releasing modifiers or losing input/window focus clears timestamp text without clearing history ticks. _(verified: src/components/Terminal/CanvasTerminal.tsx:2440 blur reset and real component keyup/input-blur/window-blur tests.)_
-- [ ] After landing, compare a live terminal with recorded command/prompt metadata against `~/Gits/.tmp/results/scrollbar-marks-1665.png`. The screenshot uses the production marks renderer with representative metadata; it does not prove the affected live terminal has prompt metadata. No Rust restart is required.
-
 ## MCP upstream secret headers (1657-e1a4) — Rust restart required
 
 - [ ] After landing and Boss's planned manual `make dev` restart or `make build`, add an HTTP upstream with Bearer and two custom header rows; confirm masked persistence, rotation and row removal. Targeted tests exercise requests, config isolation and redirects with dummy values. Rust does not hot-reload; this peer does not restart desktop.
