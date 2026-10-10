@@ -978,10 +978,12 @@ impl HandsFree {
         let send_at_ms = now_ms + self.hold_back_ms();
         // A transcript that arrives while another is held back is the same
         // turn: the user paused mid-sentence long enough for the segmenter to
-        // close the first half. Join it and restart the hold-back, because
-        // they are still talking; replacing it would drop the first half.
+        // close the first half. Preserve the phrase boundary with a newline
+        // and restart the hold-back; replacing it would drop the first half.
+        // The PTY sink frames multiline text as a paste, so this newline does
+        // not submit: the whole turn gets one Enter after the paste ends.
         let text = match self.pending.take() {
-            Some(pending) => format!("{} {text}", pending.text),
+            Some(pending) => format!("{}\n{text}", pending.text),
             None => text.to_string(),
         };
         self.pending = Some(PendingSend {
@@ -2162,7 +2164,7 @@ mod tests {
             "the first half's deadline must not send the turn early"
         );
         let send = mode.poll_send(2_500).expect("hold-back expired");
-        assert_eq!(send.text, "open the file and run the tests");
+        assert_eq!(send.text, "open the file\nand run the tests");
         assert_eq!(send.language.as_deref(), Some("en"));
         assert!(
             mode.poll_send(u64::MAX).is_none(),
@@ -2185,7 +2187,7 @@ mod tests {
         mode.accept_transcript(generation, "la frase continua", None, 4_900);
         assert_eq!(
             mode.pending_text(),
-            Some("appena faccio una pausa la frase continua")
+            Some("appena faccio una pausa\nla frase continua")
         );
         assert!(deliver_due(&mut mode, &queue, 9_899).is_none());
         assert_eq!(
@@ -2194,7 +2196,7 @@ mod tests {
         );
         assert_eq!(
             queue.written.borrow().as_slice(),
-            [written("appena faccio una pausa la frase continua")]
+            [written("appena faccio una pausa\nla frase continua")]
         );
     }
 
@@ -3871,12 +3873,12 @@ mod tests {
         tick(&mut capture, &mode, &mut endpoint, &target, &queue, 6_600);
         assert_eq!(
             mode.lock().pending_text(),
-            Some("appena faccio una pausa la frase continua")
+            Some("appena faccio una pausa\nla frase continua")
         );
         tick(&mut capture, &mode, &mut endpoint, &target, &queue, 11_600);
         assert_eq!(
             queue.written.borrow().as_slice(),
-            [written("appena faccio una pausa la frase continua")]
+            [written("appena faccio una pausa\nla frase continua")]
         );
     }
 
@@ -3915,13 +3917,13 @@ mod tests {
         tick(&mut capture, &mode, &mut endpoint, &target, &queue, 18_000);
         assert_eq!(
             mode.lock().pending_text(),
-            Some("open the file and then run the tests"),
+            Some("open the file\nand then run the tests"),
             "the second phrase was dropped; the first would be sent alone"
         );
         tick(&mut capture, &mode, &mut endpoint, &target, &queue, 23_000);
         assert_eq!(
             queue.written.borrow().as_slice(),
-            [written("open the file and then run the tests")]
+            [written("open the file\nand then run the tests")]
         );
     }
 
