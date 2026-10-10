@@ -42,6 +42,70 @@ impl TargetProbe for PtyVoicePort {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Catches: held phrases losing their line boundary or submitting separately.
+    #[cfg(unix)]
+    #[test]
+    fn queued_voice_phrases_keep_soft_newlines_and_submit_once() {
+        use tuic_dictation::continuous::{HandsFree, deliver_due};
+
+        let cases: &[(&[&str], &[u8])] = &[
+            (
+                &["first phrase", "second phrase"],
+                b"\x15\x1b[200~first phrase\nsecond phrase\x1b[201~\r",
+            ),
+            (&["first phrase"], b"\x15first phrase\r"),
+            (
+                &["first phrase", "second phrase", "third phrase"],
+                b"\x15\x1b[200~first phrase\nsecond phrase\nthird phrase\x1b[201~\r",
+            ),
+            (
+                &["first phrase\n", "second phrase"],
+                b"\x15\x1b[200~first phrase\nsecond phrase\x1b[201~\r",
+            ),
+        ];
+        for (agent, (phrases, expected)) in ["claude", "codex"]
+            .into_iter()
+            .flat_map(|agent| cases.iter().map(move |case| (agent, case)))
+        {
+            let state = crate::state::tests_support::make_test_app_state();
+            let session = "voice-lines";
+            crate::test_support::agent_session(&state, session, crate::pty::SHELL_BUSY);
+            let bytes = crate::test_support::insert_recording_session(&state, session);
+            {
+                let mut target = state.session_maps.session_states.get_mut(session).unwrap();
+                target.agent_type = Some(agent.into());
+                target.question_confident = true;
+            }
+            let mut mode = HandsFree::new(1_500);
+            let generation = mode.arm(session, "test", true).unwrap();
+            mode.accept_transcript(generation, phrases[0], None, 0);
+            let sink = PtyVoiceSink(&state);
+            deliver_due(&mut mode, &sink, 1_500);
+            assert!(bytes.lock().unwrap().is_empty());
+            for phrase in &phrases[1..] {
+                mode.accept_transcript(generation, phrase, None, 2_000);
+            }
+            state
+                .session_maps
+                .session_states
+                .get_mut(session)
+                .unwrap()
+                .question_confident = false;
+            deliver_due(&mut mode, &sink, 3_500);
+            assert_eq!(
+                bytes.lock().unwrap().as_slice(),
+                *expected,
+                "{agent}: phrase boundaries are paste content, only the final CR submits"
+            );
+            deliver_due(&mut mode, &sink, u64::MAX);
+            assert_eq!(
+                bytes.lock().unwrap().as_slice(),
+                *expected,
+                "a later tick must not submit the same turn twice"
+            );
+        }
+    }
+
     /// "Unsupported targets stay unavailable" is a refusal at the sink, not a
     /// fallback somewhere else: there is no other exit from this module.
     #[test]

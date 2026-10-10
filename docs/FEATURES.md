@@ -1311,7 +1311,7 @@ The `tuic-dictation` Rust crate implements audio, transcription and speech; the 
 
 ### 9.9 One language, end to end
 - **The dictation language decides everything**: what Whisper transcribes, which language the model is told to answer in, and which voice speaks the answer. There is no separate speech language and the model cannot override it.
-- **A spoken turn is typed into the agent at once, even while it is working** — the same as a line you type by hand into a busy agent, which the agent queues or takes mid-turn itself. It never waits in the Compose queue. Only an open permission dialog or text you are typing in the terminal holds it; it stays in the hands-free panel and is typed the moment they are gone, joined with anything you said meanwhile.
+- **A spoken turn is typed into the agent at once, even while it is working** — the same as a line you type by hand into a busy agent, which the agent queues or takes mid-turn itself. It never waits in the Compose queue. Only an open permission dialog or text you are typing in the terminal holds it; it stays in the hands-free panel and is typed the moment they are gone, joined with anything you said meanwhile. Held phrases are separated by line breaks inside one paste and submitted once.
 - Every hands-free turn reaches the model as `<what you said> (reply in <Language>)`. It is part of the typed entry, so turning optional hints off does not remove it.
 - With **Auto**, the language is the one Whisper actually detected, and it is shown. Before the first turn there is none — spoken replies are unavailable and say so, rather than falling back to English.
 - A language TUICommander transcribes but ships no voice for is **named, never substituted**: the status says which bundle is missing instead of answering in a language the user is not speaking.
@@ -2002,6 +2002,7 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
   conversation with shared transcript cards and collapsed activity, answer
   pending interactions, and switch among titled saved conversations.
 - Server-side routing: `/mobile/*` → `mobile.html`, everything else → `index.html`
+- On iPad, the root URL opens mobile by default. Settings → Open Desktop UI remembers the choice on that device; the desktop banner's Switch link clears it and returns to mobile. The installed PWA scope includes both interfaces.
 - Session state accumulator enriches `GET /sessions` with question/rate-limit/busy state
 - SSE endpoint (`/events`) and WebSocket JSON framing for real-time updates
 
@@ -2039,6 +2040,7 @@ Phone-optimized progressive web app for monitoring AI agents remotely. Separate 
 - HTTP and HTTPS links in output open in the phone's external browser; Markdown path controls open the Files editor.
 - Source-width prose rows are rejoined before the phone wraps them; short lines, lists, and box-drawing blocks retain their layout
 - When a mobile output line wraps, its continuation keeps the line's leading spaces or tabs; unindented prose and horizontally scrolling box-drawing blocks retain their layout
+- Claude tool-call status dots reserve one text cell in both visible and blank pulse frames; wrapped continuations retain the same hanging indent through the green completion frame
 - Semantic colorization: log lines are color-coded by type (info, warning, error, diff +/-, file paths) via `classifyLine()` utility
 - Search/filter in output: text search bar filters visible log lines in real time
 - Compact 56 px header: desktop agent logo with a state dot, session display name, repository/branch, state, elapsed activity time, tasks count, and an overflow menu. Tapping the name reveals intent and current task in a transient sheet. Tasks opens current work and intent history; overflow Progress opens this session's filtered journal in a bottom sheet. Files, output search, Ideas, quick commands, usage, copy ID, and terminate remain in overflow. The terminal keeps its height because these panels overlay it.

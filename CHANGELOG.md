@@ -16,6 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Add the Rust foundation for Once automation schedules with IANA timezone validation, a single preview instant and durable occurrence deduplication (#1629-2262).
 
 ### Fixed
+- Keep mobile Claude tool-call text and wrapped continuations stationary while its status dot pulses or turns green (#1654-a3d5).
+- Preserve line breaks between held hands-free phrases and submit the combined turn once (#1656-eb5e).
+- Honor Open Desktop UI on iPad, remember the device's choice, and keep a visible return link to mobile in the desktop shell (#1658-fb34).
 - Keep terminal Chat following when Claude replaces a transcript at the same path, when it has no subagents, or after a rapid CLI/Chat remount; log failed refreshes or stopped transcript tickers (#1635-3db2).
 - Repair stale TUIC MCP bridge paths in Claude private and configured launch profiles, and warn when a missing configured bridge cannot be repaired (#1637-d6e1).
 - Search the visible Claude Chat transcript with Cmd/Ctrl+F; matches span inline Markdown and skip collapsed thinking; Enter and Shift+Enter navigate matches, and switching CLI/Chat closes search and clears its highlight (#1633-f2cc).
