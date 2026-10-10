@@ -633,7 +633,7 @@ export function createAcpChat(
 					if (await openCustom(options, isCurrent)) failedSession = null;
 					return;
 				}
-				if (binding?.launch) {
+				if (binding?.launch || (!binding && failedSession)) {
 					binding = defaultBinding;
 					setConnectionId(binding?.connectionId ?? null);
 					setSessionId(binding?.sessionId ?? null);
