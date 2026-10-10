@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Keep terminal scrollbar history marks visible without Ctrl+Cmd, clear timestamp peek on focus loss, and omit empty marks overlays (#1665-ce9b).
+
 - Widen the Activity Dashboard popup by 20%, while keeping it within small windows (#1664-f4ab).
 
 - Add Spoken replies to mobile hands-free and Settings; muting keeps dictation active, and Edge HTTP 401/403 stops repeat requests for five minutes with one text outage notice (#1659-f3cc).
@@ -23,6 +25,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Add the Rust foundation for Once automation schedules with IANA timezone validation, a single preview instant and durable occurrence deduplication (#1629-2262).
 
 ### Fixed
+
+- Paste text into terminals when rich clipboard content also contains an image; keep screenshot and Finder image attachments.
 
 - Keep hands-free PTY echoes out of the mobile composer, including delayed echoes after typing or reconnecting; preserve explicit Tab completion and editable history recall (#1662-c549).
 - Keep mobile Claude tool-call text and wrapped continuations stationary while its status dot pulses or turns green (#1654-a3d5).

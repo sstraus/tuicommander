@@ -24,18 +24,21 @@ vi.mock("../../components/Terminal/canvasTerminalTransport", async (importOrigin
 }));
 
 import CanvasTerminal from "../../components/Terminal/CanvasTerminal";
+import { appLogger } from "../../stores/appLogger";
+import { settingsStore } from "../../stores/settings";
 import { terminalsStore } from "../../stores/terminals";
 import { makeTerminal } from "../helpers/store";
 
 const matches = [0, 1, 2, 3].flatMap((row) => [0, 2, 4, 6].map((col) => ({ row, col_start: col, col_end: col + 1 })));
 
 // Owned grid wire format, not a fixture of an external terminal application.
-function frame(firstRow = "f F f F ", colour = 0): ArrayBuffer {
+function frame(firstRow = "f F f F ", colour = 0, historySize = 0): ArrayBuffer {
 	const buffer = new ArrayBuffer(26 + 4 * (4 + 8 * 11));
 	const view = new DataView(buffer);
 	view.setUint16(0, 4, true);
 	view.setUint16(4, 7, true); // Cursor occupies a blank cell, away from matches.
 	view.setUint8(6, 1);
+	view.setUint32(11, historySize, true);
 	view.setUint16(18, 4, true);
 	view.setUint16(20, 8, true);
 	let offset = 26;
@@ -56,18 +59,21 @@ function frame(firstRow = "f F f F ", colour = 0): ArrayBuffer {
 // The assertion observes the resulting overlay, not a call to a private painter.
 function recordingContext() {
 	const fills: { colour: unknown; y: number; h: number }[] = [];
+	const labels: { colour: unknown; text: string }[] = [];
 	const state: Record<string, unknown> = {
 		fillStyle: "#000000",
 		clearRect: () => {
 			fills.length = 0;
+			labels.length = 0;
 		},
 		fillRect: (_x: number, y: number, _w: number, h: number) => {
 			fills.push({ colour: state.fillStyle, y, h });
 		},
+		fillText: (text: string) => labels.push({ colour: state.fillStyle, text }),
 		measureText: () => ({ width: 8, fontBoundingBoxAscent: 10, fontBoundingBoxDescent: 3 }),
 	};
 	const context = new Proxy(state, { get: (target, key: string) => target[key] ?? (() => {}) });
-	return { context: context as unknown as CanvasRenderingContext2D, fills };
+	return { context: context as unknown as CanvasRenderingContext2D, fills, labels };
 }
 
 let canvases: Map<HTMLCanvasElement, ReturnType<typeof recordingContext>>;
@@ -123,7 +129,7 @@ afterEach(() => {
 	vi.unstubAllGlobals();
 });
 
-async function open(query = "f", terminalId = "search-flicker") {
+async function open(query = "f", terminalId = "search-flicker", historySize = 0) {
 	let ref: CanvasTerminalRef | undefined;
 	const view = render(() => (
 		<CanvasTerminal
@@ -138,7 +144,7 @@ async function open(query = "f", terminalId = "search-flicker") {
 	await waitFor(() => expect(ref).toBeDefined());
 	if (!ref) throw new Error("terminal ref unavailable");
 	vi.useFakeTimers();
-	transport.sink?.(frame());
+	transport.sink?.(frame("f F f F ", 0, historySize));
 	await vi.advanceTimersByTimeAsync(32);
 	await ref.searchFind(query);
 	const canvas = view.container.querySelectorAll("canvas").item(2);
@@ -238,3 +244,121 @@ it("paints no prompt strip for a terminal with recorded userPromptLines", async 
 		terminalsStore.remove(id);
 	}
 });
+
+// Catches: CanvasTerminal hides history and user-prompt ticks whenever timestamp peek is off.
+it("history ticks remain visible with timestamp overlay off", async () => {
+	const id = terminalsStore.add(makeTerminal());
+	terminalsStore.handleOsc133(id, "A", 2);
+	terminalsStore.handleOsc133(id, "D", 4, 0);
+	terminalsStore.addUserPromptLine(id, 6);
+	const terminal = await open("", id, 100);
+	try {
+		const ticks = Array.from(terminal.view.container.querySelectorAll<HTMLElement>("div")).filter(
+			(div) => div.style.height === "2px" && div.style.right === "0px",
+		);
+		expect(ticks.map((tick) => tick.style.background)).toEqual(["rgba(88, 166, 255, 0.5)", "#3fb950"]);
+	} finally {
+		terminal.view.unmount();
+		terminalsStore.remove(id);
+	}
+});
+
+function scrollbar(view: ReturnType<typeof render>) {
+	const track = Array.from(view.container.querySelectorAll<HTMLElement>("div")).find(
+		(div) => div.style.width === "14px" && div.style.zIndex === "20",
+	);
+	if (!track) throw new Error("scrollbar unavailable");
+	return track;
+}
+
+// Catches: toggling history marks also hides search hits, or leaves old ticks behind.
+it("removes disabled history ticks while retaining live search ticks", async () => {
+	const warnings = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
+	const id = terminalsStore.add(makeTerminal());
+	terminalsStore.addUserPromptLine(id, 6);
+	const terminal = await open("f", id, 100);
+	try {
+		expect(scrollbar(terminal.view).lastElementChild?.childElementCount).toBe(5);
+		settingsStore.setShowScrollbarMarks(false);
+		transport.sink?.(frame("f F f F ", 0, 100));
+		await vi.advanceTimersByTimeAsync(32);
+		const marks = scrollbar(terminal.view).lastElementChild;
+		expect(marks?.childElementCount).toBe(4);
+		expect(
+			Array.from(marks?.children ?? []).every((tick) => (tick as HTMLElement).style.background === "#e8984c"),
+		).toBe(true);
+		terminal.ref.searchClear();
+		expect(scrollbar(terminal.view).childElementCount).toBe(1);
+		settingsStore.setShowScrollbarMarks(true);
+		transport.sink?.(frame("f F f F ", 0, 100));
+		await vi.advanceTimersByTimeAsync(32);
+		expect(scrollbar(terminal.view).lastElementChild?.childElementCount).toBe(1);
+	} finally {
+		terminal.view.unmount();
+		settingsStore.setShowScrollbarMarks(true);
+		terminalsStore.remove(id);
+		// No settings hydration in this harness: persistence must refuse to save defaults.
+		expect(
+			warnings.mock.calls.every(([source, message]) => source === "config" && message.includes("store not hydrated")),
+		).toBe(true);
+	}
+});
+
+// Catches: an empty overlay masquerades as history, or zero history retains stale ticks.
+it("omits empty marks containers and restores ticks after zero history", async () => {
+	const id = terminalsStore.add(makeTerminal());
+	const terminal = await open("", id, 100);
+	try {
+		const track = scrollbar(terminal.view);
+		expect(track.style.display).toBe("block");
+		expect(track.childElementCount).toBe(1); // Thumb only; no metadata or search hits.
+		terminalsStore.addUserPromptLine(id, 6);
+		transport.sink?.(frame("f F f F ", 0, 100));
+		await vi.advanceTimersByTimeAsync(32);
+		expect(track.childElementCount).toBe(2);
+		transport.sink?.(frame());
+		await vi.advanceTimersByTimeAsync(32);
+		expect(track.style.display).toBe("none");
+		expect(track.childElementCount).toBe(1);
+		transport.sink?.(frame("f F f F ", 0, 100));
+		await vi.advanceTimersByTimeAsync(32);
+		expect(track.style.display).toBe("block");
+		expect(track.lastElementChild?.childElementCount).toBe(1);
+	} finally {
+		terminal.view.unmount();
+		terminalsStore.remove(id);
+	}
+});
+
+// Catches: losing keyup on input/window blur leaves timestamp text stuck on screen.
+it.each(["keyup", "input blur", "window blur"])(
+	"clears timestamp peek on %s without clearing history ticks",
+	async (release) => {
+		const id = terminalsStore.add(makeTerminal());
+		terminalsStore.handleOsc133(id, "A", 100);
+		terminalsStore.addUserPromptLine(id, 100);
+		const terminal = await open("", id, 100);
+		try {
+			const input = terminal.view.container.querySelector("input");
+			if (!input) throw new Error("terminal input unavailable");
+			const timestampLabels = () =>
+				Array.from(canvases.values())
+					.flatMap((canvas) => canvas.labels)
+					.filter((label) => label.colour === "rgba(150,150,150,0.5)");
+			expect(timestampLabels()).toHaveLength(0);
+			input.dispatchEvent(new KeyboardEvent("keydown", { key: "Control", ctrlKey: true, metaKey: true }));
+			expect(timestampLabels()).toHaveLength(1);
+			if (release === "keyup") input.dispatchEvent(new KeyboardEvent("keyup", { key: "Control", metaKey: true }));
+			else (release === "input blur" ? input : window).dispatchEvent(new FocusEvent("blur"));
+			expect(timestampLabels()).toHaveLength(0);
+			expect(scrollbar(terminal.view).lastElementChild?.childElementCount).toBe(1);
+			input.dispatchEvent(new FocusEvent("focus"));
+			transport.sink?.(frame("f F f F ", 0, 100));
+			await vi.advanceTimersByTimeAsync(32);
+			expect(timestampLabels()).toHaveLength(0);
+		} finally {
+			terminal.view.unmount();
+			terminalsStore.remove(id);
+		}
+	},
+);

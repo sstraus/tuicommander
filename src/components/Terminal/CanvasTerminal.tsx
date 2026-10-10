@@ -13,6 +13,7 @@ import { writeClipboard } from "../../utils/clipboard";
 import { formatRelativeTime } from "../../utils/formatRelativeTime";
 import { ensureKeyboardViewportTracking, keyboardOcclusion } from "../../utils/keyboardViewport";
 import { handleOpenUrl } from "../../utils/openUrl";
+import { isImagePaste } from "../../utils/pastedImage";
 import { isPerfDebug } from "../../utils/perfDebug";
 import { markPerf, noteFrameRequest } from "../../utils/perfTrace";
 import { applyPinchFontDelta } from "../../utils/terminalZoom";
@@ -803,6 +804,14 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 	let blockTimestampsVisible = false;
 
+	function setBlockTimestampsVisible(visible: boolean) {
+		if (blockTimestampsVisible === visible) return;
+		blockTimestampsVisible = visible;
+		fullRepaintNeeded = true;
+		const m = metrics();
+		if (currentFrame && m) paintFrame(currentFrame, m);
+	}
+
 	function paintBlockTimestamps(m: CellMetrics) {
 		if (!blockTimestampsVisible || !settingsStore.state.showBlockTimestamps) return;
 		const term = terminalsStore.get(props.terminalId);
@@ -835,6 +844,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 		if (frame.historySize === 0) {
 			scrollbarRef.style.display = "none";
+			scrollbarMarksContainer?.remove();
+			scrollbarMarksContainer = null;
+			lastScrollbarMarksKey = "";
 			return;
 		}
 		scrollbarRef.style.display = "block";
@@ -851,12 +863,6 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 
 	function paintScrollbarMarks(totalRows: number) {
 		if (!scrollbarRef) return;
-		if (!scrollbarMarksContainer) {
-			scrollbarMarksContainer = document.createElement("div");
-			scrollbarMarksContainer.style.cssText =
-				"position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none";
-			scrollbarRef.appendChild(scrollbarMarksContainer);
-		}
 		const term = terminalsStore.get(props.terminalId);
 		if (!term) return;
 		const blocks = term.commandBlocks;
@@ -873,12 +879,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// fixes turning the setting OFF: an early return above the key computation
 		// left the last-painted marks on screen forever, because the repaint that
 		// would clear them never ran.
-		const showBlocks = blockTimestampsVisible && settingsStore.state.showScrollbarMarks;
+		const showBlocks = settingsStore.state.showScrollbarMarks;
 		const key = `${showBlocks ? blocks.length : 0}:${showBlocks ? promptLines.length : 0}:${totalRows}:${historyBase}:${showBlocks ? (blocks.at(-1)?.exitCode ?? "") : ""}:s${searchCount}:${searchCount > 0 ? search.matches[0].row : ""}`;
 		if (key === lastScrollbarMarksKey) return;
 		lastScrollbarMarksKey = key;
 
-		scrollbarMarksContainer.innerHTML = buildScrollbarMarksHtml({
+		const html = buildScrollbarMarksHtml({
 			blocks,
 			promptLines,
 			historyBase,
@@ -887,6 +893,18 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			trackH: scrollbarTrackHeight,
 			showBlocks,
 		});
+		if (!html) {
+			scrollbarMarksContainer?.remove();
+			scrollbarMarksContainer = null;
+			return;
+		}
+		if (!scrollbarMarksContainer) {
+			scrollbarMarksContainer = document.createElement("div");
+			scrollbarMarksContainer.style.cssText =
+				"position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none";
+			scrollbarRef.appendChild(scrollbarMarksContainer);
+		}
+		scrollbarMarksContainer.innerHTML = html;
 	}
 
 	// --- Suggest / Intent overlay ---
@@ -2420,7 +2438,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			resetInputBuffer();
 			if (currentFrame?.focusReporting) writePtyNoScroll("\x1b[I");
 		});
+		bindings.listen(window, "blur", () => setBlockTimestampsVisible(false));
 		bindings.listen(keyInputRef, "blur", () => {
+			setBlockTimestampsVisible(false);
 			setFocused(false);
 			stopBlink();
 			repaintCursorIfNeeded();
@@ -2484,11 +2504,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			}
 			resetBlink();
 
-			if (e.ctrlKey && e.metaKey && !blockTimestampsVisible) {
-				blockTimestampsVisible = true;
-				fullRepaintNeeded = true;
-				if (currentFrame && metrics()) paintFrame(currentFrame, metrics()!);
-			}
+			setBlockTimestampsVisible(e.ctrlKey && e.metaKey);
 
 			// Arrow Down with no modifiers: snap to bottom when scrolled up
 			if (
@@ -2761,23 +2777,14 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// Track Alt key release for macOS left-option state
 		bindings.listen(keyInputRef, "keyup", (e: KeyboardEvent) => {
 			if (e.code === "AltLeft") leftOptionHeld = false;
-			if (blockTimestampsVisible && (!e.ctrlKey || !e.metaKey)) {
-				blockTimestampsVisible = false;
-				fullRepaintNeeded = true;
-				if (currentFrame && metrics()) paintFrame(currentFrame, metrics()!);
-			}
+			setBlockTimestampsVisible(e.ctrlKey && e.metaKey);
 		});
 
 		bindings.listen(keyInputRef, "paste", (e: ClipboardEvent) => {
-			if (e.clipboardData) {
-				const items = e.clipboardData.items;
-				for (let i = 0; i < items.length; i++) {
-					if (items[i].type.startsWith("image/")) {
-						e.preventDefault();
-						writePty("\x16");
-						return;
-					}
-				}
+			if (isImagePaste(e)) {
+				e.preventDefault();
+				writePty("\x16");
+				return;
 			}
 			const text = e.clipboardData?.getData("text");
 			if (text) {
