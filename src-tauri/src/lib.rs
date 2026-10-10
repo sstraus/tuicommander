@@ -1602,6 +1602,7 @@ pub fn run() {
                 .expect("Failed to create tokio runtime for HTTP server");
             rt.block_on(async move {
                 spawn_background_tasks(&server_state);
+                telegram::start(&server_state);
 
                 tokio::spawn(relay_client::supervise(server_state.clone(), relay_rx));
 
