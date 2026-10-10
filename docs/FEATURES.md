@@ -13,7 +13,7 @@ Published story workflows can start in Plans and Stories through the owning daem
 
 Desktop AI Chat uses the terminal composer’s pin and blue play buttons. The pin highlights a parked draft; tooltips identify Park, Restore, Swap, Send and Queue.
 
-AI Chat image paste discovers capabilities on first use and shares clipboard precedence with Ideas and terminal Compose: Finder image filenames allow attachments, while substantive text takes priority.
+AI Chat image paste discovers capabilities on first use and shares clipboard precedence with Ideas, terminal Compose, and terminal input: Finder image filenames allow attachments, while substantive text takes priority.
 
 ## ego Perimeter Settings
 
@@ -491,7 +491,7 @@ Replaced by the Git Panel's Changes tab (section 3.8). `Cmd+Shift+D` now opens t
 - Data persisted to Rust config backend
 
 ### 3.7 Help Panel (`Cmd+?`)
-- Shows app info and links (About, GitHub, docs)
+- Shows app info and links (About, GitHub, Discord Community, docs)
 - Keyboard shortcuts are now in the Settings > Keyboard Shortcuts page (auto-generated from `actionRegistry.ts`)
 
 ### 3.8 Git Panel (`Cmd+Shift+D`)
@@ -1514,7 +1514,7 @@ Three pages under **Integrations**. They were one "Services & MCP" tab; each pag
 - **MCP** — HTTP API server: always active on IPC listener (Unix domain socket on macOS/Linux, named pipe `\\.\pipe\tuicommander-mcp` on Windows). TCP port only for remote access
 - **MCP** — MCP connection info: bridge sidecar auto-installs configs for supported agents (Claude Code, Cursor, etc.)
 - **MCP** — TUIC native tool toggles: enable/disable individual MCP tools (`session`, `agent`, `task`, `remote`, `repo`, `ui`, `plugin_dev_guide`, `config`, `debug`) to restrict what AI agents can access
-- **MCP** — Upstream MCP Servers: add/edit/remove upstream MCP servers (HTTP or stdio with optional `cwd`), per-upstream enable/disable, reconnect, credential storage via OS keyring, live status dots, tool count and metrics. Saved upstreams auto-connect on boot. The MCP popup's "Manage in Settings" opens this page at this section
+- **MCP** — Upstream MCP Servers: add/edit/remove upstream MCP servers (HTTP or stdio with optional `cwd`), per-upstream enable/disable, reconnect, Bearer/OAuth and multiple masked secret header rows backed by the OS credential vault, origin-bound credentials that fail closed on provider changes or unbound old entries, same-origin-only credential redirects, live status dots, tool count and metrics. Saved upstreams auto-connect on boot. The MCP popup's "Manage in Settings" opens this page at this section
 - MCP Per-Repo Scoping: each repo can define which upstream MCP servers are relevant via an allowlist in repo settings (3-layer: per-repo > `.tuic.json` > defaults). Null/empty allowlist = all servers. Quick toggle via **Cmd+Shift+M** popup
 - **Remote Access** — port, username, password (bcrypt hash), URL display, QR code, token duration, IPv6 dual-stack, Tailscale HTTPS, cloud relay
 - **Remote Machines** — `tuic-remote` connections over SSH or a direct URL; the page lists SSH hosts discovered from `~/.ssh/config` and `known_hosts` (hashed entries are only counted), shows the loaded agent keys, probes hosts on demand and prefills the Add form from a click
@@ -1684,6 +1684,7 @@ Buffer eviction is reported; it does not create another output store.
 
 ### 14.9 Tailscale HTTPS
 - Auto-detects Tailscale daemon and FQDN via `tailscale status --json` (cross-platform)
+- Headless daemon refreshes Tailscale Host trust every 30 seconds, recovering late startup and removing stale names after rename or stop
 - Provisions TLS certificates from Tailscale Local API (Unix socket on macOS/Linux, CLI on Windows)
 - HTTP+HTTPS dual-protocol on same port via `axum-server-dual-protocol`
 - Graceful fallback: HTTP-only when Tailscale unavailable or HTTPS not enabled

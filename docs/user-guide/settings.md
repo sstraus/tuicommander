@@ -387,7 +387,11 @@ OAuth upstreams show **Authorize** when consent is required. TUIC prepares the O
 
 Proxy external MCP servers through TUICommander. Their tools appear prefixed as `{name}__{tool}`:
 - Add upstream servers via HTTP (Streamable MCP) or stdio (process) transport
-- API keys for HTTP upstreams are stored in the OS keychain
+- HTTP authentication starts with a masked Bearer field. Choose OAuth 2.1 when the upstream supports it.
+- Use **+** beside **Secret headers** to add multiple name/value rows, and **−** to remove a row. Every value is masked and stored in the OS credential vault. Saved rows show an empty secret field: leave it blank to keep the current value, or enter a replacement.
+- Header names and credential references are saved in `mcp-upstreams.json`; values are never saved there. Invalid names, duplicate names and Authorization beside Bearer/OAuth are rejected. Routing, framing and MCP protocol headers are reserved.
+- An upstream with Bearer, OAuth or secret headers cannot change to another URL origin (scheme, host or port). Add a new upstream with a different name for a different provider. Same-origin path edits retain the saved auth settings. Stored credentials are checked against their saved origin before requests. After upgrading, credentials saved without an origin binding must be entered again, or authorized again for OAuth; the connection error explains this.
+- Credentials are sent only to the configured origin. Same-origin redirects work; a redirect to another scheme, host or port stops with an upstream error.
 - Live status (connecting, ready, circuit open, failed) with tool count and call metrics
 - Reconnect and remove controls per upstream
 - Per-repo scoping: each repo can define an allowlist of active upstream servers via **Cmd+Shift+I** popup (or repo settings). Empty/null allowlist = all servers active

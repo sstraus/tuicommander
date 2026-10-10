@@ -10,9 +10,9 @@
 //!   401 WWW-Authenticate parsing → [`UpstreamError::NeedsOAuth`]
 
 use crate::mcp_oauth::token::TokenManager;
-use crate::mcp_upstream_config::UpstreamTransport;
+use crate::mcp_upstream_config::{UpstreamHeader, UpstreamTransport};
 use crate::mcp_upstream_credentials::{
-    OAuthTokenSet, StoredCredential, is_token_valid, read_stored_credential,
+    OAuthTokenSet, StoredCredential, is_token_valid, read_stored_credential_for_url,
 };
 use serde_json::Value;
 use std::sync::Arc;
@@ -38,8 +38,9 @@ pub(crate) enum UpstreamError {
     /// Server returned 401 with a `WWW-Authenticate: Bearer ...` header,
     /// signalling that the client must (re-)run the OAuth authorization flow.
     ///
-    /// `www_authenticate` is surfaced to the caller verbatim; we do not yet
-    /// parse the `resource_metadata` param (RFC 9728 §3.1), which would let us
+    /// The challenge is reduced to its scheme so an upstream cannot echo
+    /// credentials into diagnostics. We do not yet parse `resource_metadata`
+    /// (RFC 9728 §3.1), which would let us
     /// auto-discover the authorization server URL instead of falling back to
     /// `<origin>/.well-known/oauth-authorization-server`. See story 1284-cc3e.
     NeedsOAuth { www_authenticate: String },
@@ -54,9 +55,7 @@ pub(crate) enum UpstreamError {
 impl std::fmt::Display for UpstreamError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NeedsOAuth { www_authenticate } => {
-                write!(f, "OAuth required (WWW-Authenticate: {www_authenticate})")
-            }
+            Self::NeedsOAuth { .. } => f.write_str("OAuth required (Bearer challenge)"),
             Self::AuthFailed => f.write_str("Upstream authentication failed (401)"),
             Self::Other(s) => f.write_str(s),
         }
@@ -107,6 +106,7 @@ pub(crate) struct HttpMcpClient {
     /// `resolve_bearer` skips the keychain entirely — avoids macOS permission
     /// popups for upstreams that don't need credentials.
     has_auth: bool,
+    headers: Vec<UpstreamHeader>,
 }
 
 impl HttpMcpClient {
@@ -120,10 +120,27 @@ impl HttpMcpClient {
             None
         };
 
-        let mut builder = reqwest::Client::builder().user_agent(concat!(
-            "tuicommander-mcp-proxy/",
-            env!("CARGO_PKG_VERSION")
-        ));
+        // reqwest strips Authorization, but retains arbitrary headers on a
+        // cross-origin redirect. Refuse that hop before any credentials leave.
+        let mut builder = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::custom(|attempt| {
+                if attempt.previous().len() >= 10 {
+                    return attempt.error("Too many upstream redirects");
+                }
+                if attempt
+                    .previous()
+                    .first()
+                    .is_some_and(|first| first.origin() != attempt.url().origin())
+                {
+                    attempt.stop()
+                } else {
+                    attempt.follow()
+                }
+            }))
+            .user_agent(concat!(
+                "tuicommander-mcp-proxy/",
+                env!("CARGO_PKG_VERSION")
+            ));
 
         if let Some(t) = timeout {
             builder = builder.timeout(t);
@@ -140,7 +157,39 @@ impl HttpMcpClient {
             session_id: None,
             token_manager: OnceCell::new(),
             has_auth,
+            headers: Vec::new(),
         }
+    }
+
+    pub(crate) fn with_headers(mut self, headers: Vec<UpstreamHeader>) -> Self {
+        self.headers = headers;
+        self
+    }
+
+    /// Resolve secret header values at request time; never attach them to config,
+    /// logs, command arguments or a cached client default-header map.
+    fn add_secret_headers(
+        &self,
+        mut req: reqwest::RequestBuilder,
+        has_bearer: bool,
+    ) -> Result<reqwest::RequestBuilder, UpstreamError> {
+        for header in &self.headers {
+            header.validate()?;
+            if has_bearer && header.name.eq_ignore_ascii_case("authorization") {
+                return Err("Custom Authorization conflicts with Bearer authentication".into());
+            }
+            let token = crate::mcp_upstream_credentials::read_credential_for_url(
+                &header.credential_key(&self.name),
+                &self.url,
+            )
+            .map_err(UpstreamError::from)?
+            .ok_or_else(|| UpstreamError::from("Custom header credential is missing"))?;
+            let mut value = reqwest::header::HeaderValue::from_str(&token)
+                .map_err(|_| UpstreamError::from("Invalid custom header value"))?;
+            value.set_sensitive(true);
+            req = req.header(&header.name, value);
+        }
+        Ok(req)
     }
 
     /// Enable auth on this client (e.g. after an OAuth flow completes for an
@@ -182,7 +231,7 @@ impl HttpMcpClient {
         if !self.has_auth {
             return Ok(None);
         }
-        let cred = read_stored_credential(&self.name)
+        let cred = read_stored_credential_for_url(&self.name, &self.url)
             .map_err(|e| UpstreamError::Other(format!("keyring read failed: {e}")))?;
         let Some(cred) = cred else { return Ok(None) };
 
@@ -229,6 +278,7 @@ impl HttpMcpClient {
                 let resource = set.resource.clone().or_else(|| Some(self.url.clone()));
                 Arc::new(TokenManager::new(
                     self.name.clone(),
+                    self.url.clone(),
                     set.client_id.clone(),
                     set.client_secret.clone(),
                     set.token_endpoint.clone(),
@@ -251,7 +301,7 @@ impl HttpMcpClient {
         let Some(rejected_bearer) = rejected_bearer else {
             return Ok(None);
         };
-        let cred = read_stored_credential(&self.name)
+        let cred = read_stored_credential_for_url(&self.name, &self.url)
             .map_err(|e| UpstreamError::Other(format!("keyring read failed: {e}")))?;
         let Some(StoredCredential::Oauth2(set)) = cred else {
             return Ok(None);
@@ -324,8 +374,7 @@ impl HttpMcpClient {
         tracing::debug!(
             upstream = %self.name,
             session_id = ?self.session_id,
-            "initialize response: {}",
-            serde_json::to_string(&_init_resp).unwrap_or_default()
+            "initialize response received"
         );
 
         // Fire-and-forget: notifications/initialized
@@ -355,8 +404,7 @@ impl HttpMcpClient {
             None => {
                 tracing::warn!(
                     upstream = %self.name,
-                    "tools/list response missing result.tools — got: {}",
-                    serde_json::to_string(&resp_value).unwrap_or_default()
+                    "tools/list response missing result.tools"
                 );
                 Vec::new()
             }
@@ -410,7 +458,9 @@ impl HttpMcpClient {
     #[allow(dead_code)]
     pub(crate) async fn shutdown(&self) {
         if let Some(sid) = &self.session_id {
-            let auth_token = self.resolve_bearer().await.ok().flatten();
+            let Ok(auth_token) = self.resolve_bearer().await else {
+                return;
+            };
             let mut req = self
                 .client
                 .delete(&self.url)
@@ -418,7 +468,9 @@ impl HttpMcpClient {
             if let Some(token) = &auth_token {
                 req = req.bearer_auth(token);
             }
-            let _ = req.send().await;
+            if let Ok(req) = self.add_secret_headers(req, auth_token.is_some()) {
+                let _ = req.send().await;
+            }
         }
     }
 
@@ -487,8 +539,8 @@ impl HttpMcpClient {
             .is_some_and(|ct| ct.contains("text/event-stream"));
 
         if is_sse {
-            let body = resp.text().await.map_err(|e| {
-                UpstreamError::Other(format!("Upstream '{}' SSE read error: {e}", self.name))
+            let body = resp.text().await.map_err(|_| {
+                UpstreamError::Other(format!("Upstream '{}' SSE read error", self.name))
             })?;
             parse_sse_json(&body).ok_or_else(|| {
                 UpstreamError::Other(format!(
@@ -497,11 +549,8 @@ impl HttpMcpClient {
                 ))
             })
         } else {
-            resp.json::<Value>().await.map_err(|e| {
-                UpstreamError::Other(format!(
-                    "Upstream '{}' invalid JSON response: {e}",
-                    self.name
-                ))
+            resp.json::<Value>().await.map_err(|_| {
+                UpstreamError::Other(format!("Upstream '{}' invalid JSON response", self.name))
             })
         }
     }
@@ -528,9 +577,10 @@ impl HttpMcpClient {
         if let Some(token) = auth_token {
             req = req.bearer_auth(token);
         }
-        req.send().await.map_err(|e| {
-            UpstreamError::Other(format!("Upstream '{}' request failed: {e}", self.name))
-        })
+        self.add_secret_headers(req, auth_token.is_some())?
+            .send()
+            .await
+            .map_err(|_| UpstreamError::Other(format!("Upstream '{}' request failed", self.name)))
     }
 
     /// Send a JSON-RPC method call (no body building, just method + params).
@@ -587,7 +637,7 @@ fn classify_401(resp: &reqwest::Response) -> UpstreamError {
 
     match header {
         Some(h) if h.to_ascii_lowercase().contains("bearer") => UpstreamError::NeedsOAuth {
-            www_authenticate: h,
+            www_authenticate: "Bearer".into(),
         },
         _ => UpstreamError::AuthFailed,
     }
@@ -654,6 +704,298 @@ fn parse_sse_json(body: &str) -> Option<Value> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn secret_headers_reach_every_mcp_request_and_rotation_is_not_cached() {
+        #[derive(Clone)]
+        struct LogWriter(Arc<std::sync::Mutex<Vec<u8>>>);
+        impl std::io::Write for LogWriter {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                self.0.lock().unwrap().extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+        let logs = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let writer = LogWriter(logs.clone());
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
+        let _subscriber = tracing::subscriber::set_default(subscriber);
+        let seen = Arc::new(std::sync::Mutex::new(
+            Vec::<(String, axum::http::HeaderMap)>::new(),
+        ));
+        let captured = seen.clone();
+        let router = axum::Router::new().route(
+            "/mcp",
+            axum::routing::post(
+                move |headers: axum::http::HeaderMap, axum::Json(body): axum::Json<Value>| {
+                    let captured = captured.clone();
+                    async move {
+                        captured
+                            .lock()
+                            .unwrap()
+                            .push((body["method"].as_str().unwrap().to_owned(), headers));
+                        (
+                            [("mcp-session-id", "secret-header-session")],
+                            axum::Json(
+                                serde_json::json!({"jsonrpc":"2.0", "id":1, "result":{"tools":[]}}),
+                            ),
+                        )
+                    }
+                },
+            )
+            .delete({
+                let seen = seen.clone();
+                move |headers: axum::http::HeaderMap| {
+                    let seen = seen.clone();
+                    async move {
+                        seen.lock().unwrap().push(("DELETE".into(), headers));
+                        axum::http::StatusCode::OK
+                    }
+                }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let name = "secret-headers-wire";
+        let headers = ["x-api-key", "X-Consumer-Key"].map(|name| UpstreamHeader {
+            name: name.into(),
+            credential_ref: uuid::Uuid::new_v4().to_string(),
+        });
+        for header in &headers {
+            crate::mcp_upstream_credentials::save_mcp_upstream_credential(
+                name.into(),
+                "DUMMY_HEADER_SENTINEL".into(),
+                Some(header.clone()),
+                url.clone(),
+            )
+            .unwrap();
+        }
+        crate::mcp_upstream_credentials::save_credential_for_url(
+            name,
+            "DUMMY_BEARER_SENTINEL",
+            &url,
+        )
+        .unwrap();
+        let mut client =
+            HttpMcpClient::new(name.into(), url, 30, true).with_headers(headers.to_vec());
+        client.initialize().await.unwrap();
+        client
+            .call_tool("example", serde_json::json!({}))
+            .await
+            .unwrap();
+        client.health_check().await.unwrap();
+        client.shutdown().await;
+        {
+            let seen = seen.lock().unwrap();
+            assert_eq!(
+                seen.iter()
+                    .map(|(method, _)| method.as_str())
+                    .collect::<Vec<_>>(),
+                [
+                    "initialize",
+                    "notifications/initialized",
+                    "tools/list",
+                    "tools/call",
+                    "tools/list",
+                    "DELETE"
+                ]
+            );
+            for (_, received) in seen.iter() {
+                assert_eq!(received["authorization"], "Bearer DUMMY_BEARER_SENTINEL");
+                assert_eq!(received["x-api-key"], "DUMMY_HEADER_SENTINEL");
+                assert_eq!(received["x-consumer-key"], "DUMMY_HEADER_SENTINEL");
+            }
+        }
+        crate::mcp_upstream_credentials::save_mcp_upstream_credential(
+            name.into(),
+            "DUMMY_ROTATED_SENTINEL".into(),
+            Some(headers[0].clone()),
+            client.url.clone(),
+        )
+        .unwrap();
+        client.health_check().await.unwrap();
+        assert_eq!(
+            seen.lock().unwrap().last().unwrap().1["x-api-key"],
+            "DUMMY_ROTATED_SENTINEL"
+        );
+        let logs = String::from_utf8(logs.lock().unwrap().clone()).unwrap();
+        assert!(
+            logs.contains("initialize response received"),
+            "capture must observe real client diagnostics"
+        );
+        assert!(!logs.contains("DUMMY_"));
+        assert!(!std::env::args().any(|arg| arg.contains("DUMMY_")));
+        task.abort();
+    }
+
+    #[tokio::test]
+    async fn secret_headers_fail_closed_without_echoing_missing_or_invalid_values() {
+        let header = UpstreamHeader {
+            name: "x-api-key".into(),
+            credential_ref: uuid::Uuid::new_v4().to_string(),
+        };
+        let client = HttpMcpClient::new(
+            "secret-header-errors".into(),
+            "http://127.0.0.1:1/mcp".into(),
+            30,
+            false,
+        )
+        .with_headers(vec![header.clone()]);
+        let error = client.health_check().await.unwrap_err().to_string();
+        assert_eq!(error, "Custom header credential is missing");
+        crate::mcp_upstream_credentials::save_credential_for_url(
+            &header.credential_key("secret-header-errors"),
+            "DUMMY_INVALID_SENTINEL\r\ninjected",
+            &client.url,
+        )
+        .unwrap();
+        let error = client.health_check().await.unwrap_err().to_string();
+        assert_eq!(error, "Invalid custom header value");
+        assert!(!error.contains("DUMMY_"));
+    }
+
+    #[tokio::test]
+    async fn secret_headers_follow_same_origin_but_never_contact_redirect_origin() {
+        let foreign_hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let hits = foreign_hits.clone();
+        let foreign = axum::Router::new().fallback(move || {
+            let hits = hits.clone();
+            async move {
+                hits.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                "leaked"
+            }
+        });
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let foreign_url = format!("http://{}/mcp", listener.local_addr().unwrap());
+        let foreign_task =
+            tokio::spawn(async move { axum::serve(listener, foreign).await.unwrap() });
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let captured = seen.clone();
+        let router = axum::Router::new()
+            .route(
+                "/mcp",
+                axum::routing::post(|| async { axum::response::Redirect::temporary("/next") }),
+            )
+            .route(
+                "/next",
+                axum::routing::post(move |headers: axum::http::HeaderMap| {
+                    let captured = captured.clone();
+                    let foreign_url = foreign_url.clone();
+                    async move {
+                        captured.lock().unwrap().push(headers);
+                        axum::response::Redirect::temporary(&foreign_url)
+                    }
+                }),
+            );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/mcp", listener.local_addr().unwrap());
+        let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let header = UpstreamHeader {
+            name: "x-api-key".into(),
+            credential_ref: uuid::Uuid::new_v4().to_string(),
+        };
+        crate::mcp_upstream_credentials::save_mcp_upstream_credential(
+            "secret-redirect".into(),
+            "DUMMY_REDIRECT_SENTINEL".into(),
+            Some(header.clone()),
+            url.clone(),
+        )
+        .unwrap();
+        crate::mcp_upstream_credentials::save_credential_for_url(
+            "secret-redirect",
+            "DUMMY_BEARER_SENTINEL",
+            &url,
+        )
+        .unwrap();
+        let mut client =
+            HttpMcpClient::new("secret-redirect".into(), url, 30, true).with_headers(vec![header]);
+        let error = client.initialize().await.unwrap_err().to_string();
+        assert!(!error.contains("DUMMY_"));
+        assert_eq!(foreign_hits.load(std::sync::atomic::Ordering::SeqCst), 0);
+        let seen = seen.lock().unwrap();
+        assert_eq!(seen.len(), 1, "same-origin redirect must still work");
+        assert_eq!(seen[0]["x-api-key"], "DUMMY_REDIRECT_SENTINEL");
+        assert_eq!(seen[0]["authorization"], "Bearer DUMMY_BEARER_SENTINEL");
+        task.abort();
+        foreign_task.abort();
+    }
+    // Catches: a config edit reuses a name-keyed token at a different origin.
+    #[tokio::test]
+    async fn saved_credentials_never_contact_a_different_origin() {
+        let hits = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let captured = hits.clone();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let foreign_url = format!("http://{}/mcp", listener.local_addr().unwrap());
+        let router = axum::Router::new().fallback(move || {
+            let captured = captured.clone();
+            async move {
+                captured.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                "unexpected request"
+            }
+        });
+        let task = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let header = UpstreamHeader {
+            name: "x-api-key".into(),
+            credential_ref: uuid::Uuid::new_v4().to_string(),
+        };
+        for method in ["bearer", "oauth", "header", "unbound"] {
+            let name = format!("origin-bound-{method}");
+            if method == "unbound" {
+                crate::mcp_upstream_credentials::save_upstream_credential(
+                    &name,
+                    "DUMMY_UNBOUND_SECRET",
+                )
+                .unwrap();
+            } else if method == "oauth" {
+                let set = OAuthTokenSet {
+                    access_token: "DUMMY_OLD_PROVIDER_SECRET".into(),
+                    refresh_token: None,
+                    expires_at: None,
+                    token_endpoint: "https://old.example/token".into(),
+                    client_id: "client".into(),
+                    client_secret: None,
+                    scope: None,
+                    resource: None,
+                };
+                crate::mcp_upstream_credentials::save_oauth_tokens(
+                    &name,
+                    &set,
+                    "https://old.example/mcp",
+                )
+                .unwrap();
+            } else {
+                crate::mcp_upstream_credentials::save_mcp_upstream_credential(
+                    name.clone(),
+                    "DUMMY_OLD_PROVIDER_SECRET".into(),
+                    (method == "header").then(|| header.clone()),
+                    "https://old.example/mcp".into(),
+                )
+                .unwrap();
+            }
+            let mut client = HttpMcpClient::new(name, foreign_url.clone(), 5, method != "header")
+                .with_headers(if method == "header" {
+                    vec![header.clone()]
+                } else {
+                    vec![]
+                });
+            let error = client.initialize().await.unwrap_err().to_string();
+            assert!(error.contains("origin"), "{method}: {error}");
+            assert!(!error.contains("DUMMY_"));
+        }
+        assert_eq!(
+            hits.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "origin mismatch must fail before any request is sent"
+        );
+        task.abort();
+    }
     use std::sync::Arc;
 
     use axum::{
@@ -730,7 +1072,12 @@ mod tests {
         {
             let replacement = state.credential_replacement.lock().unwrap().take();
             if let Some((name, set)) = replacement {
-                crate::mcp_upstream_credentials::save_oauth_tokens(&name, &set).unwrap();
+                crate::mcp_upstream_credentials::save_oauth_tokens(
+                    &name,
+                    &set,
+                    set.resource.as_deref().unwrap(),
+                )
+                .unwrap();
             }
             return oauth_challenge_response();
         }
@@ -1056,8 +1403,9 @@ mod tests {
         let state = MockState::default();
         let url = spawn_mock_server(state.clone()).await;
 
-        crate::mcp_upstream_credentials::save_upstream_credential(name, "stale-token").unwrap();
-        let mut client = HttpMcpClient::new(name.to_string(), url, 5, true);
+        crate::mcp_upstream_credentials::save_credential_for_url(name, "stale-token", &url)
+            .unwrap();
+        let mut client = HttpMcpClient::new(name.to_string(), url.clone(), 5, true);
         client.initialize().await.unwrap();
         assert_eq!(
             state.seen_bearer.lock().unwrap().as_deref(),
@@ -1065,7 +1413,8 @@ mod tests {
         );
 
         // A completed OAuth flow persists a new token for the same upstream.
-        crate::mcp_upstream_credentials::save_upstream_credential(name, "fresh-token").unwrap();
+        crate::mcp_upstream_credentials::save_credential_for_url(name, "fresh-token", &url)
+            .unwrap();
 
         client.initialize().await.unwrap();
         assert_eq!(
@@ -1083,11 +1432,13 @@ mod tests {
         let state = MockState::default();
         let url = spawn_mock_server(state.clone()).await;
 
-        crate::mcp_upstream_credentials::save_upstream_credential(name, "stale-token").unwrap();
-        let mut client = HttpMcpClient::new(name.to_string(), url, 5, true);
+        crate::mcp_upstream_credentials::save_credential_for_url(name, "stale-token", &url)
+            .unwrap();
+        let mut client = HttpMcpClient::new(name.to_string(), url.clone(), 5, true);
         client.initialize().await.unwrap();
 
-        crate::mcp_upstream_credentials::save_upstream_credential(name, "fresh-token").unwrap();
+        crate::mcp_upstream_credentials::save_credential_for_url(name, "fresh-token", &url)
+            .unwrap();
 
         client.health_check().await.unwrap();
         assert_eq!(
@@ -1130,9 +1481,9 @@ mod tests {
             scope: None,
             resource: None,
         };
-        crate::mcp_upstream_credentials::save_oauth_tokens(name, &set).unwrap();
+        crate::mcp_upstream_credentials::save_oauth_tokens(name, &set, &url).unwrap();
 
-        let mut client = HttpMcpClient::new(name.to_string(), url, 5, true);
+        let mut client = HttpMcpClient::new(name.to_string(), url.clone(), 5, true);
         let tools = client.initialize().await.unwrap();
 
         assert_eq!(tools.len(), 2);
@@ -1165,10 +1516,10 @@ mod tests {
             scope: None,
             resource: None,
         };
-        crate::mcp_upstream_credentials::save_oauth_tokens(name, &rejected).unwrap();
+        crate::mcp_upstream_credentials::save_oauth_tokens(name, &rejected, &url).unwrap();
         *state.only_accept_bearer.lock().unwrap() = Some("rejected-token".to_string());
 
-        let mut client = HttpMcpClient::new(name.to_string(), url, 5, true);
+        let mut client = HttpMcpClient::new(name.to_string(), url.clone(), 5, true);
         client.initialize().await.unwrap();
 
         let replacement = OAuthTokenSet {
@@ -1179,7 +1530,7 @@ mod tests {
             client_id: "client".to_string(),
             client_secret: None,
             scope: None,
-            resource: None,
+            resource: Some(url.clone()),
         };
         *state.only_accept_bearer.lock().unwrap() = Some("reauthorized-token".to_string());
         *state.credential_replacement.lock().unwrap() = Some((name.to_string(), replacement));
@@ -1211,12 +1562,13 @@ mod tests {
         let state = MockState::default();
         let url = spawn_mock_server(state.clone()).await;
 
-        crate::mcp_upstream_credentials::save_upstream_credential(name, "static-bearer").unwrap();
+        crate::mcp_upstream_credentials::save_credential_for_url(name, "static-bearer", &url)
+            .unwrap();
         state
             .return_401_with_challenge
             .store(true, std::sync::atomic::Ordering::SeqCst);
 
-        let mut client = HttpMcpClient::new(name.to_string(), url, 5, true);
+        let mut client = HttpMcpClient::new(name.to_string(), url.clone(), 5, true);
         let err = client.initialize().await.unwrap_err();
         assert!(
             matches!(err, UpstreamError::NeedsOAuth { .. }),

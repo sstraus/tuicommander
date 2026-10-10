@@ -1,6 +1,26 @@
 {
   "posts": [
     {
+      "slug": "composio-mcp-headers",
+      "title": "Composio through TUICommander: one app, a small tool set",
+      "date": "2026-10-10",
+      "status": "published",
+      "feature": "Generic HTTP upstream secret headers",
+      "summary": "Connect a Composio session MCP URL with secret header rows, then narrow access by repository and tool name. Start with a read-only pilot and keep the account boundary explicit.",
+      "screenshots": [
+        "/blog/composio-mcp-headers/secret-header-rows.png"
+      ]
+    },
+    {
+      "slug": "claude-cache-tiers",
+      "title": "One hour for the parent, five minutes for the child",
+      "date": "2026-10-10",
+      "status": "published",
+      "feature": "Claude Code prompt caching / Independent agent sessions",
+      "summary": "We measured Claude Code’s cache directives and idle-gap behavior. The main session gets an hour; its native subagent gets five minutes. That difference matters when agents spend time waiting.",
+      "screenshots": []
+    },
+    {
       "slug": "keyboard-shortcuts",
       "title": "The shortcuts that matter when twelve agents are working",
       "date": "2026-08-09",

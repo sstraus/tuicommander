@@ -57,6 +57,49 @@ pub(crate) struct UpstreamMcpServer {
     /// Optional authentication configuration.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) auth: Option<UpstreamAuth>,
+    /// Secret header metadata only; values live in the upstream credential vault.
+    // Keep an explicit empty array so a delta removing the final header does not
+    // turn the omitted field into null (which cannot deserialize as a Vec).
+    #[serde(default)]
+    pub(crate) headers: Vec<UpstreamHeader>,
+}
+
+/// A secret header and its opaque, upstream-scoped credential reference.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct UpstreamHeader {
+    pub(crate) name: String,
+    pub(crate) credential_ref: String,
+}
+
+impl UpstreamHeader {
+    pub(crate) fn validate(&self) -> Result<(), String> {
+        let name = reqwest::header::HeaderName::from_bytes(self.name.as_bytes())
+            .map_err(|_| "Invalid custom header name".to_string())?;
+        // These names control routing, framing or the MCP transport itself.
+        if matches!(
+            name.as_str(),
+            "host"
+                | "content-length"
+                | "transfer-encoding"
+                | "connection"
+                | "content-type"
+                | "accept"
+                | "mcp-session-id"
+                | "mcp-protocol-version"
+                | "proxy-authorization"
+                | "cookie"
+        ) {
+            return Err("Custom header name is reserved".into());
+        }
+        uuid::Uuid::parse_str(&self.credential_ref)
+            .map_err(|_| "Invalid header credential reference".to_string())?;
+        Ok(())
+    }
+
+    pub(crate) fn credential_key(&self, upstream: &str) -> String {
+        format!("{upstream}/header/{}", self.credential_ref)
+    }
 }
 
 /// Transport type for connecting to an upstream MCP server.
@@ -146,11 +189,13 @@ pub(crate) enum UpstreamConfigError {
     EmptyUrl(String),
     EmptyCommand(String),
     EmptyOAuthClientId(String),
+    InvalidHeaders,
 }
 
 impl std::fmt::Display for UpstreamConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::InvalidHeaders => f.write_str("Invalid or duplicate custom headers"),
             Self::EmptyName(id) => write!(f, "Server '{id}' has an empty name"),
             Self::InvalidName(name) => write!(
                 f,
@@ -216,6 +261,19 @@ pub(crate) fn validate_upstream_config(
                 if command.is_empty() {
                     errors.push(UpstreamConfigError::EmptyCommand(server.id.clone()));
                 }
+            }
+        }
+
+        let mut header_names = HashSet::new();
+        let mut header_refs = HashSet::new();
+        for header in &server.headers {
+            if header.validate().is_err()
+                || !matches!(server.transport, UpstreamTransport::Http { .. })
+                || !header_names.insert(header.name.to_ascii_lowercase())
+                || !header_refs.insert(&header.credential_ref)
+                || (header.name.eq_ignore_ascii_case("authorization") && server.auth.is_some())
+            {
+                errors.push(UpstreamConfigError::InvalidHeaders);
             }
         }
 
@@ -536,12 +594,6 @@ pub(crate) fn update_upstream_auth(name: &str, auth: UpstreamAuth) -> Result<(),
     set_upstream_auth(name, Some(auth))
 }
 
-/// Clear persisted auth for a single upstream (e.g. when transport URL changes
-/// and a DCR-obtained client_id is stale).
-pub(crate) fn clear_upstream_auth(name: &str) -> Result<(), String> {
-    set_upstream_auth(name, None)
-}
-
 fn set_upstream_auth(name: &str, auth: Option<UpstreamAuth>) -> Result<(), String> {
     let found =
         ConfigFile::<UpstreamMcpConfig>::new(UPSTREAMS_FILE).update_with_strict(|config| {
@@ -648,6 +700,122 @@ pub(crate) fn get_mcp_upstream_status(
 mod tests {
     use super::*;
 
+    #[test]
+    fn secret_headers_reject_injection_duplicates_and_bearer_collision() {
+        for names in [
+            vec![""],
+            vec!["x key"],
+            vec!["x\r\nkey"],
+            vec!["x-key", "X-Key"],
+            vec!["Authorization"],
+            vec!["Host"],
+            vec!["Mcp-Session-Id"],
+        ] {
+            let mut server = http_server("headers", "https://example.com/mcp");
+            server.auth = Some(UpstreamAuth::Bearer {
+                token: String::new(),
+            });
+            server.headers = names
+                .into_iter()
+                .map(|name| UpstreamHeader {
+                    name: name.into(),
+                    credential_ref: uuid::Uuid::new_v4().to_string(),
+                })
+                .collect();
+            assert!(
+                !validate_upstream_config(
+                    &UpstreamMcpConfig {
+                        servers: vec![server]
+                    },
+                    9876
+                )
+                .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_bearer_and_oauth_configs_need_no_header_migration() {
+        for auth in [
+            serde_json::json!({"type":"bearer","token":""}),
+            serde_json::json!({"type":"oauth2","client_id":"public"}),
+        ] {
+            let server: UpstreamMcpServer = serde_json::from_value(serde_json::json!({"id":"legacy", "name":"legacy", "transport":{"type":"http","url":"https://example.com/mcp"}, "auth":auth})).unwrap();
+            assert!(server.headers.is_empty());
+            assert!(
+                validate_upstream_config(
+                    &UpstreamMcpConfig {
+                        servers: vec![server]
+                    },
+                    9876
+                )
+                .is_empty()
+            );
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn secret_header_values_never_enter_persisted_config_or_validation_errors() {
+        let tmp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+        let header = UpstreamHeader {
+            name: "x-api-key".into(),
+            credential_ref: uuid::Uuid::new_v4().to_string(),
+        };
+        let sentinel = "DUMMY_PERSISTENCE_SENTINEL";
+        crate::mcp_upstream_credentials::save_mcp_upstream_credential(
+            "header-persistence".into(),
+            sentinel.into(),
+            Some(header.clone()),
+            "https://example.com/mcp".into(),
+        )
+        .unwrap();
+        let mut server = http_server("header-persistence", "https://example.com/mcp");
+        server.enabled = false;
+        server.headers = vec![header.clone()];
+        persist_upstream_delta(
+            &UpstreamMcpConfig::default(),
+            &UpstreamMcpConfig {
+                servers: vec![server],
+            },
+            9876,
+        )
+        .unwrap();
+        let disk = std::fs::read_to_string(tmp.path().join(UPSTREAMS_FILE)).unwrap();
+        assert!(!disk.contains(sentinel));
+        assert!(disk.contains("x-api-key"));
+        assert!(disk.contains(&header.credential_ref));
+        assert_eq!(
+            crate::mcp_upstream_credentials::read_upstream_credential(
+                &header.credential_key("header-persistence")
+            )
+            .unwrap()
+            .as_deref(),
+            Some(sentinel)
+        );
+        let error = crate::mcp_upstream_credentials::save_mcp_upstream_credential(
+            "header-persistence".into(),
+            format!("{sentinel}\r\ninjected"),
+            Some(header.clone()),
+            "https://example.com/mcp".into(),
+        )
+        .unwrap_err();
+        assert!(!error.contains(sentinel));
+        crate::mcp_upstream_credentials::delete_mcp_upstream_credential(
+            "header-persistence".into(),
+            Some(header.clone()),
+        )
+        .unwrap();
+        assert!(
+            crate::mcp_upstream_credentials::read_upstream_credential(
+                &header.credential_key("header-persistence")
+            )
+            .unwrap()
+            .is_none()
+        );
+    }
+
     fn http_server(name: &str, url: &str) -> UpstreamMcpServer {
         UpstreamMcpServer {
             id: format!("id-{name}"),
@@ -657,6 +825,7 @@ mod tests {
             },
             enabled: true,
             timeout_secs: 30,
+            headers: vec![],
             tool_filter: None,
             auth: None,
         }
@@ -677,6 +846,7 @@ mod tests {
             },
             enabled: true,
             timeout_secs: 30,
+            headers: vec![],
             tool_filter: None,
             auth: None,
         }
@@ -747,6 +917,7 @@ mod tests {
             },
             enabled: true,
             timeout_secs: 60,
+            headers: vec![],
             tool_filter: Some(ToolFilter {
                 mode: FilterMode::Deny,
                 patterns: vec!["dangerous_*".to_string(), "admin_*".to_string()],
@@ -1347,6 +1518,93 @@ mod tests {
 
     #[test]
     #[serial_test::serial]
+    fn config_edits_do_not_rebind_vault_credentials() {
+        let tmp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+        for method in ["bearer", "oauth", "header", "none"] {
+            let mut original = http_server("provider", "https://old.example/mcp");
+            match method {
+                "bearer" => {
+                    original.auth = Some(UpstreamAuth::Bearer {
+                        token: String::new(),
+                    })
+                }
+                "oauth" => {
+                    original.auth = Some(UpstreamAuth::OAuth2 {
+                        client_id: "public".into(),
+                        client_secret: None,
+                        scopes: vec![],
+                        authorization_endpoint: None,
+                        token_endpoint: None,
+                    })
+                }
+                "header" => {
+                    original.headers = vec![UpstreamHeader {
+                        name: "x-api-key".into(),
+                        credential_ref: uuid::Uuid::new_v4().to_string(),
+                    }]
+                }
+                _ => {}
+            }
+            let key = original
+                .headers
+                .first()
+                .map(|h| h.credential_key("provider"))
+                .unwrap_or_else(|| "provider".into());
+            crate::mcp_upstream_credentials::save_credential_for_url(
+                &key,
+                "DUMMY_ORIGIN_BINDING",
+                "https://old.example/mcp",
+            )
+            .unwrap();
+            let saved_vault_entry =
+                crate::credentials::get(crate::credentials::Credential::McpUpstream(&key)).unwrap();
+            let base = UpstreamMcpConfig {
+                servers: vec![original],
+            };
+            // Config edits are allowed at the API. Credential reuse is checked
+            // at the request boundary, including stale and replacement-ID saves.
+            for url in [
+                "https://OLD.example:443/other",
+                "https://new.example/mcp",
+                "http://old.example/mcp",
+                "https://old.example:444/mcp",
+            ] {
+                for (replace_id, stale) in [(false, false), (true, false), (false, true)] {
+                    ConfigFile::<UpstreamMcpConfig>::new(UPSTREAMS_FILE)
+                        .save(&base)
+                        .unwrap();
+                    let mut desired = base.clone();
+                    desired.servers[0].transport = UpstreamTransport::Http { url: url.into() };
+                    desired.servers[0].auth = None;
+                    desired.servers[0].headers.clear();
+                    if replace_id {
+                        desired.servers[0].id = uuid::Uuid::new_v4().to_string();
+                    }
+                    // A stale caller must not change the vault binding either.
+                    let mut stale_base = base.clone();
+                    stale_base.servers[0].auth = None;
+                    stale_base.servers[0].headers.clear();
+                    let request_base = if stale { &stale_base } else { &base };
+                    let result = persist_upstream_delta(request_base, &desired, 3845);
+                    result.unwrap();
+                    assert_eq!(
+                        crate::credentials::get(crate::credentials::Credential::McpUpstream(&key))
+                            .unwrap(),
+                        saved_vault_entry,
+                        "config edits must not alter the saved credential origin"
+                    );
+                    assert_eq!(
+                        load_mcp_upstreams().servers[0].transport,
+                        desired.servers[0].transport
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial]
     fn stale_ui_delta_preserves_a_concurrent_oauth_auth_update() {
         let tmp = tempfile::tempdir().unwrap();
         let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
@@ -1540,6 +1798,79 @@ mod tests {
         );
     }
 
+    // Catches: a same-origin path edit clears auth metadata while keeping the
+    // vault token, letting a later provider edit reuse that old token.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn same_origin_path_edit_must_not_unlock_cross_provider_credential_reuse() {
+        let tmp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+        let name = "critic3-origin-path";
+        let mut server = disabled_http_server(name, "https://old.example/mcp");
+        server.auth = Some(UpstreamAuth::Bearer {
+            token: String::new(),
+        });
+        crate::mcp_upstream_credentials::save_mcp_upstream_credential(
+            name.into(),
+            "DUMMY_OLD_PROVIDER_SECRET".into(),
+            None,
+            "https://old.example/mcp".into(),
+        )
+        .unwrap();
+        let original = UpstreamMcpConfig {
+            servers: vec![server],
+        };
+        ConfigFile::<UpstreamMcpConfig>::new(UPSTREAMS_FILE)
+            .save(&original)
+            .unwrap();
+        let mut path_edit = original.clone();
+        path_edit.servers[0].transport = UpstreamTransport::Http {
+            url: "https://old.example/updated-mcp".into(),
+        };
+        let registry = crate::mcp_proxy::registry::UpstreamRegistry::new();
+        persist_and_apply_upstream_delta(original, path_edit, 3845, &registry, || {
+            std::future::ready(())
+        })
+        .await
+        .unwrap();
+        // Reload as the settings panel does after reopening. The old token is
+        // still in the vault; a replacement token is written only after save.
+        let reloaded = load_mcp_upstreams();
+        assert_eq!(
+            crate::mcp_upstream_credentials::read_upstream_credential(name)
+                .unwrap()
+                .as_deref(),
+            Some("DUMMY_OLD_PROVIDER_SECRET")
+        );
+        let mut provider_edit = reloaded.clone();
+        provider_edit.servers[0].transport = UpstreamTransport::Http {
+            url: "https://new.example/mcp".into(),
+        };
+        provider_edit.servers[0].auth = Some(UpstreamAuth::Bearer {
+            token: String::new(),
+        });
+        assert_eq!(
+            reloaded.servers[0].auth,
+            Some(UpstreamAuth::Bearer {
+                token: String::new()
+            }),
+            "path edit must retain auth in settings"
+        );
+        persist_upstream_delta(&reloaded, &provider_edit, 3845).unwrap();
+        let mut client = crate::mcp_proxy::http_client::HttpMcpClient::new(
+            name.into(),
+            "https://new.example/mcp".into(),
+            5,
+            true,
+        );
+        let error = client.initialize().await.unwrap_err().to_string();
+        crate::mcp_upstream_credentials::delete_mcp_upstream_credential(name.into(), None).unwrap();
+        assert!(
+            error.contains("origin differs"),
+            "old credential must never reach the new provider: {error}"
+        );
+    }
+
     // -- update_upstream_auth --
 
     #[test]
@@ -1605,34 +1936,6 @@ mod tests {
         let result = update_upstream_auth("nonexistent", auth);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not found"));
-    }
-
-    #[test]
-    #[serial_test::serial]
-    fn clear_upstream_auth_removes_auth() {
-        let tmp = tempfile::tempdir().unwrap();
-        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
-
-        let mut server = http_server("delta", "https://d.example.com/mcp");
-        server.auth = Some(UpstreamAuth::OAuth2 {
-            client_id: "stale-id".into(),
-            client_secret: None,
-            scopes: vec![],
-            authorization_endpoint: None,
-            token_endpoint: None,
-        });
-        let config = UpstreamMcpConfig {
-            servers: vec![server],
-        };
-        ConfigFile::<UpstreamMcpConfig>::new(UPSTREAMS_FILE)
-            .save(&config)
-            .unwrap();
-
-        clear_upstream_auth("delta").unwrap();
-
-        let reloaded: UpstreamMcpConfig = load_json_config(UPSTREAMS_FILE);
-        let delta = reloaded.servers.iter().find(|s| s.name == "delta").unwrap();
-        assert!(delta.auth.is_none());
     }
 
     #[test]
