@@ -2,6 +2,22 @@
 
 Slice F exposes `start_graph {target:{type:story|plan,id},expected_revision?,definition_id,definition_revision,request_id,limits?}` through the existing owning-daemon service. Story starts require the current native revision and pin the selected publication; the request ID is bound to its payload. Omitted limits use Rust defaults. Plan dispatch remains unavailable in this build and its start control says so. The `workflow_run` MCP tool uses an inline schema generated from `RunAction` and the public `RunCommand` variants; it returns the same scoped snapshots and cursor-ordered events as IPC/HTTP. Run history shows pinned activations, decisions/evidence, repair counters, pause targets and complete event payloads across pages. Graph recovery uses `resume_graph {execution_id,activation_id,resolution}` after answering pending input; pause and cancel use the existing sequence-fenced commands. Legacy runs offer inspection and cancellation in the UI. No new persistence or client scheduler is added.
 
+## Explicit repository registration
+
+`repo action=add` requires an absolute local directory path. It resolves the
+canonical path, reads real repository metadata, and persists and activates a Git
+or shell workspace under the repositories file lock. Repeat calls preserve the
+existing repository and terminal state. The backend broadcasts
+`repositories-changed` to desktop and SSE consumers after a change, then starts
+the repository watcher. A watcher failure returns a warning alongside successful
+registration; invalid paths and persistence failures return an error.
+
+The CLI's directory opener calls this same MCP operation over its selected local
+IPC endpoint, including named instances and `TUIC_SOCKET`. No OS deep-link handler
+or active frontend is required. `ui tab` accepts the native `tuic://open` and
+`tuic://edit` content schemes; other `tuic://` actions return an error. Use
+`repo action=add` for `tuic://open-repo` intent.
+
 ## Browser shell authentication
 
 Unauthenticated HTML navigation to `/` and `/mobile` redirects to the existing `/mobile/login` form when a password is configured. The login handler permits root or mobile app destinations only. API authentication and non-HTML 401 responses are unchanged. The desktop entry checks touch-capable iPad/Mac user agents and selects `/mobile` before mounting the desktop app; native WebViews and standalone secret forms keep their own entry.

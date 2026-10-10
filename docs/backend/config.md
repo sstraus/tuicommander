@@ -617,6 +617,14 @@ Default values applied to new repositories when no per-repo override exists.
 
 ### Repositories (`repositories.json`)
 
+Explicit server registration (`repo action=add`, also used by CLI directory opens)
+uses a strict locked read-modify-write. It adds only the canonical repository row,
+its initial workspace and order entry, and selects it. Existing rows and unrelated
+configuration survive repeated calls. Corrupt configuration aborts registration
+and is moved to the existing `repositories.corrupt-<uuid>` recovery backup. Successful changes emit
+`repositories-changed` to both transports.
+
+
 **Type:** `serde_json::Value` (flexible persisted JSON, shape defined by frontend)
 
 Stored in the shared config directory like every other file (see Config

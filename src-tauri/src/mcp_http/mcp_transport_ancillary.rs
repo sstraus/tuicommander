@@ -1821,6 +1821,13 @@ pub(super) fn handle_ui(
             };
             let html_arg = args["html"].as_str().map(|s| s.to_string());
             let url_arg = args["url"].as_str().map(|s| s.to_string());
+            if url_arg.as_deref().is_some_and(|url| {
+                url::Url::parse(url).is_ok_and(|url| {
+                    url.scheme() == "tuic" && !matches!(url.host_str(), Some("open" | "edit"))
+                })
+            }) {
+                return serde_json::json!({"error": "ui tab cannot open tuic deep links. To register a directory, use repo action=add with path."});
+            }
             let html = match (&html_arg, &url_arg) {
                 (Some(h), None) => h.clone(),
                 (None, Some(_)) => String::new(), // URL mode — html is empty, frontend uses url
@@ -2145,6 +2152,37 @@ pub(super) async fn handle_repo_with_caller(
     };
     match action {
         "list" | "active" => handle_repo_listing(state, args),
+        "add" => {
+            let path = match require_path(args, action) {
+                Ok(path) => path,
+                Err(error) => return error,
+            };
+            if let Err(error) = validate_mcp_repo_path(&path) {
+                return error;
+            }
+            let state = Arc::clone(state);
+            run_blocking_handler(move || {
+                let register = || -> Result<serde_json::Value, String> {
+                    let path = std::fs::canonicalize(&path)
+                        .map_err(|error| format!("Cannot open repository directory: {error}"))?;
+                    if !path.is_dir() {
+                        return Err("Repository path must be a directory".into());
+                    }
+                    let path = tuic_core::path_spelling::portable_spelling(&path.to_string_lossy());
+                    let info = crate::git::get_repo_info_impl(&path);
+                    let changed = crate::config::register_repository(&info)?;
+                    if changed {
+                        state.notify_repositories_changed();
+                    }
+                    // Persistence is authoritative. A failed watcher cannot
+                    // undo registration; expose the degraded refresh explicitly.
+                    let warning = crate::repo_watcher::start_watching(&path, &state).err();
+                    Ok(serde_json::json!({"ok": true, "path": info.path, "name": info.name,
+                        "branch": info.branch, "is_git_repo": info.is_git_repo, "warning": warning}))
+                };
+                register().unwrap_or_else(|error| serde_json::json!({"error":error}))
+            }).await
+        }
         "status" => handle_github(state, args).await,
         "branch_integrations"
         | "branch_integration"
