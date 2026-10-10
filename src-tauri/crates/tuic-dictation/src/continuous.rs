@@ -2745,7 +2745,10 @@ mod tests {
             .expect("due")
             .expect("written");
 
-        assert_eq!(queue.written.borrow().as_slice(), [written("first second")]);
+        assert_eq!(
+            queue.written.borrow().as_slice(),
+            [written("first\nsecond")]
+        );
     }
 
     /// A held turn never reached the model, so a disarm discards it like one
