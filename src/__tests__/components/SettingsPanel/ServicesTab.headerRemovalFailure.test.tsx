@@ -43,6 +43,7 @@ it("preserves a configured upstream's header secret when removing its config fai
 	try {
 		await vi.advanceTimersByTimeAsync(0);
 		view.getByTitle("Remove").click();
+		await vi.dynamicImportSettled();
 		await vi.advanceTimersByTimeAsync(0);
 		expect(view.getByText("Error: Configuration write failed")).toBeTruthy();
 		expect(view.getByTitle("Edit")).toBeTruthy();
