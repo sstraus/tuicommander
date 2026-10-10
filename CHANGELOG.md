@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Preserve rejected-host diagnostics across HTTP response chunks.
+- Explain remote host DNS, connection, TLS, authentication, and rejected-name failures; suggest known Tailscale peer names and show retry delays without stale errors during connection attempts.
 - Add automation completion reconciliation, bounded final output and persisted maximum-duration enforcement, including blocked runs (#1616-1882).
 
 - Keep terminal scrollbar history marks visible without Ctrl+Cmd, clear timestamp peek on focus loss, and omit empty marks overlays (#1665-ce9b).

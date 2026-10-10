@@ -35,6 +35,58 @@ struct SelfNode {
     dns_name: String,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct PeerStatusJson {
+    backend_state: Option<String>,
+    peer: Option<std::collections::HashMap<String, PeerNode>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct PeerNode {
+    #[serde(default)]
+    host_name: String,
+    #[serde(default, rename = "DNSName")]
+    dns_name: String,
+}
+
+/// Match an advertised peer, never guess a tailnet suffix.
+fn peer_fqdn_from_status(bytes: &[u8], host: &str) -> Option<String> {
+    let status: PeerStatusJson = serde_json::from_slice(bytes).ok()?;
+    if status.backend_state.as_deref() != Some("Running") || host.contains('.') {
+        return None;
+    }
+    let peers = status.peer?;
+    let mut matches = peers.values().filter_map(|peer| {
+        let fqdn = strip_trailing_dot(&peer.dns_name);
+        ((peer.host_name.eq_ignore_ascii_case(host)
+            || fqdn
+                .split('.')
+                .next()
+                .is_some_and(|name| name.eq_ignore_ascii_case(host)))
+            && is_valid_fqdn(&fqdn)
+            && fqdn.ends_with(".ts.net"))
+        .then_some(fqdn)
+    });
+    let first = matches.next()?;
+    matches.next().is_none().then_some(first)
+}
+
+pub(crate) async fn peer_fqdn(host: &str) -> Option<String> {
+    // The CLI is optional advice: kill a hung lookup instead of holding up errors.
+    let mut command = tokio::process::Command::from(status_command()?);
+    command.kill_on_drop(true);
+    let output = tokio::time::timeout(std::time::Duration::from_secs(2), command.output())
+        .await
+        .ok()?
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    peer_fqdn_from_status(&output.stdout, host)
+}
+
 /// Find the Tailscale CLI binary path.
 pub(crate) fn find_binary() -> Option<PathBuf> {
     // Try PATH first (works on all platforms if installed properly)
@@ -75,27 +127,24 @@ pub(crate) fn find_binary() -> Option<PathBuf> {
 
 /// Detect Tailscale daemon state by running `tailscale status --json`.
 pub(crate) fn detect() -> TailscaleState {
-    let binary = match find_binary() {
-        Some(b) => b,
-        None => return TailscaleState::NotInstalled,
+    let Some(mut command) = status_command() else {
+        return TailscaleState::NotInstalled;
     };
-
-    let output = match std::process::Command::new(&binary)
-        .args(["status", "--json"])
-        .output()
-    {
-        Ok(o) => o,
-        Err(e) => {
-            tracing::warn!(source = "tailscale", "Failed to run tailscale CLI: {e}");
-            return TailscaleState::NotRunning;
+    match command.output() {
+        Ok(output) if output.status.success() => parse_status_json(&output.stdout),
+        Err(error) => {
+            tracing::warn!(source = "tailscale", "Failed to run tailscale CLI: {error}");
+            TailscaleState::NotRunning
         }
-    };
-
-    if !output.status.success() {
-        return TailscaleState::NotRunning;
+        _ => TailscaleState::NotRunning,
     }
+}
 
-    parse_status_json(&output.stdout)
+/// Detection and peer advice use the same CLI and status source.
+fn status_command() -> Option<std::process::Command> {
+    let mut command = std::process::Command::new(find_binary()?);
+    command.args(["status", "--json"]);
+    Some(command)
 }
 
 /// Parse the JSON output from `tailscale status --json`.
@@ -348,6 +397,28 @@ mod tests {
         "Version": "1.94.1",
         "BackendState": "Stopped"
     }"#;
+
+    #[test]
+    fn short_name_advice_uses_recorded_peer_not_local_tailnet_guess() {
+        // Recorded from tailscale status --json on 2026-10-10; only needed fields retained.
+        let bytes = include_bytes!("fixtures/tailscale-peer-status.json");
+        assert_eq!(
+            peer_fqdn_from_status(bytes, "mac-mint").as_deref(),
+            Some("mac-mint.tail911da.ts.net")
+        );
+        assert_eq!(
+            peer_fqdn_from_status(bytes, "MAC-MINT").as_deref(),
+            Some("mac-mint.tail911da.ts.net")
+        );
+        assert_eq!(peer_fqdn_from_status(bytes, "unknown-peer"), None);
+        assert_eq!(peer_fqdn_from_status(bytes, "mac-mint.example.net"), None);
+        let mut status: serde_json::Value = serde_json::from_slice(bytes).unwrap();
+        status["BackendState"] = "Stopped".into();
+        assert_eq!(
+            peer_fqdn_from_status(&serde_json::to_vec(&status).unwrap(), "mac-mint"),
+            None
+        );
+    }
 
     #[test]
     fn parse_status_running_with_https() {
