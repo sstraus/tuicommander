@@ -136,7 +136,7 @@ notification opens that session.
 ### Mobile Features
 
 - **Sessions list** — See all running agents with status (idle, busy, question, rate-limited, error)
-- **Session detail** — Live output streaming, quick-reply chips (Yes/No/Enter/Ctrl-C), text input
+- **Session detail** — Live output streaming, quick-reply chips (Yes/No/Enter/Ctrl-C), text input. The terminal keybar Ctrl button opens Ctrl+C, Ctrl+B, Ctrl+D and Ctrl+Enter. A choice sends once and closes; tap outside or press Escape to dismiss. Ctrl+C and Ctrl+D use danger colours. Ctrl+Enter submits the draft (Claude Code: modified Enter; Codex: Enter fallback).
 - **Files** — Browse a configured repository, view `.md` files as rendered Markdown or other text as plain text, and tap Edit to change and save source files up to 1 MB
 - **Question banner** — Instant notification when any agent needs input, with quick-reply buttons
 - **Activity feed** — Chronological event feed grouped by time

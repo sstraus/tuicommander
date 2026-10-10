@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Accept pasted images in AI Chat before ego connects, retain concurrent pastes while its first session opens, and share Finder/text clipboard rules with Ideas and terminal Compose (#1639-f474).
 - Add the `automations` MCP tool for definition management, with bound creator provenance and atomic pause/resume.
 ### Added
+
+- Mobile terminal Ctrl menu offers Ctrl+C, Ctrl+B, Ctrl+D and Ctrl+Enter from one keybar button. Ctrl+Enter uses the verified submit sequence for Claude Code and Codex.
 - Add the Rust foundation for Once automation schedules with IANA timezone validation, a single preview instant and durable occurrence deduplication (#1629-2262).
 
 ### Fixed

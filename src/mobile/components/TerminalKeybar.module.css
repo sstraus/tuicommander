@@ -1,3 +1,25 @@
+.root {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.ctrlMenu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 12px;
+  z-index: 10;
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  max-width: calc(100% - 24px);
+  max-height: 40vh;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-dropdown);
+}
+
 .bar {
   display: flex;
   gap: 6px;

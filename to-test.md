@@ -4879,3 +4879,5 @@ Needs an iPhone (iOS 16.4+, 18.4+ preferred), the desktop TUICommander running a
 - [ ] After Boss's next packaged `make build`, confirm the macOS bundle declares `LSMinimumSystemVersion` 12.0. Mermaid diagrams require system WebKit updated to Safari 17.4+; the OS version alone does not guarantee that update. No desktop instance was launched in this lane.
 
 - [ ] After Boss's next `make dev` restart or `make build`: copy and paste text in the desktop app with the arboard commands; confirm terminal copy still succeeds after an IPC await and macOS paste shows no system Paste pill. Rust changes require the restart to load (#1651-6cbe).
+
+- [ ] Mobile Ctrl menu (#1660-b7f6): on iPhone/iPad with the real keyboard open, open Ctrl, choose each key, dismiss outside, and check Ctrl+C/Ctrl+D danger colours. Ctrl+Enter submits with Claude Code CSI-u and Codex CR fallback. Desktop browser verification reserves keyboard space; real iOS keyboard remains to check.
