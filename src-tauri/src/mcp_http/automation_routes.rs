@@ -15,3 +15,6 @@ pub(super) async fn post_action(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, feature = "desktop"))]
+mod critic_tests;
