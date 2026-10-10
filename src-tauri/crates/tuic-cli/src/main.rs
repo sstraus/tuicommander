@@ -541,12 +541,15 @@ fn cmd_open(path: Option<String>, _wait: bool, goto: Option<String>) -> Result<(
                  For a shell there instead: tuic new {actual_path}"
             ));
         }
-        // A directory is a REPO, not a terminal: hand it to the app, which adds it
-        // to the sidebar if it is new (asking first) and activates it. Creating a
-        // PTY here instead — as this used to — left the sidebar untouched, which is
-        // never what `tuic .` means. Use `tuic new` when you want a shell.
-        open_deep_link(&format!("tuic://open-repo?path={}", urlencod(actual_path)))
-            .map_err(|e| e.to_string())?;
+        // The selected server owns registration. Dev builds and headless
+        // instances need no OS URL handler or connected desktop window.
+        let result = mcp::McpClient::connect()?.call(
+            "repo",
+            serde_json::json!({"action": "add", "path": actual_path}),
+        )?;
+        if let Some(warning) = result["warning"].as_str() {
+            eprintln!("warning: {warning}");
+        }
         eprintln!("Opening {actual_path}");
     } else {
         // Open file in editor via deep link

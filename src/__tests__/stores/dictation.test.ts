@@ -39,7 +39,12 @@ vi.mock("../../stores/toasts", () => ({
  * itself would prove only that the store said the right word to itself.
  */
 async function browserMode(
-	options: { armFails?: boolean; config?: unknown; handsFree?: (owner: string) => unknown[] } = {},
+	options: {
+		armFails?: boolean;
+		disarmFails?: boolean;
+		config?: unknown;
+		handsFree?: (owner: string) => unknown[];
+	} = {},
 ) {
 	const internals = (globalThis as Record<string, unknown>).__TAURI_INTERNALS__;
 	const realFetch = globalThis.fetch;
@@ -55,6 +60,19 @@ async function browserMode(
 		});
 		if (path.endsWith("/hands-free/arm") && options.armFails) {
 			return new Response("the terminal is gone", { status: 400 });
+		}
+		if (path.endsWith("/hands-free/disarm") && options.disarmFails) {
+			return new Response("disarm refused", { status: 500 });
+		}
+		if (path.endsWith("/hands-free/disarm")) {
+			return new Response(JSON.stringify({ status: { armed: false, phase: "disarmed" } }), {
+				headers: { "content-type": "application/json" },
+			});
+		}
+		if (/\/speech\/(pause|resume|status)$/.test(path)) {
+			return new Response(JSON.stringify({ paused: path.endsWith("/pause") }), {
+				headers: { "content-type": "application/json" },
+			});
 		}
 		const body =
 			path.endsWith("/dictation/hands-free") && handsFree.length > 0
@@ -78,6 +96,7 @@ async function browserMode(
 		store: module.dictationStore,
 		owner: module.browserAudioOwner,
 		fetched: (path: string) => calls.find((call) => call.path === path)?.body,
+		requested: (path: string) => calls.some((call) => call.path === path),
 		// Vitest numbers every mock call on one global counter, so these are
 		// comparable across the two mocks.
 		armCallOrder: () =>
@@ -1254,6 +1273,108 @@ describe("dictationStore", () => {
 			}
 		});
 
+		// Catches: iOS controls have no identity or cannot reach reply controls / conversation stop.
+		it("gives Now Playing an identity and routes its controls through browser dictation", async () => {
+			const handlers = new Map<MediaSessionAction, MediaSessionActionHandler | null>();
+			const media = {
+				metadata: null as MediaMetadata | null,
+				playbackState: "none" as MediaSessionPlaybackState,
+				setActionHandler: (action: MediaSessionAction, handler: MediaSessionActionHandler | null) =>
+					handlers.set(action, handler),
+			};
+			vi.stubGlobal(
+				"MediaMetadata",
+				class {
+					constructor(public fields: MediaMetadataInit) {}
+					get title() {
+						return this.fields.title;
+					}
+				},
+			);
+			Object.defineProperty(navigator, "mediaSession", { configurable: true, value: media });
+			const browser = await browserMode();
+			try {
+				await browser.store.armHandsFree("sess-1");
+				expect(media.metadata?.title).toBe("TUICommander hands-free");
+				expect(media.playbackState).toBe("playing");
+				for (const [action, path] of [
+					["pause", "/dictation/speech/pause"],
+					["play", "/dictation/speech/resume"],
+				] as const) {
+					expect(handlers.get(action)).toBeTypeOf("function");
+					await handlers.get(action)?.({ action });
+					expect(browser.requested(path)).toBe(true);
+					expect(media.playbackState).toBe(action === "pause" ? "paused" : "playing");
+					expect(stopBrowserVoice).not.toHaveBeenCalled();
+				}
+				await handlers.get("stop")?.({ action: "stop" });
+				expect(browser.requested("/dictation/hands-free/disarm")).toBe(true);
+				expect(stopBrowserVoice).toHaveBeenCalled();
+				expect(media.metadata).toBeNull();
+				expect(media.playbackState).toBe("none");
+				for (const action of ["play", "pause", "stop"] as const) expect(handlers.get(action)).toBeNull();
+			} finally {
+				await browser.store.disarmHandsFree();
+				browser.restore();
+				Reflect.deleteProperty(navigator, "mediaSession");
+				vi.unstubAllGlobals();
+			}
+		});
+
+		// Catches: a backend disarm leaves stale lock-screen handlers and this tab's mic open.
+		it("releases Now Playing and browser audio when a polled conversation ends", async () => {
+			const handlers = new Map<MediaSessionAction, MediaSessionActionHandler | null>();
+			const media = {
+				metadata: null,
+				playbackState: "none",
+				setActionHandler: (action: MediaSessionAction, handler: MediaSessionActionHandler | null) =>
+					handlers.set(action, handler),
+			};
+			Object.defineProperty(navigator, "mediaSession", { configurable: true, value: media });
+			const browser = await browserMode({ handsFree: () => [{ armed: false, phase: "disarmed" }] });
+			try {
+				await browser.store.armHandsFree("sess-1");
+				expect(handlers.get("stop")).toBeTypeOf("function");
+				await browser.store.refreshHandsFree();
+				expect(stopBrowserVoice).toHaveBeenCalledOnce();
+				expect(media.playbackState).toBe("none");
+				expect(media.metadata).toBeNull();
+				for (const action of ["play", "pause", "stop"] as const) expect(handlers.get(action)).toBeNull();
+			} finally {
+				await browser.store.disarmHandsFree();
+				browser.restore();
+				Reflect.deleteProperty(navigator, "mediaSession");
+			}
+		});
+
+		// Catches: a failed disarm keeps actionable lock-screen controls and the local microphone.
+		it("releases local Now Playing even when the disarm request fails", async () => {
+			const handlers = new Map<MediaSessionAction, MediaSessionActionHandler | null>();
+			const media = {
+				metadata: null,
+				playbackState: "none",
+				setActionHandler: (action: MediaSessionAction, handler: MediaSessionActionHandler | null) =>
+					handlers.set(action, handler),
+			};
+			Object.defineProperty(navigator, "mediaSession", { configurable: true, value: media });
+			const browser = await browserMode({ disarmFails: true });
+			const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+			try {
+				await browser.store.armHandsFree("sess-1");
+				await handlers.get("stop")?.({ action: "stop" });
+				expect(browser.store.state.handsFreeError).toContain("disarm refused");
+				expect(errors).toHaveBeenCalled();
+				expect(stopBrowserVoice).toHaveBeenCalledOnce();
+				expect(media.playbackState).toBe("none");
+				for (const action of ["play", "pause", "stop"] as const) expect(handlers.get(action)).toBeNull();
+			} finally {
+				await browser.store.disarmHandsFree();
+				errors.mockRestore();
+				browser.restore();
+				Reflect.deleteProperty(navigator, "mediaSession");
+			}
+		});
+
 		/**
 		 * The control for the pair above: the desktop never opens a socket, so
 		 * a browser transport that leaked into the desktop path — the way a
@@ -1271,6 +1392,29 @@ describe("dictationStore", () => {
 			await testInScopeAsync(async () => {
 				await store.armHandsFree("sess-1");
 				expect(connectBrowserVoice).not.toHaveBeenCalled();
+			});
+		});
+
+		// Catches: a late pre-disarm poll restores the ended conversation and its monitor.
+		it("ignores an armed status read started before disarming", async () => {
+			let answerOldPoll!: (status: HandsFreeStatus) => void;
+			const oldPoll = new Promise<HandsFreeStatus>((resolve) => {
+				answerOldPoll = resolve;
+			});
+			mockInvoke.mockImplementation((command: string) =>
+				command === "get_hands_free_status"
+					? oldPoll
+					: Promise.resolve(
+							command === "disarm_hands_free_dictation" ? { status: { armed: false, phase: "disarmed" } } : undefined,
+						),
+			);
+			await testInScopeAsync(async () => {
+				const refresh = store.refreshHandsFree();
+				await store.disarmHandsFree();
+				answerOldPoll({ armed: true, phase: "waiting" } as HandsFreeStatus);
+				await refresh;
+				expect(store.state.handsFree?.armed).toBe(false);
+				expect(store.state.handsFree?.phase).toBe("disarmed");
 			});
 		});
 

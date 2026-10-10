@@ -51,13 +51,39 @@ impl AutomationRuntime {
             } else {
                 return;
             }
+            let Some(state) = weak.upgrade() else { return };
+            let mut events = state.event_bus.subscribe();
+            drop(state);
             let mut timer = tokio::time::interval(Duration::from_secs(TICK_INTERVAL_SECS));
             timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
             loop {
-                timer.tick().await;
+                let scheduled_wake = tokio::select! {
+                    _ = timer.tick() => true,
+                    event = events.recv() => {
+                        match event {
+                            Ok(crate::state::AppEvent::ProgressRecorded { .. }
+                                | crate::state::AppEvent::PtyExit { .. }
+                                | crate::state::AppEvent::SessionClosed { .. }
+                                | crate::state::AppEvent::SessionStateChanged { .. })
+                                | Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => false,
+                            Err(tokio::sync::broadcast::error::RecvError::Closed) => return,
+                            _ => continue,
+                        }
+                    }
+                };
                 let Some(state) = weak.upgrade() else {
                     return;
                 };
+                if let Err(error) = super::completion::reconcile(
+                    owner.store(),
+                    &super::completion::NativeCompletion(&state),
+                    chrono::Utc::now().timestamp_millis(),
+                ) {
+                    tracing::warn!(source="automations", %error, "Automation reconciliation failed");
+                }
+                if !scheduled_wake {
+                    continue;
+                }
                 let dispatcher = Arc::new(Dispatcher {
                     definitions: DefinitionStore::at_path(definitions.clone()),
                     runs: owner.store().clone(),
@@ -91,13 +117,6 @@ impl AutomationRuntime {
     }
 
     /// Step 8 exposes this same owner-guarded boundary through HTTP and IPC.
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "Public automation transports are implemented in story 1617"
-        )
-    )]
     pub(crate) async fn run_now(state: &Arc<AppState>, id: &str) -> Result<AutomationRun, String> {
         let runs = state
             .automation_runtime

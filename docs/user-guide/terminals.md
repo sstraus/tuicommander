@@ -2,10 +2,6 @@
 
 Remote terminals replay their current viewport when attached or reconnected. A stream failure or stalled initial replay shows a persistent error toast; the client retries without requiring new terminal output. See [Remote Access](remote-access.md).
 
-## Scrollbar History Marks
-
-**Show scrollbar marks** in Settings > Terminal controls command-boundary and green submitted-prompt ticks. They remain visible without Ctrl+Cmd. Hold Ctrl+Cmd to peek at timestamp text; releasing the keys or leaving the terminal/window hides that text. Search-match ticks remain visible independently of the history setting. With no grid history the scrollbar stays hidden; with no visible metadata or search hits, only its thumb is shown.
-
 ## Tablet Keyboard
 
 Tap the terminal to focus its keyboard input. Touch and mouse input use the same field, including soft-keyboard text entry and repeated deletion. Primary mouse presses keep focus on that input without a temporary canvas focus change.
@@ -264,7 +260,7 @@ Also accessible via the "Search Terminals" command in the palette.
 
 - **Copy:** Select text in the terminal, then `Cmd+C`. A "Copied to clipboard" confirmation appears in the status bar. Multi-line Claude messages paste as clean text: the repeated `▎` visual gutter is removed while bullets, numbering, and indentation are preserved. Inside such a quote, rows that Claude broke only to fit the terminal width are joined back into one paragraph, so pasting into Slack or an email keeps whole sentences. Blank rows, list items and deeper indents keep their own line, and a quote that never reaches the terminal edge is copied exactly as shown.
   Claude prompt selections also remove the first `❯ ` marker and the two-column continuation margin. Width-supported wraps join, while short typed lines and additional content indentation remain. A glyph pasted inside the prompt remains part of the text. Composer cleanup applies only when the selection starts at column zero of the first composer row. Selecting body text or a VT soft-wrap continuation preserves literal markers and indentation.
-- **Paste:** `Cmd+V` writes clipboard content to the active terminal
+- **Paste:** `Cmd+V` writes clipboard content to the active terminal. Text takes priority when a copied Chat selection or other rich content also includes an image. Screenshot-only pastes and copied image filenames from Finder still send Ctrl+V so terminal agents can attach the image.
 
 ### Copy on Select
 

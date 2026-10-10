@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "website/**"
+      - "src/community.ts"
       - "docs/**"
       - ".github/workflows/website.yml"
   workflow_dispatch:

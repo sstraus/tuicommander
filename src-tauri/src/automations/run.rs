@@ -77,6 +77,10 @@ pub struct AutomationRun {
     pub created_ms: i64,
     pub updated_ms: i64,
     pub finished_ms: Option<i64>,
+    #[serde(default)]
+    pub started_ms: Option<i64>,
+    #[serde(default)]
+    pub deadline_ms: Option<i64>,
     pub task_id: Option<String>,
     pub session_id: Option<String>,
     pub workspace: Option<String>,
@@ -123,9 +127,11 @@ pub struct NotificationDelivery {
     pub settled_ms: Option<i64>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 pub enum SummaryWindow {
+    #[serde(rename = "24h")]
     Day,
+    #[serde(rename = "7d")]
     Week,
 }
 

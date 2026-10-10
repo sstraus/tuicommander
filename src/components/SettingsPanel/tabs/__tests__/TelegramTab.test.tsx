@@ -11,6 +11,7 @@ const initial = {
 	registered_agent_name: "Writer",
 	chats: ["123"],
 	connected: true,
+	polling_owner: "this_app",
 	last_error: null,
 	last_message_time: null,
 };
@@ -67,7 +68,34 @@ describe("Telegram setup", () => {
 	it("shows the explicit unregistered status", async () => {
 		invoke.mockResolvedValue({ ...initial, registered_agent_name: null });
 		render(() => <TelegramTab />);
-		await screen.findByText("nessun agent registrato");
+		await screen.findByText("No agent registered");
+		expect(screen.getByText(/Telegram MCP tool.*register/)).toBeTruthy();
+	});
+	// Catches: the connected owner is hidden, or pairing is offered with no live poller.
+	it.each([
+		["this_app", true, "Connected (this app)"],
+		["tuic_remote", true, "Connected (tuic-remote)"],
+		[null, false, "No poller connected. Check the bot token and enable Telegram in this app or tuic-remote."],
+	] as const)("identifies owner %s and gates pairing", async (polling_owner, connected, status) => {
+		invoke.mockResolvedValue({ ...initial, polling_owner, connected });
+		render(() => <TelegramTab />);
+		expect((await screen.findByRole("status")).textContent).toBe(status);
+		expect(screen.getByText("Link chat").hasAttribute("disabled")).toBe(!connected);
+		if (!connected) expect(screen.getByText(/Connect a poller before linking/)).toBeTruthy();
+	});
+	// Catches: setup failures leave an endless waiting label with pairing still enabled.
+	it.each([
+		[{ enabled: false }, "Disabled — enable Telegram to start polling."],
+		[{ token_set: false }, "No bot token — save and check a token first."],
+		[
+			{ last_error: "telegram_owner_conflict" },
+			"Polling stopped or retrying. Resolve the error below, then disable and enable Telegram.",
+		],
+	])("explains inactive setup %j", async (change, status) => {
+		invoke.mockResolvedValue({ ...initial, connected: false, polling_owner: null, ...change });
+		render(() => <TelegramTab />);
+		expect((await screen.findByRole("status")).textContent).toBe(status);
+		expect(screen.getByText("Link chat").hasAttribute("disabled")).toBe(true);
 	});
 	// Catches: a failed getMe appears successful or drops the safe error category.
 	it("shows typed setup errors", async () => {

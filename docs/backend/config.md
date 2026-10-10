@@ -617,6 +617,14 @@ Default values applied to new repositories when no per-repo override exists.
 
 ### Repositories (`repositories.json`)
 
+Explicit server registration (`repo action=add`, also used by CLI directory opens)
+uses a strict locked read-modify-write. It adds only the canonical repository row,
+its initial workspace and order entry, and selects it. Existing rows and unrelated
+configuration survive repeated calls. Corrupt configuration aborts registration
+and is moved to the existing `repositories.corrupt-<uuid>` recovery backup. Successful changes emit
+`repositories-changed` to both transports.
+
+
 **Type:** `serde_json::Value` (flexible persisted JSON, shape defined by frontend)
 
 Stored in the shared config directory like every other file (see Config
@@ -1300,3 +1308,31 @@ Automation definitions may contain `created_by_session`, the host-issued identit
 of their creating agent. Older definitions omit it. Shared definition actions
 ignore client-supplied creator provenance on creation and preserve the original
 value on update. Pause and resume change only `enabled` under the definition lock.
+
+### Automation transport ownership
+
+HTTP `/automations/action` and IPC `automation_action` use the instance-scoped
+`automations.json` and `automation_runs.sqlite3` through one Rust API. Per-id
+create/update/delete and enabled-only updates use the existing definition lock;
+run snapshots remain immutable across later edits and definition deletion.
+A reader can inspect history without owning execution. Run Now requires this
+process's already-acquired runtime owner and never acquires a second owner or
+forwards execution. The global concurrency default remains two. Summaries use
+elapsed UTC `24h`/`7d` windows; previews and next-run values use stored IANA zones
+and the durable scheduled cursor. No new configuration setting is required.
+
+### Automation completion and deadlines
+
+Runs persist their reservation deadline and dispatch start in the ledger. The
+30-second runtime wake and PTY/progress events reconcile task, session and durable
+progress records, including after broadcast lag. Idle alone leaves a run active;
+reported completion or a known zero process exit confirms success. Failed tasks
+and nonzero exits fail the run; missing or unverifiable completion becomes
+`unknown`. A task completion with no known exit code does not prove success.
+
+`needs_you` stays open and counts toward overlap, capacity and maximum duration.
+The deadline includes dispatch and precheck time. Expiry stops only the session
+bound to that run. Final output is bounded to 256 KiB; final states reject late
+or duplicate evidence. Boot preserves final history and interrupts open runs
+without retry. `automation-run-changed` is dual-emitted to desktop and SSE with
+an identical `{ "run": ... }` payload, including failure and needs-you transitions.

@@ -17,6 +17,22 @@ optional `audio-output` feature. The output-device selection is unchanged.
 
 Local voice-to-text using Whisper with Metal acceleration on macOS. Push-to-talk workflow with streaming partial results: hold hotkey to record, see partial transcriptions in real-time, release to finalize.
 
+## Diagnose speech that also appears in the mobile composer
+
+Hands-free uses `pty::write_voice_turn` for its bound session. The mobile
+`input_line` feed observes that terminal prompt; it does not choose the voice
+destination. Correlate `Hands-free turn accepted` and `Hands-free turn typed now`
+with the session ID before treating a mobile draft as a delivery failure. The
+typed log alone does not prove that the agent accepted the submission.
+
+Check the mobile client build as well as `/api/version`. The mobile
+`Update available: <client> → <server>` log identifies an older loaded bundle.
+Before the #1662 fix, an empty composer accepted any nonempty PTY input as an
+echo, so a voice paste could remain as a local draft after terminal delivery.
+Current clients accept only explicitly requested completion/history responses.
+Save any local draft, then use the mobile update action to load the current
+bundle. A desktop rebuild does not replace JavaScript already loaded on a phone.
+
 ## Module Structure
 
 | File | Purpose |
@@ -441,6 +457,28 @@ from the conversation's side — a bounded capture queue, a broadcast channel fo
 playback, an alive flag, and the deadline of whatever is currently speaking.
 `GET /dictation/hands-free/audio?owner=<id>` (`mcp_http/dictation_routes.rs`)
 registers one and serves it; the frontend half is `src/utils/browserVoice.ts`.
+
+**iPhone Now Playing.** The browser keeps `navigator.audioSession.type` at
+`play-and-record` and resumes its capture context in the arming gesture, retaining
+simultaneous microphone and reply playback. WebKit's
+[`AudioContext::isNowPlayingEligible`](https://github.com/WebKit/WebKit/blob/main/Source/WebCore/Modules/webaudio/AudioContext.cpp)
+checks a connected destination and the explicit `playback` or `play-and-record`
+category. This explains eligibility even before a reply; there is no HTML audio
+element in this path. Boss observed music controls on iPhone; attribution to this
+WebKit path is source-based inference until the device build is inspected.
+Neither the [Audio Session](https://www.w3.org/TR/audio-session/) nor
+[Media Session](https://www.w3.org/TR/mediasession/) web API exposes a switch to
+hide Now Playing while keeping these audio semantics. Changing categories while
+listening is not a proven safe fix for reply volume or background behavior.
+
+Instead the dictation store uses Media Session metadata **TUICommander hands-free**
+and the [custom Now Playing actions documented by Apple](https://developer.apple.com/videos/play/wwdc2021/10189/).
+Play/Pause use the pill's reply resume/pause commands, leaving capture active;
+Stop disarms the conversation, stopping capture and dropping replies. Backend
+speech state updates the displayed playback state. Ending hands-free clears the
+metadata, handlers and explicit playback state; iOS decides when its card disappears.
+Real iPhone lock-screen rendering, action delivery and media volume still need
+the device check in `to-test.md`.
 
 **A link outlives its socket, and that is the whole design.** The socket handler
 owns the `Arc` it registered and drops it on close, but the conversation holds

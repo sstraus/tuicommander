@@ -771,6 +771,9 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 		map: (args, p) => ({ method: "POST", path: `/progress/list?path=${p("project")}`, body: args.input }),
 	},
 	progress_projects: { map: () => ({ method: "GET", path: "/progress/projects" }) },
+	automation_action: {
+		map: (args) => ({ method: "POST", path: "/automations/action", body: { input: args.input } }),
+	},
 	story_action_command: {
 		map: (args, p) => ({
 			method: "POST",

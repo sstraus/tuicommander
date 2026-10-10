@@ -1,3 +1,17 @@
+## iPhone hands-free Now Playing (1670-fdc8)
+
+- [HUMAN] After landing and reloading the iPhone PWA, arm hands-free and lock the phone. Confirm the title is **TUICommander hands-free**; Pause holds the spoken reply and Play resumes at its position while the microphone stays active. Stop (if iOS exposes it) ends capture and drops queued replies. Also stop from the PWA and confirm controls no longer act on the ended session. Check a reply still uses media volume with the microphone open, then re-arm. Browser boundary tests cover registration, HTTP action routing and cleanup; physical iPhone audio/lock-screen behavior is unverified. No Rust change or backend restart is required.
+
+## Automations HTTP fallback (1617-290d) — Rust restart required
+
+- [ ] After Boss's manual `make dev` restart or `make build`, confirm `POST /automations/missing` returns HTTP 404 and JSON `{"error":"no such endpoint: /automations/missing"}`. The critic regression exercises the router; Rust does not hot-reload. No desktop instance was restarted by this peer.
+
+## Saved AI Chat tabs (1628-4459)
+
+- [ ] Check saved-tab connecting, failure/Retry, and pending model/mode rows at the normal panel width. An isolated worktree Vite preview reached the saved-tab click with `navigator.webdriver` undefined; the mandatory stealth wrapper then stalled on the shared browser attachment lock and timed out before producing a screenshot. A subsequent bundled headless Chrome capture also timed out after 120 seconds without producing an image (the preview port was still occupied). Visual verification is owed. No desktop instance was launched.
+## Terminal paste text precedence
+
+- [ ] After loading the updated frontend, copy a text line by selection in terminal Chat and paste into Claude Code; confirm text appears rather than an image attachment. Capture the paste event's MIME types to identify the original WebView clipboard payload. Also check a screenshot-only paste and a Finder image copy still attach. Component tests cover the mixed text/image precedence; this peer did not access Boss's running WebView or clipboard.
 ## Scrollbar history marks (1665-ce9b)
 
 - [x] Command and user-prompt ticks remain visible without Ctrl+Cmd; disabling history marks retains search ticks; missing metadata creates no empty overlay, and zero history hides the scrollbar. _(verified: src/components/Terminal/CanvasTerminal.tsx:881 setting-only gate; real component integration tests, 99 targeted tests and 8749 full rb tests passed.)_
@@ -75,6 +89,8 @@
 
 - [ ] After Boss chooses to rebuild/restart the backend, launch a new managed peer and open **Inspect Launch Instructions…** from its terminal context menu. Confirm the final brief includes peer context, explicit system instruction sections/file snapshots and served MCP initialization sections have sources/bytes, and secrets are redacted. A shell-launched or restored session must show its launch as unavailable while retaining any MCP initialization instructions actually served; autonomous agent file reads must remain unobservable. The standalone real-component preview was visually checked; live desktop/backend integration waits for the authorized restart. No second desktop instance was launched.
 # To Test
+
+- [ ] #1669-bca7: On the affected phone, save any draft and use the mobile update action, then dictate to the coordinator with an empty mobile composer. Confirm the turn reaches the terminal once and leaves the mobile composer empty. Live logs showed an older mobile client (`c0cb1d193`) during the report; its exact device identity and cached/network version response could not be inspected. The current served bundle already includes #1662; no Rust change or app restart is required by this investigation.
 
 ## Hands-free phrase boundaries (1656-eb5e) — Rust restart required
 
@@ -4917,3 +4933,13 @@ Needs an iPhone (iOS 16.4+, 18.4+ preferred), the desktop TUICommander running a
 - [ ] Mobile Ctrl menu (#1660-b7f6): on iPhone/iPad with the real keyboard open, open Ctrl, choose each key, dismiss outside, and check Ctrl+C/Ctrl+D danger colours. Ctrl+Enter submits with Claude CSI-u and ego LF; Codex/OpenCode/Goose/Grok/pi insert a newline. Other mappings and uncertainty are recorded in docs/evidence/ctrl-menu-1660/README.md. Desktop browser verification reserves keyboard space; real iOS keyboard remains to check.
 
 - [ ] Plugin development guide (#1661-4ea5): after Boss restarts `make dev` or rebuilds release, call `plugin_dev_guide` and confirm the source-checked inventories and Core-rendered plugin UX section are present. The compiled Rust guide does not hot-reload.
+- [ ] After Boss restarts `make dev` (or rebuilds release), use the rebuilt CLI to open a persistent directory and verify its sidebar row becomes active; repeat without losing tabs. Verify MCP `repo add` works and `ui tab` rejects `tuic://open-repo` with an actionable error (#1668-9b59). Rust and the installed CLI require rebuild/restart; the current running app does not load these edits.
+- [ ] After Boss restarts `make dev` (or rebuilds release), verify the Automations dialog can save, pause/resume, preview and inspect history over IPC and browser HTTP. Rust does not hot-reload. Use an isolated headless instance and throwaway definition for HTTP Run Now; phase 1 dispatches Once only (#1617-290d).
+- [ ] After a manual Rust rebuild/restart: verify a failed short-name remote host names DNS resolution, suggests its advertised Tailscale FQDN, and shows a retry delay without a simultaneous Connecting/error state. Verify HTTP 403 Untrusted Host says the daemon rejected the name. Backend and renderer regressions cover these paths; desktop verification remains pending because this task forbids launching or accessing the live app. Two isolated headless Chrome screenshot attempts hung (the second stopped at its 45s outer limit).
+
+- [ ] After a manual `make dev` restart or `make build`, verify a remote daemon returning a chunked HTTP 403 Untrusted Host reports the rejected host name instead of a permissions error. Automated regression covers the split response.
+- [ ] Automations completion (#1616-1882): after Boss restarts `make dev` or rebuilds release, verify a Once run reports done/failed/needs-you, retains bounded output, and a blocked run expires without stopping another terminal. A stop failure must leave that run open while other runs still expire; the critic regression covers this case. Rust does not hot-reload; this peer did not launch or restart desktop TUIC.
+- [ ] After rebuilding/restarting TUIC, open `https://tuicommander.com/blog/claude-cache-tiers.html` with MCP `ui action=tab`; confirm the page renders and localhost dashboards and asset previews still load. CSP config is embedded at build time; no desktop instance was launched for this change.
+- [ ] Telegram desktop owner: after a manual `make dev` restart or `make build`, enable a checked bot token with no tuic-remote running; confirm Connected (this app), link a private chat, and ask an agent to call Telegram MCP `register`. Start tuic-remote first in a separate check; confirm the desktop reports Connected (tuic-remote) and leaves its registration intact. Close the owner and confirm the standby takes over. Rust changes require restart; no desktop build was launched by the managed peer.
+- [ ] After rebuilding/restarting `tuic-remote`, start it before tailscaled, then verify its FQDN `/health` changes from 403 to 200 within 30.5 seconds plus scheduler delay after tailscaled becomes ready, provided detection completes within its 500 ms budget; verify stop/rename removes the former FQDN. Rust changes require a manual restart to load; coordinator owns mac-mint deployment.
+- [ ] Discord community links: Help → Resources → Discord Community opens TUICommander & Co; website footers and README badge use the permanent invite, with bugs directed to GitHub issues.

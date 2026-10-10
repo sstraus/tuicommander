@@ -42,6 +42,7 @@ pub(crate) trait DispatchEffects: Send + Sync {
         request: LaunchRequest,
     ) -> impl Future<Output = Result<LaunchBinding, String>> + Send;
     fn stop(&self, binding: &LaunchBinding) -> Result<(), String>;
+    fn publish(&self, _run: &AutomationRun) {}
 }
 
 pub(crate) struct Dispatcher<E> {
@@ -81,7 +82,7 @@ impl<E: DispatchEffects> Dispatcher<E> {
             return Ok(());
         };
         if let Err(error) = self.dispatch_claimed(&run).await {
-            self.runs.transition(
+            let saved = self.runs.transition(
                 id,
                 RunStatus::Failed,
                 RunDetails {
@@ -90,6 +91,7 @@ impl<E: DispatchEffects> Dispatcher<E> {
                 },
                 now_ms(),
             )?;
+            self.effects.publish(&saved);
         }
         Ok(())
     }
@@ -122,7 +124,7 @@ impl<E: DispatchEffects> Dispatcher<E> {
         )
         .await;
         let proceed = outcome.proceeds();
-        self.runs.transition(
+        let saved = self.runs.transition(
             &run.id,
             if proceed {
                 RunStatus::Prechecking
@@ -136,6 +138,7 @@ impl<E: DispatchEffects> Dispatcher<E> {
             now_ms(),
         )?;
         if !proceed {
+            self.effects.publish(&saved);
             return Ok(());
         }
         self.require_current(run)?;
@@ -166,6 +169,9 @@ impl<E: DispatchEffects> Dispatcher<E> {
         {
             self.effects.stop(&binding)?;
             return Err("Automation stopped before launch binding; owned child terminated".into());
+        }
+        if let Ok(saved) = bound {
+            self.effects.publish(&saved);
         }
         Ok(())
     }

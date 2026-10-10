@@ -6,11 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Name iPhone Now Playing controls “TUICommander hands-free”; Play/Pause control spoken replies and Stop ends the conversation. Release controls when hands-free ends (#1670-fdc8).
+
+- Register directories from `tuic` through the running server; add MCP `repo add` and reject unsupported `ui tab` deep links instead of reporting silent success (#1668-9b59).
+- Expose matching automation IPC/HTTP actions for definitions, pause/resume, Once Run Now, retained history, schedule previews/presets and UTC summaries (#1617-290d).
+- Preserve rejected-host diagnostics across HTTP response chunks.
+- Explain remote host DNS, connection, TLS, authentication, and rejected-name failures; suggest known Tailscale peer names and show retry delays without stale errors during connection attempts.
+- Add automation completion reconciliation, bounded final output and persisted maximum-duration enforcement, including blocked runs (#1616-1882).
+
 - Keep terminal scrollbar history marks visible without Ctrl+Cmd, clear timestamp peek on focus loss, and omit empty marks overlays (#1665-ce9b).
+- Start Telegram polling in the desktop app through the shared owner lock, identify the connected owner in Settings, and gate chat pairing on connectivity.
 
 - Widen the Activity Dashboard popup by 20%, while keeping it within small windows (#1664-f4ab).
 
-- Add Spoken replies to mobile hands-free and Settings; muting keeps dictation active, and Edge HTTP 401/403 stops repeat requests for five minutes with one text outage notice (#1659-f3cc).
+- Keep the mobile Spoken replies toggle in Settings, without a duplicate row on the session screen; muting keeps dictation active, and Edge HTTP 401/403 stops repeat requests for five minutes with one text outage notice (#1659-f3cc).
 - Give mobile toolbar keys enabled primary text and highlight Ctrl while its menu is open (#1663-8c02).
 
 - Use the terminal composer pin and play icon buttons in desktop AI Chat, with named Queue and parked-draft states (#1636-0d08).
@@ -25,6 +34,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Add the Rust foundation for Once automation schedules with IANA timezone validation, a single preview instant and durable occurrence deduplication (#1629-2262).
 
 ### Fixed
+- Attach saved AI Chat tabs when selected, show connection failures with Retry and pending model controls, and name tabs from conversation titles or prompts (#1628-4459).
+
+- Keep enforcing other automation runs' deadlines when stopping one owned process fails (#1616-1882).
+- Restore external URL tabs by removing the restrictive `frame-src` CSP so frames inherit the permissive `default-src`.
+- Refresh daemon Tailscale status after startup so a reboot before tailscaled is ready does not leave its MagicDNS name rejected until restart.
+- Paste text into terminals when rich clipboard content also contains an image; keep screenshot and Finder image attachments.
 
 - Keep hands-free PTY echoes out of the mobile composer, including delayed echoes after typing or reconnecting; preserve explicit Tab completion and editable history recall (#1662-c549).
 - Keep mobile Claude tool-call text and wrapped continuations stationary while its status dot pulses or turns green (#1654-a3d5).

@@ -43,8 +43,8 @@ export interface ScrollbarMarksInput {
 	/** Pixel height of the scrollbar track. */
 	trackH: number;
 	/**
-	 * Whether to draw the history markers, controlled by `showScrollbarMarks`.
-	 * Independent of the Ctrl+Cmd timestamp overlay.
+	 * Whether to draw the history markers. False either because the block
+	 * overlay is not active or because the user turned `showScrollbarMarks` off.
 	 */
 	showBlocks: boolean;
 }
