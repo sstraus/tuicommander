@@ -1,6 +1,6 @@
 ## Mobile hands-free composer ownership (1662-c549)
 
-- [ ] After loading the updated PWA frontend, dictate during a busy Claude turn, including after a dialog/draft hold and while interrupting speech. Confirm the PTY queues the phrase once and the mobile composer keeps only local typing. Toggle spoken-reply mute mid-phrase and confirm the same behavior. Real microphone, speaker, and Safari PWA timing need a device check; component tests cover unsolicited, delayed, and reconnect input echoes plus keyboard/keybar Tab. No Rust production change or backend restart is needed for this fix.
+- [ ] After loading the updated PWA frontend, dictate during a busy Claude turn, including after a dialog/draft hold and while interrupting speech. Confirm the PTY queues the phrase once and the mobile composer keeps only local typing. Toggle spoken-reply mute mid-phrase and confirm the same behavior. Real microphone, speaker, and Safari PWA timing need a device check; component tests cover unsolicited, delayed, and reconnect input echoes plus keyboard/keybar Tab and editable Up/Down history recall. No Rust production change or backend restart is needed for this fix.
 
 ## Mobile Claude dot pulse (1654-a3d5)
 

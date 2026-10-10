@@ -4,6 +4,7 @@ import { appLogger } from "../../stores/appLogger";
 import { toastsStore } from "../../stores/toasts";
 import { rpc } from "../../transport";
 import { retryWrite } from "../utils/retryWrite";
+import type { ComposerInputKey } from "./syncGuards";
 import styles from "./TerminalKeybar.module.css";
 
 interface TerminalKeybarProps {
@@ -17,8 +18,8 @@ interface TerminalKeybarProps {
 	onCommandWidgetOpen?: () => void;
 	/** Insert "/" at the composer selection through its normal input path. */
 	onSlashRequest?: () => void;
-	/** Request completion through the local composer's input ownership. */
-	onTabRequest?: () => void;
+	/** Request completion/history through the local composer's input ownership. */
+	onInputKeyRequest?: (key: ComposerInputKey) => void;
 }
 
 interface KeyDef {
@@ -182,7 +183,12 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
 							class={styles.key}
 							classList={{ [styles.danger]: !!k.danger }}
 							disabled={props.sessionExists === false}
-							onClick={() => (k.seq === "\t" && props.onTabRequest ? props.onTabRequest() : send(k.seq))}
+							onClick={() => {
+								const key =
+									k.seq === "\t" ? "Tab" : k.seq === "\x1b[A" ? "ArrowUp" : k.seq === "\x1b[B" ? "ArrowDown" : null;
+								if (key && props.onInputKeyRequest) props.onInputKeyRequest(key);
+								else void send(k.seq);
+							}}
 						>
 							{k.label}
 						</button>

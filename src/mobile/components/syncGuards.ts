@@ -1,9 +1,11 @@
+/** PTY keys whose response the mobile composer explicitly owns. */
+export type ComposerInputKey = "Tab" | "ArrowUp" | "ArrowDown";
+
 // PWA input sync helpers. The PWA textarea is the source of truth for user
-// input; the PTY is a write-only sink that receives deltas. The ONLY case
-// where we accept data back from the PTY into the textarea is a strict
-// extension of a nonempty draft we've sent (tab completion / autocomplete) — everything
-// else (prompt redraws, lagging echoes, history nav replacing typed text)
-// is ignored.
+// input; the PTY receives deltas. CommandInput only imports the response to
+// an explicit completion/history request. Completions must strictly extend a
+// nonempty local draft; history requests can replace it. Unsolicited input
+// never creates or extends a local draft.
 
 /** Window after Enter during which all PTY input-line updates are ignored.
  *  Prevents a lagging echo of the just-sent command from flashing back into

@@ -9,7 +9,7 @@ import { retryWrite } from "../utils/retryWrite";
 import { ChoicePromptOverlay } from "./ChoicePromptOverlay";
 import styles from "./CommandInput.module.css";
 import { SlashMenuOverlay } from "./SlashMenuOverlay";
-import { computeInputDelta, isPostSendGuardActive, isSupersetEcho } from "./syncGuards";
+import { type ComposerInputKey, computeInputDelta, isPostSendGuardActive, isSupersetEcho } from "./syncGuards";
 
 interface CommandInputProps {
 	sessionId: string;
@@ -31,8 +31,8 @@ interface CommandInputProps {
 	sessionExists?: boolean;
 	/** Registers character insertion through the same path as composer typing. */
 	onRegisterInsertText?: (fn: (text: string) => void) => void;
-	/** Routes keybar Tab through the same completion request as keyboard Tab. */
-	onRegisterTab?: (fn: () => void) => void;
+	/** Routes keybar completion/history through the composer input request. */
+	onRegisterInputKey?: (fn: (key: ComposerInputKey) => void) => void;
 }
 
 export function CommandInput(props: CommandInputProps) {
@@ -48,10 +48,10 @@ export function CommandInput(props: CommandInputProps) {
 	});
 	let textareaEl: HTMLTextAreaElement | undefined;
 	let fileInput: HTMLInputElement | undefined;
-	// What we last sent to PTY — used to compute deltas and to gate which
-	// PTY echoes we accept (only strict extensions — see sync effect below).
+	// The local draft baseline, including explicitly requested PTY completions
+	// and history replacements. Every edit computes its delta from this text.
 	let syncedText = "";
-	let completionRequested = false;
+	let inputRequest: "completion" | "history" | null = null;
 	// Timestamp of the last Enter (send()). Within POST_SEND_GUARD_MS, all
 	// incoming ptyInputLine updates are ignored to prevent a lagging echo of
 	// the just-sent command from flashing back into the cleared textarea
@@ -76,17 +76,20 @@ export function CommandInput(props: CommandInputProps) {
 	//   1. Post-send guard — within POST_SEND_GUARD_MS of Enter, ignore every
 	//      PTY echo (suppresses the ghost flash of the just-sent command).
 	//   2. Strict-extension rule — outside the guard, accept a PTY update
-	//      only after Tab, if it extends a nonempty syncedText.
+	//      only after Tab, if it extends a nonempty syncedText. Explicit
+	//      Up/Down requests instead accept one history replacement, including empty.
 	// Everything else (prompt redraws, lagging echoes over slow links,
-	// history-nav replacements, automated voice pastes) is ignored so the
+	// unsolicited history replacements, automated voice pastes) is ignored so the
 	// textarea can't be clobbered or resurrect a command already sent elsewhere.
 	createEffect(() => {
 		if (atomicReply()) return;
 		const text = props.ptyInputLine ?? "";
-		if (!completionRequested) return;
-		if (isPostSendGuardActive(Date.now(), lastSendAt)) return;
-		if (!isSupersetEcho(text, syncedText)) return;
-		completionRequested = false;
+		if (!inputRequest || props.ptyInputLine == null) return;
+		if (inputRequest === "completion") {
+			if (isPostSendGuardActive(Date.now(), lastSendAt)) return;
+			if (!isSupersetEcho(text, syncedText)) return;
+		}
+		inputRequest = null;
 		syncedText = text;
 		setValue(text);
 		if (textareaEl) {
@@ -112,7 +115,7 @@ export function CommandInput(props: CommandInputProps) {
 	 *  backspaces only the divergent tail instead of nuking and retyping the
 	 *  whole line, which previously caused a keystroke storm and visible mess. */
 	function syncDelta(newText: string) {
-		completionRequested = false;
+		inputRequest = null;
 		if (atomicReply() || props.sessionExists === false) return;
 		const delta = computeInputDelta(syncedText, newText);
 		if (delta) writePty(delta);
@@ -183,13 +186,13 @@ export function CommandInput(props: CommandInputProps) {
 
 	createEffect(() => {
 		if (textareaEl) props.onRegisterInsertText?.(insertText);
-		props.onRegisterTab?.(requestCompletion);
+		props.onRegisterInputKey?.(requestInputKey);
 	});
 
-	function requestCompletion() {
+	function requestInputKey(key: ComposerInputKey) {
 		if (atomicReply() || props.sessionExists === false) return;
-		completionRequested = syncedText.length > 0;
-		writePty("\t");
+		inputRequest = key === "Tab" ? (syncedText.length > 0 ? "completion" : null) : "history";
+		writePty(key === "Tab" ? "\t" : key === "ArrowUp" ? "\x1b[A" : "\x1b[B");
 	}
 
 	async function send() {
@@ -243,7 +246,7 @@ export function CommandInput(props: CommandInputProps) {
 		}
 
 		lastSendAt = Date.now();
-		completionRequested = false;
+		inputRequest = null;
 		syncedText = "";
 		setValue("");
 		if (textareaEl) {
@@ -278,7 +281,7 @@ export function CommandInput(props: CommandInputProps) {
 		}
 		if (e.key === "Tab") {
 			e.preventDefault();
-			requestCompletion();
+			requestInputKey("Tab");
 			return;
 		}
 		if (e.key === "Enter" && !e.shiftKey) {
@@ -286,7 +289,7 @@ export function CommandInput(props: CommandInputProps) {
 			send();
 		}
 		if (e.key === "Escape") {
-			completionRequested = false;
+			inputRequest = null;
 			writePty("\x1b");
 			syncedText = "";
 			setValue("");

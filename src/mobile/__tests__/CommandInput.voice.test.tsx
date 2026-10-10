@@ -2,6 +2,7 @@ import { cleanup, fireEvent, render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
 import { CommandInput } from "../components/CommandInput";
+import type { ComposerInputKey } from "../components/syncGuards";
 import { TerminalKeybar } from "../components/TerminalKeybar";
 
 vi.mock("../../transport", () => ({
@@ -49,11 +50,11 @@ it("does not import a delayed voice echo that extends the user's newer draft", (
 
 it.each(["keyboard", "keybar"])("keeps %s Tab completion anchored to the user's draft", (source) => {
 	const [inputLine, echo] = createSignal<string | null>(null);
-	let tab: (() => void) | undefined;
+	let requestKey: ((key: ComposerInputKey) => void) | undefined;
 	const { container, getByRole } = render(() => (
 		<>
-			<TerminalKeybar sessionId="voice-1662" onTabRequest={() => tab?.()} />
-			<CommandInput sessionId="voice-1662" ptyInputLine={inputLine()} onRegisterTab={(fn) => (tab = fn)} />
+			<TerminalKeybar sessionId="voice-1662" onInputKeyRequest={(key) => requestKey?.(key)} />
+			<CommandInput sessionId="voice-1662" ptyInputLine={inputLine()} onRegisterInputKey={(fn) => (requestKey = fn)} />
 		</>
 	));
 	const input = container.querySelector("textarea")!;

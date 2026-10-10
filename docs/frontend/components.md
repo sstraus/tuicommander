@@ -213,10 +213,12 @@ A vanished session keeps its output visible but disables both input controls.
 
 The mobile composer owns its draft. PTY prompt snapshots do not create a draft
 or extend it on their own: a hands-free paste can be visible before Enter, and
-a queued agent message can look like prompt input. Only a Tab request from the
+a queued agent message can look like prompt input. A Tab request from the
 composer or keybar accepts one strict extension of a nonempty local draft.
-Typing, sending, or Escape cancels that request. History recalled into an empty
-terminal stays in the terminal; use the keybar Enter to submit it.
+Explicit keybar Up/Down accepts one history replacement, including an empty
+line, and updates the local delta baseline so recalled commands remain editable.
+Typing, sending, or Escape cancels either request. Unsolicited snapshots never
+create or extend a draft.
 
 ## Core Components
 

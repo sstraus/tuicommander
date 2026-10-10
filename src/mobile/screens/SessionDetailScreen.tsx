@@ -10,6 +10,7 @@ import { IdeasOverlay } from "../components/IdeasOverlay";
 import { OutputView } from "../components/OutputView";
 import { SessionHeaderOverlay, type SessionHeaderPanel } from "../components/SessionHeaderOverlay";
 import { SuggestChips } from "../components/SuggestChips";
+import type { ComposerInputKey } from "../components/syncGuards";
 import { TerminalKeybar } from "../components/TerminalKeybar";
 
 import { getAgentCommands } from "../config/agentCommands";
@@ -167,11 +168,11 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 	const [inputPrefill] = createSignal<{ text: string; seq: number }>({ text: "", seq: 0 });
 
 	// PTY input line synced from WebSocket (what's on the terminal prompt)
-	const [ptyInputLine, setPtyInputLine] = createSignal<string | null>(null);
+	const [ptyInputLine, setPtyInputLine] = createSignal<string | null>(null, { equals: false });
 
 	// Registered by CommandInput so TerminalKeybar can trigger slash mode
 	let insertComposerText: ((text: string) => void) | undefined;
-	let completeComposerText: (() => void) | undefined;
+	let requestComposerInputKey: ((key: ComposerInputKey) => void) | undefined;
 
 	// Live countdown for rate limit retry_after_ms
 	const [retryRemaining, setRetryRemaining] = createSignal(0);
@@ -450,7 +451,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 				sessionExists={props.sessionExists}
 				onCommandWidgetOpen={() => setCommandWidgetOpen(true)}
 				onSlashRequest={() => insertComposerText?.("/")}
-				onTabRequest={() => completeComposerText?.()}
+				onInputKeyRequest={(key) => requestComposerInputKey?.(key)}
 			/>
 			<CommandInput
 				sessionId={props.session.session_id}
@@ -466,8 +467,8 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 				onRegisterInsertText={(fn) => {
 					insertComposerText = fn;
 				}}
-				onRegisterTab={(fn) => {
-					completeComposerText = fn;
+				onRegisterInputKey={(fn) => {
+					requestComposerInputKey = fn;
 				}}
 			/>
 			<Show when={commandWidgetOpen()}>
