@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Preserve rejected-host diagnostics across HTTP response chunks.
 - Explain remote host DNS, connection, TLS, authentication, and rejected-name failures; suggest known Tailscale peer names and show retry delays without stale errors during connection attempts.
 
 - Widen the Activity Dashboard popup by 20%, while keeping it within small windows (#1664-f4ab).

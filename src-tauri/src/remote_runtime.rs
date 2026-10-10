@@ -739,13 +739,18 @@ async fn response_error(mut response: reqwest::Response, base_url: &str) -> Stri
         .unwrap_or_else(|| "remote host".into());
     let status = response.status();
     if status == reqwest::StatusCode::FORBIDDEN {
-        if let Ok(Some(bytes)) = response.chunk().await {
-            let text = String::from_utf8_lossy(&bytes[..bytes.len().min(1024)]);
-            if text.to_ascii_lowercase().contains("untrusted host") {
-                return format!(
-                    "{host} rejected this name (HTTP 403 Untrusted Host) — use a name trusted by the daemon"
-                );
-            }
+        let mut prefix = Vec::with_capacity(1024);
+        while prefix.len() < 1024 {
+            let Ok(Some(bytes)) = response.chunk().await else {
+                break;
+            };
+            prefix.extend_from_slice(&bytes[..bytes.len().min(1024 - prefix.len())]);
+        }
+        let text = String::from_utf8_lossy(&prefix);
+        if text.to_ascii_lowercase().contains("untrusted host") {
+            return format!(
+                "{host} rejected this name (HTTP 403 Untrusted Host) — use a name trusted by the daemon"
+            );
         }
         return format!("Access denied by {host} (HTTP 403) — check permissions");
     }
