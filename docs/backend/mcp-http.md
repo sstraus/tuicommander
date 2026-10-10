@@ -1012,9 +1012,12 @@ The `url` param of `action=tab` supports three schemes:
 
 | Scheme | Behaviour |
 |--------|-----------|
-| `http(s)://` / `file://` | Loaded in a sandboxed iframe |
+| `http(s)://` | Loaded directly in a sandboxed iframe; external HTTPS and localhost HTTP use the permissive `default-src` CSP. |
+| `file://` | Read via IPC and rendered as inline HTML in a sandboxed iframe |
 | `tuic://edit/<path>?line=N` | Opens a native code-editor tab at the given file and line. Absolute paths require a `//` prefix: `tuic://edit//Users/x/file.rs?line=42`. Relative paths resolve against the active repo root. |
 | `tuic://open/<path>` | Opens a native markdown/preview tab |
+
+Site `X-Frame-Options` and CSP `frame-ancestors` still apply. There is no per-directive CSP, including `frame-src`; `http:` and `asset:` in `default-src` preserve localhost wildcard ports and asset frames.
 
 Custom URL schemes (`vscode://`, `x-devonthink://`, etc.) do **not** work inside iframes and must not be used with `action=tab`.
 

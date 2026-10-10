@@ -26,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Restore external URL tabs by removing the restrictive `frame-src` CSP so frames inherit the permissive `default-src`.
 - Refresh daemon Tailscale status after startup so a reboot before tailscaled is ready does not leave its MagicDNS name rejected until restart.
 - Paste text into terminals when rich clipboard content also contains an image; keep screenshot and Finder image attachments.
 
