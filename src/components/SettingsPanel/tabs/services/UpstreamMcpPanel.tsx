@@ -481,12 +481,10 @@ export const UpstreamMcpPanel: Component = () => {
 		updated.auth = authFromUpstreamForm(f, server.auth);
 		const oldMethod = server.auth?.type === "oauth2" ? "oauth2" : "bearer";
 		const methodChanged = oldMethod !== f.authMethod;
+		const replaceBearer = f.transportType === "http" && f.authMethod === "bearer" && !!f.credential;
 		try {
 			updated.headers = f.transportType === "http" ? await saveHeaderRows(server.name, f.headers) : [];
-			if (methodChanged) await rpc("delete_mcp_upstream_credential", { name: server.name }, machine());
 			if (f.transportType === "http" && f.authMethod === "bearer") {
-				if (f.credential)
-					await rpc("save_mcp_upstream_credential", { name: server.name, token: f.credential }, machine());
 				if (f.credential || server.auth?.type === "bearer") updated.auth = { type: "bearer", token: "" };
 			}
 		} catch {
@@ -496,6 +494,10 @@ export const UpstreamMcpPanel: Component = () => {
 		const ok = await saveUpstreams(upstreams().map((s) => (s.id === server.id ? updated : s)));
 		if (!ok) return;
 		try {
+			// Replacing the shared auth slot is destructive too: persist the config first.
+			if (replaceBearer)
+				await rpc("save_mcp_upstream_credential", { name: server.name, token: f.credential }, machine());
+			else if (methodChanged) await rpc("delete_mcp_upstream_credential", { name: server.name }, machine());
 			await removeHeaderCredentials(
 				server.name,
 				(server.headers ?? []).filter((old) => !updated.headers?.some((h) => h.credential_ref === old.credential_ref)),
@@ -523,13 +525,15 @@ export const UpstreamMcpPanel: Component = () => {
 			confirmed = window.confirm(`Remove upstream "${name}"?`);
 		}
 		if (!confirmed) return;
-		await removeHeaderCredentials(name, upstreams().find((server) => server.id === id)?.headers ?? []).catch(() =>
+		const removed = upstreams().find((server) => server.id === id);
+		const ok = await saveUpstreams(upstreams().filter((s) => s.id !== id));
+		if (!ok) return;
+		await removeHeaderCredentials(name, removed?.headers ?? []).catch(() =>
 			setError("Failed to remove header credentials"),
 		);
 		await rpc("delete_mcp_upstream_credential", { name }, machine()).catch((e) =>
 			appLogger.error("settings", "Failed to delete MCP upstream credential", { error: String(e) }),
 		);
-		await saveUpstreams(upstreams().filter((s) => s.id !== id));
 	}
 
 	async function clearUpstreamCredential(name: string) {
