@@ -127,9 +127,11 @@ pub struct NotificationDelivery {
     pub settled_ms: Option<i64>,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Deserialize)]
 pub enum SummaryWindow {
+    #[serde(rename = "24h")]
     Day,
+    #[serde(rename = "7d")]
     Week,
 }
 

@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Expose matching automation IPC/HTTP actions for definitions, pause/resume, Once Run Now, retained history, schedule previews/presets and UTC summaries (#1617-290d).
 - Preserve rejected-host diagnostics across HTTP response chunks.
 - Explain remote host DNS, connection, TLS, authentication, and rejected-name failures; suggest known Tailscale peer names and show retry delays without stale errors during connection attempts.
 - Add automation completion reconciliation, bounded final output and persisted maximum-duration enforcement, including blocked runs (#1616-1882).

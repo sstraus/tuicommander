@@ -882,3 +882,13 @@ on worker threads. They have no focus or user-gesture requirement. The clipboard
 owner stays alive between calls and is released on application exit. They are
 `INTENTIONALLY_UNMAPPED`: browser clients use `navigator.clipboard` on their own
 machine; HTTP clients cannot read or write the host pasteboard.
+
+### Automations
+
+`automation_action(input: serde_json::Value) -> Result<serde_json::Value, String>`
+is an async command that shares parsing, definition edits, history, schedule
+previews/presets, UTC run summaries and owner-guarded Run Now with
+`POST /automations/action`. Invoke with `{input:{action:"list"}}`; response values
+and application error messages match HTTP. See the HTTP Automations action table
+for every field and reply. Blocking storage/schedule work runs off the main
+thread. Run Now executes only on the addressed backend; phase 1 is Once-only.

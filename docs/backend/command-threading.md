@@ -249,3 +249,7 @@ serializes clipboard operations. The managed clipboard stays alive between calls
 so Linux retains ownership of copied text. Clipboard and worker failures return
 `Err(String)`. Browser clients use `navigator.clipboard`; these commands have no
 HTTP routes because remote clients must not access the host pasteboard.
+
+Automation `automation_action` is async. Shared Rust parsing routes Run Now to
+the owner-guarded runtime; definition, history, aggregate and preview work uses
+`tokio::task::spawn_blocking`. HTTP calls the same boundary.

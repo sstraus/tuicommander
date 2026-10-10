@@ -1,3 +1,7 @@
+## Automations HTTP fallback (1617-290d) — Rust restart required
+
+- [ ] After Boss's manual `make dev` restart or `make build`, confirm `POST /automations/missing` returns HTTP 404 and JSON `{"error":"no such endpoint: /automations/missing"}`. The critic regression exercises the router; Rust does not hot-reload. No desktop instance was restarted by this peer.
+
 ## Saved AI Chat tabs (1628-4459)
 
 - [ ] Check saved-tab connecting, failure/Retry, and pending model/mode rows at the normal panel width. An isolated worktree Vite preview reached the saved-tab click with `navigator.webdriver` undefined; the mandatory stealth wrapper then stalled on the shared browser attachment lock and timed out before producing a screenshot. A subsequent bundled headless Chrome capture also timed out after 120 seconds without producing an image (the preview port was still occupied). Visual verification is owed. No desktop instance was launched.
@@ -4924,6 +4928,7 @@ Needs an iPhone (iOS 16.4+, 18.4+ preferred), the desktop TUICommander running a
 - [ ] After an Edge access rejection, confirm the UI reports the cool-down and dictation continues; wait five minutes before retrying speech.
 - [ ] Mobile Ctrl menu (#1660-b7f6): on iPhone/iPad with the real keyboard open, open Ctrl, choose each key, dismiss outside, and check Ctrl+C/Ctrl+D danger colours. Ctrl+Enter submits with Claude CSI-u and ego LF; Codex/OpenCode/Goose/Grok/pi insert a newline. Other mappings and uncertainty are recorded in docs/evidence/ctrl-menu-1660/README.md. Desktop browser verification reserves keyboard space; real iOS keyboard remains to check.
 
+- [ ] After Boss restarts `make dev` (or rebuilds release), verify the Automations dialog can save, pause/resume, preview and inspect history over IPC and browser HTTP. Rust does not hot-reload. Use an isolated headless instance and throwaway definition for HTTP Run Now; phase 1 dispatches Once only (#1617-290d).
 - [ ] After a manual Rust rebuild/restart: verify a failed short-name remote host names DNS resolution, suggests its advertised Tailscale FQDN, and shows a retry delay without a simultaneous Connecting/error state. Verify HTTP 403 Untrusted Host says the daemon rejected the name. Backend and renderer regressions cover these paths; desktop verification remains pending because this task forbids launching or accessing the live app. Two isolated headless Chrome screenshot attempts hung (the second stopped at its 45s outer limit).
 
 - [ ] After a manual `make dev` restart or `make build`, verify a remote daemon returning a chunked HTTP 403 Untrusted Host reports the rejected host name instead of a permissions error. Automated regression covers the split response.

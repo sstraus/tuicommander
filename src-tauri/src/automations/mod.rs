@@ -22,4 +22,5 @@ pub mod mcp;
 pub(crate) mod dispatcher;
 pub(crate) mod runtime;
 
+pub(crate) mod api;
 pub(crate) mod completion;

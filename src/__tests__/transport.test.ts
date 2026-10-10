@@ -3964,3 +3964,26 @@ it("maps custom header credential metadata on save and delete", () => {
 		header,
 	});
 });
+
+// Catches: automation requests losing action fields or routing to an unregistered path.
+describe("automation command transport", () => {
+	it.each([
+		{ action: "list" },
+		{ action: "get", id: "a" },
+		{ action: "create", definition: { id: "a" } },
+		{ action: "update", id: "a", enabled: false },
+		{ action: "delete", id: "a" },
+		{ action: "run_now", id: "a" },
+		{ action: "list_runs", id: "a", limit: 50, offset: 1 },
+		{ action: "preview", cron: "0 9 * * *", timezone: "UTC", count: 4 },
+		{ action: "preview_definition", definition: { id: "a" }, count: 4 },
+		{ action: "preset", preset: { kind: "daily", hour: 9, minute: 0 } },
+		{ action: "summary", window: "7d" },
+	])("preserves the shared input envelope for $action", (input) => {
+		expect(mapCommandToHttp("automation_action", { input })).toEqual({
+			method: "POST",
+			path: "/automations/action",
+			body: { input },
+		});
+	});
+});

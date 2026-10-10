@@ -10,10 +10,7 @@ import type {
 	SchedulePreview,
 } from "./contract";
 
-/** The only dependency on Step 8's command envelope. Local machine only.
- * DEFERRED (2026-10-09): reconcile reply envelopes with story 1617 when it lands.
- * No direct fetch or remote fallback: transport routing stays in invoke/COMMAND_TABLE.
- */
+/** Shared command envelope; invoke selects the addressed backend transport. */
 function call<T>(input: AutomationAction): Promise<T> {
 	return invoke<T>("automation_action", { input });
 }
