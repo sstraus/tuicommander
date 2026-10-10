@@ -211,6 +211,13 @@ PTY delta, and shows the agent parser menu with navigation. Picking a command
 updates the input; closing the menu clears the input through the same sync path.
 A vanished session keeps its output visible but disables both input controls.
 
+The mobile composer owns its draft. PTY prompt snapshots do not create a draft
+or extend it on their own: a hands-free paste can be visible before Enter, and
+a queued agent message can look like prompt input. Only a Tab request from the
+composer or keybar accepts one strict extension of a nonempty local draft.
+Typing, sending, or Escape cancels that request. History recalled into an empty
+terminal stays in the terminal; use the keybar Enter to submit it.
+
 ## Core Components
 
 ### PluginPanel (`PluginPanel/`)

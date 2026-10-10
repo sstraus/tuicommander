@@ -17,6 +17,8 @@ interface TerminalKeybarProps {
 	onCommandWidgetOpen?: () => void;
 	/** Insert "/" at the composer selection through its normal input path. */
 	onSlashRequest?: () => void;
+	/** Request completion through the local composer's input ownership. */
+	onTabRequest?: () => void;
 }
 
 interface KeyDef {
@@ -180,7 +182,7 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
 							class={styles.key}
 							classList={{ [styles.danger]: !!k.danger }}
 							disabled={props.sessionExists === false}
-							onClick={() => send(k.seq)}
+							onClick={() => (k.seq === "\t" && props.onTabRequest ? props.onTabRequest() : send(k.seq))}
 						>
 							{k.label}
 						</button>

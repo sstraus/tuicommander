@@ -149,12 +149,12 @@ describe("CommandInput echo handling (PWA textarea is source of truth)", () => {
 		expect(sim.writes.at(-1)!).toBe("status");
 	});
 
-	it("history nav from empty textarea: PTY insert is accepted (empty is prefix of all)", () => {
+	it("history nav from empty textarea stays in the PTY instead of creating a local draft", () => {
 		const sim = new InputSimulator();
 
 		// Textarea empty, user presses Up on external keybar
-		expect(sim.receivePtyInput("git log --oneline")).toBe("accepted");
-		expect(sim.displayed).toBe("git log --oneline");
+		expect(sim.receivePtyInput("git log --oneline")).toBe("ignored");
+		expect(sim.displayed).toBe("");
 	});
 
 	it("history nav while typing: replacement is IGNORED (textarea wins)", () => {
@@ -186,10 +186,10 @@ describe("CommandInput echo handling (PWA textarea is source of truth)", () => {
 		expect(sim.displayed).toBe("");
 		expect(sim.syncedText).toBe("");
 
-		// After the guard window expires, new prompt content can be accepted
+		// Expiring the guard does not grant ownership of someone else's input.
 		sim.advance(POST_SEND_GUARD_MS + 1);
-		expect(sim.receivePtyInput("new-prompt> ")).toBe("accepted");
-		expect(sim.displayed).toBe("new-prompt> ");
+		expect(sim.receivePtyInput("new-prompt> ")).toBe("ignored");
+		expect(sim.displayed).toBe("");
 	});
 
 	it("post-send guard: typing during guard still works (user wins)", () => {
@@ -285,7 +285,7 @@ describe("isSupersetEcho", () => {
 	it("accepts strict supersets", () => {
 		expect(isSupersetEcho("git ", "gi")).toBe(true);
 		expect(isSupersetEcho("abcd", "abc")).toBe(true);
-		expect(isSupersetEcho("hello", "")).toBe(true);
+		expect(isSupersetEcho("hello", "")).toBe(false);
 	});
 
 	it("rejects equal, shorter, and unrelated strings", () => {

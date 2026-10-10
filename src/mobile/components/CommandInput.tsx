@@ -31,6 +31,8 @@ interface CommandInputProps {
 	sessionExists?: boolean;
 	/** Registers character insertion through the same path as composer typing. */
 	onRegisterInsertText?: (fn: (text: string) => void) => void;
+	/** Routes keybar Tab through the same completion request as keyboard Tab. */
+	onRegisterTab?: (fn: () => void) => void;
 }
 
 export function CommandInput(props: CommandInputProps) {
@@ -49,6 +51,7 @@ export function CommandInput(props: CommandInputProps) {
 	// What we last sent to PTY — used to compute deltas and to gate which
 	// PTY echoes we accept (only strict extensions — see sync effect below).
 	let syncedText = "";
+	let completionRequested = false;
 	// Timestamp of the last Enter (send()). Within POST_SEND_GUARD_MS, all
 	// incoming ptyInputLine updates are ignored to prevent a lagging echo of
 	// the just-sent command from flashing back into the cleared textarea
@@ -73,14 +76,17 @@ export function CommandInput(props: CommandInputProps) {
 	//   1. Post-send guard — within POST_SEND_GUARD_MS of Enter, ignore every
 	//      PTY echo (suppresses the ghost flash of the just-sent command).
 	//   2. Strict-extension rule — outside the guard, accept a PTY update
-	//      only if it extends syncedText (tab completion / autocomplete).
+	//      only after Tab, if it extends a nonempty syncedText.
 	// Everything else (prompt redraws, lagging echoes over slow links,
-	// history-nav replacements) is ignored so the textarea can't be clobbered.
+	// history-nav replacements, automated voice pastes) is ignored so the
+	// textarea can't be clobbered or resurrect a command already sent elsewhere.
 	createEffect(() => {
 		if (atomicReply()) return;
 		const text = props.ptyInputLine ?? "";
+		if (!completionRequested) return;
 		if (isPostSendGuardActive(Date.now(), lastSendAt)) return;
 		if (!isSupersetEcho(text, syncedText)) return;
+		completionRequested = false;
 		syncedText = text;
 		setValue(text);
 		if (textareaEl) {
@@ -106,6 +112,7 @@ export function CommandInput(props: CommandInputProps) {
 	 *  backspaces only the divergent tail instead of nuking and retyping the
 	 *  whole line, which previously caused a keystroke storm and visible mess. */
 	function syncDelta(newText: string) {
+		completionRequested = false;
 		if (atomicReply() || props.sessionExists === false) return;
 		const delta = computeInputDelta(syncedText, newText);
 		if (delta) writePty(delta);
@@ -176,7 +183,14 @@ export function CommandInput(props: CommandInputProps) {
 
 	createEffect(() => {
 		if (textareaEl) props.onRegisterInsertText?.(insertText);
+		props.onRegisterTab?.(requestCompletion);
 	});
+
+	function requestCompletion() {
+		if (atomicReply() || props.sessionExists === false) return;
+		completionRequested = syncedText.length > 0;
+		writePty("\t");
+	}
 
 	async function send() {
 		const text = (textareaEl?.value ?? value()).trim();
@@ -229,6 +243,7 @@ export function CommandInput(props: CommandInputProps) {
 		}
 
 		lastSendAt = Date.now();
+		completionRequested = false;
 		syncedText = "";
 		setValue("");
 		if (textareaEl) {
@@ -263,7 +278,7 @@ export function CommandInput(props: CommandInputProps) {
 		}
 		if (e.key === "Tab") {
 			e.preventDefault();
-			writePty("\t");
+			requestCompletion();
 			return;
 		}
 		if (e.key === "Enter" && !e.shiftKey) {
@@ -271,6 +286,7 @@ export function CommandInput(props: CommandInputProps) {
 			send();
 		}
 		if (e.key === "Escape") {
+			completionRequested = false;
 			writePty("\x1b");
 			syncedText = "";
 			setValue("");

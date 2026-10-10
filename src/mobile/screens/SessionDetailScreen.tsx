@@ -171,6 +171,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 
 	// Registered by CommandInput so TerminalKeybar can trigger slash mode
 	let insertComposerText: ((text: string) => void) | undefined;
+	let completeComposerText: (() => void) | undefined;
 
 	// Live countdown for rate limit retry_after_ms
 	const [retryRemaining, setRetryRemaining] = createSignal(0);
@@ -449,6 +450,7 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 				sessionExists={props.sessionExists}
 				onCommandWidgetOpen={() => setCommandWidgetOpen(true)}
 				onSlashRequest={() => insertComposerText?.("/")}
+				onTabRequest={() => completeComposerText?.()}
 			/>
 			<CommandInput
 				sessionId={props.session.session_id}
@@ -463,6 +465,9 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 				codexQuestionOpen={codexQuestionOpen()}
 				onRegisterInsertText={(fn) => {
 					insertComposerText = fn;
+				}}
+				onRegisterTab={(fn) => {
+					completeComposerText = fn;
 				}}
 			/>
 			<Show when={commandWidgetOpen()}>

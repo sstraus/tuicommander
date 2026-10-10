@@ -1,7 +1,7 @@
 // PWA input sync helpers. The PWA textarea is the source of truth for user
 // input; the PTY is a write-only sink that receives deltas. The ONLY case
 // where we accept data back from the PTY into the textarea is a strict
-// extension of what we've sent (tab completion / autocomplete) — everything
+// extension of a nonempty draft we've sent (tab completion / autocomplete) — everything
 // else (prompt redraws, lagging echoes, history nav replacing typed text)
 // is ignored.
 
@@ -15,9 +15,11 @@ export function isPostSendGuardActive(now: number, lastSendAt: number): boolean 
 	return lastSendAt > 0 && now - lastSendAt < POST_SEND_GUARD_MS;
 }
 
-/** True if `echo` extends `syncedText` (tab completion, autocomplete). */
+/** True if `echo` extends a local draft (tab completion, autocomplete).
+ * Empty is a prefix of every string, including an automated voice paste or
+ * an already submitted queued message. Neither creates a new local draft. */
 export function isSupersetEcho(echo: string, syncedText: string): boolean {
-	return echo.length > syncedText.length && echo.startsWith(syncedText);
+	return syncedText.length > 0 && echo.length > syncedText.length && echo.startsWith(syncedText);
 }
 
 /** Minimal end-anchored keystroke delta to turn `oldText` into `newText`.
