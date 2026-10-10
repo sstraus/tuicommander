@@ -1395,6 +1395,29 @@ describe("dictationStore", () => {
 			});
 		});
 
+		// Catches: a late pre-disarm poll restores the ended conversation and its monitor.
+		it("ignores an armed status read started before disarming", async () => {
+			let answerOldPoll!: (status: HandsFreeStatus) => void;
+			const oldPoll = new Promise<HandsFreeStatus>((resolve) => {
+				answerOldPoll = resolve;
+			});
+			mockInvoke.mockImplementation((command: string) =>
+				command === "get_hands_free_status"
+					? oldPoll
+					: Promise.resolve(
+							command === "disarm_hands_free_dictation" ? { status: { armed: false, phase: "disarmed" } } : undefined,
+						),
+			);
+			await testInScopeAsync(async () => {
+				const refresh = store.refreshHandsFree();
+				await store.disarmHandsFree();
+				answerOldPoll({ armed: true, phase: "waiting" } as HandsFreeStatus);
+				await refresh;
+				expect(store.state.handsFree?.armed).toBe(false);
+				expect(store.state.handsFree?.phase).toBe("disarmed");
+			});
+		});
+
 		/**
 		 * A stop takes the state the backend reports after it, so the UI
 		 * never shows a conversation that has ended as armed.

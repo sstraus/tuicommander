@@ -581,6 +581,8 @@ function createDictationStore() {
 	// stopped from `applyHandsFree`, the one place that stores the status.
 	const HANDS_FREE_STATUS_EVERY = 5;
 	let handsFreeTimer: ReturnType<typeof setInterval> | null = null;
+	// A poll started before arm/disarm must not overwrite that transition.
+	let handsFreeGeneration = 0;
 	const stopHandsFreeMonitor = () => {
 		if (handsFreeTimer) clearInterval(handsFreeTimer);
 		handsFreeTimer = null;
@@ -1131,8 +1133,10 @@ function createDictationStore() {
 		 * the speaker state below is not part of that answer.
 		 */
 		async refreshHandsFree(): Promise<void> {
+			const generation = handsFreeGeneration;
 			try {
-				applyHandsFree(await invoke<HandsFreeStatus>("get_hands_free_status"));
+				const status = await invoke<HandsFreeStatus>("get_hands_free_status");
+				if (generation === handsFreeGeneration) applyHandsFree(status);
 			} catch (err) {
 				appLogger.error("dictation", "Failed to get hands-free status", err);
 			}
@@ -1172,6 +1176,7 @@ function createDictationStore() {
 		 * through the microphone of the machine running TUICommander.
 		 */
 		async armHandsFree(sessionId: string): Promise<boolean> {
+			handsFreeGeneration += 1;
 			setState("handsFreeError", null);
 			try {
 				const owner = isTauri() ? DESKTOP_AUDIO_OWNER : browserAudioOwner;
@@ -1216,6 +1221,7 @@ function createDictationStore() {
 		 * there; nothing else is parked anywhere to take back.
 		 */
 		async disarmHandsFree(): Promise<void> {
+			handsFreeGeneration += 1;
 			setState("handsFreeError", null);
 			try {
 				const result = await invoke<{ status: HandsFreeStatus }>("disarm_hands_free_dictation");

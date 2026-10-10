@@ -491,6 +491,8 @@ store action. Rust owns enforcement and cool-down decisions.
   `setSpeechLevelling` each save one field.
 - `handsFree` / `speech` — polled status, never pushed. `refreshHandsFree` is
   deliberately **one** command, because the dictation hotkey asks on every press.
+  Starting arm or disarm invalidates older status reads, so their late responses
+  cannot overwrite the new conversation state or close its browser audio.
   `handsFree.pendingText` is the unsent hands-free turn; push-to-talk's
   `partialText` is a separate recording. With an activation phrase,
   `handsFree.holdBackMs` is at least 5000 even if the saved setting is shorter.
