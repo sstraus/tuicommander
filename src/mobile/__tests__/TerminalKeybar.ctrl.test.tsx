@@ -1,8 +1,12 @@
+import { readFileSync } from "node:fs";
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import agentKeyFixture from "../../../docs/evidence/ctrl-menu-1660/agent-key-fixture.json";
+import { AGENT_TYPES } from "../../agents";
 import { rpc } from "../../transport";
 import { TerminalKeybar } from "../components/TerminalKeybar";
-import styles from "../components/TerminalKeybar.module.css";
+
+const keybarCss = readFileSync(`${process.cwd()}/src/mobile/components/TerminalKeybar.module.css`, "utf8");
 
 vi.mock("../../transport", () => ({ rpc: vi.fn(() => Promise.resolve()), HttpRpcError: class extends Error {} }));
 afterEach(() => {
@@ -25,12 +29,33 @@ describe("mobile control menu", () => {
 		expect(view.queryByRole("menu")).toBeNull();
 	});
 
-	it("uses Codex's accepted submit byte instead of the ignored modified Enter", async () => {
-		const view = render(() => <TerminalKeybar sessionId="owned" agentType="codex" />);
-		fireEvent.click(view.getByRole("button", { name: "Ctrl" }));
-		fireEvent.click(view.getByRole("menuitem", { name: "Ctrl+Enter" }));
-		await waitFor(() => expect(rpc).toHaveBeenCalledExactlyOnceWith("write_pty", { sessionId: "owned", data: "\r" }));
+	it("covers every registered agent so additions cannot silently inherit an unsafe fallback", () => {
+		expect(agentKeyFixture.map((row) => row.agent).sort()).toEqual([...AGENT_TYPES].sort());
 	});
+
+	it.each(agentKeyFixture)(
+		"uses recorded mapping for $agent, preventing ignored or corrupted Ctrl+Enter",
+		async ({ agent, selectedSequence }) => {
+			const view = render(() => <TerminalKeybar sessionId="owned" agentType={agent} />);
+			fireEvent.click(view.getByRole("button", { name: "Ctrl" }));
+			fireEvent.click(view.getByRole("menuitem", { name: "Ctrl+Enter" }));
+			await waitFor(() =>
+				expect(rpc).toHaveBeenCalledExactlyOnceWith("write_pty", { sessionId: "owned", data: selectedSequence }),
+			);
+		},
+	);
+
+	it.each([null, undefined, "unknown", "__proto__"])(
+		"preserves modified Enter for unknown %s instead of executing an accidental shell command",
+		async (agentType) => {
+			const view = render(() => <TerminalKeybar sessionId="owned" agentType={agentType} />);
+			fireEvent.click(view.getByRole("button", { name: "Ctrl" }));
+			fireEvent.click(view.getByRole("menuitem", { name: "Ctrl+Enter" }));
+			await waitFor(() =>
+				expect(rpc).toHaveBeenCalledExactlyOnceWith("write_pty", { sessionId: "owned", data: "\x1b[13;5u" }),
+			);
+		},
+	);
 
 	it("dismisses with outside tap, toggle or Escape without accidentally sending", () => {
 		const view = render(() => <TerminalKeybar sessionId="owned" />);
@@ -48,13 +73,28 @@ describe("mobile control menu", () => {
 		expect(rpc).not.toHaveBeenCalled();
 	});
 
-	it("marks destructive interrupt and EOF choices as danger without marking background or submit", () => {
+	it("renders interrupt and EOF in the error colour, catching a missing or broken danger rule", () => {
+		const stylesheet = document.createElement("style");
+		stylesheet.textContent = ":root { --error: rgb(255, 0, 0); --fg-secondary: rgb(128, 128, 128); }" + keybarCss;
+		document.head.append(stylesheet);
+		try {
+			const view = render(() => <TerminalKeybar sessionId="owned" />);
+			fireEvent.click(view.getByRole("button", { name: "Ctrl" }));
+			for (const label of ["Ctrl+C", "Ctrl+D"])
+				expect(getComputedStyle(view.getByRole("menuitem", { name: label })).color).toBe("rgb(255, 0, 0)");
+			for (const label of ["Ctrl+B", "Ctrl+Enter"])
+				expect(getComputedStyle(view.getByRole("menuitem", { name: label })).color).toBe("rgb(128, 128, 128)");
+		} finally {
+			stylesheet.remove();
+		}
+	});
+
+	it("closes on another keybar key and sends Tab once instead of leaving the menu open", async () => {
 		const view = render(() => <TerminalKeybar sessionId="owned" />);
 		fireEvent.click(view.getByRole("button", { name: "Ctrl" }));
-		for (const label of ["Ctrl+C", "Ctrl+D"])
-			expect(view.getByRole("menuitem", { name: label })).toHaveClass(styles.danger);
-		for (const label of ["Ctrl+B", "Ctrl+Enter"])
-			expect(view.getByRole("menuitem", { name: label })).not.toHaveClass(styles.danger);
+		fireEvent.click(view.getByRole("button", { name: "Tab" }));
+		expect(view.queryByRole("menu")).toBeNull();
+		await waitFor(() => expect(rpc).toHaveBeenCalledExactlyOnceWith("write_pty", { sessionId: "owned", data: "\t" }));
 	});
 
 	it("prevents control writes when the session is unavailable", () => {

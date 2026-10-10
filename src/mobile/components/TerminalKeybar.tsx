@@ -1,4 +1,5 @@
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { getCtrlEnterSequence } from "../../agents";
 import { appLogger } from "../../stores/appLogger";
 import { toastsStore } from "../../stores/toasts";
 import { rpc } from "../../transport";
@@ -36,8 +37,6 @@ const STANDARD_KEYS: KeyDef[] = [
 	{ label: "\u21B5", seq: "\r" },
 ];
 
-// Live owned-PTY probe (2026-10-10): Claude Code 2.1.286 submits CSI-u
-// Ctrl+Enter; Codex 0.162.0 ignores it and modifyOtherKeys, so uses CR below.
 const CONTROL_KEYS: KeyDef[] = [
 	{ label: "Ctrl+C", seq: "\x03", danger: true },
 	{ label: "Ctrl+B", seq: "\x02" },
@@ -73,12 +72,13 @@ function getConfirmKeys(agentType?: string | null, questionConfident?: boolean):
 export function TerminalKeybar(props: TerminalKeybarProps) {
 	const [sending, setSending] = createSignal(false);
 	const [ctrlOpen, setCtrlOpen] = createSignal(false);
-	let root: HTMLDivElement | undefined;
+	let ctrlButton: HTMLButtonElement | undefined;
+	let ctrlMenu: HTMLDivElement | undefined;
 
 	createEffect(() => {
 		if (!ctrlOpen()) return;
 		const dismiss = (event: MouseEvent) => {
-			if (!root?.contains(event.target as Node)) setCtrlOpen(false);
+			if (!ctrlButton?.contains(event.target as Node) && !ctrlMenu?.contains(event.target as Node)) setCtrlOpen(false);
 		};
 		const dismissOnEscape = (event: KeyboardEvent) => {
 			if (event.key === "Escape") {
@@ -122,9 +122,9 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
 	const confirmKeys = () => getConfirmKeys(props.agentType, props.questionConfident);
 
 	return (
-		<div class={styles.root} ref={root}>
+		<div class={styles.root}>
 			<Show when={ctrlOpen()}>
-				<div class={styles.ctrlMenu} role="menu" aria-label="Control keys">
+				<div ref={ctrlMenu} class={styles.ctrlMenu} role="menu" aria-label="Control keys">
 					<For each={CONTROL_KEYS}>
 						{(k) => (
 							<button
@@ -135,7 +135,7 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
 								onMouseDown={(event) => event.preventDefault()}
 								onClick={() => {
 									setCtrlOpen(false);
-									void send(k.label === "Ctrl+Enter" && props.agentType === "codex" ? "\r" : k.seq);
+									void send(k.label === "Ctrl+Enter" ? getCtrlEnterSequence(props.agentType) : k.seq);
 								}}
 							>
 								{k.label}
@@ -165,6 +165,7 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
 				</button>
 				<button
 					class={styles.key}
+					ref={ctrlButton}
 					aria-haspopup="menu"
 					aria-expanded={ctrlOpen()}
 					disabled={props.sessionExists === false}
