@@ -9123,7 +9123,7 @@ mod tests {
             config.services.push.vapid_private_key = private;
             config.services.push.vapid_public_key = public;
         }
-        let client_key = web_push_native::p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
+        let client_key = p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
         state.push_store.upsert(crate::push::PushSubscription {
             endpoint,
             keys: crate::push::PushSubscriptionKeys {
@@ -9714,7 +9714,7 @@ mod tests {
             without_phone.last_push_ms.is_none(),
             "completion without a subscriber must leave the push budget available"
         );
-        let client_key = web_push_native::p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
+        let client_key = p256::ecdsa::SigningKey::random(&mut rand_core::OsRng);
         state.push_store.upsert(crate::push::PushSubscription {
             endpoint,
             keys: crate::push::PushSubscriptionKeys {

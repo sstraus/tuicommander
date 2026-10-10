@@ -13875,3 +13875,527 @@ fn remote_title_parser_publishes_title_and_reset() {
         .collect();
     assert_eq!(titles, vec!["Claude Code", ""]);
 }
+
+#[cfg(unix)]
+mod discovery_offsets {
+    //! Round-2 critic tests for story 1420-f3de. Child of `pty` so they can read
+    //! `SilenceState` offsets that no public accessor exposes.
+
+    use super::*;
+    use crate::state::VtLogBuffer;
+    use crate::test_support::ForegroundIdentityProbe;
+
+    #[cfg(unix)]
+    fn discovered_claude_probe(
+        sid: &str,
+        screen: &[&str],
+    ) -> (Arc<AppState>, ForegroundIdentityProbe) {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let probe = ForegroundIdentityProbe::new(state.clone(), sid, "claude");
+        let mut vt = VtLogBuffer::new(24, 80, 1000);
+        vt.process(screen.join("\r\n").as_bytes());
+        state
+            .grid
+            .vt_log_buffers
+            .insert(sid.to_string(), Mutex::new(vt));
+        let mut ring = OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY);
+        ring.write(b"already-seen output");
+        state
+            .session_maps
+            .output_buffers
+            .insert(sid.to_string(), Mutex::new(ring));
+        (state, probe)
+    }
+
+    /// Catches: identity discovery on a quiet WORKING screen caches the verdict
+    /// but records no offset, so `fresh_working_transition` (submit ack) never
+    /// sees Ready-then-Working and a submit into a working agent is mis-acked.
+    #[cfg(unix)]
+    #[test]
+    fn discovery_on_a_quiet_working_screen_records_the_working_offset() {
+        let sid = "critic-1420r2-working";
+        let (state, _probe) =
+            discovered_claude_probe(sid, &["✻ Cogitating… (3m 47s · ↓ 2.2k tokens)", "", "❯"]);
+        assert_eq!(
+            refresh_session_agent(&state, sid).as_deref(),
+            Some("claude")
+        );
+        let total = state
+            .session_maps
+            .output_buffers
+            .get(sid)
+            .unwrap()
+            .lock()
+            .total_written;
+        let silence = state.session_maps.silence_states.get(sid).unwrap();
+        let silence = silence.lock();
+        assert_eq!(silence.cached_screen_activity, AgentScreenActivity::Working);
+        assert_eq!(silence.last_working_screen_offset, total);
+        assert_eq!(silence.last_ready_screen_offset, 0);
+    }
+
+    /// Catches: the same for a quiet READY screen (offset left at 0, so a later
+    /// submit offset compares as "Ready happened before").
+    #[cfg(unix)]
+    #[test]
+    fn discovery_on_a_quiet_ready_screen_records_the_ready_offset() {
+        let sid = "critic-1420r2-ready";
+        let (state, _probe) = discovered_claude_probe(sid, &["done", "", "❯"]);
+        assert_eq!(
+            refresh_session_agent(&state, sid).as_deref(),
+            Some("claude")
+        );
+        let total = state
+            .session_maps
+            .output_buffers
+            .get(sid)
+            .unwrap()
+            .lock()
+            .total_written;
+        let silence = state.session_maps.silence_states.get(sid).unwrap();
+        let silence = silence.lock();
+        assert_eq!(silence.cached_screen_activity, AgentScreenActivity::Ready);
+        assert_eq!(silence.last_ready_screen_offset, total);
+    }
+
+    /// Catches: a repeated refresh (timer tick every second plus HTTP polls) with
+    /// no identity change re-records the offset, moving "Ready at" forward past a
+    /// submit that happened in between.
+    #[cfg(unix)]
+    #[test]
+    fn repeat_refresh_does_not_move_the_recorded_offset() {
+        let sid = "critic-1420r2-repeat";
+        let (state, _probe) = discovered_claude_probe(sid, &["done", "", "❯"]);
+        refresh_session_agent(&state, sid);
+        let first = state
+            .session_maps
+            .silence_states
+            .get(sid)
+            .unwrap()
+            .lock()
+            .last_ready_screen_offset;
+        state
+            .session_maps
+            .output_buffers
+            .get(sid)
+            .unwrap()
+            .lock()
+            .write(b"later bytes");
+        refresh_session_agent(&state, sid);
+        let second = state
+            .session_maps
+            .silence_states
+            .get(sid)
+            .unwrap()
+            .lock()
+            .last_ready_screen_offset;
+        assert_eq!(first, second);
+    }
+
+    /// Catches: a discovered agent that has exited back to a shell stays
+    /// `agent_type=Some` forever, so automated submit/mail writes text into a bare
+    /// shell prompt instead of being rejected `not_managed_agent`. (Policy
+    /// question for the coordinator: preset run-config sessions also show a shell
+    /// foreground while the shell boots, so clearing must not touch them.)
+    #[cfg(unix)]
+    #[test]
+    fn shell_foreground_after_agent_exit_is_not_submittable() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sid = "critic-1420r2-stale";
+        let probe = ForegroundIdentityProbe::shell_root(state.clone(), sid, "bash");
+        // What a previous refresh left behind while claude was foreground.
+        state
+            .session_maps
+            .session_states
+            .get_mut(sid)
+            .unwrap()
+            .agent_type = Some("claude".into());
+        assert_eq!(refresh_session_agent(&state, sid), None);
+        assert!(
+            matches!(
+                write_agent_submission_to_pty(&state, sid, "rm -rf scratch"),
+                AgentSubmissionWrite::Rejected {
+                    reason: "not_managed_agent",
+                    ..
+                }
+            ),
+            "stale agent_type let a submit through to a shell foreground; bytes={:?}",
+            probe.bytes.lock().unwrap()
+        );
+    }
+
+    /// Catches: the `claude/versions/<n>` layout is honoured by the macOS path
+    /// lookup only; Linux `/proc/<pid>/comm` yields `2.1.5`, so a claude started
+    /// by its versioned path is never classified on the platform the story is about.
+    /// Negatives: non-numeric leaf, wrong parent, or missing `versions` segment
+    /// must stay unclassified.
+    #[cfg(unix)]
+    #[test]
+    fn versioned_claude_layout_is_classified_and_lookalikes_are_not() {
+        use std::process::{Command, Stdio};
+        let scratch = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        let run = |rel: &str| -> Option<&'static str> {
+            let exe = scratch.path().join(rel);
+            std::fs::create_dir_all(exe.parent().unwrap()).unwrap();
+            std::fs::copy("/bin/cat", &exe).unwrap();
+            #[cfg(target_os = "macos")]
+            assert!(
+                Command::new("/usr/bin/codesign")
+                    .args(["--force", "--sign", "-"])
+                    .arg(&exe)
+                    .status()
+                    .unwrap()
+                    .success()
+            );
+            let mut child = Command::new(&exe).stdin(Stdio::piped()).spawn().unwrap();
+            let mut name = None;
+            for _ in 0..200 {
+                name = process_name_from_pid(child.id());
+                if name.as_deref().is_some_and(|n| n != "cat") {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+            child.kill().unwrap();
+            child.wait().unwrap();
+            classify_agent(&name.expect("process name"))
+        };
+        assert_eq!(run("claude/versions/2.1.5"), Some("claude"));
+        assert_eq!(run("claude/versions/latest"), None);
+        assert_eq!(run("xclaude/versions/2.1.5"), None);
+        assert_eq!(run("claude/other/2.1.5"), None);
+        assert_eq!(run("claude/versions/x/2.1.5"), None);
+    }
+}
+
+mod identity_provenance {
+    //! Round-3 critic tests for story 1420-f3de: provenance of `agent_type`.
+
+    use super::*;
+    #[cfg(unix)]
+    use crate::test_support::ForegroundIdentityProbe;
+
+    #[cfg(unix)]
+    fn set_identity(state: &AppState, sid: &str, agent: Option<&str>, from_run_config: bool) {
+        let mut s = state.session_maps.session_states.get_mut(sid).unwrap();
+        s.agent_type = agent.map(str::to_string);
+        s.agent_type_from_run_config = from_run_config;
+    }
+
+    #[cfg(unix)]
+    fn identity(state: &AppState, sid: &str) -> Option<String> {
+        state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .agent_type
+            .clone()
+    }
+
+    /// Catches: a discovered agent loses its identity whenever the foreground pgid
+    /// briefly points at an unrecognised NON-shell program (a `git`/`rg` child of
+    /// the agent). Revocation must need positive evidence of a shell, not mere
+    /// absence of an agent name; otherwise `suggest:`/`intent:` parsing and submit
+    /// flap off while the agent is still alive.
+    #[cfg(unix)]
+    #[test]
+    fn discovered_agent_survives_a_transient_unrecognised_non_shell_foreground() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sid = "critic-1420r3-transient";
+        let _probe = ForegroundIdentityProbe::shell_parent(state.clone(), sid, "git");
+        set_identity(&state, sid, Some("claude"), false);
+        refresh_session_agent(&state, sid);
+        assert_eq!(
+            identity(&state, sid).as_deref(),
+            Some("claude"),
+            "a transient non-shell foreground revoked a live agent's identity"
+        );
+    }
+
+    /// Catches: a run-config preset (claude) overwritten by a hand-launched,
+    /// different discovered agent (codex) keeps `agent_type_from_run_config=true`,
+    /// so codex becomes unrevocable: after it exits back to a shell the session
+    /// still reads `codex` and unattended submit/mail write into the shell.
+    #[cfg(unix)]
+    #[test]
+    fn discovered_agent_replacing_a_preset_is_still_revocable() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sid = "critic-1420r3-replace";
+        let probe = ForegroundIdentityProbe::new(state.clone(), sid, "codex");
+        set_identity(&state, sid, Some("claude"), true);
+        assert_eq!(refresh_session_agent(&state, sid).as_deref(), Some("codex"));
+        let flag = state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .agent_type_from_run_config;
+        drop(probe);
+        let _shell = ForegroundIdentityProbe::shell_root(state.clone(), sid, "bash");
+        set_identity(&state, sid, Some("codex"), flag);
+        refresh_session_agent(&state, sid);
+        assert_eq!(
+            identity(&state, sid),
+            None,
+            "discovered codex stayed pinned by the replaced preset's provenance"
+        );
+    }
+
+    /// Catches: Linux `/proc/<pid>/exe` of a running native Claude whose version
+    /// file was replaced by the updater reads `.../claude/versions/2.1.5 (deleted)`;
+    /// the numeric-leaf check rejects the suffix and the agent is never classified.
+    #[test]
+    fn deleted_versioned_claude_exe_is_still_classified() {
+        assert_eq!(
+            classify_agent_name_or_path("/home/u/.local/share/claude/versions/2.1.5 (deleted)"),
+            Some("claude")
+        );
+    }
+}
+
+mod preset_identity {
+    //! Round-4 critic tests for story 1420-f3de: preset arming and revocation.
+
+    use super::*;
+    #[cfg(unix)]
+    use crate::test_support::ForegroundIdentityProbe;
+
+    #[cfg(unix)]
+    fn flags(state: &AppState, sid: &str) -> (Option<String>, bool, bool) {
+        let s = state.session_maps.session_states.get(sid).unwrap();
+        (
+            s.agent_type.clone(),
+            s.agent_type_from_run_config,
+            s.agent_foreground_observed,
+        )
+    }
+
+    #[cfg(unix)]
+    fn restore(state: &AppState, sid: &str, f: (Option<String>, bool, bool)) {
+        let mut s = state.session_maps.session_states.get_mut(sid).unwrap();
+        s.agent_type = f.0;
+        s.agent_type_from_run_config = f.1;
+        s.agent_foreground_observed = f.2;
+    }
+
+    /// Catches: a configured wrapper whose process name `classify_agent` does not
+    /// recognise (alias/script/symlink) is never "observed", so the preset stays
+    /// armed after the wrapper exits and unattended submit/mail write into the
+    /// returned shell. Revocation must treat a non-shell foreground that carried
+    /// the preset as evidence the agent started.
+    #[cfg(unix)]
+    #[test]
+    fn unrecognised_configured_wrapper_is_revoked_when_the_shell_returns() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sid = "critic-1420r4-wrapper";
+        let probe = ForegroundIdentityProbe::shell_parent(state.clone(), sid, "mywrapper");
+        restore(&state, sid, (Some("claude".into()), true, false));
+        assert_eq!(
+            refresh_session_agent(&state, sid).as_deref(),
+            Some("claude")
+        );
+        let carried = flags(&state, sid);
+        drop(probe);
+        let _shell = ForegroundIdentityProbe::shell_root(state.clone(), sid, "bash");
+        restore(&state, sid, carried);
+        refresh_session_agent(&state, sid);
+        assert_eq!(
+            flags(&state, sid).0,
+            None,
+            "wrapper exited to a shell but the never-classified preset stayed armed"
+        );
+    }
+
+    /// Catches: the preset is disarmed during shell startup (first poll sees the
+    /// shell before the agent is launched), or revoked on the second shell poll.
+    #[cfg(unix)]
+    #[test]
+    fn preset_survives_repeated_shell_polls_before_the_agent_starts() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sid = "critic-1420r4-startup";
+        let _shell = ForegroundIdentityProbe::shell_root(state.clone(), sid, "bash");
+        restore(&state, sid, (Some("claude".into()), true, false));
+        for _ in 0..3 {
+            refresh_session_agent(&state, sid);
+        }
+        assert_eq!(flags(&state, sid), (Some("claude".into()), true, false));
+    }
+
+    /// Catches: after the observed preset agent exits and the identity is revoked,
+    /// further shell polls or a hand-launched agent leave stale provenance: the
+    /// relaunched agent must be discovered (not preset) and revocable again.
+    #[cfg(unix)]
+    #[test]
+    fn revoked_preset_session_can_rediscover_and_revoke_a_hand_launched_agent() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sid = "critic-1420r4-cycle";
+        let agent = ForegroundIdentityProbe::new(state.clone(), sid, "claude");
+        restore(&state, sid, (Some("claude".into()), true, false));
+        refresh_session_agent(&state, sid);
+        let after_agent = flags(&state, sid);
+        assert_eq!(after_agent, (Some("claude".into()), true, true));
+        drop(agent);
+
+        let shell = ForegroundIdentityProbe::shell_root(state.clone(), sid, "bash");
+        restore(&state, sid, after_agent);
+        refresh_session_agent(&state, sid);
+        refresh_session_agent(&state, sid);
+        assert_eq!(flags(&state, sid), (None, false, true));
+        let revoked = flags(&state, sid);
+        drop(shell);
+
+        let again = ForegroundIdentityProbe::new(state.clone(), sid, "claude");
+        restore(&state, sid, revoked);
+        assert_eq!(
+            refresh_session_agent(&state, sid).as_deref(),
+            Some("claude")
+        );
+        let relaunched = flags(&state, sid);
+        assert!(!relaunched.1, "a rediscovered agent must not be a preset");
+        drop(again);
+
+        let _shell = ForegroundIdentityProbe::shell_root(state.clone(), sid, "bash");
+        restore(&state, sid, relaunched);
+        refresh_session_agent(&state, sid);
+        assert_eq!(flags(&state, sid).0, None);
+    }
+
+    /// Catches: a preset for one agent (codex) replaced by a different discovered
+    /// agent (claude) stays flagged as run-config and unrevocable.
+    #[cfg(unix)]
+    #[test]
+    fn different_discovered_agent_drops_preset_and_is_revoked_on_exit() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sid = "critic-1420r4-swap";
+        let probe = ForegroundIdentityProbe::new(state.clone(), sid, "claude");
+        restore(&state, sid, (Some("codex".into()), true, false));
+        refresh_session_agent(&state, sid);
+        let seen = flags(&state, sid);
+        assert_eq!(seen, (Some("claude".into()), false, true));
+        drop(probe);
+        let _shell = ForegroundIdentityProbe::shell_root(state.clone(), sid, "bash");
+        restore(&state, sid, seen);
+        refresh_session_agent(&state, sid);
+        assert_eq!(flags(&state, sid).0, None);
+    }
+
+    /// Catches: `(deleted)` handling that over-matches (a non-agent or shell path
+    /// with the suffix classified as an agent), misses a bare agent path, or only
+    /// strips the suffix from the versioned-claude layout.
+    #[test]
+    fn deleted_suffix_normalisation_is_exact() {
+        assert_eq!(
+            classify_agent_name_or_path("/usr/local/bin/claude (deleted)"),
+            Some("claude")
+        );
+        assert_eq!(
+            classify_agent_name_or_path("/usr/local/bin/codex (deleted)"),
+            Some("codex")
+        );
+        assert_eq!(classify_agent_name_or_path("/usr/bin/bash (deleted)"), None);
+        assert_eq!(
+            classify_agent_name_or_path("/home/u/claude/versions/not-a-version (deleted)"),
+            None
+        );
+        assert_eq!(
+            classify_agent_name_or_path("/home/u/claude/other/2.1.5 (deleted)"),
+            None
+        );
+    }
+}
+
+#[cfg(unix)]
+mod shell_identity {
+    //! Round-5 critic test for story 1420-f3de: shells missing from the shell list.
+
+    use super::*;
+    use crate::test_support::ForegroundIdentityProbe;
+
+    type Flags = (Option<String>, bool, bool);
+
+    /// Run one `refresh_session_agent` per foreground name, carrying the identity
+    /// provenance across the replaced probe PTYs. Returns the stored flags after
+    /// each step.
+    #[cfg(unix)]
+    fn run(sid: &str, initial: Flags, foregrounds: &[&str]) -> Vec<Flags> {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let mut carried = initial;
+        let mut out = Vec::new();
+        for name in foregrounds {
+            let probe = if *name == "ash" {
+                ForegroundIdentityProbe::shell_root(state.clone(), sid, name)
+            } else {
+                ForegroundIdentityProbe::shell_parent(state.clone(), sid, name)
+            };
+            {
+                let mut s = state.session_maps.session_states.get_mut(sid).unwrap();
+                s.agent_type = carried.0.clone();
+                s.agent_type_from_run_config = carried.1;
+                s.agent_foreground_observed = carried.2;
+            }
+            refresh_session_agent(&state, sid);
+            let s = state.session_maps.session_states.get(sid).unwrap();
+            carried = (
+                s.agent_type.clone(),
+                s.agent_type_from_run_config,
+                s.agent_foreground_observed,
+            );
+            drop(s);
+            out.push(carried.clone());
+            drop(probe);
+        }
+        out
+    }
+
+    /// Catches: a login shell missing from `SHELLS` (busybox/Alpine `ash`, common
+    /// on remote Linux) is read as a non-shell helper, so the discovered agent's
+    /// identity is retained forever after exit and the returned shell is submittable.
+    #[cfg(unix)]
+    #[test]
+    fn busybox_ash_after_an_agent_revokes_identity() {
+        let steps = run(
+            "critic-1420r5-ash",
+            (None, false, false),
+            &["claude", "ash"],
+        );
+        assert_eq!(
+            steps[1].0, None,
+            "ash treated as a helper; agent identity stuck"
+        );
+    }
+}
+
+#[cfg(unix)]
+mod root_identity {
+    //! Round-6 critic tests for story 1420-f3de: spawn-root role contract.
+
+    use super::*;
+    use crate::test_support::ForegroundIdentityProbe;
+
+    /// Catches: a Shell-role session whose root process was `exec`'d into the
+    /// agent (`exec claude`, same pid, no job-control child) is read as "foreground
+    /// == root pid, so the shell returned": the live agent is never detected and
+    /// its identity is revoked, so submit/mail and state parsing are refused for a
+    /// running agent.
+    #[cfg(unix)]
+    #[test]
+    fn shell_root_exec_ed_into_an_agent_is_still_detected() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sid = "critic-1420r6-exec-root";
+        let _probe = ForegroundIdentityProbe::shell_root(state.clone(), sid, "claude");
+        let returned = refresh_session_agent(&state, sid);
+        let stored = state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .agent_type
+            .clone();
+        assert_eq!(
+            (returned.as_deref(), stored.as_deref()),
+            (Some("claude"), Some("claude")),
+            "a Shell-role root running claude was treated as a returned shell"
+        );
+    }
+}

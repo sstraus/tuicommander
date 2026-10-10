@@ -10,7 +10,6 @@ authors and communities behind each project.
 <!-- BEGIN GENERATED:rust -->
 | Crate | Version | License |
 |-------|---------|---------|
-| aes-gcm | 0.11.0 | Apache-2.0 OR MIT |
 | agent-client-protocol | 2.0.0 | Apache-2.0 |
 | anyhow | 1.0.104 | MIT OR Apache-2.0 |
 | arboard | 3.6.1 | MIT OR Apache-2.0 |
@@ -48,7 +47,6 @@ authors and communities behind each project.
 | grep-regex | 0.1.14 | Unlicense OR MIT |
 | grep-searcher | 0.1.17 | Unlicense OR MIT |
 | hex | 0.4.3 | MIT OR Apache-2.0 |
-| hkdf | 0.13.0 | MIT OR Apache-2.0 |
 | home | 0.5.12 | MIT OR Apache-2.0 |
 | iana-time-zone | 0.1.65 | MIT OR Apache-2.0 |
 | ignore | 0.4.31 | Unlicense OR MIT |
@@ -64,6 +62,7 @@ authors and communities behind each project.
 | moka | 0.12.15 | MIT OR Apache-2.0 AND Apache-2.0 |
 | notify | 8.2.0 | CC0-1.0 |
 | ort | 2.0.0-rc.13 | MIT OR Apache-2.0 |
+| p256 | 0.13.2 | Apache-2.0 OR MIT |
 | parking_lot | 0.12.5 | MIT OR Apache-2.0 |
 | polling | 3.11.0 | Apache-2.0 OR MIT |
 | portable-pty | 0.9.0 | MIT |
@@ -118,7 +117,6 @@ authors and communities behind each project.
 | unicode-width | 0.2.2 | MIT OR Apache-2.0 |
 | url | 2.5.8 | MIT OR Apache-2.0 |
 | uuid | 1.27.0 | Apache-2.0 OR MIT |
-| web-push-native | 0.5.0 | MIT OR Apache-2.0 |
 | webrtc-audio-processing | 2.1.0 | BSD-3-Clause |
 | whichlang | 0.1.1 | MIT |
 | whisper-rs | 0.16.0 | Unlicense |
@@ -232,7 +230,7 @@ Counts below collapse equivalent SPDX expressions (`MIT OR Apache-2.0` ≡ `Apac
 <!-- BEGIN GENERATED:summary -->
 | License | Count |
 |---------|-------|
-| MIT OR Apache-2.0 | 82 |
+| MIT OR Apache-2.0 | 80 |
 | MIT | 66 |
 | Apache-2.0 | 8 |
 | Unlicense OR MIT | 7 |
