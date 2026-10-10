@@ -3716,3 +3716,36 @@ describe("AIChatPanel: new chat after saved-tab selection", () => {
 		);
 	});
 });
+
+describe("AIChatPanel: new chat during cold saved connection", () => {
+	// Catches New chat waiting for an older saved replay and aborting when that replay fails.
+	it("opens a usable new chat when the saved connection was still pending at the click", async () => {
+		aiChatTabs.add("global", SECOND_SESSION);
+		let finishConnect!: () => void;
+		const waiting = new Promise<void>((resolve) => {
+			finishConnect = resolve;
+		});
+		client.connect.mockImplementation(async () => {
+			await waiting;
+			const opened = snapshot();
+			acpStore.applySnapshot(opened);
+			acpStore.markStreaming(CONNECTION);
+			return opened;
+		});
+		client.loadSession.mockRejectedValue(new Error("Saved conversation is unavailable"));
+		const view = renderIdlePanel();
+		await settle();
+		(view.container.querySelector(`[data-chat-session="${SECOND_SESSION}"]`) as HTMLButtonElement).click();
+		await settle();
+		expect(client.connect).toHaveBeenCalledTimes(1);
+		(view.container.querySelector('button[aria-label="New chat tab"]') as HTMLButtonElement).click();
+		await settle();
+		finishConnect();
+		await settle();
+		expect(view.container.querySelector(`[data-chat-session="${SESSION}"]`)?.getAttribute("aria-selected")).toBe(
+			"true",
+		);
+		await typeAndSend(view.container, "Continue in the fresh conversation");
+		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, "Continue in the fresh conversation", [], ROOT);
+	});
+});
