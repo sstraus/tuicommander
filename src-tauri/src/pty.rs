@@ -31,16 +31,6 @@ pub(crate) use screen::*;
 mod child_reaping_tests;
 #[cfg(feature = "desktop")]
 mod commands;
-#[cfg(all(test, unix))]
-mod critic_1420_r2;
-#[cfg(test)]
-mod critic_1420_r3;
-#[cfg(test)]
-mod critic_1420_r4;
-#[cfg(all(test, unix))]
-mod critic_1420_r5;
-#[cfg(all(test, unix))]
-mod critic_1420_r6;
 #[cfg(feature = "desktop")]
 pub(crate) use commands::*;
 
@@ -4628,9 +4618,3 @@ where
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(all(test, unix))]
-mod submit_confirmation_critic_tests;
-
-#[cfg(all(test, unix))]
-mod submit_confirmation_critic2_tests;

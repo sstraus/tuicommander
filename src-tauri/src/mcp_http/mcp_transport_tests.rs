@@ -1,5 +1,6 @@
 use super::*;
 use crate::PtySession;
+use crate::mcp_http::mcp_transport;
 use parking_lot::Mutex;
 use portable_pty::{CommandBuilder, PtySize};
 use std::sync::atomic::AtomicBool;
