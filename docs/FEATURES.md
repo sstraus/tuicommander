@@ -1301,6 +1301,7 @@ The `tuic-dictation` Rust crate implements audio, transcription and speech; the 
 - Sources and licensing: the graphs come from a public Hugging Face export of Kyutai's Pocket TTS weights; the voices come from Kyutai's ungated repository without the voice-cloning weights. Both are CC-BY-4.0, attributed in `THIRD_PARTY_NOTICES.md`.
 
 ### 9.8 Spoken Replies
+- **Spoken replies** defaults on and can be disabled from Voice Settings, the mobile conversation header or mobile Settings. Off keeps dictation armed, cancels the speech queue, and enforces text replies server-side. Edge 401/403 rejections start a five-minute cool-down across conversations.
 - Arming hands-free also opens a **reply queue** for that conversation, so the model can answer out loud. Arming without a working voice still works — that is ordinary dictation — and the reason is reported rather than discovered on the first reply.
 - **The user can talk over a reply.** Speaking stops the moment the capture loop hears them, and their words land in the new turn rather than behind the sentence they interrupted. Echo cancellation runs first, so a reply never interrupts itself on its own voice coming back through the microphone.
 - **Accepting a reply is not the user hearing it.** Every reply gets an id and one of six fates: `queued`, `rendering`, `speaking`, `finished`, `interrupted` or `failed`. Only `finished` means somebody heard it to the end, and only the audio device going quiet can produce it.
@@ -2728,6 +2729,11 @@ past instants on creation and spring gaps, resolves folds to the earlier instant
 and keeps consumed Once definitions for inspection. The backend supplies one
 preview instant and completed schedule state. Public automation controls arrive
 with the scheduler API and dialog.
+The shared Rust runtime now admits Once schedules on desktop and headless hosts,
+reserves before dispatch and records precheck decisions and launch pointers.
+Precheck stdout never changes the literal prompt. Public execution controls and
+completion/maximum-duration integration remain pending.
+
 ### Automations dialog (backend integration pending)
 
 Machine-local scheduled-run editor with search, backend cadence/zone preview,

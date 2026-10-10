@@ -10,6 +10,12 @@ const mod = isMacOS() ? "Cmd" : "Ctrl";
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Spoken replies",
+		description:
+			"Turn off Spoken replies in mobile hands-free or Settings > Voice to keep dictating while the agent answers in text.",
+		shortcut: null,
+	},
+	{
 		feature: "Mobile Control Keys",
 		description:
 			"Tap Ctrl in the mobile terminal keybar to send Ctrl+C, Ctrl+B, Ctrl+D or the agent-aware Ctrl+Enter key.",

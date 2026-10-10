@@ -372,6 +372,10 @@ one group under a shared label.
 
 #### DictationSettings (`SettingsPanel/DictationSettings.tsx`)
 
+Spoken replies is a standard toggle, also available in the mobile conversation
+header and mobile Settings. It stays visible in browser mode and saves the
+backend device preference; it does not stop microphone dictation.
+
 The **Voice** page (nav key `dictation`). One `<h3>` per section. Speech-to-text and
 text-to-speech are separate sections, and each keeps its own advanced controls
 at its bottom — there is deliberately no shared "Advanced" section:

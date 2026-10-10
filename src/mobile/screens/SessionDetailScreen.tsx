@@ -323,6 +323,16 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 					</svg>
 				</button>
 			</header>
+			<Show when={voice.available()}>
+				<label class={styles.spokenReplies}>
+					<span>Spoken replies</span>
+					<input
+						type="checkbox"
+						checked={voice.spokenReplies()}
+						onChange={(e) => voice.setSpokenReplies(e.currentTarget.checked)}
+					/>
+				</label>
+			</Show>
 			<Show when={moreOpen()}>
 				<div class={styles.overflow}>
 					<button

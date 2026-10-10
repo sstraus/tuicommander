@@ -80,9 +80,14 @@ pub struct AutomationRun {
     pub task_id: Option<String>,
     pub session_id: Option<String>,
     pub workspace: Option<String>,
+    #[serde(default)]
+    pub workspace_id: Option<String>,
     pub stdout: SavedOutput,
     pub stderr: SavedOutput,
     pub precheck: Option<SavedPrecheck>,
+    /// Full pre-dispatch decision, including explicit bypass and absent checks.
+    #[serde(default)]
+    pub precheck_outcome: Option<super::precheck::PrecheckOutcome>,
     pub reason: Option<String>,
 }
 
@@ -92,9 +97,11 @@ pub struct RunDetails {
     pub task_id: Option<String>,
     pub session_id: Option<String>,
     pub workspace: Option<String>,
+    pub workspace_id: Option<String>,
     pub stdout: Option<String>,
     pub stderr: Option<String>,
     pub precheck: Option<SavedPrecheck>,
+    pub precheck_outcome: Option<super::precheck::PrecheckOutcome>,
     pub reason: Option<String>,
 }
 

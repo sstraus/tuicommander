@@ -3,6 +3,7 @@ import { TelegramTab } from "../../components/SettingsPanel/tabs/TelegramTab";
 import { appLogger } from "../../stores/appLogger";
 import { setDesktopUI } from "../../utils/tabletRouting";
 import { loadMobileTheme, mobileTheme, setMobileTheme } from "../mobileTheme";
+import { useMobileVoice } from "../useMobileVoice";
 import styles from "./SettingsScreen.module.css";
 
 const SOUND_KEY = "tuic-mobile-sounds";
@@ -22,6 +23,10 @@ function urlBase64ToUint8Array(base64String: string): Uint8Array {
 type PushState = "unsupported" | "requires-https" | "requires-install" | "denied" | "default" | "subscribed";
 
 export function SettingsScreen(props: SettingsScreenProps) {
+	const voice = useMobileVoice(
+		() => "",
+		() => props.isConnected,
+	);
 	const [telegramOpen, setTelegramOpen] = createSignal(false);
 	const [soundEnabled, setSoundEnabled] = createSignal(localStorage.getItem(SOUND_KEY) !== "false");
 	const [serverUrl, setServerUrl] = createSignal("");
@@ -222,6 +227,20 @@ export function SettingsScreen(props: SettingsScreenProps) {
 					<span class={styles.value}>{serverVersion() ?? "Unavailable"}</span>
 				</div>
 			</section>
+
+			<Show when={voice.available()}>
+				<section class={styles.section}>
+					<h3 class={styles.sectionTitle}>VOICE</h3>
+					<label class={`${styles.row} ${styles.spokenReplies}`}>
+						<span class={styles.label}>Spoken replies</span>
+						<input
+							type="checkbox"
+							checked={voice.spokenReplies()}
+							onChange={(e) => voice.setSpokenReplies(e.currentTarget.checked)}
+						/>
+					</label>
+				</section>
+			</Show>
 
 			<section class={styles.section}>
 				<h3 class={styles.sectionTitle}>APPEARANCE</h3>

@@ -6,6 +6,7 @@ import type { SessionInfo } from "../useSessions";
 const { rpc, toastAdd, voice } = vi.hoisted(() => {
 	const voice = {
 		state: { handsFree: null as unknown, handsFreeError: null as string | null },
+		setSpokenReplies: vi.fn(),
 		armHandsFree: vi.fn(),
 		disarmHandsFree: vi.fn(),
 		setStatus: (_status: unknown) => {},
@@ -23,13 +24,23 @@ vi.mock("../components/OutputView", () => ({ OutputView: () => <div /> }));
 vi.mock("../components/TerminalKeybar", () => ({ TerminalKeybar: () => <div /> }));
 vi.mock("../../stores/dictation", async () => {
 	const { createStore } = await import("solid-js/store");
-	const [state, setState] = createStore({ handsFree: null as unknown, handsFreeError: null as string | null });
+	const [state, setState] = createStore({
+		handsFree: null as unknown,
+		handsFreeError: null as string | null,
+		spokenReplies: true,
+	});
 	voice.state = state as typeof voice.state;
 	voice.setStatus = (status) => setState("handsFree", status);
 	voice.setError = (message) => setState("handsFreeError", message);
 	return {
 		browserAudioOwner: "browser-test",
-		dictationStore: { state, armHandsFree: voice.armHandsFree, disarmHandsFree: voice.disarmHandsFree },
+		dictationStore: {
+			state,
+			refreshConfig: vi.fn().mockResolvedValue(undefined),
+			setSpokenReplies: voice.setSpokenReplies,
+			armHandsFree: voice.armHandsFree,
+			disarmHandsFree: voice.disarmHandsFree,
+		},
 	};
 });
 

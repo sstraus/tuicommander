@@ -235,6 +235,17 @@ fn saved_reports_bound_each_stream_and_keep_definition_snapshot_and_launch_point
                 stdout: Some(text.clone()),
                 stderr: Some(text),
                 precheck: Some(precheck),
+                precheck_outcome: Some(crate::automations::precheck::PrecheckOutcome::Executed(
+                    crate::automations::precheck::PrecheckResult {
+                        termination: crate::automations::precheck::Termination::Exited(Some(0)),
+                        stdout: "z".repeat(OUTPUT_LIMIT + 1),
+                        stderr: "日".repeat(OUTPUT_LIMIT),
+                        stdout_truncated: false,
+                        stderr_truncated: false,
+                        duration_ms: 12,
+                    },
+                )),
+                workspace_id: Some("allocated-workspace-id".into()),
                 reason: Some("confirmed done".into()),
             },
             2,
@@ -250,6 +261,19 @@ fn saved_reports_bound_each_stream_and_keep_definition_snapshot_and_launch_point
     assert_eq!(actual.task_id.as_deref(), Some("task-1"));
     assert_eq!(actual.session_id.as_deref(), Some("session-1"));
     assert_eq!(actual.workspace.as_deref(), Some("/worktree"));
+    assert_eq!(
+        actual.workspace_id.as_deref(),
+        Some("allocated-workspace-id")
+    );
+    let Some(crate::automations::precheck::PrecheckOutcome::Executed(result)) =
+        actual.precheck_outcome
+    else {
+        panic!("missing full precheck outcome")
+    };
+    assert_eq!(result.stdout.len(), OUTPUT_LIMIT);
+    assert_eq!(result.stderr.len(), OUTPUT_LIMIT - 1);
+    assert!(result.stdout_truncated && result.stderr_truncated);
+    assert_eq!(result.duration_ms, 12);
     assert_eq!(actual.stdout.text.len(), OUTPUT_LIMIT - 1);
     assert!(actual.stdout.truncated && actual.stderr.truncated);
     let precheck = actual.precheck.unwrap();
