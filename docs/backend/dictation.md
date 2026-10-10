@@ -17,6 +17,22 @@ optional `audio-output` feature. The output-device selection is unchanged.
 
 Local voice-to-text using Whisper with Metal acceleration on macOS. Push-to-talk workflow with streaming partial results: hold hotkey to record, see partial transcriptions in real-time, release to finalize.
 
+## Diagnose speech that also appears in the mobile composer
+
+Hands-free uses `pty::write_voice_turn` for its bound session. The mobile
+`input_line` feed observes that terminal prompt; it does not choose the voice
+destination. Correlate `Hands-free turn accepted` and `Hands-free turn typed now`
+with the session ID before treating a mobile draft as a delivery failure. The
+typed log alone does not prove that the agent accepted the submission.
+
+Check the mobile client build as well as `/api/version`. The mobile
+`Update available: <client> → <server>` log identifies an older loaded bundle.
+Before the #1662 fix, an empty composer accepted any nonempty PTY input as an
+echo, so a voice paste could remain as a local draft after terminal delivery.
+Current clients accept only explicitly requested completion/history responses.
+Save any local draft, then use the mobile update action to load the current
+bundle. A desktop rebuild does not replace JavaScript already loaded on a phone.
+
 ## Module Structure
 
 | File | Purpose |
