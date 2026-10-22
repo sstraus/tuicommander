@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Keep the File Browser and Git Panel available while a per-repo auto-consolidated worktree workspace is active; only the manual cross-repo global workspace suppresses them.
+
 ## [2.0.0-beta.1] - 2026-10-22
 
 - Keep the terminal mobile composer's bottom safe-area inset inside its painted surface, above the Home Indicator; the separately reported iPhone shell-height band still needs device evidence (#2116-0213).

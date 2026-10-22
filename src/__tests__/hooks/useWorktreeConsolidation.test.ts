@@ -4,7 +4,7 @@ vi.mock("../../invoke", () => ({
 	invoke: vi.fn(() => Promise.resolve(null)),
 }));
 
-import { makeTerminal, testInScope } from "../helpers/store";
+import { makeTerminal, testInScope, testInScopeAsync } from "../helpers/store";
 
 /**
  * Per-repo worktree consolidation (#e767) — the selection rule and the reactive
@@ -87,6 +87,106 @@ describe("worktree consolidation", () => {
 		testInScope(() => {
 			const created = repoSettingsStore.getOrCreate(REPO, "a");
 			expect(created.autoConsolidateWorktrees).toBe(false);
+		});
+	});
+
+	/**
+	 * The reactive glue itself: `useWorktreeConsolidation()`'s two effects drive
+	 * `globalWorkspaceStore` into the state PanelOrchestrator's suppression check
+	 * (`isActive() && getScope() === MANUAL_SCOPE`) depends on. Only the pure
+	 * selectors above were covered before; these exercise the actual wiring.
+	 */
+	describe("reactive activation", () => {
+		let globalWorkspaceStore: typeof import("../../stores/globalWorkspace").globalWorkspaceStore;
+		let MANUAL_SCOPE: typeof import("../../stores/globalWorkspace").MANUAL_SCOPE;
+		let paneLayoutStore: typeof import("../../stores/paneLayout").paneLayoutStore;
+
+		beforeEach(async () => {
+			const gw = await import("../../stores/globalWorkspace");
+			globalWorkspaceStore = gw.globalWorkspaceStore;
+			MANUAL_SCOPE = gw.MANUAL_SCOPE;
+			paneLayoutStore = (await import("../../stores/paneLayout")).paneLayoutStore;
+		});
+
+		afterEach(() => {
+			repositoriesStore._testCancelPendingSave();
+			paneLayoutStore._testCancelPendingSave();
+		});
+
+		/** Let SolidJS flush its effect queue (createEffect runs on a microtask). */
+		function flushEffects(): Promise<void> {
+			return new Promise((resolve) => queueMicrotask(resolve));
+		}
+
+		it("switches scope to the repo and activates once it has worktrees to show", async () => {
+			await testInScopeAsync(async () => {
+				seedRepo(["feat-1"]);
+				repoSettingsStore.getOrCreate(REPO, "a");
+				repoSettingsStore.update(REPO, { autoConsolidateWorktrees: true });
+				repositoriesStore.setActive(REPO);
+
+				hook.useWorktreeConsolidation();
+				await flushEffects();
+				await flushEffects();
+
+				expect(globalWorkspaceStore.getScope()).toBe(REPO);
+				expect(globalWorkspaceStore.isActive()).toBe(true);
+			});
+		});
+
+		it("switches scope but stays inactive for a consolidated repo with no worktrees yet", async () => {
+			await testInScopeAsync(async () => {
+				seedRepo([]);
+				repoSettingsStore.getOrCreate(REPO, "a");
+				repoSettingsStore.update(REPO, { autoConsolidateWorktrees: true });
+				repositoriesStore.setActive(REPO);
+
+				hook.useWorktreeConsolidation();
+				await flushEffects();
+				await flushEffects();
+
+				expect(globalWorkspaceStore.getScope()).toBe(REPO);
+				expect(globalWorkspaceStore.isActive()).toBe(false);
+			});
+		});
+
+		it("leaves a hand-promoted manual workspace open when the active repo isn't consolidated", async () => {
+			await testInScopeAsync(async () => {
+				const manualTerm = terminalsStore.add(makeTerminal({ name: "manual" }));
+				globalWorkspaceStore.promote(manualTerm);
+				globalWorkspaceStore.activate();
+
+				repositoriesStore.add({ path: "/repo/other", displayName: "other" });
+				repositoriesStore.setActive("/repo/other");
+
+				hook.useWorktreeConsolidation();
+				await flushEffects();
+				await flushEffects();
+
+				expect(globalWorkspaceStore.getScope()).toBe(MANUAL_SCOPE);
+				expect(globalWorkspaceStore.isActive()).toBe(true);
+			});
+		});
+
+		it("deactivates and reverts to manual scope when the repo's toggle is turned back off", async () => {
+			await testInScopeAsync(async () => {
+				seedRepo(["feat-1"]);
+				repoSettingsStore.getOrCreate(REPO, "a");
+				repoSettingsStore.update(REPO, { autoConsolidateWorktrees: true });
+				repositoriesStore.setActive(REPO);
+
+				hook.useWorktreeConsolidation();
+				await flushEffects();
+				await flushEffects();
+				expect(globalWorkspaceStore.isActive()).toBe(true);
+
+				repoSettingsStore.update(REPO, { autoConsolidateWorktrees: false });
+				await flushEffects();
+				await flushEffects();
+
+				expect(globalWorkspaceStore.isActive()).toBe(false);
+				expect(globalWorkspaceStore.getScope()).toBe(MANUAL_SCOPE);
+			});
 		});
 	});
 });
