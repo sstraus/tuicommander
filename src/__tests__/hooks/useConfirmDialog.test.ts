@@ -369,6 +369,65 @@ describe("useConfirmDialog", () => {
 		});
 	});
 
+	describe("confirmStashAndSwitch()", () => {
+		it("shows dialog with correct message and resolves true on confirm", async () => {
+			const promise = dialog.confirmStashAndSwitch("main");
+
+			expect(dialog.dialogState()).toEqual({
+				title: "Uncommitted changes",
+				message: "Working tree has uncommitted changes.\nStash them and switch to main?",
+				confirmLabel: "Stash & Switch",
+				cancelLabel: "Cancel",
+				kind: "warning",
+				defaultButton: "confirm",
+			});
+
+			dialog.handleConfirm();
+			expect(await promise).toBe(true);
+		});
+
+		it("returns false when user cancels", async () => {
+			const promise = dialog.confirmStashAndSwitch("main");
+			dialog.handleClose();
+			expect(await promise).toBe(false);
+		});
+	});
+
+	describe("reportGitError()", () => {
+		it("shows OK/Dismiss labels by default", async () => {
+			const promise = dialog.reportGitError("Commit failed", "fatal: nothing to commit");
+
+			expect(dialog.dialogState()).toEqual({
+				title: "Commit failed",
+				message: "fatal: nothing to commit",
+				confirmLabel: "OK",
+				cancelLabel: "Dismiss",
+				kind: "error",
+				defaultButton: "confirm",
+			});
+
+			dialog.handleConfirm();
+			expect(await promise).toBe(true);
+		});
+
+		it("shows Retry/Cancel labels and resolves true only when Retry is chosen", async () => {
+			const promise = dialog.reportGitError("Push failed", "fatal: connection reset", true);
+
+			const state = dialog.dialogState();
+			expect(state?.confirmLabel).toBe("Retry");
+			expect(state?.cancelLabel).toBe("Cancel");
+
+			dialog.handleConfirm();
+			expect(await promise).toBe(true);
+		});
+
+		it("resolves false when the acknowledge dialog is dismissed", async () => {
+			const promise = dialog.reportGitError("Commit failed", "fatal: nothing to commit");
+			dialog.handleClose();
+			expect(await promise).toBe(false);
+		});
+	});
+
 	describe("confirmSaveChanges()", () => {
 		it("offers Save / Don't Save / Cancel with Save as the Enter default", () => {
 			void dialog.confirmSaveChanges("notes.md");

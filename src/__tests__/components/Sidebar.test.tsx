@@ -147,11 +147,13 @@ vi.mock("../../components/PrDetailPopover/PrDetailPopover", () => ({
 	),
 }));
 
-import { _resetMergedActivityAccum } from "../../components/Sidebar/RepoSection";
+import { _resetMergedActivityAccum, BranchIcon, StatsBadge } from "../../components/Sidebar/RepoSection";
 import { Sidebar } from "../../components/Sidebar/Sidebar";
 import { appLogger } from "../../stores/appLogger";
+import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
 import { githubStore } from "../../stores/github";
 import { progressStore } from "../../stores/progress";
+import { repoSettingsStore } from "../../stores/repoSettings";
 import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
 import { sidebarPluginStore } from "../../stores/sidebarPluginStore";
@@ -3533,6 +3535,49 @@ describe("Sidebar", () => {
 			});
 		});
 
+		it("context menu Copy Path action logs a warning (not a throw) when the clipboard write fails", async () => {
+			const err = new DOMException("Write permission denied.", "NotAllowedError");
+			mockInvoke.mockImplementation((cmd: string) =>
+				cmd === "write_clipboard_text" ? Promise.reject(err) : Promise.resolve(undefined),
+			);
+			const warnSpy = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
+
+			try {
+				setRepos({
+					"/repo1": makeRepo({
+						workspaces: {
+							main: {
+								workspaceId: "main",
+								branchName: "main",
+								isMain: true,
+								worktreePath: "/path/to/repo",
+								terminals: [],
+								additions: 0,
+								deletions: 0,
+							},
+						},
+					}),
+				});
+				const { container } = render(() => <Sidebar {...defaultProps()} />);
+				const branchItem = container.querySelector(".branchItem")!;
+				fireEvent.contextMenu(branchItem, { clientX: 100, clientY: 200 });
+
+				const contextMenu = container.querySelector(".menu");
+				const items = contextMenu!.querySelectorAll(".item");
+				const copyPathItem = Array.from(items).find((i) => i.querySelector(".label")?.textContent === "Copy Path")!;
+				fireEvent.click(copyPathItem);
+
+				await vi.waitFor(() => {
+					expect(warnSpy).toHaveBeenCalledWith("app", "Failed to copy path to clipboard", err);
+				});
+			} finally {
+				// mockInvoke is shared module state across this whole test file — a
+				// permanent mockImplementation here would silently break every later
+				// test's write_clipboard_text expectations.
+				mockInvoke.mockReset().mockResolvedValue(undefined);
+			}
+		});
+
 		it("context menu Copy Path is disabled when no worktreePath", () => {
 			setRepos({
 				"/repo1": makeRepo({
@@ -4241,6 +4286,436 @@ describe("Sidebar", () => {
 			popover = container.querySelector("[data-testid='pr-detail-popover']");
 			expect(popover).not.toBeNull();
 			expect(popover!.getAttribute("data-repo")).toBe("/repo2");
+		});
+	});
+
+	describe("BranchIcon (standalone)", () => {
+		// Shape cascade: error > question > shell > (main worktree + main branch) star
+		// > (main worktree, non-main branch) falls through the switch to its default
+		// case > (linked worktree) worktree-fork. Color cascade: error > question >
+		// busy > unseen > idle > main/worktree base — note this actually differs from
+		// the component's own doc comment, which omits error/idle from the priority
+		// list entirely; these tests lock in the real, coded behavior.
+		it("renders '!' and the error color for hasError, regardless of other flags", () => {
+			const { container } = render(() => (
+				<BranchIcon isMainBranch={true} isMainWorktree={true} hasError={true} hasQuestion={true} hasBusy={true} />
+			));
+			expect(container.textContent).toBe("!");
+			expect(container.querySelector(".branchIconError")).not.toBeNull();
+		});
+
+		it("renders '?' and the question color for hasQuestion when there is no error", () => {
+			const { container } = render(() => (
+				<BranchIcon isMainBranch={true} isMainWorktree={true} hasQuestion={true} hasBusy={true} />
+			));
+			expect(container.textContent).toBe("?");
+			expect(container.querySelector(".branchIconQuestion")).not.toBeNull();
+		});
+
+		it("renders the shell (terminal) icon for a non-git shell branch", () => {
+			const { container } = render(() => <BranchIcon isMainBranch={false} isMainWorktree={false} isShell={true} />);
+			const path = container.querySelector("svg path");
+			expect(path?.getAttribute("d")).toMatch(/^M1 3l5 5-5 5h2/);
+		});
+
+		it("renders a star for the main worktree on the main branch", () => {
+			const { container } = render(() => <BranchIcon isMainBranch={true} isMainWorktree={true} />);
+			const path = container.querySelector("svg path");
+			expect(path?.getAttribute("d")).toMatch(/^M9\.2 1\.2v4\.4L13/);
+			expect(container.querySelector(".branchIconMain")).not.toBeNull();
+		});
+
+		it("falls through to the default (link) icon for the main worktree on a non-main branch", () => {
+			// iconShape() returns "branch" here, but the render switch has no "branch"
+			// case — it silently falls to `default`. This is the actual shipped
+			// behavior (not necessarily intentional), pinned down so a refactor can't
+			// change it unnoticed.
+			const { container } = render(() => <BranchIcon isMainBranch={false} isMainWorktree={true} />);
+			const path = container.querySelector("svg path");
+			expect(path?.getAttribute("d")).toMatch(/^M11\.75 2\.5a\.75\.75/);
+			// colorClass() only checks isMainBranch, not isMainWorktree — a non-main
+			// branch colors as "worktree" (green) even while sitting on the main
+			// worktree, e.g. right after switching the main checkout off main.
+			expect(container.querySelector(".branchIconWorktree")).not.toBeNull();
+		});
+
+		it("renders the worktree-fork icon and worktree color for a linked worktree", () => {
+			const { container } = render(() => <BranchIcon isMainBranch={false} isMainWorktree={false} />);
+			const path = container.querySelector("svg path");
+			expect(path?.getAttribute("d")).toMatch(/^M5 1\.5a1\.5 1\.5/);
+			expect(container.querySelector(".branchIconWorktree")).not.toBeNull();
+		});
+
+		it("colors busy over unseen when both are set", () => {
+			const { container } = render(() => (
+				<BranchIcon isMainBranch={true} isMainWorktree={true} hasBusy={true} hasUnseen={true} />
+			));
+			expect(container.querySelector(".branchIconActivity")).not.toBeNull();
+		});
+
+		it("colors unseen over idle when both would otherwise apply", () => {
+			const { container } = render(() => (
+				<BranchIcon isMainBranch={true} isMainWorktree={true} hasUnseen={true} branchHasTerminals={false} />
+			));
+			expect(container.querySelector(".branchIconUnseen")).not.toBeNull();
+		});
+
+		it("colors idle when the branch has no open terminals and nothing else applies", () => {
+			const { container } = render(() => (
+				<BranchIcon isMainBranch={true} isMainWorktree={true} branchHasTerminals={false} />
+			));
+			expect(container.querySelector(".branchIconIdle")).not.toBeNull();
+		});
+
+		it("colors main (base) for the main branch with an open terminal and no other state", () => {
+			const { container } = render(() => (
+				<BranchIcon isMainBranch={true} isMainWorktree={true} branchHasTerminals={true} />
+			));
+			expect(container.querySelector(".branchIconMain")).not.toBeNull();
+		});
+
+		it("colors worktree (base) for a non-main branch with an open terminal and no other state", () => {
+			const { container } = render(() => (
+				<BranchIcon isMainBranch={false} isMainWorktree={false} branchHasTerminals={true} />
+			));
+			expect(container.querySelector(".branchIconWorktree")).not.toBeNull();
+		});
+	});
+
+	describe("StatsBadge (standalone)", () => {
+		it("renders nothing when both additions and deletions are 0", () => {
+			const { container } = render(() => <StatsBadge additions={0} deletions={0} />);
+			expect(container.querySelector(".branchStats")).toBeNull();
+		});
+
+		it("renders +additions and -deletions when both are non-zero", () => {
+			const { container } = render(() => <StatsBadge additions={12} deletions={4} />);
+			expect(container.textContent).toBe("+12-4");
+		});
+
+		it("has no button role or tabIndex when onClick is not provided", () => {
+			const { container } = render(() => <StatsBadge additions={1} deletions={0} />);
+			const badge = container.querySelector(".branchStats")!;
+			expect(badge.getAttribute("role")).toBeNull();
+			expect(badge.getAttribute("tabindex")).toBeNull();
+		});
+
+		it("exposes a button role and calls onClick when clicked", () => {
+			const onClick = vi.fn();
+			const { container } = render(() => <StatsBadge additions={1} deletions={0} onClick={onClick} />);
+			const badge = container.querySelector(".branchStats")!;
+			expect(badge.getAttribute("role")).toBe("button");
+			expect(badge.getAttribute("tabindex")).toBe("0");
+			fireEvent.click(badge);
+			expect(onClick).toHaveBeenCalledOnce();
+		});
+
+		it("calls onClick on Enter/Space keydown via the shared onClickKeyDown helper", () => {
+			const onClick = vi.fn();
+			const { container } = render(() => <StatsBadge additions={1} deletions={0} onClick={onClick} />);
+			const badge = container.querySelector(".branchStats")!;
+			fireEvent.keyDown(badge, { key: "Enter" });
+			fireEvent.keyDown(badge, { key: " " });
+			expect(onClick).toHaveBeenCalledTimes(2);
+		});
+	});
+
+	describe("branch context menu — additional actions", () => {
+		afterEach(() => {
+			contextMenuActionsStore.clear();
+		});
+
+		it("shows a Switch Branch submenu on the main worktree row, checkmarking the current branch", () => {
+			setRepos({
+				"/repo1": makeRepo({
+					workspaces: {
+						main: {
+							workspaceId: "main",
+							branchName: "main",
+							isMain: true,
+							worktreePath: "/repo1",
+							terminals: [],
+							additions: 0,
+							deletions: 0,
+						},
+					},
+				}),
+			});
+			const onSwitchBranch = vi.fn();
+			const { container } = render(() => (
+				<Sidebar
+					{...defaultProps({
+						onSwitchBranch,
+						switchBranchLists: { "/repo1": ["main", "develop"] },
+						currentBranches: { "/repo1": "main" },
+					})}
+				/>
+			));
+			const branchItem = container.querySelector(".branchItem")!;
+			fireEvent.contextMenu(branchItem, { clientX: 0, clientY: 0 });
+			const contextMenu = container.querySelector(".menu")!;
+			const switchWrap = Array.from(contextMenu.querySelectorAll(".itemWrap")).find(
+				(w) => w.querySelector(".label")!.textContent === "Switch Branch",
+			);
+			expect(switchWrap).toBeTruthy();
+			fireEvent.mouseEnter(switchWrap!);
+			const submenu = contextMenu.querySelector(".submenu")!;
+			const subItems = Array.from(submenu.querySelectorAll(".item"));
+			const labels = subItems.map((i) => i.querySelector(".label")!.textContent);
+			expect(labels).toEqual(["main  ✓", "develop"]);
+			// The current branch's entry is disabled — can't "switch" to where you are.
+			expect(subItems[0].hasAttribute("disabled")).toBe(true);
+
+			const developItem = subItems.find((i) => i.querySelector(".label")!.textContent === "develop")!;
+			fireEvent.click(developItem);
+			expect(onSwitchBranch).toHaveBeenCalledWith("/repo1", "develop");
+		});
+
+		it("does not show a Switch Branch submenu when there is nothing to switch to", () => {
+			setRepos({
+				"/repo1": makeRepo({
+					workspaces: {
+						main: {
+							workspaceId: "main",
+							branchName: "main",
+							isMain: true,
+							worktreePath: "/repo1",
+							terminals: [],
+							additions: 0,
+							deletions: 0,
+						},
+					},
+				}),
+			});
+			const { container } = render(() => (
+				<Sidebar
+					{...defaultProps({
+						onSwitchBranch: vi.fn(),
+						switchBranchLists: { "/repo1": [] },
+						currentBranches: { "/repo1": "main" },
+					})}
+				/>
+			));
+			const branchItem = container.querySelector(".branchItem")!;
+			fireEvent.contextMenu(branchItem, { clientX: 0, clientY: 0 });
+			const labels = Array.from(container.querySelectorAll(".menu .item")).map(
+				(i) => i.querySelector(".label")!.textContent,
+			);
+			expect(labels).not.toContain("Switch Branch");
+		});
+
+		it("shows Create Worktree for a branchless-worktree branch and calls onCreateWorktreeFromBranch", () => {
+			setRepos({
+				"/repo1": makeRepo({
+					workspaces: {
+						main: {
+							workspaceId: "main",
+							branchName: "main",
+							isMain: true,
+							worktreePath: "/repo1",
+							terminals: [],
+							additions: 0,
+							deletions: 0,
+						},
+						"feature/y": {
+							workspaceId: "feature/y",
+							branchName: "feature/y",
+							isMain: false,
+							worktreePath: null,
+							terminals: [],
+							additions: 0,
+							deletions: 0,
+						},
+					},
+				}),
+			});
+			const onCreateWorktreeFromBranch = vi.fn();
+			const { container } = render(() => <Sidebar {...defaultProps({ onCreateWorktreeFromBranch })} />);
+			const branchItems = container.querySelectorAll(".branchItem");
+			fireEvent.contextMenu(branchItems[1], { clientX: 0, clientY: 0 });
+			const contextMenu = container.querySelector(".menu")!;
+			const branchWrap = Array.from(contextMenu.querySelectorAll(".itemWrap")).find(
+				(w) => w.querySelector(".label")!.textContent === "Branch",
+			)!;
+			fireEvent.mouseEnter(branchWrap);
+			const submenu = contextMenu.querySelector(".submenu")!;
+			const createItem = Array.from(submenu.querySelectorAll(".item")).find(
+				(i) => i.querySelector(".label")!.textContent === "Create Worktree",
+			)!;
+			fireEvent.click(createItem);
+			expect(onCreateWorktreeFromBranch).toHaveBeenCalledWith("/repo1", "feature/y");
+		});
+
+		it("shows Merge & Archive for a linked-worktree non-main branch and calls onMergeAndArchive", () => {
+			setRepos({
+				"/repo1": makeRepo({
+					workspaces: {
+						main: {
+							workspaceId: "main",
+							branchName: "main",
+							isMain: true,
+							worktreePath: "/repo1",
+							terminals: [],
+							additions: 0,
+							deletions: 0,
+						},
+						"feature/x": {
+							workspaceId: "feature/x",
+							branchName: "feature/x",
+							isMain: false,
+							worktreePath: "/wt/x",
+							terminals: [],
+							additions: 0,
+							deletions: 0,
+						},
+					},
+				}),
+			});
+			const onMergeAndArchive = vi.fn();
+			const { container } = render(() => <Sidebar {...defaultProps({ onMergeAndArchive })} />);
+			const branchItems = container.querySelectorAll(".branchItem");
+			fireEvent.contextMenu(branchItems[1], { clientX: 0, clientY: 0 });
+			const contextMenu = container.querySelector(".menu")!;
+			const branchWrap = Array.from(contextMenu.querySelectorAll(".itemWrap")).find(
+				(w) => w.querySelector(".label")!.textContent === "Branch",
+			)!;
+			fireEvent.mouseEnter(branchWrap);
+			const submenu = contextMenu.querySelector(".submenu")!;
+			const mergeItem = Array.from(submenu.querySelectorAll(".item")).find(
+				(i) => i.querySelector(".label")!.textContent === "Merge & Archive",
+			)!;
+			fireEvent.click(mergeItem);
+			expect(onMergeAndArchive).toHaveBeenCalledWith("/repo1", "feature/x");
+		});
+
+		it("includes plugin-registered branch context actions from contextMenuActionsStore", () => {
+			const pluginAction = vi.fn();
+			contextMenuActionsStore.registerContextAction("test-plugin", {
+				id: "do-thing",
+				label: "Do The Thing",
+				target: "branch",
+				action: pluginAction,
+			});
+			setRepos({ "/repo1": makeRepo() });
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			const branchItem = container.querySelector(".branchItem")!;
+			fireEvent.contextMenu(branchItem, { clientX: 0, clientY: 0 });
+			const items = Array.from(container.querySelectorAll(".menu .item"));
+			const pluginItem = items.find((i) => i.querySelector(".label")!.textContent === "Do The Thing")!;
+			expect(pluginItem).toBeTruthy();
+			fireEvent.click(pluginItem);
+			expect(pluginAction).toHaveBeenCalledWith({ target: "branch", repoPath: "/repo1", branchName: "main" });
+		});
+
+		it("includes agent menu items from buildAgentMenuItems for non-shell branches", () => {
+			const agentAction = vi.fn();
+			const buildAgentMenuItems = vi.fn(() => [{ label: "Run Agent", action: agentAction }]);
+			setRepos({ "/repo1": makeRepo() });
+			const { container } = render(() => <Sidebar {...defaultProps({ buildAgentMenuItems })} />);
+			const branchItem = container.querySelector(".branchItem")!;
+			fireEvent.contextMenu(branchItem, { clientX: 0, clientY: 0 });
+			const items = Array.from(container.querySelectorAll(".menu .item"));
+			const agentItem = items.find((i) => i.querySelector(".label")!.textContent === "Run Agent")!;
+			fireEvent.click(agentItem);
+			expect(agentAction).toHaveBeenCalledOnce();
+			expect(buildAgentMenuItems).toHaveBeenCalledWith("/repo1", "main");
+		});
+	});
+
+	describe("branch label dialog (Set Label / Clear Label)", () => {
+		// Runs even when an assertion throws, so a stubbed label can't leak into later tests.
+		afterEach(() => {
+			vi.mocked(repoSettingsStore.getEffectiveField).mockReturnValue(undefined);
+		});
+
+		it("opens a prompt dialog on Set Label and saves via repoSettingsStore.setLabel", async () => {
+			setRepos({ "/repo1": makeRepo() });
+			const { container, findByText, getByPlaceholderText } = render(() => <Sidebar {...defaultProps()} />);
+			const branchItem = container.querySelector(".branchItem")!;
+			fireEvent.contextMenu(branchItem, { clientX: 0, clientY: 0 });
+			const setLabelItem = Array.from(container.querySelectorAll(".menu .item")).find(
+				(i) => i.querySelector(".label")!.textContent === "Set Label",
+			)!;
+			fireEvent.click(setLabelItem);
+
+			await findByText("Set Label");
+			const input = getByPlaceholderText("Human-readable name…") as HTMLInputElement;
+			fireEvent.input(input, { target: { value: "My Label" } });
+			const confirmBtn = Array.from(document.querySelectorAll("button")).find((b) => b.textContent === "Save")!;
+			fireEvent.click(confirmBtn);
+
+			expect(repoSettingsStore.setLabel).toHaveBeenCalledWith("/repo1", "main", "My Label");
+		});
+
+		it("shows Clear Label only when a label is already set, and clears it on click", () => {
+			vi.mocked(repoSettingsStore.getEffectiveField).mockReturnValue({ main: "Existing Label" });
+			setRepos({ "/repo1": makeRepo() });
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			const branchItem = container.querySelector(".branchItem")!;
+			fireEvent.contextMenu(branchItem, { clientX: 0, clientY: 0 });
+			const items = Array.from(container.querySelectorAll(".menu .item"));
+			const clearItem = items.find((i) => i.querySelector(".label")!.textContent === "Clear Label")!;
+			fireEvent.click(clearItem);
+			expect(repoSettingsStore.setLabel).toHaveBeenCalledWith("/repo1", "main", null);
+		});
+	});
+
+	describe("pending branch states (isRemoving)", () => {
+		it("shows a 'Removing…' fallback row when the branch itself is mid-removal", () => {
+			setRepos({
+				"/repo1": makeRepo({
+					workspaces: {
+						main: {
+							workspaceId: "main",
+							branchName: "main",
+							isMain: true,
+							worktreePath: null,
+							terminals: [],
+							additions: 0,
+							deletions: 0,
+							isRemoving: true,
+						},
+					},
+				}),
+			});
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			const branchItem = container.querySelector(".branchItem")!;
+			expect(branchItem.textContent).toContain("Removing…");
+		});
+	});
+
+	describe("StatsBadge onClick wiring (via Sidebar)", () => {
+		// Restores the uiStore spies even when an assertion throws.
+		afterEach(() => vi.restoreAllMocks());
+
+		it("selects the branch, then opens the Git panel's changes tab, when the stats badge is clicked", () => {
+			// Sidebar hardwires RepoSection's onShowChanges to the git panel opener
+			// internally (not an overridable prop) — spy on the real uiStore methods
+			// it calls rather than trying to inject a fake handler.
+			vi.spyOn(uiStore, "isDetached").mockReturnValue(false);
+			const openGitPanelSpy = vi.spyOn(uiStore, "openGitPanelOnTab").mockImplementation(() => {});
+			setRepos({
+				"/repo1": makeRepo({
+					workspaces: {
+						main: {
+							workspaceId: "main",
+							branchName: "main",
+							isMain: true,
+							worktreePath: null,
+							terminals: [],
+							additions: 3,
+							deletions: 1,
+						},
+					},
+				}),
+			});
+			const onBranchSelect = vi.fn();
+			const { container } = render(() => <Sidebar {...defaultProps({ onBranchSelect })} />);
+			const badge = container.querySelector(".branchStats")!;
+			fireEvent.click(badge);
+
+			expect(onBranchSelect).toHaveBeenCalledWith("/repo1", "main");
+			expect(openGitPanelSpy).toHaveBeenCalledWith("changes");
 		});
 	});
 });
