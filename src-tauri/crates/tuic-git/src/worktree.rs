@@ -4255,8 +4255,10 @@ pub fn list_base_ref_options(repo_path: String) -> Result<Vec<BaseRefOption>, St
                 });
             }
         } else if full_ref.starts_with("refs/remotes/") {
-            // Skip origin/HEAD (synthetic ref)
-            if short_name.ends_with("/HEAD") {
+            // Skip a remote's HEAD symref. Judge by the FULL refname: git's
+            // %(refname:short) collapses refs/remotes/<remote>/HEAD to just the
+            // remote name ("origin"), so a short-name `/HEAD` check never matches.
+            if full_ref.ends_with("/HEAD") {
                 continue;
             }
             if short_name == default_branch {
@@ -7534,6 +7536,67 @@ branch refs/heads/feat
         );
     }
 
+    // --- list_local_branches tests ---
+    // Previously only exercised incidentally as a setup/assertion helper inside the
+    // delete_local_branch_* tests above; these cover it directly.
+
+    #[test]
+    fn list_local_branches_returns_current_branch_only_in_fresh_repo() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+
+        let branches = list_local_branches(repo_path).expect("list_local_branches should succeed");
+
+        assert_eq!(
+            branches.len(),
+            1,
+            "a fresh repo with one commit should have exactly one branch, got: {branches:?}"
+        );
+    }
+
+    #[test]
+    fn list_local_branches_returns_all_branches() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+
+        git_cmd(repo.path())
+            .args(["branch", "feature-a"])
+            .run()
+            .expect("create feature-a");
+        git_cmd(repo.path())
+            .args(["branch", "feature-b"])
+            .run()
+            .expect("create feature-b");
+
+        let branches = list_local_branches(repo_path).expect("list_local_branches should succeed");
+
+        assert_eq!(
+            branches.len(),
+            3,
+            "expected 3 local branches, got: {branches:?}"
+        );
+        assert!(branches.contains(&"feature-a".to_string()));
+        assert!(branches.contains(&"feature-b".to_string()));
+    }
+
+    #[test]
+    fn list_local_branches_handles_branch_names_with_slashes() {
+        let repo = setup_test_repo();
+        let repo_path = repo.path().to_string_lossy().to_string();
+
+        git_cmd(repo.path())
+            .args(["branch", "feature/nested-name"])
+            .run()
+            .expect("create feature/nested-name");
+
+        let branches = list_local_branches(repo_path).expect("list_local_branches should succeed");
+
+        assert!(
+            branches.contains(&"feature/nested-name".to_string()),
+            "branch name containing a slash should round-trip correctly, got: {branches:?}"
+        );
+    }
+
     #[test]
     fn check_worktree_dirty_clean_worktree() {
         let repo = setup_test_repo();
@@ -8340,6 +8403,63 @@ branch refs/heads/feat
             names.contains(&"origin/remote-only"),
             "origin/remote-only should be in refs, got: {:?}",
             names
+        );
+    }
+
+    #[test]
+    fn list_base_ref_options_skips_remote_head_symrefs_in_a_real_clone() {
+        let repo = setup_test_repo();
+        let bare = tempfile::tempdir().unwrap();
+        git_cmd(bare.path())
+            .args(["clone", "--bare", &repo.path().to_string_lossy(), "."])
+            .run()
+            .unwrap();
+        let work = tempfile::tempdir().unwrap();
+        let w = work.path();
+        git_cmd(w)
+            .args(["clone", &bare.path().to_string_lossy(), "."])
+            .run()
+            .unwrap();
+        for name in ["upstream", "nohead"] {
+            git_cmd(w)
+                .args(["remote", "add", name, &bare.path().to_string_lossy()])
+                .run()
+                .unwrap();
+            git_cmd(w).args(["fetch", name]).run().unwrap();
+            git_cmd(w)
+                .args(["remote", "set-head", name, "-a"])
+                .run()
+                .unwrap();
+        }
+        // A remote with no HEAD symref at all.
+        git_cmd(w)
+            .args(["remote", "set-head", "nohead", "-d"])
+            .run()
+            .unwrap();
+        // A local branch whose name looks like a remote ref.
+        git_cmd(w)
+            .args(["branch", "origin-like/feature"])
+            .run()
+            .unwrap();
+        git_cmd(w).args(["branch", "feature/HEAD"]).run().unwrap();
+
+        let refs = list_base_ref_options(w.to_string_lossy().into_owned()).unwrap();
+        let names: Vec<&str> = refs.iter().map(|r| r.name.as_str()).collect();
+        for phantom in ["origin", "upstream", "nohead"] {
+            assert!(
+                !names.contains(&phantom),
+                "phantom {phantom} leaked: {names:?}"
+            );
+        }
+        assert!(
+            names.contains(&"upstream/main") || names.contains(&"upstream/master"),
+            "{names:?}"
+        );
+        assert!(names.contains(&"origin-like/feature"));
+        assert!(
+            refs.iter()
+                .any(|r| r.name == "feature/HEAD" && r.kind == "local"),
+            "{names:?}"
         );
     }
 

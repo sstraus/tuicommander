@@ -1016,8 +1016,16 @@ pub fn get_branches_detail_impl(path: &Path) -> Result<Vec<BranchDetail>, String
             let refname = parts[0].trim();
             let name = parts[1].trim().to_string();
 
-            // Skip the synthetic origin/HEAD pointer
-            if name == "origin/HEAD" || name.ends_with("/HEAD") {
+            // Skip a remote's HEAD symref (refs/remotes/<remote>/HEAD, e.g.
+            // refs/remotes/origin/HEAD). This must be checked against the FULL
+            // refname, not the short name: git's %(refname:short) collapses this
+            // symref all the way down to just the remote name itself (e.g. "origin",
+            // not "origin/HEAD"), for ANY remote name — confirmed empirically with a
+            // non-origin remote too. The old `name.ends_with("/HEAD")` check on the
+            // short name never actually matched this ref and let a phantom branch
+            // entry named after the remote (e.g. "origin") leak into every normally
+            // cloned repo's results.
+            if refname.starts_with("refs/remotes/") && refname.ends_with("/HEAD") {
                 return None;
             }
 
@@ -4575,10 +4583,332 @@ filename test.txt
             "every branch should have a last_commit_date, got: {branches:?}"
         );
 
-        // No origin/HEAD pseudo-ref should appear
+        // No origin/HEAD pseudo-ref should appear. Note: refs/remotes/origin/HEAD's
+        // short name collapses to just "origin" (not "origin/HEAD"), so the
+        // `ends_with("/HEAD")` check alone does NOT catch it — this repo's real
+        // `origin` remote is exactly the case that check silently missed before the
+        // refname-based filter was added (see test_get_branches_detail_filters_remote_head_symref
+        // below for a direct, controlled regression test of that).
         assert!(
             !branches.iter().any(|b| b.name.ends_with("/HEAD")),
             "origin/HEAD should be filtered out"
+        );
+        assert!(
+            !branches.iter().any(|b| b.name == "origin"),
+            "a phantom branch named exactly after the remote (from its collapsed HEAD symref) \
+             should be filtered out: {:?}",
+            branches.iter().map(|b| &b.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn test_get_branches_detail_filters_remote_head_symref() {
+        // Direct regression test (independent of the ambient real repo used above)
+        // for the bug found by review: a remote's HEAD symref
+        // (refs/remotes/<remote>/HEAD, set by `git clone` or `git remote set-head`)
+        // has a short name that collapses to just the remote's name — e.g. "origin"
+        // — not "origin/HEAD". The original `name.ends_with("/HEAD")` filter (on the
+        // short name) never matched this, so it leaked a phantom branch entry named
+        // after the remote into every normally cloned repo's results.
+        let (_dir, path) = setup_test_repo_with_commit();
+        let (_remote_dir, remote_path) = setup_test_repo_with_commit();
+        git_cmd(&path)
+            .args(["remote", "add", "upstream", &remote_path.to_string_lossy()])
+            .run()
+            .expect("git remote add");
+        git_cmd(&path)
+            .args(["fetch", "upstream"])
+            .run()
+            .expect("git fetch");
+        git_cmd(&path)
+            .args(["remote", "set-head", "upstream", "-a"])
+            .run()
+            .expect("git remote set-head");
+
+        let branches =
+            get_branches_detail_impl(&path).expect("get_branches_detail_impl should succeed");
+
+        assert!(
+            !branches.iter().any(|b| b.name == "upstream"),
+            "remote HEAD symref must not leak a phantom branch named after the remote: {:?}",
+            branches.iter().map(|b| &b.name).collect::<Vec<_>>()
+        );
+        // The real upstream/<branch> entry must still be present and correctly remote.
+        assert!(
+            branches
+                .iter()
+                .any(|b| b.name.starts_with("upstream/") && b.is_remote),
+            "expected a real upstream/* remote branch to still be present: {:?}",
+            branches.iter().map(|b| &b.name).collect::<Vec<_>>()
+        );
+    }
+
+    // --- get_git_branches tests ---
+
+    /// Sets up a second local repo to act as a fetchable remote, adds it to `path`
+    /// under `remote_name`, and fetches it. Returns the remote's TempDir too so it
+    /// isn't dropped (and cleaned up) before the fetch/test body runs.
+    fn add_and_fetch_named_remote(path: &Path, remote_name: &str) -> tempfile::TempDir {
+        let (remote_dir, remote_path) = setup_test_repo_with_commit();
+        git_cmd(path)
+            .args(["remote", "add", remote_name, &remote_path.to_string_lossy()])
+            .run()
+            .expect("git remote add");
+        git_cmd(path)
+            .args(["fetch", remote_name])
+            .run()
+            .expect("git fetch");
+        // `git clone` sets the remote's HEAD symref (refs/remotes/<remote>/HEAD)
+        // automatically; a plain `remote add` + `fetch` does not. Set it explicitly
+        // so tests built on this helper exercise the same ref shape a normally
+        // cloned repo has — this symref is exactly what caused the "phantom branch
+        // named after the remote" bug (its short name collapses to just the remote
+        // name, e.g. "origin", not "origin/HEAD").
+        git_cmd(path)
+            .args(["remote", "set-head", remote_name, "-a"])
+            .run()
+            .expect("git remote set-head");
+        remote_dir
+    }
+
+    #[tokio::test]
+    async fn test_get_git_branches_basic_case() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        // Rename whatever the default init branch is to something outside
+        // MAIN_BRANCH_CANDIDATES so this test's "main"/is_main assertions are
+        // deterministic regardless of the environment's init.defaultBranch.
+        git_cmd(&path)
+            .args(["branch", "-m", "trunk"])
+            .run()
+            .expect("rename default branch");
+        git_cmd(&path)
+            .args(["checkout", "-b", "main"])
+            .run()
+            .expect("create+checkout main");
+        git_cmd(&path)
+            .args(["branch", "feature-x"])
+            .run()
+            .expect("create feature-x");
+
+        let branches = get_git_branches(path.to_string_lossy().to_string())
+            .await
+            .expect("get_git_branches should succeed");
+
+        assert_eq!(
+            branches.len(),
+            3,
+            "expected exactly 3 local branches, got: {branches:?}"
+        );
+
+        let current: Vec<_> = branches
+            .iter()
+            .filter(|b| b["is_current"].as_bool() == Some(true))
+            .collect();
+        assert_eq!(
+            current.len(),
+            1,
+            "exactly one branch should be current, got: {branches:?}"
+        );
+        assert_eq!(current[0]["name"].as_str(), Some("main"));
+
+        for b in &branches {
+            let name = b["name"].as_str().unwrap();
+            assert_eq!(
+                b["is_main"].as_bool(),
+                Some(is_main_branch(name)),
+                "is_main mismatch for {name}: {b:?}"
+            );
+            assert_eq!(
+                b["is_remote"].as_bool(),
+                Some(false),
+                "no branch should be reported remote in a repo with no remotes: {b:?}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn test_get_git_branches_detects_non_origin_remote() {
+        // Regression guard for the `is_remote = name.starts_with("origin/")` heuristic:
+        // a remote added under any other name (a common fork-workflow shape) must still
+        // be detected as remote.
+        let (_dir, path) = setup_test_repo_with_commit();
+        let _remote_dir = add_and_fetch_named_remote(&path, "upstream");
+
+        let branches = get_git_branches(path.to_string_lossy().to_string())
+            .await
+            .expect("get_git_branches should succeed");
+
+        let upstream_branches: Vec<_> = branches
+            .iter()
+            .filter(|b| b["name"].as_str().unwrap_or("").starts_with("upstream/"))
+            .collect();
+        assert!(
+            !upstream_branches.is_empty(),
+            "expected at least one upstream/* branch after fetch, got: {branches:?}"
+        );
+        for b in &upstream_branches {
+            assert_eq!(
+                b["is_remote"].as_bool(),
+                Some(true),
+                "a fetched non-origin remote branch must be reported is_remote: true: {b:?}"
+            );
+        }
+
+        // Regression guard for the remote-HEAD-symref leak: refs/remotes/upstream/HEAD's
+        // short name collapses to just "upstream", which must not appear as its own
+        // phantom branch entry.
+        assert!(
+            !branches
+                .iter()
+                .any(|b| b["name"].as_str() == Some("upstream")),
+            "remote HEAD symref must not leak a phantom branch named after the remote: {branches:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_git_branches_detached_head_produces_no_garbage_entry() {
+        // Regression guard: in a detached-HEAD state (checked-out commit/tag,
+        // mid-rebase, mid-bisect), `git branch -a` emits a synthetic pseudo-entry
+        // like `(HEAD detached at abc1234)` whose fields aren't a real ref and
+        // contain spaces. Confirmed pre-existing (present before this session's
+        // is_remote fix too): naive splitn(3, ' ') parsing turned this into a
+        // bogus branch named "(HEAD", polluting the branch switcher's list.
+        let (_dir, path) = setup_test_repo_with_commit();
+        git_cmd(&path)
+            .args(["checkout", "--detach", "HEAD"])
+            .run()
+            .expect("git checkout --detach");
+
+        let branches = get_git_branches(path.to_string_lossy().to_string())
+            .await
+            .expect("get_git_branches should succeed");
+
+        assert!(
+            !branches
+                .iter()
+                .any(|b| b["name"].as_str().unwrap_or("").starts_with("(HEAD")),
+            "detached HEAD pseudo-entry leaked into results: {branches:?}"
+        );
+        assert!(
+            !branches
+                .iter()
+                .any(|b| b["is_current"].as_bool() == Some(true)),
+            "no real branch should be current while HEAD is detached: {branches:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_git_branches_unborn_head_returns_empty() {
+        // Edge case: a freshly `git init`'d repo with zero commits has no refs at
+        // all yet (unborn HEAD) — get_git_branches must return an empty list, not
+        // error or panic.
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().to_path_buf();
+        git_cmd(&path).args(["init"]).run().expect("git init");
+
+        let branches = get_git_branches(path.to_string_lossy().to_string())
+            .await
+            .expect("get_git_branches should succeed on an unborn-HEAD repo");
+
+        assert!(
+            branches.is_empty(),
+            "a repo with no commits should have no branches, got: {branches:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_git_branches_local_branch_named_like_origin_prefix() {
+        // Regression guard: a LOCAL branch that happens to be named `origin/foo` (legal
+        // via `git checkout -b origin/foo`) must not be misreported as remote just
+        // because its short name starts with "origin/".
+        let (_dir, path) = setup_test_repo_with_commit();
+        git_cmd(&path)
+            .args(["branch", "origin/foo"])
+            .run()
+            .expect("create local branch named origin/foo");
+
+        let branches = get_git_branches(path.to_string_lossy().to_string())
+            .await
+            .expect("get_git_branches should succeed");
+
+        let b = branches
+            .iter()
+            .find(|b| b["name"].as_str() == Some("origin/foo"))
+            .unwrap_or_else(|| panic!("expected a branch named origin/foo, got: {branches:?}"));
+        assert_eq!(
+            b["is_remote"].as_bool(),
+            Some(false),
+            "a LOCAL branch literally named origin/foo must not be misreported as remote: {b:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_git_branches_and_get_branches_detail_agree_on_shared_fields() {
+        // These are two independently implemented branch enumerators backing two
+        // different UI surfaces (BranchSwitcher.tsx and GitPanel/BranchesTab.tsx).
+        // Nothing else checks they classify the same repo state the same way — this
+        // guards against future drift between them.
+        let (_dir, path) = setup_test_repo_with_commit();
+        git_cmd(&path)
+            .args(["branch", "-m", "trunk"])
+            .run()
+            .expect("rename default branch");
+        git_cmd(&path)
+            .args(["checkout", "-b", "main"])
+            .run()
+            .expect("create+checkout main");
+        git_cmd(&path)
+            .args(["branch", "feature-x"])
+            .run()
+            .expect("create feature-x");
+        let _remote_dir = add_and_fetch_named_remote(&path, "upstream");
+
+        let simple = get_git_branches(path.to_string_lossy().to_string())
+            .await
+            .expect("get_git_branches should succeed");
+        let detailed =
+            get_branches_detail_impl(&path).expect("get_branches_detail_impl should succeed");
+
+        let simple_names: std::collections::HashSet<&str> =
+            simple.iter().map(|b| b["name"].as_str().unwrap()).collect();
+        let detailed_names: std::collections::HashSet<&str> =
+            detailed.iter().map(|b| b.name.as_str()).collect();
+
+        for name in simple_names.intersection(&detailed_names) {
+            let s = simple
+                .iter()
+                .find(|b| b["name"].as_str() == Some(*name))
+                .unwrap();
+            let d = detailed.iter().find(|b| b.name == *name).unwrap();
+            assert_eq!(
+                s["is_remote"].as_bool(),
+                Some(d.is_remote),
+                "get_git_branches and get_branches_detail_impl disagree on is_remote for {name}: {s:?} vs {d:?}"
+            );
+            assert_eq!(
+                s["is_main"].as_bool(),
+                Some(d.is_main),
+                "get_git_branches and get_branches_detail_impl disagree on is_main for {name}: {s:?} vs {d:?}"
+            );
+        }
+
+        // Branch names present in one result but not the other must be reported
+        // explicitly, not silently intersected away.
+        let only_in_simple: Vec<&&str> = simple_names.difference(&detailed_names).collect();
+        let only_in_detailed: Vec<&&str> = detailed_names.difference(&simple_names).collect();
+        assert!(
+            only_in_simple.is_empty() && only_in_detailed.is_empty(),
+            "branch sets diverge: only in get_git_branches: {only_in_simple:?}, only in get_branches_detail_impl: {only_in_detailed:?}"
+        );
+
+        // Regression guard: this repo now has a real refs/remotes/upstream/HEAD symref
+        // (add_and_fetch_named_remote sets it, matching what `git clone` does), so this
+        // is exactly the scenario where both functions' remote-HEAD-symref filtering
+        // must actually be exercised, not just agree by accident.
+        assert!(
+            !simple_names.contains("upstream") && !detailed_names.contains("upstream"),
+            "remote HEAD symref must not leak a phantom branch named after the remote in \
+             either function: simple={simple_names:?} detailed={detailed_names:?}"
         );
     }
 
@@ -5323,7 +5653,11 @@ pub fn get_git_branches_blocking(path: String) -> Result<Vec<serde_json::Value>,
         let repo_path = PathBuf::from(&path);
 
         let out = git_cmd(&repo_path)
-            .args(["branch", "-a", "--format=%(refname:short) %(HEAD)"])
+            .args([
+                "branch",
+                "-a",
+                "--format=%(refname:short) %(HEAD) %(refname)",
+            ])
             .run()
             .map_err(|e| format!("git branch failed: {e}"))?;
 
@@ -5331,17 +5665,40 @@ pub fn get_git_branches_blocking(path: String) -> Result<Vec<serde_json::Value>,
             .stdout
             .lines()
             .filter(|line| !line.is_empty())
-            .map(|line| {
-                let parts: Vec<&str> = line.splitn(2, ' ').collect();
+            .filter_map(|line| {
+                let parts: Vec<&str> = line.splitn(3, ' ').collect();
                 let name = parts[0].trim().to_string();
                 let is_current = parts.get(1).is_some_and(|s| s.trim() == "*");
-                let is_remote = name.starts_with("origin/");
-                serde_json::json!({
+                // Use the full refname (refs/remotes/…), not the short name, so a
+                // local branch literally named `origin/foo` isn't misreported as
+                // remote, and a non-`origin` remote (e.g. `upstream/main`) is still
+                // correctly detected. Mirrors get_branches_detail_impl's approach.
+                let refname = parts.get(2).map(|s| s.trim()).unwrap_or("");
+                // In a detached-HEAD state (checked-out commit/tag, mid-rebase,
+                // mid-bisect), `git branch -a` emits a synthetic pseudo-entry like
+                // `(HEAD detached at abc1234)` whose refname:short/refname/HEAD
+                // fields are NOT a real ref (and contain spaces, which also breaks
+                // the splitn(3, ' ') assumption that a ref has none). Skip anything
+                // that isn't a real ref — get_branches_detail_impl is immune to this
+                // by construction, since for-each-ref only ever walks real refs.
+                if !refname.starts_with("refs/") {
+                    return None;
+                }
+                let is_remote = refname.starts_with("refs/remotes/");
+                // Skip a remote's HEAD symref (refs/remotes/<remote>/HEAD), which
+                // otherwise leaks a phantom branch named after the remote itself
+                // (e.g. "origin") in every normally cloned repo — see
+                // get_branches_detail_impl's identical check for why this must use
+                // the full refname, not the short name.
+                if is_remote && refname.ends_with("/HEAD") {
+                    return None;
+                }
+                Some(serde_json::json!({
                     "name": name,
                     "is_current": is_current,
                     "is_remote": is_remote,
                     "is_main": is_main_branch(&name),
-                })
+                }))
             })
             .collect();
 

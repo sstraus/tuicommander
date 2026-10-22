@@ -573,8 +573,8 @@ impl GixGitReads {
                     continue;
                 }
                 let short = reference.name().shorten().to_str_lossy().into_owned();
-                if short.ends_with("/HEAD") {
-                    continue; // skip origin/HEAD and similar symbolic pointers
+                if full.starts_with("refs/remotes/") && full.ends_with("/HEAD") {
+                    continue; // skip a remote's HEAD symref (not e.g. a local `a/HEAD`)
                 }
                 let Ok(id) = reference.peel_to_id() else {
                     continue;
@@ -756,8 +756,9 @@ impl GitReads for GixGitReads {
                 continue;
             }
             let name = reference.name().shorten().to_str_lossy().into_owned();
-            // Skip the synthetic origin/HEAD (and any */HEAD) pointer.
-            if name == "origin/HEAD" || name.ends_with("/HEAD") {
+            // Skip a remote's HEAD symref (refs/remotes/<remote>/HEAD). Judged on
+            // the full refname so a local branch like `feature/HEAD` survives.
+            if full.starts_with("refs/remotes/") && full.ends_with("/HEAD") {
                 continue;
             }
             let is_remote = full.starts_with("refs/remotes/");
@@ -2309,5 +2310,95 @@ mod tests {
             );
         }
         assert!(!bl_a.is_empty());
+    }
+
+    /// Real clone of a local bare repo (so `refs/remotes/origin/HEAD` exists),
+    /// plus a second remote `upstream` with its own HEAD symref and a third
+    /// remote `nohead` whose HEAD symref was removed. A local branch
+    /// `feature/HEAD` and one named `origin-like/x` must survive the filters.
+    fn clone_fixture_with_remotes() -> (Vec<tempfile::TempDir>, PathBuf) {
+        let (src, src_path) = fixture_repo();
+        let bare = tempfile::tempdir().unwrap();
+        run_git(
+            bare.path(),
+            &["clone", "--bare", &src_path.to_string_lossy(), "."],
+        );
+        let work = tempfile::tempdir().unwrap();
+        let w = work.path().to_path_buf();
+        run_git(&w, &["clone", &bare.path().to_string_lossy(), "."]);
+        for name in ["upstream", "nohead"] {
+            run_git(&w, &["remote", "add", name, &bare.path().to_string_lossy()]);
+            run_git(&w, &["fetch", name]);
+        }
+        run_git(&w, &["remote", "set-head", "upstream", "-a"]);
+        run_git(&w, &["remote", "set-head", "nohead", "-a"]);
+        run_git(&w, &["remote", "set-head", "nohead", "-d"]);
+        run_git(&w, &["branch", "feature/HEAD"]);
+        (vec![src, bare, work], w)
+    }
+
+    #[test]
+    fn branches_detail_ignores_remote_head_symrefs_in_a_real_clone() {
+        let (_guards, repo) = clone_fixture_with_remotes();
+        // Precondition: the symrefs really exist, otherwise this proves nothing.
+        assert!(
+            run_git(&repo, &["symbolic-ref", "refs/remotes/origin/HEAD"]).contains("origin/"),
+            "clone must have origin/HEAD"
+        );
+        let bs = GixGitReads::new().branches_detail(&repo).unwrap();
+        let names: Vec<&str> = bs.iter().map(|b| b.name.as_str()).collect();
+        for phantom in ["origin", "upstream", "nohead"] {
+            assert!(!names.contains(&phantom), "phantom {phantom}: {names:?}");
+        }
+        assert!(names.iter().all(|n| !n.ends_with("origin/HEAD")));
+        assert!(
+            names.contains(&"feature/HEAD"),
+            "local feature/HEAD dropped: {names:?}"
+        );
+        let local = bs.iter().find(|b| b.name == "feature/HEAD").unwrap();
+        assert!(!local.is_remote);
+        for remote in ["origin/main", "upstream/main", "nohead/main"] {
+            let b = bs
+                .iter()
+                .find(|b| b.name == remote)
+                .unwrap_or_else(|| panic!("{remote}: {names:?}"));
+            assert!(b.is_remote);
+        }
+        let (a, b) = shootout!(&repo, branches_detail());
+        assert_ok_json_eq(&a, &b, "branches_detail (real clone, multi-remote)");
+    }
+
+    #[test]
+    fn graph_decorations_keep_local_slash_head_branch_and_skip_remote_head() {
+        let (_guards, repo) = clone_fixture_with_remotes();
+        let commits = GixGitReads::new().graph_commits(&repo, 50).unwrap();
+        let labels: Vec<&String> = commits.iter().flat_map(|c| c.refs.iter()).collect();
+        assert!(
+            labels.iter().any(|l| l.as_str() == "feature/HEAD"),
+            "{labels:?}"
+        );
+        for remote_head in [
+            "origin/HEAD",
+            "upstream/HEAD",
+            "origin",
+            "upstream",
+            "nohead",
+        ] {
+            assert!(
+                !labels.iter().any(|l| l.as_str() == remote_head),
+                "{remote_head} leaked: {labels:?}"
+            );
+        }
+        // DEFERRED (2026-10-21) — no CLI/gix shootout here: the CLI fallback's
+        // `git log %D` labels remote HEAD symrefs as `origin/HEAD`, which gix
+        // hides (and hid before this change). A short `%D` label cannot tell
+        // `refs/remotes/origin/HEAD` from a local `origin/HEAD` branch, so
+        // matching gix needs `--decorate=full` parsing in raw_commits_cli.
+        let cli = CliGitReads.graph_commits(&repo, 50).unwrap();
+        let cli_labels: Vec<&String> = cli.iter().flat_map(|c| c.refs.iter()).collect();
+        assert!(
+            cli_labels.iter().any(|l| l.as_str() == "feature/HEAD"),
+            "{cli_labels:?}"
+        );
     }
 }
