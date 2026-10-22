@@ -214,7 +214,11 @@ export function useTerminalContextMenus(options: TerminalContextMenuOptions): {
 					return;
 				}
 				const text = lines.join("\n").trimEnd();
-				if (text) void writeClipboard(text);
+				if (text) {
+					writeClipboard(text).catch((err) =>
+						appLogger.warn("terminal", "Copy Block Output failed", { error: String(err) }),
+					);
+				}
 			},
 			disabled: (() => {
 				const activeId = terminalsStore.state.activeId;

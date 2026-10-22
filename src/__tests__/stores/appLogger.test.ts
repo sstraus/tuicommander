@@ -273,6 +273,23 @@ describe("appLogger", () => {
 		expect(typeof parsed.error.stack).toBe("string");
 	});
 
+	it("serializes DOMException in data with name and message", async () => {
+		const err = new DOMException("Write permission denied.", "NotAllowedError");
+		testInScope(() => {
+			appLogger.error("app", "clipboard write failed", err);
+		});
+
+		await vi.waitFor(() => {
+			expect(mockRpc).toHaveBeenCalledWith("push_log", expect.objectContaining({ level: "error", source: "app" }));
+		});
+		const call = mockRpc.mock.calls.find((c) => c[0] === "push_log");
+		// Plain JSON.stringify would emit {} — DOMException is not an Error subclass.
+		expect(JSON.parse((call![1] as { dataJson: string }).dataJson)).toMatchObject({
+			name: "NotAllowedError",
+			message: "Write permission denied.",
+		});
+	});
+
 	it("push sends null dataJson when no data provided", async () => {
 		testInScope(() => {
 			appLogger.warn("app", "plain message");

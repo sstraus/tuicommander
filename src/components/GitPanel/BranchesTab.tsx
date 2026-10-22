@@ -744,7 +744,8 @@ export const BranchesTab: Component<BranchesTabProps> = (props) => {
 
 		const copyName: ContextMenuItem = {
 			label: "Copy Name",
-			action: () => void writeClipboard(branch.name),
+			action: () =>
+				writeClipboard(branch.name).catch((err) => appLogger.error("git", "Failed to copy branch name", err)),
 		};
 
 		if (branch.is_remote) {

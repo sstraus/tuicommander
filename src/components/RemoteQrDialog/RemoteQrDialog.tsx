@@ -76,9 +76,13 @@ export const RemoteQrDialog: Component<{ onClose: () => void }> = (props) => {
 	const copyUrl = async () => {
 		const url = connectUrl();
 		if (!url) return;
-		await writeClipboard(url);
-		setCopied(true);
-		setTimeout(() => setCopied(false), 1500);
+		try {
+			await writeClipboard(url);
+			setCopied(true);
+			setTimeout(() => setCopied(false), 1500);
+		} catch (err) {
+			appLogger.warn("network", "Remote QR copy URL failed", err);
+		}
 	};
 
 	return (

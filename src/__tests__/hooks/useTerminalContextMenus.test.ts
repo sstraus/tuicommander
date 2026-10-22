@@ -56,6 +56,7 @@ vi.mock("../../transport", () => ({ rpc: mockRpc }));
 
 import { useTerminalContextMenus } from "../../hooks/useTerminalContextMenus";
 import { isWindows } from "../../platform";
+import { appLogger } from "../../stores/appLogger";
 import { settingsStore } from "../../stores/settings";
 import { getShellFamily, sendCommand } from "../../utils/sendCommand";
 
@@ -84,7 +85,7 @@ describe("useTerminalContextMenus", () => {
 		mockContextActions.getContextActions.mockReset().mockReturnValue([]);
 		mockPaneLayout.isSplit.mockReset().mockReturnValue(false);
 		mockPaneLayout.canSplit.mockReset().mockReturnValue(true);
-		mockWriteClipboard.mockClear();
+		mockWriteClipboard.mockReset().mockResolvedValue(undefined);
 		mockRpc.mockReset().mockImplementation(async (_command: string, args: { args?: string[] }) => args?.args ?? []);
 		vi.mocked(getShellFamily).mockResolvedValue("posix");
 		vi.mocked(isWindows).mockReturnValue(false);
@@ -115,6 +116,31 @@ describe("useTerminalContextMenus", () => {
 		await items.find((item) => item.label === "Copy Block Output")?.action();
 
 		expect(mockWriteClipboard).toHaveBeenCalledWith("output");
+	});
+
+	it("logs instead of leaving an unhandled rejection when Copy Block Output's clipboard write is denied", async () => {
+		const unhandled = vi.fn();
+		process.on("unhandledRejection", unhandled);
+		try {
+			mockTerminals.state.activeId = "term-1";
+			mockTerminals.get.mockReturnValue({
+				historyBase: 0,
+				commandBlocks: [{ executionLine: 1, endLine: 3 }],
+				ref: { getBufferLines: vi.fn().mockResolvedValue(["output", ""]) },
+			});
+			const err = new DOMException("Write permission denied.", "NotAllowedError");
+			mockWriteClipboard.mockRejectedValueOnce(err);
+			const warn = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
+			const items = useTerminalContextMenus(createOptions() as never).getContextMenuItems();
+
+			await items.find((item) => item.label === "Copy Block Output")?.action();
+			await new Promise((r) => setTimeout(r, 20));
+
+			expect(warn).toHaveBeenCalledWith("terminal", "Copy Block Output failed", { error: String(err) });
+			expect(unhandled).not.toHaveBeenCalled();
+		} finally {
+			process.off("unhandledRejection", unhandled);
+		}
 	});
 
 	// Catches: all-time block coordinates are passed to the retained-grid API after eviction.

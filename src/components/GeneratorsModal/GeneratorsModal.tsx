@@ -1,5 +1,6 @@
 import { type Component, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { invoke } from "../../invoke";
+import { appLogger } from "../../stores/appLogger";
 import { registerModal } from "../../stores/modalStack";
 import { writeClipboard } from "../../utils/clipboard";
 import d from "../shared/dialog.module.css";
@@ -105,9 +106,13 @@ export const GeneratorsModal: Component<{ onClose: () => void }> = (props) => {
 
 	const copy = async (text: string, setCopiedFn: (v: boolean) => void) => {
 		if (!text) return;
-		await writeClipboard(text);
-		setCopiedFn(true);
-		setTimeout(() => setCopiedFn(false), 2000);
+		try {
+			await writeClipboard(text);
+			setCopiedFn(true);
+			setTimeout(() => setCopiedFn(false), 2000);
+		} catch (err) {
+			appLogger.error("app", "Failed to copy generated value", err);
+		}
 	};
 
 	// Escape-to-close is handled centrally (stores/modalStack): registering routes
