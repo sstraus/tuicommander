@@ -26,6 +26,54 @@ fn install_test_temp_root() {
         // creates its worker threads. No test can read the environment yet.
         unsafe { std::env::set_var(key, &root) };
     }
+    isolate_git_config(&root);
+}
+
+/// The only git configuration a test process sees besides each fixture
+/// repo's own `.git/config`.
+const TEST_GITCONFIG: &str = "\
+# Written by tuic-test-support: tests never read the developer's git config.
+[user]
+\tname = TUIC Test
+\temail = tests@tuic.invalid
+[init]
+\tdefaultBranch = main
+[commit]
+\tgpgSign = false
+[tag]
+\tgpgSign = false
+[core]
+\tautocrlf = false
+";
+
+/// Point every git process this test binary starts — the fixtures' own `git`
+/// calls and the production code under test alike — at [`TEST_GITCONFIG`]
+/// instead of the developer's global and system config. A global
+/// `merge.ff = only` turned the fixtures' diverged merges into refusals, and a
+/// `url.<base>.insteadOf` made `git remote get-url` disagree with the raw
+/// `.git/config` read it is compared against; rerere, hooks paths, excludes
+/// files and signing settings leak in the same way. A test that needs a
+/// specific global setting still sets `GIT_CONFIG_GLOBAL` itself, after this.
+fn isolate_git_config(root: &std::path::Path) {
+    let path = root.join("gitconfig");
+    // Every test process of a nextest run writes this at once: write a private
+    // copy and rename it into place, so no git ever reads a half-written file.
+    let staging = root.join(format!("gitconfig.{}.tmp", std::process::id()));
+    std::fs::write(&staging, TEST_GITCONFIG).expect("write the test gitconfig");
+    std::fs::rename(&staging, &path).expect("install the test gitconfig");
+    // SAFETY: called from the process constructor, before libtest starts threads.
+    unsafe {
+        std::env::set_var("GIT_CONFIG_GLOBAL", &path);
+        std::env::set_var("GIT_CONFIG_NOSYSTEM", "1");
+        std::env::remove_var("GIT_CONFIG_SYSTEM");
+        // Command-scope config an invoking `git -c …` or shell may export.
+        std::env::remove_var("GIT_CONFIG_PARAMETERS");
+        std::env::remove_var("GIT_CONFIG_COUNT");
+        // Honoured by `git config` itself (no --file given) in place of the
+        // layered lookup, so it would bypass GIT_CONFIG_GLOBAL for exactly the
+        // `git config --get` reads tests use to inspect a repo.
+        std::env::remove_var("GIT_CONFIG");
+    }
 }
 
 /// Scratch space for Rust tests, overridable by the test runner.
@@ -300,4 +348,106 @@ pub fn read_http_request(reader: &mut impl std::io::Read) -> std::io::Result<Htt
         headers,
         body,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    fn git_config_get(cwd: &std::path::Path, key: &str) -> Option<String> {
+        let out = std::process::Command::new("git")
+            .args(["config", "--get", key])
+            .current_dir(cwd)
+            .output()
+            .expect("run git config");
+        out.status
+            .success()
+            .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+    }
+
+    /// Assert the process sees only the test gitconfig, in a fresh repo.
+    fn assert_only_test_gitconfig() {
+        let dir = tempfile::tempdir_in(super::test_temp_root()).expect("temp dir");
+        // Its own repo: the temp root sits inside this checkout, whose local
+        // config would otherwise answer.
+        let init = std::process::Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(dir.path())
+            .status()
+            .expect("run git init");
+        assert!(init.success(), "git init failed");
+        assert_eq!(
+            git_config_get(dir.path(), "user.email").as_deref(),
+            Some("tests@tuic.invalid")
+        );
+        assert_eq!(
+            git_config_get(dir.path(), "init.defaultBranch").as_deref(),
+            Some("main")
+        );
+        for leaked in ["merge.ff", "pull.rebase", "rerere.enabled"] {
+            assert_eq!(
+                git_config_get(dir.path(), leaked),
+                None,
+                "{leaked} leaked in from the developer's git config"
+            );
+        }
+    }
+
+    const HOSTILE_MARKER: &str = "TUIC_TEST_SUPPORT_HOSTILE_CHILD";
+    const HOSTILE_CHILD: &str = "tests::hostile_env_probe_child";
+
+    /// The constructor's config is the one git reads in this process.
+    #[test]
+    fn git_in_a_test_process_reads_only_the_test_gitconfig() {
+        assert_only_test_gitconfig();
+    }
+
+    /// Body of the re-exec'd child below; a no-op in a normal run.
+    #[test]
+    fn hostile_env_probe_child() {
+        if std::env::var_os(HOSTILE_MARKER).is_some() {
+            assert_only_test_gitconfig();
+        }
+    }
+
+    /// Re-run this test binary with a hostile inherited git environment (the
+    /// constructor runs in the child, before its tests) and prove the
+    /// constructor replaces it. In-process this cannot be shown: the
+    /// constructor has already run before any test can set the hostile state.
+    #[test]
+    fn constructor_overrides_a_hostile_inherited_git_environment() {
+        if std::env::var_os(HOSTILE_MARKER).is_some() {
+            return;
+        }
+        let dir = tempfile::tempdir_in(super::test_temp_root()).expect("temp dir");
+        let hostile = dir.path().join("hostile");
+        std::fs::write(
+            &hostile,
+            "[user]\n\temail = hostile@example.invalid\n[merge]\n\tff = only\n\
+             [pull]\n\trebase = true\n[rerere]\n\tenabled = true\n",
+        )
+        .expect("write hostile config");
+        let home = dir.path().join("home");
+        std::fs::create_dir_all(&home).expect("home");
+        std::fs::copy(&hostile, home.join(".gitconfig")).expect("hostile ~/.gitconfig");
+        let out = std::process::Command::new(std::env::current_exe().expect("current exe"))
+            .args(["--exact", HOSTILE_CHILD, "--nocapture", "--test-threads=1"])
+            .env(HOSTILE_MARKER, "1")
+            .env("HOME", &home)
+            .env("XDG_CONFIG_HOME", &home)
+            .env("GIT_CONFIG_GLOBAL", &hostile)
+            .env("GIT_CONFIG_SYSTEM", &hostile)
+            .env("GIT_CONFIG", &hostile)
+            .env("GIT_CONFIG_PARAMETERS", "'merge.ff=only'")
+            .env("GIT_CONFIG_COUNT", "1")
+            .env("GIT_CONFIG_KEY_0", "pull.rebase")
+            .env("GIT_CONFIG_VALUE_0", "true")
+            .env_remove("GIT_CONFIG_NOSYSTEM")
+            .output()
+            .expect("re-exec the test binary");
+        let stdout = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            out.status.success() && stdout.contains("1 passed"),
+            "child failed or did not run the probe:\n{stdout}\n{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
 }

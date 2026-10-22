@@ -119,7 +119,10 @@ fn conflict_resolved_with_a_strategy_option_is_rejected() {
     std::fs::write(repo.join("story.txt"), "main version\n").unwrap();
     git(&repo, &["add", "story.txt"]);
     git(&repo, &["commit", "-qm", "main adds story.txt"]);
-    git(&repo, &["merge", "-X", "ours", "--no-edit", "story"]);
+    git(
+        &repo,
+        &["merge", "--no-ff", "-X", "ours", "--no-edit", "story"],
+    );
     let error = integration_error(&flow, sequence);
     assert!(error.contains("human review"), "{error}");
     assert!(!has_integration_receipt(&flow));
