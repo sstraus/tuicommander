@@ -70,8 +70,6 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use tower_http::compression::CompressionLayer;
 use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove};
-#[cfg(unix)]
-use tuic_ipc::named_socket_path;
 
 /// Maximum terminal dimension (rows or cols). Prevents resource abuse from
 /// absurdly large allocations while still allowing generous sizes.
@@ -178,12 +176,11 @@ fn resolve_socket_path() -> std::path::PathBuf {
             let alt = crate::app_instance::current_app_instance()
                 .named_id()
                 .map(|id| {
-                    let base = named_socket_path(id, &std::env::temp_dir());
-                    base.with_file_name(format!(
-                        "{}-{}.sock",
-                        base.file_stem().unwrap_or_default().to_string_lossy(),
-                        std::process::id()
-                    ))
+                    tuic_ipc::named_alternate_socket_path(
+                        id,
+                        &std::env::temp_dir(),
+                        std::process::id(),
+                    )
                 })
                 .unwrap_or_else(|| {
                     crate::config::config_dir().join(format!("mcp-{}.sock", std::process::id()))
@@ -2703,6 +2700,12 @@ pub(crate) async fn spawn_ipc_listener(state: &Arc<AppState>, mcp_enabled: bool)
     #[cfg(unix)]
     {
         let sock = resolve_socket_path();
+        // A path past sun_path fails every bind with an opaque "path must be
+        // shorter than SUN_LEN"; name the budget and the way out instead.
+        if let Err(reason) = tuic_ipc::check_unix_socket_path(&sock) {
+            tracing::error!(source = "mcp_http", path = %sock.display(), "Unix socket not bound: {reason}");
+            return;
+        }
 
         if let Some(parent) = sock.parent()
             && let Err(e) = std::fs::create_dir_all(parent)
@@ -9570,7 +9573,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn named_instance_socket_path_stays_within_macos_limit() {
-        let path = named_socket_path(
+        let path = tuic_ipc::named_socket_path(
             "validate-763-20260913-with-a-long-but-valid-instance-name",
             std::path::Path::new("/var/folders/ab/cdefghijklmnop/T"),
         );

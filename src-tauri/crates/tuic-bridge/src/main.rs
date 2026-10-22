@@ -1125,7 +1125,9 @@ mod tests {
     #[cfg(unix)]
     async fn start_mock_ipc(slow_ms: u64) -> MockGuard {
         let lock = TEST_IPC_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let dir = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        // The short root: under a deep checkout the plain test temp root puts
+        // `<dir>/mcp.sock` past the 104-byte sun_path limit (SUN_LEN).
+        let dir = tempfile::tempdir_in(tuic_test_support::short_socket_test_temp_root()).unwrap();
         let sock = dir.path().join("mcp.sock");
         let listener = tokio::net::UnixListener::bind(&sock).unwrap();
         *TEST_IPC_PATH.lock().unwrap_or_else(|e| e.into_inner()) = Some(sock);

@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Explain a named instance's Unix socket path that cannot fit `sun_path`: one error names the length, the 103-byte limit, the longest `TMPDIR` that would hold it and `TUIC_SOCKET`, and the doomed bind retries are skipped.
+
 ## [2.0.0-beta.1] - 2026-10-22
 
 - Keep the terminal mobile composer's bottom safe-area inset inside its painted surface, above the Home Indicator; the separately reported iPhone shell-height band still needs device evidence (#2116-0213).
