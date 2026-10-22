@@ -33,8 +33,11 @@ published successfully.
 
 `TunnelSupervisor::stop()` sends a signal via a `oneshot` channel. The supervision loop catches this at any `tokio::select!` point and performs graceful shutdown:
 
-- Unix: SIGTERM to the SSH process, wait up to 5 seconds, then SIGKILL
-- Windows: `child.kill()` immediately
+- Unix: the ssh child is spawned into its own process group (`Command::process_group(0)`), and shutdown signals the whole group (`kill(-pid, ...)`), not just the direct child — SIGTERM first, wait up to 5 seconds, then SIGKILL to the group. A single-PID signal isn't enough: a real leak was found where the ssh/fake-ssh process forked a further child that a single-PID SIGTERM never reached. See `graceful_kill`'s doc comment in `supervisor.rs`.
+- Windows: `taskkill /PID <id> /T /F` (tree-kill) followed by `child.kill()`.
+- Every kill path is followed by an explicit `child.wait()` so the process is confirmed reaped, not just signaled — `stop_and_wait`/`stop_and_take_task` (below) depend on this to mean what they say.
+
+`stop()`/`shutdown_all()` are fire-and-forget: they signal and return immediately, which is fine for a live, long-running app (the async cleanup finishes within a few seconds on the same runtime regardless of who's watching). Where the caller needs actual confirmation the process died — because it's about to disappear itself, or its own lifetime is too short to rely on "eventually" — use `stop_and_wait(id)` / `shutdown_all_and_wait()` instead, both bounded by `GRACEFUL_SHUTDOWN_TIMEOUT` (7s: the 5s SIGTERM grace period plus a scheduling/signal-delivery buffer) so neither can hang indefinitely.
 
 ## Profile Configuration
 
@@ -253,4 +256,4 @@ Clicking the shield opens the Tunnels Panel.
 
 ## Shutdown on Exit
 
-When the app exits (`RunEvent::Exit`), `TunnelManager::shutdown_all()` iterates all active supervisors, sends stop signals, and clears the tunnel map. This ensures no orphaned SSH child processes survive after the app closes
+When the app exits (`RunEvent::Exit`), `TunnelManager::shutdown_all_and_wait()` — not the fire-and-forget `shutdown_all()` — iterates all active supervisors, signals every one to stop concurrently, and waits (bounded by the same `GRACEFUL_SHUTDOWN_TIMEOUT`, shared across the whole batch rather than paid per tunnel) for confirmation that each one's SSH process actually exited, before clearing the tunnel map. `RunEvent::Exit` blocks on this via `tauri::async_runtime::block_on`, the same way the design-mode and ACP shutdown steps in that same handler block on their own cleanup. This is load-bearing, not defensive: the fire-and-forget `shutdown_all()` only sends a signal and returns, and since the process is about to exit, nothing would otherwise be left running long enough to actually confirm the SSH child processes are gone — ensuring no orphaned SSH child processes survive after the app closes

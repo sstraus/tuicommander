@@ -2696,10 +2696,18 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
                     if let Some(dictation) = app_handle.try_state::<dictation::DictationState>() {
                         dictation.shutdown();
                     }
-                    // Kill all SSH tunnel processes so ports are freed for restart
+                    // Kill all SSH tunnel processes so ports are freed for restart.
+                    // Waited (bounded by GRACEFUL_SHUTDOWN_TIMEOUT), not
+                    // fire-and-forget: shutdown_all() only sends each
+                    // supervisor a signal and returns immediately, and since
+                    // this process is about to exit, nothing would otherwise
+                    // be left running long enough to confirm the SSH child
+                    // processes are actually gone before we do.
                     if let Some(state) = app_handle.try_state::<Arc<AppState>>() {
                         state.secrets.clear();
-                        state.tunnel_manager.shutdown_all();
+                        tauri::async_runtime::block_on(
+                            state.tunnel_manager.shutdown_all_and_wait(),
+                        );
                         if let Some(manager) = state.design_mode.get() {
                             tauri::async_runtime::block_on(manager.stop_all());
                         }
