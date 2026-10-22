@@ -43,6 +43,7 @@ When modifying PTY behavior, output parsing, shell state, or terminal UI:
 | `docs/backend/pty.md` | PTY session lifecycle, reader threads, output handling |
 | `docs/backend/output-parser.md` | Rate limits, structured events, parsing rules |
 | `docs/frontend/canvas-terminal-audit.md` | CanvasTerminal feature completeness audit |
+| `docs/frontend/terminal-features.md` | Consolidated terminal behaviors, shortcuts, configurable features |
 | `docs/FEATURES.md` | Section 1 (Terminal Management) |
 | `docs/user-guide/terminals.md` | User-facing terminal features |
 | `docs/api/tauri-commands.md` | PTY commands (create_pty, write_pty, resize_pty, etc.) |
@@ -642,6 +643,7 @@ When adding, renaming or moving a docs page:
 | `docs/frontend/stores.md` | SolidJS stores |
 | `docs/frontend/transport.md` | Tauri/HTTP dual-mode transport |
 | `docs/frontend/utilities.md` | Utility function reference |
+| `docs/frontend/terminal-features.md` | Consolidated terminal behaviors, shortcuts, configurable features |
 | `docs/features/ssh-tunnels.md` | SSH tunnel architecture and module map |
 | `docs/user-guide/*.md` | User-facing guides (20 files) |
 | **Code-embedded docs** | |

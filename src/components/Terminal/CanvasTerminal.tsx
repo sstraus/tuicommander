@@ -43,7 +43,7 @@ import {
 	readMarkerPromptBoundary,
 } from "./canvasTerminalMarkers";
 import { paintCursor, paintSearchHighlights, paintSelection, syncImePosition, thumbFor } from "./canvasTerminalPaint";
-import { createCanvasScrollController, ROW_CACHE_CHUNK } from "./canvasTerminalScroll";
+import { createCanvasScrollController, gestureAccelFactor, ROW_CACHE_CHUNK } from "./canvasTerminalScroll";
 import {
 	commitSelectionCopy,
 	createCanvasSearchController,
@@ -89,6 +89,13 @@ import {
 	textSpanToCellRanges,
 	utf16SpanToCellRange,
 } from "./canvasTerminalUtils";
+import {
+	createWheelNotchState,
+	quantizeWheelNotches,
+	resetWheelNotch,
+	WHEEL_GESTURE_END_MS,
+	wheelDeltaToPixels,
+} from "./canvasTerminalWheel";
 import { installFrameTimingDebugHook, isFrameTimingEnabled, recordFrameTiming, resetFrameTiming } from "./frameTiming";
 import {
 	dumpFrameWorkload,
@@ -192,6 +199,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	const scroll = createCanvasScrollController();
 	const rowCache = scroll.rowCache;
 	const requestedChunks = scroll.requestedChunks;
+	// Per-gesture pixel accumulator for the app-forwarded wheel path (handleWheel below).
+	// Lives for the pane's lifetime; reset on gesture-end, direction reversal, blur, and
+	// primary/alternate screen swap — see the reset points next to its usages.
+	const wheelNotch = createWheelNotchState();
 	// Base-grid renderer (the canvas2d paint implementation). Created in onMount
 	// once ctx exists.
 	let gridRenderer!: GridRenderer;
@@ -1536,6 +1547,10 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	// after we've handed control to another scroll path (scrollbar, programmatic jump).
 	function resetSmoothScroll(repaint = true) {
 		clearTimeout(scrollGestureEndTimer);
+		// That timer is what clears the forwarded wheel's sub-notch residual
+		// (onWheelGestureEnd), so cancelling it must clear the residual too: typing,
+		// a resize or a scrollbar drag would otherwise leave it to the next gesture.
+		resetWheelNotch(wheelNotch);
 		if (scrollRafId) {
 			cancelAnimationFrame(scrollRafId);
 			scrollRafId = 0;
@@ -1610,16 +1625,26 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		scheduleSmoothRender();
 	}
 
+	// Forwarded-wheel gesture went idle: drop the pixel accumulator (a trailing
+	// sub-notch residual must not leak into the next, unrelated gesture) and let any
+	// in-flight scrollback gesture settle the normal way. resetScrollGesture is a
+	// no-op when there is no smooth-scroll position, so this is safe to call even when
+	// the wheel was being forwarded to the app the whole time.
+	function onWheelGestureEnd() {
+		resetWheelNotch(wheelNotch);
+		resetScrollGesture();
+	}
+
 	// Apply one wheel/touch delta (raw pixels) with gesture acceleration → smooth
-	// sub-line scroll.
+	// sub-line scroll. The acceleration ramp is capped (gestureAccelFactor) and resets
+	// on direction reversal (accumulateGesture) so a long momentum fling can't ramp
+	// past a 2x ceiling or keep accelerating a scroll-back after the gesture reverses.
 	function handleScrollDelta(dy: number) {
 		const m = metrics();
 		const ch = m?.cellHeight ?? 20;
 		const screenPx = ch * (lastResizeRows || 24);
-		scroll.gestureDistancePx += Math.abs(dy);
-		const excess = Math.max(0, scroll.gestureDistancePx - screenPx);
-		const factor = 0.5 + 0.5 * (excess / screenPx);
-		applySmoothScroll((dy * factor) / ch);
+		const distance = scroll.accumulateGesture(dy);
+		applySmoothScroll((dy * gestureAccelFactor(distance, screenPx)) / ch);
 	}
 
 	// The transport normalizes every payload shape (see toBinaryPayload) and drops
@@ -1695,6 +1720,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			screenGeneration++;
 			resetSmoothScroll(false);
 			scroll.clearCache();
+			resetWheelNotch(wheelNotch);
 			selection.clear();
 			stopSelectionScroll();
 			clearSearchState();
@@ -2650,6 +2676,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			stopBlink();
 			repaintCursorIfNeeded();
 			if (currentFrame?.focusReporting) writePtyNoScroll("\x1b[O");
+			// A wheel gesture that was mid-flight when focus left this pane must not
+			// resume it on refocus.
+			resetWheelNotch(wheelNotch);
 		});
 
 		// Text from input methods that don't emit usable keydown events — iOS/
@@ -3338,13 +3367,31 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			// (TUIC scrolled its own history instead of forwarding to grok).
 			// Shift+wheel always scrolls the TUIC scrollback, never the app — the
 			// escape hatch matching the click/motion handlers' `!e.shiftKey` bypass.
+			// (wheelScrollDelta inside quantizeWheelNotches/wheelDeltaToPixels also
+			// corrects for macOS/WebKit reporting Shift+wheel on deltaX instead of
+			// deltaY — without that, this escape hatch does nothing until Shift is
+			// released and the momentum tail lands back on deltaY.)
 			if (currentFrame && currentFrame.mouseMode > 0 && !e.shiftKey) {
+				const ch = metrics()?.cellHeight ?? 20;
+				const rows = lastResizeRows || 24;
+				// Quantize to whole notches the way a native terminal does: macOS
+				// delivers a wheel event for the entire momentum tail after a flick
+				// (60-120 events/s of decaying deltas), and forwarding one SGR notch
+				// per event — as this used to — turns one flick into dozens of
+				// notches sent to the app.
+				const notches = quantizeWheelNotches(wheelNotch, e, ch, rows);
+				clearTimeout(scrollGestureEndTimer);
+				scrollGestureEndTimer = setTimeout(onWheelGestureEnd, WHEEL_GESTURE_END_MS);
+				if (notches === 0) return;
 				const pos = canvasToGrid(metrics, canvasRef, e as unknown as MouseEvent);
-				const btn = e.deltaY < 0 ? 64 : 65;
-				writePtyNoScroll(sgrMouseSequence(btn, pos.col, pos.row, true, e as unknown as MouseEvent));
+				const btn = notches < 0 ? 64 : 65;
+				const seq = sgrMouseSequence(btn, pos.col, pos.row, true, e as unknown as MouseEvent);
+				// One write_pty per DOM event instead of one per notch — the sequence
+				// is stateless, so repeating it is byte-identical to N separate writes.
+				writePtyNoScroll(seq.repeat(Math.abs(notches)));
 				return;
 			}
-			const dy = e.deltaY;
+			const dy = wheelDeltaToPixels(e, metrics()?.cellHeight ?? 20, lastResizeRows || 24);
 			const atBottom =
 				currentFrame && currentFrame.displayOffset === 0 && (scroll.position == null || scroll.position <= 0);
 			const atTop =
@@ -3356,7 +3403,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			handleScrollDelta(dy);
 
 			clearTimeout(scrollGestureEndTimer);
-			scrollGestureEndTimer = setTimeout(resetScrollGesture, 200);
+			// Same handler as the forwarded branch: this timer replaced that one, so it must
+			// also drop any forwarded sub-notch residual or it leaks into the next gesture.
+			scrollGestureEndTimer = setTimeout(onWheelGestureEnd, WHEEL_GESTURE_END_MS);
 		}
 		bindings.listen(canvasRef, "wheel", handleWheel, { passive: false });
 		bindings.listen(scrollbarRef, "wheel", handleWheel, { passive: false });

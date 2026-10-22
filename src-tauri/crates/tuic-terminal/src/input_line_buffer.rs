@@ -35,6 +35,11 @@ pub struct InputLineBuffer {
     esc_state: EscState,
     /// Accumulator for CSI parameter bytes (digits and semicolons).
     csi_params: Vec<u8>,
+    /// True once the current CSI sequence has seen an intermediate byte
+    /// (ECMA-48 0x20..=0x2F, e.g. the `$` in a DEC mode report `ESC [ ? 6 ; 1 $ y`).
+    /// Such a sequence is not one of the editing keys we interpret, so its final
+    /// byte is consumed without being executed.
+    csi_intermediate: bool,
 }
 
 /// Escape sequence parser state.
@@ -66,6 +71,7 @@ impl InputLineBuffer {
             cursor: 0,
             esc_state: EscState::Normal,
             csi_params: Vec::new(),
+            csi_intermediate: false,
         }
     }
 
@@ -227,6 +233,7 @@ impl InputLineBuffer {
             '[' => {
                 self.esc_state = EscState::Csi;
                 self.csi_params.clear();
+                self.csi_intermediate = false;
                 None
             }
             // ESC O — SS3 sequence (application cursor mode)
@@ -275,19 +282,40 @@ impl InputLineBuffer {
 
     fn handle_csi(&mut self, ch: char) -> Option<InputAction> {
         match ch {
-            // Parameter bytes: digits and semicolons. A sequence that never
-            // sends a final byte must not accumulate forever; the bytes past
-            // the cap cannot affect `parse_csi_params` anyway.
-            '0'..='9' | ';' => {
+            // Parameter bytes (ECMA-48 0x30..=0x3F): digits, ':' ';' and the
+            // private-marker bytes '<' '=' '>' '?'.
+            // SGR mouse reports forwarded from the frontend wheel/click handlers
+            // (`ESC [ < Cb ; Cx ; Cy M`, see CanvasTerminal.tsx sgrMouseSequence)
+            // use '<' as a private parameter prefix. Without this, '<' was
+            // misread as the FINAL byte: execute_csi no-opped on it and reset to
+            // Normal, and the remaining "Cb;Cx;CyM" bytes fell through to
+            // handle_normal, splicing literal mouse-report digits into whatever
+            // line was being reconstructed (visible as SGR-report fragments in
+            // last_prompts / busy-detection text on any mouse-tracking session).
+            // A sequence that never sends a final byte must not accumulate
+            // forever; the bytes past the cap cannot affect `parse_csi_params`
+            // anyway.
+            '0'..='9' | ';' | ':' | '<' | '=' | '>' | '?' => {
                 if self.csi_params.len() < MAX_CSI_PARAM_BYTES {
                     self.csi_params.push(ch as u8);
                 }
                 None
             }
-            // Final byte — execute CSI command
+            // Intermediate bytes (ECMA-48 0x20..=0x2F), e.g. the `$` in a DEC
+            // mode report reply `ESC [ ? 6 ; 1 $ y`. They are not final bytes:
+            // treating `$` as one would leak the real final byte `y` into the
+            // line being reconstructed.
+            ' '..='/' => {
+                self.csi_intermediate = true;
+                None
+            }
+            // Final byte (0x40..=0x7E), or an unexpected byte that aborts the
+            // sequence — execute CSI command
             _ => {
                 self.esc_state = EscState::Normal;
-                self.execute_csi(ch);
+                if !self.csi_intermediate {
+                    self.execute_csi(ch);
+                }
                 None
             }
         }
@@ -570,6 +598,77 @@ mod tests {
         assert_eq!(buf.cursor_pos(), 0);
         buf.feed("\x1b[F"); // End
         assert_eq!(buf.cursor_pos(), 5);
+    }
+
+    #[test]
+    fn test_sgr_mouse_report_does_not_leak_into_content() {
+        // Forwarded wheel/click events (CanvasTerminal.tsx sgrMouseSequence) write
+        // raw SGR mouse reports into the PTY input side whenever mouse tracking is
+        // on, regardless of which process is actually reading — the same input
+        // stream this buffer reconstructs "typed" lines from. Before the '<'
+        // private-marker fix, '<' terminated the CSI sequence early and the
+        // trailing "35;51;26M" digits/semicolons/final-byte were spliced in as
+        // literal characters.
+        let mut buf = InputLineBuffer::new();
+        buf.feed("hi");
+        buf.feed("\x1b[<35;51;26M"); // motion report (button 35 = 32|3)
+        buf.feed("\x1b[<64;17;36M"); // wheel-up notch
+        buf.feed("\x1b[<65;17;36m"); // wheel-down notch, release form
+        assert_eq!(
+            feed_and_get_line(&mut buf, " there\r"),
+            Some("hi there".into())
+        );
+    }
+
+    #[test]
+    fn test_sgr_mouse_report_split_across_writes_does_not_leak() {
+        // The PTY input side can deliver a report in arbitrary chunks; the CSI
+        // state must survive the split at every byte boundary.
+        let report = "\x1b[<65;120;36M";
+        for cut in 1..report.len() {
+            let mut buf = InputLineBuffer::new();
+            buf.feed("hi");
+            buf.feed(&report[..cut]);
+            buf.feed(&report[cut..]);
+            assert_eq!(
+                feed_and_get_line(&mut buf, "!\r"),
+                Some("hi!".into()),
+                "split at byte {cut}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_sgr_mouse_press_release_motion_with_modifiers_do_not_leak() {
+        let mut buf = InputLineBuffer::new();
+        buf.feed("ls");
+        buf.feed("\x1b[<0;5;7M"); // left press
+        buf.feed("\x1b[<32;6;7M"); // drag motion
+        buf.feed("\x1b[<0;6;7m"); // release
+        buf.feed("\x1b[<68;1;1M"); // Shift+wheel-up (64 + 4)
+        buf.feed("\x1b[<1000;9999;9999M"); // wide coordinates
+        assert_eq!(feed_and_get_line(&mut buf, " -l\r"), Some("ls -l".into()));
+    }
+
+    #[test]
+    fn test_sgr_mouse_report_does_not_move_cursor_or_edit() {
+        // Final bytes M/m must not be mistaken for editing keys.
+        let mut buf = InputLineBuffer::new();
+        buf.feed("abc");
+        buf.feed("\x1b[<65;3;1M\x1b[<64;3;1m");
+        assert_eq!(feed_and_get_line(&mut buf, "d\r"), Some("abcd".into()));
+    }
+
+    #[test]
+    fn test_kitty_keyboard_query_responses_do_not_leak_into_content() {
+        // Broader private-marker coverage beyond SGR mouse's '<': kitty keyboard
+        // protocol push/query/pop responses use '>' and '?' the same way (see
+        // strip_kitty_sequences's use of this exact string elsewhere in the
+        // codebase). These must not corrupt the reconstructed line either.
+        let mut buf = InputLineBuffer::new();
+        buf.feed("hi");
+        buf.feed("\x1b[>1u\x1b[?u\x1b[<u");
+        assert_eq!(feed_and_get_line(&mut buf, "\r"), Some("hi".into()));
     }
 
     #[test]
@@ -1876,5 +1975,28 @@ mod tests {
         buf.feed("\x1b[1;5D");
         buf.feed("X");
         assert_eq!(buf.content(), "one Xtwo");
+    }
+
+    #[test]
+    fn csi_intermediate_bytes_do_not_leak_the_final_byte() {
+        // DEC mode report reply (DECRPM): `ESC [ ? 6 ; 1 $ y`. `$` is an
+        // intermediate byte, `y` the final byte; neither may reach the line.
+        let mut buf = InputLineBuffer::new();
+        buf.feed("ab");
+        buf.feed("\x1b[?6;1$y");
+        buf.feed("c");
+        assert_eq!(buf.content(), "abc");
+
+        // The intermediate-bearing sequence is consumed, not executed: rxvt's
+        // `ESC [ 3 $ ~` must not act as a plain Delete.
+        let mut buf = InputLineBuffer::new();
+        buf.feed("abc");
+        buf.feed("\x1b[D\x1b[3$~");
+        assert_eq!(buf.content(), "abc");
+
+        // A normal sequence after it still works.
+        buf.feed("\x1b[1;5D");
+        buf.feed("X");
+        assert_eq!(buf.content(), "Xabc");
     }
 }
