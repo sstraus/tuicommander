@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Resolve a repository's default branch from the HEAD of the main checkout's tracked remote or any other remote (including remotes with slashes in the name) when `origin` has none and neither a configured base nor a local `main`/`master` decides it. A remote default whose short name is shadowed by a local branch or a tag keeps its full `refs/remotes/...` name, `fetch_if_remote` splits `<remote>/<branch>` against the configured remotes instead of at the first slash, and the answer no longer depends on which linked worktree the caller passes.
+
 ## [2.0.0-beta.1] - 2026-10-22
 
 - Keep the terminal mobile composer's bottom safe-area inset inside its painted surface, above the Home Indicator; the separately reported iPhone shell-height band still needs device evidence (#2116-0213).
