@@ -1087,3 +1087,48 @@ describe("pane tab identity", () => {
 		expect(tabsOf(g)[0]).toBe(before);
 	});
 });
+
+describe("terminalsStore.onRemove sweep (ghost-tab collapse)", () => {
+	afterEach(() => paneLayoutStore._testCancelPendingSave());
+	// The sweep is registered by utils/paneTabLiveness.ts (desktop-only; kept out
+	// of paneLayout.ts so the mobile bundle does not pull in the tab stores).
+	beforeEach(async () => {
+		await import("../../utils/paneTabLiveness");
+	});
+
+	it("collapses a pane whose only tab's session is removed — no sibling tab needed to trigger it", async () => {
+		// The gap a code review caught in the sibling-close-only fix: a pane
+		// materialized by the tmux compatibility shim with exactly one tab has no
+		// OTHER tab a user could ever close to re-evaluate this pane's liveness.
+		// paneTabLiveness.ts's module-level terminalsStore.onRemove wiring sweeps it directly.
+		const { terminalsStore } = await import("../../stores/terminals");
+		const id = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T", cwd: null, awaitingInput: null });
+
+		const groupId = paneLayoutStore.createGroup();
+		paneLayoutStore.addTab(groupId, { id, type: "terminal" });
+		paneLayoutStore.setRoot({ type: "leaf", id: groupId });
+		paneLayoutStore.setActiveGroup(groupId);
+
+		terminalsStore.remove(id);
+
+		expect(paneLayoutStore.getAllGroupIds()).not.toContain(groupId);
+		expect(paneLayoutStore.getRoot()).toBeNull();
+	});
+
+	it("does not collapse a pane that still has a live sibling tab after the removed one", async () => {
+		const { terminalsStore } = await import("../../stores/terminals");
+		const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+		const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+
+		const groupId = paneLayoutStore.createGroup();
+		paneLayoutStore.addTab(groupId, { id: id1, type: "terminal" });
+		paneLayoutStore.addTab(groupId, { id: id2, type: "terminal" });
+		paneLayoutStore.setRoot({ type: "leaf", id: groupId });
+		paneLayoutStore.setActiveGroup(groupId);
+
+		terminalsStore.remove(id1);
+
+		expect(paneLayoutStore.getAllGroupIds()).toContain(groupId);
+		expect(paneLayoutStore.state.groups[groupId]?.tabs.map((t) => t.id)).toEqual([id2]);
+	});
+});

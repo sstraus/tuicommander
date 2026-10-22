@@ -100,6 +100,65 @@ describe("globalWorkspaceStore scopes", () => {
 		});
 	});
 
+	/**
+	 * Reported live 2026-09-30: with one terminal in the manual Global
+	 * Workspace, viewing a terminal in a repo's own auto-consolidated scope,
+	 * clicking the Global Workspace pill changed the tab's displayed name
+	 * but left the OLD scope's terminal's content on screen. setScope()
+	 * restored paneLayoutStore but never reconciled terminalsStore's
+	 * activeId, which TerminalArea's single-pane rendering path gates
+	 * content visibility on.
+	 */
+	it("reconciles the active terminal when switching scopes while a workspace is already showing", () => {
+		testInScope(() => {
+			const manual = terminalsStore.add(makeTerminal({ name: "manual" }));
+			store.promote(manual);
+
+			const repoTerm = terminalsStore.add(makeTerminal({ name: "wt-1" }));
+			store.syncScopeMembers("/repo/a", [repoTerm]);
+			store.setScope("/repo/a");
+			store.activate();
+			expect(terminalsStore.state.activeId).toBe(repoTerm);
+
+			// Simulate clicking the pill while the repo's consolidated view is
+			// still active on screen.
+			store.setScope("__manual__");
+
+			expect(store.getScope()).toBe("__manual__");
+			expect(terminalsStore.state.activeId).toBe(manual);
+		});
+	});
+
+	it("setScope does not steal selection from a docked non-terminal active tab", () => {
+		testInScope(() => {
+			const manual = terminalsStore.add(makeTerminal({ name: "manual" }));
+			store.promote(manual);
+			store.setLayout({
+				root: { type: "leaf", id: "g30" },
+				groups: {
+					g30: {
+						id: "g30",
+						tabs: [
+							{ id: manual, type: "terminal" },
+							{ id: "md-1", type: "markdown" },
+						],
+						activeTabId: "md-1",
+					},
+				},
+				activeGroupId: "g30",
+			});
+			const repoTerm = terminalsStore.add(makeTerminal({ name: "wt-1" }));
+			store.syncScopeMembers("/repo/a", [repoTerm]);
+			store.setScope("/repo/a");
+			store.activate();
+
+			terminalsStore.setActive(null);
+			store.setScope("__manual__");
+
+			expect(terminalsStore.state.activeId).toBeNull();
+		});
+	});
+
 	it("forgets a closed terminal in whichever scope holds it", () => {
 		testInScope(() => {
 			// Real terminals here: this path runs through terminalsStore.onRemove,

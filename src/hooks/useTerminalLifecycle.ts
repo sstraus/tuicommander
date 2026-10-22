@@ -17,6 +17,7 @@ import { getFocusedFrameSelection } from "../utils/focusedSelection";
 import { markdownDocumentPanelId } from "../utils/markdownDocumentPanelId";
 import { navigateToTerminal } from "../utils/navigateToTerminal";
 import { assignTabToActiveGroup } from "../utils/paneTabAssign";
+import { isPaneTabLive } from "../utils/paneTabLiveness";
 import { filterValidTerminals } from "../utils/terminalFilter";
 import { clampFontSize, FONT_STEP } from "../utils/terminalZoom";
 
@@ -94,13 +95,22 @@ export function useTerminalLifecycle(deps: TerminalLifecycleDeps) {
 	};
 
 	/** After closing a non-terminal tab, select a sibling on the same branch or fall back to the last terminal */
-	/** Remove a tab from its pane group; if the group becomes empty, collapse the split. */
+	/** Remove a tab from its pane group; if the group has no live content left, collapse the split.
+	 *  A tab whose content never made it into (or was removed from) its owning store — e.g. a
+	 *  tmux-shim-materialized terminal killed outside the normal close path, or a diff/markdown/
+	 *  editor tab whose store entry was dropped by some other code path — is a ghost: it can never
+	 *  be closed by the user (no tab strip entry, no close button), so a raw tabs.length check can
+	 *  never reach zero and the pane gets stuck open forever. Ghosts don't count as live content
+	 *  for this check (see isPaneTabLive's doc comment). This only re-evaluates a group when ANOTHER
+	 *  of its tabs is closed — a solo-ghost group with no live sibling to ever trigger a close needs
+	 *  the separate terminalsStore.onRemove sweep wired in utils/paneTabLiveness.ts. */
 	const removeTabFromPane = (tabId: string) => {
 		const containingGroup = paneLayoutStore.getGroupForTab(tabId);
 		if (!containingGroup) return;
 		paneLayoutStore.removeTab(containingGroup, tabId);
 		const updated = paneLayoutStore.state.groups[containingGroup];
-		if (!updated || updated.tabs.length === 0) {
+		const hasLiveContent = updated?.tabs.some(isPaneTabLive);
+		if (!updated || !hasLiveContent) {
 			paneLayoutStore.closePane(containingGroup);
 		}
 	};

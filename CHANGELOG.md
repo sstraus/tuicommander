@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- A ghost terminal tab (its terminal entry is gone) no longer keeps a split pane open: the pane collapses when the terminal is removed, and closing a sibling tab ignores ghost terminal, diff, Markdown and editor tabs when deciding whether a pane is empty. A pane whose only tab is a ghost diff, Markdown or editor tab is still not swept until another tab in it closes. Reset Panel Sizes now also rebuilds the active Global Workspace layout (keeping the focused terminal), and switching workspace scope reconciles the active terminal without stealing selection from a docked non-terminal tab.
+
 ## [2.0.0-beta.1] - 2026-10-22
 
 - Keep the terminal mobile composer's bottom safe-area inset inside its painted surface, above the Home Indicator; the separately reported iPhone shell-height band still needs device evidence (#2116-0213).

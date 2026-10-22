@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import "../mocks/tauri";
 import { _testCancelPendingTimers, useSplitPanes } from "../../hooks/useSplitPanes";
+import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { paneLayoutStore, resetGroupCounter } from "../../stores/paneLayout";
 import { terminalsStore } from "../../stores/terminals";
 
@@ -10,6 +11,8 @@ function resetStores() {
 	}
 	paneLayoutStore.reset();
 	resetGroupCounter();
+	if (globalWorkspaceStore.isActive()) globalWorkspaceStore.deactivate();
+	for (const id of globalWorkspaceStore.getPromotedIds()) globalWorkspaceStore.unpromote(id);
 }
 
 describe("useSplitPanes", () => {
@@ -183,6 +186,32 @@ describe("useSplitPanes", () => {
 			expect(paneLayoutStore.getAllGroupIds().length).toBe(0);
 			expect(paneLayoutStore.state.activeGroupId).toBe(null);
 		});
+
+		it("collapses the active global workspace's cached layout too, so a later promote doesn't resurrect the split", () => {
+			// A plain paneLayoutStore.reset() alone doesn't stick while the global
+			// workspace is active: it keeps its own cached layout and reapplies it
+			// on the very next promote/unpromote (e.g. a new terminal getting
+			// auto-consolidated), silently reintroducing whatever split was just
+			// reset — this is what made "Reset Panel Sizes" look "only temporary".
+			const id1 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T1", cwd: null, awaitingInput: null });
+			const id2 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T2", cwd: null, awaitingInput: null });
+			terminalsStore.setActive(id1);
+
+			globalWorkspaceStore.promote(id1);
+			globalWorkspaceStore.promote(id2);
+			globalWorkspaceStore.activate();
+
+			splitPanes.handleSplit("vertical");
+			expect(paneLayoutStore.isSplit()).toBe(true);
+
+			splitPanes.resetLayout();
+			expect(paneLayoutStore.isSplit()).toBe(false);
+
+			const id3 = terminalsStore.add({ sessionId: null, fontSize: 14, name: "T3", cwd: null, awaitingInput: null });
+			globalWorkspaceStore.promote(id3);
+
+			expect(paneLayoutStore.isSplit()).toBe(false);
+		});
 	});
 
 	describe("closeActivePane", () => {
@@ -262,6 +291,18 @@ describe("useSplitPanes", () => {
 			expect(paneLayoutStore.isSplit()).toBe(false);
 			expect(paneLayoutStore.getAllGroupIds().length).toBe(1);
 			expect(terminalsStore.get(id1)).toBeDefined();
+		});
+
+		it("closes a pane whose only tab is a ghost (no terminalsStore entry) — this path never gated on tab count, unlike removeTabFromPane", () => {
+			const groupId = paneLayoutStore.createGroup();
+			paneLayoutStore.addTab(groupId, { id: "ghost-session", type: "terminal" });
+			paneLayoutStore.setRoot({ type: "leaf", id: groupId });
+			paneLayoutStore.setActiveGroup(groupId);
+
+			splitPanes.closeActivePane();
+
+			expect(paneLayoutStore.getAllGroupIds()).not.toContain(groupId);
+			expect(paneLayoutStore.getRoot()).toBeNull();
 		});
 	});
 

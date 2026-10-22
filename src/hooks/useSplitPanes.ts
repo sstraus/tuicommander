@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import { globalWorkspaceStore } from "../stores/globalWorkspace";
 import { type PaneLayoutState, paneLayoutStore } from "../stores/paneLayout";
 import { terminalsStore } from "../stores/terminals";
 
@@ -60,6 +61,14 @@ export function useSplitPanes() {
 
 	const resetLayout = () => {
 		paneLayoutStore.reset();
+		// A plain reset doesn't stick while the global workspace is active — it
+		// owns the live layout and reapplies its own cached arrangement on the
+		// very next promote/unpromote (e.g. a new terminal getting consolidated),
+		// silently reintroducing whatever split the user just reset. Collapse its
+		// cache to a single flat pane too, so there's nothing stale left to reapply.
+		if (globalWorkspaceStore.isActive()) {
+			globalWorkspaceStore.resetActiveLayout();
+		}
 		setZoomed(false);
 		setSavedLayout(null);
 	};

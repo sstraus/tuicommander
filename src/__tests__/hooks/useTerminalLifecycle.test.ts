@@ -274,6 +274,33 @@ describe("useTerminalLifecycle", () => {
 			expect(mockPty.close).toHaveBeenCalledWith("sess-1");
 		});
 
+		it("collapses the pane when the only tab left behind is a ghost (session missing from terminalsStore)", async () => {
+			// Simulates a tmux-shim-materialized pane whose PTY died via a path that
+			// never fired session-closed: its tab id is still in paneLayoutStore but
+			// has no terminalsStore entry, so it never renders and can't be closed
+			// through the UI. A raw tabs.length===0 check can never fire once one is
+			// left behind — the pane would stay open forever.
+			const ghostId = "ghost-session-that-never-fired-session-closed";
+			const realId = terminalsStore.add({
+				sessionId: "sess-1",
+				fontSize: 14,
+				name: "Test",
+				cwd: null,
+				awaitingInput: null,
+			});
+
+			const groupId = paneLayoutStore.createGroup();
+			paneLayoutStore.addTab(groupId, { id: ghostId, type: "terminal" });
+			paneLayoutStore.addTab(groupId, { id: realId, type: "terminal" });
+			paneLayoutStore.setRoot({ type: "leaf", id: groupId });
+			paneLayoutStore.setActiveGroup(groupId);
+
+			await lifecycle.closeTerminal(realId);
+
+			expect(paneLayoutStore.getAllGroupIds()).not.toContain(groupId);
+			expect(paneLayoutStore.getRoot()).toBeNull();
+		});
+
 		it("shows confirmation when foreground process is running", async () => {
 			mockInvoke.mockResolvedValue("claude");
 			const id = terminalsStore.add({
