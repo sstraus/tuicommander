@@ -151,8 +151,11 @@ pub(crate) mod plugin_pty;
 pub(crate) mod plugin_settings;
 pub(crate) mod plugins;
 pub(crate) mod pr_review;
+// The elevated-copy staging serves the desktop-only mdkb installer.
 #[cfg(feature = "desktop")]
 mod press_and_hold;
+#[cfg_attr(not(feature = "desktop"), allow(dead_code))]
+pub(crate) mod private_scratch;
 pub(crate) use tuic_core::process_env;
 pub(crate) mod progress;
 pub(crate) mod prompt;

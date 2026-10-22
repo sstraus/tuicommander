@@ -128,23 +128,37 @@ install_macos() {
   echo "Tip: you can also install via Homebrew: brew install sstraus/tap/tuicommander"
 }
 
+# A fresh 0700 directory under the caller's temp dir ($TMPDIR, else /tmp).
+# The package keeps its extension inside it: a suffix after the X's of a
+# mktemp template is a GNU extension, and a private dir also stops another
+# local user from swapping the file before `sudo dpkg/rpm` installs it.
+make_private_tmpdir() {
+  mktemp -d "${TMPDIR:-/tmp}/tuicommander-XXXXXX"
+}
+
 install_linux() {
   if command -v dpkg > /dev/null 2>&1; then
     echo "Detected dpkg — installing .deb package..."
     URL=$(get_download_url 'amd64\.deb')
     if [ -z "$URL" ]; then echo "Error: .deb asset not found in latest release"; exit 1; fi
-    TMP=$(mktemp /tmp/tuicommander-XXXXXX.deb)
+    TMP_DIR=$(make_private_tmpdir)
+    # `set -e` aborts on a failed download or install; still drop the scratch dir.
+    trap 'rm -rf "$TMP_DIR"' EXIT
+    TMP="$TMP_DIR/tuicommander.deb"
     curl -fsSL "$URL" -o "$TMP"
     sudo dpkg -i "$TMP"
-    rm -f "$TMP"
+    rm -rf "$TMP_DIR"
   elif command -v rpm > /dev/null 2>&1; then
     echo "Detected rpm — installing .rpm package..."
     URL=$(get_download_url 'x86_64\.rpm')
     if [ -z "$URL" ]; then echo "Error: .rpm asset not found in latest release"; exit 1; fi
-    TMP=$(mktemp /tmp/tuicommander-XXXXXX.rpm)
+    TMP_DIR=$(make_private_tmpdir)
+    # `set -e` aborts on a failed download or install; still drop the scratch dir.
+    trap 'rm -rf "$TMP_DIR"' EXIT
+    TMP="$TMP_DIR/tuicommander.rpm"
     curl -fsSL "$URL" -o "$TMP"
     sudo rpm -i "$TMP"
-    rm -f "$TMP"
+    rm -rf "$TMP_DIR"
   else
     echo "No dpkg or rpm found — installing AppImage..."
     URL=$(get_download_url 'amd64\.AppImage')

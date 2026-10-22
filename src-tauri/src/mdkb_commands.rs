@@ -282,19 +282,23 @@ pub async fn install_mdkb(state: State<'_, Arc<AppState>>) -> Result<String, Str
         std::fs::rename(&tmp_path, &install_path)
             .map_err(|e| format!("Failed to move binary: {e}"))?;
     } else {
-        // Need elevation
+        // Need elevation. The staged file is copied as root, so it must sit
+        // in a fresh private dir (random name, 0700), never a predictable
+        // `temp_dir()/mdkb-install` another local user could pre-create and
+        // swap the binary in. Dropping `staged` removes the dir on every path.
         let _ = std::fs::remove_file(&tmp_path);
-        let tmp_dir = std::env::temp_dir().join("mdkb-install");
-        let _ = std::fs::create_dir_all(&tmp_dir);
-        let staged = tmp_dir.join(asset);
-        std::fs::write(&staged, &bytes).map_err(|e| format!("Failed to stage binary: {e}"))?;
+        let staged = crate::private_scratch::stage_for_elevated_copy(
+            &std::env::temp_dir(),
+            "mdkb-install-",
+            asset,
+            &bytes,
+        )
+        .map_err(|e| format!("Failed to stage binary: {e}"))?;
 
         crate::tuic_cli::copy_with_elevation(
-            &staged.to_string_lossy(),
+            &staged.path().to_string_lossy(),
             &install_path.to_string_lossy(),
         )?;
-
-        let _ = std::fs::remove_dir_all(&tmp_dir);
     }
 
     #[cfg(unix)]

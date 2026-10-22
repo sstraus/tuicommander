@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Stage elevated mdkb installs, Tailscale cert provisioning (TLS private key) and Linux `.deb`/`.rpm` installs in fresh private 0700 temp directories instead of predictable `/tmp` paths another local user could pre-create or swap.
+
 ## [2.0.0-beta.1] - 2026-10-22
 
 - Keep the terminal mobile composer's bottom safe-area inset inside its painted surface, above the Home Indicator; the separately reported iPhone shell-height band still needs device evidence (#2116-0213).

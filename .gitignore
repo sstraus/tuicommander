@@ -111,6 +111,7 @@ scripts/fixtures/*
 !scripts/test-append-only-merge.sh
 !scripts/test-with-test-tmp-prune.sh
 !scripts/test-with-test-tmp-worktree-target.sh
+!scripts/test-install-sh-tmpdir.sh
 !scripts/hooks/
 !scripts/speech-assets/
 !scripts/perf/

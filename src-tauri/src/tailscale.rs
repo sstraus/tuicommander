@@ -270,12 +270,23 @@ async fn provision_cert_unix(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
 /// where the tailscaled socket is not present.
 async fn provision_cert_cli(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     let binary = find_binary().ok_or_else(|| anyhow::anyhow!("Tailscale binary not found"))?;
+    run_cert_cli(&binary, &std::env::temp_dir(), fqdn).await
+}
 
-    let temp_dir = std::env::temp_dir().join("tuicommander-certs");
-    tokio::fs::create_dir_all(&temp_dir).await?;
-
-    let cert_path = temp_dir.join(format!("{fqdn}.crt"));
-    let key_path = temp_dir.join(format!("{fqdn}.key"));
+/// Run `tailscale cert` into a fresh private directory under `base` and read
+/// the cert and key back. The private key passes through that directory, so
+/// it is never a predictable shared path (`temp_dir()/tuicommander-certs`
+/// was `/tmp/tuicommander-certs` wherever `TMPDIR` is unset, which another
+/// local user could pre-create to read or replace the key): a random name,
+/// mode 0700, removed when this returns — on the error paths too.
+async fn run_cert_cli(
+    binary: &std::path::Path,
+    base: &std::path::Path,
+    fqdn: &str,
+) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
+    let dir = crate::private_scratch::private_tempdir_in(base, "tuicommander-certs-")?;
+    let cert_path = dir.path().join("cert.pem");
+    let key_path = dir.path().join("key.pem");
 
     let cert_path_str = cert_path
         .to_str()
@@ -284,7 +295,7 @@ async fn provision_cert_cli(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("key path is not valid UTF-8: {key_path:?}"))?;
 
-    let output = tokio::process::Command::new(&binary)
+    let output = tokio::process::Command::new(binary)
         .args([
             "cert",
             "--cert-file",
@@ -304,9 +315,14 @@ async fn provision_cert_cli(fqdn: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     let cert_pem = tokio::fs::read(&cert_path).await?;
     let key_pem = tokio::fs::read(&key_path).await?;
 
-    // Clean up temp files (best effort)
-    let _ = tokio::fs::remove_file(&cert_path).await;
-    let _ = tokio::fs::remove_file(&key_path).await;
+    let dir_path = dir.path().to_path_buf();
+    if let Err(e) = dir.close() {
+        tracing::warn!(
+            source = "tailscale",
+            dir = %dir_path.display(),
+            "Could not remove the private cert scratch dir: {e}"
+        );
+    }
 
     Ok((cert_pem, key_pem))
 }
@@ -563,5 +579,95 @@ mod tests {
         let response = b"garbage data without headers";
         let result = extract_http_body(response);
         assert!(result.is_err());
+    }
+
+    /// A fake `tailscale` that behaves like `tailscale cert --cert-file C
+    /// --key-file K <fqdn>`, records the mode of the directory it was told to
+    /// write into, then runs `tail` (shell) for its own exit.
+    #[cfg(unix)]
+    fn fake_tailscale(dir: &std::path::Path, record: &std::path::Path, tail: &str) -> PathBuf {
+        use std::os::unix::fs::PermissionsExt;
+        let script = dir.join("tailscale");
+        std::fs::write(
+            &script,
+            format!(
+                "#!/bin/sh\n\
+                 [ \"$1\" = cert ] && [ \"$2\" = --cert-file ] && [ \"$4\" = --key-file ] || exit 64\n\
+                 ls -ld \"$(dirname \"$5\")\" | cut -c1-10 > '{record}'\n\
+                 dirname \"$5\" >> '{record}'\n\
+                 {tail}\n",
+                record = record.display()
+            ),
+        )
+        .unwrap();
+        std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+        script
+    }
+
+    /// Everything directly under `base` whose name mentions the cert dir.
+    #[cfg(unix)]
+    fn cert_dirs_in(base: &std::path::Path) -> Vec<String> {
+        std::fs::read_dir(base)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|name| name.starts_with("tuicommander-certs"))
+            .collect()
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cert_cli_uses_a_private_dir_and_removes_it() {
+        let bin = tempfile::tempdir().unwrap();
+        let base = tempfile::tempdir().unwrap();
+        // An attacker's pre-created predictable dir must be neither used nor removed.
+        let predictable = base.path().join("tuicommander-certs");
+        std::fs::create_dir(&predictable).unwrap();
+        let record = bin.path().join("record");
+        let fake = fake_tailscale(
+            bin.path(),
+            &record,
+            "printf CERT > \"$3\"; printf KEY > \"$5\"",
+        );
+
+        let (cert, key) = run_cert_cli(&fake, base.path(), "host.tail-abc.ts.net")
+            .await
+            .unwrap();
+        assert_eq!(cert, b"CERT");
+        assert_eq!(key, b"KEY");
+
+        let recorded = std::fs::read_to_string(&record).unwrap();
+        let mut lines = recorded.lines();
+        assert_eq!(lines.next(), Some("drwx------"), "{recorded}");
+        let used = PathBuf::from(lines.next().unwrap());
+        assert_ne!(used, predictable);
+        assert_eq!(used.parent(), Some(base.path()));
+        assert!(!used.exists(), "the private dir is removed after reading");
+        assert_eq!(std::fs::read_dir(&predictable).unwrap().count(), 0);
+        assert_eq!(cert_dirs_in(base.path()), vec!["tuicommander-certs"]);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn cert_cli_removes_the_private_dir_when_tailscale_fails() {
+        let bin = tempfile::tempdir().unwrap();
+        let base = tempfile::tempdir().unwrap();
+        let record = bin.path().join("record");
+        // Writes the key, then fails: the key must not be left behind.
+        let failing = fake_tailscale(bin.path(), &record, "printf KEY > \"$5\"; exit 1");
+        assert!(
+            run_cert_cli(&failing, base.path(), "h.ts.net")
+                .await
+                .is_err()
+        );
+        assert!(cert_dirs_in(base.path()).is_empty());
+
+        // Exits 0 without writing anything: the read fails, the dir still goes.
+        let silent = fake_tailscale(bin.path(), &record, "exit 0");
+        assert!(
+            run_cert_cli(&silent, base.path(), "h.ts.net")
+                .await
+                .is_err()
+        );
+        assert!(cert_dirs_in(base.path()).is_empty());
     }
 }
