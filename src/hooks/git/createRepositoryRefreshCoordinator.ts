@@ -558,7 +558,10 @@ export function createRepositoryRefreshCoordinator(deps: RepositoryRefreshCoordi
 			do {
 				const now = Date.now();
 				const startedAt = refreshStartedAt.get(repoPath);
-				const remaining = startedAt === undefined ? 0 : MIN_REFRESH_INTERVAL_MS - (now - startedAt);
+				// A start stamped in the future means the clock went back: refresh now rather
+				// than wait out the whole skew.
+				const sinceStart = startedAt === undefined ? Number.POSITIVE_INFINITY : now - startedAt;
+				const remaining = sinceStart < 0 ? 0 : MIN_REFRESH_INTERVAL_MS - sinceStart;
 				if (remaining > 0 && !refreshImmediate.has(repoPath)) {
 					await new Promise<void>((resolve) => {
 						const timer = setTimeout(resolve, remaining);

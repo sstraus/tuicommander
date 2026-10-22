@@ -199,7 +199,11 @@ export function createProgressStore() {
 	/// lines. Rows of one repo ask together, so asks closer than the gap collapse
 	/// into one trailing refresh.
 	async function refreshSidebarFlow(project: string): Promise<void> {
-		const wait = SIDEBAR_FLOW_MIN_GAP_MS - (Date.now() - (sidebarFlowFetchedAt.get(project) ?? 0));
+		const elapsed = Date.now() - (sidebarFlowFetchedAt.get(project) ?? 0);
+		// A last read stamped in the future means the clock went back: read now. Waiting
+		// out the skew could exceed setTimeout's 2^31-1 ms limit, which fires after 1 ms
+		// and re-arms the trailing timer in a busy loop.
+		const wait = elapsed < 0 ? 0 : SIDEBAR_FLOW_MIN_GAP_MS - elapsed;
 		if (wait > 0) {
 			if (!sidebarFlowTrailing.has(project)) {
 				sidebarFlowTrailing.set(

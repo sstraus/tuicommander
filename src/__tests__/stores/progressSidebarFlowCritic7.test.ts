@@ -60,6 +60,61 @@ describe("sidebar flow lifecycle (critic r7)", () => {
 		vi.useRealTimers();
 	});
 
+	it("a clock that went back reads at once instead of spinning a trailing timer", async () => {
+		// catches: waiting out the skew, whose >2^31-1 ms delay fires after 1 ms and re-arms forever
+		invokeMock.mockResolvedValue(flow("x"));
+		const store = await makeStore();
+		vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
+		await store.refreshSidebarFlow("/repo");
+		vi.setSystemTime(new Date("2026-09-19T12:00:00Z"));
+		await store.refreshSidebarFlow("/repo");
+		expect(flowCalls()).toBe(2);
+		expect(vi.getTimerCount()).toBe(0);
+		vi.useRealTimers();
+	});
+
+	it("a skew beyond setTimeout's 2^31-1 ms limit reads at once and arms no timer", async () => {
+		// catches: a >2^31 ms wait that fires after 1 ms and re-arms forever
+		invokeMock.mockResolvedValue(flow("x"));
+		const store = await makeStore();
+		vi.setSystemTime(new Date("2030-01-01T00:00:00Z"));
+		await store.refreshSidebarFlow("/repo");
+		vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+		await store.refreshSidebarFlow("/repo");
+		expect(flowCalls()).toBe(2);
+		expect(vi.getTimerCount()).toBe(0);
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(flowCalls()).toBe(2);
+		vi.useRealTimers();
+	});
+
+	it("an ask exactly one gap after the last read reads at once; one ms earlier waits", async () => {
+		// catches: an off-by-one at the gap boundary (wait > 0 vs >= 0)
+		invokeMock.mockResolvedValue(flow("x"));
+		const store = await makeStore();
+		vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
+		await store.refreshSidebarFlow("/repo");
+		vi.setSystemTime(new Date("2026-10-19T12:00:04.999Z"));
+		await store.refreshSidebarFlow("/repo");
+		expect(flowCalls()).toBe(1);
+		expect(vi.getTimerCount()).toBe(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(flowCalls()).toBe(2);
+		vi.useRealTimers();
+	});
+
+	it("an ask at the same instant as the last read collapses into one trailing read", async () => {
+		// catches: elapsed 0 being mistaken for a skewed clock and read immediately
+		invokeMock.mockResolvedValue(flow("x"));
+		const store = await makeStore();
+		await store.refreshSidebarFlow("/repo");
+		await store.refreshSidebarFlow("/repo");
+		await store.refreshSidebarFlow("/repo");
+		expect(flowCalls()).toBe(1);
+		expect(vi.getTimerCount()).toBe(1);
+		vi.useRealTimers();
+	});
+
 	it("a late older response is dropped once a newer one was applied", async () => {
 		// catches: last-arrival-wins, so a slow stale read overwrites the fresh flow
 		let resolveOld: (value: unknown) => void = () => {};

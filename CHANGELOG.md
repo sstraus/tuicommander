@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Read the rich sidebar's subagent flow at once, and refresh a repo's git state at once, when the system clock was set back, instead of waiting out the skew (a skew past 2^31-1 ms made the sidebar flow re-arm a 1 ms timer in a busy loop).
+
 ## [2.0.0-beta.1] - 2026-10-22
 
 - Keep the terminal mobile composer's bottom safe-area inset inside its painted surface, above the Home Indicator; the separately reported iPhone shell-height band still needs device evidence (#2116-0213).
