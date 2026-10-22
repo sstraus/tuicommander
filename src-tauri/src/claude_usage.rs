@@ -707,8 +707,15 @@ fn read_claude_credentials(
         return Ok((None, None));
     };
 
+    parse_credentials_json(&json_str)
+}
+
+/// Parse the `claudeAiOauth` object out of raw credentials JSON into a token + `PlanInfo`.
+/// Pure function (no I/O) — split out of `read_claude_credentials` so it's unit-testable
+/// without touching the filesystem or macOS Keychain.
+fn parse_credentials_json(json_str: &str) -> Result<(Option<String>, Option<PlanInfo>), String> {
     let parsed: serde_json::Value =
-        serde_json::from_str(&json_str).map_err(|e| format!("Failed to parse credentials: {e}"))?;
+        serde_json::from_str(json_str).map_err(|e| format!("Failed to parse credentials: {e}"))?;
 
     let oauth = parsed.get("claudeAiOauth");
 
@@ -2290,6 +2297,89 @@ mod tests {
     }
 
     #[test]
+    fn parse_credentials_json_normal_plan() {
+        let json = r#"{
+            "claudeAiOauth": {
+                "accessToken": "sk-ant-oat-abc123",
+                "refreshToken": "sk-ant-ort-def456",
+                "expiresAt": 1787809644161,
+                "scopes": ["user:inference", "user:profile"],
+                "subscriptionType": "max",
+                "rateLimitTier": "default"
+            }
+        }"#;
+        let (token, plan) = parse_credentials_json(json).unwrap();
+        assert_eq!(token.as_deref(), Some("sk-ant-oat-abc123"));
+        let plan = plan.expect("plan should be present");
+        assert_eq!(plan.subscription_type.as_deref(), Some("max"));
+        assert_eq!(plan.rate_limit_tier.as_deref(), Some("default"));
+        assert_eq!(plan.scopes, vec!["user:inference", "user:profile"]);
+    }
+
+    #[test]
+    fn parse_credentials_json_enterprise_plan() {
+        // Ground-truth shape captured from a real enterprise-plan credentials file
+        // on 2026-08-26 (token values replaced with placeholders).
+        let json = r#"{
+            "claudeAiOauth": {
+                "accessToken": "sk-ant-oat-enterprise-example",
+                "refreshToken": "sk-ant-ort-enterprise-example",
+                "expiresAt": 1787809644161,
+                "scopes": [
+                    "user:file_upload",
+                    "user:inference",
+                    "user:mcp_servers",
+                    "user:profile",
+                    "user:sessions:claude_code"
+                ],
+                "subscriptionType": "enterprise",
+                "rateLimitTier": "default_claude_zero"
+            }
+        }"#;
+        let (token, plan) = parse_credentials_json(json).unwrap();
+        assert!(token.is_some());
+        let plan = plan.expect("plan should be present");
+        assert_eq!(plan.subscription_type.as_deref(), Some("enterprise"));
+        assert_eq!(plan.rate_limit_tier.as_deref(), Some("default_claude_zero"));
+        assert_eq!(plan.scopes.len(), 5);
+    }
+
+    #[test]
+    fn parse_credentials_json_missing_oauth_key_returns_none() {
+        let json = r#"{"someOtherKey": true}"#;
+        let (token, plan) = parse_credentials_json(json).unwrap();
+        assert!(token.is_none());
+        assert!(plan.is_none());
+    }
+
+    #[test]
+    fn parse_credentials_json_malformed_returns_err() {
+        let result = parse_credentials_json("not valid json {{{");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn parse_credentials_json_missing_scopes_defaults_to_empty() {
+        let json = r#"{"claudeAiOauth": {"accessToken": "tok", "subscriptionType": "pro"}}"#;
+        let (token, plan) = parse_credentials_json(json).unwrap();
+        assert_eq!(token.as_deref(), Some("tok"));
+        let plan = plan.expect("plan should be present even without scopes");
+        assert_eq!(plan.rate_limit_tier, None);
+        assert!(plan.scopes.is_empty());
+    }
+
+    #[test]
+    fn parse_credentials_json_missing_access_token_still_yields_plan() {
+        let json = r#"{"claudeAiOauth": {"subscriptionType": "enterprise"}}"#;
+        let (token, plan) = parse_credentials_json(json).unwrap();
+        assert!(token.is_none());
+        assert_eq!(
+            plan.expect("plan present").subscription_type.as_deref(),
+            Some("enterprise")
+        );
+    }
+
+    #[test]
     fn usage_api_response_handles_null_resets_at() {
         let json = r#"{"five_hour":{"utilization":0.42,"resets_at":null}}"#;
         let parsed: UsageApiResponse = serde_json::from_str(json).unwrap();
@@ -2436,6 +2526,33 @@ mod tests {
         // Headers-only fields should be default on the API-body path.
         assert!(extra.resets_at.is_none());
         assert!(!extra.in_use);
+    }
+
+    #[test]
+    fn usage_api_response_deserializes_enterprise_schema_with_unknown_fields() {
+        // Ground-truth payload captured from /api/oauth/usage for an enterprise
+        // (subscriptionType "enterprise", rateLimitTier "default_claude_zero") account
+        // on 2026-08-26. The named rate buckets are all null for this plan — usage is
+        // only reported via `extra_usage` — alongside several experimental/unstable
+        // field names this struct intentionally does not model (and must tolerate).
+        let json = r#"{"five_hour":null,"seven_day":null,"seven_day_oauth_apps":null,"seven_day_opus":null,"seven_day_sonnet":null,"seven_day_cowork":null,"seven_day_omelette":null,"tangelo":null,"iguana_necktie":null,"omelette_promotional":null,"nimbus_quill":{"utilization":0.0,"resets_at":null,"limit_dollars":null,"used_dollars":null,"remaining_dollars":null},"cinder_cove":{"utilization":100.0,"resets_at":"2026-09-28T16:09:21.790107+00:00","limit_dollars":1000,"used_dollars":1000.0,"remaining_dollars":0.0},"amber_ladder":null,"extra_usage":{"is_enabled":true,"monthly_limit":500000,"used_credits":162709.0,"utilization":32.541799999999995,"currency":"USD","decimal_places":2,"disabled_reason":null,"user_disabled":false,"spend_limit_reached":false,"credits_ever_enabled":true,"daily":null,"weekly":null},"limits":[],"spend":{"used":{"amount_minor":162709,"currency":"USD","exponent":2},"limit":{"amount_minor":500000,"currency":"USD","exponent":2},"percent":33,"severity":"normal","enabled":true,"disabled_reason":null,"cap":{"money":null,"credits":{"amount_minor":500000,"exponent":2}},"balance":null,"auto_reload":null,"disclaimer":"Usage credits cover you when you hit your plan limits. [Learn more](https://support.claude.com/articles/12429409)","can_purchase_credits":false,"can_toggle":false},"member_dashboard_available":true}"#;
+
+        let parsed: UsageApiResponse = serde_json::from_str(json).unwrap();
+        assert!(parsed.five_hour.is_none());
+        assert!(parsed.seven_day.is_none());
+        assert!(parsed.seven_day_opus.is_none());
+        assert!(parsed.seven_day_sonnet.is_none());
+        assert!(parsed.seven_day_cowork.is_none());
+
+        let extra = parsed.extra_usage.expect("extra_usage must deserialize");
+        assert!(extra.is_enabled);
+        assert_eq!(extra.monthly_limit, Some(500000));
+        assert!((extra.used_credits.unwrap() - 162709.0).abs() < 0.001);
+        assert!((extra.utilization.unwrap() - 32.5418).abs() < 0.001);
+
+        // plan/meta are never deserialized from the API body — only injected by the backend.
+        assert!(parsed.plan.is_none());
+        assert!(parsed.meta.is_none());
     }
 
     /// Call the real Anthropic usage API and verify the response deserializes.

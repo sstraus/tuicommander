@@ -705,8 +705,9 @@ export const ClaudeUsageDashboard: Component<{ sessionId?: string | (() => strin
 				)}
 			</Show>
 
-			{/* Rate limits — show section whenever we have data OR an error to report */}
-			<Show when={rateBuckets().length > 0 || (apiError() && !loading())}>
+			{/* Rate limits — show section whenever we have rate buckets, extra_usage (e.g.
+			    enterprise/spend-based plans that never populate the named buckets), or an error to report */}
+			<Show when={rateBuckets().length > 0 || apiData()?.extra_usage || (apiError() && !loading())}>
 				<div class={s.section}>
 					<div class={s.sectionTitle}>
 						<span>Rate Limits</span>

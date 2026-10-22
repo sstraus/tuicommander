@@ -210,4 +210,56 @@ describe("ClaudeUsageDashboard", () => {
 			expect(apiCallsAfter).toBe(apiCallsBefore);
 		});
 	});
+
+	describe("enterprise plan (spend-based, no five_hour/seven_day buckets)", () => {
+		// Ground-truth shape captured from a real enterprise-plan /api/oauth/usage response:
+		// the named rate buckets are all null, and extra_usage carries the only usage signal.
+		const enterpriseUsageResponse = {
+			five_hour: null,
+			seven_day: null,
+			seven_day_opus: null,
+			seven_day_sonnet: null,
+			seven_day_cowork: null,
+			extra_usage: {
+				is_enabled: true,
+				monthly_limit: 500000,
+				used_credits: 162709,
+				utilization: 32.54,
+				resets_at: null,
+				in_use: false,
+			},
+			plan: {
+				subscription_type: "enterprise",
+				rate_limit_tier: "default_claude_zero",
+				scopes: ["user:inference"],
+			},
+		};
+
+		beforeEach(() => {
+			vi.mocked(invoke).mockImplementation(async (cmd: string) => {
+				if (cmd === "get_claude_usage_api") return enterpriseUsageResponse;
+				if (cmd === "get_claude_session_stats") return mockSessionStats;
+				if (cmd === "get_claude_project_list") return mockProjectList;
+				if (cmd === "get_claude_usage_timeline") return mockTimeline;
+				return undefined;
+			});
+		});
+
+		it("renders the plan name and rate-limit tier from PlanInfo", async () => {
+			const { container } = render(() => <ClaudeUsageDashboard />);
+			await vi.waitFor(() => {
+				expect(container.textContent).toContain("enterprise");
+				expect(container.textContent).toContain("default_claude_zero");
+			});
+		});
+
+		it("renders extra_usage credits/percentage even though five_hour/seven_day are absent", async () => {
+			const { container } = render(() => <ClaudeUsageDashboard />);
+			await vi.waitFor(() => {
+				expect(container.textContent).toContain("162,709");
+				expect(container.textContent).toContain("500,000");
+				expect(container.textContent).toContain("32.5% used");
+			});
+		});
+	});
 });
