@@ -130,7 +130,17 @@ export const MarkdownTab: Component<MarkdownTabProps> = (props) => {
 
 	// When this tab is active, focus the wrapper so wheel events route by cursor
 	// position rather than following xterm's retained textarea focus.
-	const focusWrapper = () => requestAnimationFrame(() => wrapperRef?.focus({ preventScroll: true }));
+	let focusFrame: number | undefined;
+	const focusWrapper = () => {
+		if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
+		focusFrame = requestAnimationFrame(() => {
+			focusFrame = undefined;
+			wrapperRef?.focus({ preventScroll: true });
+		});
+	};
+	onCleanup(() => {
+		if (focusFrame !== undefined) cancelAnimationFrame(focusFrame);
+	});
 
 	onMount(() => {
 		if (mdTabsStore.state.activeId === props.tab.id) focusWrapper();
