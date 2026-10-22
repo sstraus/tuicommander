@@ -679,6 +679,114 @@ pub fn git_cmd_forks(cwd: &Path) -> usize {
     GIT_CMD_FORKS.get(cwd).map(|n| *n).unwrap_or(0)
 }
 
+/// The extra argument a requested `git merge` needs so a user's `merge.ff=only`
+/// cannot make it fail with "Not possible to fast-forward".
+///
+/// TUIC merges because the user asked for a merge (merge-and-archive, "update
+/// from base" with the merge strategy). Under `merge.ff=only` git refuses
+/// whenever the target has diverged, which is a policy for what a stray
+/// `git merge`/`git pull` may do, not a statement that this merge should fail.
+/// Returns `Some("--ff")` only when the effective fast-forward mode is `only`;
+/// `--ff` still fast-forwards when it can and creates a merge commit when it
+/// cannot. Default users (`merge.ff` unset) and `merge.ff=false`/`true` users
+/// get `None`, so their behaviour is untouched. `branch` is the branch being
+/// merged INTO: its `branch.<name>.mergeOptions` is applied by git ahead of
+/// the command line, so the last `--ff`/`--no-ff`/`--ff-only` in it
+/// decides, falling back to `merge.ff`.
+pub fn merge_ff_override(cwd: &Path, branch: Option<&str>) -> Option<&'static str> {
+    let read = |key: &str| -> Option<String> {
+        git_cmd(cwd)
+            .args(["config", "--get", key])
+            .run_silent()
+            .map(|o| o.stdout.trim().to_string())
+            .filter(|v| !v.is_empty())
+    };
+    let from_options = branch
+        .and_then(|b| read(&format!("branch.{b}.mergeOptions")))
+        .and_then(|opts| {
+            split_cmdline(&opts)?
+                .iter()
+                .rev()
+                .find_map(|tok| match tok.as_str() {
+                    "--ff-only" => Some(true),
+                    "--ff" | "--no-ff" => Some(false),
+                    _ => None,
+                })
+        });
+    let ff_only = from_options
+        .unwrap_or_else(|| read("merge.ff").is_some_and(|v| v.eq_ignore_ascii_case("only")));
+    ff_only.then_some("--ff")
+}
+
+/// [`merge_ff_override`] for a merge run in `cwd` that merges into whatever
+/// `cwd` has checked out.
+///
+/// Git applies `branch.<name>.mergeOptions` of the branch HEAD is on, not of a
+/// branch the caller merely names, so the checked-out branch is resolved with
+/// `symbolic-ref`. A detached HEAD has no branch and falls back to `merge.ff`.
+///
+/// The full ref is read and `refs/heads/` stripped by hand: `--short` prints
+/// `heads/<name>` when a tag of the same name exists, which would look up
+/// `branch.heads/<name>.mergeOptions` instead of the real branch's.
+pub fn merge_ff_override_for_head(cwd: &Path) -> Option<&'static str> {
+    let head = git_cmd(cwd)
+        .args(["symbolic-ref", "--quiet", "HEAD"])
+        .run_silent()
+        .and_then(|o| {
+            o.stdout
+                .trim()
+                .strip_prefix("refs/heads/")
+                .filter(|b| !b.is_empty())
+                .map(str::to_string)
+        });
+    merge_ff_override(cwd, head.as_deref())
+}
+
+/// Split a config value into words the way git's `split_cmdline` does (the
+/// parser behind `branch.<name>.mergeOptions` and aliases): whitespace
+/// separates words, `'` and `"` group (and are dropped), and a backslash
+/// takes the next character literally. Returns `None` for an unterminated
+/// quote or a trailing backslash, which git rejects as well.
+fn split_cmdline(s: &str) -> Option<Vec<String>> {
+    let mut words = Vec::new();
+    let mut cur = String::new();
+    let mut in_word = false;
+    let mut quote: Option<char> = None;
+    let mut chars = s.chars();
+    while let Some(c) = chars.next() {
+        match quote {
+            Some(q) if c == q => quote = None,
+            Some(_) if c == '\\' => cur.push(chars.next()?),
+            Some(_) => cur.push(c),
+            None if c == '\'' || c == '"' => {
+                quote = Some(c);
+                in_word = true;
+            }
+            None if c == '\\' => {
+                cur.push(chars.next()?);
+                in_word = true;
+            }
+            None if c.is_whitespace() => {
+                if in_word {
+                    words.push(std::mem::take(&mut cur));
+                    in_word = false;
+                }
+            }
+            None => {
+                cur.push(c);
+                in_word = true;
+            }
+        }
+    }
+    if quote.is_some() {
+        return None;
+    }
+    if in_word {
+        words.push(cur);
+    }
+    Some(words)
+}
+
 /// Create a git command builder rooted at the given directory.
 pub fn git_cmd(cwd: &Path) -> GitCmd {
     #[cfg(any(test, feature = "test-support"))]
@@ -800,11 +908,13 @@ mod tests {
     fn setup_test_repo() -> (tempfile::TempDir, PathBuf) {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().to_path_buf();
-        Command::new("git")
+        let init = Command::new("git")
             .current_dir(&path)
             .args(["init"])
             .output()
             .expect("git init");
+        assert!(init.status.success(), "git init failed: {init:?}");
+        assert_repo_root(&path);
         Command::new("git")
             .current_dir(&path)
             .args(["config", "user.email", "test@test.com"])
@@ -816,6 +926,138 @@ mod tests {
             .output()
             .expect("git config name");
         (dir, path)
+    }
+
+    /// Panic unless `path` is itself a git work-tree root. A failed `git init`
+    /// under a parent repo would otherwise let later `git config` writes land
+    /// in that parent's `.git/config`.
+    fn assert_repo_root(path: &Path) {
+        let out = Command::new("git")
+            .current_dir(path)
+            .args(["rev-parse", "--show-toplevel"])
+            .output()
+            .expect("git rev-parse");
+        let top = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        let want = std::fs::canonicalize(path).expect("canonicalize");
+        assert!(
+            out.status.success() && std::fs::canonicalize(&top).is_ok_and(|t| t == want),
+            "{} is not its own repo root (toplevel: {top:?})",
+            path.display()
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "is not its own repo root")]
+    fn assert_repo_root_fires_for_non_repo_dir_under_a_repo() {
+        // The crate's own checkout is a repo; a not-yet-initialised subdir of
+        // a temp dir inside it resolves to the parent, which must be rejected.
+        let parent = tempfile::tempdir_in(env!("CARGO_MANIFEST_DIR")).expect("tempdir");
+        assert_repo_root(parent.path());
+    }
+
+    #[test]
+    fn split_cmdline_matches_git() {
+        let w = |s: &str| split_cmdline(s);
+        let v = |a: &[&str]| Some(a.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+        assert_eq!(w("--ff-only"), v(&["--ff-only"]));
+        assert_eq!(w("  --no-ff   -s  ours "), v(&["--no-ff", "-s", "ours"]));
+        assert_eq!(w("\"--ff-only\""), v(&["--ff-only"]));
+        assert_eq!(w("'--ff-only'"), v(&["--ff-only"]));
+        assert_eq!(w("-m 'a b' \"c d\""), v(&["-m", "a b", "c d"]));
+        assert_eq!(w("a\\ b"), v(&["a b"]));
+        assert_eq!(w("''"), v(&[""]));
+        assert_eq!(w("\"unterminated"), None);
+        assert_eq!(w("trailing\\"), None);
+        assert_eq!(w(""), v(&[]));
+    }
+
+    #[test]
+    fn merge_ff_override_sees_quoted_merge_options() {
+        let (_dir, path) = setup_test_repo();
+        git_in(&path, &["config", "merge.ff", "true"]);
+        for quoted in ["\"--ff-only\"", "'--ff-only'", "--no-ff \"--ff-only\""] {
+            git_in(&path, &["config", "branch.dev.mergeOptions", quoted]);
+            assert_eq!(
+                merge_ff_override(&path, Some("dev")),
+                Some("--ff"),
+                "{quoted}"
+            );
+        }
+    }
+
+    fn git_in(path: &Path, args: &[&str]) {
+        let out = Command::new("git")
+            .current_dir(path)
+            .args(args)
+            .output()
+            .expect("git");
+        assert!(out.status.success(), "git {args:?}");
+    }
+
+    #[test]
+    fn merge_ff_override_only_fires_for_ff_only() {
+        let (_dir, path) = setup_test_repo();
+        // Each case sets merge.ff repo-locally, which outranks the machine's
+        // global config (a developer's own merge.ff=only would otherwise leak in).
+        for (value, want) in [
+            ("only", Some("--ff")),
+            ("ONLY", Some("--ff")),
+            ("false", None),
+            ("true", None),
+        ] {
+            git_in(&path, &["config", "merge.ff", value]);
+            assert_eq!(merge_ff_override(&path, Some("main")), want, "{value}");
+        }
+    }
+
+    #[test]
+    fn merge_ff_override_honours_branch_merge_options() {
+        let (_dir, path) = setup_test_repo();
+        // Pin a neutral repo-local merge.ff so the "no mergeOptions" cases do
+        // not pick up a developer's global merge.ff=only.
+        git_in(&path, &["config", "merge.ff", "true"]);
+        git_in(&path, &["config", "branch.dev.mergeOptions", "--ff-only"]);
+        assert_eq!(merge_ff_override(&path, Some("dev")), Some("--ff"));
+        assert_eq!(merge_ff_override(&path, Some("other")), None);
+        assert_eq!(merge_ff_override(&path, None), None);
+        // mergeOptions outranks merge.ff: an explicit --no-ff wins over merge.ff=only.
+        git_in(&path, &["config", "merge.ff", "only"]);
+        git_in(&path, &["config", "branch.dev.mergeOptions", "--no-ff"]);
+        assert_eq!(merge_ff_override(&path, Some("dev")), None);
+    }
+
+    #[test]
+    fn merge_ff_override_for_head_reads_the_checked_out_branch() {
+        let (_dir, path) = setup_test_repo();
+        git_in(&path, &["config", "merge.ff", "true"]);
+        git_in(&path, &["commit", "--allow-empty", "-m", "init"]);
+        git_in(&path, &["checkout", "-b", "feature"]);
+        // The branch a caller might name is not the one checked out here.
+        git_in(
+            &path,
+            &["config", "branch.feature.mergeOptions", "--ff-only"],
+        );
+        git_in(&path, &["config", "branch.other.mergeOptions", "--no-ff"]);
+        assert_eq!(merge_ff_override_for_head(&path), Some("--ff"));
+        // Detached HEAD: no branch, falls back to merge.ff (true here).
+        git_in(&path, &["checkout", "--detach"]);
+        assert_eq!(merge_ff_override_for_head(&path), None);
+    }
+
+    #[test]
+    fn merge_ff_override_for_head_survives_a_tag_named_like_the_branch() {
+        let (_dir, path) = setup_test_repo();
+        git_in(&path, &["config", "merge.ff", "true"]);
+        git_in(&path, &["commit", "--allow-empty", "-m", "init"]);
+        git_in(&path, &["checkout", "-b", "feature"]);
+        // With a tag `feature` too, `symbolic-ref --short HEAD` prints
+        // `heads/feature`.
+        git_in(&path, &["tag", "feature"]);
+        git_in(
+            &path,
+            &["config", "branch.feature.mergeOptions", "--ff-only"],
+        );
+        assert_eq!(merge_ff_override_for_head(&path), Some("--ff"));
     }
 
     /// A child that outlives any deadline these tests set.

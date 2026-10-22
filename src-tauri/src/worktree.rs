@@ -1272,8 +1272,14 @@ pub(crate) fn merge_and_archive_worktree_impl_with_confirmation(
         })?;
 
     // 2. Merge the source branch
+    //    `--ff` only when the user's config says `merge.ff=only` (see
+    //    `merge_ff_override`): that policy would otherwise fail a diverged merge.
     if let Err(e) = git_cmd(&base_repo)
         .args(["merge", &branch_name, "--no-edit"])
+        .args(crate::git_cli::merge_ff_override(
+            &base_repo,
+            Some(&target_branch),
+        ))
         .run()
     {
         return Err(finish_failed_git_operation_after_abort(
@@ -2283,6 +2289,94 @@ mod tests {
 
         assert_eq!(res.action, "archived", "nothing to lose, nothing to ask");
         assert!(!res.worktree_dirty);
+    }
+
+    // --- merge-and-archive vs. a hostile `merge.ff` config ---
+
+    /// Merge `branch` into the base repo through merge-and-archive, with
+    /// `merge.ff` set repo-locally to `ff` and (optionally) the base branch
+    /// advanced past the worktree branch's fork point. Returns the repo, the
+    /// worktree branch tip, and the parent count of the base branch's HEAD.
+    fn merge_archive_with_ff_config(ff: &str, diverge: bool) -> (TempDir, String, usize) {
+        let (_cfg, _guard) = isolated_config();
+        let repo = setup_test_repo();
+        let base = base_branch_of(repo.path());
+        worktree_with(repo.path(), "feat-ffcfg", true);
+        if diverge {
+            fs::write(repo.path().join("base-only.txt"), "moved on").unwrap();
+            git_cmd(repo.path()).args(["add", "."]).run().unwrap();
+            git_cmd(repo.path())
+                .args(["commit", "-m", "base moves on"])
+                .run()
+                .unwrap();
+        }
+        git_cmd(repo.path())
+            .args(["config", "merge.ff", ff])
+            .run()
+            .unwrap();
+        let tip = git_cmd(repo.path())
+            .args(["rev-parse", "feat-ffcfg"])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .to_string();
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+
+        let res = merge_and_archive_worktree_impl(
+            &state,
+            repo.path().to_string_lossy().to_string(),
+            "feat-ffcfg".to_string(),
+            "feat-ffcfg".to_string(),
+            base,
+            "archive".to_string(),
+            false,
+        )
+        .unwrap_or_else(|e| panic!("merge.ff={ff} diverge={diverge}: {e}"));
+        assert!(res.merged, "merge.ff={ff} diverge={diverge}");
+
+        let parents = git_cmd(repo.path())
+            .args(["rev-list", "--parents", "-n", "1", "HEAD"])
+            .run()
+            .unwrap()
+            .stdout
+            .split_whitespace()
+            .count()
+            - 1;
+        (repo, tip, parents)
+    }
+
+    #[test]
+    fn merge_and_archive_merges_a_diverged_target_under_merge_ff_only() {
+        let (repo, _tip, parents) = merge_archive_with_ff_config("only", true);
+        assert_eq!(parents, 2, "a diverged target gets a merge commit");
+        assert!(repo.path().join("work.txt").exists());
+        assert!(repo.path().join("base-only.txt").exists());
+    }
+
+    #[test]
+    fn merge_and_archive_still_fast_forwards_under_merge_ff_only() {
+        let (repo, tip, parents) = merge_archive_with_ff_config("only", false);
+        assert_eq!(parents, 1, "ff-able merge stays a fast-forward");
+        let head = git_cmd(repo.path())
+            .args(["rev-parse", "HEAD"])
+            .run()
+            .unwrap()
+            .stdout;
+        assert_eq!(head.trim(), tip);
+    }
+
+    #[test]
+    fn merge_and_archive_keeps_a_merge_commit_under_merge_ff_false() {
+        let (_repo, _tip, parents) = merge_archive_with_ff_config("false", false);
+        assert_eq!(parents, 2, "merge.ff=false users still get a merge commit");
+    }
+
+    #[test]
+    fn merge_and_archive_fast_forwards_by_default() {
+        let (_repo, tip, parents) = merge_archive_with_ff_config("true", false);
+        assert_eq!(parents, 1);
+        assert!(!tip.is_empty());
     }
 
     #[test]

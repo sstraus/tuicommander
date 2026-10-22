@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Merge-and-archive and Update-from-base (merge strategy) no longer fail with "Not possible to fast-forward" for users whose Git config sets `merge.ff=only` or whose target branch's `branch.<target>.mergeOptions` selects `--ff-only`; `--ff` is passed only in those cases, so default and `merge.ff=false` behavior is unchanged.
+
 ## [2.0.0-beta.1] - 2026-10-22
 
 - Keep the terminal mobile composer's bottom safe-area inset inside its painted surface, above the Home Indicator; the separately reported iPhone shell-height band still needs device evidence (#2116-0213).
