@@ -284,7 +284,7 @@ mod tests {
             cached_version: None,
         };
         let result = daemon.ensure_running().await;
-        if MdkbClient::socket_path().exists() {
+        if MdkbClient::socket_path().is_some_and(|path| path.exists()) {
             assert!(result.is_ok(), "should connect to running daemon");
         } else {
             assert!(result.unwrap_err().to_string().contains("not found"));
