@@ -30,6 +30,11 @@ APP_BUNDLE=$(TAURI_TARGET)/$(APP_NAME).app
 # Distribution output
 DIST_DIR=dist-release
 
+# Updater artifacts (.sig/.tar.gz for auto-update) require TAURI_SIGNING_PRIVATE_KEY.
+# CI/release builds set it; local/dev builds don't, so skip updater artifact
+# generation in that case rather than failing the whole build.
+TAURI_BUILD_FLAGS=$(if $(TAURI_SIGNING_PRIVATE_KEY),,--config '{"bundle":{"createUpdaterArtifacts":false}}')
+
 .PHONY: all clean dev test agent-test agent-test-stop test-shell build build-dmg check check-desktop-embedding cov crap fmt sign verify-sign notarize release dist \
        nightly github-release preview bump release-notes hooks docs docs-serve \
        gh-debug-on gh-debug-off gh-debug-status gh-debug-logs gh-rate logs
@@ -120,12 +125,12 @@ agent-test-stop:
 # Build .app only (default, fast — skips DMG)
 build:
 	@echo "Building TUICommander $(VERSION)..."
-	pnpm tauri build
+	pnpm tauri build $(TAURI_BUILD_FLAGS)
 
 # Build .app + DMG (for distribution)
 build-dmg:
 	@echo "Building TUICommander $(VERSION) with DMG..."
-	pnpm tauri build --bundles app,dmg
+	pnpm tauri build --bundles app,dmg $(TAURI_BUILD_FLAGS)
 
 # Auto-format frontend + Rust
 fmt:

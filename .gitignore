@@ -108,6 +108,7 @@ scripts/fixtures/*
 !scripts/install-launch-shells.sh
 !scripts/test-shell-entrypoint.sh
 !scripts/test-make-bump.sh
+!scripts/test-make-build-signing.sh
 !scripts/test-append-only-merge.sh
 !scripts/test-with-test-tmp-prune.sh
 !scripts/test-with-test-tmp-worktree-target.sh
