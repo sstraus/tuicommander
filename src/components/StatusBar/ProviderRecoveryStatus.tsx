@@ -2,6 +2,7 @@ import { type Component, createSignal, onCleanup, Show } from "solid-js";
 import { appLogger } from "../../stores/appLogger";
 import type { ProviderRecovery } from "../../stores/terminals";
 import { rpc } from "../../transport";
+import { Button } from "../ui";
 import s from "./ProviderRecoveryStatus.module.css";
 
 export function recoveryLabel(recovery: ProviderRecovery, now: number): string {
@@ -34,9 +35,9 @@ export const ProviderRecoveryStatus: Component<{ recovery: ProviderRecovery; ses
 			<span class={s.label} title={recoveryLabel(props.recovery, now())}>
 				{recoveryLabel(props.recovery, now())}
 			</span>
-			<button type="button" class={s.retry} disabled={sending()} onClick={retry}>
+			<Button size="compact" type="button" disabled={sending()} onClick={retry}>
 				Force retry
-			</button>
+			</Button>
 			<Show when={failure()}>{(message) => <span role="alert">{message()}</span>}</Show>
 		</span>
 	);

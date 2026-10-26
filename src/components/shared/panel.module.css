@@ -1,5 +1,6 @@
 /* Shared Panel Styles (DiffPanel, MarkdownPanel, FileBrowserPanel, etc.) */
 .header {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -21,22 +22,6 @@
   gap: 4px;
 }
 
-.headerBtn {
-  background: none;
-  border: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-}
-
-.headerBtn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
 .title {
   color: var(--fg-secondary);
   font-weight: 500;
@@ -52,66 +37,17 @@
   flex-shrink: 0;
 }
 
-.close {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: var(--font-xl);
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: var(--radius-md);
-}
-
-.close:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
 .content {
   flex: 1;
   overflow: auto;
 }
 
 .search {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   padding: 4px 8px;
   border-bottom: 1px solid var(--border);
-}
-
-.searchInput {
-  flex: 1;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-primary);
-  font-size: var(--font-sm);
-  font-family: var(--font-mono);
-  padding: 3px 6px;
-  outline: none;
-}
-
-.searchInput:focus {
-  border-color: var(--accent);
-}
-
-.searchInput::placeholder {
-  color: var(--fg-muted);
-  opacity: 0.5;
-}
-
-.searchClear {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: var(--font-md);
-  cursor: pointer;
-  padding: 0 4px;
-  margin-left: 4px;
-}
-
-.searchClear:hover {
-  color: var(--fg-primary);
 }
 
 .fileCountBadge {

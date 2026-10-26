@@ -1,0 +1,111 @@
+[
+  {
+    "time": "2026-10-22T11:04:26.035596+00:00",
+    "kind": "bridge pid",
+    "value": 25941
+  },
+  {
+    "time": "2026-10-22T11:04:26.863452+00:00",
+    "kind": "healthy",
+    "value": [
+      "agent",
+      "automations",
+      "fake2126__echo",
+      "plugin_dev_guide",
+      "progress",
+      "repo",
+      "secret",
+      "session",
+      "ui",
+      "workflow"
+    ]
+  },
+  {
+    "time": "2026-10-22T11:04:27.038407+00:00",
+    "kind": "fake stopped",
+    "value": 56354
+  },
+  {
+    "time": "2026-10-22T11:05:24.957901+00:00",
+    "kind": "circuit status",
+    "value": {
+      "upstreams": [
+        {
+          "name": "fake2126",
+          "status": "circuit_open",
+          "transport": {
+            "type": "http",
+            "url": "http://127.0.0.1:56354/mcp"
+          },
+          "tool_count": 1,
+          "tools": [
+            "echo"
+          ],
+          "metrics": {
+            "call_count": 0,
+            "error_count": 0,
+            "last_latency_ms": 0
+          },
+          "last_error": "Upstream 'fake2126' request failed"
+        }
+      ]
+    }
+  },
+  {
+    "time": "2026-10-22T11:05:24.958323+00:00",
+    "kind": "bridge stdout",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "notifications/tools/list_changed"
+    }
+  },
+  {
+    "time": "2026-10-22T11:05:24.965092+00:00",
+    "kind": "unhealthy",
+    "value": [
+      "agent",
+      "automations",
+      "plugin_dev_guide",
+      "progress",
+      "repo",
+      "secret",
+      "session",
+      "ui",
+      "workflow"
+    ]
+  },
+  {
+    "time": "2026-10-22T11:05:24.971322+00:00",
+    "kind": "fake restarted",
+    "value": 56354
+  },
+  {
+    "time": "2026-10-22T11:06:25.649631+00:00",
+    "kind": "bridge stdout",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "notifications/tools/list_changed"
+    }
+  },
+  {
+    "time": "2026-10-22T11:06:25.683520+00:00",
+    "kind": "recovered",
+    "value": [
+      "agent",
+      "automations",
+      "fake2126__echo",
+      "plugin_dev_guide",
+      "progress",
+      "repo",
+      "secret",
+      "session",
+      "ui",
+      "workflow"
+    ]
+  },
+  {
+    "time": "2026-10-22T11:06:25.815175+00:00",
+    "kind": "outcome",
+    "value": "Periodic health-check outage/recovery did not remove native tools or disconnect bridge on unchanged code"
+  }
+]

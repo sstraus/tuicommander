@@ -18,11 +18,11 @@ impl RunStore {
         run: &RunSnapshot,
         story_id: &str,
         session: &str,
-    ) -> Result<(), String> {
+    ) -> Result<StoryStatus, String> {
         let stories = StoryStore::open()?;
         let mut story = stories.get_story(story_id)?;
         if !matches!(story.status, StoryStatus::Ready | StoryStatus::Review) {
-            return Ok(());
+            return Ok(story.status);
         }
         let mut conn = self.connect()?;
         let tx = conn
@@ -39,10 +39,10 @@ impl RunStore {
                 Some(session),
             )?;
         }
-        stories.begin_workflow_story(story_id, story.revision, session)?;
+        let started = stories.begin_workflow_story(story_id, story.revision, session)?;
         tx.commit()
             .map_err(|e| format!("commit workflow story start: {e}"))?;
-        Ok(())
+        Ok(started.status)
     }
 
     /// The writer fence prevents cancellation winning between approval preflight and

@@ -123,10 +123,10 @@ describe("RemoteQrDialog", () => {
 
 	it("does not render the copy-URL button while there is no connect URL", async () => {
 		mockRpc({ connectUrlError: new Error("no route") });
-		const { findByText, queryByTitle } = render(() => <RemoteQrDialog onClose={vi.fn()} />);
+		const { findByText, queryByRole } = render(() => <RemoteQrDialog onClose={vi.fn()} />);
 		await findByText("Could not build a connection URL. Enable Remote Access in Settings → Remote Access.");
 
-		expect(queryByTitle("Copy connection URL")).toBeNull();
+		expect(queryByRole("button", { name: "Copy connection URL" })).toBeNull();
 	});
 
 	it("does not show the network selector when there is only one local IP", async () => {
@@ -170,17 +170,32 @@ describe("RemoteQrDialog", () => {
 
 	it("copies the connect URL to the clipboard and shows a confirmation", async () => {
 		vi.useFakeTimers();
-		const { getByTitle, getByText, queryByText } = render(() => <RemoteQrDialog onClose={vi.fn()} />);
-		await vi.waitFor(() => expect(getByTitle("Copy connection URL")).toBeTruthy());
+		const { getByRole, getByText } = render(() => <RemoteQrDialog onClose={vi.fn()} />);
+		await vi.waitFor(() => expect(getByRole("button", { name: "Copy connection URL" })).toBeTruthy());
+		const copy = getByRole("button", { name: "Copy connection URL" });
+		expect(copy.textContent).toBe("Copy URL");
 
-		fireEvent.click(getByTitle("Copy connection URL"));
+		fireEvent.click(copy);
 
-		await vi.waitFor(() => expect(getByText("Copied to clipboard")).toBeTruthy());
+		await vi.waitFor(() => expect(copy.textContent).toBe("Copied"));
 		expect(h.writeClipboard).toHaveBeenCalledWith("https://example.test/connect?ip=192.168.1.10");
 
 		await vi.advanceTimersByTimeAsync(1500);
-		expect(queryByText("Copied to clipboard")).toBeNull();
+		expect(copy.textContent).toBe("Copy URL");
 		expect(getByText("https://example.test/connect?ip=192.168.1.10")).toBeTruthy();
+	});
+
+	// Catches: splitting the URL/action truncates readable text or copies the action label instead of the full URL.
+	// (Upstream main's version of this file held only this test; folded into the backfilled suite.)
+	it("keeps the full URL separate from the copy action", async () => {
+		const longUrl = `http://192.168.1.42:9876/connect?token=${"a".repeat(100)}`;
+		mockRpc({ connectUrl: longUrl });
+		const { findByText, getByRole } = render(() => <RemoteQrDialog onClose={vi.fn()} />);
+		const text = await findByText(longUrl);
+		expect(text.tagName).toBe("CODE");
+		expect(text.closest("button")).toBeNull();
+		expect(getByRole("button", { name: "Copy connection URL" }).textContent).toBe("Copy URL");
+		expect(text.textContent).toBe(longUrl);
 	});
 
 	it("does nothing when the copy button is clicked before a connect URL exists", async () => {

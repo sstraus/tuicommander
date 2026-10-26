@@ -3,6 +3,7 @@ import { t } from "../../i18n";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { registerModal } from "../../stores/modalStack";
+import { Button, Textarea } from "../ui";
 import s from "./AutofixDialog.module.css";
 
 /** Backend `get_issue_detail` response. `autofix_prompt` is a pre-built,
@@ -68,9 +69,16 @@ export const AutofixDialog: Component<{
 					<span class={s.title}>
 						{t("github.autofixTitle", "Auto-fix issue")} #{props.issueNumber}
 					</span>
-					<button class={s.close} onClick={props.onClose} title={t("common.close", "Close")}>
+					<Button
+						variant="ghost"
+						class={s.close}
+						onClick={props.onClose}
+						shape="icon"
+						aria-label={t("common.close", "Close")}
+						title={t("common.close", "Close")}
+					>
 						&times;
-					</button>
+					</Button>
 				</div>
 
 				<div class={s.body}>
@@ -94,7 +102,8 @@ export const AutofixDialog: Component<{
 									<label class={s.label} for="autofix-prompt">
 										{t("github.autofixPromptLabel", "Prompt sent to the agent")}
 									</label>
-									<textarea
+									<Textarea
+										rows={10}
 										id="autofix-prompt"
 										class={s.textarea}
 										value={prompt()}
@@ -108,16 +117,14 @@ export const AutofixDialog: Component<{
 				</div>
 
 				<div class={s.footer}>
-					<button class={s.btnPrimary} onClick={handleStart} disabled={loading() || !!error()}>
+					<Button variant="primary" onClick={handleStart} disabled={loading() || !!error()}>
 						<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 							<path d="M4.5 2.5a.5.5 0 0 0-.76-.43l-2 1.2a.5.5 0 0 0 0 .86l2 1.2A.5.5 0 0 0 4.5 5V3.7A4.5 4.5 0 1 1 3.6 9.4a.75.75 0 1 0-1.45.4A6 6 0 1 0 4.5 3.02V2.5Z" />
 						</svg>
 						{t("github.autofixStart", "Start auto-fix")}
-					</button>
+					</Button>
 					<span class={s.spacer} />
-					<button class={s.btn} onClick={props.onClose}>
-						{t("common.cancel", "Cancel")}
-					</button>
+					<Button onClick={props.onClose}>{t("common.cancel", "Cancel")}</Button>
 				</div>
 			</div>
 		</div>

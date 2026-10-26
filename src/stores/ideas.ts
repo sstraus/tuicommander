@@ -1,5 +1,6 @@
 import { createStore, produce } from "solid-js/store";
 import { invoke } from "../invoke";
+import { subscribeEvents } from "../transport";
 import { createConfigDeltaWriter } from "../utils/configDeltaWriter";
 import { appLogger } from "./appLogger";
 
@@ -21,6 +22,7 @@ export interface Idea {
 	repoDisplayName: string | null;
 	usedAt: number | null;
 	images: string[];
+	source?: string;
 }
 
 /** Ideas store state */
@@ -40,6 +42,8 @@ export function generateId(): string {
  * (GH #107). Every mutation path funnels through saveIdeas, so gating here covers them all.
  */
 let hydrated = false;
+let pendingWrite: Promise<void> = Promise.resolve();
+let mutationRevision = 0;
 const notesWriter = createConfigDeltaWriter<{ notes: Idea[] }>("save_notes");
 
 /** Persist ideas to Rust backend (fire-and-forget) */
@@ -48,7 +52,10 @@ function saveIdeas(ideas: Idea[]): void {
 		appLogger.error("store", "Refusing to persist ideas before a successful hydrate — notes.json left untouched");
 		return;
 	}
-	notesWriter.save({ notes: ideas }).catch((err) => appLogger.error("store", "Failed to save ideas", err));
+	mutationRevision++;
+	pendingWrite = notesWriter
+		.save({ notes: ideas })
+		.catch((err) => appLogger.error("store", "Failed to save ideas", err));
 }
 
 /** Create the ideas store */
@@ -60,11 +67,46 @@ function createIdeasStore() {
 	const visibleIdeas = (activeRepo: string | null): Idea[] =>
 		activeRepo ? state.ideas.filter((n) => n.repoPath === null || n.repoPath === activeRepo) : state.ideas;
 
+	let syncStarted = false;
+	let readSequence = 0;
 	const actions = {
 		/** Load ideas from Rust backend */
 		async hydrate(): Promise<void> {
+			if (!syncStarted) {
+				syncStarted = true;
+				await subscribeEvents(
+					{
+						"ideas-changed": () => {
+							void actions.hydrate();
+						},
+					},
+					{
+						onResync: () => {
+							void actions.hydrate();
+						},
+					},
+				).catch((err) => {
+					syncStarted = false;
+					appLogger.error("store", "Failed to subscribe to idea changes", err);
+				});
+			}
+			const sequence = ++readSequence;
 			try {
+				// A backend notice can arrive before the local write acknowledgement.
+				// Finish all queued intent first, and discard reads raced by newer edits.
+				const revision = mutationRevision;
+				await pendingWrite;
+				if (sequence !== readSequence) return;
+				if (revision !== mutationRevision) {
+					void actions.hydrate();
+					return;
+				}
 				const loaded = await invoke<{ notes?: Idea[] }>("load_notes");
+				if (sequence !== readSequence) return;
+				if (revision !== mutationRevision) {
+					void actions.hydrate();
+					return;
+				}
 				notesWriter.loaded({ notes: loaded?.notes ?? [] });
 				if (loaded?.notes && Array.isArray(loaded.notes)) {
 					const migrated = loaded.notes.map((n) => ({
@@ -75,6 +117,8 @@ function createIdeasStore() {
 						images: (n as Idea & { images?: string[] }).images ?? [],
 					}));
 					setState("ideas", migrated);
+				} else {
+					setState("ideas", []);
 				}
 				hydrated = true;
 			} catch (err) {

@@ -17,7 +17,8 @@ import { pastedImageFiles } from "../../utils/pastedImage";
 import { pathBasename } from "../../utils/pathUtils";
 import { getRepoTextColor } from "../../utils/repoColor";
 import { ComposePinIcon, ComposeSendIcon } from "../shared/ComposeActionIcons";
-import actions from "../shared/ComposeActions.module.css";
+import { Button } from "../ui/Button";
+import { Textarea } from "../ui/Textarea";
 import s from "./AIChatPanel.module.css";
 import { aiChatDraft } from "./draft";
 import { sessionSummary } from "./SessionControls";
@@ -192,8 +193,10 @@ export const Composer: Component<{
 								return (
 									<div class={s.queueRow}>
 										<span class={s.queueText}>{label}</span>
-										<button
+										<Button
 											type="button"
+											shape="icon"
+											variant="ghost"
 											class={s.queueCancel}
 											aria-label={`Cancel queued prompt ${label}`}
 											onClick={() => void props.chat.cancelQueued(queued.turnId)}
@@ -201,7 +204,7 @@ export const Composer: Component<{
 											<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
 												<path d="M2.8 2l3.2 3.2L9.2 2l.8.8L6.8 6l3.2 3.2-.8.8L6 6.8 2.8 10l-.8-.8L5.2 6 2 2.8z" />
 											</svg>
-										</button>
+										</Button>
 									</div>
 								);
 							}}
@@ -230,15 +233,17 @@ export const Composer: Component<{
 								{(image) => (
 									<div class={s.imagePreview}>
 										<img src={image.src} alt="Pasted image" />
-										<button
+										<Button
 											type="button"
+											shape="icon"
+											variant="ghost"
 											aria-label="Remove pasted image"
 											onClick={() => aiChatDraft.removeImage(image)}
 										>
 											<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
 												<path d="M2.8 2l3.2 3.2L9.2 2l.8.8L6.8 6l3.2 3.2-.8.8L6 6.8 2.8 10l-.8-.8L5.2 6 2 2.8z" />
 											</svg>
-										</button>
+										</Button>
 									</div>
 								)}
 							</For>
@@ -250,13 +255,15 @@ export const Composer: Component<{
 								{(file) => (
 									<span class={s.filePreview}>
 										{file.name}
-										<button
+										<Button
 											type="button"
+											shape="icon"
+											variant="ghost"
 											aria-label={`Remove ${file.name}`}
 											onClick={() => aiChatDraft.removeFile(file)}
 										>
 											×
-										</button>
+										</Button>
 									</span>
 								)}
 							</For>
@@ -278,9 +285,10 @@ export const Composer: Component<{
 						</span>
 					</Show>
 					<div class={props.mobileAttachments ? mobileInput.composer : s.composerActions}>
-						<textarea
+						<Textarea
 							ref={textarea}
-							class={props.mobileAttachments ? mobileInput.input : s.textarea}
+							data-control-layout="composer-editor"
+							class={props.mobileAttachments ? `${s.textarea} ${mobileInput.input}` : s.textarea}
 							autocorrect={props.mobileAttachments ? (keyboardCorrection.enabled() ? "on" : "off") : undefined}
 							spellcheck={props.mobileAttachments ? keyboardCorrection.enabled() : undefined}
 							autocapitalize={
@@ -304,17 +312,20 @@ export const Composer: Component<{
 				</div>
 				<div class={props.mobileAttachments ? s.mobileComposerActions : s.composerActions}>
 					<Show when={props.chat.busy() && !props.mobileAttachments}>
-						<button type="button" class={s.stopBtn} title="Stop" onClick={() => void props.chat.cancel()}>
+						<Button
+							type="button"
+							variant="danger"
+							class={s.stopBtn}
+							title="Stop"
+							onClick={() => void props.chat.cancel()}
+						>
 							Stop
-						</button>
+						</Button>
 					</Show>
 					<Show when={!props.mobileAttachments}>
-						<button
-							type="button"
-							class={actions.pinButton}
-							classList={{
-								[actions.pinButtonActive]: !!aiChatDraft.parked(),
-							}}
+						<Button
+							variant="ghost"
+							shape="icon"
 							aria-label={parkLabel()}
 							title={parkLabel()}
 							aria-pressed={!!aiChatDraft.parked()}
@@ -322,40 +333,54 @@ export const Composer: Component<{
 							onClick={() => aiChatDraft.parkOrSwap()}
 						>
 							<ComposePinIcon />
-						</button>
+						</Button>
 					</Show>
 				</div>
-				<button
-					type="button"
-					aria-label={!props.mobileAttachments && props.chat.busy() ? "Queue" : "Send"}
-					title={props.chat.busy() ? "Queue" : "Send"}
-					class={props.mobileAttachments ? mobileInput.send : actions.sendButton}
-					disabled={(!!props.mobileAttachments && uploading()) || !hasContent()}
-					onClick={send}
+				<Show
+					when={props.mobileAttachments}
+					fallback={
+						<Button
+							variant="primary"
+							shape="icon"
+							aria-label={props.chat.busy() ? "Queue" : "Send"}
+							title={props.chat.busy() ? "Queue" : "Send"}
+							disabled={!hasContent()}
+							onClick={send}
+						>
+							<ComposeSendIcon />
+						</Button>
+					}
 				>
-					{props.mobileAttachments ? (
+					<Button
+						type="button"
+						shape="icon"
+						variant="primary"
+						aria-label="Send"
+						title={props.chat.busy() ? "Queue" : "Send"}
+						disabled={uploading() || !hasContent()}
+						onClick={send}
+					>
 						<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
 							<path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
 						</svg>
-					) : (
-						<ComposeSendIcon />
-					)}
-				</button>
+					</Button>
+				</Show>
 			</div>
 			<div class={s.composerMeta}>
 				<Show when={props.chat.operatingRepo?.()}>
 					{(repo) => (
 						<div class={s.repoContext}>
 							<span style={{ color: getRepoTextColor(repo()) }}>{pathBasename(repo())}</span>
-							<button
+							<Button
 								type="button"
+								variant="ghost"
 								aria-label={props.chat.pinnedRepo?.() ? "Unpin repository" : "Pin repository"}
 								aria-pressed={!!props.chat.pinnedRepo?.()}
 								disabled={!props.chat.sessionId()}
 								onClick={() => props.chat.toggleRepoPin()}
 							>
 								· {props.chat.pinnedRepo?.() ? "pinned repository" : "follows the repository on screen"}
-							</button>
+							</Button>
 						</div>
 					)}
 				</Show>

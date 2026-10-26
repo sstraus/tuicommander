@@ -1,5 +1,6 @@
 import { type Component, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { cx } from "../../utils";
+import { Button } from "../ui/Button";
 import s from "./ContextMenu.module.css";
 
 export interface ContextMenuItem {
@@ -61,8 +62,8 @@ const clampSubmenu = (wrapEl: HTMLDivElement, submenuEl: HTMLDivElement) => {
 	const subRect = submenuEl.getBoundingClientRect();
 	const vw = window.innerWidth;
 	const vh = window.innerHeight;
-	const subWidth = Math.min(subRect.width || 160, viewportLimit("width"));
-	const subHeight = Math.min(subRect.height || 36, viewportLimit("height"));
+	const subWidth = Math.min(submenuEl.offsetWidth || subRect.width || 160, viewportLimit("width"));
+	const subHeight = Math.min(submenuEl.offsetHeight || subRect.height || 36, viewportLimit("height"));
 
 	// Horizontal: prefer right of parent, flip left if needed, clamp to viewport
 	let left = parentRect.right;
@@ -122,7 +123,8 @@ const MenuItem: Component<{
 			}
 		>
 			<div ref={wrapRef} class={s.itemWrap} onMouseEnter={openSubmenu} onMouseLeave={() => setSubmenuOpen(false)}>
-				<button
+				<Button
+					variant="ghost"
 					class={cx(s.item, props.item.disabled && s.disabled)}
 					title={props.item.title}
 					onClick={() => {
@@ -147,7 +149,7 @@ const MenuItem: Component<{
 					<Show when={hasChildren()}>
 						<span class={s.arrow}>{"\u203A"}</span>
 					</Show>
-				</button>
+				</Button>
 				<Show when={submenuOpen() && props.item.children}>
 					<div ref={submenuRef} class={s.submenu}>
 						<For each={props.item.children}>
@@ -215,18 +217,19 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
 	});
 
 	// Reposition menu after render to use measured dimensions
-	const clampToViewport = () => {
+	const clampToViewport = (anchorX: number, anchorY: number, itemCount: number) => {
 		if (!menuRef) return;
 		constrainPopupSize(menuRef);
 		const rect = menuRef.getBoundingClientRect();
-		// Fallback estimates when getBoundingClientRect returns 0 (e.g. jsdom)
-		const menuWidth = Math.min(rect.width || 180, viewportLimit("width"));
-		const menuHeight = Math.min(rect.height || props.items.length * 36 + 8, viewportLimit("height"));
+		// Layout dimensions ignore the opening scale animation; rects do not.
+		// Fallback estimates support environments without layout (e.g. jsdom).
+		const menuWidth = Math.min(menuRef.offsetWidth || rect.width || 180, viewportLimit("width"));
+		const menuHeight = Math.min(menuRef.offsetHeight || rect.height || itemCount * 36 + 8, viewportLimit("height"));
 		const vw = window.innerWidth;
 		const vh = window.innerHeight;
 
-		let x = props.x;
-		let y = props.y;
+		let x = anchorX;
+		let y = anchorY;
 
 		// Horizontal: flip left if overflows right
 		if (x + menuWidth > vw - VIEWPORT_MARGIN) {
@@ -236,7 +239,7 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
 
 		// Vertical: if menu doesn't fit below click point, grow upward
 		if (y + menuHeight > vh - VIEWPORT_MARGIN) {
-			y = props.y - menuHeight;
+			y = anchorY - menuHeight;
 		}
 		y = clampAxis(y, menuHeight, vh);
 
@@ -247,7 +250,12 @@ export const ContextMenu: Component<ContextMenuProps> = (props) => {
 
 	createEffect(() => {
 		if (!props.visible || !menuRef) return;
-		const raf = requestAnimationFrame(clampToViewport);
+		// Read reactive inputs here, not in the frame callback: another right click
+		// can move an already-visible menu without changing `visible`.
+		const x = props.x;
+		const y = props.y;
+		const itemCount = props.items.length;
+		const raf = requestAnimationFrame(() => clampToViewport(x, y, itemCount));
 		onCleanup(() => cancelAnimationFrame(raf));
 	});
 

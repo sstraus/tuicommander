@@ -555,9 +555,9 @@ mod tests {
         assert_eq!(ac.success, "#00cc00"); // green ANSI color
         assert_eq!(ac.warning, "#cccc00"); // yellow ANSI color
         assert_eq!(ac.error, "#cc0000"); // red ANSI color
-        assert!(!ac.fg_primary.is_empty());
-        assert!(!ac.fg_secondary.is_empty());
-        assert!(!ac.fg_muted.is_empty());
+        assert_ne!(ac.fg_primary, "");
+        assert_ne!(ac.fg_secondary, "");
+        assert_ne!(ac.fg_muted, "");
     }
 
     #[test]
@@ -641,11 +641,11 @@ mod tests {
         assert_eq!(themes.len(), BUILTIN_THEMES.len());
 
         for theme in &themes {
-            assert!(!theme.key.is_empty());
-            assert!(!theme.name.is_empty());
-            assert!(!theme.terminal.background.is_empty());
-            assert!(!theme.terminal.foreground.is_empty());
-            assert!(!theme.terminal.cursor.is_empty());
+            assert_ne!(theme.key, "");
+            assert_ne!(theme.name, "");
+            assert_ne!(theme.terminal.background, "");
+            assert_ne!(theme.terminal.foreground, "");
+            assert_ne!(theme.terminal.cursor, "");
             assert_eq!(theme.terminal.ansi.len(), 16);
             for color in &theme.terminal.ansi {
                 assert!(
@@ -654,8 +654,8 @@ mod tests {
                     theme.key
                 );
             }
-            assert!(!theme.app_chrome.bg_primary.is_empty());
-            assert!(!theme.app_chrome.accent.is_empty());
+            assert_ne!(theme.app_chrome.bg_primary, "");
+            assert_ne!(theme.app_chrome.accent, "");
         }
     }
 

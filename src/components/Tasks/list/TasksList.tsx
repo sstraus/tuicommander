@@ -7,8 +7,10 @@ import type {
 	WorkItemOption,
 	WorkItemRef,
 } from "../../../types/work-items.gen";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
+import { Switch } from "../../ui/Switch";
 import { filterOptions, loadFilterChoices } from "./filterChoices";
 import { TaskRows } from "./TaskRows";
 import s from "./tasksList.module.css";
@@ -165,16 +167,16 @@ export function TasksList(props: TasksListProps) {
 						onInput={(event) => updateSearch(event.currentTarget.value)}
 					/>
 				</label>
-				<button type="button" aria-expanded={filtersOpen()} onClick={() => setFiltersOpen((open) => !open)}>
+				<Button type="button" aria-expanded={filtersOpen()} onClick={() => setFiltersOpen((open) => !open)}>
 					{activeFilters() ? `Filters (${activeFilters()})` : "Filters"}
-				</button>
-				<button
+				</Button>
+				<Button
 					type="button"
 					disabled={!provider() || model.state().loading || props.visible === false}
 					onClick={() => void model.refresh()}
 				>
 					Refresh
-				</button>
+				</Button>
 			</div>
 			<Show when={filtersOpen() ? provider() : undefined}>
 				{(current) => (
@@ -228,7 +230,7 @@ export function TasksList(props: TasksListProps) {
 								</For>
 							</Select>
 						</label>
-						<button
+						<Button
 							type="button"
 							disabled={!query().sort}
 							aria-label="Reverse task sort"
@@ -241,7 +243,7 @@ export function TasksList(props: TasksListProps) {
 							}
 						>
 							{query().sort?.descending ? "Descending" : "Ascending"}
-						</button>
+						</Button>
 						<label>
 							Group
 							<Select
@@ -259,8 +261,8 @@ export function TasksList(props: TasksListProps) {
 							</Select>
 						</label>
 						<label class={s.check}>
-							<input
-								type="checkbox"
+							<Switch
+								role="checkbox"
 								checked={linkedOnly()}
 								onChange={(event) => setLinkedOnly(event.currentTarget.checked)}
 							/>
@@ -279,9 +281,9 @@ export function TasksList(props: TasksListProps) {
 				</Show>
 				<Show when={model.state().error}>
 					<span class={s.error}>{model.state().error}</span>
-					<button type="button" onClick={() => void model.refresh()}>
+					<Button type="button" onClick={() => void model.refresh()}>
 						Retry
-					</button>
+					</Button>
 				</Show>
 			</div>
 			<Show when={!provider()}>
@@ -300,14 +302,14 @@ export function TasksList(props: TasksListProps) {
 				onOpen={props.onOpen}
 			/>
 			<Show when={model.state().nextCursor}>
-				<button
+				<Button
 					class={s.more}
 					type="button"
 					disabled={model.state().loading || props.visible === false}
 					onClick={() => void model.loadMore()}
 				>
 					Load more
-				</button>
+				</Button>
 			</Show>
 		</section>
 	);

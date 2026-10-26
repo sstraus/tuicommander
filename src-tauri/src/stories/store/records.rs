@@ -16,6 +16,16 @@ pub(super) fn validate_text(label: &str, value: &str, max: usize) -> Result<(), 
     Ok(())
 }
 
+pub(super) fn validate_criteria(criteria: &[String]) -> Result<(), String> {
+    if criteria.is_empty() || criteria.len() > 100 {
+        return Err("story must have between 1 and 100 criteria".into());
+    }
+    for criterion in criteria {
+        validate_text("criterion", criterion, 2000)?;
+    }
+    Ok(())
+}
+
 pub(super) fn validate_scope_path(path: &str) -> Result<(), String> {
     validate_text("file scope path", path, 4096)?;
     if crate::fs::is_absolute_on_any_platform(path)
@@ -202,4 +212,24 @@ pub(super) fn reconcile_ready(
         }
     }
     Ok(())
+}
+
+/// Check within the caller's SQLite transaction, not an earlier presentation read.
+pub(super) fn require_active_plan(conn: &Connection, id: &str) -> Result<(), String> {
+    let archived: bool = conn
+        .query_row("SELECT archived FROM plans WHERE id=?1", [id], |row| {
+            row.get(0)
+        })
+        .map_err(|e| format!("read plan archive state: {e}"))?;
+    if archived {
+        return Err("plan is archived; restore it first".into());
+    }
+    Ok(())
+}
+
+pub(super) fn require_active_story(conn: &Connection, story: &Story) -> Result<(), String> {
+    if story.archived {
+        return Err("story is archived; restore it first".into());
+    }
+    require_active_plan(conn, &story.plan_id)
 }

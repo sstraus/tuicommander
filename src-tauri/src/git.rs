@@ -74,6 +74,23 @@ pub(crate) async fn get_repo_info(
     .await
 }
 
+/// Rename a branch and carry its label along. The one rename path for the
+/// Tauri command and the HTTP route; the main branch is never renamed.
+pub(crate) fn rename_branch_with_label(
+    path: &str,
+    old_name: &str,
+    new_name: &str,
+) -> Result<(), String> {
+    if tuic_git::git::check_is_main_branch(old_name.to_string()) {
+        return Err(format!("Cannot rename the main branch '{old_name}'"));
+    }
+    rename_branch_impl(path, old_name, new_name)?;
+    if let Err(e) = crate::config::move_branch_label(path, old_name, new_name) {
+        tracing::warn!("Branch renamed but its label could not be moved: {e}");
+    }
+    Ok(())
+}
+
 /// Rename a git branch (Tauri command with cache invalidation)
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -85,7 +102,7 @@ pub(crate) async fn rename_branch(
 ) -> Result<(), String> {
     let state_arc = state.inner().clone();
     tokio::task::spawn_blocking(move || {
-        rename_branch_impl(&path, &old_name, &new_name)?;
+        rename_branch_with_label(&path, &old_name, &new_name)?;
         state_arc.invalidate_repo_caches(&path);
         Ok(())
     })
@@ -233,6 +250,8 @@ pub(crate) struct RepoStructure {
     /// Workspace id -> its checkout. Never keyed by branch: two workspaces may
     /// share one (#726-5ac7).
     worktree_paths: HashMap<String, crate::worktree::WorkspaceWorktree>,
+    detached_worktrees: Vec<crate::worktree::DetachedWorktree>,
+    worktree_diagnostics: Vec<crate::worktree::WorktreeDiagnostic>,
     merged_branches: Vec<String>,
 }
 
@@ -255,6 +274,8 @@ pub(crate) struct RepoSummary {
     /// Workspace id -> its checkout. Never keyed by branch: two workspaces may
     /// share one (#726-5ac7).
     worktree_paths: HashMap<String, crate::worktree::WorkspaceWorktree>,
+    detached_worktrees: Vec<crate::worktree::DetachedWorktree>,
+    worktree_diagnostics: Vec<crate::worktree::WorktreeDiagnostic>,
     merged_branches: Vec<String>,
     /// Per-worktree diff stats, keyed by worktree path (matches the `path` field
     /// of worktree_paths values).
@@ -277,12 +298,13 @@ pub(crate) struct RepoSummary {
 async fn cached_worktree_paths(
     state: &AppState,
     repo_path: String,
-) -> Result<HashMap<String, crate::worktree::WorkspaceWorktree>, String> {
+) -> Result<crate::worktree::WorktreeInventory, String> {
     let p = repo_path.clone();
+    let pool = crate::worktree::archive_pool_for_repo(Path::new(&p), &state.worktrees_dir);
     cached_try(
         state.git_cache.worktree_paths.clone(),
         repo_path,
-        move || git_reads().worktree_paths(Path::new(&p)),
+        move || git_reads().worktree_inventory(Path::new(&p), Some(&pool)),
     )
     .await
     .map_err(|e| format!("get_worktree_paths failed: {e}"))
@@ -298,6 +320,8 @@ pub(crate) async fn get_repo_summary_impl(
     let stats = get_repo_diff_stats_impl(state, repo_path).await?;
     Ok(RepoSummary {
         worktree_paths: structure.worktree_paths,
+        detached_worktrees: structure.detached_worktrees,
+        worktree_diagnostics: structure.worktree_diagnostics,
         merged_branches: structure.merged_branches,
         diff_stats: stats.diff_stats,
         last_commit_ts: stats.last_commit_ts,
@@ -333,8 +357,11 @@ pub(crate) async fn get_repo_structure_impl(
         ),
     );
 
+    let inventory = worktree_paths?;
     Ok(RepoStructure {
-        worktree_paths: worktree_paths?,
+        worktree_paths: inventory.worktree_paths,
+        detached_worktrees: inventory.detached_worktrees,
+        worktree_diagnostics: inventory.worktree_diagnostics,
         merged_branches: merged_branches?,
     })
 }
@@ -358,7 +385,9 @@ pub(crate) async fn get_repo_diff_stats_impl(
     let _permit = state.monitoring_git_permit().await;
     // Need worktree paths to know which directories to diff. Phase 1
     // (`get_repo_structure`) of this same refresh already read them.
-    let worktree_paths = cached_worktree_paths(state, repo_path.clone()).await?;
+    let worktree_paths = cached_worktree_paths(state, repo_path.clone())
+        .await?
+        .worktree_paths;
     let path = repo_path.clone();
     let proof_state = Arc::clone(state);
     cached_try(
@@ -961,6 +990,189 @@ mod tests {
     use super::*;
     use tuic_git::test_fixtures::setup_test_repo_with_commit;
 
+    fn labelled_repo(branch: &str) -> (tempfile::TempDir, String, tempfile::TempDir) {
+        let (dir, path) = setup_test_repo_with_commit();
+        let repo = path.to_string_lossy().to_string();
+        git_cmd(&path)
+            .args(["branch", branch])
+            .run()
+            .expect("branch");
+        let config = tempfile::TempDir::new().expect("config dir");
+        (dir, repo, config)
+    }
+
+    fn seed_label(repo: &str, branch: &str, label: &str) {
+        let mut map = crate::config::RepoSettingsMap::default();
+        map.repos.insert(
+            repo.to_string(),
+            crate::config::RepoSettingsEntry {
+                path: repo.to_string(),
+                ..Default::default()
+            },
+        );
+        crate::config::save_repo_settings(Default::default(), map).expect("seed settings");
+        crate::config::set_branch_label(repo.to_string(), branch.to_string(), Some(label.into()))
+            .expect("seed label");
+    }
+
+    fn labels(repo: &str) -> HashMap<String, String> {
+        crate::config::load_repo_settings().repos[repo]
+            .branch_labels
+            .clone()
+    }
+
+    /// B15: the label stayed under the old name and vanished from the renamed row.
+    #[test]
+    #[serial_test::serial]
+    fn renaming_a_branch_moves_its_label() {
+        let (_dir, repo, config) = labelled_repo("feat/a");
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        seed_label(&repo, "feat/a", "X");
+
+        rename_branch_with_label(&repo, "feat/a", "feat/a2").expect("rename");
+
+        assert_eq!(
+            labels(&repo),
+            HashMap::from([("feat/a2".into(), "X".into())])
+        );
+    }
+
+    /// C3: the toolbar path renamed `main`; the sidebar refuses it.
+    #[test]
+    #[serial_test::serial]
+    fn the_main_branch_is_not_renamed() {
+        let (_dir, repo, config) = labelled_repo("feat/a");
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let main = tuic_git::test_fixtures::base_branch_of(Path::new(&repo));
+
+        let err = rename_branch_with_label(&repo, &main, "trunk").expect_err("must refuse");
+
+        assert!(err.contains("main branch"), "{err}");
+        assert!(
+            git_cmd(Path::new(&repo))
+                .args(["rev-parse", "--verify", &main])
+                .run()
+                .is_ok(),
+            "the branch must still exist"
+        );
+    }
+
+    /// Catches a Gix discovery failure poisoning the shared inventory cache with an empty success.
+    #[test]
+    fn discovery_2157_error_does_not_cache_empty_inventory() {
+        let dir = tempfile::tempdir().unwrap();
+        let repo = dir
+            .path()
+            .join("not-a-repository")
+            .to_string_lossy()
+            .into_owned();
+        let state = crate::state::tests_support::make_test_app_state();
+        let error = crate::worktree::get_worktree_paths_cached(&state, &repo).unwrap_err();
+        assert!(error.contains("Worktree discovery failed"), "{error}");
+        assert!(
+            state.git_cache.worktree_paths.get(&repo).is_none(),
+            "discovery error was cached as an empty success"
+        );
+        std::fs::create_dir_all(&repo).unwrap();
+        git_cmd(Path::new(&repo))
+            .args(["init", "-b", "recovered"])
+            .run()
+            .unwrap();
+        let recovered = crate::worktree::get_worktree_paths_cached(&state, &repo).unwrap();
+        assert!(
+            recovered.contains_key("recovered"),
+            "retry after repository repair must not reuse an empty inventory"
+        );
+    }
+
+    /// Catches cache/DTO boundaries discarding duplicate and missing-registration diagnostics.
+    #[tokio::test]
+    async fn discovery_2157_structure_and_summary_keep_diagnostics() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let linked = tempfile::tempdir().unwrap();
+        let branch = git_cmd(&path)
+            .args(["branch", "--show-current"])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .to_string();
+        let duplicate = linked.path().join("duplicate");
+        git_cmd(&path)
+            .args([
+                "worktree",
+                "add",
+                "--force",
+                duplicate.to_str().unwrap(),
+                &branch,
+            ])
+            .run()
+            .unwrap();
+        let missing = linked.path().join("missing");
+        git_cmd(&path)
+            .args([
+                "worktree",
+                "add",
+                "-b",
+                "missing-work",
+                missing.to_str().unwrap(),
+            ])
+            .run()
+            .unwrap();
+        std::fs::remove_dir_all(&missing).unwrap();
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let repo = path.to_string_lossy().into_owned();
+        let structure = get_repo_structure_impl(&state, repo.clone()).await.unwrap();
+        assert_eq!(structure.worktree_diagnostics.len(), 2);
+        assert!(structure.worktree_diagnostics.iter().any(|row| row.state
+            == crate::worktree::WorktreeDiagnosticState::Missing
+            && Path::new(&row.path) == missing));
+        assert!(
+            structure
+                .worktree_diagnostics
+                .iter()
+                .any(|row| row.state == crate::worktree::WorktreeDiagnosticState::DuplicateBranch)
+        );
+        let summary = get_repo_summary_impl(&state, repo).await.unwrap();
+        assert_eq!(summary.worktree_diagnostics, structure.worktree_diagnostics);
+    }
+
+    /// Catches dropping detached inventory at the cached structure/summary boundary.
+    #[tokio::test]
+    async fn discovery_2156_structure_and_summary_keep_detached_metadata() {
+        let (_dir, path) = setup_test_repo_with_commit();
+        let linked = tempfile::tempdir().unwrap();
+        let checkout = linked.path().join("detached-visible");
+        git_cmd(&path)
+            .args(["worktree", "add", "--detach", checkout.to_str().unwrap()])
+            .run()
+            .unwrap();
+        let expected_head = git_cmd(&checkout)
+            .args(["rev-parse", "HEAD"])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .to_string();
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let repo = path.to_string_lossy().into_owned();
+        let structure = get_repo_structure_impl(&state, repo.clone()).await.unwrap();
+        assert_eq!(structure.detached_worktrees.len(), 1);
+        assert_eq!(structure.detached_worktrees[0].head, expected_head);
+        assert_eq!(
+            structure.detached_worktrees[0].directory_name,
+            "detached-visible"
+        );
+        assert!(
+            !structure
+                .worktree_paths
+                .values()
+                .any(|w| Path::new(&w.path) == checkout)
+        );
+        let summary = get_repo_summary_impl(&state, repo).await.unwrap();
+        assert_eq!(summary.detached_worktrees, structure.detached_worktrees);
+    }
+
     /// Progressive loading splits one refresh into `get_repo_structure` (phase 1)
     /// then `get_repo_diff_stats` (phase 2), and both need the branch→path map.
     /// Each was forking `git worktree list` for itself, so every repo-changed
@@ -984,16 +1196,20 @@ mod tests {
         // git again would report the repo's real branch, never this sentinel.
         state.git_cache.worktree_paths.insert(
             repo.clone(),
-            Arc::new(HashMap::from([(
-                "sentinel-id".to_string(),
-                crate::worktree::WorkspaceWorktree {
-                    branch: "sentinel-branch".to_string(),
-                    path: repo.clone(),
-                    kind: crate::worktree::WorkspaceKind::Worktree,
-                    warm_artifacts: None,
-                    lifecycle_status: None,
-                },
-            )])),
+            Arc::new(crate::worktree::WorktreeInventory {
+                worktree_paths: HashMap::from([(
+                    "sentinel-id".to_string(),
+                    crate::worktree::WorkspaceWorktree {
+                        branch: "sentinel-branch".to_string(),
+                        path: repo.clone(),
+                        kind: crate::worktree::WorkspaceKind::Worktree,
+                        warm_artifacts: None,
+                        lifecycle_status: None,
+                    },
+                )]),
+                detached_worktrees: Vec::new(),
+                worktree_diagnostics: Vec::new(),
+            }),
         );
 
         let stats = get_repo_diff_stats_impl(&state, repo.clone())

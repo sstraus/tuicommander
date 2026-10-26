@@ -1,0 +1,25 @@
+{"kind":"load","standalone":false,"displayStandalone":false,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":699}
+{"kind":"visibility","state":"hidden"}
+{"kind":"load","standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"tap","label":"Chat","trusted":true}
+{"kind":"snapshot-parse","elapsedMs":0,"updates":2000}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/fadc5617-d3ff-40d0-b55b-19deb34b0417/chat-view?from_seq=0","headersMs":17,"bodyMs":2,"elapsedMs":19,"bytes":481442}
+{"kind":"snapshot-consumer","elapsedMs":11621,"layoutMs":157,"layoutReads":2001}
+{"kind":"chat","elapsedMs":12520,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/fadc5617-d3ff-40d0-b55b-19deb34b0417/chat-view?from_seq=2000&epoch=4","headersMs":874,"bodyMs":0,"elapsedMs":874,"bytes":87}
+{"kind":"visibility","state":"hidden"}
+{"kind":"visibility","state":"visible"}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/fadc5617-d3ff-40d0-b55b-19deb34b0417/chat-view?from_seq=2000&epoch=4","headersMs":52,"bodyMs":0,"elapsedMs":52,"bytes":87}
+{"kind":"resume","elapsedMs":55,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/fadc5617-d3ff-40d0-b55b-19deb34b0417/chat-view?from_seq=2000&epoch=4","headersMs":9,"bodyMs":0,"elapsedMs":9,"bytes":87}
+{"kind":"tap","label":"CLI","trusted":true}
+{"kind":"cli","elapsedMs":72,"entryCount":0,"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"tap","label":"Chat","trusted":true}
+{"kind":"snapshot-parse","elapsedMs":0,"updates":2000}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/fadc5617-d3ff-40d0-b55b-19deb34b0417/chat-view?from_seq=0","headersMs":8,"bodyMs":3,"elapsedMs":11,"bytes":481442}
+{"kind":"snapshot-consumer","elapsedMs":14276,"layoutMs":160,"layoutReads":2001}
+{"kind":"chat","elapsedMs":15212.000000000007,"entryCount":2000,"lastBounds":{"x":32,"y":579,"width":326,"height":88,"top":579,"right":358,"bottom":667,"left":32},"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/fadc5617-d3ff-40d0-b55b-19deb34b0417/chat-view?from_seq=2000&epoch=4","headersMs":921,"bodyMs":0,"elapsedMs":921,"bytes":87}
+{"kind":"snapshot-transfer","url":"http://127.0.0.1:11663/sessions/fadc5617-d3ff-40d0-b55b-19deb34b0417/chat-view?from_seq=2000&epoch=4","headersMs":3,"bodyMs":0,"elapsedMs":3,"bytes":87}
+{"kind":"tap","label":"CLI","trusted":true}
+{"kind":"cli","elapsedMs":57,"entryCount":0,"standalone":true,"displayStandalone":true,"userAgent":"Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.4 Mobile/15E148 Safari/604.1","width":390,"height":797}

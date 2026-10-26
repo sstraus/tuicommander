@@ -403,7 +403,7 @@ mod tests {
         let pid = std::process::id();
         let path = read_process_env_var(pid, "PATH");
         assert!(path.is_some(), "PATH should always be set");
-        assert!(!path.unwrap().is_empty());
+        assert_ne!(path.unwrap(), "");
     }
 
     #[test]
@@ -442,7 +442,7 @@ mod tests {
         // hid live in argv[1..], so reading only argv[0] would drop them.
         let pid = std::process::id();
         let argv = read_process_argv(pid).expect("own argv is readable");
-        assert!(!argv.is_empty());
+        assert_ne!(argv, [] as [std::string::String; 0]);
         assert_eq!(Some(&argv[0]), read_process_argv0(pid).as_ref());
     }
 

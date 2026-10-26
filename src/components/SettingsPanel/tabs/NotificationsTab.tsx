@@ -6,7 +6,9 @@ import { tasksNotifications } from "../../../services/tasksNotifications";
 import { appLogger } from "../../../stores/appLogger";
 import { notificationsStore } from "../../../stores/notifications";
 import { isTauri } from "../../../transport";
+import { Button } from "../../ui/Button";
 import { Select } from "../../ui/Select";
+import { Switch } from "../../ui/Switch";
 import { ContextualHelp } from "../ContextualHelp";
 import { ExpertSetting } from "../ExpertSetting";
 import { SettingSlider, SettingToggle } from "../SettingFields";
@@ -180,7 +182,7 @@ export const NotificationsTab: Component = () => {
 																t("notifications.option.systemDefault", "System Default"),
 														})}
 													</p>
-													<button
+													<Button
 														data-non-setting="Explicit output-device discovery; does not select a device"
 														id={id}
 														aria-label={t("notifications.btn.chooseDevice", "Choose output device…")}
@@ -192,7 +194,7 @@ export const NotificationsTab: Component = () => {
 														{loadingDevices()
 															? t("notifications.btn.loadingDevices", "Loading…")
 															: t("notifications.btn.chooseDevice", "Choose output device…")}
-													</button>
+													</Button>
 												</>
 											}
 										>
@@ -218,7 +220,7 @@ export const NotificationsTab: Component = () => {
 													)}
 												</For>
 											</Select>
-											<button
+											<Button
 												data-non-setting="Explicit output-device discovery; does not select a device"
 												class={s.testBtn}
 												style={{ "margin-top": "6px" }}
@@ -226,7 +228,7 @@ export const NotificationsTab: Component = () => {
 												onClick={loadDevices}
 											>
 												{t("notifications.btn.refreshDevices", "Refresh")}
-											</button>
+											</Button>
 										</Show>
 									</div>
 								)}
@@ -243,12 +245,10 @@ export const NotificationsTab: Component = () => {
 								<SettingRow label={sound.label}>
 									{(id, descriptionId) => (
 										<div class={s.soundControls}>
-											<input
+											<Switch
 												id={id}
 												aria-describedby={descriptionId()}
-												type="checkbox"
 												role="switch"
-												class={s.rowSwitch}
 												data-setting-id={`notifications.sounds.${sound.key}`}
 												checked={notificationsStore.state.config.sounds[sound.key]}
 												onChange={(event) => notificationsStore.setSoundEnabled(sound.key, event.currentTarget.checked)}
@@ -256,14 +256,14 @@ export const NotificationsTab: Component = () => {
 											<span class={s.soundPattern}>
 												<SoundPatternSvg sound={sound.key} />
 											</span>
-											<button
+											<Button
 												data-non-setting="Preview the sound without changing its configuration"
 												class={s.testBtn}
 												aria-label={`Preview ${sound.label}`}
 												onClick={() => notificationsStore.testSound(sound.key)}
 											>
 												{t("notifications.btn.test", "Test")}
-											</button>
+											</Button>
 										</div>
 									)}
 								</SettingRow>
@@ -281,23 +281,23 @@ export const NotificationsTab: Component = () => {
 							row
 							checked={notificationsStore.state.config.silence_remote_completions}
 							onChange={(value) => notificationsStore.setSilenceRemoteCompletions(value)}
-							label={t("notifications.label.silenceRemoteCompletions", "Silence completions from MCP sessions")}
+							label={t("notifications.label.silenceRemoteCompletions", "Silence subagent sounds and notifications")}
 						/>
 						<p class={s.hint} style={{ "margin-top": "6px" }}>
 							{t(
 								"notifications.hint.silenceRemoteCompletions",
-								"Sessions started by an agent orchestrator (session create, agent spawn) finish without a chime. They still appear in Activity and update the badge.",
+								"Mute agent-spawned sessions; keep Activity, bell entries and urgent cards.",
 							)}
 						</p>
 					</div>
 
 					<div class={s.actions}>
-						<button
+						<Button
 							data-non-setting="Reset the notification owner document to its defaults"
 							onClick={() => notificationsStore.reset()}
 						>
 							{t("notifications.btn.resetDefaults", "Reset Defaults")}
-						</button>
+						</Button>
 					</div>
 				</Show>
 			</SectionCard>

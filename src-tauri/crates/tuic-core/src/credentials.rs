@@ -110,6 +110,9 @@ pub enum Credential<'a> {
     /// Pairing token used by a TUIC-deployed daemon. It shares the connection
     /// UUID namespace but never enters the plain-text connection store.
     RemotePairingToken(&'a str),
+    /// Relay pairing bundle (relay bearer and end-to-end secret), keyed by the
+    /// desktop connection UUID, or by a fixed id on the daemon (story 2085-721d).
+    RelayPairing(&'a str),
 }
 
 impl Credential<'_> {
@@ -128,6 +131,7 @@ impl Credential<'_> {
             Self::RemotePairingToken(id) => {
                 format!("remote/connection/{id}/pairing-token")
             }
+            Self::RelayPairing(id) => format!("remote/relay-pairing/{id}"),
         }
     }
 
@@ -144,7 +148,8 @@ impl Credential<'_> {
             | Self::AccountToken(_)
             | Self::CircleCiToken
             | Self::RemoteConnection(_)
-            | Self::RemotePairingToken(_) => None,
+            | Self::RemotePairingToken(_)
+            | Self::RelayPairing(_) => None,
         }
     }
 }

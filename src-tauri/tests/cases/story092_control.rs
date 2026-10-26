@@ -396,7 +396,10 @@ async fn async_config_offer_is_published_and_settable_without_a_prompt() {
         .new_session(connection.connection_id, authority(fixture.root()))
         .await
         .unwrap();
-    assert!(first.config_options.is_empty());
+    assert_eq!(
+        first.config_options,
+        [] as [agent_client_protocol::schema::v1::SessionConfigOption; 0]
+    );
     let mut stream = fixture
         .manager
         .subscribe(connection.connection_id, 0)
@@ -408,14 +411,14 @@ async fn async_config_offer_is_published_and_settable_without_a_prompt() {
         .unwrap();
     until(&mut stream, |event| matches!(event, AcpClientEvent::SessionUpdate { update } if matches!(&**update, v1::SessionUpdate::ConfigOptionUpdate(_)))).await;
     let snapshot = fixture.manager.snapshot(connection.connection_id).unwrap();
-    assert!(
+    assert_eq!(
         snapshot
             .attachments
             .iter()
             .find(|a| a.session_id == other.session_id)
             .unwrap()
-            .config_options
-            .is_empty()
+            .config_options,
+        [] as [agent_client_protocol::schema::v1::SessionConfigOption; 0]
     );
     let offered = snapshot
         .attachments

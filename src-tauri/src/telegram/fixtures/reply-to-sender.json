@@ -1,0 +1,18 @@
+{
+  "_source": "https://core.telegram.org/bots/api#message — documentation-derived synthetic fixture, 2026-10-22; not recorded traffic",
+  "update_id": 77,
+  "message": {
+    "message_id": 78,
+    "date": 1792620000,
+    "chat": {"id": 1111111, "type": "private"},
+    "from": {"id": 1111111, "is_bot": false, "first_name": "Test"},
+    "text": "ship it",
+    "reply_to_message": {
+      "message_id": 76,
+      "date": 1792619999,
+      "chat": {"id": 1111111, "type": "private"},
+      "from": {"id": 111, "is_bot": true, "first_name": "Test Bot"},
+      "text": "[coordinator] release ready"
+    }
+  }
+}

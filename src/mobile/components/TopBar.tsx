@@ -1,4 +1,5 @@
 import { createSignal, Show } from "solid-js";
+import { Button } from "../../components/ui/Button";
 import styles from "./TopBar.module.css";
 
 interface TopBarProps {
@@ -25,9 +26,10 @@ export function TopBar(props: TopBarProps) {
 				</Show>
 			</div>
 			<Show when={props.onOpenSettings}>
-				<button
+				<Button
+					shape="icon"
+					variant="ghost"
 					type="button"
-					class={styles.more}
 					aria-label="More options"
 					aria-haspopup="menu"
 					aria-expanded={menuOpen()}
@@ -38,10 +40,11 @@ export function TopBar(props: TopBarProps) {
 						<circle cx="12" cy="12" r="1.75" />
 						<circle cx="12" cy="19" r="1.75" />
 					</svg>
-				</button>
+				</Button>
 				<Show when={menuOpen()}>
 					<div class={styles.menu} role="menu" aria-label="More options">
-						<button
+						<Button
+							variant="ghost"
 							type="button"
 							role="menuitem"
 							class={styles.menuItem}
@@ -51,7 +54,7 @@ export function TopBar(props: TopBarProps) {
 							}}
 						>
 							Settings
-						</button>
+						</Button>
 					</div>
 				</Show>
 			</Show>

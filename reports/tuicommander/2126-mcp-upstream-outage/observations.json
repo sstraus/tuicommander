@@ -1,0 +1,170 @@
+[
+  {
+    "time": "2026-10-22T10:46:23.170002+00:00",
+    "kind": "bridge pid",
+    "value": 39072
+  },
+  {
+    "time": "2026-10-22T10:46:23.493352+00:00",
+    "kind": "healthy",
+    "value": [
+      "agent",
+      "automations",
+      "fake2126__echo",
+      "plugin_dev_guide",
+      "progress",
+      "repo",
+      "secret",
+      "session",
+      "ui",
+      "workflow"
+    ]
+  },
+  {
+    "time": "2026-10-22T10:46:23.671329+00:00",
+    "kind": "fake stopped",
+    "value": 64834
+  },
+  {
+    "time": "2026-10-22T10:46:23.672142+00:00",
+    "kind": "bridge stdout",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": 6,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"error\":\"Upstream 'fake2126' request failed\"}"
+          }
+        ],
+        "isError": true
+      }
+    }
+  },
+  {
+    "time": "2026-10-22T10:46:23.672758+00:00",
+    "kind": "bridge stdout",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": 7,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"error\":\"Upstream 'fake2126' request failed\"}"
+          }
+        ],
+        "isError": true
+      }
+    }
+  },
+  {
+    "time": "2026-10-22T10:46:23.673490+00:00",
+    "kind": "bridge stdout",
+    "value": {
+      "jsonrpc": "2.0",
+      "id": 8,
+      "result": {
+        "content": [
+          {
+            "type": "text",
+            "text": "{\"error\":\"Upstream 'fake2126' request failed\"}"
+          }
+        ],
+        "isError": true
+      }
+    }
+  },
+  {
+    "time": "2026-10-22T10:46:23.674508+00:00",
+    "kind": "circuit status",
+    "value": {
+      "upstreams": [
+        {
+          "name": "fake2126",
+          "status": "circuit_open",
+          "transport": {
+            "type": "http",
+            "url": "http://127.0.0.1:64834/mcp"
+          },
+          "tool_count": 1,
+          "tools": [
+            "echo"
+          ],
+          "metrics": {
+            "call_count": 3,
+            "error_count": 3,
+            "last_latency_ms": 0
+          },
+          "last_error": null
+        }
+      ]
+    }
+  },
+  {
+    "time": "2026-10-22T10:46:23.678546+00:00",
+    "kind": "unhealthy",
+    "value": [
+      "agent",
+      "automations",
+      "plugin_dev_guide",
+      "progress",
+      "repo",
+      "secret",
+      "session",
+      "ui",
+      "workflow"
+    ]
+  },
+  {
+    "time": "2026-10-22T10:46:23.679008+00:00",
+    "kind": "bridge stdout",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "notifications/tools/list_changed"
+    }
+  },
+  {
+    "time": "2026-10-22T10:46:23.682520+00:00",
+    "kind": "fake restarted",
+    "value": 64834
+  },
+  {
+    "time": "2026-10-22T10:46:23.685306+00:00",
+    "kind": "bridge stdout",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "notifications/tools/list_changed"
+    }
+  },
+  {
+    "time": "2026-10-22T10:46:23.689263+00:00",
+    "kind": "bridge stdout",
+    "value": {
+      "jsonrpc": "2.0",
+      "method": "notifications/tools/list_changed"
+    }
+  },
+  {
+    "time": "2026-10-22T10:46:23.744170+00:00",
+    "kind": "recovered",
+    "value": [
+      "agent",
+      "automations",
+      "fake2126__echo",
+      "plugin_dev_guide",
+      "progress",
+      "repo",
+      "secret",
+      "session",
+      "ui",
+      "workflow"
+    ]
+  },
+  {
+    "time": "2026-10-22T10:46:23.753701+00:00",
+    "kind": "outcome",
+    "value": "Upstream outage did not remove native tools or disconnect bridge on unchanged code"
+  }
+]

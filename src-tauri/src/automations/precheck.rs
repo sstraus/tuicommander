@@ -159,6 +159,11 @@ fn empty_result(termination: Termination, started: Instant) -> PrecheckResult {
     }
 }
 
+#[cfg(test)]
+pub(crate) static PRECHECK_INVOCATIONS: std::sync::LazyLock<
+    dashmap::DashMap<std::path::PathBuf, String>,
+> = std::sync::LazyLock::new(dashmap::DashMap::new);
+
 fn execute(workspace: &Path, precheck: &Precheck) -> PrecheckResult {
     let started = Instant::now();
     // Persisted definitions validate these bounds; retain the check at this
@@ -179,6 +184,16 @@ fn execute(workspace: &Path, precheck: &Precheck) -> PrecheckResult {
         Ok(tree) => tree,
         Err(error) => return empty_result(Termination::SpawnError(error.to_string()), started),
     };
+    #[cfg(test)]
+    PRECHECK_INVOCATIONS.insert(
+        workspace.to_path_buf(),
+        format!(
+            "argv={:?} {:?}; cwd={:?}",
+            command.get_program(),
+            command.get_args().collect::<Vec<_>>(),
+            command.get_current_dir()
+        ),
+    );
     let child = match command.spawn() {
         Ok(child) => child,
         Err(error) => return empty_result(Termination::SpawnError(error.to_string()), started),

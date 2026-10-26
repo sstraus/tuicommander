@@ -4,6 +4,8 @@ import { registerModal } from "../../stores/modalStack";
 import { HttpRpcError, rpc } from "../../transport";
 import type { DirEntry } from "../../types/fs";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import s from "./RemoteRepoPicker.module.css";
 
 export interface RemoteRepoPickerProps {
@@ -131,7 +133,7 @@ export const RemoteRepoPicker: Component<RemoteRepoPickerProps> = (props) => {
 						</div>
 					</div>
 					<div class={d.body}>
-						<input
+						<Input
 							type="text"
 							value={draft()}
 							onInput={(e) => setDraft((e.target as HTMLInputElement).value)}
@@ -152,7 +154,13 @@ export const RemoteRepoPicker: Component<RemoteRepoPickerProps> = (props) => {
 						/>
 						<div class={s.list}>
 							<Show when={!isRoot(cwd())}>
-								<button class={s.row} onClick={() => void load(parentOf(cwd()))} disabled={loading()}>
+								<button
+									type="button"
+									data-control-layout="row"
+									class={s.row}
+									onClick={() => void load(parentOf(cwd()))}
+									disabled={loading()}
+								>
 									<span class={s.name}>..</span>
 								</button>
 							</Show>
@@ -167,7 +175,13 @@ export const RemoteRepoPicker: Component<RemoteRepoPickerProps> = (props) => {
 							</Show>
 							<For each={entries()}>
 								{(entry) => (
-									<button class={s.row} onClick={() => void load(join(cwd(), entry.name))} disabled={loading()}>
+									<button
+										type="button"
+										data-control-layout="row"
+										class={s.row}
+										onClick={() => void load(join(cwd(), entry.name))}
+										disabled={loading()}
+									>
 										<span class={s.name}>{entry.name}</span>
 									</button>
 								)}
@@ -175,11 +189,9 @@ export const RemoteRepoPicker: Component<RemoteRepoPickerProps> = (props) => {
 						</div>
 					</div>
 					<div class={d.actions}>
-						<button class={d.cancelBtn} onClick={props.onClose}>
-							{t("remoteRepoPicker.cancel", "Cancel")}
-						</button>
-						<button
-							class={d.primaryBtn}
+						<Button onClick={props.onClose}>{t("remoteRepoPicker.cancel", "Cancel")}</Button>
+						<Button
+							variant="primary"
 							onClick={() => {
 								props.onConfirm(cwd().trim());
 								props.onClose();
@@ -187,7 +199,7 @@ export const RemoteRepoPicker: Component<RemoteRepoPickerProps> = (props) => {
 							disabled={loading() || !cwd().trim()}
 						>
 							{t("remoteRepoPicker.confirm", "Add This Folder")}
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>

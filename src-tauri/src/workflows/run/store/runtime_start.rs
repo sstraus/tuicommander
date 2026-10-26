@@ -35,14 +35,14 @@ impl RunStore {
         let stories = StoryStore::open()?;
         let (plan_id, target_id, kind, revision) = match &request.target {
             RunTarget::Plan(id) => {
-                let plan = stories.get_plan(id)?;
+                let plan = stories.require_unarchived_plan(id)?;
                 if plan.project != owner {
                     return Err("plan does not belong to project".into());
                 }
                 (id.clone(), id.clone(), WorkflowKind::Plan, None)
             }
             RunTarget::Story(id) => {
-                let story = stories.get_story(id)?;
+                let story = stories.require_unarchived_story(id)?;
                 let plan = stories.get_plan(&story.plan_id)?;
                 if plan.project != owner {
                     return Err("story does not belong to project".into());
@@ -119,6 +119,7 @@ impl RunStore {
             started_ms: now_ms(),
             paused_since_ms: None,
             paused_duration_ms: 0,
+            pause_cause: None,
             limits: request.limits.clone(),
             loops: 0,
             story_creations: 0,
@@ -144,11 +145,11 @@ impl RunStore {
         // Recheck native identity after obtaining the run writer lock.
         let current_revision = match &request.target {
             RunTarget::Plan(id) => {
-                stories.get_plan(id)?;
+                stories.require_unarchived_plan(id)?;
                 None
             }
             RunTarget::Story(id) => {
-                let story = stories.get_story(id)?;
+                let story = stories.require_unarchived_story(id)?;
                 if story.claim_session.is_some() {
                     return Err("story has a live manual claim".into());
                 }

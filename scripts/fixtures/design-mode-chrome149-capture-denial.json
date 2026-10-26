@@ -1,0 +1,13 @@
+{
+  "jsonrpc": "2.0",
+  "id": 30,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"error\":\"Either the '<all_urls>' or 'activeTab' permission is required.\"}"
+      }
+    ],
+    "isError": true
+  }
+}

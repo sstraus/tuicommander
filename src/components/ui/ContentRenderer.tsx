@@ -4,6 +4,8 @@ import AnsiToHtml from "ansi-to-html";
 // environment so security behavior matches real browser engines.
 import DOMPurify from "dompurify";
 import { marked, Renderer, type Tokens } from "marked";
+import { render } from "solid-js/web";
+import { Button } from "./Button";
 import "./markdown-content.css";
 import { type Component, createEffect, createMemo, Index, onCleanup, Show } from "solid-js";
 import { appLogger } from "../../stores/appLogger";
@@ -45,7 +47,7 @@ export interface ContentRendererProps {
 	 * Called for local file, directory, and heading links (raw href passed as argument).
 	 * Resolving to `false` reports a dead target: the clicked link is replaced by its text.
 	 */
-	onLinkClick?: (href: string) => void | Promise<boolean | void>;
+	onLinkClick?: (href: string) => void | Promise<boolean | undefined> | Promise<void>;
 	/**
 	 * Called when a checkbox is clicked (source line, new mark, and — for a
 	 * whole-cell checkbox in a table — the column of its `[`, since one row can
@@ -661,15 +663,31 @@ export const ContentRenderer: Component<ContentRendererProps> = (props) => {
 			});
 		}
 		if (props.onCodeCopy) {
+			const disposers: (() => void)[] = [];
+			let disposed = false;
+			onCleanup(() => {
+				disposed = true;
+				for (const dispose of disposers) dispose();
+			});
 			queueMicrotask(() => {
+				if (disposed) return;
 				containerRef?.querySelectorAll<HTMLPreElement>("pre[data-raw-code]").forEach((pre) => {
 					if (pre.querySelector("button[data-copy-code]")) return;
-					const button = document.createElement("button");
-					button.type = "button";
-					button.dataset.copyCode = "";
-					button.setAttribute("aria-label", "Copy code");
-					button.textContent = "Copy";
-					pre.append(button);
+					const host = document.createElement("span");
+					host.style.display = "contents";
+					pre.append(host);
+					const dispose = render(
+						() => (
+							<Button data-copy-code="" aria-label="Copy code">
+								Copy
+							</Button>
+						),
+						host,
+					);
+					disposers.push(() => {
+						dispose();
+						host.remove();
+					});
 				});
 			});
 		}

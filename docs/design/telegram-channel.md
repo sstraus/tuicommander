@@ -1,6 +1,6 @@
 # Telegram channel for TUICommander
 
-**Stories:** 1438-79b4, 1959-162a, 1983-1b47. **Updated:** 2026-10-17.
+**Stories:** 1438-79b4, 1959-162a, 1983-1b47, 2119-d5de. **Updated:** 2026-10-22.
 Offline implementation is available; live mint deployment remains pending.
 
 ## Consumer contract and registration
@@ -65,11 +65,44 @@ there are no target peer, token, chat selector, approval or idempotency argument
 | `finish` | `request_id`, `text`; sends the exact final reply even after draft retirement and returns known `message_ids`. Completed requests return the same IDs. |
 | `send` | `text`, optional rows of `{label,data}` buttons; returns known `message_ids`. |
 
-Only the registered agent, or the selected live AI Chat fallback when no agent is registered, may begin/activity/finish/send. Others receive
+Request-specific begin/activity/finish stay bound to the peer that received the request, even if inbound ownership changes. Unrelated callers receive
 `telegram_not_registered: call telegram register first`. Receipt and working
 acknowledgements are TUIC-driven; begin and activity are optional. A PTY agent
 calls finish with its complete authored reply. No raw PTY text, tool arguments or hidden reasoning
 is streamed. Tool arguments cannot register a different agent.
+
+## Non-owner notifications and reply routing
+
+Any live MCP-bound agent may call `send` without registering. This does not change
+registration, inbound ownership, pending requests or the owner’s current buttons.
+The destination remains the single allowlisted chat. Non-owner buttons are refused
+with `telegram_non_owner_buttons`: this preserves the existing owner-only callback
+contract without a second callback-routing map.
+
+The server derives `[<session name>] ` from the caller identity and adds it to
+every outgoing non-owner chunk. The agent cannot choose the attribution. Names must
+be non-empty, contain no brackets or control characters, and use at most 128 UTF-16
+units; invalid names return `telegram_invalid_sender_name`. Each non-owner peer
+may send once per 30 seconds; an earlier attempt returns
+`telegram_sender_rate_limited`. The interval is charged before network I/O, including
+uncertain failures, and expires in memory. Owners have no sender interval or prefix.
+Owner text remains byte-exact, including leading brackets. Splitting includes
+attribution within the conservative 4096 UTF-16-unit message budget. An owner
+message that starts with a live peer name in brackets can route a Reply to that
+peer: this ambiguity is accepted instead of changing the authored text.
+
+For Telegram Reply, the adapter reads `message.reply_to_message.text`. A leading
+`[<name>] ` selects a unique live peer with that exact name. New messages, unprefixed
+replies, unknown names, dead peers and duplicate live names use the
+current inbound owner. Reply routing does not register the sender; the request’s
+begin/activity/finish authority follows its delivered recipient as before. No sent
+message-ID cache is kept. Renamed or replaced peers therefore use current names,
+not historical sender identity.
+
+The reply fixture is synthetic and derived from the official
+[Message schema](https://core.telegram.org/bots/api#message), not recorded traffic.
+The schema defines optional `reply_to_message` as a Message in the same chat and
+thread, without nested `reply_to_message` fields.
 
 ## Drafts, outbound delivery and callbacks
 

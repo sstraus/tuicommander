@@ -40,6 +40,18 @@ afterEach(() => {
 });
 
 describe("mobile Progress", () => {
+	it.each([{ projects: ["/newer"] }, { projects: ["/newer", "/older"] }, { projects: [] }, { projects: undefined }])(
+		"keeps the selected project name once with or without a mobile selector ($projects)",
+		async ({ projects }) => {
+			// Catch both a duplicate subtitle and a lost label while project discovery is unavailable.
+			progressStore.open("/newer", null);
+			render(() => <ProgressDialog embedded projects={projects} />);
+			await waitFor(() => expect(screen.getByText("Later work is blocked.")).toBeTruthy());
+			expect(screen.queryByLabelText("Progress project") !== null).toBe(!!projects?.length);
+			expect(screen.getAllByText("newer")).toHaveLength(1);
+		},
+	);
+
 	it("opens the newest populated project and lets Boss read another project's entries", async () => {
 		render(() => <ProgressDialog embedded projects={["/newer", "/older"]} />);
 		await waitFor(() => expect(screen.getByText("Later work is blocked.")).toBeTruthy());

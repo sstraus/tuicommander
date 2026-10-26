@@ -14,11 +14,3 @@
   overflow-wrap: anywhere;
 }
 
-.paste button {
-  border: 0;
-  background: transparent;
-  color: var(--accent);
-  padding: 4px 0 0;
-  cursor: pointer;
-  font: var(--font-sm) var(--font-ui);
-}

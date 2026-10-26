@@ -445,16 +445,20 @@ describe("BranchesTab", () => {
 	describe("rename branch", () => {
 		it("renames on Enter and bumps the git revision", async () => {
 			const { findByText, getByText, getByDisplayValue } = render(() => <BranchesTab repoPath={REPO} />);
-			await findByText("main"); // main is current, so Rename is offered directly
-			openContextMenuFor(getByText, "main");
+			await findByText("feature/foo"); // upstream disables Rename on the main branch
+			openContextMenuFor(getByText, "feature/foo");
 			fireEvent.click(getByText("Rename"));
 
-			const input = getByDisplayValue("main");
+			const input = getByDisplayValue("feature/foo");
 			fireEvent.input(input, { target: { value: "trunk" } });
 			fireEvent.keyDown(input, { key: "Enter" });
 
 			await waitFor(() => {
-				expect(h.invoke).toHaveBeenCalledWith("rename_branch", { path: REPO, oldName: "main", newName: "trunk" });
+				expect(h.invoke).toHaveBeenCalledWith("rename_branch", {
+					path: REPO,
+					oldName: "feature/foo",
+					newName: "trunk",
+				});
 			});
 		});
 
@@ -462,28 +466,28 @@ describe("BranchesTab", () => {
 			const { findByText, getByText, getByDisplayValue, queryByDisplayValue } = render(() => (
 				<BranchesTab repoPath={REPO} />
 			));
-			await findByText("main");
-			openContextMenuFor(getByText, "main");
+			await findByText("feature/foo");
+			openContextMenuFor(getByText, "feature/foo");
 			fireEvent.click(getByText("Rename"));
-			const input = getByDisplayValue("main");
+			const input = getByDisplayValue("feature/foo");
 			fireEvent.keyDown(input, { key: "Escape" });
 
-			expect(queryByDisplayValue("main")).toBeNull();
+			expect(queryByDisplayValue("feature/foo")).toBeNull();
 			expect(h.invoke).not.toHaveBeenCalledWith("rename_branch", expect.anything());
 		});
 
 		it("logs on rename failure", async () => {
 			mockInvokeDefaults({ rename_branch: () => Promise.reject(new Error("invalid name")) });
 			const { findByText, getByText, getByDisplayValue } = render(() => <BranchesTab repoPath={REPO} />);
-			await findByText("main");
-			openContextMenuFor(getByText, "main");
+			await findByText("feature/foo");
+			openContextMenuFor(getByText, "feature/foo");
 			fireEvent.click(getByText("Rename"));
-			const input = getByDisplayValue("main");
+			const input = getByDisplayValue("feature/foo");
 			fireEvent.input(input, { target: { value: "trunk" } });
 			fireEvent.keyDown(input, { key: "Enter" });
 
 			await waitFor(() => {
-				expect(h.appLoggerError).toHaveBeenCalledWith("git", "Failed to rename branch main", expect.any(Error));
+				expect(h.appLoggerError).toHaveBeenCalledWith("git", "Failed to rename branch feature/foo", expect.any(Error));
 			});
 		});
 	});

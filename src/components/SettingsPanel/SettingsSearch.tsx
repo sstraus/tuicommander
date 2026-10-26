@@ -1,5 +1,6 @@
 import { type Component, For, Show } from "solid-js";
 import { t } from "../../i18n";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import s from "./Settings.module.css";
 import type { SettingsShellTab } from "./SettingsShell";
@@ -23,14 +24,15 @@ export const SettingsSearchBox: Component<{ value: string; onInput: (value: stri
 			spellcheck={false}
 		/>
 		<Show when={props.value}>
-			<button
+			<Button
+				variant="ghost"
 				data-non-setting="Search or navigate the catalogue without reading owner values"
 				class={s.searchClear}
 				aria-label={t("settings.search.clear", "Clear search")}
 				onClick={() => props.onInput("")}
 			>
 				&times;
-			</button>
+			</Button>
 		</Show>
 	</div>
 );
@@ -53,6 +55,7 @@ export const SettingsSearchResults: Component<{
 					<For each={props.results}>
 						{(entry) => (
 							<button
+								data-control-layout="row"
 								data-non-setting="Search or navigate the catalogue without reading owner values"
 								class={s.searchResult}
 								onClick={() => props.onSelect(entry)}

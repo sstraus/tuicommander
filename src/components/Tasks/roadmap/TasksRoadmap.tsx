@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, onCleanup, Show, untrack } from
 import type { WorkItemProvider } from "../../../plugins/workItemProvider";
 import { createTasksQuery } from "../../../stores/tasksQuery";
 import type { WorkItemQuery, WorkItemRef } from "../../../types/work-items.gen";
+import { Button } from "../../ui/Button";
 import { Select } from "../../ui/Select";
 import { TaskRows } from "../list/TaskRows";
 import listStyles from "../list/tasksList.module.css";
@@ -55,21 +56,21 @@ export function TasksRoadmap(props: TasksRoadmapProps) {
 		<section class={s.roadmap} aria-label="Tasks roadmap">
 			<div class={s.toolbar}>
 				<div class={s.navigation}>
-					<button type="button" aria-label="Previous period" onClick={() => move(-1)}>
+					<Button type="button" aria-label="Previous period" onClick={() => move(-1)}>
 						<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
 							<path d="M10 2 4 8l6 6 1.4-1.4L6.8 8l4.6-4.6Z" />
 						</svg>
-					</button>
+					</Button>
 					<h2>{window().label}</h2>
-					<button type="button" aria-label="Next period" onClick={() => move(1)}>
+					<Button type="button" aria-label="Next period" onClick={() => move(1)}>
 						<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor" aria-hidden="true">
 							<path d="m6 2 6 6-6 6-1.4-1.4L9.2 8 4.6 3.4Z" />
 						</svg>
-					</button>
+					</Button>
 				</div>
-				<button type="button" onClick={() => setAnchor(new Date())}>
+				<Button type="button" onClick={() => setAnchor(new Date())}>
 					Today
-				</button>
+				</Button>
 				<label>
 					Zoom
 					<Select
@@ -81,13 +82,13 @@ export function TasksRoadmap(props: TasksRoadmapProps) {
 						<option value="quarter">Quarter</option>
 					</Select>
 				</label>
-				<button
+				<Button
 					type="button"
 					disabled={!props.provider || model.state().loading || props.visible === false}
 					onClick={() => void model.refresh()}
 				>
 					Refresh
-				</button>
+				</Button>
 			</div>
 			<div class={s.status} role="status" aria-live="polite">
 				<span>
@@ -128,14 +129,14 @@ export function TasksRoadmap(props: TasksRoadmapProps) {
 				</div>
 			</Show>
 			<Show when={model.state().nextCursor}>
-				<button
+				<Button
 					class={s.more}
 					type="button"
 					disabled={model.state().loading || props.visible === false}
 					onClick={() => void model.loadMore()}
 				>
 					Load more
-				</button>
+				</Button>
 			</Show>
 		</section>
 	);

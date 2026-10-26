@@ -407,11 +407,11 @@ mod tests {
                     .expect("capture");
             assert!(status.success());
             if stderr_only {
-                assert!(stdout.is_empty());
+                assert_eq!(stdout, [] as [u8; 0]);
                 assert_eq!(stderr, expected);
             } else {
                 assert_eq!(stdout, expected);
-                assert!(stderr.is_empty());
+                assert_eq!(stderr, [] as [u8; 0]);
             }
         }
     }

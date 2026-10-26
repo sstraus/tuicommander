@@ -1,5 +1,5 @@
 import { fireEvent, render } from "@solidjs/testing-library";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { mockInvoke } = vi.hoisted(() => {
 	return { mockInvoke: vi.fn().mockResolvedValue(undefined) };
@@ -15,7 +15,22 @@ vi.mock("../../invoke", () => ({
 }));
 
 import { IdeasPanel } from "../../components/IdeasPanel/IdeasPanel";
+import { appLogger } from "../../stores/appLogger";
 import { ideasStore } from "../../stores/ideas";
+
+// These component cases intentionally do not hydrate or persist the notes store.
+beforeEach(() => {
+	vi.spyOn(appLogger, "error").mockImplementation(() => {});
+});
+afterEach(() => {
+	for (const args of vi.mocked(appLogger.error).mock.calls) {
+		expect(args).toEqual([
+			"store",
+			"Refusing to persist ideas before a successful hydrate — notes.json left untouched",
+		]);
+	}
+	vi.mocked(appLogger.error).mockRestore();
+});
 
 const noop = () => {};
 
@@ -247,4 +262,22 @@ it("rejects empty Ideas narration while retaining the add control", () => {
 	expect(container.textContent).toContain("No ideas yet.");
 	expect(container.querySelector("textarea")?.placeholder).toBe("New idea…");
 	expect(getByTitle("Add idea (Enter)")).not.toBeNull();
+});
+
+it("catches edit image removal or Save losing the draft, and Send/Delete losing their idea", () => {
+	for (const idea of [...ideasStore.state.ideas]) ideasStore.removeIdea(idea.id);
+	ideasStore.addIdea("Original idea", null, null, ["/img/idea.png"]);
+	const onSendToTerminal = vi.fn();
+	const view = render(() => <IdeasPanel visible repoPath={null} onClose={noop} onSendToTerminal={onSendToTerminal} />);
+	fireEvent.click(view.getByRole("button", { name: "Edit idea" }));
+	fireEvent.click(view.getByRole("button", { name: "Remove image" }));
+	fireEvent.input(view.getByRole("textbox"), { target: { value: "Revised idea" } });
+	fireEvent.click(view.getByRole("button", { name: "Add idea (Enter)" }));
+	expect(ideasStore.state.ideas).toHaveLength(1);
+	expect(ideasStore.state.ideas[0]).toMatchObject({ text: "Revised idea", images: [] });
+	fireEvent.click(view.getByRole("button", { name: "Send to terminal" }));
+	expect(onSendToTerminal).toHaveBeenCalledWith("Revised idea");
+	expect(ideasStore.state.ideas[0].usedAt).not.toBeNull();
+	fireEvent.click(view.getByRole("button", { name: "Delete idea" }));
+	expect(ideasStore.state.ideas).toHaveLength(0);
 });

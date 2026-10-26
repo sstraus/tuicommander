@@ -42,7 +42,10 @@ def run(source: Path, args: list[str]) -> int:
                 staging.unlink(missing_ok=True)
 
         print(f"Starting dev executable: {directory / source.name}", file=sys.stderr)
-        child = subprocess.Popen([str(directory / source.name), *args])
+        child = subprocess.Popen(
+            [str(directory / source.name), *args],
+            env={**os.environ, "TUIC_DEV_BUILD_EXE": str(source)},
+        )
 
         def forward(signum: int, _frame: object) -> None:
             try:

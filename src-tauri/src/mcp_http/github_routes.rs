@@ -498,7 +498,12 @@ pub(super) async fn github_auth_status(State(state): State<Arc<AppState>>) -> Re
 }
 
 pub(super) async fn github_diagnostics(State(state): State<Arc<AppState>>) -> Response {
-    json_result(crate::github_auth::github_diagnostics_impl(&state).await)
+    json_result(crate::github_auth::github_diagnostics_impl(&state, false).await)
+}
+
+/// Explicit manual refresh releases retry exclusions; ordinary GET remains read-only.
+pub(super) async fn github_refresh_diagnostics(State(state): State<Arc<AppState>>) -> Response {
+    json_result(crate::github_auth::github_diagnostics_impl(&state, true).await)
 }
 
 // --- Multi-account: accounts + repo bindings (IPC/HTTP parity) ---
@@ -514,7 +519,7 @@ pub(super) async fn github_list_accounts() -> Response {
 
 // Desktop-only: the add/remove/resolve impls in github_account.rs are
 // #[cfg(feature = "desktop")] (keychain-backed). The remote daemon never serves
-// GitHub routes (build_remote_router omits them), so gate these handlers to match
+// GitHub account routes (build_remote_router omits them), so gate these handlers to match
 // their impls and keep the always-compiled lib building for tuic-remote (#094-ec55).
 #[cfg(feature = "desktop")]
 pub(super) async fn github_remove_account(
@@ -631,7 +636,7 @@ mod pr_action_route_tests {
         )
         .await;
         assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
-        assert!(!error_body(response).await.is_empty());
+        assert_ne!(error_body(response).await, "");
     }
 
     /// Catches (merge_pr_via_github_http -> Default): a refused merge answering 200 with no

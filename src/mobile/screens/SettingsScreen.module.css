@@ -1,5 +1,4 @@
 .screen {
-  --control-height: 44px;
   height: 100%;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
@@ -52,9 +51,6 @@
   white-space: nowrap;
 }
 
-.select:not([data-form-control]) { min-height: 44px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--bg-secondary); color: var(--fg-primary); font: inherit; }
-.select:not([data-form-control]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
 .connected {
   font-size: 13px;
   color: var(--success);
@@ -65,38 +61,6 @@
   font-size: 13px;
   color: var(--error);
   font-weight: 500;
-}
-
-.toggle {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  border-radius: 12px;
-  border: none;
-  background: var(--bg-tertiary);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  transition: background 0.2s ease;
-  padding: 0;
-}
-
-.toggleOn {
-  background: var(--accent);
-}
-
-.toggleThumb {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: white;
-  transition: transform 0.2s ease;
-}
-
-.toggleOn .toggleThumb {
-  transform: translateX(20px);
 }
 
 .hint {
@@ -134,15 +98,3 @@
   margin-left: auto;
   font-variant-numeric: tabular-nums;
 }
-
-.fontSizeControl button {
-  min-width: 44px;
-  min-height: 44px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-  font: inherit;
-}
-
-.fontSizeControl button:disabled { opacity: 0.5; }

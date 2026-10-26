@@ -95,6 +95,7 @@
 /config/remote-connections/x/connect
 /config/remote-connections/x/install
 /config/remote-connections/x/password
+/config/remote-connections/x/relay-pairing
 /config/remote-connections/x/token
 /config/remote-connections/x/update
 /config/repo-defaults
@@ -190,6 +191,7 @@
 /github/viewer-login
 /grok/usage
 /logs
+/mcp/audit
 /mcp/confirm-response
 /mcp/status
 /mcp/upstream-status
@@ -349,6 +351,7 @@
 /sessions/x/terminal/search-buffer
 /sessions/x/terminal/selection-text
 /sessions/x/terminal/styled-rows
+/sessions/x/usage
 /sessions/x/visible
 /sessions/x/write
 /sessions/x/write-parts

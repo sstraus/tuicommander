@@ -18,6 +18,7 @@
 
 /* Toolbar with view mode toggle */
 .toolbar {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 2px;
@@ -25,37 +26,6 @@
   border-bottom: 1px solid var(--border);
   background: var(--bg-secondary);
   flex-shrink: 0;
-}
-
-.modeBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 22px;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition: color 0.1s, background 0.1s;
-}
-
-.modeBtn:hover {
-  color: var(--fg-secondary);
-  background: var(--bg-highlight);
-}
-
-.modeBtn:disabled {
-  opacity: 0.3;
-  cursor: default;
-  pointer-events: none;
-}
-
-.modeBtnActive {
-  color: var(--accent);
-  background: var(--bg-highlight);
-  border-color: var(--accent);
 }
 
 /* Diff content wrapper (positions revert overlay) */
@@ -70,30 +40,15 @@
 .revertBtn {
   position: absolute;
   right: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-muted);
-  cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.1s, color 0.1s;
+  transition: opacity 0.1s;
   z-index: 2;
 }
 
 .revertBtnVisible {
   opacity: 1;
   pointer-events: auto;
-}
-
-.revertBtn:hover {
-  color: var(--error);
-  border-color: var(--error);
 }
 
 /* Hover hint on add/del rows — cursor shows they're selectable */
@@ -129,6 +84,7 @@
 }
 
 .selectionBar {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 4px;
@@ -138,61 +94,6 @@
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-dropdown);
   width: fit-content;
-}
-
-.restoreSelectedBtn {
-  padding: 4px 12px;
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: var(--font-sm);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.restoreSelectedBtn:hover {
-  background: var(--accent-hover);
-}
-
-.commentBtn {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 12px;
-  background: var(--bg-highlight);
-  color: var(--fg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-size: var(--font-sm);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
-}
-
-.commentBtn:hover {
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-}
-
-.clearSelectionBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  background: none;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--fg-muted);
-  font-size: var(--font-lg);
-  cursor: pointer;
-}
-
-.clearSelectionBtn:hover {
-  color: var(--fg-primary);
-  background: var(--bg-highlight);
 }
 
 /* Comment box (stacked above selection bar inside floater) */
@@ -210,20 +111,6 @@
 
 .commentTextarea {
   width: 100%;
-  padding: 6px 8px;
-  background: var(--bg-primary);
-  color: var(--fg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-size: var(--font-sm);
-  font-family: inherit;
-  resize: vertical;
-  min-height: 60px;
-  outline: none;
-}
-
-.commentTextarea:focus {
-  border-color: var(--accent);
 }
 
 .commentActions {
@@ -237,42 +124,6 @@
   color: var(--fg-muted);
   font-size: var(--font-xs);
   margin-right: auto;
-}
-
-.commentCancelBtn {
-  padding: 4px 10px;
-  background: none;
-  color: var(--fg-muted);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  font-size: var(--font-sm);
-  cursor: pointer;
-}
-
-.commentCancelBtn:hover {
-  color: var(--fg-primary);
-  background: var(--bg-highlight);
-}
-
-.commentSendBtn {
-  padding: 4px 12px;
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: var(--font-sm);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.commentSendBtn:hover {
-  background: var(--accent-hover);
-}
-
-.commentSendBtn:disabled {
-  opacity: 0.4;
-  cursor: default;
 }
 
 .commentErrorMsg {
@@ -291,20 +142,4 @@
   padding: 48px 16px;
   color: var(--fg-muted);
   font-size: var(--font-sm);
-}
-
-.largeDiffBtn {
-  padding: 4px 12px;
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: var(--font-sm);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.1s;
-}
-
-.largeDiffBtn:hover {
-  background: var(--accent-hover);
 }

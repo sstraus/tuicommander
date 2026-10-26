@@ -353,6 +353,18 @@ async fn agent_without_required_profile_pauses_with_a_durable_reason() {
     let project_alias = project.path().join(".");
     let project_path = project_alias.to_str().unwrap();
     let published = definition(project_path, false, true);
+    // A default install seeds a default Codex profile, so the pause needs two saved profiles and no default.
+    crate::config::save_agents_config(
+        crate::config::AgentsConfig::default(),
+        agents(serde_json::json!({"agents": {
+            "codex": {"codex_bypass_migrated": true},
+            "claude": {"run_configs": [
+                {"name": "alpha", "command": "claude"},
+                {"name": "beta", "command": "claude"}
+            ]}
+        }})),
+    )
+    .unwrap();
     let state = state(config.path());
     WorkflowRuntime::spawn(&state);
     owner_ready(&state).await;
@@ -378,7 +390,10 @@ async fn agent_without_required_profile_pauses_with_a_durable_reason() {
     let current = store.snapshot(&run.id).unwrap();
     assert_eq!(current.attempts.len(), 1);
     assert!(current.attempts[0].agent.is_none());
-    assert!(current.effects.is_empty());
+    assert_eq!(
+        current.effects,
+        [] as [crate::workflows::run::model::EffectIntent; 0]
+    );
     let notices = crate::progress::ProgressStore::open()
         .unwrap()
         .list_limited(
@@ -391,10 +406,190 @@ async fn agent_without_required_profile_pauses_with_a_durable_reason() {
         notices
             .entries
             .iter()
-            .any(|n| n.text.contains(&run.id) && n.text.contains("'sol'"))
+            .any(|n| n.text.contains(&run.id) && n.text.contains("mark one as default"))
     );
+    // catches: a pause whose cause lives only in the progress journal, so Incidents says none is retained.
+    let cause = current.pause_cause.as_deref().unwrap();
+    assert!(cause.contains("mark one as default"), "{cause}");
+    let incidents = crate::workflows::run::incidents::project_incidents(&current, None);
+    assert_eq!(incidents[0].cause, cause);
     assert_eq!(store.replay(&run.id).unwrap(), current);
     store
         .command(&run.id, "test:cancel", RunCommand::Cancel)
         .unwrap();
+}
+
+fn agents(json: serde_json::Value) -> crate::config::AgentsConfig {
+    serde_json::from_value(json).unwrap()
+}
+
+#[test]
+fn a_default_install_with_one_saved_profile_serves_every_role() {
+    // catches: hardcoded sol/sonnet names pausing a run on an install that saved another profile.
+    let config = agents(serde_json::json!({"agents": {"claude": {"run_configs": [
+        {"name": "mine", "command": "claude"}
+    ]}}}));
+    for role in [
+        AgentRole::Implementer,
+        AgentRole::Reviewer,
+        AgentRole::Coordinator,
+    ] {
+        assert_eq!(
+            super::super::runtime::effects::resolve_run_profile(&config, &role).unwrap(),
+            "mine"
+        );
+    }
+}
+
+#[test]
+fn the_default_profile_wins_over_other_saved_profiles_and_named_ones_win_over_it() {
+    // catches: picking an arbitrary saved profile; ignoring the legacy sol/sonnet names on configured installs.
+    let config = agents(serde_json::json!({"agents": {"claude": {"run_configs": [
+        {"name": "alpha", "command": "claude"},
+        {"name": "beta", "command": "claude", "is_default": true},
+        {"name": "sonnet", "command": "claude"}
+    ]}}}));
+    use super::super::runtime::effects::resolve_run_profile as resolve;
+    assert_eq!(resolve(&config, &AgentRole::Implementer).unwrap(), "beta");
+    assert_eq!(resolve(&config, &AgentRole::Reviewer).unwrap(), "sonnet");
+}
+
+#[test]
+fn several_profiles_without_a_default_say_what_to_do() {
+    // catches: guessing a model when the user never chose one.
+    let config = agents(serde_json::json!({"agents": {"claude": {"run_configs": [
+        {"name": "alpha", "command": "claude"},
+        {"name": "beta", "command": "claude"}
+    ]}}}));
+    let error =
+        super::super::runtime::effects::resolve_run_profile(&config, &AgentRole::Implementer)
+            .unwrap_err();
+    assert!(error.contains("mark one as default"), "{error}");
+}
+
+#[test]
+fn readiness_names_each_problem_once_for_a_definition_with_agents() {
+    // catches: the start dialog saying nothing before a run that cannot reach its first Agent step.
+    let (_config, project, _plan, _story, _template, _guard) = fixture();
+    let published = definition(project.path().to_str().unwrap(), false, true);
+    let problems = super::super::runtime::effects::profile_problems(
+        &published,
+        &crate::config::AgentsConfig::default(),
+    );
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("Settings > Agents"));
+}
+
+#[test]
+fn a_default_profile_that_bypasses_the_sandbox_is_refused_for_workflows() {
+    // catches: workflow agents inheriting a permission-skipping flag from the interactive default.
+    let config = agents(serde_json::json!({"agents": {"codex": {"run_configs": [
+        {"name": "Codex Default", "command": "codex",
+         "args": ["--dangerously-bypass-approvals-and-sandbox"], "is_default": true}
+    ]}}}));
+    use super::super::runtime::effects::resolve_run_profile as resolve;
+    let error = resolve(&config, &AgentRole::Implementer).unwrap_err();
+    assert!(
+        error.contains("Codex Default") && error.contains("--dangerously-bypass"),
+        "{error}"
+    );
+    // The user choosing that profile for workflows by name is allowed.
+    let chosen = agents(serde_json::json!({"agents": {"codex": {"run_configs": [
+        {"name": "sol", "command": "codex", "args": ["--dangerously-bypass-approvals-and-sandbox"]}
+    ]}}}));
+    assert_eq!(resolve(&chosen, &AgentRole::Implementer).unwrap(), "sol");
+}
+
+/// What the Start dialog would be told for a published Agent workflow under this saved config.
+fn readiness_under(agents_json: serde_json::Value) -> Vec<String> {
+    let (_config, project, _plan, _story, _template, _guard) = fixture();
+    let project_path = project.path().to_str().unwrap();
+    let published = definition(project_path, false, true);
+    crate::config::save_agents_config(crate::config::AgentsConfig::default(), agents(agents_json))
+        .unwrap();
+    match crate::workflows::run_action(
+        project_path,
+        crate::workflows::RunAction::StartReadiness {
+            definition_id: published.id.clone(),
+            definition_revision: published.revision,
+        },
+    )
+    .unwrap()
+    {
+        crate::workflows::RunReply::Readiness(problems) => problems,
+        other => panic!("unexpected reply {other:?}"),
+    }
+}
+
+#[test]
+fn readiness_refuses_every_effective_ego_yolo_default() {
+    // catches: a fallback that checks two flag spellings but launches ego with yolo through --mode forms or ego_mode.
+    for (args, ego_mode) in [
+        (serde_json::json!(["--mode=yolo"]), serde_json::json!(null)),
+        (
+            serde_json::json!(["--mode", "yolo"]),
+            serde_json::json!(null),
+        ),
+        (serde_json::json!([]), serde_json::json!("yolo")),
+    ] {
+        let problems = readiness_under(serde_json::json!({"agents": {
+            "codex": {"codex_bypass_migrated": true},
+            "ego": {"ego_mode": ego_mode, "run_configs": [
+                {"name": "Ego", "command": "ego", "args": args, "is_default": true}
+            ]}
+        }}));
+        assert!(
+            problems
+                .iter()
+                .all(|p| p.contains("'Ego'") && p.contains("yolo")),
+            "{args} {ego_mode}: {problems:?}"
+        );
+        assert!(!problems.is_empty(), "{args} {ego_mode}");
+    }
+}
+
+#[test]
+fn readiness_refuses_claude_permission_mode_and_codex_full_access_defaults() {
+    // catches: fallback agents bypassing permissions via value-taking CLI options instead of --dangerously-*.
+    // Options confirmed by installed claude --help and codex --help on 2026-10-23.
+    let mut missed = Vec::new();
+    for (agent, args) in [
+        ("claude", vec!["--permission-mode", "bypassPermissions"]),
+        ("claude", vec!["--permission-mode=bypassPermissions"]),
+        ("codex", vec!["--sandbox", "danger-full-access"]),
+        ("codex", vec!["-s", "danger-full-access"]),
+        ("codex", vec!["--sandbox=danger-full-access"]),
+    ] {
+        let problems = readiness_under(serde_json::json!({"agents": {
+            "codex": {"codex_bypass_migrated": true},
+            (agent): {"codex_bypass_migrated": true, "run_configs": [
+                {"name": "Interactive", "command": agent, "args": args, "is_default": true}
+            ]}
+        }}));
+        if problems.is_empty() || problems.iter().any(|p| !p.contains("'Interactive'")) {
+            missed.push(format!("{agent} {args:?}: {problems:?}"));
+        }
+    }
+    assert!(missed.is_empty(), "unsafe defaults accepted: {missed:?}");
+}
+
+#[test]
+fn readiness_picks_the_one_safe_default_among_per_agent_defaults_and_names_real_ambiguity() {
+    // catches: choosing the alphabetically first agent's default as if defaults were global.
+    let seeded_and_safe = readiness_under(serde_json::json!({"agents": {
+        "codex": {"codex_bypass_migrated": true, "run_configs": [
+            {"name": "Codex Default", "command": "codex",
+             "args": ["--dangerously-bypass-approvals-and-sandbox"], "is_default": true}]},
+        "claude": {"run_configs": [{"name": "Zed", "command": "claude", "is_default": true}]}
+    }}));
+    assert_eq!(seeded_and_safe, Vec::<String>::new());
+    let two_safe = readiness_under(serde_json::json!({"agents": {
+        "codex": {"codex_bypass_migrated": true, "run_configs": [
+            {"name": "Alpha", "command": "codex", "is_default": true}]},
+        "claude": {"run_configs": [{"name": "Zed", "command": "claude", "is_default": true}]}
+    }}));
+    assert!(
+        two_safe[0].contains("Alpha") && two_safe[0].contains("Zed"),
+        "{two_safe:?}"
+    );
 }

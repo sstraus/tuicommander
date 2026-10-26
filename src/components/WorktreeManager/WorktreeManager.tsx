@@ -9,6 +9,7 @@ import { worktreeManagerStore } from "../../stores/worktreeManager";
 import type { BranchPrStatus } from "../../types";
 import { formatRelativeTime } from "../../utils/time";
 import b from "../shared/branch.module.css";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import s from "./WorktreeManager.module.css";
 
@@ -230,20 +231,20 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
 				<div class={s.panel} onClick={(e) => e.stopPropagation()}>
 					<div class={s.header}>
 						<h3>Worktree Manager</h3>
-						<button class={s.close} onClick={() => worktreeManagerStore.close()}>
+						<Button variant="ghost" aria-label="Close" class={s.close} onClick={() => worktreeManagerStore.close()}>
 							&times;
-						</button>
+						</Button>
 					</div>
 
 					<Show when={selectionCount() > 0}>
 						<div class={s.batchBar}>
 							<span>{selectionCount()} selected</span>
-							<button class={s.batchMergeBtn} onClick={handleBatchMerge}>
+							<Button class={s.batchMergeBtn} onClick={handleBatchMerge}>
 								Merge &amp; Archive ({selectionCount()})
-							</button>
-							<button class={s.batchDeleteBtn} onClick={handleBatchDelete}>
+							</Button>
+							<Button variant="danger" class={s.batchDeleteBtn} onClick={handleBatchDelete}>
 								Delete ({selectionCount()})
-							</button>
+							</Button>
 						</div>
 					</Show>
 
@@ -254,20 +255,22 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
 							</Show>
 							<Show when={repoOptions().length > 1}>
 								<div class={s.pillsRow}>
-									<button
+									<Button
+										aria-pressed={!worktreeManagerStore.state.repoFilter}
 										class={`${s.filterPill} ${!worktreeManagerStore.state.repoFilter ? s.filterPillActive : ""}`}
 										onClick={() => worktreeManagerStore.setRepoFilter(null)}
 									>
 										All
-									</button>
+									</Button>
 									<For each={repoOptions()}>
 										{(repo) => (
-											<button
+											<Button
+												aria-pressed={worktreeManagerStore.state.repoFilter === repo.path}
 												class={`${s.filterPill} ${worktreeManagerStore.state.repoFilter === repo.path ? s.filterPillActive : ""}`}
 												onClick={() => worktreeManagerStore.setRepoFilter(repo.path)}
 											>
 												{repo.name}
-											</button>
+											</Button>
 										)}
 									</For>
 								</div>
@@ -367,29 +370,29 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
 										<Show when={props.actions} fallback={<span />}>
 											{(actions) => (
 												<div class={s.actions}>
-													<button
+													<Button
 														class={s.actionBtn}
 														title="Open terminal"
 														onClick={() => actions().onOpenTerminal(wt.repoPath, wt.workspaceId)}
 													>
 														&gt;_
-													</button>
-													<button
+													</Button>
+													<Button
 														class={s.actionBtn}
 														title="Merge & archive"
 														disabled={wt.isMain}
 														onClick={() => actions().onMergeAndArchive(wt.repoPath, wt.workspaceId)}
 													>
 														&#x2714;
-													</button>
-													<button
+													</Button>
+													<Button
 														class={`${s.actionBtn} ${s.actionBtnDanger}`}
 														title="Delete worktree"
 														disabled={wt.isMain}
 														onClick={() => actions().onDelete(wt.repoPath, wt.workspaceId)}
 													>
 														&#x2715;
-													</button>
+													</Button>
 												</div>
 											)}
 										</Show>
@@ -412,9 +415,9 @@ export const WorktreeManager: Component<{ actions?: WorktreeActions }> = (props)
 									</div>
 									<span />
 									<span />
-									<button class={s.pruneBtn} onClick={() => handlePrune(orphan)}>
+									<Button class={s.pruneBtn} onClick={() => handlePrune(orphan)}>
 										Prune
-									</button>
+									</Button>
 								</div>
 							)}
 						</For>

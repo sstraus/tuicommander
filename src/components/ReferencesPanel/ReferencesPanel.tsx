@@ -3,6 +3,7 @@ import { referencesStore } from "../../stores/references";
 import { onClickKeyDown } from "../../utils/a11y";
 import { openFileAction } from "../../utils/filePreview";
 import p from "../shared/panel.module.css";
+import { Button } from "../ui/Button";
 import s from "./ReferencesPanel.module.css";
 
 export interface ReferencesPanelProps {
@@ -25,9 +26,9 @@ export const ReferencesPanel: Component<ReferencesPanelProps> = (props) => {
 					</Show>
 				</div>
 				<div class={p.headerRight}>
-					<button class={p.close} onClick={props.onClose} title="Close">
+					<Button variant="ghost" class={p.close} onClick={props.onClose} title="Close">
 						×
-					</button>
+					</Button>
 				</div>
 			</div>
 			<Show when={referencesStore.querySymbol}>

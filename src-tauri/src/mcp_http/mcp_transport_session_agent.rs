@@ -506,7 +506,8 @@ fn begin_session_submit(
             reason,
             composer_state,
             pending,
-        } => BeginSubmission::Response(serde_json::json!({
+        } => {
+            let mut response = serde_json::json!({
             "status": "rejected",
             "submission_id": submission_id,
             "submitted": false,
@@ -522,7 +523,14 @@ fn begin_session_submit(
             // composer; a bare `queued_commands_pending` against an empty
             // Compose list left a caller retrying with nothing to act on.
             "pending": pending,
-        })),
+            });
+            if matches!(reason, "awaiting_input" | "selection_required")
+                && let Some(kind) = crate::pty::agent_submission_prompt_kind(state, &session_id)
+            {
+                response["prompt_kind"] = serde_json::json!(kind);
+            }
+            BeginSubmission::Response(response)
+        }
         crate::pty::AgentSubmissionWrite::Failed(detail) => {
             BeginSubmission::Response(serde_json::json!({
                 "status": "write_failed",
@@ -1048,6 +1056,13 @@ fn handle_session_unpaged(
                         "agent_state",
                         agent_state.map(serde_json::Value::String),
                     );
+                    let queued = crate::pty::queued_command_count(state, &id);
+                    if queued > 0 {
+                        session["queued_commands"] = serde_json::json!(queued);
+                        if let Some(reason) = crate::pty::queued_submission_blocker(state, &id) {
+                            session["queue_blocker"] = serde_json::json!(reason);
+                        }
+                    }
                     if let Some(snapshot) = session_state
                         .as_ref()
                         .filter(|snapshot| snapshot.last_activity_ms > 0)
@@ -1464,7 +1479,7 @@ fn handle_session_unpaged(
                 return serde_json::json!({"error": msg});
             }
             // Same core as HTTP resize_session: grid before SIGWINCH, same-dims no-op.
-            match crate::pty::resize_session_core(state, session_id, rows, cols) {
+            match crate::pty::resize_session_core(state, session_id, rows, cols, "mcp") {
                 Ok(Some(frame)) => crate::pty::send_grid_frame(state, session_id, frame),
                 Ok(None) => {}
                 Err(e) if e.starts_with("Session not found") => {

@@ -1,5 +1,24 @@
 # HTTP API Reference
 
+## Build identity
+
+`GET /api/version` returns `version` and `git_hash` in all builds. The desktop
+debug WebView also receives `window.__TUIC_DEV_BACKEND__` before frontend scripts:
+`exe` (current executable), `build_exe` (original Cargo artifact when the copy
+runner is used), `bridge_exe` (the used bridge build artifact, when present),
+`started_at_ms` (application-entry Unix milliseconds), and `git_hash`.
+
+Vite alone serves `GET /__tuic_backend_identity?backend=<URL-encoded launch JSON>`,
+uncached. It returns `status` (`current`, `stale`, or `unavailable`), a dismissal
+`key`, and, when available, `backend_id`, `tree_id`, and the checked input count.
+It reads Cargo's final binary dep-info and compares mtimes. This development
+endpoint is not part of the packaged HTTP server; release builds expose neither
+the launch global nor the warning module.
+
+Planner Ideas use the same `StoryAction` envelope as plans and stories: `add_idea {text,source?}`, `list_ideas`, and `update_idea {idea_id,text}`. IPC `story_action_command`, HTTP `POST /stories/action?path=<project>` (`{action:<StoryAction>,sessionId?:string}`), CLI `tuic story`, and MCP `workflow action=story input=<StoryAction>` share the Rust owner. Add/update return `{type:"idea",value:<camelCase Idea>}`; list returns `{type:"ideas",value:[...]}`. The project sets `repoPath`; list also includes global Ideas, while update requires project ownership. Source defaults to the bound session id or `local-api`. Text is trimmed to a nonblank maximum of 16000 characters; source is nonblank with a maximum of 256. Writes use the strict locked `notes.json` owner and publish payload-free `ideas-changed` on desktop and `/events` SSE. UI `save_notes(base,config)` / `PUT /config/notes` applies per-id and per-field intent instead of replacing stale arrays. See [Ideas through the planner](../user-guide/native-stories.md#ideas-through-the-planner).
+
+Native plans have a stored `revision`. `update_plan` takes `plan_id`, `expected_revision`, and `patch` with optional `title` and `source`. At least one field is required. The shared service validates both fields and commits them with one revision increment in one transaction; stale revisions leave the plan unchanged. Existing records start at revision 1. A metadata change changes the workflow planning and verification fingerprints, including plans with no stories. Source prose stays in the external document; the update does not move or rewrite that file. Source-changing edits are refused with a user error while a plan coordinator/planner attempt is running, including an unbound attempt or a paused run. Finish the coordinator or cancel its run first. Title-only and unchanged-source edits remain allowed. The same action is available through MCP, HTTP, desktop IPC, and `tuic story`.
+
 ## Scoped plugin settings
 
 `POST /api/plugins/{id}/settings` accepts the same tagged PluginAction body as IPC: describe, get, set, reset, patch. Get takes paths; writes take expectedRevision. It returns descriptors, a redacted snapshot or a commit reply. Errors are structured settings failures: 400 invalid path/value, 404 unloaded owner, 409 stale revision. Existing API authentication applies. No caller-selected target, store or file is accepted.
@@ -28,17 +47,38 @@ A distinct second start on a plan with a running or paused run is refused with `
 
 ## Workflow definitions
 
-`POST /workflows/definition/action?path=<absolute-project>` accepts one `WorkflowAction` object and returns `{ type, value }`. Actions are `seed_templates`, `create_draft {name,kind,graph}`, `list_drafts`, `get_draft {id}`, `update_draft {id,expected_revision,graph}`, `update_closure {id,expected_revision,closure}`, `update_checks {id,expected_revision,checks}`, `publish {id,expected_revision}`, and `get_published {id,revision}`. `closure` is `human` or `automatic`, defaults to `human`, and `automatic` cannot be published until its evidence gate exists. Each check has `id`, `argv`, and camel-case `timeoutSecs`; the published revision pins its `requiredChecks`. A graph has `nodes` and `edges`; see [Workflow definitions](../backend/workflows.md) for node, outcome, and publication rules. The path resolves to the canonical owning project. Published revisions are immutable. This endpoint defines workflows; it does not start one. Executable-graph validation errors during `publish` return HTTP 422 with `{ "error": "invalid workflow definition: ..." }`; invalid Pause targets name `resume_to`.
+`POST /workflows/definition/action?path=<absolute-project>` accepts one `WorkflowAction` object and returns `{ type, value }`. Actions are `seed_templates`, `create_draft {name,kind,graph}`, `list_drafts`, `get_draft {id}`, `update_draft {id,expected_revision,graph}`, `update_closure {id,expected_revision,closure}`, `update_checks {id,expected_revision,checks}`, `publish {id,expected_revision}`, and `get_published {id,revision}`. `closure` is `human` or `automatic`, defaults to `human`, and `automatic` cannot be published until its evidence gate exists. Each check has `id`, `argv`, and camel-case `timeoutSecs`; the published revision pins its `requiredChecks`. A graph has `nodes` and `edges`; see [Workflow definitions](../backend/workflows.md) for node, outcome, and publication rules. The path resolves to the canonical owning project. Published revisions are immutable. This endpoint defines workflows; it does not start one. Executable-graph validation errors during `publish` return HTTP 422 with `{ "error": "invalid workflow definition: ..." }`; invalid Pause targets name `resume_to`. Publishing a draft with no edit since its last publication also returns HTTP 422 (`draft revision has already been published`); each draft carries `lastPublishedDraftRevision`, and a client disables Publish while it equals `draftRevision`.
 
 ## Native stories
 
+Native stories expose `qa` for work that waits on manual checks. A criterion starts with `[MANUAL]`, or is marked through `set_criterion_manual {index,manual}`. Active work automatically enters QA when all unchecked criteria are manual; `submit_qa` explicitly requests that state. `reject_qa` returns QA to In progress; `approve` requires every criterion checked. QA keeps plans Active and dependencies blocked. All transitions retain expected-revision checks. See the [native stories guide](../user-guide/native-stories.md#manual-qa).
+
+### Reversible native record archival
+
+All native story transports share `archive_story`, `unarchive_story`, `archive_plan`, and `unarchive_plan`. Story actions take `story_id`; plan actions take `plan_id`. Each requires `expected_revision` and returns the updated record with its incremented `revision` and `archived` flag. Stale revisions fail without a write. Archival preserves status, criteria, dependencies, and child archive flags; it never deletes records or cascades to children.
+
+`list_plans` and `list_stories` default to `archived: false`. Set `archived: true` to select archived records. The story filter combines with the other filters and is bound into pagination cursors. `filtered_plan_view` also accepts camel-case `filter.archived` (default false), which selects archived list ids and board columns without changing the active-plan state calculation. Direct reads remain available. Default plan views and workflow dispatch omit archived stories; archived plans and stories cannot start manual or workflow work. Restore the parent plan before starting its stories.
+
+Both archive and restore refuse claimed stories and plans that contain a claimed story. An active or paused plan-root workflow owns the plan's story set. A story-root workflow owns its target and execution stories, not unrelated siblings. Cleanup of an owned story or its parent plan is refused until the run ends. The workflow writer lock remains held through the archive transaction, so a concurrent run cannot start between the ownership check and the write.
+
+`story_archive_history` (`story_id`) and `plan_archive_history` (`plan_id`) return `{type:"archive_history",value:[{revision,archived,actor}]}` in revision order. Events commit atomically with the record and retain caller provenance. Existing status transition history remains separate. Consecutive archive-only revisions preserve accepted-work integration receipts; a work change or a moved canonical Git ref still invalidates them. Example: `tuic story '{"action":"archive_story","story_id":"<id>","expected_revision":1}' --project /absolute/project`.
+
+
 `GET /stories/capabilities` returns JSON `true` when the running backend supports the native stories dialog. The frontend probes it once per dialog opening, recognizes a missing route by HTTP 404, and preserves other HTTP failures as errors.
 
-`POST /stories/action?path=<absolute-project>` accepts `{ "action": StoryAction, "sessionId"?: string }` and returns a tagged `StoryReply` (`{type, value}`). `StoryAction` uses a snake-case `action` discriminator: `create_plan`, `list_plans`, `list_plan_sources`, `add_plan_source`, `get_plan`, `plan_state`, `plan_view`, `create_story`, `list_stories`, `get_story`, `transition_history`, `add_dependency`, `remove_dependency`, `claim`, or `transition`. Create-story input uses the shared camel-case `NewStory` fields. `create_plan` takes `title` and `source`; `add_plan_source` takes a local document `source` and derives its title from front matter or the first heading. `list_plan_sources` reads top-level Markdown files in `plans/` and `.claude/plans/`, so a new file appears on the next call. It returns `{type:"plan_sources",value:[{title,source}]}`. `get_plan`, `plan_state`, `plan_view`, and `list_stories` take `plan_id`; `get_story` and `transition_history` take `story_id`; `claim` takes `story_id` and `expected_revision`; `transition` also takes a `command`; both dependency actions take `story_id`, `dependency_id`, and `expected_revision`. `transition_history` returns committed transitions with their resulting revisions, commands, and actor provenance.
+`POST /stories/action?path=<absolute-project>` accepts `{ "action": StoryAction, "sessionId"?: string }` and returns a tagged `StoryReply` (`{type, value}`). `StoryAction` uses a snake-case `action` discriminator: `create_plan`, `list_plans`, `list_plan_sources`, `add_plan_source`, `get_plan`, `plan_state`, `plan_view`, `filtered_plan_view`, `create_story`, `update_story`, `list_stories`, `get_story`, `transition_history`, `add_dependency`, `remove_dependency`, `claim`, or `transition`. Create-story input uses the shared camel-case `NewStory` fields. `create_plan` takes `title` and `source`; `add_plan_source` takes a local document `source` and derives its title from front matter or the first heading. `list_plan_sources` reads top-level Markdown files in `plans/` and `.claude/plans/`, so a new file appears on the next call. It returns `{type:"plan_sources",value:[{title,source}]}`. `get_plan`, `plan_state`, `plan_view`, and `list_stories` take `plan_id`; `get_story` and `transition_history` take `story_id`; `claim` takes `story_id` and `expected_revision`; `transition` also takes a `command`; both dependency actions take `story_id`, `dependency_id`, and `expected_revision`. `transition_history` returns committed transitions with their resulting revisions, commands, and actor provenance.
 
 Story transition provenance comes from host-validated credentials: desktop IPC and credential-authenticated HTTP record `human`; sessionless local HTTP records `local_api`. Managed calls record their session identity, including when the claiming session approves its own story. Actor identity never restricts actions; state, revision, project and claim-conflict rules remain enforced.
 
-`plan_view` returns `{type:"plan_view",value:{stories,state,wontFixCount,allCancelled}}`. Each story in `stories` includes a read-only `abandoned` boolean, derived from whether that story or any dependency reachable from it is WontFix. The summary and state are derived from the same read; no abandonment flag is persisted.
+`plan_view` returns `{type:"plan_view",value:{stories,state,wontFixCount,allCancelled,visibleStoryIds,columns}}`. Each story in `stories` includes a read-only `abandoned` boolean, derived from whether that story or any dependency reachable from it is WontFix. The summary and state are derived from the same read; no abandonment flag is persisted.
+
+`list_stories` accepts optional snake-case `state` (a native story status), `priority` (1–3), and `story_type` (feature, fix, refactor, chore, task). Filters combine with AND; omitted filters match all values, including untyped records. The type filter reads persisted `storyType`, not origin. With no `limit`, the reply remains the complete filtered `{type:"stories",value:Story[]}` in ascending id order. A `limit` of 1–100 opts into keyset pagination; `next_cursor` is an optional sibling of `value` and is absent on the final page. Send it as `cursor` with a limit and the same plan and filters. Cursors are versioned, limited to 1024 bytes, and rejected for another plan/query; invalid priority, limit, or cursor values return HTTP 422 user errors. Page size may change between requests. These are live reads, not retained snapshots: changes at or before an already consumed id require starting again without a cursor. Internal workflow dispatch still reads the full plan and retains priority/id ordering. Archive filtering uses the `archived` flag described below.
+
+`filtered_plan_view` takes `plan_id` and a camel-case `filter`: `{visibility:"all"|"open"|"closed",storyType?:"feature"|"fix"|"refactor"|"chore"|"task"|null,untypedOnly?:boolean}`. Defaults are all statuses and all types. Open excludes only `done` and `wont_fix`; closed includes those two states. `untypedOnly:true` cannot be combined with a non-null `storyType`. The reply is the same `plan_view` shape. Full `stories` and plan summary remain unfiltered for detail and dependency reads; `visibleStoryIds` and `columns:[{status,storyIds}]` are the Rust-owned display projection. The unfiltered action supplies the all-stories projection. Creation input and stored story JSON accept optional `storyType`; omitted historical values stay absent and untyped. No database migration assigns a type.
+
+`update_story` takes `story_id`, `expected_revision`, and a camel-case `patch`. Omitted fields stay unchanged. The patch accepts `title`, `priority` (1–3), `fileScope`, `origin` (including a plan step), nullable `storyType` (`feature`, `fix`, `refactor`, `chore`, `task`), optional `problem` and `risk` (`low`, `medium`, `high`), ordered `criteria`, and the final `dependencies` set. Null clears `storyType`, `problem` or `risk`; old story records default both to absent. Unknown fields, invalid values, cross-plan dependencies, duplicates, cycles and stale revisions are rejected without partial story writes. Only unclaimed Backlog/Ready stories without active or paused workflow ownership can be amended. Unique byte-identical criteria retain their checks after reorder; changed, new or ambiguous duplicate criteria become unchecked. A priority-only patch preserves all checks. Dependency changes recompute readiness. Planning and execution fingerprints include the amended requirements/revision, so existing evidence cannot certify changed work.
+
+`summary` returns `{type:"summary",value:{activePlans,inProgress,qa,done,total}}` for the project: plans whose derived state is active, and over their stories those `in_progress`, those waiting in `qa`, those `done`, and all except `wont_fix` and abandoned ones. The Plans and Stories toolbar button reads it; it is also available over IPC through `story_action_command`.
 
 The project path is resolved to its canonical owner, so a managed worktree shares its parent project's plans. Unknown action and create-story fields are rejected. Claim requires a live PTY session in that project. `transition` accepts the `start_manual` command to begin a Ready story without a terminal. Actor identity is tracking only; managed, local API and human callers use the same transition rules. `remove_dependency` accepts only a Backlog dependent with a direct WontFix prerequisite; it returns the revised story, Ready only when all remaining prerequisites are Done. WontFix never satisfies dependencies. A nonempty plan with only Done/WontFix stories has `plan_state: done`, while an empty plan is `draft`. Reads and writes verify the stored plan's project; a story ID alone grants no cross-project access. Revisions are required for mutations to detect stale clients. The same service backs desktop IPC and MCP. There is no import or export endpoint.
 
@@ -422,7 +462,10 @@ question is awaiting human input, a human reply can pass queued automated messag
 those messages remain parked until the question clears. The mobile client shows
 the returned `detail` on refusal and keeps the draft. Foreground ownership,
 unfinished drafts and uncertain prior writes still block submission. Automated
-`session action=submit` cannot answer a confident question.
+`session action=submit` may answer confirmed-idle conversational questions,
+including `progress blocked` reports, but cannot answer native dialogs. Native
+refusals include `prompt_kind`: `choice`, `approval`, `free_text`, or `question`.
+The human HTTP reply path retains its busy-question behavior.
 
 ### Write Several Inputs at Once
 
@@ -510,6 +553,10 @@ Returns recent output. Format controls what is returned:
 | `format` | (raw) | See table above |
 
 `format=log` reads from `VtLogBuffer` — a VT100-aware buffer that extracts only scrolled-off lines, suppressing alternate-screen TUI apps (vim, htop, claude). Ideal for mobile clients.
+
+The HTTP log response and log-WebSocket screen use the shared active agent identity.
+After agent exit, they keep the shell prompt and subsequent output even if old
+agent chrome remains on screen, and omit the historical agent `input_line`.
 
 `format=text` is a point-in-time canonical grid view. It does not concatenate
 the finalized log cursor with the visible screen, because growing a viewport can
@@ -1092,7 +1139,9 @@ Returns recent git commits.
 GET /repo/github?path=/path/to/repo
 ```
 
-Returns PR status, CI status, ahead/behind for current branch.
+Returns `has_remote`, `current_branch`, `ahead` and `behind`. This route and
+`/repo/prs`, `/repo/prs/batch` and `/repo/issues` are shared by desktop and
+headless servers. PR and CI snapshots are not part of this status object.
 
 ### PR Statuses (Batch)
 
@@ -1143,10 +1192,33 @@ Content-Type: application/json
 
 Reopens a closed issue via GitHub GraphQL API.
 
+### GitHub Poller Controls (Desktop and Headless)
+
+These existing handlers share one route registration on both servers. TCP uses
+normal server authentication; the local Unix socket remains trusted local IPC.
+
+| Method | Path | JSON body |
+|---|---|---|
+| POST | `/repo/github-poller/start` | `{ "paths": ["/repo"], "issueFilter": "all", "prHideDrafts": false }` |
+| POST | `/repo/github-poller/stop` | none |
+| POST | `/repo/github-poller/visibility` | `{ "visible": true }` |
+| POST | `/repo/github-poller/poll-repo` | `{ "path": "/repo" }` |
+| POST | `/repo/github-poller/update-paths` | `{ "paths": ["/repo"] }` |
+| POST | `/repo/github-poller/set-issue-filter` | `{ "filter": "all" }` |
+| GET / POST | `/repo/github-poller/api-debug` | POST: `{ "enabled": false }` |
+
+Start cold-starts the poller without a WebView. Control delivery returns
+`{"ok":true}` or an error when no poller accepts the command. API-debug reads
+return `{"enabled":false}` (or true); writes also return `ok`. Repository status
+is read through `/repo/github?path=...`; there is no separate poller-status route.
+PR/issue updates also reach `/events` SSE. Empty paths or a repository with no
+GitHub remote permit a credential-free lifecycle smoke; that does not verify
+GitHub authentication, network calls or populated snapshots.
+
 ### GitHub Auth & Diagnostics
 
 Browser/PWA parity for the GitHub settings panel. Registered on the loopback
-router only (the headless `tuic-remote` daemon does not expose GitHub).
+router only (the headless `tuic-remote` daemon exposes monitoring, not account/auth routes).
 
 ```
 GET  /github/viewer-login                       -> string (login)
@@ -1520,6 +1592,7 @@ GET    /config/remote-connections
 PUT    /config/remote-connections
 DELETE /config/remote-connections/{id}
 PUT    /config/remote-connections/{id}/password
+PUT    /config/remote-connections/{id}/relay-pairing
 GET    /config/remote-connections/{id}/password
 POST   /config/remote-connections/{id}/token
 POST   /config/remote-connections/{id}/install
@@ -1536,6 +1609,13 @@ daemon's in-memory session token. Successful password set/clear requests publish
 a value-free `settings-changed` event for `connections` after vault persistence;
 a failed vault write publishes nothing. Deployment pairing-token creation and
 persisted deployment-mode changes invalidate the same Settings section.
+`PUT .../relay-pairing` takes `{ "bundle": "tuic-pair-v1:..." }`, the text printed
+by `tuic-remote --relay-pair`. The bundle is parsed first; an unparsable one is
+rejected, nothing is stored and nothing is published. It is kept in the vault
+only (it holds the end-to-end secret) and an empty string forgets it. A
+successful change publishes the same value-free `connections` event. The
+connection status of a `relay` connection carries `relay_failure`
+(`relay_unreachable`, `daemon_offline`, `pairing_rejected`, `link_lost`).
 `PUT /config/remote-connections` takes `{ "base": null, "connection": {...} }`
 for a new machine, or the loaded connection as `base` when editing. The server
 merges only changed fields into that connection's latest locked record.
@@ -1640,7 +1720,7 @@ batch authentication with a five-second connect timeout, and caches results for
 GET /mcp/status
 ```
 
-Returns MCP server status (enabled, running, active sessions, connected MCP clients, maximum sessions). `native_tools` contains the unfiltered native MCP registry as `{name, summary, description}` entries, including disabled tools. `summary` is the first line of the full registry description. This Settings inventory is independent of upstream tools, collapse mode and progress tracking; MCP client discovery still applies all configured filters.
+Returns MCP server status (enabled, running, active sessions, connected MCP clients, maximum sessions). `tls_active` is true only while the current TCP listener serves with a loaded TLS configuration; Tailscale certificate capability does not set it. It becomes false when that serving task stops or is replaced. `native_tools` contains the unfiltered native MCP registry as `{name, summary, description}` entries, including disabled tools. `summary` is the first line of the full registry description. This Settings inventory is independent of upstream tools, collapse mode and progress tracking; MCP client discovery still applies all configured filters.
 
 ### Suspended Sessions
 
@@ -1731,7 +1811,7 @@ GET  /fs/read-external?path=/absolute/path/to/file
 POST /fs/write         { "repoPath": "...", "file": "...", "content": "..." }
 POST /fs/write-if-unchanged { "repoPath": "...", "file": "...", "expected": "...", "content": "..." } -> true | false (false: disk text differs from `expected`, nothing written)
 POST /fs/mkdir         { "repoPath": "...", "dir": "..." }
-POST /fs/delete        { "repoPath": "...", "path": "..." }
+POST /fs/delete        { "repoPath": "...", "path": "..." } # removes final symlink itself, even when dangling
 POST /fs/rename        { "repoPath": "...", "from": "...", "to": "..." }
 POST /fs/copy          { "repoPath": "...", "from": "...", "to": "..." }
 POST /fs/gitignore     { "repoPath": "...", "pattern": "..." }
@@ -2926,6 +3006,8 @@ Disconnect retires that host's existing shadows synchronously, independently
 of a pending handshake or a later reconnect generation. This is a bounded replay horizon,
 not unbounded or restart-persistent exactly-once delivery.
 
+`POST /stories/action` answers a mistake the user can fix with HTTP 422 and `{ "error": "..." }`: `add_plan_source` for a missing plan file (`plan document not found: <path>`) and `submit_review` with unchecked criteria (`criteria are incomplete: unchecked indexes N`). Other failures stay HTTP 500.
+
 Workflow definition and run APIs are actorless and share the same services across transports. Story transition actors track provenance and never restrict actions. Desktop IPC and valid HTTP credentials record Human; sessionless local requests record LocalApi; managed story requests record their session. Missing ConnectInfo on Unix sockets and in-process services means local/unknown caller metadata, not HTTP 500. Local token exchange is accepted; state, revision, project and integration checks remain enforced.
 
 ### Stored terminal marker coordinates
@@ -3222,8 +3304,8 @@ remains separate.
 
 | Method | Path | Request | Response |
 | --- | --- | --- | --- |
-| GET | `/repo/open-markdown-tabs` | `cwd` query: session directory | Array of `{id,title,relative_path,absolute_path,fs_root}` |
-| PUT | `/config/open-markdown-tabs` | `{tabs:[{id,repoPath,filePath,fsRoot?}]}` | `null` |
+| GET | `/repo/open-markdown-tabs` | `cwd` query: session directory | Array of `{id,title,relative_path,absolute_path,fs_root,opener_tuic_session?}` |
+| PUT | `/config/open-markdown-tabs` | `{tabs:[{id,repoPath,filePath,fsRoot?,openerTuicSession?}]}` | `null` |
 
 GET uses the existing remote authentication and returns 403 for unregistered
 directories. Repository/workspace ownership is computed by Rust. Only file tabs
@@ -3455,6 +3537,8 @@ and IPC use the same raw 500-Unicode-scalar text limit as MCP.
 
 ### GET /mcp/audit
 
+Gated by `mcp_call_audit_enabled` (default off in release, on in debug): when off the body is `{"enabled":false,"records":[]}`. Rows add `outcome`: `replied`, `error` or `cancelled`. IPC: `get_mcp_audit`.
+
 Returns a bounded, body-free runtime MCP call outcome projection (100 newest rows,
 1024 retained per instance). Includes call/parent correlation UUIDs, recognized
 operation, target digest, UTF-8 response text bytes, application error and separate
@@ -3506,3 +3590,49 @@ and semantics apply to desktop IPC state.
 ### Remote session closure
 
 MCP `session action=close` accepts a remote `connection_id` or connection-qualified session reference. The host resolves aliases on the owning daemon and sends authenticated `DELETE /sessions/{id}`. The caller's own PTY remains protected from self-close, and non-loopback MCP callers cannot invoke destructive close actions. A disconnected connection reports an error; it never falls back to a local session. HTTP DELETE and local MCP close use the same teardown, session-closed events and retained output tombstone. Repeating a close of a retained tombstone succeeds. Explicit close remains user-directed and is not limited to abandoned shells.
+
+GitHub diagnostics (`GET /github/diagnostics`) also returns `repo_access_errors`:
+owner/account/host groups with `repos: [{repo, reason, message}]` and an
+optional `oauth_app_url` for every github.com OAuth group, regardless of reason.
+`reason` is `not_found`, `forbidden` or `unknown`. Messages are the exact per-alias GraphQL errors.
+Only confirmed root `NOT_FOUND` responses enter `repos_not_found` and its 24-hour
+exclusion. Other denials are eligible for the next monitoring poll.
+
+Manual GitHub diagnostics refresh uses `POST /github/diagnostics` (no body). It
+clears the NOT_FOUND cooldown for all accounts and returns the same diagnostics
+DTO. `GET /github/diagnostics` remains read-only. This maps to
+`github_diagnostics` with `refresh: true` over IPC; omitted or false is read-only.
+
+### Detached checkout inventory
+
+`GET /repo/structure` and `GET /repo/summary` add `detached_worktrees` beside `worktree_paths`. Each record is `{path, head, short_head, directory_name, state: "detached"}`. The branch map and its workspace IDs do not change. `GET /worktrees/paths` remains a branch-only map for lifecycle and terminal placement. Both discovery backends retain detached checkouts in the additive inventory and exclude only the configured TUIC archive pool. Detached records are read-only sidebar information, not selectable workspaces.
+
+### Directory listing link metadata
+
+`GET /fs/list?repoPath=…&subdir=…` returns the same `DirEntry` shape as `list_directory` IPC. Symbolic links include optional `symlink_target` (link text) and `symlink_target_kind` (`directory`, `file`, or `unavailable`) fields and size 0. These fields are metadata only; existing repository containment checks still gate reads. Outside-link reads return a target-specific refusal.
+
+### Session usage
+
+`GET /sessions/{id}/usage` mirrors `get_session_usage(session_id)`. It returns
+`{agent, model, scope, source, availability, reason, observed_at_ms, stale, lines}`.
+Each line has `label` and `value`; the backend owns units and formatting.
+Availability is `available` or `unavailable`; unknown identity/timestamp fields
+are null, not inferred from defaults. Scope is `account_quota` or `session_usage`.
+Claude/Codex lines describe shared account windows, not session spend. ego v3
+lines retain token categories, currencies, unknown costs and separate subscription
+API-equivalent estimates. `observed_at_ms` for ego is report creation, not latest
+settlement. Remote sessions are forwarded to their owning daemon or are unavailable.
+The request is bounded to 30 seconds locally; ego stdout is capped at 4 MiB.
+
+Worktree discovery diagnostics (#2157): `/repo/structure` and `/repo/summary` also return `worktree_diagnostics: Array<{path: string, branch: string | null, state: "missing" | "duplicate_branch", guidance: string}>`. These records have no workspace ID and cannot select a branch workspace. `/worktrees/paths` remains a branch map with the same deterministic primary path used by lifecycle resolution. Discovery failures return errors and are not cached as empty inventories. MCP repository list entries expose discovery failures as `worktree_error`; ACP workspace resource entries use `worktreeError`.
+
+Unavailable detached registrations are excluded from automatic orphan cleanup in both Ask and On modes, including the Ask countdown. They remain repair diagnostics until restored or explicitly removed. Safe-only removal rechecks availability, so a directory moved after assessment cannot be pruned automatically. Explicit user-confirmed removal remains available.
+
+
+### Append-only story notes
+
+The shared story service accepts `add_note` with `story_id`, `expected_revision`, `text`, and optional `receipts` (an array of `{runId, commandId}`). `list_notes` takes `story_id` and returns `{type:"notes",value:StoryNote[]}` in append order; `add_note` returns `{type:"note",value:StoryNote}`. Each note includes `id`, `storyId`, `storyRevision`, `text`, `actor`, `createdAt` (Unix milliseconds), and `receipts`.
+
+The backend derives actor provenance and time. It checks the current story revision atomically with the append. A note does not advance the story revision or change its status, claim, criteria, or integration proof. Notes have no edit or delete action. Text must be nonblank and at most 16,000 characters; a note can reference at most 16 distinct receipts. Invalid note input is a user error (HTTP 422).
+
+Receipt references identify persisted workflow event receipts by run ID and command ID, not a policy check name. Each receipt must exist in the same project and plan as the story. The note stores only these identifiers, not a copy of the receipt. A reference is historical evidence, not an assertion that the story is approved or its integration checks are current. All actions use the existing project-scoped IPC, HTTP, MCP, and CLI boundary.

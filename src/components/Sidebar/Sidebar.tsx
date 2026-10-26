@@ -23,6 +23,7 @@ import { ContextMenu, type ContextMenuItem, createContextMenu } from "../Context
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { PromptDialog } from "../PromptDialog";
 import { ColorPickerDialog } from "../shared/ColorPickerDialog";
+import { Button } from "../ui/Button";
 import { CountBadge } from "../ui/CountBadge";
 import { GlobalWorkspaceEntry } from "./GlobalWorkspaceEntry";
 import { GroupSection } from "./GroupSection";
@@ -406,7 +407,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 				    engaged (toggled from the toolbar icon). Keeps it unmistakable that
 				    repos are hidden, so nobody panics, while taking zero space at rest. */}
 					<Show when={hasVisibleRepos() && uiStore.state.repoFilterActiveOnly}>
-						<button
+						<Button
+							size="compact"
+							variant="ghost"
 							class={s.filterStatus}
 							onClick={() => uiStore.setRepoFilterActiveOnly(false)}
 							data-tooltip={t("sidebar.filterShowAll", "Show all")}
@@ -424,7 +427,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 								{t("sidebar.filterActiveOnly", "Active only")} · {shownRepoCount()}/{totalRepoCount()}
 							</span>
 							<span class={s.filterStatusClear}>{t("sidebar.filterShowAll", "Show all")}</span>
-						</button>
+						</Button>
 					</Show>
 
 					{/* Repository Section */}
@@ -456,16 +459,18 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 							<Show when={!hasVisibleRepos()}>
 								<div class={s.empty}>
 									<p>{t("sidebar.noRepositories", "No repositories")}</p>
-									<button onClick={handleAddRepoClick}>{t("sidebar.addRepository", "Add Repository")}</button>
+									<Button size="compact" variant="ghost" onClick={handleAddRepoClick}>
+										{t("sidebar.addRepository", "Add Repository")}
+									</Button>
 								</div>
 							</Show>
 							{/* Filter hides every repo — offer a way back to "all" */}
 							<Show when={hasVisibleRepos() && !hasFilteredRepos()}>
 								<div class={s.empty}>
 									<p>{t("sidebar.noActiveRepos", "No repositories with open terminals")}</p>
-									<button onClick={() => uiStore.setRepoFilterActiveOnly(false)}>
+									<Button size="compact" variant="ghost" onClick={() => uiStore.setRepoFilterActiveOnly(false)}>
 										{t("sidebar.filterShowAll", "Show all")}
-									</button>
+									</Button>
 								</div>
 							</Show>
 						</div>
@@ -502,7 +507,9 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 							</text>
 						</svg>
 						<div class={s.gitQuickBtns}>
-							<button
+							<Button
+								size="compact"
+								variant="ghost"
 								class={s.gitQuickBtn}
 								classList={{ [s.loading]: props.runningGitOps?.has("pull") }}
 								disabled={props.runningGitOps?.has("pull")}
@@ -525,8 +532,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 									</svg>
 								</span>
 								{t("sidebar.gitPullLabel", "Pull")}
-							</button>
-							<button
+							</Button>
+							<Button
+								size="compact"
+								variant="ghost"
 								class={s.gitQuickBtn}
 								classList={{ [s.loading]: props.runningGitOps?.has("push") }}
 								disabled={props.runningGitOps?.has("push")}
@@ -549,8 +558,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 									</svg>
 								</span>
 								{t("sidebar.gitPushLabel", "Push")}
-							</button>
-							<button
+							</Button>
+							<Button
+								size="compact"
+								variant="ghost"
 								class={s.gitQuickBtn}
 								classList={{ [s.loading]: props.runningGitOps?.has("fetch") }}
 								disabled={props.runningGitOps?.has("fetch")}
@@ -585,8 +596,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 									</svg>
 								</span>
 								{t("sidebar.gitFetchLabel", "Fetch")}
-							</button>
-							<button
+							</Button>
+							<Button
+								size="compact"
+								variant="ghost"
 								class={s.gitQuickBtn}
 								classList={{ [s.loading]: props.runningGitOps?.has("stash") }}
 								disabled={props.runningGitOps?.has("stash")}
@@ -608,14 +621,16 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 									</svg>
 								</span>
 								{t("sidebar.gitStashLabel", "Stash")}
-							</button>
+							</Button>
 						</div>
 					</div>
 				</Show>
 
 				{/* Footer */}
 				<div class={s.footer}>
-					<button
+					<Button
+						size="compact"
+						variant="ghost"
 						class={s.addRepo}
 						onClick={handleAddRepoClick}
 						data-tooltip={t("sidebar.addRepository", "Add Repository")}
@@ -629,10 +644,12 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 							/>
 						</svg>
 						{t("sidebar.addRepository", "Add Repository")}
-					</button>
+					</Button>
 					<div class={s.footerIcons}>
 						<Show when={parkedCount() > 0}>
-							<button
+							<Button
+								size="compact"
+								variant="ghost"
 								class={s.footerAction}
 								onClick={() => setParkedPopoverVisible((v) => !v)}
 								aria-label={t("sidebar.parkedRepos", "Parked repositories")}
@@ -644,10 +661,12 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 									<path d="M5 8h6" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" />
 								</svg>
 								<CountBadge count={parkedCount()} />
-							</button>
+							</Button>
 						</Show>
 						<Show when={repositoriesStore.state.staleTempCandidates.length > 0}>
-							<button
+							<Button
+								size="compact"
+								variant="ghost"
 								class={s.footerAction}
 								onClick={() => setStaleTempPopoverVisible((v) => !v)}
 								aria-label={t("sidebar.staleTempRepos", "Stale repositories awaiting repair")}
@@ -665,14 +684,16 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 									<circle cx="8" cy="11.2" r="0.7" fill="currentColor" />
 								</svg>
 								<CountBadge count={repositoriesStore.state.staleTempCandidates.length} tone="error" />
-							</button>
+							</Button>
 						</Show>
 						<Show when={tunnelsStore.state.profiles.length > 0}>
 							{(() => {
 								const connectedCount = () =>
 									Object.values(tunnelsStore.state.activeTunnels).filter((t) => t.status.type === "connected").length;
 								return (
-									<button
+									<Button
+										size="compact"
+										variant="ghost"
 										class={s.footerAction}
 										onClick={() => tunnelPanelStore.toggle()}
 										aria-label={`SSH Tunnels (${connectedCount()} connected)`}
@@ -683,11 +704,13 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 											<path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" />
 										</svg>
 										<CountBadge count={connectedCount()} tone="success" />
-									</button>
+									</Button>
 								);
 							})()}
 						</Show>
-						<button
+						<Button
+							size="compact"
+							variant="ghost"
 							class={s.footerAction}
 							onClick={props.onOpenHelp}
 							aria-label={t("sidebar.help", "Help")}
@@ -704,8 +727,10 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 								/>
 								<circle cx="8" cy="11.5" r="0.7" fill="currentColor" />
 							</svg>
-						</button>
-						<button
+						</Button>
+						<Button
+							size="compact"
+							variant="ghost"
 							class={s.footerAction}
 							onClick={props.onOpenSettings}
 							aria-label={t("sidebar.settings", "Settings")}
@@ -721,7 +746,7 @@ export const Sidebar: Component<SidebarProps> = (props) => {
 								/>
 								<circle cx="8" cy="8" r="2" stroke="currentColor" stroke-width="1.2" />
 							</svg>
-						</button>
+						</Button>
 					</div>
 				</div>
 

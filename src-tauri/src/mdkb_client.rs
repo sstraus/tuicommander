@@ -77,8 +77,8 @@ mod platform {
     pub struct MdkbClient;
 
     impl MdkbClient {
-        pub fn socket_path() -> PathBuf {
-            PathBuf::new()
+        pub fn socket_path() -> Option<PathBuf> {
+            None
         }
 
         pub async fn connect() -> Result<Self> {
@@ -228,14 +228,24 @@ mod platform {
     }
 
     impl MdkbClient {
-        pub fn socket_path() -> PathBuf {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("/tmp"))
-                .join(".mdkb/daemon-hook.sock")
+        /// mdkb's daemon socket, `~/.mdkb/daemon-hook.sock`. `None` when there
+        /// is no home directory: there is no shared fallback (a predictable
+        /// socket in `/tmp` is one any local user could plant).
+        pub fn socket_path() -> Option<PathBuf> {
+            Self::socket_path_in(dirs::home_dir())
+        }
+
+        pub(crate) fn socket_path_in(home: Option<PathBuf>) -> Option<PathBuf> {
+            home.map(|home| home.join(".mdkb/daemon-hook.sock"))
         }
 
         pub async fn connect() -> Result<Self> {
-            let path = Self::socket_path();
+            Self::connect_to(Self::socket_path()).await
+        }
+
+        pub(crate) async fn connect_to(path: Option<PathBuf>) -> Result<Self> {
+            let path =
+                path.context("mdkb: no home directory, so no daemon socket to connect to")?;
             let stream = UnixStream::connect(&path)
                 .await
                 .with_context(|| format!("mdkb: connect to {}", path.display()))?;
@@ -417,6 +427,23 @@ pub(crate) mod tests {
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
     use tokio::net::{UnixListener, UnixStream};
+
+    // Catches: a `/tmp` (or any shared) fallback when HOME is unresolvable.
+    #[test]
+    fn no_home_means_no_daemon_socket() {
+        assert_eq!(MdkbClient::socket_path_in(None), None);
+        assert_eq!(
+            MdkbClient::socket_path_in(Some(PathBuf::from("/h"))),
+            Some(PathBuf::from("/h/.mdkb/daemon-hook.sock"))
+        );
+    }
+
+    // Catches: connect() reaching for any socket when there is no path.
+    #[tokio::test]
+    async fn connect_without_socket_path_errors() {
+        let err = MdkbClient::connect_to(None).await.unwrap_err();
+        assert!(err.to_string().contains("no home directory"), "{err}");
+    }
 
     async fn spawn_mock_server() -> (PathBuf, tokio::task::JoinHandle<()>) {
         let dir = crate::test_support::short_socket_tempdir();
@@ -751,7 +778,13 @@ pub(crate) mod tests {
         // Will fail unless mdkb daemon is actually running — that's expected in test env
         // The important thing is it doesn't panic
         if let Err(err) = result {
-            assert!(err.to_string().contains("mdkb: connect"));
+            // With no home directory there is no socket path to dial at all.
+            let want = if MdkbClient::socket_path().is_some() {
+                "mdkb: connect"
+            } else {
+                "no home directory"
+            };
+            assert!(err.to_string().contains(want), "{err}");
         }
     }
 

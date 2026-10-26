@@ -113,7 +113,7 @@ pub(crate) async fn create_pty(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
-    let vt_log = state.new_vt_log_buffer(24, 220, VT_LOG_BUFFER_CAPACITY);
+    let vt_log = state.new_vt_log_buffer(rows, cols, VT_LOG_BUFFER_CAPACITY);
     state
         .grid
         .vt_log_buffers
@@ -284,7 +284,7 @@ pub(crate) async fn create_pty_with_worktree(
         session_id.clone(),
         Mutex::new(OutputRingBuffer::new(OUTPUT_RING_BUFFER_CAPACITY)),
     );
-    let vt_log = state.new_vt_log_buffer(24, 220, VT_LOG_BUFFER_CAPACITY);
+    let vt_log = state.new_vt_log_buffer(rows, cols, VT_LOG_BUFFER_CAPACITY);
     state
         .grid
         .vt_log_buffers
@@ -454,7 +454,8 @@ pub(crate) async fn resize_pty(
     cols: u16,
 ) -> Result<(), String> {
     let state = Arc::clone(&state);
-    let resize_frame = resize_session_off_thread(&state, session_id.clone(), rows, cols).await?;
+    let resize_frame =
+        resize_session_off_thread(&state, session_id.clone(), rows, cols, "ipc").await?;
     // Flush the post-resize frame so the viewport repaints without waiting for the
     // next PTY data event (fixes blank screen after zoom on static content).
     if let Some(frame) = resize_frame {
@@ -803,17 +804,27 @@ pub(crate) fn ack_terminal_frame(
     received: u64,
     visible: Option<bool>,
 ) {
+    ack_terminal_frame_core(&state, &session_id, epoch, received, visible);
+}
+
+#[cfg(feature = "desktop")]
+pub(super) fn ack_terminal_frame_core(
+    state: &AppState,
+    session_id: &str,
+    epoch: u64,
+    received: u64,
+    visible: Option<bool>,
+) {
     if let Some(visible) = visible
-        && let Some(channel) = state.grid.channels.get(&session_id)
+        && let Some(channel) = state.grid.channels.get(session_id)
         && channel.epoch == epoch
     {
         channel.visible.store(visible, Ordering::Relaxed);
     }
-    if let Some(gate) = state.grid.gates.get(&session_id)
-        && gate.ack(epoch, received)
-        && let Some(dirty) = state.grid.frame_dirty.get(&session_id)
-    {
-        dirty.store(true, Ordering::Relaxed);
+    if let Some(gate) = state.grid.gates.get(session_id) {
+        // A receipt reopens delivery; it is not new terminal damage. The ticker
+        // retains actual reader damage and missed-frame repair debt while gated.
+        gate.ack(epoch, received);
     }
 }
 
@@ -882,7 +893,7 @@ pub(crate) fn terminal_exit_alt_screen(
             if !vt.is_alternate_screen() {
                 return false;
             }
-            vt.process(b"\x1b[?1049l\x1b[?1047l\x1b[?47l\x1b[?25h\x1b[0m");
+            vt.process_local(b"\x1b[?1049l\x1b[?1047l\x1b[?47l\x1b[?25h\x1b[0m");
             (true, vt.serialize_dirty_rows())
         };
         if was_alt {

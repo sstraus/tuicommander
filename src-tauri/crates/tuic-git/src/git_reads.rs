@@ -46,6 +46,11 @@ pub trait GitReads: Send + Sync {
         &self,
         repo: &Path,
     ) -> Result<HashMap<String, crate::worktree::WorkspaceWorktree>, String>;
+    fn worktree_inventory(
+        &self,
+        repo: &Path,
+        archive_pool: Option<&Path>,
+    ) -> Result<crate::worktree::WorktreeInventory, String>;
     fn status_counts(&self, repo: &Path) -> StatusCounts;
     fn diff_stats(&self, repo: &Path, scope: Option<&str>) -> DiffStats;
     fn blame(&self, repo: &Path, file: &str) -> Result<Vec<BlameLine>, String>;
@@ -81,6 +86,14 @@ impl GitReads for CliGitReads {
         repo: &Path,
     ) -> Result<HashMap<String, crate::worktree::WorkspaceWorktree>, String> {
         crate::worktree::get_worktree_paths_raw(&repo.to_string_lossy())
+    }
+
+    fn worktree_inventory(
+        &self,
+        repo: &Path,
+        archive_pool: Option<&Path>,
+    ) -> Result<crate::worktree::WorktreeInventory, String> {
+        crate::worktree::get_worktree_inventory_raw(&repo.to_string_lossy(), archive_pool)
     }
 
     fn status_counts(&self, repo: &Path) -> StatusCounts {
@@ -573,8 +586,8 @@ impl GixGitReads {
                     continue;
                 }
                 let short = reference.name().shorten().to_str_lossy().into_owned();
-                if short.ends_with("/HEAD") {
-                    continue; // skip origin/HEAD and similar symbolic pointers
+                if full.starts_with("refs/remotes/") && full.ends_with("/HEAD") {
+                    continue; // skip a remote's HEAD symref (not e.g. a local `a/HEAD`)
                 }
                 let Ok(id) = reference.peel_to_id() else {
                     continue;
@@ -756,8 +769,9 @@ impl GitReads for GixGitReads {
                 continue;
             }
             let name = reference.name().shorten().to_str_lossy().into_owned();
-            // Skip the synthetic origin/HEAD (and any */HEAD) pointer.
-            if name == "origin/HEAD" || name.ends_with("/HEAD") {
+            // Skip a remote's HEAD symref (refs/remotes/<remote>/HEAD). Judged on
+            // the full refname so a local branch like `feature/HEAD` survives.
+            if full.starts_with("refs/remotes/") && full.ends_with("/HEAD") {
                 continue;
             }
             let is_remote = full.starts_with("refs/remotes/");
@@ -956,67 +970,49 @@ impl GitReads for GixGitReads {
         &self,
         repo: &Path,
     ) -> Result<HashMap<String, crate::worktree::WorkspaceWorktree>, String> {
+        let mut paths = self.worktree_inventory(repo, None)?.worktree_paths;
+        // Legacy lifecycle callers still address branch workspaces only.
+        paths.retain(|_, entry| !crate::worktree::is_archived_checkout(Path::new(&entry.path)));
+        Ok(paths)
+    }
+
+    fn worktree_inventory(
+        &self,
+        repo: &Path,
+        archive_pool: Option<&Path>,
+    ) -> Result<crate::worktree::WorktreeInventory, String> {
         let grepo = self.repo(repo)?;
-        let mut map = HashMap::new();
-        // `git worktree list` reports resolved real paths (symlinks followed,
-        // e.g. macOS /var -> /private/var). Match that so paths are byte-equal.
-        let real = |p: &Path| -> String {
-            let resolved = std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-            git_spelling(&resolved.to_string_lossy())
+        let mut entries = Vec::new();
+        let mut add = |base: &Path| {
+            let path = std::fs::canonicalize(base).unwrap_or_else(|_| base.to_path_buf());
+            let head = crate::git::resolve_git_dir(&path)
+                .and_then(|dir| std::fs::read_to_string(dir.join("HEAD")).ok())
+                .unwrap_or_default();
+            let branch = crate::git::read_branch_from_head(&path);
+            entries.push(crate::worktree::WorktreeEntry {
+                path: git_spelling(&path.to_string_lossy()),
+                detached: branch.is_none() && !head.trim().is_empty() && !head.starts_with("ref:"),
+                branch,
+                head: head.trim().to_string(),
+            });
         };
-
-        // Main worktree (gix's worktrees() lists only LINKED ones). Standard
-        // non-bare layout: the main work dir is the `.git` directory's parent.
-        if let Some(main_wd) = grepo.common_dir().parent()
-            && main_wd.exists()
-            && let Some(branch) = crate::git::read_branch_from_head(main_wd)
+        // Resolve common-dir before taking its parent: linked discovery may return
+        // a path ending in `../..`, whose lexical parent is not the main checkout.
+        let common = std::fs::canonicalize(grepo.common_dir())
+            .map_err(|error| format!("Cannot resolve Git common directory: {error}"))?;
+        if !grepo.is_bare()
+            && let Some(main) = common.parent()
         {
-            // A git worktree's workspace id currently is its branch.
-            map.insert(
-                branch.clone(),
-                crate::worktree::WorkspaceWorktree {
-                    branch,
-                    path: real(main_wd),
-                    kind: crate::worktree::WorkspaceKind::Worktree,
-                    warm_artifacts: None,
-                    lifecycle_status: None,
-                },
-            );
+            add(main);
         }
-
-        // Linked worktrees on a branch whose directory still exists.
         for proxy in grepo.worktrees().map_err(|e| e.to_string())? {
-            let Ok(base) = proxy.base() else { continue };
-            if !base.exists() {
-                continue;
-            }
-            // Recycled checkouts parked in `__archived/` are a pool, not workspaces.
-            if crate::worktree::is_archived_checkout(&base) {
-                continue;
-            }
-            let path = real(&base);
-            // A worktree mid-rebase has a detached HEAD. Recover the
-            // pre-rebase branch from git's own state files, otherwise the row vanishes from the
-            // sidebar and its terminals are closed mid-conflict-resolution (GH #112).
-            // Only the admin HEAD is checkout-specific. Opening a full gix repository
-            // here rereads shared config and object-store layout for every workspace.
-            let branch = crate::git::read_branch_from_head(&base)
-                .or_else(|| crate::worktree::operation_head_branch(&base.to_string_lossy()));
-            if let Some(branch) = branch {
-                map.insert(
-                    branch.clone(),
-                    crate::worktree::WorkspaceWorktree {
-                        branch,
-                        path,
-                        kind: crate::worktree::WorkspaceKind::Worktree,
-                        warm_artifacts: None,
-                        lifecycle_status: None,
-                    },
-                );
-            }
+            let base = proxy.base().map_err(|error| format!(
+                "Cannot read worktree registration {}: {error}. Inspect git worktree list --porcelain and run git worktree repair from the checkout.",
+                proxy.git_dir().display()
+            ))?;
+            add(&base);
         }
-
-        Ok(map)
+        Ok(crate::worktree::checkout_inventory(entries, archive_pool))
     }
 
     // status_counts via gix: classify status items into the panel's staged /
@@ -1220,6 +1216,19 @@ impl GitReadsRouter {
         }?;
         crate::worktree::attach_warm_statuses(&mut paths);
         Ok(paths)
+    }
+
+    pub fn worktree_inventory(
+        &self,
+        repo: &Path,
+        archive_pool: Option<&Path>,
+    ) -> Result<crate::worktree::WorktreeInventory, String> {
+        let mut inventory = match self.backend.worktree_paths {
+            Backend::Cli => self.cli.worktree_inventory(repo, archive_pool),
+            Backend::Gix => self.gix.worktree_inventory(repo, archive_pool),
+        }?;
+        crate::worktree::attach_warm_statuses(&mut inventory.worktree_paths);
+        Ok(inventory)
     }
 
     pub fn status_counts(&self, repo: &Path) -> StatusCounts {
@@ -1599,6 +1608,356 @@ mod tests {
             .to_string();
         let cli_head = run_git(&repo, &["rev-parse", "HEAD"]).trim().to_string();
         assert_eq!(gix_head, cli_head);
+    }
+
+    /// Catches branch-keyed insertion silently overwriting a forced duplicate checkout.
+    #[test]
+    fn discovery_2157_duplicate_branch_preserves_every_path() {
+        let (_guard, repo) = fixture_repo();
+        let linked = tempfile::tempdir().unwrap();
+        let duplicate = linked.path().join("duplicate-main");
+        run_git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "--force",
+                duplicate.to_str().unwrap(),
+                "main",
+            ],
+        );
+        let third = linked.path().join("another-main");
+        run_git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "--force",
+                third.to_str().unwrap(),
+                "main",
+            ],
+        );
+        let expected = [repo.clone(), duplicate, third];
+        let mut failures = Vec::new();
+        for (name, reads) in [
+            ("cli", &CliGitReads as &dyn GitReads),
+            ("gix", &GixGitReads::new() as &dyn GitReads),
+        ] {
+            let actual = reads.worktree_inventory(&repo, None).unwrap();
+            let legacy = crate::worktree::get_worktree_paths_raw(repo.to_str().unwrap()).unwrap();
+            assert_eq!(
+                actual.worktree_paths["main"].path, legacy["main"].path,
+                "discovery and lifecycle must address the same duplicate checkout"
+            );
+            let inventory = serde_json::to_value(actual).unwrap();
+            for path in &expected {
+                let path = git_spelling(&std::fs::canonicalize(path).unwrap().to_string_lossy());
+                let selectable = inventory["worktree_paths"]
+                    .as_object()
+                    .unwrap()
+                    .values()
+                    .any(|w| w["path"] == path);
+                let diagnostic = inventory["worktree_diagnostics"]
+                    .as_array()
+                    .is_some_and(|rows| {
+                        rows.iter()
+                            .any(|w| w["path"] == path && w["state"] == "duplicate_branch")
+                    });
+                if !selectable && !diagnostic {
+                    failures.push(format!("{name}: {path}"));
+                }
+            }
+        }
+        assert!(
+            failures.is_empty(),
+            "duplicate checkouts lost: {failures:?}"
+        );
+    }
+
+    /// Catches moved/deleted registrations disappearing without non-selectable repair guidance.
+    #[test]
+    fn discovery_2157_missing_registrations_have_repair_diagnostics() {
+        let (_guard, repo) = fixture_repo();
+        let linked = tempfile::tempdir().unwrap();
+        let mut expected = Vec::new();
+        for branch in ["deleted-registration", "moved-registration"] {
+            let path = linked.path().join(branch);
+            run_git(
+                &repo,
+                &["worktree", "add", "-b", branch, path.to_str().unwrap()],
+            );
+            expected.push(git_spelling(
+                &std::fs::canonicalize(&path).unwrap().to_string_lossy(),
+            ));
+            if branch.starts_with("deleted") {
+                std::fs::remove_dir_all(path).unwrap();
+            } else {
+                std::fs::rename(&path, linked.path().join("new-location")).unwrap();
+            }
+        }
+        let before = run_git(&repo, &["worktree", "list", "--porcelain", "-z"]);
+        let mut failures = Vec::new();
+        for (name, reads) in [
+            ("cli", &CliGitReads as &dyn GitReads),
+            ("gix", &GixGitReads::new() as &dyn GitReads),
+        ] {
+            let inventory =
+                serde_json::to_value(reads.worktree_inventory(&repo, None).unwrap()).unwrap();
+            for path in &expected {
+                if !inventory["worktree_diagnostics"]
+                    .as_array()
+                    .is_some_and(|rows| {
+                        rows.iter().any(|w| {
+                            w["path"] == *path
+                                && w["state"] == "missing"
+                                && w["guidance"]
+                                    .as_str()
+                                    .is_some_and(|s| s.contains("git worktree repair"))
+                        })
+                    })
+                {
+                    failures.push(format!("{name}: {path}"));
+                }
+                assert!(
+                    !inventory["worktree_paths"]
+                        .as_object()
+                        .unwrap()
+                        .values()
+                        .any(|w| w["path"] == *path)
+                );
+            }
+        }
+        assert_eq!(
+            run_git(&repo, &["worktree", "list", "--porcelain", "-z"]),
+            before,
+            "discovery must not prune registrations"
+        );
+        assert!(
+            failures.is_empty(),
+            "missing repair diagnostics: {failures:?}"
+        );
+    }
+
+    /// Catches bisect detachment losing the original branch despite Git's BISECT_START.
+    #[test]
+    fn discovery_2157_bisect_recovers_original_branch() {
+        let (_guard, repo) = fixture_repo();
+        let linked = tempfile::tempdir().unwrap();
+        let path = linked.path().join("bisect");
+        run_git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "bisect-work",
+                path.to_str().unwrap(),
+            ],
+        );
+        run_git(&path, &["bisect", "start", "HEAD", "HEAD~2"]);
+        assert_eq!(
+            run_git(&path, &["rev-parse", "--abbrev-ref", "HEAD"]).trim(),
+            "HEAD"
+        );
+        let mut missing = Vec::new();
+        for (name, reads) in [
+            ("cli", &CliGitReads as &dyn GitReads),
+            ("gix", &GixGitReads::new() as &dyn GitReads),
+        ] {
+            let inventory = reads.worktree_inventory(&repo, None).unwrap();
+            if !inventory
+                .worktree_paths
+                .values()
+                .any(|w| w.branch == "bisect-work")
+            {
+                missing.push(name);
+            }
+        }
+        run_git(&path, &["bisect", "reset"]);
+        assert!(missing.is_empty(), "bisect branch lost in {missing:?}");
+    }
+
+    /// Catches interpreting a relative gitdir against the process cwd during rebase recovery.
+    #[test]
+    fn discovery_2157_relative_gitdir_rebase_recovers_branch() {
+        let (_guard, repo) = fixture_repo();
+        let path = repo.join("relative-checkout");
+        run_git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "rebase-work",
+                path.to_str().unwrap(),
+                "feature",
+            ],
+        );
+        let relative = run_git(&path, &["rev-parse", "--path-format=relative", "--git-dir"]);
+        std::fs::write(path.join(".git"), format!("gitdir: {}\n", relative.trim())).unwrap();
+        assert!(
+            crate::git_cli::git_cmd(&path)
+                .args(["rebase", "--exec", "exit 1", "main"])
+                .run()
+                .is_err()
+        );
+        assert_eq!(
+            run_git(&path, &["rev-parse", "--abbrev-ref", "HEAD"]).trim(),
+            "HEAD"
+        );
+        let mut missing = Vec::new();
+        for (name, reads) in [
+            ("cli", &CliGitReads as &dyn GitReads),
+            ("gix", &GixGitReads::new() as &dyn GitReads),
+        ] {
+            let inventory = reads.worktree_inventory(&repo, None).unwrap();
+            if !inventory
+                .worktree_paths
+                .values()
+                .any(|w| w.branch == "rebase-work")
+            {
+                missing.push(name);
+            }
+        }
+        run_git(&path, &["rebase", "--abort"]);
+        assert!(
+            missing.is_empty(),
+            "relative-gitdir rebase branch lost in {missing:?}"
+        );
+    }
+
+    /// Catches detached HEAD checkouts disappearing instead of reaching the sidebar inventory.
+    #[test]
+    fn discovery_2156_detached_checkouts_are_explicit() {
+        let (_guard, repo) = fixture_repo();
+        let linked = tempfile::tempdir().unwrap();
+        let detached = linked.path().join("detached-checkout");
+        run_git(
+            &repo,
+            &["worktree", "add", "--detach", detached.to_str().unwrap()],
+        );
+        let expected = git_spelling(&std::fs::canonicalize(&detached).unwrap().to_string_lossy());
+        let expected_head = run_git(&detached, &["rev-parse", "HEAD"])
+            .trim()
+            .to_string();
+        let mut missing = Vec::new();
+        for (name, reads) in [
+            ("cli", &CliGitReads as &dyn GitReads),
+            ("gix", &GixGitReads::new() as &dyn GitReads),
+        ] {
+            let actual = reads.worktree_inventory(&repo, None).unwrap();
+            if !actual.detached_worktrees.iter().any(|entry| {
+                entry.path == expected
+                    && entry.head == expected_head
+                    && entry.short_head == expected_head[..7]
+                    && entry.directory_name == "detached-checkout"
+                    && entry.state == crate::worktree::DetachedWorktreeState::Detached
+            }) {
+                missing.push(name);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "detached checkout missing from {missing:?}: {expected}"
+        );
+    }
+
+    /// Catches taking the parent of an unresolved common-dir from a linked checkout.
+    #[test]
+    fn discovery_2156_linked_input_keeps_main_checkout() {
+        let (_guard, repo) = fixture_repo();
+        let linked = tempfile::tempdir().unwrap();
+        let path = linked.path().join("linked");
+        run_git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "linked-input",
+                path.to_str().unwrap(),
+            ],
+        );
+        let expected = git_spelling(&std::fs::canonicalize(&repo).unwrap().to_string_lossy());
+        let actual = GixGitReads::new().worktree_paths(&path).unwrap();
+        assert!(
+            actual.values().any(|entry| entry.path == expected),
+            "main checkout omitted for linked input: {actual:?}"
+        );
+    }
+
+    /// Catches treating a user's unrelated __archived directory as a TUIC recycling pool.
+    #[test]
+    fn discovery_2156_unowned_archive_name_keeps_checkout() {
+        let (_guard, repo) = fixture_repo();
+        let linked = tempfile::tempdir().unwrap();
+        let path = linked.path().join("unrelated/__archived/user-checkout");
+        run_git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "user-archive-name",
+                path.to_str().unwrap(),
+            ],
+        );
+        let pool = linked.path().join("configured/__archived");
+        let pooled = pool.join("pooled");
+        run_git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "tuic-pool",
+                pooled.to_str().unwrap(),
+            ],
+        );
+        let mut missing = Vec::new();
+        for (name, reads) in [
+            ("cli", &CliGitReads as &dyn GitReads),
+            ("gix", &GixGitReads::new() as &dyn GitReads),
+        ] {
+            let inventory = reads.worktree_inventory(&repo, Some(&pool)).unwrap();
+            assert!(
+                !inventory.worktree_paths.contains_key("tuic-pool"),
+                "{name} exposed the configured recycling pool"
+            );
+            if !inventory.worktree_paths.contains_key("user-archive-name") {
+                missing.push(name);
+            }
+        }
+        assert!(
+            missing.is_empty(),
+            "ordinary checkout hidden by archive basename in {missing:?}"
+        );
+    }
+
+    /// Catches line-based porcelain parsing dropping a legal newline in a checkout path.
+    #[cfg(unix)]
+    #[test]
+    fn discovery_2156_newline_path_matches_git_inventory() {
+        let (_guard, repo) = fixture_repo();
+        let linked = tempfile::tempdir().unwrap();
+        let path = linked.path().join("line\nbreak");
+        run_git(
+            &repo,
+            &[
+                "worktree",
+                "add",
+                "-b",
+                "newline-path",
+                path.to_str().unwrap(),
+            ],
+        );
+        let expected = git_spelling(&std::fs::canonicalize(&path).unwrap().to_string_lossy());
+        let actual = CliGitReads.worktree_paths(&repo).unwrap();
+        assert_eq!(
+            actual.get("newline-path").map(|entry| &entry.path),
+            Some(&expected),
+            "CLI lost newline path from real Git"
+        );
     }
 
     /// Step 10: gix worktree_paths == CLI, including the main worktree (gix
@@ -2309,5 +2668,95 @@ mod tests {
             );
         }
         assert!(!bl_a.is_empty());
+    }
+
+    /// Real clone of a local bare repo (so `refs/remotes/origin/HEAD` exists),
+    /// plus a second remote `upstream` with its own HEAD symref and a third
+    /// remote `nohead` whose HEAD symref was removed. A local branch
+    /// `feature/HEAD` and one named `origin-like/x` must survive the filters.
+    fn clone_fixture_with_remotes() -> (Vec<tempfile::TempDir>, PathBuf) {
+        let (src, src_path) = fixture_repo();
+        let bare = tempfile::tempdir().unwrap();
+        run_git(
+            bare.path(),
+            &["clone", "--bare", &src_path.to_string_lossy(), "."],
+        );
+        let work = tempfile::tempdir().unwrap();
+        let w = work.path().to_path_buf();
+        run_git(&w, &["clone", &bare.path().to_string_lossy(), "."]);
+        for name in ["upstream", "nohead"] {
+            run_git(&w, &["remote", "add", name, &bare.path().to_string_lossy()]);
+            run_git(&w, &["fetch", name]);
+        }
+        run_git(&w, &["remote", "set-head", "upstream", "-a"]);
+        run_git(&w, &["remote", "set-head", "nohead", "-a"]);
+        run_git(&w, &["remote", "set-head", "nohead", "-d"]);
+        run_git(&w, &["branch", "feature/HEAD"]);
+        (vec![src, bare, work], w)
+    }
+
+    #[test]
+    fn branches_detail_ignores_remote_head_symrefs_in_a_real_clone() {
+        let (_guards, repo) = clone_fixture_with_remotes();
+        // Precondition: the symrefs really exist, otherwise this proves nothing.
+        assert!(
+            run_git(&repo, &["symbolic-ref", "refs/remotes/origin/HEAD"]).contains("origin/"),
+            "clone must have origin/HEAD"
+        );
+        let bs = GixGitReads::new().branches_detail(&repo).unwrap();
+        let names: Vec<&str> = bs.iter().map(|b| b.name.as_str()).collect();
+        for phantom in ["origin", "upstream", "nohead"] {
+            assert!(!names.contains(&phantom), "phantom {phantom}: {names:?}");
+        }
+        assert!(names.iter().all(|n| !n.ends_with("origin/HEAD")));
+        assert!(
+            names.contains(&"feature/HEAD"),
+            "local feature/HEAD dropped: {names:?}"
+        );
+        let local = bs.iter().find(|b| b.name == "feature/HEAD").unwrap();
+        assert!(!local.is_remote);
+        for remote in ["origin/main", "upstream/main", "nohead/main"] {
+            let b = bs
+                .iter()
+                .find(|b| b.name == remote)
+                .unwrap_or_else(|| panic!("{remote}: {names:?}"));
+            assert!(b.is_remote);
+        }
+        let (a, b) = shootout!(&repo, branches_detail());
+        assert_ok_json_eq(&a, &b, "branches_detail (real clone, multi-remote)");
+    }
+
+    #[test]
+    fn graph_decorations_keep_local_slash_head_branch_and_skip_remote_head() {
+        let (_guards, repo) = clone_fixture_with_remotes();
+        let commits = GixGitReads::new().graph_commits(&repo, 50).unwrap();
+        let labels: Vec<&String> = commits.iter().flat_map(|c| c.refs.iter()).collect();
+        assert!(
+            labels.iter().any(|l| l.as_str() == "feature/HEAD"),
+            "{labels:?}"
+        );
+        for remote_head in [
+            "origin/HEAD",
+            "upstream/HEAD",
+            "origin",
+            "upstream",
+            "nohead",
+        ] {
+            assert!(
+                !labels.iter().any(|l| l.as_str() == remote_head),
+                "{remote_head} leaked: {labels:?}"
+            );
+        }
+        // DEFERRED (2026-10-21) — no CLI/gix shootout here: the CLI fallback's
+        // `git log %D` labels remote HEAD symrefs as `origin/HEAD`, which gix
+        // hides (and hid before this change). A short `%D` label cannot tell
+        // `refs/remotes/origin/HEAD` from a local `origin/HEAD` branch, so
+        // matching gix needs `--decorate=full` parsing in raw_commits_cli.
+        let cli = CliGitReads.graph_commits(&repo, 50).unwrap();
+        let cli_labels: Vec<&String> = cli.iter().flat_map(|c| c.refs.iter()).collect();
+        assert!(
+            cli_labels.iter().any(|l| l.as_str() == "feature/HEAD"),
+            "{cli_labels:?}"
+        );
     }
 }

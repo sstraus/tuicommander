@@ -81,20 +81,6 @@
   font-style: italic;
 }
 
-.resumeDismiss {
-  background: none;
-  border: none;
-  color: var(--fg-muted);
-  font-size: var(--font-md);
-  cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
-}
-
-.resumeDismiss:hover {
-  color: var(--error);
-}
-
 /* Visual bell flash — applied as raw class on the container DOM element */
 :global(.bell-flash) {
   animation: bell-flash-anim 150ms ease-out;
@@ -175,16 +161,4 @@
 /* Resume action of the suspended-tab notice. */
 .resumeButton {
   margin-top: 6px;
-  padding: 4px 14px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  color: var(--fg-primary);
-  font-size: var(--font-sm);
-  cursor: pointer;
-}
-
-.resumeButton:hover {
-  color: var(--accent);
-  background: var(--bg-highlight);
 }

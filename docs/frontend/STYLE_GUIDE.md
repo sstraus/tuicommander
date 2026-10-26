@@ -272,7 +272,7 @@ Branch item anatomy (left to right):
 - **PR marker** (optional): a 7px square plus `#N`, both in the state color, no fill or border. A conflict rotates the square into a diamond so it does not rely on color. Draft and Review outline the square instead of filling it, as their pills did (Review vs Changes requested differ only by fill). Motion matches the pill form: the conflict marker pulses at 1.5s, Checking and CI Running at 2s; the number never moves. The UI Legend renders this same component The state word (Review, Conflicts, …) and any uncommitted-file count live in the `data-tooltip`
 - **Unmerged mark** (optional): a 7px outlined square in `--fg-secondary`, centered in a 14px target with no pill background. It marks a worktree with commits outside the default branch even when its working tree is clean; hover or focus explains why branch deletion is blocked.
 - **Diff numbers** (optional): plain `+N -N` in `--font-2xs`, `--success` / `--diff-del`, no chip. Always shown beside the PR marker, never alternating with it
-- **Actions** (on hover only): `max-width: 0 → 44px`, two 20×20px buttons (+, ×)
+- **Actions** (on hover only): reveal the natural width of shared compact `Button` controls (+, ×), without reserving space while idle. Compact actions are 22px high on desktop and at least 44px high at touch widths. Swipe-tray actions use shared stretch geometry; the open tray grows with its controls.
 
 ### Tab Bar
 
@@ -309,7 +309,7 @@ Located inside `#toolbar`, center section. Background matches toolbar (`--bg-pri
 Tab anatomy: `[agent badge?] [name, truncated] [close × on hover]`
 - Agent badge: small colored prefix (e.g. `C claude`, `G gemini`)
 - Close button: invisible by default, `opacity: 1` on tab hover
-- New tab button `[+]`: 28px circle, `--accent` color
+- New-tab and scroll actions use shared stretch `Button` geometry with square edges (22px toolbar density, 44px at touch widths). The tab-bar container grows with these controls. Close and global-workspace actions use shared compact Buttons; inline rename uses a shared compact Input.
 
 ### Status Bar
 
@@ -424,27 +424,64 @@ All follow the same structure:
 **Primary button**: `background: var(--accent); color: var(--text-on-accent); padding: 8px 16px; border-radius: var(--radius-lg);`
 **Secondary button**: `background: var(--bg-tertiary); color: var(--fg-secondary); same padding/radius.`
 **Danger button**: `background: var(--error); color: var(--text-on-error);`
-**Ready action** (Send, Save): set `data-ready="true"` on the button while it can act (unsaved changes, agent selected). `global.css` gives `button[data-ready]:not(:disabled)` the accent border, text and a faint accent tint; clean or disabled stays neutral. Never hand-roll a per-component "dirty" colour.
+**Ready action** (Send, Save): set `data-ready="true"` on the button while it can act (unsaved changes, agent selected). `styles/ready-actions.css`, imported by desktop `global.css` and PWA `mobile.css`, gives `button[data-ready]:not(:disabled)` the accent border, text and a faint accent tint; clean or disabled stays neutral. Never hand-roll a per-component "dirty" colour.
 
 ### Form Controls
 
-Use `Select`, `Input` and `Textarea` from `src/components/ui` for form fields.
+There are two shared densities: **form** (36px, 8px horizontal padding) and
+**toolbar** (22px, 6px horizontal padding). The toolbar size matches the measured
+22px panel close/detach controls and fits inside the 32px app toolbar. Compose
+`toolbar` from `ui/FormControls.module.css` on header, filter, tab and toolbar
+rows. Do not apply it to a whole panel with configuration forms. Compose `form`
+on a nested form to reset inherited toolbar tokens. Shared dialog popovers, native
+dialogs, `[role="dialog"]` and native `[popover]` roots reset to form density, including when
+mounted inside a toolbar. Mark custom modal roots with their dialog role and
+accessible name; do not add a per-dialog density override.
+Shared icon actions and segmented switches follow the row density. Settings and
+configuration forms keep form density. Both densities retain the 44px touch
+minimum at viewport widths up to 600px.
+
+Use `Button`, `Select`, `Input` and `Textarea` from `src/components/ui` for form fields.
 They forward native attributes, refs, options and events. `Input` is for text,
-numeric and date fields; toggles, ranges, colour and file pickers keep their
-specialised controls. `FormControls.module.css` owns their presentation:
+numeric and date fields. Use `Switch`, `Slider` and `ColorInput` for native
+checkbox switches, ranges and colour pickers; file pickers keep their specialised controls. `FormControls.module.css` owns their presentation:
 `--control-height` (36px), `--control-padding-x` (8px), theme colours,
 `--radius-lg` and `--font-md`. Containers own width and alignment, never
 control height, padding, borders or colours. Textareas resize vertically;
-multiple selects keep native listbox behavior. At widths up to 600px,
+multiple selects keep native listbox behavior. Shared Select reserves 32px at the inline end for its native arrow; consumers must not add feature padding for this. At widths up to 600px,
 controls have a 44px minimum height and 16px text to prevent iOS zoom.
+
+`Button` forwards native button attributes and defaults to `type="button"` (set
+`type="submit"` for form submission). Variants are `primary`, `secondary` (default),
+`ghost` and `danger`; sizes are `default` (36px) and `compact` (22px), both with a
+44px touch minimum. It shares FormControls height and padding tokens with fields.
+Clickable list rows/cards retain native buttons with `data-control-layout="row"`
+or `data-control-layout="card"`. Their geometry selectors must include both the
+`button` tag and the exact marker. This exception is for content layout, never
+form, toolbar or dialog actions.
+
+AI Chat retains native full-frame conversation pickers and native session
+`details`/`summary` disclosures. Mark these controls with
+`data-control-layout="overlay-picker"` or `"disclosure"` and retain only their
+exact, reasoned geometry exceptions. The visible picker frame and disclosures
+use the shared 36px/44px control tokens. Its shared `Textarea` retains the tested
+panel-relative editor cap and one-line reset with a narrow `composer-editor`
+exception; this does not exempt other actions or fields. Keep desktop editor
+resize and overflow rules scoped to the non-mobile composer. The phone editor
+keeps its native scrollable surface for drafts beyond its height cap.
 
 `SegmentedControl` is the shared view switch. It uses a named tablist, one
 keyboard tab stop, and Arrow Left/Right, Home and End to select and focus an
 enabled choice. Tasks uses it for List, Board and Roadmap.
 
-**Toggle switch**: 36×20px track, `--radius-full` (10px), off=`--bg-tertiary`, on=`--accent`. White thumb slides with 0.2s transition.
+**Toggle switch**: use `ui/Switch`, with a 36px row-height target (44px on touch),
+a 36×20px track, `--radius-full` (10px), off=`--bg-tertiary`, on=`--accent`. White thumb slides with 0.2s transition.
 
-**Range slider**: 4px track height, 16px circular thumb in `--accent`.
+**Range slider**: use `ui/Slider`, with the shared row-height target, a 4px track
+and the existing 14px circular thumb in `--accent`. Native input/change events
+remain separate. `ui/ColorInput` keeps the native colour picker over a shared
+swatch target; its `selected` prop marks a custom selection. The controls guard
+also rejects feature-owned checkbox/range/colour widths and shared primitive sizing.
 
 ### Settings Panel
 
@@ -664,3 +701,42 @@ Commander retains its urgent/attention foregrounds and pulse.
 - Dialog footer hints wrap as complete groups, with gaps between groups and actions. Action labels do not wrap letter by letter.
 - Task field labels align at the top when neighboring controls have different heights. Roadmap state labels use ellipsis inside short bars.
 - Native controls use the light color scheme on the Paper theme. Mobile bottom tabs and diff gutters use the existing application surface tokens.
+
+`ui/ColorSwatch` is the shared native button for immediate preset/clear color selection.
+It keeps selection in the owner through `selected`/`aria-pressed`, defaults to
+`type="button"`, forwards native refs/events/disabled, and uses a 36px circular
+target with a 44px touch minimum. Set `swatchColor` for a preset; omit it for
+the dashed clear target. Give each target an accessible name. Feature CSS may
+arrange the wrapping picker but must not resize its swatches.
+
+### Shared edge actions and content-sized editors
+
+- Use `Button geometry="stretch"` for square-edged container-height actions.
+  Keep placement in the consumer; do not restore feature-owned control sizes.
+- Use `ButtonGroup` with direct shared `Button` children for connected split
+  actions. Buttons retain their own size and behavior; the shared group owns
+  corners and the single divider. Do not clip focus rings or dropdown content.
+- Use `Textarea autoGrow` for compact content-sized editors. The shared minimum
+  is 36px desktop or 44px touch, and the maximum is three control heights.
+  Remove consumer auto-resize callbacks and height caps when adopting it.
+
+### Shared validation and removable toggles
+
+- Use native `aria-invalid="true"` on `Input`, `Select` and `Textarea` for an
+  error-token border. Link existing validation text with `aria-describedby`.
+  The shared keyboard focus outline remains visible and unchanged.
+- Use `Button variant="removalToggle"` only for an on/off action where clicking
+  the pressed state removes or uninstalls the active integration. Set native
+  `aria-pressed` from owner state. Pressed uses the success border; enabled
+  pressed hover uses the danger tone. Disabled actions keep their state tone.
+  Ordinary selection buttons retain their existing accent styling.
+
+### Icon-only actions
+
+Use `Button shape="icon" aria-label="Describe the action"` for an icon-only action.
+Use `circular` when the action needs a circular visual. The native hit region stays
+square at 36 × 36px in forms, 22 × 22px in toolbar rows, and 44 × 44px at touch widths; only the inner
+surface is circular. `size="compact"` alone does not shrink a standalone icon target; a toolbar row selects toolbar density for all its controls. Icon mode
+cannot combine with stretch geometry. Supply one icon or glyph and a nonempty,
+descriptive `aria-label` (required by the TypeScript API); a tooltip alone is not
+an accessible name. Do not add feature-level sizing or rounding rules.

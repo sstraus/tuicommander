@@ -9,8 +9,34 @@ pub const OUTPUT_LIMIT: usize = 256 * 1024;
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RunTrigger {
-    Scheduled { occurrence_ms: i64 },
+    Scheduled {
+        occurrence_ms: i64,
+    },
     Manual,
+    /// A labelled GitHub issue admitted by event intake, once per issue and label.
+    Event {
+        repository: String,
+        issue_number: i64,
+        label: String,
+    },
+}
+
+impl RunTrigger {
+    /// Durable deduplication identity; GitHub names compare case-insensitively.
+    pub fn event_key(&self) -> Option<String> {
+        match self {
+            Self::Event {
+                repository,
+                issue_number,
+                label,
+            } => Some(format!(
+                "{}#{issue_number}:{}",
+                repository.to_ascii_lowercase(),
+                label.to_lowercase()
+            )),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Ord, PartialOrd, Serialize)]

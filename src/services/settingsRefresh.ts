@@ -16,6 +16,8 @@ interface Reader<T> {
 	read: () => Promise<T>;
 	/** Non-saving adoption: advance the baseline and keep unsaved intent. */
 	apply: (snapshot: T) => void;
+	/** Apply healthy parts now, but retry when an independent part is unavailable. */
+	retryWhen?: (snapshot: T) => boolean;
 }
 
 /** One disposable subscription per window, never a migration/bootstrap hydration. */
@@ -139,18 +141,15 @@ export function createSettingsRefreshCoordinator(subscribe?: typeof subscribeEve
 							.read()
 							.then((snapshot) => {
 								if (!disposed && current === sequence) {
-									retryDelay = 1000;
 									reader.apply(snapshot);
+									if (reader.retryWhen?.(snapshot)) scheduleRetry();
+									else retryDelay = 1000;
 								}
 							})
 							.catch((error) => {
 								if (disposed || current !== sequence) return;
 								appLogger.warn("config", "Settings reload failed", error);
-								retry = setTimeout(() => {
-									retry = undefined;
-									entry.invalidate();
-								}, retryDelay);
-								retryDelay = Math.min(retryDelay * 2, 30000);
+								scheduleRetry();
 							})
 							.finally(() => {
 								reading = false;
@@ -168,6 +167,13 @@ export function createSettingsRefreshCoordinator(subscribe?: typeof subscribeEve
 					sequence++;
 				},
 			};
+			function scheduleRetry() {
+				retry = setTimeout(() => {
+					retry = undefined;
+					entry.invalidate();
+				}, retryDelay);
+				retryDelay = Math.min(retryDelay * 2, 30000);
+			}
 			readers.add(entry);
 			start();
 			if (unlisten || subscriptionRetry) entry.invalidate();

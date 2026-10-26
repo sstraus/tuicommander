@@ -1,8 +1,9 @@
 import { type Component, For, Show } from "solid-js";
 import { t } from "../../i18n";
 import type { SettingId } from "../../services/settingsCatalogue";
-import { cx } from "../../utils";
 import s from "../SettingsPanel/Settings.module.css";
+import { ColorInput } from "../ui/ColorInput";
+import { ColorSwatch } from "../ui/ColorSwatch";
 import type { ColorPreset } from "./colorPresets";
 
 export interface ColorSwatchPickerProps {
@@ -19,40 +20,37 @@ export const ColorSwatchPicker: Component<ColorSwatchPickerProps> = (props) => {
 		<div class={s.groupColorPicker}>
 			<For each={props.presets}>
 				{(preset) => (
-					<button
+					<ColorSwatch
 						data-setting-id={props.settingId}
-						class={cx(s.colorSwatch, props.color === preset.hex && s.active)}
-						style={{ background: preset.hex }}
+						selected={props.color === preset.hex}
+						swatchColor={preset.hex}
+						aria-label={preset.name}
 						onClick={() => props.onChange(preset.hex)}
 						title={preset.name}
 					/>
 				)}
 			</For>
-			<label
-				class={cx(s.colorSwatch, s.colorSwatchCustom, isCustomColor() && s.active)}
-				style={{
-					background: isCustomColor() ? props.color : "var(--bg-tertiary)",
-				}}
+			<ColorInput
+				selected={!!isCustomColor()}
+				data-setting-id={props.settingId}
+				aria-label={t("groups.btn.customColor", "Custom color")}
 				title={t("groups.btn.customColor", "Custom color")}
+				value={props.color || "#999999"}
+				onInput={(e) => props.onChange(e.currentTarget.value)}
 			>
-				<input
-					data-setting-id={props.settingId}
-					type="color"
-					value={props.color || "#999999"}
-					onInput={(e) => props.onChange(e.currentTarget.value)}
-				/>
 				<Show when={!isCustomColor()}>
 					<span class={s.colorSwatchLabel}>&#x22EF;</span>
 				</Show>
-			</label>
-			<button
+			</ColorInput>
+			<ColorSwatch
 				data-setting-id={props.settingId}
-				class={cx(s.colorSwatch, s.colorSwatchClear, !props.color && s.active)}
+				selected={!props.color}
+				aria-label={t("groups.btn.noColor", "No color")}
 				onClick={() => props.onChange("")}
 				title={t("groups.btn.noColor", "No color")}
 			>
 				&times;
-			</button>
+			</ColorSwatch>
 		</div>
 	);
 };

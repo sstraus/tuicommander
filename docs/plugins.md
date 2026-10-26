@@ -820,9 +820,10 @@ panel.close();
   window.parent.postMessage({ type: "save", config: { ... } }, "*");
 
   // Receive messages from host
-  window.addEventListener("message", (e) => {
-    if (e.data?.type === "response") {
-      console.log("Host says:", e.data.ok);
+  // The SDK unwraps the tuic:host-message envelope from panel.send().
+  window.tuic.onMessage((data) => {
+    if (data?.type === "response") {
+      // Use data.ok to update the panel.
     }
   });
 </script>

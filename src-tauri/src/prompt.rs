@@ -510,13 +510,13 @@ mod tests {
     #[test]
     fn extract_variables_empty_string() {
         let vars = extract_variables("");
-        assert!(vars.is_empty());
+        assert_eq!(vars, [] as [std::string::String; 0]);
     }
 
     #[test]
     fn extract_variables_no_vars() {
         let vars = extract_variables("Hello world!");
-        assert!(vars.is_empty());
+        assert_eq!(vars, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -541,7 +541,7 @@ mod tests {
     #[test]
     fn extract_variables_unclosed_brace() {
         let vars = extract_variables("Hello {name");
-        assert!(vars.is_empty());
+        assert_eq!(vars, [] as [std::string::String; 0]);
     }
 
     // --- process_content tests ---

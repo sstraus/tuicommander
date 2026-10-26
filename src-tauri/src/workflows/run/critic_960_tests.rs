@@ -27,6 +27,7 @@ fn dependency_refresh_failure_after_interruption_does_not_requeue_recovery_of_li
         .unwrap();
     let story = stories
         .create_story(NewStory {
+            story_type: None,
             plan_id: plan.id.clone(),
             title: "Work".into(),
             criteria: vec!["Done".into()],

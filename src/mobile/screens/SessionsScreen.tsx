@@ -1,4 +1,6 @@
-import { createMemo, createSignal, For, Index, Show } from "solid-js";
+import { createMemo, createSignal, For, Index, mapArray, Show } from "solid-js";
+import { Button } from "../../components/ui/Button";
+import { Input } from "../../components/ui/Input";
 import { appLogger } from "../../stores/appLogger";
 import { rpc } from "../../transport";
 import { HeroMetrics } from "../components/HeroMetrics";
@@ -14,6 +16,7 @@ import {
 } from "../utils/recentSessions";
 import { ptysLast } from "../utils/sessionKind";
 import { nestUnderParents, parentLabel } from "../utils/sessionTree";
+import { useDebouncedStatus } from "../utils/useDebouncedStatus";
 import styles from "./SessionsScreen.module.css";
 
 interface SessionsScreenProps {
@@ -28,6 +31,22 @@ interface SessionsScreenProps {
 const PULL_THRESHOLD = 60;
 
 export function SessionsScreen(props: SessionsScreenProps) {
+	// Key by session id: polling replaces session objects, but must not reset the busy hold.
+	const sessionsById = createMemo(() => new Map(props.sessions.map((session) => [session.session_id, session])));
+	const sessionStatuses = mapArray(
+		() => [...sessionsById().keys()],
+		(sessionId) => ({ sessionId, status: useDebouncedStatus(() => sessionsById().get(sessionId)!) }),
+	);
+	const statusById = createMemo(() => new Map(sessionStatuses().map(({ sessionId, status }) => [sessionId, status])));
+	const counts = createMemo(() => {
+		const totals = { busy: 0, idle: 0, question: 0 };
+		for (const { status } of sessionStatuses()) {
+			const value = status();
+			if (value === "sub-tasks") totals.busy++;
+			else if (value === "busy" || value === "idle" || value === "question") totals[value]++;
+		}
+		return totals;
+	});
 	const [pulling, setPulling] = createSignal(false);
 	const [pullY, setPullY] = createSignal(0);
 	const [showNewSession, setShowNewSession] = createSignal(false);
@@ -120,9 +139,10 @@ export function SessionsScreen(props: SessionsScreenProps) {
 				<div class={styles.searchRow}>
 					<span class={styles.sectionTitle}>Sessions</span>
 					<div class={styles.sortMenu}>
-						<button
+						<Button
 							type="button"
-							class={styles.searchToggle}
+							shape="icon"
+							variant="ghost"
 							aria-label="Sort sessions"
 							aria-haspopup="menu"
 							aria-expanded={sortOpen()}
@@ -140,7 +160,7 @@ export function SessionsScreen(props: SessionsScreenProps) {
 							>
 								<path d="M4 7h16M7 12h10M10 17h4" />
 							</svg>
-						</button>
+						</Button>
 						<Show when={sortOpen()}>
 							<div class={styles.sortList} role="menu" aria-label="Sort sessions">
 								<For
@@ -152,24 +172,26 @@ export function SessionsScreen(props: SessionsScreenProps) {
 									}
 								>
 									{([value, label]) => (
-										<button
+										<Button
 											type="button"
 											role="menuitemradio"
 											aria-checked={sort() === value}
+											variant="ghost"
 											class={styles.sortOption}
 											classList={{ [styles.sortOptionActive]: sort() === value }}
 											onClick={() => chooseSort(value)}
 										>
 											{label}
-										</button>
+										</Button>
 									)}
 								</For>
 							</div>
 						</Show>
 					</div>
-					<button
+					<Button
 						type="button"
-						class={styles.searchToggle}
+						shape="icon"
+						variant="ghost"
 						aria-label={searchOpen() ? "Close session search" : "Search sessions"}
 						aria-expanded={searchOpen()}
 						onClick={toggleSearch}
@@ -203,11 +225,11 @@ export function SessionsScreen(props: SessionsScreenProps) {
 								<path d="M18 6 6 18M6 6l12 12" />
 							</svg>
 						</Show>
-					</button>
+					</Button>
 				</div>
 				<Show when={searchOpen()}>
 					<div class={styles.searchField}>
-						<input
+						<Input
 							ref={(element) => queueMicrotask(() => element.focus())}
 							type="search"
 							aria-label="Filter sessions"
@@ -243,10 +265,11 @@ export function SessionsScreen(props: SessionsScreenProps) {
 
 			<Show when={props.sessions.length > 0}>
 				<HeroMetrics
-					activeCount={props.sessions.length}
-					awaitingCount={props.sessions.filter((s) => s.state?.awaiting_input).length}
+					workingCount={counts().busy}
+					idleCount={counts().idle}
+					awaitingCount={counts().question}
 					onAwaitingClick={() => {
-						const waiting = props.sessions.find((session) => session.state?.awaiting_input);
+						const waiting = props.sessions.find((session) => statusById().get(session.session_id)?.() === "question");
 						if (waiting) props.onSelectSession(waiting.session_id);
 					}}
 				/>
@@ -290,6 +313,7 @@ export function SessionsScreen(props: SessionsScreenProps) {
 				{(row) => (
 					<SessionCard
 						session={row.session}
+						status={statusById().get(row.session.session_id)}
 						depth={row.depth}
 						lastInGroup={row.last}
 						spawnedBy={row.session.parent_session ? parentLabel(rows(), row.session) : undefined}
@@ -299,12 +323,21 @@ export function SessionsScreen(props: SessionsScreenProps) {
 				)}
 			</For>
 
-			<button class={styles.fab} aria-label="New session" onClick={openNewSessionSheet} data-testid="new-session-fab">
-				<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-					<line x1="12" y1="5" x2="12" y2="19" />
-					<line x1="5" y1="12" x2="19" y2="12" />
-				</svg>
-			</button>
+			<div class={styles.fab}>
+				<Button
+					shape="icon"
+					circular
+					variant="primary"
+					aria-label="New session"
+					onClick={openNewSessionSheet}
+					data-testid="new-session-fab"
+				>
+					<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<line x1="12" y1="5" x2="12" y2="19" />
+						<line x1="5" y1="12" x2="19" y2="12" />
+					</svg>
+				</Button>
+			</div>
 
 			<Show when={showNewSession()}>
 				<NewSessionSheet

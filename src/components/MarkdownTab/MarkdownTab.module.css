@@ -44,6 +44,7 @@
 }
 
 .agentActions {
+  composes: toolbar from "../ui/FormControls.module.css";
   margin-left: auto;
   display: inline-flex;
   align-items: center;
@@ -84,24 +85,7 @@
 .commentBtn {
   position: fixed;
   z-index: 9000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--fg-secondary);
-  cursor: pointer;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.25);
   pointer-events: auto;
-}
-
-.commentBtn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
 }
 
 /* Inline comment popover */
@@ -121,63 +105,14 @@
 }
 
 .popoverTextarea {
-  resize: vertical;
-  min-height: 110px;
   width: 100%;
-  box-sizing: border-box;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-primary);
-  font-size: var(--font-base);
-  font-family: var(--font-ui);
-  line-height: 1.4;
-  padding: 8px 10px;
-  outline: none;
-}
-
-.popoverTextarea:focus {
-  border-color: var(--accent);
 }
 
 .popoverActions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 6px;
-}
-
-.popoverBtn {
-  padding: 4px 12px;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-sm);
-  font-family: var(--font-ui);
-  cursor: pointer;
-  border: 1px solid var(--border);
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-}
-
-.popoverBtn:hover {
-  background: var(--bg-highlight);
-}
-
-.popoverBtnPrimary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--text-on-accent);
-}
-
-.popoverBtnPrimary:hover {
-  opacity: 0.85;
-}
-
-.popoverBtnDanger {
-  color: var(--error);
-  border-color: color-mix(in srgb, var(--error) 40%, transparent);
-}
-
-.popoverBtnDanger:hover {
-  background: color-mix(in srgb, var(--error) 15%, transparent);
 }
 
 .popoverHighlightedText {

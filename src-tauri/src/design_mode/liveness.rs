@@ -116,18 +116,18 @@ mod tests {
         let start = Instant::now();
         let mut live = Liveness::default();
         live.armed("/repo", "agent", start);
-        assert!(
-            live.expire(start + SETUP_TIMEOUT - Duration::from_secs(1))
-                .is_empty()
+        assert_eq!(
+            live.expire(start + SETUP_TIMEOUT - Duration::from_secs(1)),
+            [] as [(std::string::String, std::string::String); 0]
         );
         assert_eq!(
             live.beat("/repo", start + Duration::from_secs(300)),
             Some(0)
         );
         let beat = start + Duration::from_secs(300);
-        assert!(
-            live.expire(beat + BEAT_TIMEOUT - Duration::from_secs(1))
-                .is_empty()
+        assert_eq!(
+            live.expire(beat + BEAT_TIMEOUT - Duration::from_secs(1)),
+            [] as [(std::string::String, std::string::String); 0]
         );
         assert_eq!(
             live.expire(beat + BEAT_TIMEOUT),

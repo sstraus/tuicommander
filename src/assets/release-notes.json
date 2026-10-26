@@ -251,5 +251,31 @@
       "BREAKING: MCP per-tool switches are now capability groups and old tool aliases are gone, so reconnect clients after updating."
     ],
     "date": "2026-10-22"
+  },
+  "2.0.0-beta.2": {
+    "highlights": [
+      "Stories now have an Edit form, append-only notes, detailed history, and status and type filters with a Kanban view.",
+      "You can edit plans in place with Save and Cancel, and you can detach Plans and Stories into a separate window.",
+      "Stories move to QA by themselves when only manual checks remain, so human checks stay apart from development work.",
+      "Mobile now shows ego question controls, session quota and cost, faster Progress lists, and no gap below the iOS composer.",
+      "Terminal Chat opens faster, stays readable in dark and light themes, and hides agent-mail wake notices.",
+      "Any agent connected through MCP can now send Telegram notifications, and Settings now shows the MCP call audit.",
+      "Orphan cleanup now skips detached and temporary worktrees, and Delete clearly says that the workspace is archived.",
+      "Stopped MCP servers restart automatically, and Tailscale HTTPS status and certificates now work reliably on macOS."
+    ],
+    "date": "2026-10-24"
+  },
+  "2.0.0-beta.3": {
+    "highlights": [
+      "Manage Ideas from the planner API, the CLI and the workflow MCP tool, and the Ideas panel stays in sync.",
+      "Headless tuic-remote now serves GitHub poller controls, repository status, PRs and issues with existing authentication.",
+      "Final agent API failures from Claude, Codex and ego now stay red after the agent goes idle or a retry fails.",
+      "Mute sounds and OS notifications from agent-spawned sessions while keeping urgent cards visible.",
+      "Queued commands and replies reach idle agents waiting on progress reports without bypassing native dialogs.",
+      "Mobile shows Working, Idle and Awaiting counts, keeps CLI output pinned during resizes and recovers from outages.",
+      "Markdown reviews default to the agent that opened the document, and comment actions no longer cover list content.",
+      "Buttons, switches, sliders and settings controls share consistent desktop sizes and 44px mobile touch targets."
+    ],
+    "date": "2026-10-26"
   }
 }

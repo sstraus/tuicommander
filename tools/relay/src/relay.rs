@@ -58,6 +58,30 @@ pub struct AppState {
     pub rate_limit_per_hour: u32,
     /// Max concurrent sessions per token. 0 = no limit.
     pub max_sessions_per_token: u32,
+    pub timing: RelayTiming,
+}
+
+/// Waits the relay applies to slow or silent peers. Fields are public so a
+/// test can shrink them; production uses the defaults.
+#[derive(Clone, Copy, Debug)]
+pub struct RelayTiming {
+    /// How long a forward waits for room in a full peer queue before the room
+    /// is closed. A terminal burst is absorbed; a stuck peer is not.
+    pub peer_send_timeout: Duration,
+    /// Interval between WebSocket pings to each peer.
+    pub ping_interval: Duration,
+    /// A peer that sent no frame (pong included) this long is dropped.
+    pub dead_after: Duration,
+}
+
+impl Default for RelayTiming {
+    fn default() -> Self {
+        Self {
+            peer_send_timeout: Duration::from_secs(5),
+            ping_interval: Duration::from_secs(20),
+            dead_after: Duration::from_secs(60),
+        }
+    }
 }
 
 impl AppState {
@@ -73,6 +97,7 @@ impl AppState {
             rate_limits: DashMap::new(),
             rate_limit_per_hour: 0,
             max_sessions_per_token: 0,
+            timing: RelayTiming::default(),
         })
     }
 
@@ -88,6 +113,7 @@ impl AppState {
             rate_limits: DashMap::new(),
             rate_limit_per_hour: 0,
             max_sessions_per_token: 0,
+            timing: RelayTiming::default(),
         })
     }
 
@@ -150,6 +176,10 @@ async fn resolve_token(state: &AppState, token: &str) -> Option<String> {
 
 /// Maximum peers allowed per session (desktop + mobile).
 const MAX_PEERS_PER_SESSION: usize = 2;
+
+/// Largest WebSocket message the relay accepts. A tunnel record is 16 KiB plus
+/// framing and tag; existing mobile event envelopes fit well under this.
+pub const MAX_WS_MESSAGE_BYTES: usize = 1024 * 1024;
 
 /// Bounded channel capacity per peer — backpressure on slow clients.
 const PEER_CHANNEL_CAPACITY: usize = 32;
@@ -266,12 +296,29 @@ pub async fn handle_ws(state: Arc<AppState>, session_id: String, mut socket: Web
     drop(tx);
     let mut writer_handle = tokio::spawn(write_loop(ws_sender, rx));
 
-    // Reader loop: reads from WebSocket, forwards to other peer(s)
+    // Reader loop: reads from WebSocket, forwards to other peer(s). A silent
+    // TCP peer would otherwise pin its room until the idle reaper runs.
+    let mut ping = tokio::time::interval_at(
+        tokio::time::Instant::now() + state.timing.ping_interval,
+        state.timing.ping_interval,
+    );
+    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut last_seen = Instant::now();
     loop {
         tokio::select! {
             _ = &mut writer_handle => break,
+            _ = ping.tick() => {
+                if last_seen.elapsed() > state.timing.dead_after {
+                    warn!(session_id, peer_id, "peer silent, dropping");
+                    break;
+                }
+                if let Some(tx) = peer.upgrade() {
+                    let _ = tx.try_send(Message::Ping(Vec::new().into()));
+                }
+            }
             incoming = ws_receiver.next() => {
                 let Some(Ok(msg)) = incoming else { break };
+                last_seen = Instant::now();
                 if matches!(&msg, Message::Close(_)) {
                     break;
                 }
@@ -421,6 +468,10 @@ async fn process_message(
 }
 
 /// Forward a message to all peers in the session except the sender.
+///
+/// A full peer queue ends the whole room. The frames carry an ordered encrypted
+/// stream, so dropping one would corrupt it while both sides still looked
+/// connected; closing both ends is the only outcome the endpoints can detect.
 async fn forward_to_others(
     state: &AppState,
     session_id: &str,
@@ -428,16 +479,50 @@ async fn forward_to_others(
     peer: &mpsc::WeakSender<Message>,
     msg: Message,
 ) {
-    if let Some(slot) = state.sessions.get(session_id) {
+    // Clone the senders so no map guard is held across the awaits below.
+    let targets: Vec<mpsc::Sender<Message>> = {
+        let Some(slot) = state.sessions.get(session_id) else {
+            return;
+        };
         if !slot.contains_peer(sender_id, peer) {
             return;
         }
-        for (id, peer_tx) in slot.peers.iter() {
-            if *id != sender_id {
-                // Drop message if peer is slow (bounded channel)
-                let _ = peer_tx.try_send(msg.clone());
-            }
+        slot.peers
+            .iter()
+            .filter(|(id, _)| *id != sender_id)
+            .map(|(_, tx)| tx.clone())
+            .collect()
+    };
+    let mut overflowed = false;
+    for tx in targets {
+        if let Err(mpsc::error::SendTimeoutError::Timeout(_)) = tx
+            .send_timeout(msg.clone(), state.timing.peer_send_timeout)
+            .await
+        {
+            overflowed = true;
         }
+    }
+    if overflowed {
+        evict_room(state, session_id, sender_id, peer);
+    }
+}
+
+/// Drop the room's senders so each writer drains its queue, sends a close
+/// frame and ends its handler. Only the room that overflowed is touched.
+fn evict_room(
+    state: &AppState,
+    session_id: &str,
+    sender_id: u64,
+    peer: &mpsc::WeakSender<Message>,
+) {
+    let _guard = state.admission.lock().expect("admission lock poisoned");
+    let still_ours = state
+        .sessions
+        .get(session_id)
+        .is_some_and(|slot| slot.contains_peer(sender_id, peer));
+    if still_ours {
+        warn!(session_id, "peer queue full, closing room");
+        state.sessions.remove(session_id);
     }
 }
 
@@ -499,9 +584,17 @@ async fn remove_peer(
 async fn write_loop(mut sender: SplitSink<WebSocket, Message>, mut rx: mpsc::Receiver<Message>) {
     while let Some(msg) = rx.recv().await {
         if sender.send(msg).await.is_err() {
-            break;
+            return;
         }
     }
+    // The room dropped this peer's channel (overflow or idle reap): say so
+    // explicitly rather than leaving the socket to look like a network fault.
+    let _ = sender
+        .send(Message::Close(Some(axum::extract::ws::CloseFrame {
+            code: 4004,
+            reason: "room closed".into(),
+        })))
+        .await;
 }
 
 /// Spawn a background task that reaps idle sessions.

@@ -32,7 +32,9 @@
 }
 
 .toolbar {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   align-items: center;
   min-height: 0;
@@ -47,24 +49,11 @@
 .input {
   flex: 1;
   min-width: 0;
-  padding: 3px 6px;
-  color: var(--fg-primary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-}
-
-.btn {
-  padding: 2px 8px;
-  color: var(--fg-primary);
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  cursor: pointer;
 }
 
 .conflict {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   padding: 6px 24px;

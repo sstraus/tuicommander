@@ -5,15 +5,37 @@
 	height: var(--control-height, 36px);
 	padding: 0 var(--control-padding-x, 8px);
 	border: 1px solid var(--border);
-	border-radius: var(--radius-lg);
+	border-radius: var(--control-radius, var(--radius-lg));
 	background: var(--bg-tertiary);
 	color: var(--fg-primary);
 	font-family: var(--font-ui, sans-serif);
-	font-size: var(--font-md, 13px);
+	font-size: var(--control-font-size, var(--font-md, 13px));
 	line-height: 1.4;
 	user-select: text;
 }
-/* Rows of 20-24px buttons: match their height instead of the 36px form field. */
+/* Dialog and popover boundaries isolate form controls from an owning toolbar.
+   Nested headers may opt back into toolbar density. */
+.form, :global(dialog), :global([role="dialog"]), :global([popover]) {
+ --control-height: 36px;
+ --control-padding-x: 8px;
+ --control-font-size: var(--font-md, 13px);
+ --control-radius: var(--radius-lg);
+ --control-icon-height: 36px;
+ --control-segment-padding-x: 12px;
+}
+/* Toolbar density: measured panel close/detach neighbours are 22px, and the
+   app toolbar is 32px. 22px leaves 5px per side there; a 36px form cannot fit.
+   Keep the existing compact height, with 6px horizontal padding. Compose on
+   the header/toolbar row, not a whole panel that also contains forms. */
+.toolbar {
+ --control-height: 22px;
+ --control-padding-x: 6px;
+ --control-font-size: var(--font-sm, 12px);
+ --control-radius: var(--radius-sm);
+ --control-icon-height: 22px;
+ --control-segment-padding-x: 6px;
+}
+/* Per-control spelling of toolbar density for isolated actions. */
 .compact {
 	--control-height: 22px;
 	--control-padding-x: 6px;
@@ -30,21 +52,23 @@
 	cursor: not-allowed;
 }
 .control::placeholder { color: var(--fg-muted); }
-.select { cursor: pointer; }
+.select { cursor: pointer; padding-inline-end: 32px; }
 .select[multiple], .select[size]:not([size="1"]) { height: auto; min-height: var(--control-height, 36px); padding-block: 8px; }
 .textarea { height: auto; min-height: calc(var(--control-height, 36px) * 3); padding-block: 8px; resize: vertical; }
 .segmented {
+	box-sizing: border-box;
 	display: inline-flex;
 	align-items: stretch;
 	max-width: 100%;
 	min-height: var(--control-height, 36px);
+	font-size: var(--control-font-size, inherit);
 	border: 1px solid var(--border);
-	border-radius: var(--radius-lg);
+	border-radius: var(--control-radius, var(--radius-lg));
 	background: var(--bg-tertiary);
 }
 .segment {
 	min-width: 0;
-	padding: 0 12px;
+	padding: 0 var(--control-segment-padding-x, 12px);
 	border: 0;
 	border-radius: var(--radius-md);
 	background: transparent;
@@ -57,4 +81,194 @@
 @media (max-width: 600px) {
 	.control { font-size: 16px; min-height: 44px; }
 	.segmented { min-height: 44px; }
+}
+
+.button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	flex-shrink: 0;
+	white-space: nowrap;
+	cursor: pointer;
+	user-select: none;
+}
+/* Keep the native icon hit region square; only the decorative surface is circular. */
+.iconButton {
+ --control-height: var(--control-icon-height, 36px);
+ width: var(--control-height);
+ min-width: var(--control-height);
+ max-width: none;
+ height: var(--control-height);
+ padding: 0;
+ border-radius: 0;
+}
+.circleButton, .circleButton:focus-visible, .button.circleButton[aria-pressed="true"] {
+ background: transparent;
+ border-color: transparent;
+}
+.circleSurface {
+ box-sizing: border-box;
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ width: 100%;
+ height: 100%;
+ border: 1px solid var(--border);
+ border-radius: 50%;
+}
+@media (max-width: 600px) { .iconButton { --control-height: 44px; } }
+
+.secondary { background: var(--bg-tertiary); color: var(--fg-primary); }
+.primary { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); }
+.ghost { background: transparent; border-color: transparent; color: var(--fg-secondary); }
+.danger { background: var(--error); border-color: var(--error); color: var(--text-on-error); }
+.secondary:hover:enabled, .ghost:hover:enabled, .circleButton:hover:enabled > :is(.secondary, .ghost) { background: var(--bg-highlight); }
+.primary:hover:enabled, .danger:hover:enabled, .circleButton:hover:enabled > :is(.primary, .danger) { filter: brightness(1.1); }
+.button[aria-pressed="true"], .circleButton[aria-pressed="true"] > .circleSurface { border-color: var(--accent); }
+
+/* Promoted from Settings: Expert's 36x20 track is the shared switch look. */
+.switchControl, .colorInput {
+ box-sizing: border-box;
+ position: relative;
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ flex-shrink: 0;
+ width: var(--control-height, 36px);
+ height: var(--control-height, 36px);
+}
+.switchInput, .colorInput input {
+ position: absolute;
+ inset: 0;
+ opacity: 0;
+ width: 100%;
+ height: 100%;
+ margin: 0;
+ cursor: pointer;
+ z-index: 1;
+}
+.switchTrack {
+ box-sizing: border-box;
+ position: relative;
+ width: 36px;
+ height: 20px;
+ border-radius: 10px;
+ background: var(--bg-tertiary);
+ border: 1px solid var(--border);
+ transition: background 0.2s ease;
+ pointer-events: none;
+}
+.switchTrack::before {
+ content: "";
+ position: absolute;
+ top: 2px;
+ left: 2px;
+ width: 14px;
+ height: 14px;
+ border-radius: var(--radius-full);
+ background: #fff;
+ transition: transform 0.2s ease;
+}
+.switchInput:checked + .switchTrack { background: var(--accent); border-color: var(--accent); }
+.switchInput:checked + .switchTrack::before { transform: translateX(16px); }
+.switchControl:has(:focus-visible), .colorInput:has(:focus-visible), .slider:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switchControl:has(:disabled), .colorInput:has(:disabled), .slider:disabled { opacity: 0.5; }
+.switchInput:disabled, .colorInput input:disabled, .slider:disabled { cursor: not-allowed; }
+.slider {
+ box-sizing: border-box;
+ flex: 1;
+ min-width: 0;
+ height: var(--control-height, 36px);
+ margin: 0;
+ padding: 0;
+ appearance: none;
+ background: linear-gradient(var(--bg-tertiary), var(--bg-tertiary)) center / 100% 4px no-repeat;
+ border: 0;
+ border-radius: var(--radius-xs);
+}
+.slider::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; background: var(--accent); border-radius: var(--radius-full); cursor: pointer; }
+.slider::-moz-range-thumb { width: 14px; height: 14px; background: var(--accent); border: 0; border-radius: var(--radius-full); cursor: pointer; }
+.colorInput { cursor: pointer; overflow: hidden; border: 1px dashed var(--border); border-radius: var(--radius-full); }
+.colorValue { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; }
+@media (max-width: 600px) {
+ .switchControl, .colorInput { width: max(44px, var(--control-height, 36px)); height: max(44px, var(--control-height, 36px)); }
+ .slider { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) { .switchTrack, .switchTrack::before { transition: none; } }
+
+.colorInput[data-selected] { border-color: var(--fg-primary); border-style: solid; }
+
+/* Preset and clear targets promoted from Settings; match the native color picker. */
+.colorSwatch {
+ box-sizing: border-box;
+ position: relative;
+ flex-shrink: 0;
+ width: var(--control-height, 36px);
+ height: var(--control-height, 36px);
+ border-radius: var(--radius-full);
+ border: 2px solid transparent;
+ padding: 0;
+ overflow: hidden;
+ cursor: pointer;
+ transition: transform 0.1s ease;
+ display: inline-flex;
+ align-items: center;
+ justify-content: center;
+ font-size: var(--font-xs);
+ color: var(--fg-secondary);
+}
+.colorSwatch:hover:enabled { transform: scale(1.15); }
+.colorSwatch[data-clear] { background: var(--bg-secondary); border: 1px dashed var(--border); }
+.colorSwatch[aria-pressed="true"] { border-color: var(--fg-primary); box-shadow: 0 0 0 2px var(--bg-primary); }
+.colorSwatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.colorSwatch:disabled { opacity: 0.5; cursor: not-allowed; }
+@media (max-width: 600px) {
+ .colorSwatch { width: max(44px, var(--control-height, 36px)); height: max(44px, var(--control-height, 36px)); }
+}
+@media (prefers-reduced-motion: reduce) { .colorSwatch { transition: none; } }
+
+/* Edge actions fill their container without inheriting feature-owned geometry. */
+.stretchButton {
+ height: auto;
+ align-self: stretch;
+ min-height: var(--control-height, 36px);
+ min-width: var(--control-height, 36px);
+ border-radius: 0;
+}
+.stretchButton.compact { --control-height: var(--control-icon-height, 36px); }
+@media (max-width: 600px) {
+ .stretchButton { min-height: max(44px, var(--control-height, 36px)); min-width: max(44px, var(--control-height, 36px)); }
+}
+
+.buttonGroup { display: inline-flex; align-items: stretch; max-width: 100%; }
+.buttonGroup > .button { border-radius: 0; }
+.buttonGroup > .button:first-child { border-start-start-radius: var(--radius-lg); border-end-start-radius: var(--radius-lg); }
+.buttonGroup > .button:last-child { border-start-end-radius: var(--radius-lg); border-end-end-radius: var(--radius-lg); }
+.buttonGroup > .button.compact:first-child { border-start-start-radius: var(--radius-sm); border-end-start-radius: var(--radius-sm); }
+.buttonGroup > .button.compact:last-child { border-start-end-radius: var(--radius-sm); border-end-end-radius: var(--radius-sm); }
+.buttonGroup > .button:not(:last-child) { border-inline-end: 0; }
+.buttonGroup > .button:not(:first-child) { border-inline-start: 1px solid var(--border); }
+.buttonGroup > .button:focus-visible { position: relative; z-index: 1; }
+
+.textareaAutoGrow {
+ min-height: var(--control-height, 36px);
+ max-height: calc(var(--control-height, 36px) * 3);
+ padding-block: calc(var(--control-padding-x, 8px) / 2);
+ resize: none;
+ overflow-y: auto;
+}
+@media (max-width: 600px) {
+ .textareaAutoGrow { min-height: max(44px, var(--control-height, 36px)); max-height: calc(max(44px, var(--control-height, 36px)) * 3); }
+}
+
+/* Validation changes the border, not the keyboard focus ring. */
+:is(input, select, textarea).control[aria-invalid="true"] { border-color: var(--error); }
+.removalToggle { background: var(--bg-tertiary); color: var(--fg-primary); }
+.removalToggle:hover:enabled, .circleButton:hover:enabled > .removalToggle { background: var(--bg-highlight); }
+.button.removalToggle[aria-pressed="true"], .circleButton[aria-pressed="true"] > .removalToggle { border-color: var(--success); color: var(--success); }
+.button.removalToggle[aria-pressed="true"]:hover:enabled, .circleButton[aria-pressed="true"]:hover:enabled > .removalToggle {
+ border-color: var(--error);
+ color: var(--error);
+ background: color-mix(in srgb, var(--error) 10%, transparent);
 }

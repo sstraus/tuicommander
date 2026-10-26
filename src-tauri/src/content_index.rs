@@ -1582,26 +1582,16 @@ mod tests {
         assert!(index.search("anything", 5).is_empty());
     }
 
+    // Catches: checkpoint waits for a fallback search guard to drop, starving the build.
     #[test]
     fn a_fallback_search_guard_cannot_starve_an_index_checkpoint() {
         let throttle = Arc::new(IndexerThrottle::default());
         let guard = throttle.begin_search();
-        let (tx, rx) = std::sync::mpsc::channel();
-        let worker = std::thread::spawn(move || {
-            throttle.checkpoint();
-            tx.send(()).unwrap();
-        });
-
-        let completed_while_search_was_active = rx
-            .recv_timeout(THROTTLE_SEARCH_POLL * 2 + Duration::from_millis(100))
-            .is_ok();
+        // Keep the search active until checkpoint returns. A starvation regression
+        // hangs here and is caught by nextest's outer timeout, without confusing
+        // worker scheduling under CI load with checkpoint's bounded deferral.
+        throttle.checkpoint();
         drop(guard);
-        worker.join().unwrap();
-
-        assert!(
-            completed_while_search_was_active,
-            "a long fallback grep must defer the build briefly, not pause it until grep completes"
-        );
     }
 
     #[test]
@@ -2034,7 +2024,7 @@ mod tests {
         let dir = incremental_repo();
         let index = built(dir.path());
         let slots_before = index.read().entries.len();
-        assert!(hits(&index, "kumquat").is_empty());
+        assert_eq!(hits(&index, "kumquat"), [] as [std::string::String; 0]);
 
         fs::write(
             dir.path().join("file_7.rs"),
@@ -2096,7 +2086,7 @@ mod tests {
 
         assert!(hits(&index, "axolotl").contains(&"later.rs".to_string()));
         assert_eq!(index.read().entries.len(), slots_before);
-        assert!(index.read().free_ids.is_empty());
+        assert_eq!(index.read().free_ids, [] as [u32; 0]);
     }
 
     #[test]

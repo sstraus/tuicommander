@@ -50,6 +50,7 @@ type StatusPayload = {
 	error?: string;
 	retry_after_secs?: number;
 	step?: string;
+	relay_failure?: string;
 };
 
 function directConn(id: string): RemoteConnection {
@@ -219,6 +220,13 @@ describe("remoteConnectionsStore renders what the backend reports", () => {
 			push({ id: "c1", status: "connecting" });
 			expect(store.getConnectionState("c1")?.error).toBeUndefined();
 			expect(store.getConnectionState("c1")?.retryAfterSecs).toBeUndefined();
+		});
+
+		it("keeps the typed relay failure and drops it when the next attempt begins", () => {
+			push({ id: "c1", status: "error", error: "link lost", relay_failure: "link_lost" });
+			expect(store.getConnectionState("c1")?.relayFailure).toBe("link_lost");
+			push({ id: "c1", status: "connecting" });
+			expect(store.getConnectionState("c1")?.relayFailure).toBeUndefined();
 		});
 
 		it("keeps the deployment step from the backend status", () => {
@@ -470,6 +478,15 @@ describe("remoteConnectionsStore renders what the backend reports", () => {
 				password: "s3cret",
 			});
 			expect(JSON.stringify(store.getConnections())).not.toContain("s3cret");
+		});
+
+		it("the relay pairing bundle goes to the vault through the backend and is never held here", async () => {
+			await store.setRelayPairing("c1", "tuic-pair-v1:secret");
+			expect(invokeMock).toHaveBeenCalledWith("set_remote_connection_relay_pairing", {
+				id: "c1",
+				bundle: "tuic-pair-v1:secret",
+			});
+			expect(JSON.stringify(store.getConnections())).not.toContain("tuic-pair-v1:secret");
 		});
 
 		it("removing a live connection deletes it without a separate disconnect", async () => {

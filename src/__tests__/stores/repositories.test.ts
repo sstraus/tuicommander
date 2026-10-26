@@ -88,6 +88,20 @@ describe("repositoriesStore", () => {
 			});
 		});
 
+		// Catches stale filesystem diagnostics being restored from persisted repository configuration.
+		it("does not persist transient worktree diagnostics", () => {
+			testInScope(() => {
+				store.add({ path: "/repo", displayName: "test" });
+				store.setWorktreeDiagnostics("/repo", [
+					{ path: "/old/path", branch: null, state: "missing", guidance: "Run git worktree repair" },
+				]);
+				store.setWorkspace("/repo", "main");
+				vi.advanceTimersByTime(500);
+				const repo = lastRepositoryMutation().repos.find((mutation) => mutation.id === "/repo")?.after;
+				expect(repo).not.toHaveProperty("worktreeDiagnostics");
+			});
+		});
+
 		it("does not persist terminals via invoke", () => {
 			testInScope(() => {
 				store.add({ path: "/repo", displayName: "test" });

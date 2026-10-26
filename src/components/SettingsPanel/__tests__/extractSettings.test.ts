@@ -59,6 +59,14 @@ describe("extractTab — client gating", () => {
 });
 
 describe("extractTab — text read from source", () => {
+	// Catches: shared Switch migration makes a static toggle caption disappear from the search drift oracle.
+	it.each(["input", "Switch"])("reads the caption after a self-closing %s", (control) => {
+		const result = extractTab(
+			`<h3>Prompts</h3><label><${control} checked={enabled()} /><span>Auto-execute</span></label>`,
+		);
+		expect(result.settings).toEqual([{ text: "Auto-execute", section: "Prompts" }]);
+		expect(result.dynamic).toBe(0);
+	});
 	it("ignores accessible names on form controls while indexing setting labels", () => {
 		const src = `<input aria-label="Model" /><h3>Agents</h3><SettingToggle label="Show agent intent as tab title" />`;
 		expect(extractTab(src).settings).toEqual([{ text: "Show agent intent as tab title", section: "Agents" }]);

@@ -7,16 +7,28 @@
   background: var(--bg-primary);
 }
 
+/* Preserve the transcript type scale around the session-owned terminal size.
+ * Do not scale the viewport or shared control geometry. Mobile keeps its tokens. */
+.chatView[data-session-zoom="true"] {
+  --font-3xs: calc(var(--font-base) * 8 / 14);
+  --font-2xs: calc(var(--font-base) * 10 / 14);
+  --font-xs: calc(var(--font-base) * 11 / 14);
+  --font-sm: calc(var(--font-base) * 12 / 14);
+  --font-md: calc(var(--font-base) * 13 / 14);
+  --font-lg: calc(var(--font-base) * 15 / 14);
+  --font-xl: calc(var(--font-base) * 17 / 14);
+  --font-2xl: calc(var(--font-base) * 20 / 14);
+  --font-3xl: calc(var(--font-base) * 24 / 14);
+}
+
 .toggle {
+  composes: toolbar from "../ui/FormControls.module.css";
   position: absolute;
   top: 6px;
   right: 20px;
   z-index: 11;
   display: flex;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   background: var(--bg-secondary);
-  overflow: hidden;
 }
 
 /* Chat content starts below its controls, even without a LastPromptBar. */
@@ -25,31 +37,6 @@
   align-self: flex-end;
   flex-shrink: 0;
   margin: 6px 20px 4px;
-}
-
-.toggleButton {
-  padding: 2px 8px;
-  border: 0;
-  background: transparent;
-  color: var(--fg-secondary);
-  font-family: var(--font-ui);
-  font-size: var(--font-xs);
-  cursor: pointer;
-}
-
-.toggleButton:hover:not(:disabled) {
-  background: var(--bg-highlight);
-}
-
-.toggleButton[aria-pressed="true"] {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.toggleButton:disabled {
-  color: var(--fg-muted);
-  opacity: 0.6;
-  cursor: not-allowed;
 }
 
 .fallbackBanner {

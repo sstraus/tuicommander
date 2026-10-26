@@ -1,6 +1,7 @@
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { WorkItemBoardColumn } from "../../../types/work-items.gen";
+import { Button } from "../../ui/Button";
 import s from "./board.module.css";
 import type { BoardCard } from "./types";
 
@@ -53,7 +54,7 @@ export function CardMoveMenu(props: {
 	});
 	return (
 		<>
-			<button
+			<Button
 				ref={trigger}
 				type="button"
 				class={s.moveTrigger}
@@ -63,7 +64,7 @@ export function CardMoveMenu(props: {
 				onClick={toggle}
 			>
 				Move…
-			</button>
+			</Button>
 			<Show when={position()}>
 				{(point) => (
 					<Portal>
@@ -97,7 +98,7 @@ export function CardMoveMenu(props: {
 							<For each={props.columns}>
 								{(column) => (
 									<Show when={column.id !== props.columnId}>
-										<button
+										<Button
 											type="button"
 											role="menuitem"
 											disabled={!props.canMove(props.card, column.id)}
@@ -107,7 +108,7 @@ export function CardMoveMenu(props: {
 											}}
 										>
 											{column.name}
-										</button>
+										</Button>
 									</Show>
 								)}
 							</For>

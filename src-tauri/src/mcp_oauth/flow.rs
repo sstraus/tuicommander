@@ -698,7 +698,7 @@ mod tests {
         let pr = pr_meta_no_scopes();
         let as_ = as_meta_no_scopes();
         let scopes = resolve_scopes(&pr, &as_);
-        assert!(scopes.is_empty());
+        assert_eq!(scopes, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -941,7 +941,7 @@ mod tests {
             )
             .await
             .unwrap();
-        assert!(m.cleanup_expired().is_empty());
+        assert_eq!(m.cleanup_expired(), [] as [std::string::String; 0]);
         assert_eq!(m.pending_count(), 1);
     }
 }
