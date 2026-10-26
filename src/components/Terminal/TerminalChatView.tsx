@@ -7,6 +7,7 @@ import { terminalsStore } from "../../stores/terminals";
 import { openFileLinkHere, resolveFileLink } from "../../utils/openFileLink";
 import { sendNativeChoice } from "../../utils/sendNativeChoice";
 import type { TranscriptSearchRef } from "../AIChatPanel/Transcript";
+import { Button, SegmentedControl } from "../ui";
 import { TerminalChatTranscript } from "./TerminalChatTranscript";
 import s from "./TerminalChatView.module.css";
 
@@ -112,6 +113,7 @@ export const TerminalChatView: Component<{
 		<>
 			<TerminalChatTranscript
 				sessionId={props.sessionId}
+				fontSize={term()?.fontSize}
 				terminalAgent={terminalsStore.get(props.terminalId)?.agentType ?? undefined}
 				onSearchRef={props.onSearchRef}
 				onOpenFile={openFile}
@@ -124,13 +126,13 @@ export const TerminalChatView: Component<{
 						fallback={
 							<div class={s.fallbackBanner}>
 								{term()?.questionText}
-								<button
+								<Button
+									variant="ghost"
 									type="button"
-									class={s.toggleButton}
 									onClick={() => terminalsStore.setViewMode(props.terminalId, "cli")}
 								>
 									Answer in CLI
-								</button>
+								</Button>
 							</div>
 						}
 					>
@@ -158,29 +160,22 @@ export const ViewModeToggle: Component<{ terminalId: string; onWheel?: (e: Wheel
 	};
 	return (
 		<Show when={term()?.agentType}>
-			<div class={s.toggle} data-mode={mode()} role="group" aria-label="Terminal view" onWheel={props.onWheel}>
-				<button
-					type="button"
-					class={s.toggleButton}
-					aria-pressed={mode() === "cli"}
-					onClick={() => terminalsStore.setViewMode(props.terminalId, "cli")}
-				>
-					CLI
-				</button>
-				<button
-					type="button"
-					class={s.toggleButton}
-					aria-pressed={mode() === "chat"}
-					disabled={!availability().available}
-					title={reason()}
-					onClick={() => {
-						const sessionId = term()?.sessionId;
-						if (sessionId) chatViewStore.clearUnavailable(sessionId);
-						terminalsStore.setViewMode(props.terminalId, "chat");
+			<div class={s.toggle} data-terminal-view-toggle data-mode={mode()} title={reason()} onWheel={props.onWheel}>
+				<SegmentedControl
+					aria-label="Terminal view"
+					options={[
+						{ id: "cli", label: "CLI" },
+						{ id: "chat", label: "Chat", disabled: !availability().available },
+					]}
+					value={mode()}
+					onChange={(value) => {
+						if (value === "chat") {
+							const sessionId = term()?.sessionId;
+							if (sessionId) chatViewStore.clearUnavailable(sessionId);
+						}
+						terminalsStore.setViewMode(props.terminalId, value);
 					}}
-				>
-					Chat
-				</button>
+				/>
 			</div>
 		</Show>
 	);

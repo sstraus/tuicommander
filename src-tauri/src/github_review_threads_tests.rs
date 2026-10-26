@@ -116,11 +116,12 @@ async fn outdated_thread_shown_as_outdated() {
     assert_eq!(page.threads[0]["line"], Value::Null);
     assert!(page.threads[0]["originalLine"].as_u64().is_some());
     assert!(!page.has_next_page);
-    assert!(
-        !page.threads[0]["comments"]["nodes"]
+    assert_ne!(
+        page.threads[0]["comments"]["nodes"]
             .as_array()
             .unwrap()
-            .is_empty()
+            .as_slice(),
+        [] as [serde_json::Value; 0]
     );
 }
 

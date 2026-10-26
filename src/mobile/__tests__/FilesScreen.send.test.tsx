@@ -42,13 +42,14 @@ afterEach(() => {
 	for (const toast of [...toastsStore.toasts]) toastsStore.remove(toast.id);
 	vi.useRealTimers();
 });
-async function open() {
+async function open(openerTuicSession?: string) {
 	const view = render(() => (
 		<>
 			<MobileToastContainer />
 			<FilesScreen
 				sessions={[agent("other"), agent("origin"), agent("foreign", "/elsewhere")]}
 				initialSessionId="origin"
+				openerTuicSession={openerTuicSession}
 				initialRepo={{ cwd: "/repo", worktreePath: "/repo" }}
 				initialLink={{ candidate: "review.md" }}
 			/>
@@ -58,6 +59,13 @@ async function open() {
 	return view;
 }
 const sends = () => vi.mocked(rpc).mock.calls.filter(([command]) => command === "enqueue_agent_command");
+
+it("keeps the viewing-session fallback when the document opener is unavailable", async () => {
+	// Catches: an unavailable opener changes the existing fallback from the viewing session to the first agent.
+	const view = await open("missing-opener");
+	await fireEvent.click(view.getByRole("checkbox"));
+	expect(await waitFor(() => view.getByRole("combobox", { name: "Review agent" }))).toHaveValue("origin");
+});
 
 it("sends persisted checkbox and tweak edits with the absolute path and comment count to the originating agent", async () => {
 	// Catches: send drops the absolute path, ignores checkbox edits, or targets a foreign repository.

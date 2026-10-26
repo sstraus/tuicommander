@@ -8,16 +8,12 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 16px;
   background: rgba(255, 215, 0, 0.08);
-  border-bottom: 1px solid rgba(255, 215, 0, 0.2);
-  border: none;
   color: inherit;
   text-align: left;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   font-family: inherit;
-  width: 100%;
   animation: slide-in 0.2s ease;
 }
 
@@ -66,4 +62,11 @@
   .banner {
     animation: none;
   }
+}
+
+button[data-control-layout="row"].banner {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 16px;
+  border: none;
 }

@@ -10,6 +10,7 @@ const DEFAULT_FILE = `<svg width="16" height="16" viewBox="0 0 16 16" fill="curr
 export interface FileIconProps {
 	name: string;
 	isDir: boolean;
+	isLink?: boolean;
 	class?: string;
 }
 
@@ -48,7 +49,10 @@ export const FileIcon: Component<FileIconProps> = (props) => {
 		return fileIconRegistry.resolve(props.name, props.isDir);
 	});
 
-	const svg = () => icon() ?? (props.isDir ? DEFAULT_FOLDER : DEFAULT_FILE);
+	const svg = () =>
+		props.isLink
+			? '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><path d="M6.5 3a3.5 3.5 0 0 1 5-0.1l1.6 1.6a3.5 3.5 0 0 1 0 5l-2 2-1-1 2-2a2 2 0 0 0 0-3L10.5 4a2 2 0 0 0-3 0l-2 2-1-1 2-2zm3 10a3.5 3.5 0 0 1-5 0.1l-1.6-1.6a3.5 3.5 0 0 1 0-5l2-2 1 1-2 2a2 2 0 0 0 0 3L5.5 12a2 2 0 0 0 3 0l2-2 1 1-2 2zM5 10l5-5 1 1-5 5z"/></svg>'
+			: (icon() ?? (props.isDir ? DEFAULT_FOLDER : DEFAULT_FILE));
 
 	return <span class={props.class}>{iconNode(svg())}</span>;
 };

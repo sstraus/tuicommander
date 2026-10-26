@@ -1936,9 +1936,8 @@ mod tests {
         #[tokio::test]
         async fn failed_handshake_error_does_not_contain_the_token() {
             let state = test_state();
-            let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-            let url = format!("http://{}", listener.local_addr().unwrap());
-            drop(listener);
+            let socket = crate::test_support::resetting_tcp_peer();
+            let url = format!("http://{}", socket.local_addr().unwrap());
             state
                 .remote
                 .force_connected_for_test("mint", &url, Some("SECRET-TOKEN-1419"));

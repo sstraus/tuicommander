@@ -37,7 +37,8 @@ it("renders exactly one awaiting count for three waiting sessions on mobile home
 	const view = render(() => <MobileApp />);
 	await waitFor(() => expect(view.getByText("Awaiting")).toBeTruthy());
 	expect(view.getAllByText("3", { exact: true })).toHaveLength(1);
-	expect(view.getByText("Active").parentElement?.textContent).toBe("4Active");
+	expect(view.getByText("Working").parentElement?.textContent).toBe("0Working");
+	expect(view.getAllByText("Idle")[0].parentElement?.textContent).toBe("1Idle");
 	for (const name of ["Waiting agent 0", "Waiting agent 1", "Waiting agent 2"]) {
 		expect(view.getByRole("button", { name: new RegExp(`${name}.*Question`) })).toBeTruthy();
 	}

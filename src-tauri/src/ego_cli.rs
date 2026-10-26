@@ -843,7 +843,10 @@ mod tests {
         );
         assert_eq!(projected.providers.len(), 1);
         assert_eq!(projected.providers[0].name, "anthropic");
-        assert!(projected.providers[0].models.is_empty());
+        assert_eq!(
+            projected.providers[0].models,
+            [] as [crate::ego_cli::EgoModel; 0]
+        );
     }
 
     #[test]

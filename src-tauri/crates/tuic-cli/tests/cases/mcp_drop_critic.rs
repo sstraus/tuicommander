@@ -274,7 +274,7 @@ fn a_server_gone_before_delete_does_not_change_the_outcome() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(output.status.success(), "{stderr}");
     assert!(!stderr.contains("panicked"), "{stderr}");
-    assert!(!output.stdout.is_empty());
+    assert_ne!(output.stdout, [] as [u8; 0]);
     assert_eq!(methods(&seen), ["POST", "POST"]);
 }
 

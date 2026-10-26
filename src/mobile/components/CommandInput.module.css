@@ -7,7 +7,6 @@
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
   flex-shrink: 0;
-  padding-bottom: calc(4px + env(safe-area-inset-bottom, 0px));
 }
 
 .composer {
@@ -40,6 +39,7 @@
   white-space: nowrap;
 }
 
+/* Native embedded composer surface, not a standalone form field. */
 .input {
   display: block;
   flex: 1;
@@ -68,72 +68,22 @@
   outline: none;
 }
 
-.send,
-.dictate {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-bottom: 5px;
-  border-radius: var(--radius-full);
-  border: none;
-  background: var(--accent);
-  color: var(--text-on-accent);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  flex-shrink: 0;
-  position: relative;
-}
-
 .send {
-  width: 36px;
-  height: 36px;
-  margin: 0 0 2px 2px;
+  margin-left: 2px;
+  flex-shrink: 0;
 }
 
-/* Hit area 42x44: reaches left only across the 4px gap to the box, never over the mic. */
-.send::before {
-  content: "";
-  position: absolute;
-  inset: -4px -2px -4px -4px;
-}
-
-.send:active {
-  opacity: 0.7;
-}
-
-.dictate {
-  width: 22px;
-  height: 38px;
-  margin-bottom: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--fg-muted);
-}
-
-/* Hit area 22x44. */
-.dictate::before {
-  content: "";
-  position: absolute;
-  inset: -3px 0;
-}
-
-.dictate[aria-pressed="true"] {
-  color: var(--error);
-}
-
+.dictate[aria-pressed="true"],
 .dictate[data-failed="true"] {
-  width: auto;
-  gap: 4px;
-  padding-inline: 4px;
   color: var(--error);
-  font-family: var(--font-ui);
-  font-size: var(--font-sm);
 }
 
-.dictate:disabled {
-  opacity: 0.5;
+.dictationFailure {
+  position: absolute;
+  bottom: 100%;
+  right: 12px;
+  color: var(--error);
+  background: var(--bg-secondary);
 }
 
 .question {

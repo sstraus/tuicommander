@@ -710,6 +710,7 @@ mod tests {
                 pinned: false,
                 focus: false,
                 origin_repo_path: None,
+                opener_tuic_session: None,
             },
             AppEvent::CloseHtmlTabs {
                 tab_ids: vec!["panel".to_string()],

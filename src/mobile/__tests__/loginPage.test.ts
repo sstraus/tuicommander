@@ -13,6 +13,9 @@ function loadServiceWorker(networkResponse: Response) {
 		Response,
 		Request,
 		URL,
+		AbortController,
+		setTimeout,
+		clearTimeout,
 	});
 	async function navigate(path: string) {
 		let answer: Promise<Response> | undefined;
@@ -22,8 +25,7 @@ function loadServiceWorker(networkResponse: Response) {
 				answer = p;
 			},
 		});
-		await answer;
-		await new Promise((r) => setTimeout(r, 0)); // the cache write is not awaited by the worker
+		expect(await answer).toBe(networkResponse);
 	}
 	return { navigate, writes };
 }
@@ -37,10 +39,11 @@ describe("service worker shell cache", () => {
 		expect(writes).toEqual([]);
 	});
 
-	it("still stores the app shell on a successful /mobile navigation", async () => {
+	// Catches: successful navigation writes an unused shell instead of keeping offline recovery splash-only.
+	it("does not cache the app shell on a successful /mobile navigation", async () => {
 		const { navigate, writes } = loadServiceWorker(new Response("<app>", { status: 200 }));
 		await navigate("/mobile");
-		expect(writes).toEqual(["/mobile.html"]);
+		expect(writes).toEqual([]);
 	});
 
 	// Plausible bug: a cached refusal replaces the shell and the app never leaves it.

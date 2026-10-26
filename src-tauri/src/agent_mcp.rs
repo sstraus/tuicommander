@@ -24,8 +24,8 @@ enum McpFormat {
     /// `additionalProperties: false`, so the standard entry shape is rejected.
     OpenCode,
     /// TOML: `[mcp_servers.tuicommander]`. `forward_session` adds the
-    /// `env_vars` allowlist Codex needs to pass `TUIC_SESSION` through its
-    /// sandbox; agents that inherit the environment do not use it.
+    /// `env_vars` allowlist Codex needs to pass identity and endpoint selection
+    /// to its bridge; agents that inherit the environment do not use it.
     Toml { forward_session: bool },
     /// YAML: goose's `extensions:` map. The entry is an `ExtensionEntry`
     /// (`enabled` + a `type`-tagged `ExtensionConfig`), which names the command
@@ -200,8 +200,8 @@ fn get_mcp_config_spec(agent_type: &str) -> Option<McpConfigSpec> {
             ..json(opencode_config_path(), vec!["mcp"], &["opencode"])
         }),
         "codex" => Some(McpConfigSpec {
-            // Codex filters the child environment, so TUIC_SESSION only reaches
-            // the bridge when it is on the env_vars allowlist.
+            // Codex filters the child environment, so identity and endpoint
+            // selection reach the bridge only through the env_vars allowlist.
             format: McpFormat::Toml {
                 forward_session: true,
             },
@@ -953,9 +953,9 @@ fn write_toml_file(path: &std::path::Path, value: &toml::Value) -> Result<(), St
 /// Ensure a TOML config (`[mcp_servers.<name>]`) has the correct bridge entry.
 /// Returns true if the config was written (installed or updated).
 ///
-/// `forward_session` adds `TUIC_SESSION` to the entry's `env_vars` allowlist —
-/// Codex needs it to pass the variable through its sandbox. Grok inherits the
-/// environment, and its schema has no `env_vars` key.
+/// `forward_session` adds identity and endpoint selectors to the entry's
+/// `env_vars` allowlist. Codex filters its bridge environment; Grok inherits
+/// the environment, and its schema has no `env_vars` key.
 fn ensure_toml_mcp_entry(
     config_path: &std::path::Path,
     forward_session: bool,
@@ -973,23 +973,34 @@ fn ensure_toml_mcp_entry(
     let existing_command = existing_entry
         .and_then(|entry| entry.get("command"))
         .and_then(toml::Value::as_str);
-    let forwards_tuic_session = existing_entry
-        .and_then(|entry| entry.get("env_vars"))
-        .and_then(toml::Value::as_array)
-        .is_some_and(|env_vars| {
-            env_vars.iter().any(|value| {
-                value.as_str() == Some("TUIC_SESSION")
-                    || value.as_table().is_some_and(|entry| {
-                        entry.get("name").and_then(toml::Value::as_str) == Some("TUIC_SESSION")
-                            && entry
-                                .get("source")
-                                .and_then(toml::Value::as_str)
-                                .is_none_or(|source| source == "local")
+    let missing_forwarded_vars: Vec<_> = [
+        "TUIC_SESSION",
+        "TUIC_SOCKET",
+        "TUIC_APP_INSTANCE",
+        "TUIC_CONFIG_DIR",
+    ]
+    .into_iter()
+    .filter(|name| {
+        forward_session
+            && !existing_entry
+                .and_then(|entry| entry.get("env_vars"))
+                .and_then(toml::Value::as_array)
+                .is_some_and(|env_vars| {
+                    env_vars.iter().any(|value| {
+                        value.as_str() == Some(*name)
+                            || value.as_table().is_some_and(|entry| {
+                                entry.get("name").and_then(toml::Value::as_str) == Some(*name)
+                                    && entry
+                                        .get("source")
+                                        .and_then(toml::Value::as_str)
+                                        .is_none_or(|source| source == "local")
+                            })
                     })
-            })
-        });
+                })
+    })
+    .collect();
 
-    let session_ok = forwards_tuic_session || !forward_session;
+    let session_ok = missing_forwarded_vars.is_empty();
     match existing_command {
         Some(cmd) if cmd == bridge_path && session_ok => {
             return false;
@@ -998,7 +1009,7 @@ fn ensure_toml_mcp_entry(
             tracing::info!(
                 source = "mcp",
                 agent = %agent_label,
-                "Enabling TUIC_SESSION forwarding for bridge identity"
+                "Enabling bridge identity and endpoint forwarding"
             );
         }
         Some(old) => {
@@ -1045,14 +1056,16 @@ fn ensure_toml_mcp_entry(
         *command.decor_mut() = decor;
     }
     entry["command"] = toml_edit::Item::Value(command);
-    if forward_session && !forwards_tuic_session {
+    if !missing_forwarded_vars.is_empty() {
         let mut env_vars = entry
             .get("env_vars")
             .and_then(toml_edit::Item::as_value)
             .and_then(toml_edit::Value::as_array)
             .cloned()
             .unwrap_or_default();
-        env_vars.push("TUIC_SESSION");
+        for name in missing_forwarded_vars {
+            env_vars.push(name);
+        }
         entry["env_vars"] = toml_edit::value(env_vars);
     }
     let edited = document.to_string();
@@ -2808,7 +2821,12 @@ mod tests {
             root["mcp_servers"][TUIC_MCP_KEY]["env_vars"]
                 .as_array()
                 .unwrap(),
-            &[toml::Value::String("TUIC_SESSION".to_string())],
+            &[
+                toml::Value::String("TUIC_SESSION".to_string()),
+                toml::Value::String("TUIC_SOCKET".to_string()),
+                toml::Value::String("TUIC_APP_INSTANCE".to_string()),
+                toml::Value::String("TUIC_CONFIG_DIR".to_string()),
+            ],
         );
     }
 
@@ -3029,6 +3047,47 @@ mod tests {
         );
     }
 
+    /// Catches: an identity-only Codex allowlist drops the launching instance's
+    /// endpoint, so its bridge reports completion to the default instance.
+    #[test]
+    fn codex_repairs_identity_only_allowlist_for_isolated_endpoint() {
+        let dir = TempDir::new().unwrap();
+        let config_path = dir.path().join("config.toml");
+        for initial_vars in [
+            "['TUIC_SESSION']",
+            "['TUIC_SESSION', { name = 'TUIC_SOCKET', source = 'remote' }]",
+        ] {
+            std::fs::write(
+                &config_path,
+                format!(
+                    "[mcp_servers.tuicommander]\ncommand = '/bridge'\nenv_vars = {initial_vars}\n"
+                ),
+            )
+            .unwrap();
+
+            assert!(
+                ensure_toml_mcp_entry(&config_path, true, "/bridge", "codex"),
+                "missing local endpoint forwarding must be repaired: {initial_vars}"
+            );
+            let root = read_toml_file(&config_path).unwrap();
+            let vars = root["mcp_servers"][TUIC_MCP_KEY]["env_vars"]
+                .as_array()
+                .unwrap();
+            for required in [
+                "TUIC_SESSION",
+                "TUIC_SOCKET",
+                "TUIC_APP_INSTANCE",
+                "TUIC_CONFIG_DIR",
+            ] {
+                assert_eq!(
+                    vars.iter().filter(|v| v.as_str() == Some(required)).count(),
+                    1,
+                    "missing or duplicate local forwarding for {required}: {vars:?}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn codex_updates_matching_path_to_forward_managed_identity() {
         let dir = TempDir::new().unwrap();
@@ -3058,6 +3117,9 @@ mod tests {
             &[
                 toml::Value::String("EXISTING_VAR".to_string()),
                 toml::Value::String("TUIC_SESSION".to_string()),
+                toml::Value::String("TUIC_SOCKET".to_string()),
+                toml::Value::String("TUIC_APP_INSTANCE".to_string()),
+                toml::Value::String("TUIC_CONFIG_DIR".to_string()),
             ],
         );
     }
@@ -3069,7 +3131,12 @@ mod tests {
         let initial = toml::toml! {
             [mcp_servers.tuicommander]
             command = "/correct/path"
-            env_vars = [{ name = "TUIC_SESSION", source = "local" }]
+            env_vars = [
+                { name = "TUIC_SESSION", source = "local" },
+                { name = "TUIC_SOCKET", source = "local" },
+                { name = "TUIC_APP_INSTANCE", source = "local" },
+                { name = "TUIC_CONFIG_DIR" },
+            ]
         };
         write_toml_file(&config_path, &toml::Value::Table(initial)).unwrap();
         let mtime_before = std::fs::metadata(&config_path).unwrap().modified().unwrap();

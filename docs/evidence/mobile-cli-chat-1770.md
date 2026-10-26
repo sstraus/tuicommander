@@ -105,3 +105,15 @@ test-change explanations were added to the main story store after checking the
 original `6dae12fbe7` diff. The real-phone 2,000-entry timing criterion remains
 open; an image-capable reviewer must inspect the new captures before checking
 the visual criterion.
+
+## Standalone iOS simulator measurement — 2026-10-23
+
+A new owned iPhone 13 simulator ran the full standalone PWA against the isolated
+`agent-test-1770` instance with a synthetic 2,000-entry Claude transcript. Five
+samples per transition recorded first-open p50/p95 13,351/14,257 ms, retained
+foreground resume 57/59 ms, and CLI-to-Chat remount 13,514/21,848 ms. These are
+post-layout animation-frame opportunities, not compositor first-paint or
+physical-phone timings. The [report, raw events, summary and app-only captures](mobile-cli-chat-1770-simulator/README.md)
+record the exact clock, fixture, setup failures and limits. The owned PTY,
+proxy, application instance and simulator were cleaned up. The main story
+worklog has the simulator results; the phone criterion remains unchecked.

@@ -1,6 +1,7 @@
 import { render } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ChangesTab } from "../../components/GitPanel/ChangesTab";
+import { appLogger } from "../../stores/appLogger";
 import { repositoriesStore } from "../../stores/repositories";
 import { mockInvoke } from "../mocks/tauri";
 
@@ -11,6 +12,7 @@ describe("ChangesTab git gating", () => {
 	beforeEach(() => {
 		vi.useFakeTimers();
 		vi.clearAllMocks();
+		vi.spyOn(appLogger, "warn").mockImplementation(() => {});
 		mockInvoke.mockResolvedValue({ staged: [], unstaged: [], untracked: [] });
 	});
 
@@ -18,6 +20,10 @@ describe("ChangesTab git gating", () => {
 	// them so the leak detector does not blame an unrelated later test.
 	afterEach(() => {
 		vi.runOnlyPendingTimers();
+		for (const call of vi.mocked(appLogger.warn).mock.calls) {
+			expect(call).toEqual(["store", "Repositories save blocked — hydrate not yet complete"]);
+		}
+		vi.restoreAllMocks();
 		vi.useRealTimers();
 	});
 

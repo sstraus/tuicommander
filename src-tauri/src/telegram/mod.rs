@@ -12,6 +12,9 @@ mod outbound;
 pub(crate) mod recent;
 mod registration;
 mod runtime;
+mod sender;
+#[cfg(test)]
+mod sender_tests;
 pub(crate) mod settings;
 mod stop;
 mod streaming;
@@ -33,6 +36,9 @@ pub(crate) enum Error {
     Config,
     State,
     NotRegistered,
+    NonOwnerButtons,
+    SenderRateLimited,
+    InvalidSenderName,
     Capacity,
     PrivateFile,
     AlreadyOwned,
@@ -58,6 +64,9 @@ impl std::fmt::Display for Error {
         f.write_str(match self {
             Self::State => "telegram_invalid_state",
             Self::NotRegistered => "telegram_not_registered: call telegram register first",
+            Self::NonOwnerButtons => "telegram_non_owner_buttons: only the inbound owner may send buttons",
+            Self::SenderRateLimited => "telegram_sender_rate_limited: non-owner sends require a 30-second interval",
+            Self::InvalidSenderName => "telegram_invalid_sender_name: use a non-empty name without brackets or control characters (maximum 128 UTF-16 units)",
             Self::Capacity => "telegram_mail_capacity",
             Self::Config => "telegram_invalid_config",
             Self::PrivateFile => "telegram_private_file_unavailable",

@@ -1,0 +1,64 @@
+{
+  "date": "2026-10-24",
+  "browser": "Chrome for Testing 149.0.7827.54",
+  "profile": "/Users/stefano.straus/Gits/.tmp/design-web/profile",
+  "initial_argv": [
+    "/Users/stefano.straus/.agent-browser/browsers/chrome-149.0.7827.54/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+    "--user-data-dir=/Users/stefano.straus/Gits/.tmp/design-web/profile",
+    "--remote-debugging-port=0",
+    "--enable-unsafe-extension-debugging",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-blink-features=AutomationControlled",
+    "chrome://extensions/"
+  ],
+  "restart_argv": [
+    "/Users/stefano.straus/.agent-browser/browsers/chrome-149.0.7827.54/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+    "--user-data-dir=/Users/stefano.straus/Gits/.tmp/design-web/profile",
+    "--remote-debugging-port=0",
+    "--enable-unsafe-extension-debugging",
+    "--no-first-run",
+    "--no-default-browser-check",
+    "--disable-blink-features=AutomationControlled",
+    "chrome://extensions/"
+  ],
+  "after_native_install": {
+    "extensions": [
+      {
+        "id": "eefbgjmmpaimpeaflioojmdipmfchefo",
+        "name": "TUICommander Design Mode",
+        "version": "2.0.0",
+        "path": "/Users/stefano.straus/Gits/.tmp/design-web/profile/tuic-design-extension",
+        "enabled": true
+      }
+    ]
+  },
+  "after_no_load_restart": {
+    "extensions": [
+      {
+        "id": "eefbgjmmpaimpeaflioojmdipmfchefo",
+        "name": "TUICommander Design Mode",
+        "version": "2.0.0",
+        "path": "/Users/stefano.straus/Gits/.tmp/design-web/profile/tuic-design-extension",
+        "enabled": true
+      }
+    ]
+  },
+  "cleanup": {
+    "89686": "absent",
+    "1540": "absent"
+  },
+  "native_sequence": [
+    "Open browser Load unpacked UI through actual button (CDP harness click, no install API)",
+    "MacControl Cmd+Shift+G on owning Extensions window with native chooser open",
+    "MacControl paste actual installed directory on owning window",
+    "MacControl Enter to accept path",
+    "MacControl Enter separately to select folder"
+  ],
+  "limits": [
+    "Direct chooser window targeting returned focus selected window no longer available; parent targeting succeeded",
+    "Several calls reported user_active after the named action completed; no later action in those batches",
+    "No extension preferences/storage/install state written by harness",
+    "Round12 side-panel/pick/crop/cancellation evidence reused; not rerun"
+  ]
+}

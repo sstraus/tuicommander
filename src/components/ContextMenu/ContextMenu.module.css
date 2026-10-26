@@ -1,6 +1,6 @@
 .menu {
   position: fixed;
-  min-width: 180px;
+  min-width: min(180px, calc(100vw - 16px));
   background: var(--bg-secondary);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
@@ -27,10 +27,7 @@
   justify-content: space-between;
   align-items: center;
   width: 100%;
-  padding: 8px 12px;
   background: transparent;
-  border: none;
-  border-radius: var(--radius-md);
   color: var(--fg-primary);
   font-size: var(--font-base);
   text-align: left;
@@ -76,7 +73,7 @@
 .submenu {
   position: fixed;
   width: max-content;
-  min-width: 160px;
+  min-width: min(160px, calc(100vw - 16px));
   max-height: 400px;
   overflow-y: auto;
   background: var(--bg-secondary);

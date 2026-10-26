@@ -3,46 +3,8 @@
   position: relative;
 }
 
-.split {
-  display: flex;
-}
-
 .btn {
   -webkit-app-region: no-drag;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  height: 26px;
-  padding: 0 6px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  color: var(--fg-secondary);
-  font-size: var(--font-xs);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.main {
-  border-radius: var(--radius-md) 0 0 var(--radius-md);
-  border-right: none;
-}
-
-.arrowBtn {
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-  padding: 0 5px;
-  border-left: 1px solid var(--border);
-}
-
-.split:hover .btn:not(:disabled) {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-  border-color: var(--accent);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .icon {
@@ -88,28 +50,8 @@
 }
 
 .item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
   width: 100%;
-  padding: 5px 10px;
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: var(--font-md);
-  cursor: pointer;
   text-align: left;
-  transition: background 0.1s, color 0.1s;
-}
-
-.item:hover:not(:disabled) {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.item:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .item.selected {
@@ -130,14 +72,6 @@
   height: 1px;
   background: var(--border);
   margin: 4px 0;
-}
-
-.action {
-  color: var(--fg-secondary);
-}
-
-.action:hover:not(:disabled) {
-  color: var(--fg-primary);
 }
 
 .shortcut {

@@ -5,6 +5,17 @@ import { ACTION_NAMES } from "../../keybindingDefaults";
 import { settingsStore } from "../../stores/settings";
 
 describe("KeyboardShortcutsTab", () => {
+	// Catches: migrating Rebind loses its capture handler or Escape changes the saved binding.
+	it("cancels a rebind without changing its current shortcut", () => {
+		const view = render(() => <KeyboardShortcutsTab />);
+		const row = view.container.querySelector("tr")!;
+		const before = row.querySelector("kbd")!.textContent;
+		fireEvent.click(row.querySelector("button")!);
+		const recorder = view.getByText("Press a key...");
+		fireEvent.keyDown(recorder, { key: "Escape", code: "Escape" });
+		expect(row.querySelector("kbd")!.textContent).toBe(before);
+		expect(row.querySelector("button")!.textContent).toBe("Rebind");
+	});
 	// Catches: named rebind controls disappearing or obsolete permanent walkthroughs returning.
 	it("shows named Rebind actions without a permanent walkthrough", () => {
 		const view = render(() => <KeyboardShortcutsTab />);

@@ -164,12 +164,23 @@ export function useSessions(onRecovered?: () => void) {
 	let refreshToken = 0;
 	let failures = 0;
 	let nextAttemptAt = 0;
+	let request: AbortController | undefined;
+	let disposed = false;
+	onCleanup(() => {
+		disposed = true;
+		request?.abort();
+	});
 
 	/** `force` skips the backoff wait: first load, SSE events, manual retry, back online. */
 	async function fetchSessions(force = true, retryViews = false) {
-		if (!force && Date.now() < nextAttemptAt) return;
+		if (disposed || (!force && (request || Date.now() < nextAttemptAt))) return;
+		request?.abort();
+		const current = new AbortController();
+		request = current;
+		const timeout = setTimeout(() => current.abort(), 5_000);
 		try {
-			const result = await rpc<SessionInfo[]>("list_active_sessions");
+			const result = await rpc<SessionInfo[]>("list_active_sessions", {}, undefined, current.signal);
+			if (disposed || request !== current) return;
 			const recovered = error() !== null;
 			for (const session of result) {
 				if (session.state?.agent_state !== "completed") seenCompletions.delete(session.session_id);
@@ -184,13 +195,18 @@ export function useSessions(onRecovered?: () => void) {
 				onRecovered?.();
 			}
 		} catch (err) {
+			if (disposed || request !== current) return;
 			const msg = err instanceof Error ? err.message : String(err);
 			setError(isAuthError(err) ? "Sign in again to reconnect." : "Could not connect to the server.");
 			setAuthError(isAuthError(err));
 			nextAttemptAt = Date.now() + pollDelayMs(failures++);
 			appLogger.warn("network", `Failed to fetch sessions: ${msg}`);
 		} finally {
-			setLoading(false);
+			clearTimeout(timeout);
+			if (request === current) {
+				request = undefined;
+				if (!disposed) setLoading(false);
+			}
 			// NOTE: do NOT set refreshing here — refresh() manages its own lifecycle
 			// via the refreshToken guard to avoid race conditions with concurrent fetches.
 		}
@@ -204,6 +220,15 @@ export function useSessions(onRecovered?: () => void) {
 
 	// A returning connection should not wait out the backoff.
 	const onOnline = () => void fetchSessions();
+	const onVisible = () => {
+		if (document.visibilityState !== "hidden") void fetchSessions();
+	};
+	window.addEventListener("pageshow", onVisible);
+	document.addEventListener("resume", onVisible);
+	onCleanup(() => {
+		window.removeEventListener("pageshow", onVisible);
+		document.removeEventListener("resume", onVisible);
+	});
 	window.addEventListener("online", onOnline);
 	onCleanup(() => window.removeEventListener("online", onOnline));
 

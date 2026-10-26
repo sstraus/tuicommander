@@ -59,7 +59,10 @@ fn template_drafts_are_disabled_valid_and_only_persist_after_explicit_save() {
                 first
             );
             assert!(!dir.path().join("automations.json").exists());
-            assert!(runs.history(None, 100, 0).unwrap().is_empty());
+            assert_eq!(
+                runs.history(None, 100, 0).unwrap(),
+                [] as [crate::automations::run::AutomationRun; 0]
+            );
         }
     }
     let draft = call(
@@ -70,7 +73,7 @@ fn template_drafts_are_disabled_valid_and_only_persist_after_explicit_save() {
     )
     .unwrap();
     let zone = draft["timezone"].as_str().unwrap();
-    assert!(!zone.is_empty());
+    assert_ne!(zone, "");
     assert!(zone.parse::<chrono_tz::Tz>().is_ok());
     call(
         &definitions,
@@ -83,7 +86,10 @@ fn template_drafts_are_disabled_valid_and_only_persist_after_explicit_save() {
         call(&definitions, runs, json!({"action":"list"})).unwrap()[0]["next_run_ms"],
         Value::Null
     );
-    assert!(runs.history(None, 100, 0).unwrap().is_empty());
+    assert_eq!(
+        runs.history(None, 100, 0).unwrap(),
+        [] as [crate::automations::run::AutomationRun; 0]
+    );
 }
 
 // Catches: unknown recipes or invalid selection inputs being accepted as runnable defaults.
@@ -117,5 +123,8 @@ fn invalid_template_requests_leave_existing_definitions_and_history_unchanged() 
         std::fs::read(dir.path().join("automations.json")).unwrap(),
         before
     );
-    assert!(runs.history(None, 100, 0).unwrap().is_empty());
+    assert_eq!(
+        runs.history(None, 100, 0).unwrap(),
+        [] as [crate::automations::run::AutomationRun; 0]
+    );
 }

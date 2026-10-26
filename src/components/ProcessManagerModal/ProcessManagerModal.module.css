@@ -133,15 +133,4 @@
 
 .close {
   margin-left: auto;
-  padding: 0 4px;
-  border: none;
-  background: transparent;
-  color: var(--fg-muted);
-  font-size: 22px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.close:hover {
-  color: var(--fg-primary);
 }

@@ -2,6 +2,7 @@ import { type Component, createEffect, createResource, For, Show } from "solid-j
 import { invoke } from "../../invoke";
 import { registerModal } from "../../stores/modalStack";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
 import s from "./PromptInspector.module.css";
 
 export interface PromptReceipt {
@@ -97,9 +98,9 @@ export const PromptInspector: Component<{ sessionId: string | null; onClose: () 
 						</Show>
 					</div>
 					<div class={d.actions}>
-						<button class={d.cancelBtn} onClick={props.onClose}>
+						<Button class={d.cancelBtn} onClick={props.onClose}>
 							Close
-						</button>
+						</Button>
 					</div>
 				</section>
 			</div>

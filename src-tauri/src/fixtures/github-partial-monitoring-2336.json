@@ -1,0 +1,45 @@
+{
+  "capturedAt": "2026-10-25T19:29:39.915Z",
+  "source": "GitHub GraphQL via loaded github-work plugin_http_fetch; Rust injected account credential; eval_js log 70353. Response headers omitted. No genuine missing-scope response was recorded.",
+  "request": {
+    "query": "query PartialMonitoring2336 { r0: repository(owner:\"sstraus\", name:\"tuicommander\") { pullRequests(first:1, states:OPEN) { nodes { number title url headRefName state isDraft } } issues(first:1, states:OPEN) { nodes { number title url state createdAt author { login } labels(first:5) { nodes { name color } } } } } r1: repository(owner:\"sstraus\", name:\"tuic-2336-nonexistent-fixture\") { name } }"
+  },
+  "status": 200,
+  "response": {
+    "data": {
+      "r0": {
+        "pullRequests": {
+          "nodes": [{
+            "number": 128,
+            "title": "Fix terminal wheel and scrolling",
+            "url": "https://github.com/sstraus/tuicommander/pull/128",
+            "headRefName": "fix/terminal-wheel-and-scroll-accel",
+            "state": "OPEN",
+            "isDraft": false
+          }]
+        },
+        "issues": {
+          "nodes": [{
+            "number": 121,
+            "title": "[Feature Request] Support for remote environments / headless VPS workflows (Client-Server architecture or SSH/Remote daemon support)",
+            "url": "https://github.com/sstraus/tuicommander/issues/121",
+            "state": "OPEN",
+            "createdAt": "2026-09-07T08:29:32Z",
+            "author": { "login": "falkayadev" },
+            "labels": { "nodes": [
+              { "name": "type: feature", "color": "0e8a16" },
+              { "name": "needs triage", "color": "e4e669" }
+            ] }
+          }]
+        }
+      },
+      "r1": null
+    },
+    "errors": [{
+      "type": "NOT_FOUND",
+      "path": ["r1"],
+      "locations": [{ "line": 1, "column": 314 }],
+      "message": "Could not resolve to a Repository with the name 'sstraus/tuic-2336-nonexistent-fixture'."
+    }]
+  }
+}

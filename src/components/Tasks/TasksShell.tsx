@@ -4,6 +4,7 @@ import { setupForProvider } from "../../plugins/workItemSetup";
 import { repositoriesStore } from "../../stores/repositories";
 import { uiStore } from "../../stores/ui";
 import type { WorkItemRef } from "../../types/work-items.gen";
+import { Button } from "../ui/Button";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Select } from "../ui/Select";
 import { TasksCreate } from "./create/TasksCreate";
@@ -97,7 +98,7 @@ export function TasksShell(props: { visible?: () => boolean }) {
 										setView(id);
 									}}
 								/>
-								<button
+								<Button
 									type="button"
 									class={s.create}
 									onClick={() => {
@@ -107,9 +108,9 @@ export function TasksShell(props: { visible?: () => boolean }) {
 									}}
 								>
 									New task
-								</button>
+								</Button>
 								<Show when={setup()}>
-									<button
+									<Button
 										type="button"
 										aria-pressed={configuring()}
 										onClick={() => {
@@ -119,7 +120,7 @@ export function TasksShell(props: { visible?: () => boolean }) {
 										}}
 									>
 										Provider settings
-									</button>
+									</Button>
 								</Show>
 							</header>
 							<div class={s.body} data-detail={reference() ? "open" : "closed"}>
@@ -159,9 +160,9 @@ export function TasksShell(props: { visible?: () => boolean }) {
 								</div>
 								<Show when={reference()}>
 									<aside class={s.side}>
-										<button type="button" class={s.back} onClick={() => setReference(null)}>
+										<Button type="button" class={s.back} onClick={() => setReference(null)}>
 											Back to list
-										</button>
+										</Button>
 										<TasksDetail
 											provider={current()}
 											reference={reference()}

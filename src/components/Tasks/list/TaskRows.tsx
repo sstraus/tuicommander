@@ -73,6 +73,7 @@ export function TaskRows(props: TaskRowsProps) {
 										return (
 											<div role="listitem" aria-posinset={row.index + 1} aria-setsize={rows().length}>
 												<button
+													data-control-layout="row"
 													type="button"
 													class={s.item}
 													aria-current={sameRef(current.item.reference, props.selected) ? "true" : undefined}

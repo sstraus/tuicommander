@@ -3,21 +3,16 @@
 .fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); column-gap: 12px; }
 .actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 8px; }
 .actions .muted { margin-right: auto; }
-.create button { min-height: 32px; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-tertiary); color: var(--fg-primary); font: inherit; cursor: pointer; }
-.create button:hover:enabled { background: var(--bg-highlight); color: var(--fg-primary); }
-.create button:disabled { opacity: 0.5; cursor: not-allowed; }
 .create :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.create .primary { background: var(--accent); color: var(--text-on-accent); border-color: var(--accent); }
 .muted { color: var(--fg-secondary); font-size: var(--font-sm, 12px); margin: 0; }
 .error { color: var(--error); margin: 8px 0 0; overflow-wrap: anywhere; }
 .error button { margin-left: 8px; }
 @container (max-width: 600px) {
 	.create { padding: 12px; }
 
-	.create button { min-height: 44px; }
 }
 
-.create [data-form-control] { width: 100%; }
+.create :is(input, select, textarea)[data-form-control] { width: 100%; }
 
 .optional { margin-top: 8px; }
 .optional > summary { cursor: pointer; margin-bottom: 8px; color: var(--fg-secondary); }

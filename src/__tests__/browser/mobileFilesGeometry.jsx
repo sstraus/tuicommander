@@ -1,0 +1,32 @@
+import { render } from 'solid-js/web';
+import { FilesScreen } from '../../mobile/screens/FilesScreen';
+import '../../mobile/mobile.css';
+const entry={name:'example.txt',path:'example.txt',is_dir:false,size:12};
+let saved='Original source\n';
+window.fetch=async(input,init)=>{
+ const url=new URL(typeof input==='string'?input:input.url,location.origin);
+ if(url.pathname==='/config/repositories')return Response.json({repos:{'/fixture/repo':{}}});
+ if(url.pathname==='/fs/list'||url.pathname==='/fs/search')return Response.json([entry]);
+ if(url.pathname==='/fs/read')return Response.json(saved);
+ if(url.pathname==='/fs/write-if-unchanged'){const body=JSON.parse(init.body);saved=body.content;return Response.json(true);}
+ throw new Error(`Unexpected fixture RPC ${url.pathname}`);
+};
+render(() => <section id="geometry" style="height:760px;background:var(--bg-secondary)"><FilesScreen /></section>,document.getElementById('root'));
+const frame=()=>new Promise(resolve=>requestAnimationFrame(resolve));
+const wait=async find=>{for(let i=0;i<60;i++){const found=find();if(found)return found;await frame();}throw new Error('Files fixture state did not render');};
+const named=name=>[...document.querySelectorAll('button')].find(button=>button.textContent.trim()===name);
+(await wait(()=>document.querySelector('button[data-control-layout="row"]'))).click();
+const search=await wait(()=>document.querySelector('[aria-label="Search files"]'));
+search.value='example';search.dispatchEvent(new Event('input',{bubbles:true}));
+(await wait(()=>named('example.txt'))).click();
+(await wait(()=>named('Edit'))).click();
+let editor=await wait(()=>document.querySelector('textarea'));
+if(editor.getAttribute('data-control-layout')!=='editor'||editor.wrap!=='soft'||editor.spellcheck)throw new Error('Native source editor contract changed');
+editor.value='Discarded';editor.dispatchEvent(new Event('input',{bubbles:true}));named('Cancel').click();named('Edit').click();
+editor=document.querySelector('textarea');
+if(editor.value!==saved)throw new Error('Cancel did not discard draft');
+editor.value='Changed source\n';editor.dispatchEvent(new Event('input',{bubbles:true}));named('Save').click();
+await wait(()=>named('Edit'));
+if(saved!=='Changed source\n')throw new Error('Save contract changed');
+named('Edit').click();
+window.controlGeometryReady=true;

@@ -120,6 +120,9 @@ impl RunStore {
             CREATE INDEX IF NOT EXISTS automation_retention ON automation_runs(finished_ms);
             CREATE TABLE IF NOT EXISTS automation_cursors (
                 automation_id TEXT PRIMARY KEY, occurrence_ms INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS automation_event_keys (
+                automation_id TEXT NOT NULL, event_key TEXT NOT NULL, run_id TEXT NOT NULL,
+                PRIMARY KEY(automation_id,event_key));
             CREATE TABLE IF NOT EXISTS automation_deliveries (
                 run_id TEXT NOT NULL REFERENCES automation_runs(id) ON DELETE CASCADE,
                 transition TEXT NOT NULL, channel TEXT NOT NULL, document_json TEXT NOT NULL,
@@ -207,7 +210,7 @@ fn reserve_in(
 ) -> Result<Option<AutomationRun>, String> {
     let occurrence = match trigger {
         RunTrigger::Scheduled { occurrence_ms } => Some(occurrence_ms),
-        RunTrigger::Manual => None,
+        RunTrigger::Manual | RunTrigger::Event { .. } => None,
     };
     let run = AutomationRun {
         id: uuid::Uuid::now_v7().to_string(),

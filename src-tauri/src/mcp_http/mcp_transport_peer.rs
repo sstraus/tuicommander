@@ -1827,6 +1827,7 @@ fn handle_messaging_with_message_id(
                                 state,
                                 pty_session,
                                 &sender_tuic,
+                                &sender_name,
                             );
                             state.finish_urgent_notice(
                                 to,

@@ -17,7 +17,7 @@ pub struct TelegramSettingsStore {
 }
 
 impl TelegramSettingsStore {
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn at_paths(paths: Paths) -> Self {
         Self { paths: Some(paths) }
     }
@@ -146,7 +146,7 @@ pub struct TelegramOwnerSettings {
     paths: Option<Paths>,
 }
 impl TelegramOwnerSettings {
-    #[cfg(test)]
+    #[cfg(all(test, unix))]
     pub(crate) fn at_paths(paths: Paths) -> Self {
         Self { paths: Some(paths) }
     }

@@ -37,6 +37,15 @@ pub fn test_temp_root() -> std::path::PathBuf {
     root
 }
 
+/// Fixture location for tests whose subject distinguishes persistent paths from
+/// temporary roots. Each caller must own a TempDir here so teardown removes it.
+/// This is separate from TMPDIR, not a classifier bypass (story 2160).
+pub fn non_temporary_fixture_root() -> std::path::PathBuf {
+    let root = checkout_root().join(".tmp/orphan-persistent-fixtures");
+    std::fs::create_dir_all(&root).expect("create non-temporary fixture root");
+    root
+}
+
 #[cfg(unix)]
 fn socket_root_fits(root: &std::path::Path) -> bool {
     root.join("sXXXXXX/.mdkb/daemon-hook.sock.4294967295.tmp")

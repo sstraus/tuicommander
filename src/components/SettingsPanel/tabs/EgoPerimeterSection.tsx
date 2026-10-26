@@ -6,6 +6,7 @@ import { reportSettingsConflicts, settingsRefresh } from "../../../services/sett
 import { appLogger } from "../../../stores/appLogger";
 import { asEgoCliError, type EgoPerimeterView, type EgoRootAccess, type EgoRootsEdit } from "../../../types/ego";
 import { mergeSettingsSnapshot } from "../../../utils/mergeSettingsSnapshot";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
 import { StatusBadge } from "../../ui/StatusBadge";
@@ -91,13 +92,13 @@ export const EgoPerimeterSection: Component<{ client?: EgoPerimeterClient }> = (
 						<SectionCard
 							title="Workspace access"
 							actions={
-								<button
+								<Button
 									data-non-setting="Open or close perimeter editing and recovery instructions"
 									class={s.testBtn}
 									onClick={() => setEditingRoots(!editingRoots())}
 								>
 									{editingRoots() ? "Hide folder editor" : "Add folder"}
-								</button>
+								</Button>
 							}
 						>
 							<p class={s.hint}>
@@ -122,13 +123,13 @@ export const EgoPerimeterSection: Component<{ client?: EgoPerimeterClient }> = (
 										description={root.source}
 										badges={<StatusBadge label={root.access === "read" ? "Read only" : "Read and write"} />}
 										actions={
-											<button
+											<Button
 												data-non-setting="Open or close perimeter editing and recovery instructions"
 												class={s.testBtn}
 												onClick={() => setEditingRoots(true)}
 											>
 												Edit
-											</button>
+											</Button>
 										}
 									/>
 								)}
@@ -227,14 +228,14 @@ export const EgoPerimeterSection: Component<{ client?: EgoPerimeterClient }> = (
 									)}
 								</SettingRow>
 								<div class={s.actions}>
-									<button
+									<Button
 										data-setting-id="ego.roots"
 										disabled={busy()}
 										data-ready={rootsDirty() ? "true" : undefined}
 										onClick={() => void attempt(() => client().setRoots(draft()), true)}
 									>
 										{t("perimeter.saveRoots", "Save roots in ego")}
-									</button>
+									</Button>
 								</div>
 							</Show>
 						</SectionCard>
@@ -281,13 +282,13 @@ export const EgoPerimeterSection: Component<{ client?: EgoPerimeterClient }> = (
 								}
 								source={loaded().effective.capabilities_reason}
 							>
-								<button
+								<Button
 									data-non-setting="Open or close perimeter editing and recovery instructions"
 									class={s.testBtn}
 									onClick={() => setVerifyOpen(!verifyOpen())}
 								>
 									How to verify
-								</button>
+								</Button>
 							</StatusSummary>
 							<Show when={verifyOpen()}>
 								<p class={s.hint}>Run ego doctor in a terminal and inspect its command-isolation report.</p>
@@ -301,14 +302,14 @@ export const EgoPerimeterSection: Component<{ client?: EgoPerimeterClient }> = (
 						<SectionCard
 							title="Advanced and diagnostics"
 							actions={
-								<button
+								<Button
 									data-non-setting="Explicitly refresh the configured Ego owner without saving"
 									class={s.testBtn}
 									disabled={busy()}
 									onClick={() => void attempt(() => client().perimeter(), true)}
 								>
 									{t("perimeter.reload", "Reload from ego")}
-								</button>
+								</Button>
 							}
 						>
 							<details>
@@ -320,14 +321,14 @@ export const EgoPerimeterSection: Component<{ client?: EgoPerimeterClient }> = (
 				)}
 			</Show>
 			<Show when={!view()}>
-				<button
+				<Button
 					data-non-setting="Explicitly refresh the configured Ego owner without saving"
 					class={s.testBtn}
 					disabled={busy()}
 					onClick={() => void attempt(() => client().perimeter(), true)}
 				>
 					{t("perimeter.reload", "Reload from ego")}
-				</button>
+				</Button>
 			</Show>
 		</div>
 	);

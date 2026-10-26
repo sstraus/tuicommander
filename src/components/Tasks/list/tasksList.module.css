@@ -1,15 +1,12 @@
 .list { container-type: inline-size; display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; color: var(--fg-primary); background: var(--bg-primary); font-family: var(--font-ui); font-size: var(--font-md); }
-.toolbar, .filters { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
+.toolbar, .filters {
+ composes: toolbar from "../../ui/FormControls.module.css"; display: flex; align-items: end; flex-wrap: wrap; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
 .filters { padding-top: 8px; padding-bottom: 8px; }
 .list label { display: flex; flex-direction: column; gap: 4px; color: var(--fg-secondary); font-size: var(--font-sm); min-width: 0; }
-.list button { min-height: 36px; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0 8px; background: var(--bg-tertiary); color: var(--fg-primary); font: inherit; }
 .list .check { flex-direction: row; align-items: center; justify-content: flex-end; }
 .list select { max-width: 260px; }
 .list input { min-width: 0; }
-.list button { cursor: pointer; }
-.list button:hover { background: var(--bg-highlight); }
 .list :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.list button:disabled { opacity: 0.5; cursor: not-allowed; }
 .list .search { flex: 1; min-width: 160px; }
 .status { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 12px; color: var(--fg-secondary); }
 .stale { color: var(--warning); }
@@ -19,7 +16,7 @@
 .row { position: absolute; left: 0; width: 100%; padding: 0 12px; box-sizing: border-box; }
 .row > [role="listitem"] { height: 100%; }
 .group { display: flex; align-items: center; height: 100%; margin: 0; font-size: var(--font-md); color: var(--fg-secondary); }
-.list .item { display: flex; align-items: center; gap: 12px; width: 100%; height: 100%; text-align: left; border: none; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; }
+button[data-control-layout="row"].item { min-height: 36px; padding: 0 8px; color: var(--fg-primary); font: inherit; cursor: pointer; display: flex; align-items: center; gap: 12px; width: 100%; height: 100%; text-align: left; border: none; border-bottom: 1px solid var(--border); border-radius: 0; background: transparent; }
 .list .item:hover { background: var(--bg-secondary); }
 .key { font-family: var(--font-mono); color: var(--fg-secondary); flex-shrink: 0; }
 .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -36,7 +33,6 @@
 .more { align-self: center; margin: 8px; }
 @container (max-width: 600px) {
 
-	.list button { min-height: 44px; }
 	.toolbar, .filters { padding: 8px; }
 	.toolbar label { flex: 1 1 140px; }
 	.filters label { flex: 1 1 120px; }

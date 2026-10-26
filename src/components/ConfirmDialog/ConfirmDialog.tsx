@@ -1,6 +1,7 @@
 import { type Component, createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { registerModal } from "../../stores/modalStack";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
 
 export interface ConfirmDialogProps {
 	visible: boolean;
@@ -110,19 +111,19 @@ export const ConfirmDialog: Component<ConfirmDialogProps> = (props) => {
 						</p>
 					</div>
 					<div class={d.actions}>
-						<button class={d.cancelBtn} onClick={close}>
+						<Button class={d.cancelBtn} onClick={close}>
 							{props.cancelLabel ?? "Cancel"}
 							{props.autoCancelMs && remaining() !== null ? ` (${remaining()})` : ""}
-						</button>
+						</Button>
 						<Show when={props.discardLabel}>
-							<button class={d.cancelBtn} onClick={() => props.onDiscard?.()}>
+							<Button class={d.cancelBtn} onClick={() => props.onDiscard?.()}>
 								{props.discardLabel}
-							</button>
+							</Button>
 						</Show>
-						<button class={d.primaryBtn} onClick={confirm}>
+						<Button variant="primary" class={d.primaryBtn} onClick={confirm}>
 							{props.confirmLabel ?? "OK"}
 							{props.autoConfirmMs && remaining() !== null ? ` (${remaining()})` : ""}
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>

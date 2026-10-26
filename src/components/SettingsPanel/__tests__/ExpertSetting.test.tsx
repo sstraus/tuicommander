@@ -14,6 +14,7 @@ vi.mock("../../../stores/ui", async () => {
 	};
 });
 
+import { appLogger } from "../../../stores/appLogger";
 import { settingsExpertStore } from "../../../stores/settingsExpert";
 import { uiStore } from "../../../stores/ui";
 import { ExpertSection, ExpertSetting } from "../ExpertSetting";
@@ -117,17 +118,27 @@ describe("ExpertSetting", () => {
 	});
 
 	it("shows the control when defaults cannot be loaded", async () => {
-		mockInvoke.mockImplementation((cmd: string) =>
-			cmd === "get_config_defaults" ? Promise.reject(new Error("offline")) : Promise.resolve(undefined),
-		);
-		settingsExpertStore._resetForTests();
-		await settingsExpertStore.open();
-		const { container } = render(() => (
-			<ExpertSetting configKey="app.osc52_clipboard" value={true}>
-				<TestControl />
-			</ExpertSetting>
-		));
-		expect(control(container)).not.toBeNull();
+		const warning = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
+		try {
+			mockInvoke.mockImplementation((cmd: string) =>
+				cmd === "get_config_defaults" ? Promise.reject(new Error("offline")) : Promise.resolve(undefined),
+			);
+			settingsExpertStore._resetForTests();
+			await settingsExpertStore.open();
+			const { container } = render(() => (
+				<ExpertSetting configKey="app.osc52_clipboard" value={true}>
+					<TestControl />
+				</ExpertSetting>
+			));
+			expect(control(container)).not.toBeNull();
+			expect(warning).toHaveBeenCalledExactlyOnceWith(
+				"config",
+				"Failed to load config defaults; expert settings stay visible",
+				expect.any(Error),
+			);
+		} finally {
+			warning.mockRestore();
+		}
 	});
 
 	it("shows a control of a domain the host does not report (dictation outside desktop)", async () => {

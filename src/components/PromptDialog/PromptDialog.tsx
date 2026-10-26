@@ -2,6 +2,8 @@ import { type Component, createEffect, createSignal, onCleanup, Show } from "sol
 import { t } from "../../i18n";
 import { registerModal } from "../../stores/modalStack";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 
 export interface PromptDialogProps {
 	visible: boolean;
@@ -67,7 +69,7 @@ export const PromptDialog: Component<PromptDialogProps> = (props) => {
 						</div>
 					</div>
 					<div class={d.body}>
-						<input
+						<Input
 							ref={inputRef}
 							type="text"
 							value={value()}
@@ -80,10 +82,11 @@ export const PromptDialog: Component<PromptDialogProps> = (props) => {
 						/>
 					</div>
 					<div class={d.actions}>
-						<button class={d.cancelBtn} onClick={props.onClose}>
+						<Button class={d.cancelBtn} onClick={props.onClose}>
 							{t("promptDialog.cancel", "Cancel")}
-						</button>
-						<button
+						</Button>
+						<Button
+							variant="primary"
 							class={d.primaryBtn}
 							onClick={() => {
 								if (value().trim()) {
@@ -94,7 +97,7 @@ export const PromptDialog: Component<PromptDialogProps> = (props) => {
 							disabled={!value().trim()}
 						>
 							{props.confirmLabel ?? t("promptDialog.ok", "OK")}
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>

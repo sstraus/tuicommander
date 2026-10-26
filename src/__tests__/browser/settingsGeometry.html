@@ -1,0 +1,11 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Mounted Settings geometry</title></head><body><div id="root"></div><script>
+// Component-layout fixture only: no backend, network discovery or persistence is exercised.
+window.__TAURI_INTERNALS__={transformCallback:()=>0,unregisterCallback:()=>{},invoke:async command=>{
+if(command==='load_config')return {services:{server:{enabled:true,port:9876,ipv6_enabled:false},auth:{username:'admin',password_hash:'',session_token_duration_secs:2592000,lan_auth_bypass:false},relay:{enabled:false,url:'wss://relay.example.test',session_id:''}},mcp_capabilities:{denied:[],migration_unknown_tools:[]}};
+if(command==='get_local_ips')return [];
+if(command==='get_tailscale_status')return {state:'Running',fqdn:'layout.example.test',https_enabled:false};
+if(command==='get_mcp_status')return {running:true,tls_active:false,native_capabilities:[],native_tools:[]};
+if(command==='get_relay_status')return {connected:false};
+return {};
+}};
+</script><script type="module" src="./settingsGeometry.jsx"></script></body></html>

@@ -914,14 +914,14 @@ mod tests {
                     credential_ref: uuid::Uuid::new_v4().to_string(),
                 })
                 .collect();
-            assert!(
-                !validate_upstream_config(
+            assert_ne!(
+                validate_upstream_config(
                     &UpstreamMcpConfig {
                         servers: vec![server]
                     },
                     9876
-                )
-                .is_empty()
+                ),
+                [] as [crate::mcp_upstream_config::UpstreamConfigError; 0]
             );
         }
     }
@@ -933,15 +933,18 @@ mod tests {
             serde_json::json!({"type":"oauth2","client_id":"public"}),
         ] {
             let server: UpstreamMcpServer = serde_json::from_value(serde_json::json!({"id":"legacy", "name":"legacy", "transport":{"type":"http","url":"https://example.com/mcp"}, "auth":auth})).unwrap();
-            assert!(server.headers.is_empty());
-            assert!(
+            assert_eq!(
+                server.headers,
+                [] as [crate::mcp_upstream_config::UpstreamHeader; 0]
+            );
+            assert_eq!(
                 validate_upstream_config(
                     &UpstreamMcpConfig {
                         servers: vec![server]
                     },
                     9876
-                )
-                .is_empty()
+                ),
+                [] as [crate::mcp_upstream_config::UpstreamConfigError; 0]
             );
         }
     }
@@ -1081,7 +1084,10 @@ mod tests {
         let json = serde_json::to_string_pretty(&config).unwrap();
         let parsed: UpstreamMcpConfig = serde_json::from_str(&json).unwrap();
         assert_eq!(config, parsed);
-        assert!(parsed.servers.is_empty());
+        assert_eq!(
+            parsed.servers,
+            [] as [crate::mcp_upstream_config::UpstreamMcpServer; 0]
+        );
     }
 
     #[test]
@@ -1275,7 +1281,10 @@ mod tests {
         let config = UpstreamMcpConfig {
             servers: vec![server],
         };
-        assert!(validate_upstream_config(&config, 3845).is_empty());
+        assert_eq!(
+            validate_upstream_config(&config, 3845),
+            [] as [crate::mcp_upstream_config::UpstreamConfigError; 0]
+        );
     }
 
     #[test]
@@ -1287,7 +1296,10 @@ mod tests {
         let config = UpstreamMcpConfig {
             servers: vec![server],
         };
-        assert!(validate_upstream_config(&config, 3845).is_empty());
+        assert_eq!(
+            validate_upstream_config(&config, 3845),
+            [] as [crate::mcp_upstream_config::UpstreamConfigError; 0]
+        );
     }
 
     // -- Validation: valid configs --
@@ -1309,7 +1321,10 @@ mod tests {
         let config = UpstreamMcpConfig {
             servers: vec![http_server("a", "http://remote:8080/mcp")],
         };
-        assert!(validate_upstream_config(&config, 3845).is_empty());
+        assert_eq!(
+            validate_upstream_config(&config, 3845),
+            [] as [crate::mcp_upstream_config::UpstreamConfigError; 0]
+        );
     }
 
     #[test]
@@ -1317,7 +1332,10 @@ mod tests {
         let config = UpstreamMcpConfig {
             servers: vec![http_server("my-server_2", "http://remote:8080/mcp")],
         };
-        assert!(validate_upstream_config(&config, 3845).is_empty());
+        assert_eq!(
+            validate_upstream_config(&config, 3845),
+            [] as [crate::mcp_upstream_config::UpstreamConfigError; 0]
+        );
     }
 
     // -- Validation: empty name --
@@ -1425,7 +1443,10 @@ mod tests {
         let config = UpstreamMcpConfig {
             servers: vec![http_server("ok", "http://localhost:9999/mcp")],
         };
-        assert!(validate_upstream_config(&config, 3845).is_empty());
+        assert_eq!(
+            validate_upstream_config(&config, 3845),
+            [] as [crate::mcp_upstream_config::UpstreamConfigError; 0]
+        );
     }
 
     #[test]
@@ -1433,7 +1454,10 @@ mod tests {
         let config = UpstreamMcpConfig {
             servers: vec![http_server("ok", "http://remote-host:3845/mcp")],
         };
-        assert!(validate_upstream_config(&config, 3845).is_empty());
+        assert_eq!(
+            validate_upstream_config(&config, 3845),
+            [] as [crate::mcp_upstream_config::UpstreamConfigError; 0]
+        );
     }
 
     // -- Validation: empty URL / command --
@@ -1529,7 +1553,10 @@ mod tests {
         let config = UpstreamMcpConfig {
             servers: vec![http_server("ok", "http://remote:8080/mcp")],
         };
-        assert!(validate_upstream_config(&config, 3845).is_empty());
+        assert_eq!(
+            validate_upstream_config(&config, 3845),
+            [] as [crate::mcp_upstream_config::UpstreamConfigError; 0]
+        );
     }
 
     #[test]
@@ -1537,7 +1564,10 @@ mod tests {
         let config = UpstreamMcpConfig {
             servers: vec![http_server("ok", "https://remote:443/mcp")],
         };
-        assert!(validate_upstream_config(&config, 3845).is_empty());
+        assert_eq!(
+            validate_upstream_config(&config, 3845),
+            [] as [crate::mcp_upstream_config::UpstreamConfigError; 0]
+        );
     }
 
     // -- is_self_referential edge cases --
@@ -1563,7 +1593,10 @@ mod tests {
     fn load_nonexistent_returns_default() {
         // load_json_config returns Default for missing files
         let config: UpstreamMcpConfig = load_json_config("nonexistent-mcp-upstreams-test.json");
-        assert!(config.servers.is_empty());
+        assert_eq!(
+            config.servers,
+            [] as [crate::mcp_upstream_config::UpstreamMcpServer; 0]
+        );
     }
 
     // -- apply_config_diff (via UpstreamRegistry) --
@@ -1606,7 +1639,7 @@ mod tests {
 
         registry.apply_config_diff(&old, &new, 9999).await;
 
-        assert!(registry.upstream_names().is_empty());
+        assert_eq!(registry.upstream_names(), [] as [std::string::String; 0]);
     }
 
     #[tokio::test]

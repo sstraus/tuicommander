@@ -1172,7 +1172,7 @@ mod survivor_tests {
     #[cfg(unix)]
     #[tokio::test]
     async fn orphan_decisions_and_clear_are_visible_to_other_clients() {
-        let temp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let temp = tempfile::tempdir_in(tuic_test_support::non_temporary_fixture_root()).unwrap();
         let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
         let repo = super::warm_tests::setup_repo(temp.path());

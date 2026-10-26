@@ -16,14 +16,11 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  min-height: 44px;
   background: none;
-  border: none;
   color: var(--fg-muted);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: color 0.15s ease;
-  padding: 0;
 }
 
 .tab:active {

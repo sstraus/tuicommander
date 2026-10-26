@@ -3,6 +3,7 @@ import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
+import { Button } from "../ui/Button";
 import s from "./SyncRow.module.css";
 import type { WorkingTreeStatus } from "./types";
 
@@ -151,8 +152,9 @@ export const SyncRow: Component<SyncRowProps> = (props) => {
 			{/* Action buttons */}
 			<div class={s.actions}>
 				{OPERATIONS.map((op) => (
-					<button
-						class={cx(s.btn, runningOp() === op.id && s.btnRunning)}
+					<Button
+						size="compact"
+						aria-busy={runningOp() === op.id}
 						onClick={() => runOperation(op)}
 						disabled={isRunning()}
 						title={op.title}
@@ -163,7 +165,7 @@ export const SyncRow: Component<SyncRowProps> = (props) => {
 							</Show>
 						</span>
 						{op.label}
-					</button>
+					</Button>
 				))}
 			</div>
 

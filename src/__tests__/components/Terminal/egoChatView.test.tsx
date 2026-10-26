@@ -31,7 +31,7 @@ it("ego desktop toggle selects chat for its bound terminal", () => {
 		agentSessionId: "own-session",
 	});
 	const view = render(() => <ViewModeToggle terminalId={id} />);
-	fireEvent.click(view.getByRole("button", { name: "Chat" }));
+	fireEvent.click(view.getByRole("tab", { name: "Chat" }));
 	expect(terminalsStore.get(id)?.viewMode).toBe("chat");
 });
 

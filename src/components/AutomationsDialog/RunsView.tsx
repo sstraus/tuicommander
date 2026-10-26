@@ -4,6 +4,7 @@ import type { AutomationsStore } from "../../stores/automations";
 import { terminalsStore } from "../../stores/terminals";
 import { getSessionConnection } from "../../transportRuntime";
 import { navigateToTerminal } from "../../utils/navigateToTerminal";
+import { Button } from "../ui/Button";
 import s from "./AutomationsDialog.module.css";
 import type { AutomationRun } from "./contract";
 import { zonedTime } from "./ScheduleFields";
@@ -67,9 +68,9 @@ export function RunsView(props: { store: AutomationsStore; connectionId?: string
 		<section class={s.history} aria-label={t("automations.runs", "Runs")}>
 			<div class={s.row}>
 				<h3>{t("automations.runs", "Runs")}</h3>
-				<button type="button" disabled={props.store.runsLoading()} onClick={() => void props.store.loadRuns()}>
+				<Button type="button" disabled={props.store.runsLoading()} onClick={() => void props.store.loadRuns()}>
 					{t("automations.refreshHistory", "Refresh history")}
-				</button>
+				</Button>
 			</div>
 			<div class={s.summaries}>
 				<For each={["24h", "7d"]}>
@@ -116,7 +117,7 @@ export function RunsView(props: { store: AutomationsStore; connectionId?: string
 								<p>{run.reason}</p>
 							</Show>
 							<WorktreeCleanup run={run} connectionId={props.connectionId} />
-							<button
+							<Button
 								type="button"
 								onClick={() => {
 									if (focusAutomationRun(run, props.connectionId)) props.onNavigate();
@@ -124,26 +125,26 @@ export function RunsView(props: { store: AutomationsStore; connectionId?: string
 								}}
 							>
 								{t("automations.viewRun", "View run")}
-							</button>
+							</Button>
 						</li>
 					)}
 				</For>
 			</ol>
 			<div class={s.row}>
-				<button
+				<Button
 					type="button"
 					disabled={props.store.runsLoading() || props.store.runsOffset() === 0}
 					onClick={() => void props.store.loadRuns(Math.max(0, props.store.runsOffset() - 20))}
 				>
 					{t("automations.previousRuns", "Previous runs")}
-				</button>
-				<button
+				</Button>
+				<Button
 					type="button"
 					disabled={props.store.runsLoading() || !props.store.hasMoreRuns()}
 					onClick={() => void props.store.loadRuns(props.store.runsOffset() + 20)}
 				>
 					{t("automations.nextRuns", "Next runs")}
-				</button>
+				</Button>
 			</div>
 			<Show when={selected()}>{(run) => <RunOutput run={run()} />}</Show>
 		</section>

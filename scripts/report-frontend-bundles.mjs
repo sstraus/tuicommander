@@ -5,7 +5,8 @@ const CHECK = process.argv.includes("--check");
 
 const entries = [
 	{ page: "dist/index.html", maxGzipBytes: 500 * 1024 },
-	{ page: "dist/mobile.html", maxGzipBytes: 100 * 1024 },
+	// 2026-10-25: Boss raised the budget for feature growth; measured mobile size: 76169 gzip bytes.
+	{ page: "dist/mobile.html", maxGzipBytes: 150 * 1024 },
 ];
 
 const deferredAssetPattern =

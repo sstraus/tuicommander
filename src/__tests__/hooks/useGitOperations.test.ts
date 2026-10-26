@@ -20,6 +20,7 @@ import { navigateToTerminal } from "../../utils/navigateToTerminal";
 import { branchFacts, STALE_AFTER_DAYS } from "../../utils/sidebarRich";
 import { makeTerminal } from "../helpers/store";
 import { mockInvoke } from "../mocks/tauri";
+import missingDetachedOrphans from "./missingDetachedOrphans.fixture.json";
 
 function resetStores() {
 	for (const id of terminalsStore.getIds()) {
@@ -926,6 +927,22 @@ describe("useGitOperations", () => {
 			);
 		});
 
+		// Catches: a recycled (archived) checkout is reported as "Removed", hiding that the branch lives on.
+		it("reports archive and kept branch when the backend recycled the checkout", async () => {
+			mockRepo.removeWorktree.mockResolvedValueOnce({
+				branch_delete_warning: null,
+				branch: "feature",
+				removal_rule: "recyclable",
+			});
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setWorkspace("/repo", "feature", { worktreePath: "/repo/wt" });
+
+			await gitOps.handleRemoveWorkspace("/repo", "feature");
+
+			expect(mockSetStatusInfo).toHaveBeenCalledWith("Archived feature worktree for reuse; branch was kept");
+			expect(mockSetStatusInfo).not.toHaveBeenCalledWith("Removed feature");
+		});
+
 		it("passes deleteBranch=false when repo setting overrides default", async () => {
 			mockRepo.getWorkspaceLifecycle.mockResolvedValueOnce({
 				dirtyFiles: 0,
@@ -1018,6 +1035,49 @@ describe("useGitOperations", () => {
 			expect(repositoriesStore.get("/repo")?.workspaces["new-name"]).toBeDefined();
 			expect(repositoriesStore.get("/repo")?.workspaces["old-name"]).toBeUndefined();
 			expect(gitOps.currentBranch()).toBe("new-name");
+		});
+
+		it("moves the branch label to the new name", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setWorkspace("/repo", "feat/a", { worktreePath: "/repo/wt" });
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.setLabel("/repo", "feat/a", "X");
+			gitOps.setBranchToRename({ repoPath: "/repo", branchName: "feat/a" });
+
+			await gitOps.handleRenameBranch("feat/a", "feat/a2");
+
+			expect(repoSettingsStore.get("/repo")?.branchLabels).toEqual({ "feat/a2": "X" });
+		});
+
+		it("keeps the label under the old name when the backend rename fails", async () => {
+			mockRepo.renameBranch.mockRejectedValueOnce("already exists");
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setWorkspace("/repo", "feat/a", { worktreePath: "/repo/wt" });
+			repoSettingsStore.getOrCreate("/repo", "Repo");
+			repoSettingsStore.setLabel("/repo", "feat/a", "X");
+			gitOps.setBranchToRename({ repoPath: "/repo", branchName: "feat/a" });
+
+			await gitOps.handleRenameBranch("feat/a", "feat/b");
+
+			expect(repoSettingsStore.get("/repo")?.branchLabels).toEqual({ "feat/a": "X" });
+		});
+	});
+
+	describe("handleOpenRenameBranchDialog", () => {
+		it("refuses the main branch, whichever entry point asks", () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setWorkspace("/repo", "main", { worktreePath: "/repo" });
+
+			expect(gitOps.handleOpenRenameBranchDialog("/repo", "main")).toBe(false);
+			expect(gitOps.branchToRename()).toBeNull();
+		});
+
+		it("opens for a feature branch", () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			repositoriesStore.setWorkspace("/repo", "feat/a", { worktreePath: "/repo/wt" });
+
+			expect(gitOps.handleOpenRenameBranchDialog("/repo", "feat/a")).toBe(true);
+			expect(gitOps.branchToRename()).toEqual({ repoPath: "/repo", branchName: "feat/a" });
 		});
 	});
 
@@ -1672,6 +1732,55 @@ describe("useGitOperations", () => {
 				last_commit_ts: summary.last_commit_ts,
 			});
 		}
+
+		// Catches the structure-to-store boundary dropping detached rows or minting fake workspaces.
+		it("refreshes detached inventory separately from branch workspaces and retracts it", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			const detached = {
+				path: "/external/detached",
+				head: "abcdef0123456789",
+				short_head: "abcdef0",
+				directory_name: "detached",
+				state: "detached",
+			};
+			mockRepo.getRepoStructure.mockResolvedValue({
+				worktree_paths: wtPaths({ main: "/repo" }),
+				merged_branches: [],
+				detached_worktrees: [detached],
+			});
+			await gitOps.refreshAllBranchStats();
+			expect(repositoriesStore.get("/repo")?.detachedWorktrees).toEqual([detached]);
+			expect(Object.keys(repositoriesStore.get("/repo")!.workspaces)).toEqual(["main"]);
+			mockRepo.getRepoStructure.mockResolvedValue({
+				worktree_paths: wtPaths({ main: "/repo" }),
+				merged_branches: [],
+				detached_worktrees: [],
+			});
+			await gitOps.refreshAllBranchStats("/repo", { immediate: true });
+			expect(repositoriesStore.get("/repo")?.detachedWorktrees).toEqual([]);
+		});
+
+		// Catches read-only diagnostics disappearing at refresh or being persisted as selectable workspaces.
+		it("refreshes and retracts repair diagnostics without minting workspace IDs", async () => {
+			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
+			const diagnostic = {
+				path: "/moved/checkout",
+				branch: "feature",
+				state: "missing",
+				guidance: "Run git worktree repair",
+			};
+			mockRepo.getRepoStructure.mockResolvedValue({
+				worktree_paths: wtPaths({ main: "/repo" }),
+				merged_branches: [],
+				worktree_diagnostics: [diagnostic],
+			});
+			await gitOps.refreshAllBranchStats();
+			expect(repositoriesStore.get("/repo")?.worktreeDiagnostics).toEqual([diagnostic]);
+			expect(Object.keys(repositoriesStore.get("/repo")!.workspaces)).toEqual(["main"]);
+			mockRepo.getRepoStructure.mockResolvedValue({ worktree_paths: wtPaths({ main: "/repo" }), merged_branches: [] });
+			await gitOps.refreshAllBranchStats("/repo", { immediate: true });
+			expect(repositoriesStore.get("/repo")?.worktreeDiagnostics).toEqual([]);
+		});
 
 		it("updates branch stats for all repos", async () => {
 			repositoriesStore.add({ path: "/repo", displayName: "Repo" });
@@ -4392,6 +4501,27 @@ describe("useGitOperations", () => {
 			safe: false,
 			reason: "untracked files",
 			dirty_fingerprint: fingerprint,
+		});
+
+		// Catches: automatic cleanup pruning missing detached registrations before repair.
+		// Input is the actual Rust assessment of deleted/moved Git-created checkouts, not hand-set safety.
+		it.each(["ask", "on"] as const)("preserves missing detached registrations during %s cleanup", async (mode) => {
+			repoSettingsStore.update("/repo", { orphanCleanup: mode });
+			mockRepo.getRepoStructure.mockResolvedValue({
+				worktree_paths: wtPaths({ main: "/repo" }),
+				merged_branches: [],
+				worktree_diagnostics: missingDetachedOrphans.diagnostics,
+			});
+			mockRepo.assessOrphanCleanup.mockResolvedValue(missingDetachedOrphans.assessments);
+			const confirmOrphanCleanup = vi.fn().mockResolvedValue(false);
+
+			await askOps(confirmOrphanCleanup).refreshAllBranchStats();
+
+			expect(repositoriesStore.get("/repo")?.worktreeDiagnostics).toHaveLength(2);
+			expect(repositoriesStore.get("/repo")?.worktreeDiagnostics).toEqual(missingDetachedOrphans.diagnostics);
+			expect(mockRepo.removeOrphanWorktree).not.toHaveBeenCalled();
+			expect(confirmOrphanCleanup).not.toHaveBeenCalled();
+			expect(mockSetStatusInfo).not.toHaveBeenCalledWith(expect.stringContaining("Removed"));
 		});
 
 		// Catches: "ask" mode opening a dialog for a clean, merged detached checkout, so a worktree that holds

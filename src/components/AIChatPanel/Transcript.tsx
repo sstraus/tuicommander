@@ -1,3 +1,5 @@
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 /**
  * The conversation, drawn from the projection `acpTranscript` builds.
  *
@@ -330,8 +332,9 @@ export interface TranscriptProps {
 }
 
 const CopyButton: Component<{ label: string; text: string; answer?: boolean }> = (props) => (
-	<button
+	<Button
 		type="button"
+		variant="ghost"
 		class={s.copyAction}
 		aria-label={props.label}
 		onClick={() =>
@@ -341,7 +344,7 @@ const CopyButton: Component<{ label: string; text: string; answer?: boolean }> =
 		}
 	>
 		Copy
-	</button>
+	</Button>
 );
 
 const LinkedPlainText: Component<{ text: string; onOpenFile?: (href: string) => void }> = (props) => {
@@ -631,7 +634,7 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 			) {
 				if (!disclosure.querySelector(":scope > summary")?.contains(node)) hidden = true;
 			}
-			if (hidden || parent?.closest("button, input, ." + s.findBar)) {
+			if (hidden || parent?.closest("button, input, ." + s.findBar.split(" ").join("."))) {
 				current = undefined;
 				continue;
 			}
@@ -741,7 +744,7 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 			>
 				<Show when={finding()}>
 					<div class={s.findBar}>
-						<input
+						<Input
 							ref={searchInput}
 							aria-label="Find in chat"
 							value={query()}
@@ -763,17 +766,17 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 								}
 							}}
 						/>
-						<button type="button" onClick={() => findNext(-1)}>
+						<Button type="button" onClick={() => findNext(-1)}>
 							Previous
-						</button>
-						<button type="button" onClick={() => findNext()}>
+						</Button>
+						<Button type="button" onClick={() => findNext()}>
 							Next
-						</button>
-						<button type="button" aria-label="Close chat search" onClick={closeSearch}>
+						</Button>
+						<Button type="button" shape="icon" aria-label="Close chat search" onClick={closeSearch}>
 							<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
 								<path d="M2.8 2l3.2 3.2L9.2 2l.8.8L6.8 6l3.2 3.2-.8.8L6 6.8 2.8 10l-.8-.8L5.2 6 2 2.8z" />
 							</svg>
-						</button>
+						</Button>
 					</div>
 				</Show>
 				<Show when={props.entries().length > 0} fallback={<div class={s.emptyState}>{props.emptyMessage}</div>}>
@@ -794,11 +797,11 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 											<Show
 												when={!isHarnessNotice(user().text)}
 												fallback={
-													<div class={s.systemNotice} role="note" title={user().text}>
-														{props.terminalAgent && user().text.trim().startsWith("[TUIC]")
-															? "Message from an agent"
-															: user().text}
-													</div>
+													<Show when={!props.terminalAgent || !user().text.trim().startsWith("[TUIC]")}>
+														<div class={s.systemNotice} role="note" title={user().text}>
+															{user().text}
+														</div>
+													</Show>
 												}
 											>
 												<div class={s.userMsg}>
@@ -889,8 +892,9 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 														<div class={s.replyActions}>
 															<CopyButton label="Copy assistant message" text={agent().text} answer />
 															<Show when={props.canForkAtMessage?.() && agent().messageId}>
-																<button
+																<Button
 																	type="button"
+																	variant="ghost"
 																	class={s.copyAction}
 																	aria-label="Fork from here"
 																	disabled={props.busy()}
@@ -900,7 +904,7 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 																	}}
 																>
 																	Fork from here
-																</button>
+																</Button>
 															</Show>
 														</div>
 														<Show
@@ -913,9 +917,9 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 															<div class={s.suggestedReplies} aria-label="Suggested replies">
 																<For each={projected().suggestions}>
 																	{(item) => (
-																		<button type="button" onClick={() => props.onSuggestion?.(item)}>
+																		<Button type="button" onClick={() => props.onSuggestion?.(item)}>
 																			{item}
-																		</button>
+																		</Button>
 																	)}
 																</For>
 															</div>
@@ -934,9 +938,9 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 												<div class={s.noticeBody}>{notice().text}</div>
 												<Show when={notice().action}>
 													{(action) => (
-														<button type="button" class={s.noticeAction} onClick={() => runNoticeAction(action())}>
+														<Button type="button" class={s.noticeAction} onClick={() => runNoticeAction(action())}>
 															{NOTICE_LABELS[action().kind].button}
-														</button>
+														</Button>
 													)}
 												</Show>
 											</div>
@@ -1022,12 +1026,12 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 				{props.children}
 			</div>
 			<Show when={newTextBelow() && transcriptPreferences.enabled()}>
-				<button type="button" class={s.newTextBadge} onClick={scrollToBottom}>
+				<Button type="button" class={s.newTextBadge} onClick={scrollToBottom}>
 					<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
 						<path d="M7 2h2v8.2l3.6-3.6L14 8l-6 6-6-6 1.4-1.4L7 10.2z" />
 					</svg>
 					New text below
-				</button>
+				</Button>
 			</Show>
 		</div>
 	);

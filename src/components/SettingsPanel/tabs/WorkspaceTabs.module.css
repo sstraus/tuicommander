@@ -40,11 +40,6 @@
 .binding kbd { color: var(--fg-secondary); white-space: nowrap; }
 .srOnly { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-.page .secondaryButton { min-height: 36px; height: 36px; padding: 6px 14px; line-height: 20px; align-self: center; }
-
-
-.rebindButton { min-height: 36px; padding: 6px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-tertiary); color: var(--fg-primary); font: inherit; cursor: pointer; }
-.rebindButton:hover { border-color: var(--accent); background: var(--bg-highlight); }
-@media (max-width: 600px) { .rebindButton { min-height: 44px; } }
+.secondaryButton { align-self: center; }
 
 .page > [data-settings-page-header] { margin-bottom: 8px; }

@@ -506,6 +506,28 @@ export function gridDimsForBox(
 	};
 }
 
+/**
+ * Several viewers share one PTY and the last resize wins, so a viewer that
+ * lost keeps drawing its own box while the child sees the winner's size
+ * (story 2131-aa75). The viewer the user is using takes the size back: on focus
+ * or input it asks again, but only when the backend frame shows a size other
+ * than its own, and only once per foreign size so typing in a loser does not
+ * send one request per keystroke before the new frame arrives.
+ *
+ * `askedFor` is the foreign size already answered ("" when none); the caller
+ * stores the returned value.
+ */
+export function decideSizeReclaim(
+	frame: { screenRows: number; screenCols: number },
+	mine: { rows: number; cols: number },
+	askedFor: string,
+): { send: boolean; askedFor: string } {
+	if (!frame.screenRows || !frame.screenCols || !mine.rows || !mine.cols) return { send: false, askedFor };
+	if (frame.screenRows === mine.rows && frame.screenCols === mine.cols) return { send: false, askedFor: "" };
+	const foreign = `${frame.screenRows}x${frame.screenCols}`;
+	return { send: foreign !== askedFor, askedFor: foreign };
+}
+
 /** Trailing-debounce window for the full-frame reconcile self-heal. */
 export const RECONCILE_DEBOUNCE_MS = 250;
 /** Hard cap on how long a reschedule burst can defer the reconcile. */

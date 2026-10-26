@@ -8,8 +8,9 @@ vi.mock("../../invoke", async (importOriginal) => {
 	return { ...actual, invoke: invokeMock };
 });
 
-import type { ActionEntry } from "../../actions/actionRegistry";
+import { type ActionEntry, getActionEntries } from "../../actions/actionRegistry";
 import { CommandPalette, isBrowserCommandPaletteAction } from "../../components/CommandPalette/CommandPalette";
+import type { ShortcutHandlers } from "../../hooks/useKeyboardShortcuts";
 import { emitLocalEvent } from "../../invoke";
 import { commandPaletteStore } from "../../stores/commandPalette";
 import { repositoriesStore } from "../../stores/repositories";
@@ -112,6 +113,13 @@ describe("CommandPalette browser mode", () => {
 		expect(container.textContent).not.toContain("Open file");
 		expect(container.textContent).not.toContain("QR for Remote Mobile Connection");
 		expect(container.textContent).not.toContain("Future native action");
+	});
+
+	// Catches: the Plans and Stories entry is registered but missing from BROWSER_ACTION_IDS, so a browser or phone client never sees it.
+	it("lists the real Plans and Stories entry in browser mode", () => {
+		const entry = getActionEntries({} as ShortcutHandlers).find((candidate) => candidate.id === "plans-stories");
+		expect(entry).toBeDefined();
+		expect(isBrowserCommandPaletteAction(entry as ActionEntry)).toBe(true);
 	});
 
 	it("keeps the complete desktop action list when browser mode is off", () => {

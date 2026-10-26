@@ -312,7 +312,10 @@ mod hostile_input_tests {
         let known = parse_known_hosts(
             "   @revoked gone.example ssh-rsa AAAA\n\t|1|c2FsdA==|aGFzaA== ssh-rsa AAAA\n",
         );
-        assert!(known.hosts.is_empty());
+        assert_eq!(
+            known.hosts,
+            [] as [(std::string::String, std::option::Option<u16>); 0]
+        );
         assert_eq!(known.hashed_count, 1);
     }
 

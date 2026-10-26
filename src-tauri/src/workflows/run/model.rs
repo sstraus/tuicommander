@@ -276,6 +276,9 @@ pub struct RunSnapshot {
     pub paused_since_ms: Option<i64>,
     #[serde(default)]
     pub paused_duration_ms: i64,
+    /// Why the daemon paused the run; cleared on resume. Absent for manual pauses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pause_cause: Option<String>,
     pub limits: RunLimits,
     pub loops: u16,
     pub story_creations: u16,
@@ -361,6 +364,9 @@ pub enum RunEventKind {
         fingerprint: String,
     },
     Paused,
+    PausedFor {
+        cause: String,
+    },
     DeadlineExpired {
         deadline_ms: i64,
     },
@@ -470,6 +476,11 @@ pub enum RunCommand {
     FinalVerificationPassed,
     Complete,
     Pause,
+    /// Internal: the daemon pauses a run and keeps the cause it already knows.
+    #[schemars(skip)]
+    PauseFor {
+        cause: String,
+    },
     /// Internal daemon timer command, never a caller-supplied timeout assertion.
     #[schemars(skip)]
     ExpireDeadline,

@@ -928,7 +928,7 @@ mod tests {
         let (_temp, repo, worktree) = warming_fixture();
         let report = warm_worktree_with(&repo, &worktree, plain_copy);
         assert_eq!(report.warmed, 1);
-        assert!(report.warnings.is_empty());
+        assert_eq!(report.warnings, [] as [std::string::String; 0]);
         assert_eq!(
             std::fs::read_to_string(worktree.join("build/cache/data")).unwrap(),
             "warm"
@@ -1040,7 +1040,7 @@ mod tests {
         });
 
         assert_eq!(report.warmed, 0);
-        assert!(report.warnings.is_empty());
+        assert_eq!(report.warnings, [] as [std::string::String; 0]);
         assert_eq!(
             std::fs::read_to_string(worktree.join("build/cache/data")).unwrap(),
             "workspace"
@@ -1056,7 +1056,7 @@ mod tests {
         });
 
         assert_eq!(report.warmed, 1);
-        assert!(report.warnings.is_empty());
+        assert_eq!(report.warnings, [] as [std::string::String; 0]);
         assert_eq!(
             std::fs::read_to_string(worktree.join("build/cache/data")).unwrap(),
             "warm"
@@ -1170,7 +1170,7 @@ mod tests {
         });
 
         assert_eq!(report.warmed, 0);
-        assert!(report.warnings.is_empty());
+        assert_eq!(report.warnings, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -1212,7 +1212,7 @@ mod tests {
         });
 
         assert_eq!(report.warmed, 0);
-        assert!(report.warnings.is_empty());
+        assert_eq!(report.warnings, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -1221,7 +1221,7 @@ mod tests {
         git_cmd(&repo.join("build")).args(["init"]).run().unwrap();
         let report = warm_worktree_with(&repo, &worktree, |_, _| panic!("must not copy"));
         assert_eq!(report.warmed, 0);
-        assert!(report.warnings.is_empty());
+        assert_eq!(report.warnings, [] as [std::string::String; 0]);
     }
 
     /// Story 1398-42b4 criterion 2: a child created from a linked-worktree
@@ -1268,5 +1268,174 @@ mod tests {
         std::fs::write(src.join(".git"), "gitdir: ../store/wt\n").unwrap();
 
         assert!(head_file(&src).is_file(), "{:?}", head_file(&src));
+    }
+
+    #[test]
+    fn a_probe_without_a_head_says_so_instead_of_probing() {
+        let temp = TempDir::new().unwrap();
+        let bare = temp.path().join("not-a-repo");
+        std::fs::create_dir_all(&bare).unwrap();
+
+        let CowSupport::Unsupported(reason) = probe_cow_support(&bare, temp.path()) else {
+            panic!("a directory without .git/HEAD cannot be probed");
+        };
+
+        assert!(reason.contains("no HEAD to probe"), "{reason}");
+    }
+
+    #[test]
+    fn a_probe_on_one_volume_never_reports_a_volume_mismatch() {
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().join("repo");
+        init_repo(&repo);
+
+        if let CowSupport::Unsupported(reason) = probe_cow_support(&repo, temp.path()) {
+            assert!(!reason.contains("different volumes"), "{reason}");
+        }
+    }
+
+    #[test]
+    fn a_copy_succeeds_only_when_cp_succeeds_and_the_target_exists() {
+        let temp = TempDir::new().unwrap();
+        let source = temp.path().join("source");
+        let target = temp.path().join("target");
+        std::fs::write(&source, "payload").unwrap();
+
+        assert!(clone_file_with(&[], &source, &target));
+        assert_eq!(std::fs::read_to_string(&target).unwrap(), "payload");
+
+        // cp fails on a missing source; a target left from earlier must not
+        // make the attempt look successful.
+        assert!(!clone_file_with(&[], &temp.path().join("missing"), &target));
+    }
+
+    #[test]
+    fn the_nearest_existing_ancestor_is_found_above_missing_directories() {
+        let temp = TempDir::new().unwrap();
+        let existing = temp.path().join("exists");
+        std::fs::create_dir_all(&existing).unwrap();
+
+        assert_eq!(existing_ancestor(&existing), Some(existing.clone()));
+        assert_eq!(
+            existing_ancestor(&existing.join("missing/deeper")),
+            Some(existing)
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn same_volume_compares_devices_and_is_unknown_for_a_missing_path() {
+        let temp = TempDir::new().unwrap();
+        let inner = temp.path().join("inner");
+        std::fs::create_dir_all(&inner).unwrap();
+
+        assert_eq!(same_volume(temp.path(), &inner), Some(true));
+        assert_eq!(same_volume(temp.path(), &temp.path().join("missing")), None);
+        assert_eq!(same_volume(&temp.path().join("missing"), temp.path()), None);
+    }
+
+    #[test]
+    fn a_failed_tree_clone_reports_the_error() {
+        let temp = TempDir::new().unwrap();
+
+        let error = clone_tree(&temp.path().join("missing"), &temp.path().join("dest"))
+            .expect_err("a missing source cannot be cloned");
+
+        assert!(error.contains("copy-on-write copy of"), "{error}");
+    }
+
+    #[test]
+    fn production_warming_reports_a_copy_or_a_reason_for_an_ignored_directory() {
+        let (_temp, repo, worktree) = warming_fixture();
+
+        let report = warm_worktree(&repo, &worktree);
+
+        assert_ne!(report, WarmingReport::default());
+        assert!(
+            report.warmed == 1 || report.warnings.len() == 1,
+            "{report:?}"
+        );
+    }
+
+    #[test]
+    fn only_files_named_after_the_declared_sidecar_are_candidates() {
+        let temp = TempDir::new().unwrap();
+        let src = temp.path();
+        std::fs::create_dir_all(src.join("src-tauri/binaries/bridge-dir")).unwrap();
+        std::fs::write(
+            src.join("src-tauri/tauri.conf.json"),
+            r#"{"bundle":{"externalBin":["binaries/bridge"]}}"#,
+        )
+        .unwrap();
+        std::fs::write(src.join("src-tauri/binaries/bridge-arm"), "x").unwrap();
+        std::fs::write(src.join("src-tauri/binaries/unrelated"), "x").unwrap();
+
+        assert_eq!(
+            external_bin_candidates(src),
+            vec![PathBuf::from("src-tauri/binaries/bridge-arm")]
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn warming_never_copies_a_symlinked_sidecar() {
+        let (_temp, repo, worktree) = warming_fixture();
+        std::fs::write(repo.join(".gitignore"), "").unwrap();
+        std::fs::remove_dir_all(repo.join("build")).unwrap();
+        std::fs::create_dir_all(repo.join("src-tauri/binaries")).unwrap();
+        std::fs::write(
+            repo.join("src-tauri/tauri.conf.json"),
+            r#"{"bundle":{"externalBin":["binaries/bridge"]}}"#,
+        )
+        .unwrap();
+        std::fs::write(repo.join("real-sidecar"), "x").unwrap();
+        std::os::unix::fs::symlink(
+            repo.join("real-sidecar"),
+            repo.join("src-tauri/binaries/bridge-link"),
+        )
+        .unwrap();
+
+        let report = warm_worktree_with(&repo, &worktree, |from, _| {
+            panic!("a symlink must not be copied: {}", from.display())
+        });
+
+        assert_eq!(report.warmed, 0);
+    }
+
+    #[test]
+    fn warm_artifacts_reports_each_present_directory_with_its_size() {
+        let temp = TempDir::new().unwrap();
+        std::fs::create_dir_all(temp.path().join("node_modules/pkg")).unwrap();
+        std::fs::write(
+            temp.path().join("node_modules/pkg/index.js"),
+            vec![0u8; 2048],
+        )
+        .unwrap();
+
+        assert_eq!(
+            warm_artifacts(temp.path()),
+            vec![WarmArtifact {
+                path: "node_modules".into(),
+                size: "2.0K".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn walk_size_sums_file_lengths_and_measures_a_plain_file() {
+        let temp = TempDir::new().unwrap();
+        let file = temp.path().join("one");
+        std::fs::write(&file, vec![0u8; 1500]).unwrap();
+        std::fs::create_dir_all(temp.path().join("sub")).unwrap();
+        std::fs::write(temp.path().join("sub/two"), vec![0u8; 500]).unwrap();
+
+        assert_eq!(walk_size(&file), Some(1500));
+        assert_eq!(walk_size(temp.path()), Some(2000));
+        assert_eq!(walk_size(&temp.path().join("missing")), None);
+    }
+
+    #[test]
+    fn human_size_stops_at_the_largest_unit() {
+        assert_eq!(human_size(2048 * 1024 * 1024 * 1024 * 1024), "2048T");
     }
 }

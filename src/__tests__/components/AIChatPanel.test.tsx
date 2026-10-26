@@ -2469,23 +2469,38 @@ describe("AIChatPanel: a turn", () => {
 });
 
 describe("AIChatPanel: durable conversations", () => {
-	// Catches: the conversation picker left at the 36px default beside the 19px settings button in the control bar.
-	it("sizes the conversation picker compact like its control bar neighbours", async () => {
+	// Catches: migrating the native picker drops its session selection handler or sends a prompt.
+	it("loads the selected conversation through the native picker without sending", async () => {
 		client.listSessions.mockResolvedValue({
 			sessions: [
-				{ sessionId: SESSION, cwd: CHAT_ROOT, title: null, updatedAt: "2026-09-27T09:00:00Z" },
-				{
-					sessionId: "01932d5e-0000-7000-8000-0000000000bb",
-					cwd: CHAT_ROOT,
-					title: null,
-					updatedAt: "2026-09-26T09:00:00Z",
-				},
+				{ sessionId: SESSION, cwd: CHAT_ROOT, title: "First conversation", updatedAt: "2026-09-27T09:00:00Z" },
+				{ sessionId: SECOND_SESSION, cwd: CHAT_ROOT, title: "Second conversation", updatedAt: "2026-09-26T09:00:00Z" },
 			],
 			nextCursor: null,
 		});
+		client.loadSession.mockImplementation(async (_id, session) => {
+			acpStore.applySnapshot(snapshot({ attachments: [attachment({ sessionId: session })] }));
+			feed(
+				{
+					kind: "sessionUpdate",
+					update: {
+						sessionUpdate: "agent_message_chunk",
+						content: { type: "text", text: "Selected conversation history" },
+					},
+				},
+				session,
+			);
+		});
 		const { container } = await renderPanel();
 		await settle();
-		expect(container.querySelector('select[title="Conversation"]')?.className).toMatch(/compact/);
+		const picker = container.querySelector<HTMLSelectElement>('select[title="Conversation"]')!;
+		picker.value = SECOND_SESSION;
+		picker.dispatchEvent(new Event("change", { bubbles: true }));
+		await settle();
+		expect(client.loadSession).toHaveBeenCalledExactlyOnceWith(CONNECTION, SECOND_SESSION, CHAT_ROOT);
+		expect(picker.value).toBe(SECOND_SESSION);
+		expect(container.textContent).toContain("Selected conversation history");
+		expect(client.prompt).not.toHaveBeenCalled();
 	});
 
 	it("labels untitled conversations without exposing an id as the option text", async () => {
@@ -3610,10 +3625,12 @@ describe("AIChatPanel: pause, resume and compact", () => {
 
 	it("draws an unavailable control-bar button visibly dimmed", async () => {
 		const style = document.createElement("style");
-		style.textContent = readFileSync(
-			resolve(process.cwd(), "src/components/AIChatPanel/AIChatPanel.module.css"),
-			"utf8",
-		);
+		style.textContent = [
+			"src/components/ui/FormControls.module.css",
+			"src/components/AIChatPanel/AIChatPanel.module.css",
+		]
+			.map((path) => readFileSync(resolve(process.cwd(), path), "utf8"))
+			.join("\n");
 		document.head.append(style);
 		try {
 			const { container } = await renderPanel();
@@ -4283,12 +4300,15 @@ describe("AI Chat clipboard precedence", () => {
 // Catches: mobile Chat retains a separate Park button or loses the shared +/mic order.
 it("mobile plus Chat shares the control order and restores its parked text", async () => {
 	vi.stubGlobal("SpeechRecognition", class {});
-	const chat = createAcpChat(
-		() => ROOT,
-		() => true,
-		client,
-	);
-	const view = render(() => <Composer chat={chat} mobileAttachments />);
+	let chat!: ReturnType<typeof createAcpChat>;
+	const view = render(() => {
+		chat = createAcpChat(
+			() => ROOT,
+			() => true,
+			client,
+		);
+		return <Composer chat={chat} mobileAttachments />;
+	});
 	await chat.ensureStarted();
 	await settle();
 	const plus = view.getByRole("button", { name: "More composer actions" });
@@ -4317,12 +4337,15 @@ it("mobile plus Chat shares the control order and restores its parked text", asy
 // Catches: the moved Chat picker stages no image, or Queue sends through a different path.
 it("mobile plus Chat stages a captured image and queues it through ACP while busy", async () => {
 	supportsImages = true;
-	const chat = createAcpChat(
-		() => ROOT,
-		() => true,
-		client,
-	);
-	const view = render(() => <Composer chat={chat} mobileAttachments />);
+	let chat!: ReturnType<typeof createAcpChat>;
+	const view = render(() => {
+		chat = createAcpChat(
+			() => ROOT,
+			() => true,
+			client,
+		);
+		return <Composer chat={chat} mobileAttachments />;
+	});
 	await chat.ensureStarted();
 	await settle();
 	acpStore.applySnapshot(

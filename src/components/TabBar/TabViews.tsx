@@ -14,6 +14,8 @@ import { markdownDocumentPanelId } from "../../utils/markdownDocumentPanelId";
 import type { LeafRect } from "../../utils/paneTreeGeometry";
 import { getRepoColor } from "../../utils/repoColor";
 import { GlobeIcon } from "../GlobeIcon";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import s from "./TabBar.module.css";
 
 type TabKind = "diff" | "editor" | "markdown" | "terminal";
@@ -210,7 +212,8 @@ export const TerminalTabView: Component<TerminalTabViewProps> = (props) => {
 						</span>
 					}
 				>
-					<input
+					<Input
+						compact
 						class={s.tabNameInput}
 						type="text"
 						value={terminal()?.name || ""}
@@ -233,7 +236,9 @@ export const TerminalTabView: Component<TerminalTabViewProps> = (props) => {
 				)}
 				<PanePositionIcon tabId={props.id} rects={props.paneRects} />
 				<Show when={props.showWorkspaceMetadata && isPromoted() && !globalWorkspaceStore.isActive()}>
-					<button
+					<Button
+						size="compact"
+						variant="ghost"
 						class={s.globeIcon}
 						title={t("tabBar.removeFromWorkspace", "Remove from Global Workspace")}
 						onClick={(event) => {
@@ -242,7 +247,7 @@ export const TerminalTabView: Component<TerminalTabViewProps> = (props) => {
 						}}
 					>
 						<GlobeIcon size={11} />
-					</button>
+					</Button>
 				</Show>
 				<Show when={(props.tabHintsActive || props.quickSwitcherActive) && props.index < 9}>
 					<span class={s.shortcutBadge}>
@@ -252,7 +257,9 @@ export const TerminalTabView: Component<TerminalTabViewProps> = (props) => {
 				<Show when={props.showWorkspaceMetadata && hovered() && globalWorkspaceStore.isActive() && repoName()}>
 					<span class={s.repoOverlay}>{repoName()}</span>
 				</Show>
-				<button
+				<Button
+					size="compact"
+					variant="ghost"
 					class={s.tabClose}
 					title={t("tabBar.close", "Close")}
 					onClick={(event) => {
@@ -262,7 +269,7 @@ export const TerminalTabView: Component<TerminalTabViewProps> = (props) => {
 					}}
 				>
 					×
-				</button>
+				</Button>
 			</div>
 		</Show>
 	);
@@ -318,7 +325,9 @@ export const DiffTabView: Component<FileTabViewProps> = (props) => {
 					{tab()?.scope ? ` (${tab()?.scope?.slice(0, 7)})` : ""}
 				</span>
 				<PanePositionIcon tabId={props.id} rects={props.paneRects} />
-				<button
+				<Button
+					size="compact"
+					variant="ghost"
 					class={s.tabClose}
 					title={t("tabBar.close", "Close")}
 					onClick={(event) => {
@@ -328,7 +337,7 @@ export const DiffTabView: Component<FileTabViewProps> = (props) => {
 					}}
 				>
 					×
-				</button>
+				</Button>
 			</div>
 		</Show>
 	);
@@ -401,7 +410,9 @@ export const MarkdownTabView: Component<FileTabViewProps> = (props) => {
 				</Show>
 				<span class={s.tabName}>{label()}</span>
 				<PanePositionIcon tabId={props.id} rects={props.paneRects} />
-				<button
+				<Button
+					size="compact"
+					variant="ghost"
 					class={s.tabClose}
 					title={t("tabBar.close", "Close")}
 					onClick={(event) => {
@@ -411,7 +422,7 @@ export const MarkdownTabView: Component<FileTabViewProps> = (props) => {
 					}}
 				>
 					×
-				</button>
+				</Button>
 			</div>
 		</Show>
 	);
@@ -454,7 +465,9 @@ export const EditorTabView: Component<Omit<FileTabViewProps, "richIcon">> = (pro
 				</Show>
 				<span class={s.tabName}>{tab()?.fileName}</span>
 				<PanePositionIcon tabId={props.id} rects={props.paneRects} />
-				<button
+				<Button
+					size="compact"
+					variant="ghost"
 					class={s.tabClose}
 					title={t("tabBar.close", "Close")}
 					onClick={(event) => {
@@ -463,7 +476,7 @@ export const EditorTabView: Component<Omit<FileTabViewProps, "richIcon">> = (pro
 					}}
 				>
 					×
-				</button>
+				</Button>
 			</div>
 		</Show>
 	);

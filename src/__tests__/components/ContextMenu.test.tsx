@@ -1,4 +1,5 @@
 import { fireEvent, render } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import type { ContextMenuItem } from "../../components/ContextMenu/ContextMenu";
 import { ContextMenu, createContextMenu } from "../../components/ContextMenu/ContextMenu";
@@ -147,6 +148,59 @@ describe("ContextMenu", () => {
 		));
 		fireEvent.mouseDown(document.body);
 		expect(handleClose).toHaveBeenCalled();
+	});
+
+	// Catches: fadeIn's scale(0.95) underestimates a tall popup's final box.
+	it("clamps the full layout box at the bottom edge during the opening animation", async () => {
+		const [visible, setVisible] = createSignal(false);
+		const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+			width: 190,
+			height: 712.5,
+			left: 0,
+			top: 0,
+			right: 190,
+			bottom: 712.5,
+			x: 0,
+			y: 0,
+			toJSON: () => ({}),
+		});
+		const height = vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(750);
+		const width = vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(200);
+		try {
+			const { container } = render(() => (
+				<ContextMenu
+					items={sampleItems}
+					x={window.innerWidth - 2}
+					y={window.innerHeight - 2}
+					visible={visible()}
+					onClose={() => {}}
+				/>
+			));
+			setVisible(true);
+			await new Promise((resolve) => requestAnimationFrame(resolve));
+			const menu = container.querySelector(".menu") as HTMLElement;
+			expect(Number.parseFloat(menu.style.top) + 750).toBeLessThanOrEqual(window.innerHeight - 8);
+			expect(Number.parseFloat(menu.style.left) + 200).toBeLessThanOrEqual(window.innerWidth - 8);
+			expect(menu.style.opacity).toBe("1");
+		} finally {
+			rect.mockRestore();
+			height.mockRestore();
+			width.mockRestore();
+		}
+	});
+
+	it("reclamps an already-open menu when another right click moves its anchor", async () => {
+		// Catches: x/y update inline styles but fail to schedule the viewport clamp.
+		const [position, setPosition] = createSignal({ x: 20, y: 20 });
+		const { container } = render(() => (
+			<ContextMenu items={sampleItems} x={position().x} y={position().y} visible={true} onClose={() => {}} />
+		));
+		await new Promise((resolve) => requestAnimationFrame(resolve));
+		setPosition({ x: window.innerWidth - 2, y: window.innerHeight - 2 });
+		await new Promise((resolve) => requestAnimationFrame(resolve));
+		const menu = container.querySelector(".menu") as HTMLElement;
+		expect(Number.parseFloat(menu.style.left) + 180).toBeLessThanOrEqual(window.innerWidth - 8);
+		expect(Number.parseFloat(menu.style.top) + sampleItems.length * 36 + 8).toBeLessThanOrEqual(window.innerHeight - 8);
 	});
 
 	it("clamps position to viewport bounds", async () => {

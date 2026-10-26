@@ -1,0 +1,8 @@
+{
+  "sessions_remaining": [],
+  "stop_exit": 0,
+  "stop_stdout": "Stop requested for this agent-test instance only\n",
+  "stop_stderr": "",
+  "supervisor_exit": 2,
+  "worktree_processes_remaining": []
+}

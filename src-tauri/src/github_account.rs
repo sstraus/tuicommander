@@ -409,6 +409,10 @@ pub(crate) fn github_remove_account_impl(
     // Drop the account's per-account runtime state and its cooldown keys
     // ("{id}:owner/repo"). github.com cooldowns ("owner/repo") are untouched.
     state.github.ghe_state.remove(&id);
+    state
+        .git_cache
+        .github_repo_access_errors
+        .retain(|_, failure| failure.account_id != id);
     let prefix = format!("{id}:");
     state
         .git_cache
@@ -587,7 +591,7 @@ mod tests {
     fn registry_reads_shared_account_records() {
         let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).expect("tempdir");
         let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
-        assert!(GitHubAccountRegistry::load().list().is_empty());
+        assert_eq!(GitHubAccountRegistry::load().list(), []);
 
         let account = GitHubAccount::ghe_pat(
             GitHubHost::new("ghe.acme.com").unwrap(),

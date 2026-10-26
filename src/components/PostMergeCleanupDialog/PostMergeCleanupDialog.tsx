@@ -1,6 +1,7 @@
 import { type Component, createSignal, For, Show } from "solid-js";
 import { registerModal } from "../../stores/modalStack";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 import s from "./PostMergeCleanupDialog.module.css";
 
@@ -227,12 +228,18 @@ export const PostMergeCleanupDialog: Component<PostMergeCleanupDialogProps> = (p
 					</ul>
 				</div>
 				<div class={d.actions}>
-					<button class={d.cancelBtn} data-testid="skip-btn" onClick={props.onSkip} disabled={!!props.executing}>
+					<Button class={d.cancelBtn} data-testid="skip-btn" onClick={props.onSkip} disabled={!!props.executing}>
 						Skip
-					</button>
-					<button class={d.primaryBtn} data-testid="execute-btn" onClick={handleExecute} disabled={!!props.executing}>
+					</Button>
+					<Button
+						variant="primary"
+						class={d.primaryBtn}
+						data-testid="execute-btn"
+						onClick={handleExecute}
+						disabled={!!props.executing}
+					>
 						Execute
-					</button>
+					</Button>
 				</div>
 			</div>
 		</div>

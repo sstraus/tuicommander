@@ -43,3 +43,33 @@ it("accepts a shared Android file and opens the mobile chat with a recoverable d
 	expect(stored.get("/_shared/shared-1")?.headers.get("x-file-name")).toBe("report.pdf");
 	expect(await stored.get("/_shared/shared-1")?.text()).toBe("report");
 });
+
+// Catches: keeping obsolete v1 data after the shell cache upgrade.
+it("deletes the old v1 shell cache on activation while keeping the current shared files", async () => {
+	const handlers = new Map<string, (event: unknown) => void>();
+	const names = new Set(["tuic-shell-v1", "tuic-shell-v2"]);
+	let claimed = false;
+	runInNewContext(readFileSync("public/sw.js", "utf8"), {
+		self: {
+			addEventListener: (type: string, handler: (event: unknown) => void) => handlers.set(type, handler),
+			clients: {
+				claim: async () => {
+					claimed = true;
+				},
+			},
+		},
+		caches: {
+			keys: async () => [...names],
+			delete: async (name: string) => names.delete(name),
+		},
+	});
+	let pending: Promise<unknown> | undefined;
+	handlers.get("activate")!({
+		waitUntil: (result: Promise<unknown>) => {
+			pending = result;
+		},
+	});
+	await pending;
+	expect([...names]).toEqual(["tuic-shell-v2"]);
+	expect(claimed).toBe(true);
+});

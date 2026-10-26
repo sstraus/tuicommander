@@ -3,6 +3,8 @@ import { t } from "../../i18n";
 import { registerModal } from "../../stores/modalStack";
 import { cx } from "../../utils";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import s from "./RunCommandDialog.module.css";
 
 export interface RunCommandDialogProps {
@@ -69,7 +71,7 @@ export const RunCommandDialog: Component<RunCommandDialogProps> = (props) => {
 								"Enter a command to run in this worktree. It will be saved to repository settings.",
 							)}
 						</p>
-						<input
+						<Input
 							ref={inputRef}
 							type="text"
 							class={s.monoInput}
@@ -79,12 +81,12 @@ export const RunCommandDialog: Component<RunCommandDialogProps> = (props) => {
 						/>
 					</div>
 					<div class={d.actions}>
-						<button class={d.cancelBtn} onClick={props.onClose}>
+						<Button class={d.cancelBtn} onClick={props.onClose}>
 							{t("runCommand.cancel", "Cancel")}
-						</button>
-						<button class={d.primaryBtn} onClick={handleSaveAndRun} disabled={!command().trim()}>
+						</Button>
+						<Button variant="primary" class={d.primaryBtn} onClick={handleSaveAndRun} disabled={!command().trim()}>
 							{t("runCommand.saveAndRun", "Save & Run")}
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>

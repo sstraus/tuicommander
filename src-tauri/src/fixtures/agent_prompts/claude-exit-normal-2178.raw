@@ -1,0 +1,70 @@
+export PS1='shell2178$ '; CLAUDE_CONFIG_DIR=/Users/stefano.straus/Gits/.tmp/results/2178/claude-normal claude --bare; printf '\nAGENT_EXIT_2178=%s\n' $?
+
+The default interactive shell is now zsh.
+To update your account to use zsh, please run `chsh -s /bin/zsh`.
+For more details, please visit https://support.apple.com/kb/HT208050.
+[?1034hDGQT92CJFP:2178 stefano.straus$ export PS1='shell2178$ '; CLAUDE_CONFIG_DIR=/Users/stefano.straus/Gits/.tmp/results/2178/claude- normal claude --bare; printf '\nAGENT_EXIT_2178=%s\n' $?
+7[r8[?25h[?25l[?2004h[?2031h[?1004h[>4;2m[?2026h[38;2;215;119;87mWelcome[9Gto[12GClaude[19GCode[24G[38;2;153;153;153mv2.1.308[39m
+..........................................................
+
+[6G*[46G█████▓▓░
+[34G*[44G███▓░[54G░░
+[13G░░░░░░[43G███▓░
+[5G░░░[11G░░░░░░░░░░[43G███▓░
+[4G░░░░░░░░░░░░░░░░░░░[27G[1m*[44G[22m██▓░░[55G▓
+[46G░▓▓███▓▓░
+[38;2;153;153;153m *[36G░░░░[39m
+[38;2;153;153;153m [34G░░░░░░░░[39m
+[38;2;153;153;153m [32G░░░░░░░░░░░░░░░░[39m
+[7G[38;2;215;119;87m █████████[57G[38;2;153;153;153m*[39m
+[7G[38;2;215;119;87m██▄█████▄██[42G[39m[1m*[22m
+[7G[38;2;215;119;87m █████████[23G[39m*
+.......[38;2;215;119;87m█[10G█[14G█[16G█[39m..........................................
+
+[2GLet's[8Gget[12Gstarted.
+
+[2G[1mChoose[9Gthe[13Gtext[18Gstyle[24Gthat[29Glooks[35Gbest[40Gwith[45Gyour[50Gterminal[22m
+[2G[38;2;153;153;153mTo[5Gchange[12Gthis[17Glater,[24Grun[28G/theme[39m
+
+[6GAuto[11G(match[18Gterminal)
+[2G[38;2;177;185;249m❯[4G[38;2;78;186;101m✔[6G[38;2;177;185;249mDark[11Gmode[39m
+[6GLight[12Gmode
+[6GDark[11Gmode[16G(colorblind-friendly)
+[6GLight[12Gmode[17G(colorblind-friendly)
+[6GDark[11Gmode[16G(ANSI[22Gcolors[29Gonly)
+[6GLight[12Gmode[17G(ANSI[23Gcolors[30Gonly)
+
+[2G[38;2;80;80;80m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌[39m
+[2G[38;2;248;248;242m[2m 1[5G[22m [38;2;102;217;239mfunction[38;2;248;248;242m [38;2;166;226;46mgreet[38;2;248;248;242m()[23G{[39m
+[2G[38;2;220;90;90m[48;2;61;1;0m 2 -[38;2;248;248;242m  console.log("Hello, [48;2;92;2;0mWorld[48;2;61;1;0m!");                                                                                       [49m[39m
+[2G[38;2;80;200;80m[48;2;2;40;0m 2 +[38;2;248;248;242m  [38;2;255;255;255mconsole[38;2;248;248;242m.[38;2;166;226;46mlog[38;2;248;248;242m([38;2;230;219;116m"Hello, [48;2;4;71;0mClaude[48;2;2;40;0m!"[38;2;248;248;242m);                                                                                      [39m[49m
+[2G[38;2;248;248;242m[2m 3[5G[22m }[39m
+[2G[38;2;80;80;80m╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌[39m
+[2G[38;2;153;153;153m Syntax[10Gtheme:[17GMonokai[25GExtended[34G(ctrl+t[42Gto[45Gdisable)[39m
+[1C[14A[?2026l[>0q]7501;?[c(B[?2004h[>4;2m[?2026h[1D[14B[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G[1A[1C[10A[1mSecurity notes:[22m[K[1C[2B[38;2;153;153;153m1.[39m Claude can make mistakes.[K[1C[1B   [38;2;153;153;153mYou'r[12Gresponsible[24Gfor[28GClaud[34G's actions and should always[4C[1Breview them, especially when running code.[5C[1B[39m[K[1C[1B[38;2;153;153;153m2.[39m Due to prompt[19Ginjection[29Grisks,[36Gonly[41Guse[45Git[48Gwith[53Gcode[58Gyou[62Gtrust[4C[1B[38;2;153;153;153mLearn more: ]8;id=zaxmda;https://code.claude.com/docs/en/securityhttps://code.claude.com/docs/en/security]8;;[5C[1B[39m[K[1C[1B[38;2;177;185;249mPress [1mEnter[22m to continue…[39m[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[9A[?2026l(B[?2004h[>4;2m[?2026h
+[2G[38;2;153;153;153mPress[8GCtrl-C[15Gagain[21Gto[24Gexit[39m
+
+[?2026l[?2026h[2K[1A[2K[1A[2K[G[1A[K[1B[K[1B[K[2A[?2026l[>4m[?1004l[?2031l[?2004l[?2026h[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[1A[2K[G[1A[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[1B[K[26A[?2026l[?2004h[?2031h[?1004h[>4;2m[>0q[c[?2026h
+[38;2;255;193;7m────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────[39m
+[2G[38;2;255;193;7m[1mAccessing[12Gworkspace:[22m[39m
+
+[2G[1m/Users/stefano.straus/Gits/.tmp/results/2178[22m
+
+[2GQuick[8Gsafety[15Gcheck:[22GIs[25Gthis[30Ga[32Gproject[40Gyou[44Gcreated[52Gor[55Gone[59Gyou[63Gtrust?[70G(Like[76Gyour[81Gown[85Gcode,[91Ga[93Gwell-known[104Gopen[109Gsource[116Gproject,[125Gor
+[2Gwork[7Gfrom[12Gyour[17Gteam).[24GIf[27Gnot,[32Gtake[37Ga[39Gmoment[46Gto[49Greview[56Gwhat's[63Gin[66Gthis[71Gfolder[78Gfirst.
+
+[2GClaude[9GCode'll[17Gbe[20Gable[25Gto[28Gread,[34Gedit,[40Gand[44Gexecute[52Gfiles[58Ghere.
+
+[2G]8;id=zaxmda;https://code.claude.com/docs/en/security[38;2;153;153;153mSecurity guide[39m]8;;
+
+[2G[38;2;177;185;249m❯[4GNo,[8Gexit[39m
+[4GYes,[9GI[11Gtrust[17Gthis[22Gfolder
+
+[2G[38;2;153;153;153mEnter[8Gto[11Gconfirm[19G·[21GEsc[25Gto[28Gcancel[39m
+[1C[4A[?2026l[?2026h[1D[4B[1C[1A[38;2;153;153;153mPress[8GCtrl-C again[21Gto exit[39m[K
+[1C[4A[?2026l[?1006l[?1003l[?1002l[?1000l[1D[4B[?1004l[>4m[?2031l[?2004l(B[?1016l[?1006l[?1003l[?1002l[?1000l[?25h7[r8]9;4;0;]0;
+AGENT_EXIT_2178=1
+shell2178$ 
+shell2178$ printf 'SHELL_%s_2178\n' NORMAL
+SHELL_NORMAL_2178
+shell2178$ 

@@ -9,6 +9,7 @@
 
 /* Inline search bar — sticky header with fold-toggle button */
 .searchBar {
+  composes: toolbar from "../ui/FormControls.module.css";
   position: sticky;
   top: 0;
   z-index: 1;
@@ -21,7 +22,7 @@
   gap: 6px;
 }
 
-.searchInput { width: 100%; }
+.searchInput { width: 100%; flex: 1; }
 
 
 .searchInput::placeholder {
@@ -31,6 +32,7 @@
 
 /* Collapsible section headers (Local, Remote) */
 .sectionHeader {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 6px;
@@ -178,6 +180,7 @@
 .inlineInput { flex: 1; min-width: 0; }
 
 .smartActions {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   justify-content: flex-end;
   padding: 4px 12px;
@@ -187,6 +190,7 @@
 
 /* Create branch inline form row */
 .createForm {
+  flex-wrap: wrap;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -209,37 +213,6 @@
   cursor: pointer;
 }
 
-.createConfirmBtn,
-.createCancelBtn {
-  padding: 3px 10px;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-sm);
-  font-family: var(--font-ui);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.createConfirmBtn {
-  background: var(--accent);
-  color: var(--text-on-accent);
-}
-
-.createConfirmBtn:hover {
-  background: var(--accent-hover);
-}
-
-.createCancelBtn {
-  background: var(--bg-highlight);
-  color: var(--fg-secondary);
-}
-
-.createCancelBtn:hover {
-  background: var(--border);
-  color: var(--fg-primary);
-}
-
-
 /* Inline dialog / popover (for multi-button confirms) */
 .overlay {
   position: fixed;
@@ -261,6 +234,7 @@
 }
 
 .popoverHeader {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   padding: 12px 16px;
@@ -295,90 +269,7 @@
   border-top: 1px solid var(--border);
 }
 
-.popoverActions button {
-  flex: 1;
-  padding: 8px 12px;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-md);
-  font-weight: 500;
-  font-family: var(--font-ui);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.popoverActions button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.cancelBtn {
-  background: var(--bg-highlight);
-  color: var(--fg-secondary);
-}
-
-.cancelBtn:hover:not(:disabled) {
-  background: var(--border);
-  color: var(--fg-primary);
-}
-
-.primaryBtn {
-  background: var(--accent);
-  color: var(--text-on-accent);
-}
-
-.primaryBtn:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
-
-.secondaryBtn {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-  border: 1px solid var(--border) !important;
-}
-
-.secondaryBtn:hover:not(:disabled) {
-  background: var(--border);
-}
-
-.dangerBtn {
-  background: color-mix(in srgb, var(--error) 80%, transparent);
-  color: var(--fg-primary);
-}
-
-.dangerBtn:hover:not(:disabled) {
-  background: var(--error);
-}
-
-/* --- Prefix folding: group header and indented rows --- */
-
-/* Fold toggle button in the search bar */
-.foldToggle {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
-}
-
-.foldToggle:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.foldToggleActive {
-  background: color-mix(in srgb, var(--accent) 15%, transparent);
-  border-color: var(--accent);
-  color: var(--accent);
-}
+.popoverActions > button { flex: 1; }
 
 /* Count badge on the "delete merged" cleanup button */
 .mergedBadge {

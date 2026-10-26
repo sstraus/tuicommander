@@ -122,37 +122,90 @@ fn action_capability(tool: &str, action: &str) -> Option<&'static str> {
     }
 }
 
-/// Metadata shared by Settings clients. Core/recovery restrictions are advanced;
-/// optional effects have prominent switches independent of tool implementation.
+/// Settings inventory. Domains own their nested permission switches; no gate is hidden.
 pub(crate) fn catalog() -> Vec<serde_json::Value> {
     [
-        ("secret", "Secrets", "Collect and use secrets through private forms.", true),
-        ("telegram", "Telegram", "Send external messages; requires Telegram configuration.", true),
-        ("settings", "Settings access", "Read and propose settings; trusted UI opt-in is also required.", true),
-        ("diagnostics", "Diagnostics / JS inspection", "Inspect diagnostics and execute frontend inspection scripts.", true),
-        ("remote_deployment", "Remote daemon deployment", "Preview and update connected remote daemons with deployment consent.", true),
-        ("progress", "Progress tracking", "Record outcomes; global Progress tracking must also be enabled.", true),
-        ("session", "Terminal sessions", "Create and control terminal sessions.", false),
-        ("agent", "Peers and mail", "Launch peers and exchange durable messages, including task actions.", false),
-        ("agent_tasks", "Background task outcomes", "Read and cancel task outcomes, without killing terminals.", false),
-        ("repo", "Repositories", "Manage repositories and worktrees.", false),
-        ("workflow", "Project workflows", "All story, run, proposal, report and launch actions.", false),
-        ("workflow.story", "Stories and plans", "Read and update native stories and plans.", false),
-        ("workflow.run", "Workflow runs", "Start and inspect published workflow graphs.", false),
-        ("workflow.proposals", "Workflow story proposals", "Create idempotent coordinator proposals.", false),
-        ("workflow.reports", "Workflow reports", "Submit caller-bound attempt outcomes.", false),
-        ("workflow.launch", "Workflow agent launch", "Launch pinned workflow attempts.", false),
-        ("automations", "Scheduled automations", "Manage scheduled definitions and runs.", false),
-        ("ui", "User interaction", "Tabs, notices and confirmation, including Design Mode actions.", false),
-        ("design", "Design Mode", "Browser inspection; existing extension host grants remain required.", false),
-        ("voice", "Spoken replies", "Caller-bound speech; voice configuration remains required.", false),
-        ("plugin_reference", "Plugin authoring reference", "Read the plugin development guide.", false),
-    ].into_iter().map(|(id, title, description, optional)| serde_json::json!({"name":id,"title":title,"description":description,"optional":optional})).collect()
+        ("session", "Terminal sessions", "Create and control terminal sessions.", "session", "always"),
+        ("agent", "Peers and mail", "Launch peers and exchange durable messages, including task actions.", "agent", "always"),
+        ("agent_tasks", "Background task outcomes", "Read and cancel task outcomes, without killing terminals.", "agent", "always"),
+        ("repo", "Repositories", "Manage repositories and worktrees.", "repo", "always"),
+        ("workflow", "Project workflows", "All story, run, proposal, report and launch actions.", "workflow", "always"),
+        ("workflow.story", "Stories and plans", "Read and update native stories and plans.", "workflow", "always"),
+        ("workflow.run", "Workflow runs", "Start and inspect published workflow graphs.", "workflow", "always"),
+        ("workflow.proposals", "Workflow story proposals", "Create idempotent coordinator proposals.", "workflow", "always"),
+        ("workflow.reports", "Workflow reports", "Submit caller-bound attempt outcomes.", "workflow", "always"),
+        ("workflow.launch", "Workflow agent launch", "Launch pinned workflow attempts.", "workflow", "always"),
+        ("automations", "Scheduled automations", "Manage scheduled definitions and runs.", "automations", "always"),
+        ("ui", "User interaction", "Tabs, notices and confirmation, including Design Mode actions.", "ui", "always"),
+        ("design", "Design Mode", "Browser inspection; existing extension host grants remain required.", "ui", "always"),
+        ("secret", "Secrets", "Collect and use secrets through private forms.", "secret", "always"),
+        ("settings", "Settings access", "Read and propose settings; trusted UI opt-in is also required.", "settings", "always"),
+        ("progress", "Progress tracking", "Record outcomes; global Progress tracking must also be enabled.", "progress", "always"),
+        ("diagnostics", "Diagnostics / JS inspection", "Inspect diagnostics and execute frontend inspection scripts.", "debug", "rare"),
+        ("plugin_reference", "Plugin authoring reference", "Read the plugin development guide.", "plugin_dev_guide", "rare"),
+        ("voice", "Spoken replies", "Caller-bound speech; voice configuration remains required.", "voice", "conditional"),
+        ("telegram", "Telegram", "Send external messages; requires Telegram configuration.", "telegram", "conditional"),
+        ("remote_deployment", "Remote daemon deployment", "Preview and update connected remote daemons with deployment consent.", "remote", "conditional"),
+    ].into_iter().map(|(id, title, description, domain, section)| serde_json::json!({"name":id,"title":title,"description":description,"domain":domain,"section":section,"parent": match id { "agent_tasks" => Some("agent"), "design" => Some("ui"), id if id.starts_with("workflow.") => Some("workflow"), _ => None }})).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Catches: a new capability escaping its approved domain as a stray flat row.
+    #[test]
+    fn every_capability_has_an_approved_domain_and_section() {
+        let sections = [
+            (
+                "always",
+                vec![
+                    "session",
+                    "agent",
+                    "repo",
+                    "workflow",
+                    "automations",
+                    "ui",
+                    "secret",
+                    "settings",
+                    "progress",
+                ],
+            ),
+            ("rare", vec!["debug", "plugin_dev_guide"]),
+            ("conditional", vec!["voice", "telegram", "remote"]),
+        ];
+        let catalog = catalog();
+        for (section, domains) in &sections {
+            let actual: Vec<_> = catalog
+                .iter()
+                .filter(|c| c["section"] == *section && c["parent"].is_null())
+                .map(|c| c["domain"].as_str().unwrap())
+                .collect();
+            assert_eq!(&actual, domains);
+        }
+        for capability in &catalog {
+            let domain = capability["domain"]
+                .as_str()
+                .expect("capability has no domain");
+            let section = capability["section"]
+                .as_str()
+                .expect("capability has no section");
+            assert!(
+                sections
+                    .iter()
+                    .any(|(name, domains)| *name == section && domains.contains(&domain)),
+                "{capability}"
+            );
+            if let Some(parent) = capability["parent"].as_str() {
+                assert!(
+                    catalog.iter().any(|c| c["name"] == parent
+                        && c["domain"] == domain
+                        && c["parent"].is_null()),
+                    "orphan: {capability}"
+                );
+            }
+        }
+    }
 
     // Catches: merging a former tool silently widens a saved denial, or drops unknown names.
     #[test]

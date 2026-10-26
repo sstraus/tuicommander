@@ -24,7 +24,8 @@ const { invoke } = vi.hoisted(() => ({
 }));
 vi.mock("../../invoke", () => ({ invoke }));
 
-beforeEach(() => {
+beforeEach(async () => {
+	await activityStore.hydrate();
 	activityStore.clearAll();
 	invoke.mockClear();
 });

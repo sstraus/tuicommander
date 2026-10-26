@@ -113,7 +113,7 @@ fn native_tool_catalog_summaries_are_short_and_not_description_prefixes() {
     // Agent descriptions may shrink; Settings copy must stay unchanged.
     let recorded: serde_json::Value =
         serde_json::from_str(include_str!("fixtures/native-guidance-2069.json")).unwrap();
-    assert!(!tools.is_empty());
+    assert_ne!(tools.as_slice(), [] as [serde_json::Value; 0]);
     assert_eq!(catalog.len(), tools.len());
     assert_eq!(NATIVE_TOOL_SUMMARIES.len(), tools.len());
     for (tool, entry) in tools.iter().zip(&catalog) {
@@ -815,6 +815,36 @@ fn the_progress_obligation_and_the_progress_tool_appear_and_vanish_together() {
 }
 
 // search_tools
+
+// Catches required name terms becoming optional BM25 description boosts, before and after limit.
+#[test]
+fn required_name_terms_do_not_fall_back_to_description_matches() {
+    let fixture: serde_json::Value =
+        serde_json::from_str(include_str!("fixtures/tool-search-2300.json")).unwrap();
+    let tools = fixture["tools"].as_array().unwrap();
+    assert!(tools.iter().any(|tool| tool["name"] == "quill__get_file"));
+    let state = test_state();
+    *state.mcp.tool_search_index.write() = crate::tool_search::ToolSearchIndex::build(tools);
+    let mut failures = Vec::new();
+    for query in ["+repo", "+repo status"] {
+        for limit in [1, 100] {
+            let response = handle_search_tools(
+                &state,
+                &serde_json::json!({"query":query,"limit":limit,"schema_byte_budget":65536}),
+            );
+            let names: Vec<_> = response["results"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|entry| entry["name"].as_str().unwrap())
+                .collect();
+            if names != ["repo"] || response["top_schema"]["name"] != "repo" {
+                failures.push(format!("query={query:?}, limit={limit}: {response}"));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
 
 #[test]
 fn search_tools_requires_query() {
@@ -2079,7 +2109,7 @@ fn built_instructions_follow_the_served_tool_list_and_ready_upstreams() {
         .inject_ready_upstream("quill", &["a", "b"]);
     let out = build_mcp_instructions_for_mode(&state, Some("claude-code"), false);
     let served = filtered_native_tools(&state);
-    assert!(!served.is_empty());
+    assert_ne!(served, [] as [serde_json::Value; 0]);
     for tool in &served {
         let name = tool["name"].as_str().unwrap();
         assert!(
@@ -2320,7 +2350,10 @@ async fn action_validation_rejects_observed_bad_inputs_before_effects() {
         assert_eq!(result["effect"], "not_started");
         assert_eq!(result["retryable"], false);
         assert_eq!(result["repair"]["retry_after_correction"], true);
-        assert!(!result["violations"].as_array().unwrap().is_empty());
+        assert_ne!(
+            result["violations"].as_array().unwrap().as_slice(),
+            [] as [serde_json::Value; 0]
+        );
         assert!(result["violations"][0]["path"].is_string());
     }
     assert!(state.session_maps.session_html_tabs.is_empty());
@@ -2528,6 +2561,14 @@ async fn conditional_remote_tracks_live_connections_and_preserves_explicit_denia
             .iter()
             .any(|name| name == "remote")
     );
+    // Settings must distinguish configured availability from a policy denial.
+    let remote = |state: &AppState| {
+        native_capability_catalog(state)
+            .into_iter()
+            .find(|c| c["domain"] == "remote")
+            .unwrap()
+    };
+    assert_eq!(remote(&state)["available"], true);
     crate::remote_runtime::teardown(&state, "first");
     assert!(
         tool_names(&merged_tool_definitions(&state, None, None))
@@ -2557,8 +2598,10 @@ async fn conditional_remote_tracks_live_connections_and_preserves_explicit_denia
         denied["error"],
         "Tool 'remote' is disabled by configuration"
     );
+    assert_eq!(remote(&state)["available"], true);
     state.config.write().mcp_capabilities.denied.clear();
     crate::remote_runtime::teardown(&state, "second");
+    assert_eq!(remote(&state)["available"], false);
     assert!(
         !tool_names(&merged_tool_definitions(&state, None, None))
             .iter()
@@ -2614,6 +2657,7 @@ async fn conditional_configured_telegram_preserves_caller_authority() {
 // Oracle: descriptions recorded from d4882b0f6c before the catalogue rewrite.
 // UI updated verbatim from main 06f115ae14 for the added 2067 Design Mode actions.
 // Agent guidance updated for the explicit interrupt delivery contract in 2113.
+// Telegram guidance updated for non-owner send and reply routing in 2119.
 #[tokio::test]
 async fn native_help_preserves_every_displaced_rule_2069() {
     let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();

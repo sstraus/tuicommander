@@ -76,6 +76,7 @@ async fn main() -> anyhow::Result<()> {
         rate_limits: dashmap::DashMap::new(),
         rate_limit_per_hour: args.rate_limit_per_hour,
         max_sessions_per_token: args.max_sessions_per_token,
+        timing: relay::RelayTiming::default(),
     });
     // Spawn session reaper
     relay::spawn_session_reaper(

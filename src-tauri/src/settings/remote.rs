@@ -301,6 +301,22 @@ pub enum ConnectionCredentialAction {
     ClearPairingToken {
         id: String,
     },
+    /// The relay pairing bundle printed by `tuic-remote --relay-pair`.
+    SetRelayPairing {
+        id: String,
+        #[schemars(extend("writeOnly" = true, "x-sensitivity" = "secret"))]
+        bundle: String,
+    },
+    ClearRelayPairing {
+        id: String,
+    },
+}
+
+#[derive(Clone, Copy)]
+enum Slot {
+    Password,
+    PairingToken,
+    RelayPairing,
 }
 
 /// One vault slot per immutable connection id, not a caller-selected vault reference.
@@ -327,9 +343,13 @@ impl ConnectionCredentialSettings {
             let pairing = crate::remote_connection::pairing_token(id)
                 .map_err(|_| Error::new(CONNECTIONS_ID, "secret_unreadable"))?
                 .is_some();
+            let relay = crate::remote_connection::relay_bundle(id)
+                .map_err(|_| Error::new(CONNECTIONS_ID, "secret_unreadable"))?
+                .is_some();
             Ok(
                 json!({"password":{"status":if password {"set"} else {"unset"}},
-                "pairingToken":{"status":if pairing {"set"} else {"unset"}}}),
+                "pairingToken":{"status":if pairing {"set"} else {"unset"}},
+                "relayPairing":{"status":if relay {"set"} else {"unset"}}}),
             )
         })
     }
@@ -354,23 +374,44 @@ impl ConnectionCredentialSettings {
             .map_err(|_| failure.unwrap_or_else(|| Error::new(CONNECTIONS_ID, "store_failed")))
     }
     pub fn perform(&self, action: ConnectionCredentialAction) -> Result<Value, Failure> {
-        let (id, secret, pairing, clear) = match action {
+        let (id, secret, slot, clear) = match action {
             ConnectionCredentialAction::SetPassword { id, password } => {
-                (id, password, false, false)
+                (id, password, Slot::Password, false)
             }
-            ConnectionCredentialAction::ClearPassword { id } => (id, String::new(), false, true),
-            ConnectionCredentialAction::SetPairingToken { id, token } => (id, token, true, false),
-            ConnectionCredentialAction::ClearPairingToken { id } => (id, String::new(), true, true),
+            ConnectionCredentialAction::ClearPassword { id } => {
+                (id, String::new(), Slot::Password, true)
+            }
+            ConnectionCredentialAction::SetPairingToken { id, token } => {
+                (id, token, Slot::PairingToken, false)
+            }
+            ConnectionCredentialAction::ClearPairingToken { id } => {
+                (id, String::new(), Slot::PairingToken, true)
+            }
+            ConnectionCredentialAction::SetRelayPairing { id, bundle } => {
+                (id, bundle, Slot::RelayPairing, false)
+            }
+            ConnectionCredentialAction::ClearRelayPairing { id } => {
+                (id, String::new(), Slot::RelayPairing, true)
+            }
         };
         let secret = zeroize::Zeroizing::new(secret);
         if !clear && (secret.is_empty() || secret.len() > 16384) {
             return Err(Error::new(CONNECTIONS_ID, "out_of_range"));
         }
         self.with_connection(&id, || {
-            let result = if pairing {
-                crate::remote_connection::set_pairing_token(&id, &secret)
-            } else {
-                crate::remote_connection::set_connection_password(&id, &secret)
+            let result = match slot {
+                Slot::PairingToken => crate::remote_connection::set_pairing_token(&id, &secret),
+                Slot::Password => crate::remote_connection::set_connection_password(&id, &secret),
+                // A bundle that does not parse is the caller's mistake, not a
+                // store failure worth retrying.
+                Slot::RelayPairing => {
+                    if !clear
+                        && crate::relay_tunnel::bundle::PairingBundle::parse(secret.trim()).is_err()
+                    {
+                        return Err(Error::new(CONNECTIONS_ID, "out_of_range"));
+                    }
+                    crate::remote_connection::set_relay_pairing(&id, &secret)
+                }
             };
             result.map_err(|_| {
                 let mut error = Error::new(CONNECTIONS_ID, "store_failed");

@@ -5,6 +5,7 @@ import { appLogger } from "../../../stores/appLogger";
 import type { WorkItemDetail, WorkItemRef } from "../../../types/work-items.gen";
 import { writeClipboard } from "../../../utils/clipboard";
 import { handleOpenUrl } from "../../../utils/openUrl";
+import { Button } from "../../ui/Button";
 import { Textarea } from "../../ui/Textarea";
 import { START_WORK_NEEDS_REPO, suggestedBranch, useStartWork } from "../startWork";
 import { TaskComment } from "./TaskComment";
@@ -66,7 +67,7 @@ export function TasksDetail(props: TasksDetailProps) {
 								<span>{detail().item.itemType}</span>
 							</div>
 							<div class={styles.toolbar}>
-								<button
+								<Button
 									type="button"
 									aria-pressed={tasksNotifications.followed(detail().item.reference)}
 									onClick={() => {
@@ -78,11 +79,11 @@ export function TasksDetail(props: TasksDetailProps) {
 									}}
 								>
 									{tasksNotifications.followed(detail().item.reference) ? "Unfollow task" : "Follow task"}
-								</button>
-								<button type="button" onClick={() => handleOpenUrl(detail().item.url)}>
+								</Button>
+								<Button type="button" onClick={() => handleOpenUrl(detail().item.url)}>
 									Open in provider
-								</button>
-								<button
+								</Button>
+								<Button
 									type="button"
 									onClick={() => {
 										void model.refresh();
@@ -90,11 +91,11 @@ export function TasksDetail(props: TasksDetailProps) {
 									disabled={model.loading() || busy()}
 								>
 									Refresh
-								</button>
+								</Button>
 								<Show when={props.onClose}>
-									<button type="button" onClick={props.onClose}>
+									<Button type="button" onClick={props.onClose}>
 										Close detail
-									</button>
+									</Button>
 								</Show>
 							</div>
 							<h2>{detail().item.title}</h2>
@@ -119,7 +120,7 @@ export function TasksDetail(props: TasksDetailProps) {
 							<div class={styles.actions}>
 								<For each={transitions()}>
 									{(action) => (
-										<button
+										<Button
 											type="button"
 											disabled={busy() || !action.enabled}
 											title={action.disabledReason ?? undefined}
@@ -128,22 +129,22 @@ export function TasksDetail(props: TasksDetailProps) {
 											}}
 										>
 											{action.name}
-										</button>
+										</Button>
 									)}
 								</For>
 								<For each={startActions()}>
 									{(action) => (
-										<button
+										<Button
 											type="button"
 											disabled={busy() || !action.enabled || !props.repoPath}
 											title={action.disabledReason ?? (props.repoPath ? undefined : START_WORK_NEEDS_REPO)}
 											onClick={runStart}
 										>
 											{start.pending() ? "Starting…" : action.name}
-										</button>
+										</Button>
 									)}
 								</For>
-								<button
+								<Button
 									type="button"
 									onClick={() => {
 										writeClipboard(suggestedBranch(detail().item)).catch((cause) =>
@@ -152,7 +153,7 @@ export function TasksDetail(props: TasksDetailProps) {
 									}}
 								>
 									Copy branch name
-								</button>
+								</Button>
 							</div>
 							<Show when={start.startedBranch()}>
 								{(branch) => (
@@ -165,9 +166,9 @@ export function TasksDetail(props: TasksDetailProps) {
 								{(message) => (
 									<p class={styles.error} role="alert">
 										{message()}
-										<button type="button" disabled={busy()} onClick={runStart}>
+										<Button type="button" disabled={busy()} onClick={runStart}>
 											Retry start work
-										</button>
+										</Button>
 									</p>
 								)}
 							</Show>
@@ -213,7 +214,7 @@ export function TasksDetail(props: TasksDetailProps) {
 									</For>
 								</Show>
 								<Show when={detail().comments.nextCursor}>
-									<button
+									<Button
 										type="button"
 										disabled={busy() || model.loading()}
 										onClick={() => {
@@ -221,7 +222,7 @@ export function TasksDetail(props: TasksDetailProps) {
 										}}
 									>
 										{model.paging() ? "Loading comments…" : "Load more comments"}
-									</button>
+									</Button>
 								</Show>
 								<Show when={commentAction()}>
 									{(action) => (
@@ -236,13 +237,14 @@ export function TasksDetail(props: TasksDetailProps) {
 													onInput={(event) => setDraft(event.currentTarget.value)}
 												/>
 											</label>
-											<button
+											<Button
+												variant="primary"
 												type="submit"
 												title={action().disabledReason ?? undefined}
 												disabled={busy() || !action().enabled || !draft().trim()}
 											>
 												Add comment
-											</button>
+											</Button>
 										</form>
 									)}
 								</Show>
@@ -254,7 +256,7 @@ export function TasksDetail(props: TasksDetailProps) {
 			<Show when={model.error()}>
 				<p class={styles.error} role="alert">
 					{model.error()}
-					<button
+					<Button
 						type="button"
 						disabled={busy()}
 						onClick={() => {
@@ -262,7 +264,7 @@ export function TasksDetail(props: TasksDetailProps) {
 						}}
 					>
 						Retry
-					</button>
+					</Button>
 				</p>
 			</Show>
 		</section>

@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
+import { createMutable } from "solid-js/store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { actions, connections } = vi.hoisted(() => ({
@@ -174,6 +175,32 @@ describe("RemoteMachinesPanel", () => {
 		expect(view.getByText("Cannot resolve mac-mint")).toBeTruthy();
 		expect(view.getByText("Retry delay: 3s")).toBeTruthy();
 		expect(view.queryByText("Connecting...")).toBeNull();
+	});
+
+	// Catches: the current-build warning clears but the update action remains on connected rows.
+	it("hides update action when the connected remote reports the current build", () => {
+		const state = createMutable({ ...sshConnection(), status: "connected", outOfDate: true });
+		connections["machine-1"] = state;
+		const view = render(() => <RemoteMachinesPanel />);
+		expect(view.getByText("Remote out of date")).toBeTruthy();
+		expect(view.getByRole("button", { name: "Update & restart remote" })).toBeTruthy();
+		// record_updated_build publishes this false flag after /health confirms the selected SHA.
+		state.outOfDate = false;
+		expect(view.queryByText("Remote out of date")).toBeNull();
+		expect(view.queryByRole("button", { name: "Update & restart remote" })).toBeNull();
+	});
+
+	// Catches: unknown build metadata or a stale disconnected snapshot offers a destructive update.
+	it("does not offer updates for unknown builds or disconnected remotes", () => {
+		for (const state of [
+			{ ...sshConnection(), status: "connected" },
+			{ ...sshConnection(), status: "disconnected", outOfDate: true },
+		]) {
+			connections["machine-1"] = state;
+			const view = render(() => <RemoteMachinesPanel />);
+			expect(view.queryByRole("button", { name: "Update & restart remote" })).toBeNull();
+			view.unmount();
+		}
 	});
 
 	it("confirms the live session loss before an update of a Direct remote", async () => {

@@ -1,5 +1,6 @@
 import { createMemo, createSignal, For } from "solid-js";
 import { TIPS } from "../../data/tips";
+import { Button } from "../ui";
 import styles from "./TipOfTheDay.module.css";
 
 /** Max visible dots in the sliding window */
@@ -37,21 +38,21 @@ export default function TipOfTheDay() {
 		<div class={styles.card}>
 			<div class={styles.label}>TIP OF THE DAY</div>
 			<div class={styles.body}>
-				<button class={styles.arrow} onClick={prev} aria-label="Previous tip">
+				<Button variant="ghost" class={styles.arrow} onClick={prev} aria-label="Previous tip">
 					<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
 						<path d="M10 3L5 8l5 5V3z" />
 					</svg>
-				</button>
+				</Button>
 				<div class={styles.content}>
 					<span class={styles.feature}>{TIPS[index()].feature}</span>
 					<span class={styles.description}>{TIPS[index()].description}</span>
 					{TIPS[index()].shortcut && <kbd class={styles.shortcut}>{TIPS[index()].shortcut}</kbd>}
 				</div>
-				<button class={styles.arrow} onClick={next} aria-label="Next tip">
+				<Button variant="ghost" class={styles.arrow} onClick={next} aria-label="Next tip">
 					<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor">
 						<path d="M6 3l5 5-5 5V3z" />
 					</svg>
-				</button>
+				</Button>
 			</div>
 			<div class={styles.dots}>
 				<For each={visibleDots()}>

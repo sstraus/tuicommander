@@ -41,18 +41,8 @@
 }
 
 .key {
-  flex-shrink: 0;
-  height: 44px;
-  min-width: 44px;
-  padding: 0 10px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--bg-tertiary);
   color: var(--fg-primary);
-  font-size: 13px;
   font-family: var(--font-mono);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .key:active {
@@ -61,25 +51,21 @@
 
 .key[aria-expanded="true"] {
   color: var(--accent);
-  border-color: var(--accent);
   background: var(--bg-highlight);
 }
 
 .confirm {
   color: var(--accent);
-  border-color: var(--accent);
   font-weight: 600;
 }
 
 .danger {
   color: var(--error);
-  border-color: var(--error);
   font-weight: 600;
 }
 
 .accent {
   color: var(--accent);
-  border-color: var(--accent);
   font-weight: 700;
   font-size: 16px;
 }

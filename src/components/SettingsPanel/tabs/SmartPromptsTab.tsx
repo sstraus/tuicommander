@@ -8,9 +8,11 @@ import { promptLibraryStore, type SavedPrompt, type SmartPlacement } from "../..
 import { onClickKeyDown } from "../../../utils/a11y";
 import { ConfirmDialog } from "../../ConfirmDialog";
 import { KeyComboCapture } from "../../shared/KeyComboCapture";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
 import { StatusBadge } from "../../ui/StatusBadge";
+import { Switch } from "../../ui/Switch";
 import { Textarea } from "../../ui/Textarea";
 import s from "../Settings.module.css";
 import { DangerZone, ListRow, SectionCard, SettingPageHeader, SettingRow } from "../SettingsPrimitives";
@@ -176,9 +178,8 @@ const VariableDropdown: Component<{
 
 	return (
 		<div class={sp.varDropdownWrap}>
-			<button
+			<Button
 				data-non-setting="Open or close a structured Smart Prompt editor"
-				class={sp.varDropdownBtn}
 				onClick={() => setOpen(!open())}
 				type="button"
 			>
@@ -186,7 +187,7 @@ const VariableDropdown: Component<{
 				<span class={sp.varChevron} classList={{ [sp.varChevronOpen]: open() }}>
 					&#9660;
 				</span>
-			</button>
+			</Button>
 			<Show when={open()}>
 				<div class={sp.varDropdownList}>
 					<For each={Array.from(groups().entries())}>
@@ -198,6 +199,7 @@ const VariableDropdown: Component<{
 										<button
 											data-setting-id="prompts.prompts.{id}.text"
 											class={sp.varItem}
+											data-control-layout="row"
 											type="button"
 											onClick={() => {
 												props.onInsert(v.name);
@@ -446,13 +448,11 @@ const PromptEditor: Component<{
 							{(id, descriptionId) => (
 								<div>
 									<label class={sp.autoExecLabel}>
-										<input
+										<Switch
 											data-setting-id="prompts.prompts.{id}.text"
 											id={id}
 											aria-describedby={descriptionId()}
-											class={s.rowSwitch}
 											role="switch"
-											type="checkbox"
 											checked={props.prompt.autoExecute ?? false}
 											onChange={handleAutoExecuteToggle}
 										/>
@@ -575,13 +575,12 @@ const PromptEditor: Component<{
 				{/* Actions */}
 				<div class={sp.editorActions}>
 					<Show when={isBuiltIn() && isOverridden()}>
-						<button
+						<Button
 							data-non-setting="Reset, remove or create a stable Smart Prompt through its owner"
-							class={sp.smallBtn}
 							onClick={handleReset}
 						>
 							Reset to Default
-						</button>
+						</Button>
 					</Show>
 				</div>
 			</SectionCard>
@@ -591,13 +590,13 @@ const PromptEditor: Component<{
 					scope={props.prompt.name}
 					consequence="This permanently removes this custom prompt."
 				>
-					<button
+					<Button
+						variant="danger"
 						data-non-setting="Reset, remove or create a stable Smart Prompt through its owner"
-						class={sp.dangerBtn}
 						onClick={handleDelete}
 					>
 						Delete
-					</button>
+					</Button>
 				</DangerZone>
 			</Show>
 
@@ -644,7 +643,7 @@ const PromptRow: Component<{ prompt: SavedPrompt; onEdit: (id: string) => void; 
 				}
 				actions={
 					<>
-						<button
+						<Button
 							data-non-setting="Open or close a structured Smart Prompt editor"
 							class={s.testBtn}
 							aria-label={`Edit ${props.prompt.name}`}
@@ -653,11 +652,9 @@ const PromptRow: Component<{ prompt: SavedPrompt; onEdit: (id: string) => void; 
 							onClick={() => props.onEdit(props.prompt.id)}
 						>
 							Edit
-						</button>
-						<input
+						</Button>
+						<Switch
 							data-setting-id="prompts.prompts.{id}.text"
-							class={s.rowSwitch}
-							type="checkbox"
 							role="switch"
 							aria-label={`Enable ${props.prompt.name}`}
 							checked={isEnabled()}
@@ -804,13 +801,13 @@ export const SmartPromptsTab: Component = () => {
 			<SectionCard
 				title="Prompt library"
 				actions={
-					<button
+					<Button
 						data-non-setting="Reset, remove or create a stable Smart Prompt through its owner"
 						class={s.testBtn}
 						onClick={handleNewPrompt}
 					>
 						+ New Smart Prompt
-					</button>
+					</Button>
 				}
 			>
 				<div class={sp.promptList}>

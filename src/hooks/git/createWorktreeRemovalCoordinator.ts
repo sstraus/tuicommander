@@ -38,10 +38,20 @@ function describeRemoveWorktreeSuccess(branchName: string, outcome: RemoveWorktr
 	if (outcome?.branch_delete_warning) {
 		return `Removed ${branchName} worktree; branch was kept: ${outcome.branch_delete_warning}`;
 	}
+	if (outcome?.removal_rule === "recyclable") {
+		return `Archived ${branchName} worktree for reuse; branch was kept`;
+	}
 	return `Removed ${branchName}`;
 }
 
 /** Owns worktree removal locking, force recovery, and store cleanup. */
+/** Mirrors the backend: recycling and keeping the branch leave its label alone. */
+function branchWasDeleted(outcome: RemoveWorktreeResult | undefined): boolean {
+	return (
+		!outcome?.branch_delete_warning && outcome?.removal_rule !== "recyclable" && outcome?.removal_rule !== "kept_branch"
+	);
+}
+
 export function createWorktreeRemovalCoordinator(deps: WorktreeRemovalCoordinatorDeps) {
 	const { removingBranches, setRemovingBranches } = deps;
 
@@ -163,7 +173,7 @@ export function createWorktreeRemovalCoordinator(deps: WorktreeRemovalCoordinato
 				const outcome = await removeConfirmed(false);
 				appLogger.info("git", `handleRemoveWorkspace: remove_worktree SUCCESS`, { workspaceId });
 				shouldRemoveFromStore = true;
-				shouldClearBranchLabel = !outcome?.branch_delete_warning;
+				shouldClearBranchLabel = deleteBranch && branchWasDeleted(outcome);
 				deps.setStatusInfo(describeRemoveWorktreeSuccess(branchName, outcome));
 			} catch (err) {
 				const reason = err instanceof Error ? err.message : String(err);
@@ -198,7 +208,7 @@ export function createWorktreeRemovalCoordinator(deps: WorktreeRemovalCoordinato
 						const outcome = await removeConfirmed(true);
 						appLogger.info("git", `handleRemoveWorkspace: force remove_worktree SUCCESS`, { workspaceId });
 						shouldRemoveFromStore = true;
-						shouldClearBranchLabel = !outcome?.branch_delete_warning;
+						shouldClearBranchLabel = deleteBranch && branchWasDeleted(outcome);
 						deps.setStatusInfo(describeRemoveWorktreeSuccess(branchName, outcome));
 					} catch (forceErr) {
 						const forceReason = forceErr instanceof Error ? forceErr.message : String(forceErr);

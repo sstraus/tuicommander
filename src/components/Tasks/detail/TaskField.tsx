@@ -1,5 +1,6 @@
 import { createEffect, createMemo, createSignal, For, Match, on, Show, Switch } from "solid-js";
 import type { WorkItemFieldSchema, WorkItemFieldValue } from "../../../types/work-items.gen";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
 import { Textarea } from "../../ui/Textarea";
@@ -173,13 +174,13 @@ export function TaskField(props: {
 				</Show>
 			</label>
 			<Show when={editable()}>
-				<button
+				<Button
 					type="submit"
 					disabled={props.disabled || !dirty() || !valid()}
 					aria-label={`Save ${props.schema.name}`}
 				>
 					Save
-				</button>
+				</Button>
 			</Show>
 		</form>
 	);

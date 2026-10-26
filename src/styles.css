@@ -53,8 +53,8 @@
 
 /* Tab Bar wrapper (used by App.tsx) */
 #tab-bar {
-  height: var(--tab-bar-height);
   min-height: var(--tab-bar-height);
+  flex-shrink: 0;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   display: flex;

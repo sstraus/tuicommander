@@ -198,6 +198,7 @@ describe("visual review layout regressions", () => {
 		const { getByPlaceholderText } = render(() => <WorktreeManager />);
 		const input = getComputedStyle(getByPlaceholderText("Filter worktrees…"));
 		expect(input.flexShrink).toBe("0");
-		expect(parseFloat(input.height)).toBeGreaterThanOrEqual(36);
+		// Story 2316 density contract: desktop toolbar controls are 22px, not 36px form controls.
+		expect(parseFloat(input.height)).toBe(22);
 	});
 });
