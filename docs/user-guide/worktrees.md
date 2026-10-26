@@ -144,7 +144,7 @@ Right-click a worktree branch → **Merge & Archive** to:
    - **Delete**: Removes the worktree and branch entirely. Anything not committed is gone
    - **Ask**: Merge succeeds, then you choose what to do
 
-The merge uses `--no-edit` for a clean fast-forward or merge commit. If conflicts are detected, TUICommander attempts `git merge --abort` and leaves the worktree intact. If that abort fails, the error message tells you the repository may still be conflicted and includes the manual abort command. If your Git config sets `merge.ff=only` (or the target branch's `branch.<name>.mergeOptions` ends in `--ff-only`), TUICommander passes `--ff` for this merge so a diverged target gets a merge commit instead of failing with "Not possible to fast-forward"; `merge.ff=false` and default configs are unchanged.
+The merge uses `--no-edit` for a clean fast-forward or merge commit. If conflicts are detected, TUICommander attempts `git merge --abort` and leaves the worktree intact. If that abort fails, the error message tells you the repository may still be conflicted and includes the manual abort command. If your Git config sets `merge.ff=only` (or the target branch's `branch.<name>.mergeOptions` ends in `--ff-only`), TUICommander passes `--ff` for this merge so a diverged target gets a merge commit instead of failing with "Not possible to fast-forward"; `merge.ff=false` and default configs are unchanged. The target branch's `branch.<name>.mergeOptions` takes precedence over `merge.ff`: if its last fast-forward flag is `--ff` or `--no-ff`, the override does not apply (`--no-ff` always creates a merge commit; `--ff` still fast-forwards when it can), even when `merge.ff=only` is set.
 
 ### Uncommitted work in the worktree
 
