@@ -8,7 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { budgetStatus, WARN_FRACTION } from "../../scripts/report-frontend-bundles.mjs";
 
 const SCRIPT = join(process.cwd(), "scripts/report-frontend-bundles.mjs");
-const MOBILE_CAP = 100 * 1024;
+const MOBILE_CAP = 150 * 1024;
 
 describe("budgetStatus", () => {
 	it("warns from 98% of the cap and fails only above the cap", () => {
@@ -45,14 +45,14 @@ describe("report-frontend-bundles.mjs --check", () => {
 	});
 
 	it("passes with a WARNING between 98% and 100% of the cap", () => {
-		const r = run(101_000);
+		const r = run(152_000);
 		expect(r.status).toBe(0);
-		expect(r.stderr).toMatch(/WARNING dist\/mobile\.html: .* over 98% of the 102400-byte budget/);
+		expect(r.stderr).toMatch(/WARNING dist\/mobile\.html: .* over 98% of the 153600-byte budget/);
 	});
 
 	it("fails over the hard cap", () => {
-		const r = run(103_000);
+		const r = run(155_000);
 		expect(r.status).toBe(1);
-		expect(r.stderr).toMatch(/exceeds the 102400-byte budget/);
+		expect(r.stderr).toMatch(/exceeds the 153600-byte budget/);
 	});
 });
