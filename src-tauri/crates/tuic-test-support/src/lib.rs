@@ -56,11 +56,30 @@ const TEST_GITCONFIG: &str = "\
 /// specific global setting still sets `GIT_CONFIG_GLOBAL` itself, after this.
 fn isolate_git_config(root: &std::path::Path) {
     let path = root.join("gitconfig");
-    // Every test process of a nextest run writes this at once: write a private
-    // copy and rename it into place, so no git ever reads a half-written file.
+    // Every test process of a nextest run installs this at once, and the file
+    // is part of the monitoring cache's config signature (`GIT_CONFIG_GLOBAL`),
+    // so replacing it with an identical copy still changes its mtime and
+    // retires a peer test's cached snapshot mid-run. Install it only when it
+    // is absent or stale, and never replace an identical file: write a private
+    // copy and hard-link it into place (atomic, fails if a peer got there
+    // first), so no git ever reads a half-written file either.
     let staging = root.join(format!("gitconfig.{}.tmp", std::process::id()));
-    std::fs::write(&staging, TEST_GITCONFIG).expect("write the test gitconfig");
-    std::fs::rename(&staging, &path).expect("install the test gitconfig");
+    let installed = |p: &std::path::Path| {
+        std::fs::read_to_string(p).is_ok_and(|current| current == TEST_GITCONFIG)
+    };
+    if !installed(&path) {
+        std::fs::write(&staging, TEST_GITCONFIG).expect("write the test gitconfig");
+        if std::fs::hard_link(&staging, &path).is_err() && !installed(&path) {
+            // Present but stale (an older constant), or links unsupported:
+            // replace it. Windows refuses to replace a file a peer has open
+            // (PermissionDenied); the content is constant, so a peer having
+            // installed it meanwhile is as good as installing it here.
+            if let Err(err) = std::fs::rename(&staging, &path) {
+                assert!(installed(&path), "install the test gitconfig: {err}");
+            }
+        }
+        let _ = std::fs::remove_file(&staging);
+    }
     // SAFETY: called from the process constructor, before libtest starts threads.
     unsafe {
         std::env::set_var("GIT_CONFIG_GLOBAL", &path);
