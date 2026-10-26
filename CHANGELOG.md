@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Resolve a repository's default branch from the HEAD of the main checkout's tracked remote or any other remote (including remotes with slashes in the name) when `origin` has none and neither a configured base nor a local `main`/`master` decides it. A remote default whose short name is shadowed by a local branch or a tag keeps its full `refs/remotes/...` name, `fetch_if_remote` splits `<remote>/<branch>` against the configured remotes instead of at the first slash, and the answer no longer depends on which linked worktree the caller passes. When the default is a local branch that tracks a non-origin remote, merge and removal checks also compare against that upstream, so a branch merged upstream but not yet pulled is no longer reported unmerged.
+
 ## [2.0.0-beta.3] - 2026-10-26
 
 - Serve shared GitHub poller controls and repository status, PR and issue reads from headless `tuic-remote`, with the existing transport authentication (#2345-49f0).
