@@ -1054,6 +1054,7 @@ mod tests {
             status,
             shutdown_tx: Some(shutdown_tx),
             ssh_binary: script,
+            task: None,
         };
 
         tokio::time::sleep(Duration::from_millis(1500)).await;
