@@ -101,8 +101,8 @@ describe("mobile Settings", () => {
 		transcriptPreferences.setEnabled(true);
 		render(() => <SettingsScreen isConnected />);
 		await screen.findByRole("combobox", { name: "Theme" });
-		fireEvent.click(screen.getByRole("button", { name: "New text indicator" }));
-		expect(screen.getByRole("button", { name: "New text indicator" }).getAttribute("aria-pressed")).toBe("false");
+		fireEvent.click(screen.getByRole("switch", { name: "New text indicator" }));
+		expect((screen.getByRole("switch", { name: "New text indicator" }) as HTMLInputElement).checked).toBe(false);
 		expect(localStorage.getItem("tui-commander-new-text-indicator")).toBe("false");
 		transcriptPreferences.setEnabled(true);
 	});
@@ -175,4 +175,47 @@ describe("mobile Settings", () => {
 			expect(appLogger.warn).toHaveBeenCalledWith("network", "Could not load server version", expect.any(Error)),
 		);
 	});
+});
+
+// Catches: the native checkbox keeps its optimistic checked state after permission is dismissed.
+it("requests push permission in the enabling gesture and restores an ungranted switch", async () => {
+	let finish!: (value: NotificationPermission) => void;
+	const requestPermission = vi.fn(
+		() =>
+			new Promise<NotificationPermission>((resolve) => {
+				finish = resolve;
+			}),
+	);
+	vi.stubGlobal("PushManager", class {});
+	vi.stubGlobal("Notification", { permission: "default", requestPermission });
+	vi.stubGlobal("navigator", {
+		userAgent: "Chromium",
+		serviceWorker: { ready: Promise.resolve({ pushManager: { getSubscription: async () => null } }) },
+	});
+	render(() => <SettingsScreen isConnected />);
+	const toggle = (await screen.findByRole("switch", { name: "Push notifications" })) as HTMLInputElement;
+	expect(toggle.checked).toBe(false);
+	fireEvent.click(toggle);
+	expect(requestPermission).toHaveBeenCalledTimes(1);
+	expect(toggle.disabled).toBe(true);
+	finish("default");
+	await waitFor(() => expect(toggle.disabled).toBe(false));
+	expect(toggle.checked).toBe(false);
+	expect(screen.getByText("Permission not granted")).toBeTruthy();
+});
+
+// Catches: sound or wake Switch changes no longer reach the persisted preference keys.
+it("persists notification sound and screen-wake switch changes across remounts", () => {
+	const mount = () => render(() => <SettingsScreen isConnected />);
+	mount();
+	for (const name of ["Notification sounds", "Keep screen awake while dictating"]) {
+		const toggle = screen.getByRole("switch", { name }) as HTMLInputElement;
+		expect(toggle.checked).toBe(true);
+		fireEvent.click(toggle);
+		expect(toggle.checked).toBe(false);
+	}
+	cleanup();
+	mount();
+	for (const name of ["Notification sounds", "Keep screen awake while dictating"])
+		expect((screen.getByRole("switch", { name }) as HTMLInputElement).checked).toBe(false);
 });

@@ -91,6 +91,8 @@ bundle, signing operation or installed executable is involved. Embedded frontend
 assets use `tauri/custom-protocol` even though this is a debug build.
 
 Defaults are `AGENT_TEST_INSTANCE=agent-test` and `AGENT_TEST_PORT=19876`.
+The isolated window starts at 1400 × 900 logical pixels so Tasks and other
+virtualized panels have a usable viewport. Its minimum size remains 640 × 420.
 Override with, for example, `make agent-test AGENT_TEST_INSTANCE=agent-check
 AGENT_TEST_PORT=19877` (on one line). Use the same instance on the stop target.
 Agents must connect through the instance's Unix socket, printed as `socket` and
@@ -195,7 +197,7 @@ part of the unattended shell/Rust/JS suites.
 | Config, credential vault, databases and file locks | Existing named-instance namespace; debug credentials remain file-backed. The test never claims the global-input lock, even in its own namespace. |
 | HTTP and MCP | Explicit loopback-only `127.0.0.1:19876`; never port 9876 or automatic next-port fallback. Unix MCP socket uses the selected instance hash and the launch's short `TMPDIR` under `~/Gits/.tmp/tuic-at/`. Child CLI/bridge processes inherit the same namespace. |
 | Global window shortcut and Fn/Globe monitor | Input ownership refused and shortcut registration rejected at runtime, including later Settings changes. The verification window is non-focusable; drive its own HTTP/socket API. |
-| Microphone and dictation | Not compiled into this binary. A dictation-enabled build refuses to start; no microphone permission request or capture path is available. Audio/voice hardware checks still belong to Boss. |
+| Microphone and dictation | Not compiled by default. With explicit authorization, `AGENT_TEST_SPEECH_OUTPUT=1` and an `agent-test-<name>` instance enable runtime speech output only: effective listening is forced off, microphone permission/capture is refused, and global input ownership stays disabled. Speech output is audible; do not use this option without authorization. |
 | Telegram bot | Supervisor never starts, tool availability is false, and setup changes are rejected. A copied or previously saved bot configuration cannot start polling. |
 | Global CLI | Startup auto-update is skipped. Explicit installation, update and removal are rejected before sidecar resolution or filesystem changes, including elevated helper paths. |
 | Global agent hooks | Hook enable and disable requests are rejected over IPC and HTTP before saving the instance flag or changing shared Claude, Gemini, Grok, Codex or OpenCode files. Read-only hook status remains available. |
@@ -217,6 +219,34 @@ must checksum the running daily binary and app bundle before and after, start
 agent-test alongside it, verify both listeners without mutating the daily API,
 and stop only agent-test. Until that proof is recorded, do not claim macOS TCC,
 simultaneous listeners or global-input isolation have been verified live.
+
+### Development backend restart warning
+
+`tauri dev --no-watch` keeps the Rust process running while Vite reloads the UI.
+A short, dismissible warning appears when a Cargo-recorded input is newer than
+its executable, or the backend executable was rebuilt after application entry.
+It shows compact backend/tree identifiers (source SHA plus timestamp token) and
+`Restart tauri dev`. Restart only when you are ready to end the backend session.
+Missing executable or dep-info files, or an older backend without launch identity,
+show `Backend identity unavailable` instead of a silent match.
+
+Vite reads Cargo's final `<binary>.d`, which covers local path crates and embedded
+assets even outside `src-tauri/`. It also checks local package manifests found
+through dependency ancestors and the workspace `Cargo.lock`. There are no source
+extension allowlists or fixture-directory exclusions. The debug bridge built and
+used by `make dev` has its own executable/dep-info check, against its own build
+time. Unrelated frontend, test-only module and documentation edits stay quiet;
+frontend assets embedded by Rust are backend inputs and do warn.
+
+This uses Cargo-style mtimes, not content fingerprints: an edit followed by a
+revert still asks for a restart. Vite checks on load and after HMR, without polling,
+compiling or restarting the backend. The macOS copy runner passes
+`TUIC_DEV_BUILD_EXE` so checks follow the original Cargo artifact rather than its
+protected launch copy. A rebuilt original bridge also requires restart when the
+runner still holds its older protected sibling copy. Without that binding, the running executable needs its
+own sibling `.d`. Vite does not guess an mbx target directory. Source archives
+with build artifacts can work without Git (the SHA is diagnostic only). Release
+builds do not expose launch identity or include the warning module.
 
 ### Browser Mode
 
@@ -301,6 +331,28 @@ pnpm test:coverage     # Coverage report
 **Framework:** Vitest + SolidJS Testing Library + happy-dom
 
 **Coverage:** ~80%+
+
+### Chat browser landing gate (macOS)
+
+Run `make check-chat-readability` at landing when Chat prose or answer-list CSS
+changes. This local gate starts an isolated fixture Vite on an OS-assigned port,
+runs the computed-colour, border and list-geometry regressions, then closes Vite
+in a cleanup trap. It does not start Tauri or use a running app. The browser
+harness closes its own named tab and does not close shared Chrome.
+
+Prerequisites: installed frontend dependencies, `agent-browser`, matching Chrome
+for Testing, and the approved `ab-stealth.sh` wrapper under
+`~/Gits/personal/brainstorming/tools/browser-stealth/`. Set
+`TUIC_CHAT_BROWSER_WRAPPER` to override the wrapper path. Evidence defaults to a
+new `.tmp/chat-readability-*` directory in the checkout; set
+`TUIC_CHAT_EVIDENCE_DIR` to retain it elsewhere. Managed agents run this target
+through the shared build slot.
+
+The frontend CI job runs on Ubuntu and cannot use this macOS `.app`/`open` wrapper.
+This is a separate required local landing gate, not part of `make check` or the
+ordinary Vitest run. The direct test retains its explicit opt-in skip when
+`TUIC_CHAT_BROWSER_URL` is absent; the make target always supplies the URL and
+evidence directory, so it runs both regressions without skips.
 
 ### Rust build features
 

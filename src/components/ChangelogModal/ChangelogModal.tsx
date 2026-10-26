@@ -6,6 +6,7 @@ import { registerModal } from "../../stores/modalStack";
 import type { ChangelogResult } from "../../types";
 import { writeClipboard } from "../../utils/clipboard";
 import { downloadText } from "../../utils/downloadText";
+import { Button } from "../ui/Button";
 import s from "./ChangelogModal.module.css";
 
 /**
@@ -66,9 +67,15 @@ export const ChangelogModal: Component<{ repoPath: string; onClose: () => void }
 						<path d="M4 1.5A1.5 1.5 0 0 0 2.5 3v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 1.5H4Zm5 1.06L12.44 6H9.5a.5.5 0 0 1-.5-.5V2.56ZM5 8h6v1H5V8Zm0 2.5h6v1H5v-1ZM5 5.5h2v1H5v-1Z" />
 					</svg>
 					<span class={s.title}>{t("github.changelog", "Changelog")}</span>
-					<button class={s.close} onClick={props.onClose} title={t("common.close", "Close")}>
+					<Button
+						variant="ghost"
+						onClick={props.onClose}
+						shape="icon"
+						aria-label={t("common.close", "Close")}
+						title={t("common.close", "Close")}
+					>
 						&times;
-					</button>
+					</Button>
 				</div>
 
 				<div class={s.body}>
@@ -89,22 +96,20 @@ export const ChangelogModal: Component<{ repoPath: string; onClose: () => void }
 				</div>
 
 				<div class={s.footer}>
-					<button class={s.btn} onClick={handleCopy} disabled={actionsDisabled()}>
+					<Button onClick={handleCopy} disabled={actionsDisabled()}>
 						<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 							<path d="M10 1.5H6a.5.5 0 0 0-.5.5v1H4A1.5 1.5 0 0 0 2.5 4.5v9A1.5 1.5 0 0 0 4 15h6a1.5 1.5 0 0 0 1.5-1.5v-1H13a1.5 1.5 0 0 0 1.5-1.5v-7L10 1.5ZM10.5 12v1.5a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5v-9A.5.5 0 0 1 4 4h1.5v6.5A1.5 1.5 0 0 0 7 12h3.5ZM9.5 3.56 12.44 6.5H10a.5.5 0 0 1-.5-.5V3.56Z" />
 						</svg>
 						{copied() ? t("github.copied", "Copied") : t("github.copy", "Copy")}
-					</button>
-					<button class={s.btn} onClick={handleSave} disabled={actionsDisabled()}>
+					</Button>
+					<Button onClick={handleSave} disabled={actionsDisabled()}>
 						<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 							<path d="M8 1a.5.5 0 0 1 .5.5v6.79l2.15-2.14a.5.5 0 0 1 .7.7l-3 3a.5.5 0 0 1-.7 0l-3-3a.5.5 0 1 1 .7-.7L7.5 8.29V1.5A.5.5 0 0 1 8 1ZM2.5 11a.5.5 0 0 1 .5.5V13h10v-1.5a.5.5 0 0 1 1 0V13a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-1.5a.5.5 0 0 1 .5-.5Z" />
 						</svg>
 						{t("github.save", "Save")}
-					</button>
+					</Button>
 					<span class={s.spacer} />
-					<button class={s.btn} onClick={props.onClose}>
-						{t("common.close", "Close")}
-					</button>
+					<Button onClick={props.onClose}>{t("common.close", "Close")}</Button>
 				</div>
 			</div>
 		</div>

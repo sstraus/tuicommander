@@ -942,13 +942,18 @@ pub async fn install_plugin_from_url(
         .await
         .map_err(|e| format!("Failed to read download: {e}"))?;
 
-    let temp_dir = std::env::temp_dir();
-    let temp_path = temp_dir.join(format!("tuic-plugin-{}.zip", uuid::Uuid::new_v4()));
-    std::fs::write(&temp_path, &bytes).map_err(|e| format!("Failed to write temp file: {e}"))?;
+    // A `NamedTempFile` is created 0600 with an unguessable name and removed on
+    // drop, so a panic or early return cannot leak the archive into shared /tmp.
+    let mut temp_file = tempfile::Builder::new()
+        .prefix("tuic-plugin-")
+        .suffix(".zip")
+        .tempfile()
+        .map_err(|e| format!("Failed to create temp file: {e}"))?;
+    std::io::Write::write_all(&mut temp_file, &bytes)
+        .and_then(|()| std::io::Write::flush(&mut temp_file))
+        .map_err(|e| format!("Failed to write temp file: {e}"))?;
 
-    let result = install_zip_inner(&temp_path, &app_handle);
-    let _ = std::fs::remove_file(&temp_path);
-    result
+    install_zip_inner(temp_file.path(), &app_handle)
 }
 
 // ---------------------------------------------------------------------------
@@ -956,23 +961,77 @@ pub async fn install_plugin_from_url(
 // ---------------------------------------------------------------------------
 
 /// Holds the prepared target directory and optional backup of existing data/.
+///
+/// The backup lives next to the plugin dirs (inside `plugins_dir()`), never in
+/// the OS temp dir: `rename` fails with EXDEV across filesystems, which is the
+/// normal case on Linux (tmpfs `/tmp` vs. a config dir under `$HOME`).
+///
+/// If the install is abandoned (any `?` between `prepare_plugin_target` and
+/// `finalize_plugin_install`, or a panic), `Drop` moves the backup back so the
+/// user's `data/` is never lost.
 struct PreparedTarget {
     path: PathBuf,
     data_backup: Option<PathBuf>,
 }
 
+impl PreparedTarget {
+    /// Move the backed-up `data/` back into the target. Idempotent: a no-op
+    /// when there is no backup. On failure the backup is kept for `Drop` to retry.
+    fn restore_data(&mut self) -> Result<(), String> {
+        let Some(backup) = self.data_backup.as_ref() else {
+            return Ok(());
+        };
+        std::fs::create_dir_all(&self.path)
+            .map_err(|e| format!("Failed to recreate plugin dir: {e}"))?;
+        let data = self.path.join("data");
+        if data.exists() {
+            // A partial install must not shadow the user's data.
+            std::fs::remove_dir_all(&data)
+                .map_err(|e| format!("Failed to clear data/ before restore: {e}"))?;
+        }
+        std::fs::rename(backup, &data).map_err(|e| format!("Failed to restore data/: {e}"))?;
+        self.data_backup = None;
+        Ok(())
+    }
+}
+
+impl Drop for PreparedTarget {
+    fn drop(&mut self) {
+        if let Err(e) = self.restore_data() {
+            tracing::warn!(
+                source = "plugins",
+                "Could not restore plugin data/ from {:?}: {e}",
+                self.data_backup
+            );
+        }
+    }
+}
+
 /// Prepare the target plugin directory: backup data/, clean, create fresh dir.
 fn prepare_plugin_target(manifest: &PluginManifest) -> Result<PreparedTarget, String> {
-    let target_dir = plugins_dir().join(&manifest.id);
+    let root = plugins_dir();
+    let target_dir = root.join(&manifest.id);
 
-    // Preserve data/ directory if plugin already exists
+    // Preserve data/ directory if plugin already exists. The backup is a hidden
+    // sibling inside plugins_dir() (same filesystem as the source, so rename
+    // cannot hit EXDEV); discovery skips dot-directories.
     let data_backup = if target_dir.join("data").exists() {
-        let tmp = std::env::temp_dir().join(format!("tuic-data-backup-{}", uuid::Uuid::new_v4()));
-        std::fs::rename(target_dir.join("data"), &tmp)
+        let backup = root.join(format!(
+            ".tuic-data-backup-{}-{}",
+            manifest.id,
+            uuid::Uuid::new_v4()
+        ));
+        std::fs::rename(target_dir.join("data"), &backup)
             .map_err(|e| format!("Failed to backup data/: {e}"))?;
-        Some(tmp)
+        Some(backup)
     } else {
         None
+    };
+
+    // From here on the guard restores data/ if anything below fails.
+    let prepared = PreparedTarget {
+        path: target_dir.clone(),
+        data_backup,
     };
 
     // Clean target
@@ -983,23 +1042,17 @@ fn prepare_plugin_target(manifest: &PluginManifest) -> Result<PreparedTarget, St
     std::fs::create_dir_all(&target_dir)
         .map_err(|e| format!("Failed to create plugin dir: {e}"))?;
 
-    Ok(PreparedTarget {
-        path: target_dir,
-        data_backup,
-    })
+    Ok(prepared)
 }
 
 #[cfg(feature = "desktop")]
 /// Restore data/ backup, emit plugin-changed event, log success.
 fn finalize_plugin_install(
-    target: PreparedTarget,
+    mut target: PreparedTarget,
     manifest: &PluginManifest,
     app_handle: &AppHandle,
 ) -> Result<PluginManifest, String> {
-    if let Some(tmp) = target.data_backup {
-        std::fs::rename(&tmp, target.path.join("data"))
-            .map_err(|e| format!("Failed to restore data/: {e}"))?;
-    }
+    target.restore_data()?;
 
     let _ = app_handle.emit("plugin-changed", vec![manifest.id.clone()]);
     crate::app_logger::log_via_handle(
@@ -1491,7 +1544,7 @@ mod tests {
             set_plugin_output_watchers_impl(&state, "c1", 1, &[spec("a", "done"), spec("b", "x+")]);
 
         assert!(outcome.applied);
-        assert!(outcome.rejected.is_empty());
+        assert_eq!(outcome.rejected, [] as [std::string::String; 0]);
         let watchers = state.plugin_output_watchers.read();
         assert!(!watchers.needs_all_lines());
         assert!(!watchers.is_idle());
@@ -1527,7 +1580,10 @@ mod tests {
         set_plugin_output_watchers_impl(&state, "c1", 2, &[spec("new", "kept")]);
 
         let watchers = state.plugin_output_watchers.read();
-        assert!(watchers.matching_ids("gone").is_empty());
+        assert_eq!(
+            watchers.matching_ids("gone"),
+            [] as [std::string::String; 0]
+        );
         assert_eq!(watchers.matching_ids("kept"), vec!["c1/new".to_string()]);
     }
 
@@ -1558,7 +1614,7 @@ mod tests {
         let outcome = set_plugin_output_watchers_impl(&state, "c1", 2, &[]);
 
         assert!(outcome.applied);
-        assert!(outcome.rejected.is_empty());
+        assert_eq!(outcome.rejected, [] as [std::string::String; 0]);
         assert!(state.plugin_output_watchers.read().is_idle());
     }
 
@@ -2482,11 +2538,25 @@ mod tests {
         std::fs::write(target.join("data").join("state.json"), "keepme").unwrap();
         std::fs::write(target.join("old.js"), "stale code").unwrap();
 
-        let prepared = prepare_plugin_target(&valid_manifest("dp-plugin")).unwrap();
+        let mut prepared = prepare_plugin_target(&valid_manifest("dp-plugin")).unwrap();
 
         // data/ was moved out to the backup (contents intact), the stale file is
         // gone, and a fresh empty target dir exists.
-        let backup = prepared.data_backup.expect("data/ must be backed up");
+        let backup = prepared
+            .data_backup
+            .clone()
+            .expect("data/ must be backed up");
+        // The backup must live under plugins_dir() (same filesystem as the
+        // plugin dirs) so rename can never fail with EXDEV, and be hidden so
+        // discovery skips it.
+        assert_eq!(backup.parent().unwrap(), plugins_dir());
+        assert!(
+            backup
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".tuic-data-backup-")
+        );
         assert_eq!(
             std::fs::read_to_string(backup.join("state.json")).unwrap(),
             "keepme"
@@ -2501,12 +2571,53 @@ mod tests {
         );
         assert!(prepared.path.is_dir(), "fresh target dir must exist");
 
-        // The restore rename (as finalize_plugin_install performs) round-trips it.
-        std::fs::rename(&backup, prepared.path.join("data")).unwrap();
+        // The restore (as finalize_plugin_install performs) round-trips it and
+        // leaves no backup dir behind.
+        prepared.restore_data().unwrap();
         assert_eq!(
             std::fs::read_to_string(prepared.path.join("data").join("state.json")).unwrap(),
             "keepme"
         );
+        assert!(!backup.exists(), "backup must be gone after restore");
+    }
+
+    /// An abandoned install (error between prepare and finalize) must put the
+    /// user's data/ back instead of orphaning it in the backup dir.
+    #[test]
+    fn prepare_plugin_target_drop_restores_data_on_abandoned_install() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
+
+        let target = dir.path().join("plugins").join("dp-plugin");
+        std::fs::create_dir_all(target.join("data")).unwrap();
+        std::fs::write(target.join("data").join("state.json"), "keepme").unwrap();
+
+        let backup = {
+            let prepared = prepare_plugin_target(&valid_manifest("dp-plugin")).unwrap();
+            // Simulate a half-extracted install that then errors out.
+            std::fs::write(prepared.path.join("partial.js"), "x").unwrap();
+            prepared.data_backup.clone().unwrap()
+        }; // dropped without finalize
+
+        assert_eq!(
+            std::fs::read_to_string(target.join("data").join("state.json")).unwrap(),
+            "keepme"
+        );
+        assert!(!backup.exists(), "backup must be cleaned up on drop");
+    }
+
+    /// A leftover hidden backup dir (e.g. after a crash) must never be listed
+    /// as a plugin, even if it contains a manifest.
+    #[test]
+    fn list_user_plugins_ignores_leftover_data_backup_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = crate::config::set_config_dir_override(dir.path().to_path_buf());
+
+        let leftover = dir.path().join("plugins").join(".tuic-data-backup-x-1234");
+        std::fs::create_dir_all(&leftover).unwrap();
+        std::fs::write(leftover.join("manifest.json"), valid_manifest_json("x")).unwrap();
+
+        assert!(list_user_plugins(None).is_empty());
     }
 
     /// A first install (no prior dir) has nothing to back up.

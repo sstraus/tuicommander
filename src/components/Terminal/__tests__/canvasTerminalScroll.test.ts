@@ -1,5 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { createCanvasScrollController, ROW_CACHE_CHUNK, ROW_CACHE_MAX } from "../canvasTerminalScroll";
+import {
+	createCanvasScrollController,
+	GESTURE_ACCEL_MAX,
+	GESTURE_ACCEL_MIN,
+	gestureAccelFactor,
+	ROW_CACHE_CHUNK,
+	ROW_CACHE_MAX,
+} from "../canvasTerminalScroll";
 
 describe("canvas terminal scroll controller", () => {
 	const row = (n: number) => ({ index: n }) as never;
@@ -94,6 +101,28 @@ describe("canvas terminal scroll controller", () => {
 		expect(scroll.scrolling).toBe(false);
 		expect(scroll.settleTarget).toBeNull();
 		expect(scroll.gestureDistancePx).toBe(0);
+	});
+
+	it("accumulates same-signed gesture distance and restarts the ramp on reversal", () => {
+		const scroll = createCanvasScrollController();
+		expect(scroll.accumulateGesture(10)).toBe(10);
+		expect(scroll.accumulateGesture(5)).toBe(15);
+		// Reversal restarts at |dy| instead of adding to the outbound distance.
+		expect(scroll.accumulateGesture(-4)).toBe(4);
+		expect(scroll.accumulateGesture(-6)).toBe(10);
+	});
+
+	it("snap and cancel both reset the gesture sign, not just the distance", () => {
+		const scroll = createCanvasScrollController();
+		scroll.accumulateGesture(10);
+		scroll.snap();
+		// If sign weren't reset, this same-direction call would still read as a
+		// reversal relative to stale state and incorrectly restart the ramp.
+		expect(scroll.accumulateGesture(5)).toBe(5);
+
+		scroll.accumulateGesture(10);
+		scroll.cancel();
+		expect(scroll.accumulateGesture(5)).toBe(5);
 	});
 
 	it("invalidates delayed cache responses when the screen generation changes", () => {
@@ -259,5 +288,22 @@ describe("canvas terminal scroll controller", () => {
 			expect(scroll.cacheFetchedRows(rows, scroll.liveEpoch, 100)).toBe(true);
 			expect(scroll.rowCache.size).toBe(2);
 		});
+	});
+});
+
+describe("gestureAccelFactor", () => {
+	it("starts at the damped floor and reaches 1:1 tracking after two screens", () => {
+		expect(gestureAccelFactor(0, 100)).toBe(GESTURE_ACCEL_MIN);
+		expect(gestureAccelFactor(100, 100)).toBe(GESTURE_ACCEL_MIN);
+		expect(gestureAccelFactor(200, 100)).toBe(1.0);
+	});
+
+	it("is capped at the ceiling no matter how long the gesture runs", () => {
+		expect(gestureAccelFactor(2000, 100)).toBe(GESTURE_ACCEL_MAX);
+	});
+
+	it("falls back to the floor when there is no screen height to ramp against", () => {
+		expect(gestureAccelFactor(500, 0)).toBe(GESTURE_ACCEL_MIN);
+		expect(gestureAccelFactor(500, -10)).toBe(GESTURE_ACCEL_MIN);
 	});
 });

@@ -28,7 +28,7 @@ async fn zero_exit_admits_dispatch() {
     );
     let result = executed(outcome);
     assert_eq!(normalize_newlines(&result.stdout), "ready\n");
-    assert!(result.stderr.is_empty());
+    assert_eq!(result.stderr, "");
     assert!(!result.stdout_truncated);
 }
 
@@ -78,7 +78,7 @@ async fn missing_workspace_preserves_spawn_error() {
     assert!(!outcome.proceeds());
     let result = executed(outcome);
     assert!(matches!(result.termination, Termination::SpawnError(_)));
-    assert!(result.stdout.is_empty());
+    assert_eq!(result.stdout, "");
 }
 
 // Catches: manually triggered runs executing prechecks or recording them as absent.
@@ -125,7 +125,7 @@ fn lossy_unicode_stays_within_stored_byte_limit() {
     capture.append(&vec![0xff; MAX_STREAM_BYTES]);
     let (text, truncated) = capture.text();
     assert!(text.len() <= MAX_STREAM_BYTES && truncated);
-    assert!(!text.is_empty());
+    assert_ne!(text, "");
     let mut exact = StreamCapture::default();
     exact.append(&vec![b'x'; MAX_STREAM_BYTES]);
     assert!(!exact.text().1);

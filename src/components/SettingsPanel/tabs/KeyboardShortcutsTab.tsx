@@ -10,6 +10,7 @@ import { isTauri } from "../../../transport";
 import { comboToDisplay, keyFor } from "../../../utils/hotkey";
 import { keyEventToCombo, validateGlobalHotkeyCombo } from "../../../utils/keyRecorder";
 import { KeyComboCapture } from "../../shared/KeyComboCapture";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { ContextualHelp } from "../ContextualHelp";
 import s from "../Settings.module.css";
@@ -594,22 +595,13 @@ export const KeyboardShortcutsTab: Component = () => {
 										onCapturingChange={handleGlobalCapturingChange}
 									/>
 									<Show when={settingsStore.state.globalHotkey}>
-										<button
+										<Button
 											data-setting-id="keybindings.bindings.{action}.key"
 											class={w.secondaryButton}
 											onClick={clearGlobalHotkey}
-											style={{
-												background: "none",
-												border: "1px solid var(--border)",
-												"border-radius": "var(--radius-md)",
-												padding: "4px 8px",
-												color: "var(--fg-secondary)",
-												cursor: "pointer",
-												"font-size": "var(--font-sm)",
-											}}
 										>
 											{t("settings.clear", "Clear")}
-										</button>
+										</Button>
 									</Show>
 								</div>
 							</>
@@ -666,14 +658,13 @@ export const KeyboardShortcutsTab: Component = () => {
 																{shortcut.keys || "Not set"}
 															</kbd>
 															<Show when={shortcut.action}>
-																<button
+																<Button
 																	data-setting-id="keybindings.bindings.{action}.key"
 																	onClick={() => startEditing(shortcut.action!)}
 																	title="Edit shortcut"
-																	class={w.rebindButton}
 																>
 																	Rebind
-																</button>
+																</Button>
 																<Show when={keybindingsStore.isOverridden(shortcut.action!)}>
 																	<button
 																		data-setting-id="keybindings.bindings.{action}.key"
@@ -860,6 +851,8 @@ const RecordingIndicator: Component<{
 	// Replace — the Tab fires onBlur first. Fixing this requires either a
 	// containing element that owns focus or a conflict-confirm modal; both are
 	// larger refactors. Captured here as tech debt.
+	// DEFERRED (2026-10-25) — Chromium geometry fixture observes an unfocused recorder after
+	// Rebind activation; investigate capture focus separately from the audited button sizing.
 	const handleMount = (el: HTMLDivElement) => {
 		el.focus();
 	};

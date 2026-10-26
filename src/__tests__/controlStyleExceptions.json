@@ -1,0 +1,56 @@
+[
+  {
+    "file": "src/components/AIChatPanel/AIChatPanel.module.css",
+    "reason": "Native full-frame conversation picker retains OS activation over the shared-height visible frame.",
+    "rules": [
+      "[[],\".conversationSwitcher > select[data-control-layout=\\\"overlay-picker\\\"]\",[\"height: 100%\"]]"
+    ]
+  },
+  {
+    "file": "src/components/AIChatPanel/AIChatPanel.module.css",
+    "reason": "Native details/summary retains activation and Escape focus return with shared 36/44 control tokens.",
+    "rules": [
+      "[[],\"summary.headerBtn[data-control-layout=\\\"disclosure\\\"]\",[\"height: var(--control-height, 36px)\",\"padding: 0 var(--control-padding-x, 8px)\",\"border: 1px solid transparent\",\"border-radius: var(--radius-lg)\"]]",
+      "[[],\".actionsMenu > summary.headerBtn[data-control-layout=\\\"disclosure\\\"]\",[\"padding: 0\"]]",
+      "[[\"@media (max-width: 600px)\"],\"summary.headerBtn[data-control-layout=\\\"disclosure\\\"]\",[\"height: max(44px, var(--control-height, 36px))\"]]"
+    ]
+  },
+  {
+    "file": "src/components/AIChatPanel/AIChatPanel.module.css",
+    "reason": "Shared Textarea retains the tested panel-relative 40% resize cap and one-line reset instead of the generic three-row minimum.",
+    "rules": [
+      "[[],\".textarea[data-control-layout=\\\"composer-editor\\\"]\",[\"min-height: var(--control-height, 36px)\"]]",
+      "[[\"@media (max-width: 600px)\"],\".textarea[data-control-layout=\\\"composer-editor\\\"]\",[\"min-height: max(44px, var(--control-height, 36px))\"]]"
+    ]
+  },
+  {
+    "file": "src/components/ProgressDialog/ProgressFlow.module.css",
+    "rules": [
+      "[[],\".label\",[\"padding: 0 6px\",\"border: 0\"]]",
+      "[[],\".expandable\",[\"border-radius: var(--radius-sm)\"]]"
+    ],
+    "reason": "Intentional specialized diagram label and expansion affordance; not a form or view-switch control."
+  },
+  {
+    "file": "src/mobile/components/HeroMetrics.module.css",
+    "rules": [
+      "[[],\".card\",[\"padding: 12px 8px\",\"border-radius: var(--radius-md)\",\"border: 1px solid var(--border)\"]]"
+    ],
+    "reason": "Intentional metric-card geometry shared by noninteractive cards and the Awaiting action; not a form-control size."
+  },
+  {
+    "file": "src/mobile/components/CommandInput.module.css",
+    "reason": "Native embedded composer layout (data-control-layout=composer), not a standalone form field; preserves content sizing and draft selection.",
+    "rules": [
+      "[[],\".input\",[\"min-height: 38px\",\"max-height: 120px\",\"padding: 8px 2px 8px 4px\",\"border: none\"]]",
+      "[[],\".input:focus\",[\"border-color: var(--accent)\"]]"
+    ]
+  },
+  {
+    "file": "src/mobile/screens/FilesScreen.module.css",
+    "reason": "Native full-pane source editor (data-control-layout=editor), not a form field; preserves flex sizing, soft wrap and selection.",
+    "rules": [
+      "[[],\".viewer, .editor\",[\"min-height: 0\",\"padding: 16px\",\"border: 0\"]]"
+    ]
+  }
+]

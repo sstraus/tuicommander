@@ -151,7 +151,10 @@ async fn missing_or_corrupt_cursor_skips_backlog_then_persists_the_new_tail() {
         assert_eq!(server.requests()[0].1["offset"], -1);
         assert_eq!(server.requests()[0].1["limit"], 1);
         assert_eq!(offset(&paths), 101);
-        assert!(adapter.pending().unwrap().is_empty());
+        assert_eq!(
+            adapter.pending().unwrap(),
+            [] as [crate::telegram::mail::PendingMail; 0]
+        );
         drop(adapter);
         let mut adapter = Inbound::loopback(paths.clone(), server.address).unwrap();
         assert!(matches!(adapter.poll().await.unwrap(), Poll::Accepted(1)));

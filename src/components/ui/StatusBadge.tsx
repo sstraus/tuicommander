@@ -1,5 +1,5 @@
 import type { Component } from "solid-js";
-import { cx } from "../../utils";
+import { cx } from "../../utils/cx";
 import { PR_READINESS_SEVERITY, type PrReadinessKind } from "../../utils/prReadiness";
 import s from "./StatusBadge.module.css";
 

@@ -26,6 +26,7 @@
 }
 
 .header {
+ composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -39,37 +40,8 @@
   font-weight: 600;
 }
 
-.close {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: var(--font-2xl);
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: var(--radius-md);
-}
-
-.close:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
 .backButton {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  padding: 4px;
-  border-radius: var(--radius-md);
   margin-right: 4px;
-}
-
-.backButton:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
 }
 
 .content {
@@ -89,23 +61,6 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-}
-
-.copyVersionBtn {
-  padding: 2px 8px;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-muted);
-  font-size: var(--font-sm);
-  font-family: var(--font-ui);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
-}
-
-.copyVersionBtn:hover {
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
 }
 
 .section {
@@ -135,25 +90,9 @@
 }
 
 .linkButton {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   width: 100%;
-  padding: 8px 12px;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-md);
-  color: var(--fg-secondary);
-  font-size: var(--font-base);
-  font-family: var(--font-ui);
-  cursor: pointer;
+  justify-content: flex-start;
   text-align: left;
-  transition: background 0.1s, color 0.1s;
-}
-
-.linkButton:hover {
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
 }
 
 .linkButton svg {

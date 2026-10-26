@@ -1,0 +1,18 @@
+.toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.toolbar .spacer { flex: 1; }
+.meta { color: var(--fg-muted); font-size: var(--font-sm); }
+.tableWrap { overflow-x: auto; }
+.table { width: 100%; table-layout: fixed; border-collapse: collapse; font-size: var(--font-sm); }
+.table th, .table td { overflow: hidden; text-overflow: ellipsis; }
+.table th { text-align: left; color: var(--fg-muted); font-weight: 600; padding: 4px 4px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.table td { padding: 4px 4px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.table tbody tr:hover { background: var(--bg-tertiary); }
+.clip { overflow: hidden; text-overflow: ellipsis; }
+.colTime { width: 72px; }
+.colTarget { width: 160px; }
+.colOutcome { width: 88px; }
+.colBytes { width: 48px; }
+.colEffect { width: 100px; }
+.mono { font-family: var(--font-mono); }
+.num { text-align: right; }
+.empty { color: var(--fg-muted); padding: 16px 0; }

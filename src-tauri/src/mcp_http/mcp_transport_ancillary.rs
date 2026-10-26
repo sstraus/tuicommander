@@ -20,6 +20,11 @@ use super::mcp_transport_session_agent::handle_session;
 use super::mcp_transport_session_agent::require_action;
 use super::mcp_transport_session_agent::require_path;
 
+#[cfg(test)]
+pub(super) static WORKTREE_LIST_TIMINGS: std::sync::LazyLock<
+    dashmap::DashMap<String, Vec<(String, std::time::Duration)>>,
+> = std::sync::LazyLock::new(dashmap::DashMap::new);
+
 pub(super) async fn handle_remote_update(
     state: &Arc<AppState>,
     args: &serde_json::Value,
@@ -55,6 +60,14 @@ pub(super) async fn handle_remote_update(
     }
 }
 
+/// The spelling under which `repo add` stores a repository path.
+fn registered_spelling(path: &str) -> std::io::Result<String> {
+    let canonical = std::fs::canonicalize(path)?;
+    Ok(tuic_core::path_spelling::portable_spelling(
+        &canonical.to_string_lossy(),
+    ))
+}
+
 pub(super) async fn handle_github(
     state: &Arc<AppState>,
     args: &serde_json::Value,
@@ -65,7 +78,7 @@ pub(super) async fn handle_github(
     };
     match action {
         "status" => {
-            // Cross-repo aggregate: for each workspace repo, return branch/ahead/behind/open PRs
+            // Cross-repo aggregate (or the one repo named by `path`): for each workspace repo, return branch/ahead/behind/open PRs
             // Reads from poller cache to avoid fan-out API calls
             let repo_data = crate::config::load_repositories();
             let repo_order = repo_data
@@ -73,11 +86,28 @@ pub(super) async fn handle_github(
                 .and_then(|v| v.as_array())
                 .cloned()
                 .unwrap_or_default();
+            // Same spelling `repo add` stores, so a trailing slash or symlink still matches.
+            // An unresolvable path keeps its raw spelling and is reported as unregistered.
+            let requested = args["path"]
+                .as_str()
+                .map(|raw| registered_spelling(raw).unwrap_or_else(|_| raw.to_string()));
+            let requested = requested.as_deref();
+            if let Some(requested) = requested
+                && !repo_order.iter().any(|p| p.as_str() == Some(requested))
+            {
+                let given = args["path"].as_str().unwrap_or(requested);
+                return serde_json::json!({"error": format!(
+                    "Path '{given}' is not a registered repository. Use repo action=list to see registered paths."
+                )});
+            }
             let mut results: Vec<serde_json::Value> = Vec::new();
             for path_val in &repo_order {
                 let Some(path) = path_val.as_str() else {
                     continue;
                 };
+                if requested.is_some_and(|requested| requested != path) {
+                    continue;
+                }
                 let info = crate::git::get_repo_info_cached(state, path);
                 if !info.is_git_repo {
                     continue;
@@ -227,6 +257,8 @@ async fn handle_worktree_with_caller(
             if let Err(e) = validate_mcp_repo_path(&path) {
                 return e;
             }
+            #[cfg(test)]
+            let inventory_started = std::time::Instant::now();
             let inventory_path = path.clone();
             let mut wts = match tokio::task::spawn_blocking(move || {
                 crate::worktree::get_worktree_paths(inventory_path)
@@ -239,6 +271,11 @@ async fn handle_worktree_with_caller(
                     return serde_json::json!({"error": format!("worktree inventory task failed: {error}")});
                 }
             };
+            #[cfg(test)]
+            WORKTREE_LIST_TIMINGS
+                .entry(path.clone())
+                .or_default()
+                .push(("inventory".into(), inventory_started.elapsed()));
             // Keep full, fresh checkout safety fields, but share the sidebar's
             // ref-keyed merge proofs instead of rerunning every integration read.
             // GitHub evidence is cache-only here; monitoring fills it separately.
@@ -247,12 +284,30 @@ async fn handle_worktree_with_caller(
                 let workspace_id = workspace_id.clone();
                 let workspace = workspace.clone();
                 let base_repo = path.clone();
+                #[cfg(test)]
+                let queued = std::time::Instant::now();
                 lifecycle_handles.push(tokio::task::spawn_blocking(move || {
+                    #[cfg(test)]
+                    let started = std::time::Instant::now();
                     let lifecycle = tuic_git::worktree::inspect_workspace_listing_with_pr(
                         std::path::Path::new(&base_repo),
                         &workspace,
                         crate::worktree::merged_github_pr_proves_tip_cached,
                     );
+                    #[cfg(test)]
+                    WORKTREE_LIST_TIMINGS
+                        .entry(base_repo.clone())
+                        .or_default()
+                        .extend([
+                            (
+                                format!("{workspace_id}: queue"),
+                                started.duration_since(queued),
+                            ),
+                            (
+                                format!("{workspace_id}: inspect {:?}", workspace.path),
+                                started.elapsed(),
+                            ),
+                        ]);
                     (workspace_id, lifecycle)
                 }));
             }
@@ -697,8 +752,12 @@ fn handle_repo_listing(state: &Arc<AppState>, args: &serde_json::Value) -> serde
                     entry["group"] = serde_json::json!(group_name);
                 }
                 super::mcp_transport_catalogue::tag_repo_connection(&mut entry, repo_entry);
-                if !worktrees.is_empty() {
-                    entry["worktrees"] = to_json_or_error(&worktrees);
+                match worktrees {
+                    Ok(worktrees) if !worktrees.is_empty() => {
+                        entry["worktrees"] = to_json_or_error(&worktrees)
+                    }
+                    Err(error) => entry["worktree_error"] = serde_json::json!(error),
+                    _ => {}
                 }
                 results.push(entry);
             }
@@ -1842,6 +1901,7 @@ pub(super) fn handle_ui(
             // Register this tab under the creator's tuic session so it can be
             // closed automatically when that session exits.
             if let Some(ref tuic_session) = caller_tuic {
+                payload["opener_tuic_session"] = serde_json::Value::String(tuic_session.clone());
                 let mut registered = state
                     .session_maps
                     .session_html_tabs
@@ -1871,6 +1931,7 @@ pub(super) fn handle_ui(
                 pinned,
                 focus,
                 origin_repo_path,
+                opener_tuic_session: caller_tuic,
             });
             serde_json::json!({"ok": true, "id": id})
         }
@@ -2249,12 +2310,11 @@ pub(super) async fn handle_repo_with_caller(
             let state = Arc::clone(state);
             run_blocking_handler(move || {
                 let register = || -> Result<serde_json::Value, String> {
-                    let path = std::fs::canonicalize(&path)
+                    let path = registered_spelling(&path)
                         .map_err(|error| format!("Cannot open repository directory: {error}"))?;
-                    if !path.is_dir() {
+                    if !std::path::Path::new(&path).is_dir() {
                         return Err("Repository path must be a directory".into());
                     }
-                    let path = tuic_core::path_spelling::portable_spelling(&path.to_string_lossy());
                     let info = crate::git::get_repo_info_impl(&path);
                     let changed = crate::config::register_repository(&info)?;
                     if changed {

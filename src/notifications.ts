@@ -25,9 +25,9 @@ export interface NotificationConfig {
 	volume: number; // 0.0 to 1.0
 	sounds: Record<NotificationSound, boolean>;
 	audio_device: string | null;
-	/** Drop the completion chime for MCP/HTTP-created sessions (`session create`,
-	 *  `agent spawn`) — an orchestration of many agents otherwise beeps per worker.
-	 *  Visual signals (activity item, badge, OS notification) are unaffected. */
+	/** Mute sounds and native notices for parented sessions. Also retains the
+	 *  legacy completion-chime mute for unparented MCP/HTTP-created sessions.
+	 *  Activity, bell entries and urgent cards are unaffected. */
 	silence_remote_completions: boolean;
 	/** Mirror every toast into the toolbar bell, so a message that auto-dismissed
 	 *  while the user looked elsewhere is still readable afterwards. */

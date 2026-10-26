@@ -1,6 +1,7 @@
 import { type Component, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
+import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 import s from "./ClaudeUsageDashboard.module.css";
 
@@ -747,9 +748,7 @@ export const ClaudeUsageDashboard: Component<{ sessionId?: string | (() => strin
 					<Show when={apiError() && rateBuckets().length === 0}>
 						<div class={s.rateLimitHint}>
 							<span>Rate limit data unavailable</span>
-							<button class={s.retryButton} onClick={() => fetchApi(selectedSessionId())}>
-								Retry
-							</button>
+							<Button onClick={() => fetchApi(selectedSessionId())}>Retry</Button>
 						</div>
 					</Show>
 

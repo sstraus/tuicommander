@@ -34,6 +34,7 @@ import { safeUnlisten } from "../../utils/safeUnlisten";
 import { isSuspendingOrSuspended, resumeTerminal } from "../../utils/suspendTerminal";
 import type { TranscriptSearchRef } from "../AIChatPanel/Transcript";
 import { createSearchVisibility } from "../shared/SearchBar";
+import { Button } from "../ui";
 import { handleAgentExitCompletion } from "./agentExitCompletion";
 import { getAwaitingInputSound } from "./awaitingInputSound";
 import CanvasTerminal, { type CanvasTerminalRef } from "./CanvasTerminal";
@@ -165,10 +166,27 @@ export function cleanOscTitle(title: string): string {
 	return cleaned;
 }
 
+/** The box the canvas grid fills: CanvasTerminal's own container once it is
+ *  mounted, otherwise the content box of the pane, because its padding holds no
+ *  cells. Measuring the padded pane gave the PTY one more row and column than the
+ *  canvas draws; when that resize landed after the canvas's own, Claude kept the
+ *  larger size with its last row and column off screen (story 2128-153a). */
+function gridBox(container: HTMLElement): { width: number; height: number } {
+	const canvasBox = container.querySelector<HTMLElement>("[data-terminal-container]");
+	if (canvasBox) return canvasBox.getBoundingClientRect();
+	const rect = container.getBoundingClientRect();
+	const style = getComputedStyle(container);
+	const px = (value: string) => Number.parseFloat(value) || 0;
+	return {
+		width: rect.width - px(style.paddingLeft) - px(style.paddingRight),
+		height: rect.height - px(style.paddingTop) - px(style.paddingBottom),
+	};
+}
+
 /** Get initial terminal dimensions from container size + font metrics.
  *
- *  Mirrors CanvasTerminal's remeasure EXACTLY — shared `gridDimsForBox` formula
- *  (gutter + scrollbar subtracted) and the per-terminal font-size override — so
+ *  Mirrors CanvasTerminal's remeasure EXACTLY — the same box (`gridBox`), the
+ *  shared `gridDimsForBox` formula and the per-terminal font-size override — so
  *  the reconnect-path resize lands on the same dims the canvas will compute and
  *  the backend no-ops it instead of firing a spurious SIGWINCH (each SIGWINCH
  *  makes Ink TUIs clear+reprint their full frame into scrollback). */
@@ -178,8 +196,8 @@ function calcGridSize(container: HTMLElement, terminalId: string): { rows: numbe
 	const fontWeight = settingsStore.state.fontWeight;
 	const dpr = window.devicePixelRatio || 1;
 	const m = getSharedMetrics(fontSize, fontFamily, dpr, snapLineHeight(fontSize), fontWeight);
-	const rect = container.getBoundingClientRect();
-	const d = gridDimsForBox(rect.width, rect.height, m.cellWidth, m.cellHeight);
+	const box = gridBox(container);
+	const d = gridDimsForBox(box.width, box.height, m.cellWidth, m.cellHeight);
 	return { rows: Math.max(2, d.rows), cols: Math.max(2, d.cols) };
 }
 
@@ -257,6 +275,21 @@ export const Terminal: Component<TerminalProps> = (props) => {
 	const RETRY_DELAYS = [5_000, 15_000, 30_000];
 	let retryCount = 0;
 	let retryTimer: ReturnType<typeof setTimeout> | undefined;
+	let retryWorkObserved = false;
+	// Reset only after a recovered turn reaches idle. A late pre-error idle
+	// snapshot can briefly have no last_error; it must not cancel the retry.
+	createEffect(() => {
+		const terminal = terminalsStore.get(props.id);
+		if (!terminal || terminal.awaitingInput !== null) return;
+		if (terminal.shellState === "busy") {
+			retryWorkObserved = true;
+		} else if (terminal.shellState === "idle" && retryWorkObserved) {
+			retryCount = 0;
+			retryWorkObserved = false;
+			clearTimeout(retryTimer);
+			retryTimer = undefined;
+		}
+	});
 	let agentDetectTimer: ReturnType<typeof setTimeout> | undefined;
 	let rafHandle = 0;
 	/** Disposer for the bounded zero-size retry, so it cannot outlive the effect run. */
@@ -400,7 +433,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					break;
 				}
 				case "status-line": {
-					retryCount = 0;
+					// Working evidence cancels a parked injection, not the retry budget.
+					clearTimeout(retryTimer);
+					retryTimer = undefined;
 					terminalsStore.update(props.id, {
 						currentTask: parsed.task_name,
 					});
@@ -440,7 +475,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 							"terminal",
 							`[Notify] ${props.id} warning — rate-limit pattern=${parsed.pattern_name} matched="${parsed.matched_text}"`,
 						);
-						notificationsStore.playWarning();
+						notificationsStore.play("warning", { originSessionId: props.id });
 					}
 					break;
 				}
@@ -471,7 +506,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					if (terminalsStore.state.activeId !== props.id && !planFileNotified) {
 						planFileNotified = true;
 						appLogger.info("terminal", `[Notify] ${props.id} info — plan-file path="${parsed.path}" (background tab)`);
-						notificationsStore.playInfo();
+						notificationsStore.play("info", { originSessionId: props.id });
 					}
 					break;
 				case "user-input":
@@ -482,10 +517,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					// A submitted prompt starts a new turn. Clear old choices and allow
 					// new ones even when busy was emitted before this input echo.
 					terminalsStore.update(props.id, { suggestDismissed: false, suggestedActions: null, activeSubTasks: 0 });
-					// User resumed typing — clear any stale error/question badge. See comment
-					// in stores/terminals.ts handleShellStateChange: error state should be
-					// cleared on explicit agent activity, user-input, or process exit.
-					terminalsStore.clearAwaitingInput(props.id);
+					// Input answers a question, but does not prove API recovery. In
+					// particular auto-retry can submit continue without starting work.
+					if (terminalsStore.get(props.id)?.awaitingInput === "question") {
+						terminalsStore.clearAwaitingInput(props.id);
+					}
 					invoke<string | null>("get_last_prompt", { sessionId: targetSessionId })
 						.then((prompt) => {
 							if (prompt !== null) terminalsStore.setLastPrompt(props.id, prompt);
@@ -504,6 +540,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					const label = agent ?? "Agent";
 					const kindLabel = kind === "server" ? "server error" : kind === "auth" ? "auth failure" : "API error";
 					appLogger.error("terminal", `${label}: ${kindLabel} (${patternName})`);
+
+					// Keep failure visible until the backend observes real recovery. An
+					// injected continue that stays idle is not a successful turn.
+					retryWorkObserved = false;
+					terminalsStore.setAwaitingInput(props.id, "error");
 
 					const willAutoRetry =
 						kind === "server" &&
@@ -562,7 +603,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					break;
 				}
 				case "intent": {
-					retryCount = 0;
 					const term = terminalsStore.get(props.id);
 					const agentType = term?.agentType;
 					const perAgentEnabled = agentType
@@ -632,7 +672,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 						`[ChoicePrompt] ${props.id} title="${parsed.title}" options=${parsed.options.length}${isActive ? "" : " (background)"}`,
 					);
 					if (!isActive) {
-						notificationsStore.playWarning();
+						notificationsStore.play("warning", { originSessionId: props.id });
 					}
 					break;
 				}
@@ -850,6 +890,18 @@ export const Terminal: Component<TerminalProps> = (props) => {
 			let reconnected = false;
 			if (sessionId) {
 				try {
+					if (isPerfDebug()) {
+						const box = gridBox(containerRef);
+						appLogger.diag.info("terminal", `resize_pty request reconnect ${grid.rows}x${grid.cols}`, {
+							sessionId,
+							caller: "reconnect",
+							viewer: isTauri() ? "desktop" : "browser",
+							rows: grid.rows,
+							cols: grid.cols,
+							boxWidth: box.width,
+							boxHeight: box.height,
+						});
+					}
 					await pty.resize(sessionId, grid.rows, grid.cols);
 					reconnected = true;
 					await attachSessionListeners(sessionId);
@@ -1220,7 +1272,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 			setTimeout(() => containerRef?.classList.remove("bell-flash"), 150);
 		}
 		if (style === "sound" || style === "both") {
-			notificationsStore.play("info").catch((err) => {
+			notificationsStore.play("info", { originSessionId: props.id }).catch((err) => {
 				appLogger.warn("terminal", "Bell audio playback failed", err);
 			});
 		}
@@ -1346,9 +1398,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
 							</span>
 						)}
 					</Show>
-					<button class={s.resumeDismiss} onClick={handleDismissResume} title="Dismiss">
+					<Button variant="ghost" class={s.resumeDismiss} onClick={handleDismissResume} title="Dismiss">
 						&times;
-					</button>
+					</Button>
 				</div>
 			</Show>
 			{/* Chat mode HIDES the grid (display:none, the background-tab path) and never
@@ -1391,9 +1443,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
 													</span>
 												)}
 											</Show>
-											<button class={s.resumeButton} type="button" onClick={() => void resumeTerminal(props.id)}>
+											<Button class={s.resumeButton} type="button" onClick={() => void resumeTerminal(props.id)}>
 												{t("terminal.suspended.resume", "Resume")}
-											</button>
+											</Button>
 										</div>
 									</Show>
 									<Show when={sessionEnded()}>

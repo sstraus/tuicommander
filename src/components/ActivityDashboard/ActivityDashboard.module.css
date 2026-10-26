@@ -23,6 +23,7 @@
 }
 
 .header {
+ composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -37,6 +38,7 @@
 }
 
 .headerActions {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 4px;
@@ -88,7 +90,7 @@
  * including padding, measured in Chrome); the name column absorbs the difference. */
 .rowMain {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 60px 112px 60px 20px;
+  grid-template-columns: minmax(0, 1fr) 60px 112px 60px auto;
   align-items: center;
   gap: 8px;
 }
@@ -96,6 +98,7 @@
 /* Terminal name + optional project badge — both in the 1fr column */
 .nameCell {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   min-width: 0;
@@ -124,8 +127,9 @@
   background: var(--bg-tertiary);
   padding: 1px 6px;
   border-radius: var(--radius-sm);
-  max-width: 90px;
-  white-space: nowrap;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
   overflow: hidden;
   text-overflow: ellipsis;
   flex-shrink: 0;
@@ -133,7 +137,7 @@
 
 @media (max-width: 540px) {
   .rowMain {
-    grid-template-columns: minmax(0, 1fr) 112px 20px;
+    grid-template-columns: minmax(0, 1fr) 112px auto;
   }
 
   .project,
@@ -197,11 +201,8 @@
   align-items: center;
   justify-content: center;
   background: none;
-  border: none;
   color: var(--fg-muted);
   cursor: pointer;
-  padding: 2px;
-  border-radius: var(--radius-sm);
   opacity: 0.4;
   transition: opacity 0.15s, color 0.15s;
 }

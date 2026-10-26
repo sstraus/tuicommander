@@ -112,14 +112,14 @@ async fn either_view_can_cancel_a_queued_prompt_before_ego_receives_it() {
         .cancel_queued(connection.connection_id, session.session_id.clone(), queued)
         .await
         .expect("desktop cancelled phone's queued prompt");
-    assert!(
+    assert_eq!(
         fixture
             .manager
             .snapshot(connection.connection_id)
             .unwrap()
             .attachments[0]
-            .queued_prompts
-            .is_empty()
+            .queued_prompts,
+        [] as [tuicommander_lib::acp::AcpQueuedPrompt; 0]
     );
     let seen = acp_support::until(&mut desktop, |event| matches!(event, AcpClientEvent::PromptQueueChanged { queued_prompts } if queued_prompts.is_empty())).await;
     assert!(matches!(

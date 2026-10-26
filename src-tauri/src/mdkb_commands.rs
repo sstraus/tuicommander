@@ -203,6 +203,16 @@ pub async fn mdkb_status(state: State<'_, Arc<AppState>>) -> Result<MdkbStatus, 
     })
 }
 
+/// The launch prompt carries the MDKB search rule only while mdkb is installed.
+fn refresh_launch_files() {
+    if let Err(error) = crate::launch_instructions::write_files(&crate::config::config_dir()) {
+        tracing::error!(
+            source = "mdkb",
+            "Failed to rewrite launch instructions: {error}"
+        );
+    }
+}
+
 fn mdkb_install_path() -> PathBuf {
     #[cfg(target_os = "macos")]
     {
@@ -320,6 +330,8 @@ pub async fn install_mdkb(state: State<'_, Arc<AppState>>) -> Result<String, Str
         .ensure_running()
         .await
         .map_err(|e| format!("Installed mdkb but failed to start its daemon: {e}"))?;
+    drop(daemon);
+    refresh_launch_files();
 
     Ok(install_path.display().to_string())
 }
@@ -359,6 +371,8 @@ pub async fn uninstall_mdkb(state: State<'_, Arc<AppState>>) -> Result<(), Strin
 
     let mut daemon = state.mdkb_daemon.lock().await;
     *daemon = crate::mdkb_daemon::MdkbDaemon::new();
+    drop(daemon);
+    refresh_launch_files();
 
     Ok(())
 }

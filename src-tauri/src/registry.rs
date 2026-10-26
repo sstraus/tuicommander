@@ -102,6 +102,6 @@ mod tests {
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].repo, "");
         assert_eq!(entries[0].min_app_version, "");
-        assert!(entries[0].capabilities.is_empty());
+        assert_eq!(entries[0].capabilities, [] as [std::string::String; 0]);
     }
 }

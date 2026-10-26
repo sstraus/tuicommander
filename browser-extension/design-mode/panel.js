@@ -1,3 +1,4 @@
+import {hasExplicitHostGrant} from './browserCommands.js';
 const $ = (id) => document.getElementById(id);
 let current;
 const cards = new Map();
@@ -103,10 +104,19 @@ $('grant-host').onclick = async () => {
     if (!['http:','https:'].includes(url.protocol)) throw new Error('Select an HTTP(S) page first.');
     // A wildcard scheme distinguishes explicit localhost consent from static access.
     const allowed = await chrome.permissions.request({origins:[`*://${url.hostname}/*`]});
-    $('grants').textContent = allowed ? 'Host granted for agent commands and eval.' : 'Host permission declined.';
+    $('grants').textContent = !allowed ? 'Host permission declined.' : hasExplicitHostGrant((await chrome.permissions.getAll()).origins, tab.url) ? 'Host granted for agent commands and eval.' : 'Chrome did not add separate eval consent. Remove the all-sites capture permission in Chrome, grant this host, then enable capture again.';
   } catch (error) { $('grants').textContent = error.message; }
 };
 $('grant-all').onclick = async () => {
   const allowed = await chrome.permissions.request({origins:['http://*/*','https://*/*']});
-  $('grants').textContent = allowed ? 'All sites granted for agent commands and eval.' : 'Host permission declined.';
+  const {origins = []} = await chrome.permissions.getAll();
+  $('grants').textContent = !allowed ? 'Host permission declined.' : ['http://*/*','https://*/*'].every((origin) => origins.includes(origin)) ? 'All sites granted for agent commands and eval.' : 'Chrome did not add separate eval consent. Remove the all-sites capture permission in Chrome, grant all sites, then enable capture again.';
+};
+
+$('grant-capture').onclick = async () => {
+  try {
+    const permission = {origins:['<all_urls>']};
+    const allowed = await chrome.permissions.request(permission);
+    $('grants').textContent = allowed ? 'All-sites capture enabled. Agent eval still needs a separate grant.' : 'Capture permission declined. Invoke the Design Mode browser action on a tab for temporary capture access.';
+  } catch (error) { $('grants').textContent = error.message; }
 };

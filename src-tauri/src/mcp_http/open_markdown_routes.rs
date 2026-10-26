@@ -87,12 +87,14 @@ mod tests {
                     repo_path: "/repo".into(),
                     file_path: "docs/guide.md".into(),
                     fs_root: None,
+                    opener_tuic_session: None,
                 },
                 DesktopMarkdownTab {
                     id: "foreign".into(),
                     repo_path: "/other".into(),
                     file_path: "secret.md".into(),
                     fs_root: None,
+                    opener_tuic_session: None,
                 },
             ],
         )

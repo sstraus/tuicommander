@@ -1,4 +1,5 @@
 import { For } from "solid-js";
+import { Button } from "../../components/ui/Button";
 import styles from "./BottomTabs.module.css";
 
 export type TabId = "chat" | "sessions" | "files" | "progress" | "activity" | "settings";
@@ -44,7 +45,9 @@ export function BottomTabs(props: BottomTabsProps) {
 		<nav class={styles.tabs}>
 			<For each={tabs.filter((tab) => tab.id !== "chat" || props.aiChatAvailable)}>
 				{(tab) => (
-					<button
+					<Button
+						variant="ghost"
+						geometry="stretch"
 						class={styles.tab}
 						classList={{ [styles.active]: props.active === tab.id }}
 						onClick={() => props.onSelect(tab.id)}
@@ -53,7 +56,7 @@ export function BottomTabs(props: BottomTabsProps) {
 					>
 						<span class={styles.icon} innerHTML={tab.icon} />
 						<span class={styles.label}>{tab.label}</span>
-					</button>
+					</Button>
 				)}
 			</For>
 		</nav>

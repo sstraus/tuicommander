@@ -48,7 +48,7 @@ pub(crate) async fn handle_secret(
         Some("remove") => match serde_json::from_value::<Vec<String>>(args["names"].clone()) {
             Ok(names) => {
                 state.secrets.remove(&names);
-                Ok(serde_json::json!({"names": names, "status": "missing"}))
+                Ok(serde_json::json!({"names": names, "status": "removed"}))
             }
             Err(_) => Err("Invalid secret names".into()),
         },

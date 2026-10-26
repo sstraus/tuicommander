@@ -45,7 +45,19 @@ Agents can request `design_navigate`, `design_reload`, `design_screenshot`,
 `design_errors`, and `design_eval` through `ui`. The native port returns a request-id-matched reply, with a ten-second
 timeout. Open the sidebar on the page to select the reviewed tab. Screenshot fails
 if that tab is not visible; it never captures a different active tab. PNG files are
-stored in the instance's `design-grabs` directory. Errors and eval values are bounded,
+stored in the instance's `design-grabs` directory.
+
+For screenshots without repeated browser-action gestures, click **Let agents capture any site**
+in the extension sidebar, then accept Chrome's optional all-sites permission prompt.
+The extension does not request this permission at installation. Clicking the option
+again after consent does not request another grant. You can revoke access in Chrome's extension settings. This grant also permits selected-element screenshot crops,
+but does not enable agent eval or remote page-error injection. Chrome's grant is
+extension-wide; TUIC still restricts commands to the armed session and reviewed tab.
+
+Without this grant, invoke the Design Mode browser action on the reviewed tab for
+temporary `activeTab` capture access. Cross-origin navigation or tab closure can
+remove that access. A missing grant returns `capture_permission_required` and names
+**Let agents capture any site**; DOM evidence remains available. Errors and eval values are bounded,
 redacted evidence, not instructions. Navigation reports acceptance, not page-load completion.
 
 Local HTTP(S) navigation is allowed by default. Remote navigation needs a host grant.
@@ -55,11 +67,18 @@ not permit eval. Grants are Chrome extension permissions and can be revoked in
 Chrome's extension settings. Eval runs in the page MAIN world without a debugger port.
 The sidebar retains the last fifty agent actions with session, action, time and outcome.
 
-Direct tools/list, meta search and schema lookup expose Design Mode only for the
-armed terminal session. Start remains callable by its known tool name; otherwise
-arm Design Mode from the UI first. Remote error capture starts on the next page
-load after a host grant and is removed for future loads when the grant is revoked.
-Lifecycle changes emit `notifications/tools/list_changed`. Clients that cache tool
-schemas may still display an old tool; dispatch refuses it with
-`Design Mode not armed for this session`. Live refresh by Claude Code, Codex and ego
-has not yet been verified for this command channel.
+The grouped `ui` tool always lists `design_*` actions. Discovery is not authorization:
+dispatch requires the armed terminal session and repository. Lifecycle changes
+emit `notifications/tools/list_changed`; clients that cache schemas may still show
+actions while stopped, but dispatch refuses them with
+`Design Mode not armed for this session`. Remote error capture starts on the next
+page load after an explicit host/eval grant and is removed for future loads when
+that grant is revoked. The capture-only all-sites option does not register remote
+error scripts. Remote `design_errors` calls without a separate host grant refuse
+instead of reporting an unobserved empty list.
+
+Chrome can return success for a host permission request already covered by the
+capture grant without adding separate eval consent. The sidebar checks the granted
+origins and reports this case instead of claiming eval is enabled. If this occurs,
+remove the all-sites capture grant in Chrome, grant the host (or all sites) first,
+then enable capture again.

@@ -687,7 +687,7 @@ mod tests {
     #[test]
     fn a_run_with_no_segments_reports_empty_text_rather_than_no_speech() {
         match filter_speech_segments(&[], DEFAULT_NO_SPEECH_THRESHOLD) {
-            SegmentFilter::Speech(text) => assert!(text.is_empty()),
+            SegmentFilter::Speech(text) => assert_eq!(text, ""),
             SegmentFilter::AllNoSpeech(worst) => panic!("empty run scored as no-speech ({worst})"),
         }
     }

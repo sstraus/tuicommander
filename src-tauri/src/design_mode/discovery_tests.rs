@@ -257,11 +257,13 @@ async fn unknown_or_foreign_session_lists_no_listeners() {
     let response = discover_with_source(&state, repo.path(), Some("ghost"), |_| async {
         Ok(vec![json!({"url":format!("http://localhost:{}/", server.port),"source":"listener","pid":server.pid(),"worktreePath":repo.path()})])
     }).await.unwrap();
-    assert!(response["servers"].as_array().unwrap().is_empty());
-    assert!(
-        offered_to(state, repo.path(), "elsewhere", outside.path(), &[&server])
-            .await
-            .is_empty()
+    assert_eq!(
+        response["servers"].as_array().unwrap().as_slice(),
+        [] as [serde_json::Value; 0]
+    );
+    assert_eq!(
+        offered_to(state, repo.path(), "elsewhere", outside.path(), &[&server]).await,
+        [] as [serde_json::Value; 0]
     );
 }
 // Catches: JSON API/redirect/error listeners being mistaken for usable HTML pages.
@@ -305,12 +307,12 @@ async fn html_probe_rejects_json_redirects_and_errors() {
 fn tuic_pid_is_not_a_candidate() {
     let root = PathBuf::from("/fixture/repo");
     let pid = std::process::id();
-    assert!(
+    assert_eq!(
         candidates(
             &format!("p{pid}\nctuicommander\nn127.0.0.1:9876\n"),
             &format!("p{pid}\nn{}\n", root.display()),
             &[root]
-        )
-        .is_empty()
+        ),
+        [] as [serde_json::Value; 0]
     );
 }

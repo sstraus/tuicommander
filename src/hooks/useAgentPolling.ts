@@ -13,6 +13,7 @@ const NATIVE_LIFECYCLE_TIMEOUT_MS = 5_000;
 
 type BackendSessionState = {
 	provider_recovery?: ProviderRecovery | null;
+	last_error?: string | null;
 	codex_binding?: { session_id: string } | null;
 	agent_type?: string | null;
 	shell_state?: string;
@@ -89,7 +90,9 @@ function applySessionState(termId: string, sessionId: string, state: BackendSess
 		// therefore absence retracts context instead of meaning "unchanged".
 		agentIntent: state?.agent_intent ?? null,
 		lastPrompt: state?.last_prompt ?? null,
-		awaitingInput: isAwaiting ? "question" : null,
+		// API failure is durable backend state, not a question. Idle snapshots
+		// must not erase the red dot set by the parsed-event consumer.
+		awaitingInput: state?.last_error ? "error" : isAwaiting ? "question" : null,
 		awaitingInputConfident: state?.question_confident === true,
 		questionText: isAwaiting ? (state?.question_text ?? null) : null,
 		choicePrompt: isAwaiting ? (state?.choice_prompt ?? null) : null,

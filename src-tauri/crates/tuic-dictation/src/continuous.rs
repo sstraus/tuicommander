@@ -2160,7 +2160,7 @@ mod tests {
         let pre_roll = ms_to_samples(200);
 
         for _ in 0..600 {
-            assert!(segmenter.push(&silence(100)).is_empty());
+            assert_eq!(segmenter.push(&silence(100)), [] as [Utterance; 0]);
         }
 
         assert!(
@@ -3010,7 +3010,7 @@ mod tests {
                 !notice.contains('\n') && !notice.contains('\r'),
                 "a notice must be one line: {notice:?}"
             );
-            assert!(!notice.trim().is_empty());
+            assert_ne!(notice.trim(), "");
         }
         assert!(
             MODE_ENTRY_HINT.contains("`voice` tool"),

@@ -8,7 +8,9 @@ import { appLogger } from "../../stores/appLogger";
 import { toastsStore } from "../../stores/toasts";
 import { generateTweakCommentId, OverlappingCommentError, toggleCheckbox } from "../../utils/tweakComments";
 import { codeEditorTheme } from "../CodeEditorPanel/theme";
+import { Button } from "../ui/Button";
 import { ContentRenderer } from "../ui/ContentRenderer";
+import { Input } from "../ui/Input";
 import s from "./LiveMarkdownEditor.module.css";
 import { addTweakCommentAtSelection, liveLineSeparator, liveMarkdown, loadMarkdownLanguage } from "./liveMarkdown";
 
@@ -302,17 +304,12 @@ export const LiveMarkdownEditor: Component<LiveMarkdownEditorProps> = (props) =>
 		<div class={s.root}>
 			<div class={s.toolbar}>
 				<Show when={hasSelection() && !composing()}>
-					<button
-						type="button"
-						class={s.btn}
-						onMouseDown={(ev) => ev.preventDefault()}
-						onClick={() => setComposing(true)}
-					>
+					<Button type="button" onMouseDown={(ev) => ev.preventDefault()} onClick={() => setComposing(true)}>
 						{t("markdownTab.addComment", "Comment")}
-					</button>
+					</Button>
 				</Show>
 				<Show when={composing()}>
-					<input
+					<Input
 						class={s.input}
 						ref={commentInput}
 						value={draft()}
@@ -332,23 +329,17 @@ export const LiveMarkdownEditor: Component<LiveMarkdownEditorProps> = (props) =>
 							}
 						}}
 					/>
-					<button type="button" class={s.btn} onClick={addComment}>
+					<Button type="button" onClick={addComment}>
 						{t("markdownTab.addCommentConfirm", "Add")}
-					</button>
-					<button type="button" class={s.btn} onClick={cancelComment}>
+					</Button>
+					<Button type="button" onClick={cancelComment}>
 						{t("markdownTab.addCommentCancel", "Cancel")}
-					</button>
+					</Button>
 				</Show>
 				<Show when={dirty()}>
-					<button
-						type="button"
-						class={s.btn}
-						data-ready="true"
-						style={{ "margin-left": "auto" }}
-						onClick={() => void save()}
-					>
+					<Button type="button" data-ready="true" style={{ "margin-left": "auto" }} onClick={() => void save()}>
 						{t("markdownTab.saveLive", "Save")}
-					</button>
+					</Button>
 				</Show>
 			</div>
 			<Show when={conflict() !== null}>
@@ -359,12 +350,12 @@ export const LiveMarkdownEditor: Component<LiveMarkdownEditorProps> = (props) =>
 							"This file changed on disk while you were editing. Saving would overwrite those changes.",
 						)}
 					</span>
-					<button type="button" class={s.btn} onClick={reloadFromDisk}>
+					<Button type="button" onClick={reloadFromDisk}>
 						{t("markdownTab.liveReload", "Reload")}
-					</button>
-					<button type="button" class={s.btn} onClick={() => void commit()}>
+					</Button>
+					<Button type="button" onClick={() => void commit()}>
 						{t("markdownTab.liveOverwrite", "Overwrite")}
-					</button>
+					</Button>
 				</div>
 			</Show>
 			<div class={s.content} onClick={handleClick}>

@@ -11,6 +11,7 @@ vi.mock("../../transport", async (importOriginal) => ({
 import { listen } from "@tauri-apps/api/event";
 import { handleIntentEvent, shouldApplyIntentTitle } from "../../components/Terminal/intentTitle";
 import { type AppInitDeps, browserCreatedSessions, initApp } from "../../hooks/useAppInit";
+import { notificationManager } from "../../notifications";
 import { activityStore } from "../../stores/activityStore";
 import { appLogger } from "../../stores/appLogger";
 import { chatViewAvailability } from "../../stores/chatView";
@@ -421,6 +422,7 @@ describe("initApp", () => {
 						url: string;
 						focus: boolean;
 						origin_repo_path: string;
+						opener_tuic_session: string;
 					};
 			  }) => void)
 			| null = null;
@@ -449,12 +451,17 @@ describe("initApp", () => {
 				url: `tuic://open/${targetRepo}/reports/comparison.md`,
 				focus: true,
 				origin_repo_path: sourceRepo,
+				opener_tuic_session: "tuic-b",
 			},
 		});
 
 		expect(repositoriesStore.state.activeRepoPath).toBe(targetRepo);
 		const activeTab = mdTabsStore.getActive();
-		expect(activeTab).toMatchObject({ repoPath: targetRepo, filePath: "reports/comparison.md" });
+		expect(activeTab).toMatchObject({
+			repoPath: targetRepo,
+			filePath: "reports/comparison.md",
+			openerTuicSession: "tuic-b",
+		});
 		expect(mdTabsStore.getVisibleIds(`${targetRepo}|main`)).toContain(activeTab!.id);
 	});
 
@@ -2986,6 +2993,31 @@ describe("initApp", () => {
 			focus.mockRestore();
 		});
 
+		// Catches: suppressing a subagent's attention sound also discards its urgent card or bell entry.
+		it("keeps urgent child cards and bell entries while muting attention", async () => {
+			const { getCallback } = captureMcpToast();
+			await initApp(createMockDeps());
+			terminalsStore.add(
+				makeTerminal({ sessionId: "child-pty", tuicSession: "child-peer", parentSession: "parent-peer" }),
+			);
+			notificationsStore.setSilenceRemoteCompletions(true);
+			const audio = vi.spyOn(notificationManager, "play").mockResolvedValue(undefined);
+			getCallback()!({
+				payload: {
+					title: "Child needs a decision",
+					message: "Choose a branch",
+					level: "warn",
+					sound: "attention",
+					urgency: "urgent",
+					origin_session_id: "child-peer",
+				},
+			});
+			expect(toastsStore.toasts).toHaveLength(1);
+			expect(activityStore.getForSection("messages")).toHaveLength(1);
+			expect(audio).not.toHaveBeenCalled();
+			audio.mockRestore();
+		});
+
 		// Catches: automatic routing ignores the opt-out, non-terminal tabs, unknown origins, or urgent bypass.
 		it.each([
 			{ name: "active unfocused origin", enabled: true, origin: "active", focused: false, urgent: false, cards: 1 },
@@ -3105,7 +3137,7 @@ describe("initApp", () => {
 				repoPath: "/remote/repo",
 			});
 			expect(play).toHaveBeenCalledOnce();
-			expect(play).toHaveBeenCalledWith("attention");
+			expect(play).toHaveBeenCalledWith("attention", { originSessionId: "remote-pty" });
 			expect(terminalsStore.state.activeId).toBe(local);
 			notices[0].onClick!();
 			expect(terminalsStore.state.activeId).toBe(remote);
@@ -3184,7 +3216,7 @@ describe("initApp", () => {
 				payload: { title: "need you", message: "which branch?", level: "warn", sound: "attention" },
 			});
 
-			expect(play).toHaveBeenCalledWith("attention");
+			expect(play).toHaveBeenCalledWith("attention", { originSessionId: undefined });
 			expect(toastsStore.toasts).toHaveLength(0);
 			expect(activityStore.getForSection("messages")[0]).toMatchObject({
 				title: "need you",

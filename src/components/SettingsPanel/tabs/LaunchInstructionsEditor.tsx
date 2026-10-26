@@ -1,6 +1,8 @@
 import { type Component, createEffect, createSignal, Show, untrack } from "solid-js";
 import type { SettingId } from "../../../services/settingsCatalogue";
 import { reportSettingsConflicts } from "../../../services/settingsRefresh";
+import { Button } from "../../ui/Button";
+import { Textarea } from "../../ui/Textarea";
 import s from "../Settings.module.css";
 import a from "./AgentsTab.module.css";
 
@@ -51,20 +53,19 @@ export const LaunchInstructionsEditor: Component<{
 						<pre id={props.id} class={a.instructionsPreview} aria-label={props.label}>
 							{props.fallback ?? "Loading preview…"}
 						</pre>
-						<button
+						<Button
 							type="button"
 							data-setting-id={props.settingId}
-							class={a.smallBtn}
 							disabled={props.fallback === undefined}
 							onClick={() => props.onSave("")}
 						>
 							{props.customizeLabel}
-						</button>
+						</Button>
 					</>
 				}
 			>
 				<p class={s.hint}>User additions only — enabled modules and global additions still apply.</p>
-				<textarea
+				<Textarea
 					data-setting-id={props.settingId}
 					id={props.id}
 					class={`${a.formInput} ${a.mono}`}
@@ -76,17 +77,16 @@ export const LaunchInstructionsEditor: Component<{
 				/>
 			</Show>
 			<Show when={props.value !== undefined}>
-				<button
+				<Button
 					data-setting-id={props.settingId}
 					type="button"
-					class={a.smallBtn}
 					onClick={() => {
 						setDraft("");
 						props.onSave(undefined);
 					}}
 				>
 					{props.resetLabel}
-				</button>
+				</Button>
 			</Show>
 			<Show when={props.value !== undefined}>
 				<pre class={a.instructionsPreview} aria-label={`${props.label} effective preview`}>

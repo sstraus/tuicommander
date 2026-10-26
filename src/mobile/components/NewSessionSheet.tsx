@@ -1,5 +1,6 @@
 import { createSignal, For, onMount, Show } from "solid-js";
 import { AGENTS, type AgentConfig, type AgentType } from "../../agents";
+import { Button } from "../../components/ui/Button";
 import { Input } from "../../components/ui/Input";
 import { Select } from "../../components/ui/Select";
 import { appLogger } from "../../stores/appLogger";
@@ -82,7 +83,7 @@ export function NewSessionSheet(props: NewSessionSheetProps) {
 			<div class={styles.sheet} role="dialog" aria-label="New session">
 				<div class={styles.header}>
 					<div class={styles.title}>New Session</div>
-					<button type="button" class={styles.close} aria-label="Close new session" onClick={props.onDismiss}>
+					<Button shape="icon" variant="ghost" aria-label="Close new session" onClick={props.onDismiss}>
 						<svg
 							width="20"
 							height="20"
@@ -94,7 +95,7 @@ export function NewSessionSheet(props: NewSessionSheetProps) {
 						>
 							<path d="M18 6 6 18M6 6l12 12" />
 						</svg>
-					</button>
+					</Button>
 				</div>
 				<label class={styles.fieldLabel} for="new-session-agent">
 					Agent
@@ -140,6 +141,8 @@ export function NewSessionSheet(props: NewSessionSheetProps) {
 						<For each={visibleRepos()}>
 							{(repo) => (
 								<button
+									type="button"
+									data-control-layout="row"
 									class={styles.repoItem}
 									disabled={creating() || detecting() || !agent()}
 									onClick={() => createSession(repo)}

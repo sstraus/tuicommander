@@ -25,7 +25,10 @@ async fn first_start_discards_backlog_once_then_restart_uses_committed_offset() 
     .await;
     let mut adapter = Inbound::loopback(paths.clone(), server.address).unwrap();
     assert!(matches!(adapter.poll().await.unwrap(), Poll::Accepted(0)));
-    assert!(adapter.pending().unwrap().is_empty());
+    assert_eq!(
+        adapter.pending().unwrap(),
+        [] as [crate::telegram::mail::PendingMail; 0]
+    );
     drop(adapter);
     let mut adapter = Inbound::loopback(paths, server.address).unwrap();
     assert!(matches!(adapter.poll().await.unwrap(), Poll::Accepted(1)));

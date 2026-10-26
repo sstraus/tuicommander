@@ -4,6 +4,7 @@ import { createSignal } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ComposePanel } from "../../components/ComposePanel/ComposePanel";
 import { invoke } from "../../invoke";
+import { appLogger } from "../../stores/appLogger";
 
 vi.mock("../../invoke", () => ({ invoke: vi.fn() }));
 
@@ -79,13 +80,17 @@ describe("ComposePanel paste (critic 1350)", () => {
 	});
 
 	it("leaves the document unchanged when saving fails — catches inserting `[image: null]`", async () => {
-		vi.mocked(invoke).mockRejectedValue(new Error("boom"));
+		const failure = new Error("boom");
+		const loggedError = vi.spyOn(appLogger, "error").mockImplementation(() => {});
+		vi.mocked(invoke).mockRejectedValue(failure);
 		const { view } = await mount();
 		view.dispatch({ changes: { from: 0, insert: "keep" } });
 		const e = paste(view, ["image/png"]);
 		expect(e.defaultPrevented).toBe(true);
 		await new Promise((r) => setTimeout(r, 30));
 		expect(view.state.doc.toString()).toBe("keep");
+		expect(loggedError).toHaveBeenCalledWith("store", "Failed to save pasted image", failure);
+		loggedError.mockRestore();
 	});
 
 	it("does not claim a text-only paste — catches CodeMirror's default paste being swallowed", async () => {

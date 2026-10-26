@@ -103,6 +103,18 @@ describe("PromptDrawer auto-execute", () => {
 		vi.useRealTimers();
 	});
 
+	// Catches: category actions losing their selected state or closing the drawer on click.
+	it("keeps category selection and Escape dismissal with shared buttons", () => {
+		const view = render(() => <PromptDrawer />);
+		const favorites = buttonByText(view.container, "Favorites");
+		fireEvent.click(favorites);
+		expect(favorites.getAttribute("aria-pressed")).toBe("true");
+		expect(buttonByText(view.container, "All").getAttribute("aria-pressed")).toBe("false");
+		expect(promptLibraryStore.state.drawerOpen).toBe(true);
+		fireEvent.keyDown(document, { key: "Escape" });
+		expect(promptLibraryStore.state.drawerOpen).toBe(false);
+	});
+
 	// Catches: execution-mode controls reintroduce always-visible helper captions.
 	it("renders prompt controls without invented guidance", () => {
 		const view = render(() => <PromptDrawer />);

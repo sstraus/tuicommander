@@ -22,7 +22,7 @@ const CLIENT_ID: &str = "Ov23liN95BHKQDboVFRl";
 /// `repo` covers repository REST/GraphQL operations; `read:project` permits
 /// Projects v2 reads. Existing logins must authorize again to gain that scope.
 /// SAML-SSO access still requires the user's per-org token authorization.
-const OAUTH_SCOPES: &str = "repo read:project";
+const OAUTH_SCOPES: &str = include_str!("../../src/data/github-oauth-scopes.txt");
 
 // ---------------------------------------------------------------------------
 // Device Flow types
@@ -56,7 +56,7 @@ fn device_flow_request(client: &reqwest::Client) -> reqwest::RequestBuilder {
     client
         .post("https://github.com/login/device/code")
         .header("Accept", "application/json")
-        .form(&[("client_id", CLIENT_ID), ("scope", OAUTH_SCOPES)])
+        .form(&[("client_id", CLIENT_ID), ("scope", OAUTH_SCOPES.trim())])
 }
 
 /// Start the Device Flow by requesting a device code from GitHub.
@@ -216,6 +216,12 @@ pub(crate) async fn github_poll_login_impl_at_epoch(
             .git_cache
             .github_repo_cooldown
             .retain(|key, _| key.contains(':'));
+        state
+            .git_cache
+            .github_repo_access_errors
+            .retain(|_, failure| {
+                failure.account_id != crate::github_account::GitHubAccount::GITHUB_COM_ID
+            });
         tracing::info!(source = "github", "OAuth Device Flow login successful");
     }
 
@@ -368,8 +374,18 @@ pub(crate) struct GitHubDiagnostics {
     pub circuit_breaker_status: String,
     /// Repos that returned "not found" from GitHub (in cooldown)
     pub repos_not_found: Vec<String>,
+    pub repo_access_errors: Vec<RepoAccessErrorGroup>,
     /// Number of repos successfully monitored
     pub repos_monitored: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct RepoAccessErrorGroup {
+    pub account_id: String,
+    pub host: String,
+    pub owner: String,
+    pub repos: Vec<tuic_git::github_access::RepoAccessError>,
+    pub oauth_app_url: Option<String>,
 }
 
 /// Compute GitHub integration diagnostics from the current state.
@@ -401,14 +417,60 @@ pub(crate) fn compute_diagnostics(state: &AppState) -> GitHubDiagnostics {
         .map(|entry| entry.key().clone())
         .collect();
 
-    // Count repos with cached GitHub status (successfully queried).
-    // `entry_count` is eventually consistent — fine for a diagnostic gauge.
-    let repos_monitored = state.git_cache.github_status.entry_count() as u32;
+    let mut groups = std::collections::BTreeMap::new();
+    for entry in &state.git_cache.github_repo_access_errors {
+        let failure = entry.value();
+        if failure.error.reason == tuic_git::github_access::RepoAccessReason::NotFound
+            && state
+                .git_cache
+                .github_repo_cooldown
+                .get(entry.key())
+                .is_none_or(|expiry| *expiry <= now)
+        {
+            continue;
+        }
+        let group = groups
+            .entry((
+                failure.account_id.clone(),
+                failure.host.clone(),
+                failure.owner.clone(),
+            ))
+            .or_insert_with(|| RepoAccessErrorGroup {
+                account_id: failure.account_id.clone(),
+                host: failure.host.clone(),
+                owner: failure.owner.clone(),
+                repos: Vec::new(),
+                oauth_app_url: None,
+            });
+        if failure.oauth_app && failure.host == "github.com" {
+            group.oauth_app_url = Some(format!(
+                "https://github.com/settings/connections/applications/{CLIENT_ID}"
+            ));
+        }
+        group.repos.push(failure.error.clone());
+    }
+    let repo_access_errors = groups
+        .into_values()
+        .map(|mut group| {
+            group.repos.sort_by(|a, b| a.repo.cmp(&b.repo));
+            group
+        })
+        .collect();
+
+    // Transition history belongs to the running poller, not to its expiring
+    // query payload cache. Empty successful snapshots count as monitored too.
+    let repos_monitored = state
+        .github
+        .poller
+        .lock()
+        .as_ref()
+        .map_or(0, |poller| poller.monitored_repo_count() as u32);
 
     GitHubDiagnostics {
         circuit_breaker_open,
         circuit_breaker_status,
         repos_not_found,
+        repo_access_errors,
         repos_monitored,
     }
 }
@@ -418,8 +480,9 @@ pub(crate) fn compute_diagnostics(state: &AppState) -> GitHubDiagnostics {
 #[tauri::command]
 pub(crate) async fn github_diagnostics(
     state: State<'_, Arc<AppState>>,
+    refresh: Option<bool>,
 ) -> Result<GitHubDiagnostics, String> {
-    github_diagnostics_impl(state.inner()).await
+    github_diagnostics_impl(state.inner(), refresh.unwrap_or(false)).await
 }
 
 /// HTTP/IPC-parity wrapper over the pure `compute_diagnostics` seam. Kept so the
@@ -427,7 +490,11 @@ pub(crate) async fn github_diagnostics(
 /// share one code path; `compute_diagnostics` now also folds in GHE accounts.
 pub(crate) async fn github_diagnostics_impl(
     state: &Arc<AppState>,
+    refresh: bool,
 ) -> Result<GitHubDiagnostics, String> {
+    if refresh {
+        state.git_cache.github_repo_cooldown.clear();
+    }
     Ok(compute_diagnostics(state))
 }
 
@@ -1118,6 +1185,7 @@ mod tests {
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel(32);
         *state.github.poller.lock() = Some(crate::github_poller::GitHubPoller {
             cmd_tx,
+            previous_prs: Default::default(),
             stop: std::sync::Arc::new(tokio::sync::Notify::new()),
         });
 
@@ -1273,6 +1341,11 @@ mod device_scope_tests {
             .and_then(reqwest::Body::as_bytes)
             .expect("form body");
         let form: std::collections::HashMap<_, _> = url::form_urlencoded::parse(bytes).collect();
+        // Catches: the backend request diverges from the scope value rendered by Settings.
+        assert_eq!(
+            form["scope"],
+            include_str!("../../src/data/github-oauth-scopes.txt").trim()
+        );
         let scopes: std::collections::HashSet<_> = form["scope"].split_whitespace().collect();
         assert!(
             scopes.contains("repo"),

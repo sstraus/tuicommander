@@ -346,7 +346,7 @@ mod tests {
     #[test]
     fn no_agent_socket_yields_empty_env() {
         let env = build_ssh_env(None);
-        assert!(env.is_empty());
+        assert_eq!(env, [] as [(std::string::String, std::string::String); 0]);
     }
 
     #[test]

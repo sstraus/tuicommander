@@ -6,7 +6,7 @@ import type { QueuedCommand } from "../../hooks/usePty";
 import { cx } from "../../utils";
 import { IMAGE_FILE_ACCEPT } from "../../utils/pastedImage";
 import { ComposePinIcon, ComposeSendIcon } from "../shared/ComposeActionIcons";
-import actions from "../shared/ComposeActions.module.css";
+import { Button } from "../ui/Button";
 import s from "./ComposePanel.module.css";
 import { useComposeImages } from "./useComposeImages";
 
@@ -299,9 +299,9 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 				<div class={s.queueList}>
 					<div class={s.queueListHeader}>
 						<span>Waiting for the agent to go idle</span>
-						<button class={s.queueClearAll} onClick={() => props.onClearQueue()}>
+						<Button variant="ghost" class={s.queueClearAll} onClick={() => props.onClearQueue()}>
 							Clear all
-						</button>
+						</Button>
 					</div>
 					<For each={queueItems()}>
 						{(item) => (
@@ -309,7 +309,9 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 								<span class={s.queueItemText} title={queueItemTitle(item)}>
 									{queueItemLabel(item)}
 								</span>
-								<button
+								<Button
+									variant="ghost"
+									shape="icon"
 									class={s.queueItemRemove}
 									onClick={() => props.onRemoveQueued(item.id)}
 									title="Remove from queue"
@@ -318,7 +320,7 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 									<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
 										<path d="M4.3 3.3l8.4 8.4-1 1-8.4-8.4zM12.7 4.3l-8.4 8.4-1-1 8.4-8.4z" />
 									</svg>
-								</button>
+								</Button>
 							</div>
 						)}
 					</For>
@@ -347,7 +349,8 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 				</div>
 				<div class={s.actions}>
 					<Show when={props.queuedCount() > 0}>
-						<button
+						<Button
+							variant="ghost"
 							class={cx(s.queueBadge, queueOpen() && s.queueBadgeOpen)}
 							onClick={() => setQueueOpen(!queueOpen())}
 							title="Waiting for the agent to go idle — click to review"
@@ -364,21 +367,26 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 							>
 								<path d="M8 11L3 5h10z" />
 							</svg>
-						</button>
+						</Button>
 					</Show>
 					<Show when={!props.persistent?.()}>
-						<button
-							class={cx(actions.pinButton, props.pinned() && actions.pinButtonActive)}
+						<Button
+							variant="ghost"
 							onClick={() => props.onTogglePin()}
+							shape="icon"
+							aria-label={props.pinned() ? "Unpin from the terminal bottom" : "Pin to the terminal bottom"}
 							title={props.pinned() ? "Unpin from the terminal bottom" : "Pin to the terminal bottom"}
 							aria-pressed={props.pinned()}
 						>
 							<ComposePinIcon />
-						</button>
+						</Button>
 						<span class={s.divider} aria-hidden="true" />
 					</Show>
 					<Show when={props.canEnqueue()}>
-						<button
+						<Button
+							variant="ghost"
+							shape="icon"
+							aria-label="Queue for the next idle moment (Shift+Ctrl+Enter)"
 							class={s.queueButton}
 							onClick={handleEnqueue}
 							title="Queue for the next idle moment (Shift+Ctrl+Enter)"
@@ -386,7 +394,7 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 							<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 								<path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h8v2H2z" />
 							</svg>
-						</button>
+						</Button>
 					</Show>
 					<input
 						ref={fileInput}
@@ -400,23 +408,32 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 							event.currentTarget.value = "";
 						}}
 					/>
-					<button
+					<Button
+						variant="ghost"
 						type="button"
-						class={actions.pinButton}
 						onClick={() => fileInput?.click()}
+						shape="icon"
 						title="Attach images"
 						aria-label="Attach images"
 					>
 						<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
 							<path d="M16.5 3a4.5 4.5 0 0 1 3.18 7.68l-8.49 8.49a6 6 0 0 1-8.48-8.48l8.49-8.49 1.41 1.41-8.49 8.49a4 4 0 0 0 5.66 5.66l8.49-8.49a2.5 2.5 0 0 0-3.54-3.54l-8.49 8.49a1 1 0 0 0 1.42 1.42l7.78-7.78 1.41 1.41-7.78 7.78a3 3 0 0 1-4.24-4.24l8.49-8.49A4.49 4.49 0 0 1 16.5 3z" />
 						</svg>
-					</button>
-					<button class={actions.sendButton} onClick={handleSend} title="Send (Ctrl+Enter)">
+					</Button>
+					<Button
+						shape="icon"
+						variant="primary"
+						onClick={handleSend}
+						title="Send (Ctrl+Enter)"
+						aria-label="Send (Ctrl+Enter)"
+					>
 						<ComposeSendIcon />
-					</button>
+					</Button>
 					<Show when={!props.persistent?.()}>
 						<span class={s.divider} aria-hidden="true" />
-						<button
+						<Button
+							variant="ghost"
+							shape="icon"
 							class={s.closeButton}
 							onClick={() => props.onDismiss()}
 							title="Close compose panel"
@@ -425,7 +442,7 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 							<svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
 								<path d="M4.3 3.3l8.4 8.4-1 1-8.4-8.4zM12.7 4.3l-8.4 8.4-1-1 8.4-8.4z" />
 							</svg>
-						</button>
+						</Button>
 					</Show>
 				</div>
 			</div>

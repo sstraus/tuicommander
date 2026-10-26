@@ -102,14 +102,24 @@ export const TreeNode: Component<TreeNodeProps> = (props) => {
 				<Show when={!props.entry.is_dir}>
 					<span class={s.treeLeafSpacer} />
 				</Show>
-				<FileIcon name={props.entry.name} isDir={props.entry.is_dir} class={s.entryIcon} />
+				<FileIcon
+					name={props.entry.name}
+					isDir={props.entry.is_dir}
+					isLink={props.entry.symlink_target_kind !== undefined}
+					class={s.entryIcon}
+				/>
 				<span class={s.entryName} title={fileTooltip(props.entry)}>
 					{props.entry.name}
+					<Show when={props.entry.symlink_target_kind}>
+						<span class={s.entryLink}>
+							{props.entry.symlink_target_kind} link → {props.entry.symlink_target ?? "Target unavailable"}
+						</span>
+					</Show>
 				</span>
 				<Show when={props.entry.git_status}>
 					<span class={cx(g.dot, getStatusClass(props.entry.git_status))} title={props.entry.git_status} />
 				</Show>
-				<Show when={!props.entry.is_dir && props.entry.size > 0}>
+				<Show when={!props.entry.is_dir && !props.entry.symlink_target_kind && props.entry.size > 0}>
 					<span class={s.entrySize}>{formatSize(props.entry.size)}</span>
 				</Show>
 			</div>

@@ -1,0 +1,26 @@
+{"fixture":"src-tauri/src/fixtures/agent_prompts/ego-provider-failure-approval-2317.tcap","agent":"ego","geometry":[41,128]}
+{"record":0,"event":{"type":"shell-state","state":"busy","agent_type":"ego"}}
+{"record":0,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":1,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":2,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":3,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":4,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":5,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":6,"event":{"type":"intent","text":"## TUICommander Multi-Agent Context","title":"εgo","_turn_epoch":0}}
+{"record":6,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
+{"record":6,"event":{"type":"progress","state":0,"value":0,"_turn_epoch":0}}
+{"record":6,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":7,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":8,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":9,"event":{"type":"question","prompt_text":"","confident":true,"_turn_epoch":0}}
+{"record":9,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"","confident":true,"last_question":"","choice_sig":null,"fullscreen":false}}
+{"record":10,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"","confident":true,"last_question":"","choice_sig":null,"fullscreen":false}}
+{"record":11,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"","confident":true,"last_question":"","choice_sig":null,"fullscreen":false}}
+{"record":12,"event":{"type":"choice-prompt","title":"Allow run sh -c 'printf APPROVAL_2317'?","options":[{"key":"y","label":"yes","highlighted":true,"destructive":false},{"key":"a","label":"yes, do not ask again for exec(sh -c printf\\ APPROVAL_2317)","highlighted":false,"destructive":false},{"key":"n","label":"no, say what to do instead","highlighted":false,"destructive":true},{"key":"e","label":"edit","highlighted":false,"destructive":false},{"key":"d","label":"details","highlighted":false,"destructive":false}],"_turn_epoch":0}}
+{"record":12,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Allow run sh -c 'printf APPROVAL_2317'?","confident":true,"last_question":"","choice_sig":"Allow run sh -c 'printf APPROVAL_2317'?|y,a,n,e,d","fullscreen":false}}
+{"record":13,"event":{"type":"protocol-question-cleared"}}
+{"record":13,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
+{"record":13,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":"","choice_sig":"Allow run sh -c 'printf APPROVAL_2317'?|y,a,n,e,d","fullscreen":false}}
+{"record":14,"event":{"type":"choice-cleared","_turn_epoch":0}}
+{"record":14,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":"","choice_sig":null,"fullscreen":false}}
+{"ring_len":1501}

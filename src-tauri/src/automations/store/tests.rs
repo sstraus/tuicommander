@@ -195,7 +195,10 @@ fn restart_interrupts_every_open_state_and_keeps_all_final_states_immutable() {
         assert_eq!(run.status, RunStatus::Interrupted);
         assert_eq!(run.finished_ms, Some(10));
     }
-    assert!(owner.store().open_runs().unwrap().is_empty());
+    assert_eq!(
+        owner.store().open_runs().unwrap(),
+        [] as [crate::automations::run::AutomationRun; 0]
+    );
     for run in final_runs {
         assert_eq!(owner.store().get(&run.id).unwrap(), run);
     }
@@ -312,7 +315,10 @@ fn history_pages_utc_windows_and_retention_preserve_open_runs() {
     assert_eq!(store.summary(SummaryWindow::Week, now).unwrap().total, 4);
     assert_eq!(store.history(Some("daily"), 1, 0).unwrap()[0].id, future.id);
     assert_eq!(store.history(Some("daily"), 1, 1).unwrap()[0].id, latest.id);
-    assert!(store.history(Some("deleted-id"), 10, 0).unwrap().is_empty());
+    assert_eq!(
+        store.history(Some("deleted-id"), 10, 0).unwrap(),
+        [] as [crate::automations::run::AutomationRun; 0]
+    );
     assert!(store.history(None, 0, 0).is_err());
     assert!(store.history(None, 101, 0).is_err());
     assert!(store.prune(now, Some(0)).is_err());

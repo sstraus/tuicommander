@@ -15,6 +15,7 @@ import { terminalsStore } from "../../stores/terminals";
 import { cx } from "../../utils";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { KeyComboCapture } from "../shared/KeyComboCapture";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { Textarea } from "../ui/Textarea";
@@ -255,9 +256,9 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 						{/* Header */}
 						<div class={s.header}>
 							<h3>{t("promptDrawer.title", "Smart Prompts Library")}</h3>
-							<button class={s.close} onClick={() => promptLibraryStore.closeDrawer()}>
+							<Button variant="ghost" aria-label="Close" onClick={() => promptLibraryStore.closeDrawer()}>
 								&times;
-							</button>
+							</Button>
 						</div>
 
 						{/* Search */}
@@ -278,15 +279,13 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 						<div class={s.categories}>
 							<For each={Object.entries(CATEGORY_LABELS)}>
 								{([category, label]) => (
-									<button
-										class={cx(
-											s.categoryBtn,
-											promptLibraryStore.state.selectedCategory === category && s.categoryBtnActive,
-										)}
+									<Button
+										class={cx(promptLibraryStore.state.selectedCategory === category && s.categoryBtnActive)}
+										aria-pressed={promptLibraryStore.state.selectedCategory === category}
 										onClick={() => promptLibraryStore.setSelectedCategory(category as PromptCategory | "all")}
 									>
 										{label}
-									</button>
+									</Button>
 								)}
 							</For>
 						</div>
@@ -298,9 +297,9 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 								fallback={
 									<div class={s.empty}>
 										<p>{t("promptDrawer.noPrompts", "No prompts found")}</p>
-										<button onClick={createNewPrompt}>
+										<Button variant="primary" onClick={createNewPrompt}>
 											{t("promptDrawer.createFirst", "Create your first prompt")}
-										</button>
+										</Button>
 									</div>
 								}
 							>
@@ -351,10 +350,11 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 													</Show>
 												</div>
 												<div class={s.itemActions} onDblClick={(event) => event.stopPropagation()}>
-													<button
+													<Button
+														variant="ghost"
 														title={isDisabled() ? "Enable" : "Disable"}
 														onClick={(e) => toggleEnabled(e, prompt)}
-														class={cx(s.toggleBtn, isDisabled() && s.toggleOff)}
+														class={cx(isDisabled() && s.toggleOff)}
 													>
 														<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
 															{isDisabled() ? (
@@ -363,8 +363,9 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 																<circle cx="8" cy="8" r="6" />
 															)}
 														</svg>
-													</button>
-													<button
+													</Button>
+													<Button
+														variant="ghost"
 														title="Edit"
 														onClick={(e) => {
 															e.stopPropagation();
@@ -374,8 +375,9 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 														<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
 															<path d="M11.013 1.427a1.75 1.75 0 0 1 2.474 0l1.086 1.086a1.75 1.75 0 0 1 0 2.474l-8.61 8.61c-.21.21-.47.364-.756.445l-3.251.93a.75.75 0 0 1-.927-.928l.929-3.25c.081-.286.235-.547.445-.758l8.61-8.61z" />
 														</svg>
-													</button>
-													<button
+													</Button>
+													<Button
+														variant="ghost"
 														title={prompt.isFavorite ? "Unfavorite" : "Favorite"}
 														onClick={(e) => {
 															e.stopPropagation();
@@ -389,9 +391,10 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 																<path d="M8 .25a.75.75 0 0 1 .673.418l1.882 3.815 4.21.612a.75.75 0 0 1 .416 1.279l-3.046 2.97.719 4.192a.75.75 0 0 1-1.088.791L8 12.347l-3.766 1.98a.75.75 0 0 1-1.088-.79l.72-4.194L.818 6.374a.75.75 0 0 1 .416-1.28l4.21-.611L7.327.668A.75.75 0 0 1 8 .25zm0 2.445L6.615 5.5a.75.75 0 0 1-.564.41l-3.097.45 2.24 2.184a.75.75 0 0 1 .216.664l-.528 3.084 2.769-1.456a.75.75 0 0 1 .698 0l2.77 1.456-.53-3.084a.75.75 0 0 1 .216-.664l2.24-2.183-3.096-.45a.75.75 0 0 1-.564-.41L8 2.694z" />
 															)}
 														</svg>
-													</button>
+													</Button>
 													<Show when={!prompt.builtIn}>
-														<button
+														<Button
+															variant="ghost"
 															title="Delete"
 															onClick={(e) => {
 																e.stopPropagation();
@@ -401,7 +404,7 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 															<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
 																<path d="M11 1.75V3h2.25a.75.75 0 0 1 0 1.5H2.75a.75.75 0 0 1 0-1.5H5V1.75C5 .784 5.784 0 6.75 0h2.5C10.216 0 11 .784 11 1.75zM6.5 1.75V3h3V1.75a.25.25 0 0 0-.25-.25h-2.5a.25.25 0 0 0-.25.25zM3.613 5.5l.806 8.87A1.75 1.75 0 0 0 6.163 16h3.674a1.75 1.75 0 0 0 1.744-1.63l.806-8.87H3.613z" />
 															</svg>
-														</button>
+														</Button>
 													</Show>
 												</div>
 											</div>
@@ -413,7 +416,9 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 
 						{/* Footer */}
 						<div class={s.footer}>
-							<button onClick={createNewPrompt}>{t("promptDrawer.newPrompt", "+ New Prompt")}</button>
+							<Button variant="primary" onClick={createNewPrompt}>
+								{t("promptDrawer.newPrompt", "+ New Prompt")}
+							</Button>
 							<span class={s.hint}>
 								{t("promptDrawer.hint", "↑↓ Navigate • Enter Insert • Ctrl+N New • Esc Close")}
 							</span>
@@ -443,11 +448,13 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 								)}
 							</For>
 							<div class={s.variableActions}>
-								<button onClick={() => handleVariableSubmit(false)}>{t("promptDrawer.insert", "Insert")}</button>
-								<button onClick={() => handleVariableSubmit(true)}>
+								<Button variant="primary" onClick={() => handleVariableSubmit(false)}>
+									{t("promptDrawer.insert", "Insert")}
+								</Button>
+								<Button variant="primary" onClick={() => handleVariableSubmit(true)}>
 									{t("promptDrawer.insertAndRun", "Insert & Run")}
-								</button>
-								<button onClick={() => setShowVariableDialog(false)}>{t("promptDrawer.cancel", "Cancel")}</button>
+								</Button>
+								<Button onClick={() => setShowVariableDialog(false)}>{t("promptDrawer.cancel", "Cancel")}</Button>
 							</div>
 						</div>
 					</div>
@@ -556,12 +563,12 @@ const VariableDropdown: Component<{
 
 	return (
 		<div class={s.varDropdownWrap}>
-			<button class={s.varDropdownBtn} onClick={() => setOpen(!open())} type="button">
+			<Button onClick={() => setOpen(!open())} type="button">
 				Insert variable...
 				<span class={s.varChevron} classList={{ [s.varChevronOpen]: open() }}>
 					&#9660;
 				</span>
-			</button>
+			</Button>
 			<Show when={open()}>
 				<div class={s.varDropdownList}>
 					<For each={Array.from(groups().entries())}>
@@ -571,6 +578,7 @@ const VariableDropdown: Component<{
 								<For each={vars}>
 									{(v) => (
 										<button
+											data-control-layout="row"
 											class={s.varItem}
 											type="button"
 											onClick={() => {
@@ -840,15 +848,15 @@ const PromptEditor: Component<PromptEditorProps> = (props) => {
 				{/* Actions */}
 				<div class={s.editorActions}>
 					<Show when={isBuiltIn() && isOverridden()}>
-						<button class={s.resetBtn} onClick={handleReset}>
+						<Button variant="ghost" class={s.resetBtn} onClick={handleReset}>
 							Reset to Default
-						</button>
+						</Button>
 					</Show>
 					<div style={{ flex: "1" }} />
-					<button data-ready={formDirty() ? "true" : undefined} onClick={handleSave}>
+					<Button variant="primary" data-ready={formDirty() ? "true" : undefined} onClick={handleSave}>
 						Save
-					</button>
-					<button onClick={props.onCancel}>Cancel</button>
+					</Button>
+					<Button onClick={props.onCancel}>Cancel</Button>
 				</div>
 			</div>
 		</div>

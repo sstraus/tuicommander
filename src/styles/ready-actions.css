@@ -1,0 +1,7 @@
+/* Ready action: a primary button (Send, Save) that can act right now. Set data-ready on
+ * it while that is true; disabled buttons stay neutral. One rule for every such button. */
+button[data-ready]:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}

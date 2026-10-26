@@ -38,6 +38,7 @@ export const ROOMY_MAX_ROWS = roomyMaxRows(768);
 export interface DensityRepoShape {
 	collapsed: boolean;
 	expanded: boolean;
+	detachedWorktrees?: readonly unknown[];
 	workspaces: Record<string, { terminals: readonly unknown[]; tabsCollapsed?: boolean }>;
 }
 
@@ -56,7 +57,7 @@ export function countSidebarRows(
 		if (!r.expanded || r.collapsed) return n + 1;
 		const branches = Object.values(r.workspaces);
 		const tabs = tabTreeEnabled ? branches.reduce((t, w) => t + (w.tabsCollapsed ? 0 : w.terminals.length), 0) : 0;
-		return n + 1 + branches.length + tabs + pluginRowsPerRepo;
+		return n + 1 + branches.length + (r.detachedWorktrees?.length ?? 0) + tabs + pluginRowsPerRepo;
 	}, 0);
 }
 

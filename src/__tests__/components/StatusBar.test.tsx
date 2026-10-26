@@ -176,9 +176,13 @@ describe("StatusBar", () => {
 		onDictationStop: vi.fn(),
 	};
 
-	beforeEach(() => {
+	beforeEach(async () => {
 		vi.useFakeTimers();
 		vi.clearAllMocks();
+		mockInvoke.mockImplementation(async (command: string) =>
+			command === "get_working_tree_status" ? { staged: [], unstaged: [], untracked: [] } : undefined,
+		);
+		await uiStore.hydrate();
 		mockGitHubStatus.mockReturnValue(null);
 		mockGetActive.mockReturnValue(null);
 		mockTerminalGetActive.mockReturnValue(null);
@@ -198,6 +202,7 @@ describe("StatusBar", () => {
 
 	afterEach(() => {
 		statusBarTicker.clear();
+		uiStore._testCancelPendingSave();
 		vi.useRealTimers();
 	});
 

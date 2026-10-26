@@ -1,8 +1,11 @@
-import { render } from "@solidjs/testing-library";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ErrorLogPanel } from "../../components/ErrorLogPanel/ErrorLogPanel";
 import { appLogger } from "../../stores/appLogger";
 import { errorLogStore } from "../../stores/errorLog";
+
+const { writeClipboard } = vi.hoisted(() => ({ writeClipboard: vi.fn().mockResolvedValue(undefined) }));
+vi.mock("../../utils/clipboard", () => ({ writeClipboard }));
 
 /**
  * The panel is mounted for the whole app lifetime — App renders it
@@ -18,6 +21,13 @@ describe("ErrorLogPanel memo gating", () => {
 		errorLogStore.close();
 		appLogger.clear();
 		vi.restoreAllMocks();
+		vi.spyOn(console, "error").mockImplementation(() => {});
+		vi.spyOn(console, "warn").mockImplementation(() => {});
+	});
+
+	afterEach(() => {
+		cleanup();
+		vi.restoreAllMocks();
 	});
 
 	it("does not filter the log ring while the panel is closed", () => {
@@ -27,6 +37,7 @@ describe("ErrorLogPanel memo gating", () => {
 		for (let i = 0; i < 10; i++) appLogger.error("app", `boom ${i}`);
 
 		expect(getEntries).not.toHaveBeenCalled();
+		expect(console.error).toHaveBeenCalledTimes(10);
 		view.unmount();
 	});
 
@@ -44,6 +55,7 @@ describe("ErrorLogPanel memo gating", () => {
 
 		expect(getEntries).toHaveBeenCalled();
 		expect(container.textContent).toContain("visible failure");
+		expect(console.error).toHaveBeenCalledWith("[app]", "visible failure");
 		view.unmount();
 	});
 
@@ -56,6 +68,7 @@ describe("ErrorLogPanel memo gating", () => {
 		for (let i = 0; i < 5; i++) appLogger.warn("app", `later ${i}`);
 
 		expect(getEntries).not.toHaveBeenCalled();
+		expect(console.warn).toHaveBeenCalledTimes(5);
 		view.unmount();
 	});
 
@@ -84,4 +97,30 @@ describe("ErrorLogPanel memo gating", () => {
 		view.unmount();
 		vi.unstubAllGlobals();
 	});
+});
+
+it("catches shared filters losing severity selection and clipboard actions losing visible payloads", async () => {
+	vi.spyOn(console, "error").mockImplementation(() => {});
+	vi.spyOn(console, "warn").mockImplementation(() => {});
+	appLogger.clear();
+	appLogger.warn("app", "fixture warning");
+	appLogger.error("git", "fixture error");
+	expect(console.warn).toHaveBeenCalledWith("[app]", "fixture warning");
+	expect(console.error).toHaveBeenCalledWith("[git]", "fixture error");
+	errorLogStore.open();
+	const view = render(() => <ErrorLogPanel />);
+	fireEvent.click(view.getByRole("button", { name: "Error" }));
+	expect(view.queryByText("fixture warning")).toBeNull();
+	expect(view.getByText("fixture error")).toBeInTheDocument();
+	fireEvent.click(view.getByRole("button", { name: "Copy All" }));
+	await waitFor(() => expect(writeClipboard).toHaveBeenCalledWith(expect.stringContaining("fixture error")));
+	expect(writeClipboard.mock.calls.at(-1)?.[0]).not.toContain("fixture warning");
+	fireEvent.click(view.getByRole("button", { name: "Copy to clipboard" }));
+	await waitFor(() => expect(writeClipboard).toHaveBeenCalledTimes(2));
+	fireEvent.click(view.getByRole("button", { name: "Clear" }));
+	expect(view.getByText("No log entries")).toBeInTheDocument();
+	fireEvent.keyDown(document, { key: "Escape" });
+	expect(errorLogStore.state.isOpen).toBe(false);
+	cleanup();
+	vi.restoreAllMocks();
 });

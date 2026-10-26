@@ -3,7 +3,7 @@
   bottom: 0;
   left: 0;
   right: 0;
-  height: 142px;
+  height: auto;
   background: var(--bg-primary);
   border-top: 1px solid var(--border);
   box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.3);
@@ -31,12 +31,14 @@
 }
 
 .editor {
-  flex: 1;
+  flex-shrink: 0;
+  height: 96px;
   overflow: hidden;
 }
 
 .statusBar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -86,6 +88,8 @@
 
 .actions {
   display: flex;
+  flex-wrap: wrap;
+  max-width: 100%;
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
@@ -95,10 +99,6 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  height: 20px;
-  padding: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--fg-muted);
   font-size: var(--font-xs);
@@ -108,12 +108,10 @@
 
 .queueBadge:hover {
   color: var(--fg-primary);
-  border-color: var(--fg-muted);
 }
 
 .queueBadgeOpen {
   color: var(--fg-primary);
-  border-color: var(--fg-muted);
 }
 
 .queueChevron {
@@ -125,8 +123,7 @@
 }
 
 .queueList {
-  /* Shares the panel's 142px with the editor and the status bar, and does not
-     shrink. Above ~78px the editor is left with too few rows to compose in. */
+  /* The queue scrolls independently; it never consumes the reserved editor space. */
   max-height: 78px;
   overflow-y: auto;
   border-top: 1px solid var(--border);
@@ -145,14 +142,11 @@
   user-select: none;
 }
 
-.queueClearAll {
-  border: none;
-  background: transparent;
+.queueClearAll {  background: transparent;
   color: var(--fg-muted);
   font-family: var(--font-ui);
   font-size: var(--font-xs);
   cursor: pointer;
-  padding: 0;
 }
 
 .queueClearAll:hover {
@@ -184,14 +178,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
-  border: none;
-  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
-  padding: 0;
   flex-shrink: 0;
 }
 
@@ -203,34 +192,23 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 20px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
-  padding: 0;
   flex-shrink: 0;
 }
 
 .queueButton:hover {
   color: var(--fg-primary);
-  border-color: var(--fg-muted);
 }
 
 .closeButton {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
-  border: none;
-  border-radius: var(--radius-sm);
   background: transparent;
   color: var(--fg-muted);
   cursor: pointer;
-  padding: 0;
   flex-shrink: 0;
 }
 

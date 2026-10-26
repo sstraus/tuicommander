@@ -31,6 +31,7 @@
 
 /* Line 1: ref name + message */
 .stashHeader {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
@@ -56,61 +57,11 @@
 
 /* Line 2: action buttons */
 .stashActions {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 4px;
   padding-top: 4px;
-}
-
-.actionBtn {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--fg-secondary);
-  font-size: var(--font-xs);
-  font-family: var(--font-ui);
-  padding: 2px 8px;
-  cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
-}
-
-.actionBtn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.actionBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.actionBtnDanger {
-  composes: actionBtn;
-}
-
-.actionBtnDanger:hover {
-  background: color-mix(in srgb, var(--error) 20%, transparent);
-  color: var(--error);
-}
-
-/* Show diff toggle */
-.diffToggle {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: var(--font-xs);
-  font-family: var(--font-ui);
-  cursor: pointer;
-  padding: 2px 0;
-  margin-left: 4px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  transition: color 0.1s ease;
-}
-
-.diffToggle:hover {
-  color: var(--fg-primary);
 }
 
 .chevron {

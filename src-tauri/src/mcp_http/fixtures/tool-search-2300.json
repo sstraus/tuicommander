@@ -1,0 +1,809 @@
+{
+  "tools": [
+    {
+      "name": "session",
+      "description": "PTY multiplexer (tmux): input=send-keys, output=capture-pane. help: full usage and response guide. All session_id actions accept PTY id, tuic_session, alias, unique short PTY prefix or unique display name; ambiguity errors.\nlist: local and connected remote inventory; optional session_id/compact. All active sessions and states in one call; never fan out per-session status calls. Optional fields are omitted, not null; background_work/standby only when true. completed requires a suggest marker.\ncreate: new PTY. submit: one non-empty command to a confirmed-idle managed agent; bounded receipt. Use one call; never split text and Enter; never poll after it. Never queues; partial composers, dialogs, busy agents, and older queued commands reject before writing. Acknowledgement means child terminal movement after Enter, not semantic application acceptance. composer_state (tracked InputLineBuffer, not application state). force_retry: submit /retry once only during ego provider recovery; never queues or retries automatically. input: Raw text/key compatibility surface. Send text and/or special_key; ok confirms PTY write only.\noutput: bounded retained terminal output; anomaly fallback only when a child failed to send its result, not normal orchestration. Tail hides empty composer/HUD; raw preserves it. Byte-budget chunks bound compact envelope bytes, not MCP framing; concatenate chunk values then parse JSON. Continue with same action/session and opaque token; expires after 300s/eviction. Follow has_more/next_cursor without rerunning commands; raw cursors are source bytes. Evicted output is unrecoverable.\n- status: state. wait: server-side idle/exited wait, not a polling loop. resize: dimensions. rename: non-empty display name; sticky unless is_custom=false. \n- keep_open: managed child enabled=true disables idle closure; enabled=false restores it. suspend: end PTY/agent, keep restorable tab; refused while working, awaiting answer or running a command; not SIGSTOP standby. close: graceful shutdown. kill: SIGKILL only if close fails. pause: stop buffering. resume: restart buffering. declare_worktree: authenticated live caller only, existing linked worktree in its repository, no foreign session; persists placement without changing cwd; MCP-only via POST /mcp. Executing/destructive session actions require localhost.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "connection_id": {
+            "type": "string",
+            "description": "Configured remote connection qualifier (session list/output/submit; agent list_peers/send). Remote addresses also accept connection/id; local/id addresses the desktop hub."
+          },
+          "compact": {
+            "type": "boolean",
+            "description": "Inventory only: identity, state, activity_age_ms and explicit omitted_fields."
+          },
+          "byte_budget": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65536,
+            "description": "Opt into byte-bounded JSON-text chunks (inbox/output). Bound includes compact JSON page envelope, excludes MCP framing. Default on continuation: 4096."
+          },
+          "continuation": {
+            "type": "string",
+            "description": "Opaque token from a byte-budget page; repeat with same action and target. Concatenate chunk values then parse JSON. Expires after 300s or cache eviction."
+          },
+          "action": {
+            "type": "string",
+            "description": "One of: list, create, submit, force_retry, input, output, resize, rename, keep_open, suspend, close, kill, pause, resume, status, wait, declare_worktree, help",
+            "enum": [
+              "list",
+              "create",
+              "submit",
+              "force_retry",
+              "input",
+              "output",
+              "resize",
+              "rename",
+              "keep_open",
+              "suspend",
+              "close",
+              "kill",
+              "pause",
+              "resume",
+              "status",
+              "wait",
+              "declare_worktree",
+              "help"
+            ]
+          },
+          "session_id": {
+            "type": "string",
+            "description": "Session address \u2014 PTY id, tuic_session, alias, unique short PTY-id prefix, or unique display name. Ambiguous prefixes or names return an error. Required for submit, force_retry, input, output, status, resize, rename, keep_open, suspend, close, kill, pause, resume, wait"
+          },
+          "name": {
+            "type": "string",
+            "description": "New tab display name, non-empty (action=rename, required)"
+          },
+          "is_custom": {
+            "type": "boolean",
+            "description": "action=rename, default true. true protects the name from later OSC/intent title updates; false lets them refine it."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "Required for action=keep_open: true disables idle close for a managed child; false restores it."
+          },
+          "until": {
+            "type": "string",
+            "description": "Wait target: 'idle' or 'exited' (action=wait, default idle)"
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300000,
+            "description": "action=submit: acknowledgement wait, clamped 250-10000ms, default 3000. action=wait: max wait, default 60000; values at or above 300000 run as 295000."
+          },
+          "input": {
+            "type": "string",
+            "description": "Non-empty command (action=submit) or raw text (action=input)"
+          },
+          "pty_description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Short orchestrator-supplied description shown above the PTY (action=submit or input)"
+          },
+          "special_key": {
+            "type": "string",
+            "description": "Special key: enter, tab, ctrl+c, ctrl+d, ctrl+z, ctrl+l, ctrl+a, ctrl+e, ctrl+k, ctrl+u, ctrl+w, ctrl+r, up, down, left, right, home, end, backspace, delete, escape (action=input)"
+          },
+          "rows": {
+            "type": "integer",
+            "description": "Terminal rows (action=create or resize)",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "cols": {
+            "type": "integer",
+            "description": "Terminal cols (action=create or resize)",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "shell": {
+            "type": "string",
+            "description": "Shell binary path (action=create)"
+          },
+          "worktree_path": {
+            "type": "string",
+            "description": "Absolute existing linked worktree path (action=declare_worktree, required). Caller only; omit session_id."
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Working directory (action=create)"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Max scrollback rows (raw: source bytes), default 50. Logical lines and UTF-8 codepoints stay whole, so pages can exceed this limit (action=output)"
+          },
+          "from_byte": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Absolute source-byte offset for format=raw. Use oldest_offset to start, then next_cursor to continue retained output without rerunning a command (action=output)"
+          },
+          "from_line": {
+            "type": "integer",
+            "description": "Absolute line number to start reading from. Use oldest_offset from a previous response to read from the beginning of the buffer. Omit to read the tail (action=output)"
+          },
+          "format": {
+            "type": "string",
+            "description": "Output format: ANSI escape codes are stripped by default; pass 'raw' to preserve them (action=output)"
+          },
+          "since_cursor": {
+            "type": "integer",
+            "description": "Cursor from a previous output response (raw: source bytes; text: scrollback rows). Returns a bounded forward page; follow next_cursor while has_more. Omit for snapshot (action=output)"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "description": " Action-specific requirements (checked by the server before dispatch): [{\"if\":{\"properties\":{\"action\":{\"enum\":[\"submit\",\"force_retry\",\"input\",\"output\",\"status\",\"wait\",\"resize\",\"rename\",\"keep_open\",\"suspend\",\"close\",\"kill\",\"pause\",\"resume\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"session_id\"]}},{\"if\":{\"properties\":{\"action\":{\"enum\":[\"submit\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"input\"]}},{\"if\":{\"properties\":{\"action\":{\"enum\":[\"rename\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"name\"]}},{\"if\":{\"properties\":{\"action\":{\"enum\":[\"keep_open\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"enabled\"]}},{\"if\":{\"properties\":{\"action\":{\"enum\":[\"declare_worktree\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"worktree_path\"]}},{\"if\":{\"properties\":{\"action\":{\"const\":\"input\"}},\"required\":[\"action\"]},\"then\":{\"anyOf\":[{\"required\":[\"input\"]},{\"required\":[\"special_key\"]},{\"required\":[\"pty_description\"]}]}}]"
+      }
+    },
+    {
+      "name": "agent",
+      "description": "Managed peers and mail. There is no separate swarm action. help: full orchestration, response and subscription guide. Managed PTYs auto-bind from TUIC_SESSION; a headerless external caller calls register without tuic_session. Every worker must report task output or blockers with send. Lifecycle notifications carry state only. Use session output only for anomalously missing results. Wait: do NOT poll in a loop; waits cap at 300s.\nlaunch: localhost-only durable idempotent launch. Requires registered parent_session_id, stable idempotency_key/name, explicit keep_open, workspace={existing_path}|{repo_path,branch,base_ref?}, spawn={prompt,...}. Read with launch_id alone; identical retry returns same resources, conflicting key errors. Uncertain interrupted creation blocks: retain handle and inspect, never spawn again. Delivered proves argv/PTY handoff, not model acceptance; ready also needs native Ready-screen evidence. Model/account/brief policy is caller-owned.\nspawn: localhost-only new PTY, name assigned before prompt; returns task_id. task_get: caller-owned outcome retained up to 24h in this server process, including reconnect; working|input_required|completed|failed|cancelled, last three immutable. Poll no faster than poll_interval_ms. task_cancel: localhost-only, caller-owned; final status unchanged, does NOT kill PTY (session kill does).\nregister: optional stable UUID (omission generates MCP-scoped identity); reconnect with a NEW UUID must pass replaces or strand mail. Live-PTY identity cannot be superseded: check mail_stranded/identity_warning. No terminal means no PTY notice; subscribed ACP can notify/wake idle ego, otherwise wait/inbox only. orchestrator=true/false sets/removes role; omission preserves it, spawning a child never infers it. mail_wake=managed_pty_lifecycle identifies reachable PTY wake. list_peers: local/remote peers; optional to/path/connection_id/compact, absent fields omitted.\nsend: requires to/message; peer UUID, PTY id, alias, unique prefix/name or connection/peer_id. Normal is the default; urgent when the recipient must change course before its next step. For normal and urgent mail, the payload is never typed into the recipient's composer. Idle/completed recipients may get a payload-free generic `agent action=inbox` wake. Safe busy Claude/Codex/ego gets only a payload-free notice. urgent_delivered does not prove model action or interrupt tools; false supplies urgent_fallback_reason. Explicit urgency=interrupt sends Esc to a safe working Claude/Codex/ego, waits up to 10 seconds for confirmed idle, then submits the full message as one input; an idle recipient skips Esc. Dialogs/approvals and drafts block Esc/text. Unsupported agents or idle timeout use urgent fallback. Inspect interrupt_delivered, interrupt_fallback_reason and delivery_path; interrupt_payload_and_inbox proves input written, not model action. Interrupted tools may leave partial work or running children. Active waiters own delivery without interruption.\ninbox: FIFO up to 100, omitted since resumes server cursor, since=0 deliberately replays; follow has_more. Byte-budget chunks include compact envelope, not MCP framing; concatenate/parse, same action/token; expire after 300s/eviction. Cursor advances only on final chunk; fresh read after error; missed_count reports unread eviction. wait: Block for fresh mail inline, next_since even on timeout; active wait suppresses terminal wake. byte_budget/continuation rejected before consumption.\nsubscribe: independent durable subscription_id (1..64 ASCII letters/digits/_/-), immutable actionable|all|exit|failure filter; actionable excludes routine lifecycle, never peer mail. Subscription inbox/wait: limit 1..100, no byte_budget/continuation or since; reads do NOT acknowledge, unacked retained batch replays unchanged; ACK before following has_more. Matching mail/retention loss alone wakes wait. ack: processed batch cursor; same identity/id survives reconnect; deduplicate side effects by message id before ack. Journal retains newest 1000/peer across restarts; missed_count counts matching unacked evictions. unsubscribe: remove reader only, not mail/other readers.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "connection_id": {
+            "type": "string",
+            "description": "Configured remote connection qualifier (session list/output/submit; agent list_peers/send). Remote addresses also accept connection/id; local/id addresses the desktop hub."
+          },
+          "compact": {
+            "type": "boolean",
+            "description": "Inventory only: identity, state, activity_age_ms and explicit omitted_fields."
+          },
+          "byte_budget": {
+            "type": "integer",
+            "minimum": 1024,
+            "maximum": 65536,
+            "description": "Opt into byte-bounded JSON-text chunks (inbox/output). Bound includes compact JSON page envelope, excludes MCP framing. Default on continuation: 4096."
+          },
+          "continuation": {
+            "type": "string",
+            "description": "Opaque token from a byte-budget page; repeat with same action and target. Concatenate chunk values then parse JSON. Expires after 300s or cache eviction."
+          },
+          "action": {
+            "type": "string",
+            "description": "One of: launch, spawn, register, list_peers, send, inbox, wait, subscribe, ack, unsubscribe, task_get, task_cancel, help",
+            "enum": [
+              "launch",
+              "spawn",
+              "register",
+              "list_peers",
+              "send",
+              "inbox",
+              "wait",
+              "subscribe",
+              "ack",
+              "unsubscribe",
+              "task_get",
+              "task_cancel",
+              "help"
+            ]
+          },
+          "idempotency_key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256,
+            "description": "launch: stable retry key scoped to parent; do not change after a lost reply."
+          },
+          "launch_id": {
+            "type": "string",
+            "description": "launch: read only a durable receipt by handle; omit all creation fields."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Task handle returned by agent spawn (required for task_get/task_cancel)."
+          },
+          "parent_session_id": {
+            "type": "string",
+            "description": "launch: registered parent peer identity."
+          },
+          "workspace": {
+            "type": "object",
+            "description": "launch: exactly {existing_path} or {repo_path,branch,base_ref?}. Never falls back to another checkout.",
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "existing_path": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "existing_path"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "repo_path": {
+                    "type": "string"
+                  },
+                  "branch": {
+                    "type": "string"
+                  },
+                  "base_ref": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  }
+                },
+                "required": [
+                  "repo_path",
+                  "branch"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "spawn": {
+            "type": "object",
+            "description": "launch: existing spawn options including prompt, agent_type, binary_path, args, model and env. cwd/name/keep_open belong to the transaction and are rejected here.",
+            "properties": {
+              "prompt": {
+                "type": "string",
+                "description": "Task prompt for the agent (action=spawn)"
+              },
+              "pty_description": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "description": "Short description of the PTY task shown above the terminal (action=spawn)"
+              },
+              "model": {
+                "type": "string",
+                "description": "Structured model flag; preserved when args is also set (action=spawn)"
+              },
+              "env": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "description": "Child environment overrides. Applied after run-config env and before protected TUIC_SESSION/TUIC_PARENT (action=spawn)"
+              },
+              "print_mode": {
+                "type": "boolean",
+                "description": "false (default): visible TUI tab, observable via agent(inbox). true: headless, no tab. (action=spawn)"
+              },
+              "output_format": {
+                "type": "string",
+                "description": "Output format, e.g. 'json' (action=spawn)"
+              },
+              "agent_type": {
+                "type": "string",
+                "description": "Agent type OR run config name. Resolved as: (1) run config name match across enabled agents, (2) agent binary name (claude, codex, goose, gemini, ...). Case-insensitive. (action=spawn)"
+              },
+              "binary_path": {
+                "type": "string",
+                "description": "Override agent binary path (action=spawn)"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Additional CLI args; composed with structured flags and agent defaults. Native scrollback is controlled by the per-agent prevent_alt_screen setting (action=spawn)."
+              },
+              "rows": {
+                "type": "integer",
+                "description": "Terminal rows (action=spawn)",
+                "minimum": 1,
+                "maximum": 500
+              },
+              "cols": {
+                "type": "integer",
+                "description": "Terminal cols (action=spawn)",
+                "minimum": 1,
+                "maximum": 500
+              }
+            },
+            "required": [
+              "prompt"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "action"
+                  ]
+                },
+                {
+                  "required": [
+                    "name"
+                  ]
+                },
+                {
+                  "required": [
+                    "keep_open"
+                  ]
+                },
+                {
+                  "required": [
+                    "cwd"
+                  ]
+                },
+                {
+                  "required": [
+                    "parent_session_id"
+                  ]
+                },
+                {
+                  "required": [
+                    "idempotency_key"
+                  ]
+                }
+              ]
+            }
+          },
+          "timeout_ms": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300000,
+            "description": "Max wait in ms (action=wait; default 60000). Values at or above 300000 run as 295000 so the reply beats a 300s client-side tool-call deadline. On timeout returns {timed_out:true}."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "Task prompt for the agent (action=spawn)"
+          },
+          "pty_description": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Short description of the PTY task shown above the terminal (action=spawn)"
+          },
+          "cwd": {
+            "type": "string",
+            "description": "Working directory (action=spawn)"
+          },
+          "model": {
+            "type": "string",
+            "description": "Structured model flag; preserved when args is also set (action=spawn)"
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Child environment overrides. Applied after run-config env and before protected TUIC_SESSION/TUIC_PARENT (action=spawn)"
+          },
+          "print_mode": {
+            "type": "boolean",
+            "description": "false (default): visible TUI tab, observable via agent(inbox). true: headless, no tab. (action=spawn)"
+          },
+          "output_format": {
+            "type": "string",
+            "description": "Output format, e.g. 'json' (action=spawn)"
+          },
+          "agent_type": {
+            "type": "string",
+            "description": "Agent type OR run config name. Resolved as: (1) run config name match across enabled agents, (2) agent binary name (claude, codex, goose, gemini, ...). Case-insensitive. (action=spawn)"
+          },
+          "binary_path": {
+            "type": "string",
+            "description": "Override agent binary path (action=spawn)"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Additional CLI args; composed with structured flags and agent defaults. Native scrollback is controlled by the per-agent prevent_alt_screen setting (action=spawn)."
+          },
+          "rows": {
+            "type": "integer",
+            "description": "Terminal rows (action=spawn)",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "cols": {
+            "type": "integer",
+            "description": "Terminal cols (action=spawn)",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "tuic_session": {
+            "type": "string",
+            "description": "Optional explicit stable UUID (action=register). Managed PTYs normally auto-bind; a headerless caller may omit this to receive an MCP-scoped UUID."
+          },
+          "replaces": {
+            "type": "string",
+            "description": "Prior tuic_session this registration supersedes (action=register). Required to inherit the old identity's inbox when reconnecting under a new UUID \u2014 there is no implicit link across protocol sessions, and identity is never guessed. Ignored when that identity still owns a live PTY; the response then reports mail_stranded."
+          },
+          "name": {
+            "type": "string",
+            "description": "Non-empty peer/session display name (action=spawn optional; action=register optional; default: 'agent')"
+          },
+          "path": {
+            "type": "string",
+            "description": "Git repo root path (action=register optional, action=list_peers filter)"
+          },
+          "orchestrator": {
+            "type": "boolean",
+            "description": "Explicitly enable or remove orchestrator inbox-only routing (action=register). Omission preserves the current role; spawning a child never infers it."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient address (action=send, required): its tuic_session UUID, PTY id, alias, unique short PTY-id prefix, or unique display name"
+          },
+          "message": {
+            "type": "string",
+            "description": "Message content, max 64KB (action=send, required)"
+          },
+          "urgency": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "urgent",
+              "interrupt"
+            ],
+            "description": "action=send: normal (default) and urgent keep payloads in the inbox; urgent also sends a safe busy inbox notice without interrupting. interrupt explicitly requests Esc, up to 10 seconds for confirmed idle, then full message submission for Claude/Codex/ego. Dialogs/drafts block input; unsupported or timed-out sessions use urgent fallback. Inspect interrupt_delivered, interrupt_fallback_reason and delivery_path. Interrupted tools may leave partial work."
+          },
+          "keep_open": {
+            "type": "boolean",
+            "description": "action=launch: required explicit child lifetime; action=spawn: keep this managed child open; action=send: set or clear the recipient managed child's keep-open flag."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Maximum inbox entries to return (action=inbox; default 100, maximum 100). Read again while has_more is true."
+          },
+          "subscription_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9_-]+$",
+            "description": "Independent durable reader (subscribe, inbox, wait, ack, unsubscribe). Reuse the same peer identity and id on reconnect."
+          },
+          "filter": {
+            "type": "string",
+            "enum": [
+              "actionable",
+              "all",
+              "exit",
+              "failure"
+            ],
+            "description": "Immutable subscription filter; default actionable. Exit includes failed exits; failure includes nonzero exits and delivery failures."
+          },
+          "cursor": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Returned subscription batch cursor to acknowledge (ack only); not a legacy since timestamp."
+          },
+          "since": {
+            "type": "integer",
+            "description": "Logical unix-millis cursor (action=inbox|wait). OMIT IT: the server remembers your last read position and resumes from there. Pass it only to override \u2014 since=0 deliberately replays the whole inbox. Every wait/inbox response carries next_since, including on timeout"
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "description": " Action-specific requirements (checked by the server before dispatch): [{\"if\":{\"properties\":{\"action\":{\"enum\":[\"send\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"to\",\"message\"]}},{\"if\":{\"properties\":{\"action\":{\"enum\":[\"task_get\",\"task_cancel\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"task_id\"]}},{\"if\":{\"properties\":{\"action\":{\"enum\":[\"subscribe\",\"ack\",\"unsubscribe\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"subscription_id\"]}},{\"if\":{\"properties\":{\"action\":{\"enum\":[\"ack\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"cursor\"]}},{\"if\":{\"properties\":{\"action\":{\"const\":\"launch\"}},\"required\":[\"action\"]},\"then\":{\"oneOf\":[{\"properties\":{\"action\":{},\"launch_id\":{}},\"required\":[\"launch_id\"],\"additionalProperties\":false},{\"properties\":{\"action\":{},\"idempotency_key\":{\"pattern\":\"\\\\S\"},\"parent_session_id\":{},\"name\":{\"pattern\":\"^\\\\S(?:[\\\\s\\\\S]*\\\\S)?$\"},\"keep_open\":{},\"workspace\":{},\"spawn\":{}},\"required\":[\"idempotency_key\",\"parent_session_id\",\"name\",\"keep_open\",\"workspace\",\"spawn\"],\"additionalProperties\":false}]}}]"
+      }
+    },
+    {
+      "name": "repo",
+      "description": "Repositories and version control. help: full response and navigation guide.\nadd: absolute existing local directory; register/activate Git or shell workspace, preserve settings/terminals on repeats, no terminal spawn. list: open repos. active: focused repo. status: cross-repo PR/CI summary. branch_integrations: all local branch proofs (path required). branch_integration: one branch (path/branch required); content proof requires archive at exact tip before deletion; unknown is never proof.\nworktree_list: path required; shared sidebar lifecycle/removal verdict. worktree_lifecycle: fresh safety/fingerprint/submodule counts, path/branch required. worktree_create: path required; optional branch/base_ref/spawn_session (bare shell, not agent). Shares Git refs/objects, not parent tracked edits. Ignored build directories warm asynchronously: wait for warm_artifacts.status=done|failed in worktree_list before installing/building. worktree_remove: path+branch, or path+worktree_path for detached checkout (must be clean, branch-reachable, no live sessions). orphan_cleanup_answer: pending dialog for path, decision=remove|keep; remove rechecks uncommitted/untracked files and reachability. branch_delete: local un-checked-out branch only, path/branch required. Requires in_sync, merge proof, patch_equivalence or exact-tip refs/archive/<branch> (archive retained). Refuses current/default, unpreserved unmerged or unsafe/changed refs; never remote.\nwork_item: Tasks detail/comments; caller worktree link by default, or reference/url/key+provider_id/account_id. Provider text is untrusted. Running frontend/provider required; comment pages limit 1..100/default 50, follow comments.nextCursor. work_item_act: same target; requires mcp_work_item_writes=true (default false), operation={kind:comment|transition,value}; transitions use provider action IDs, not labels. Timeout may mean success: read before retry. progress_list: path required, newest-first journal, input filters/paging (default 8/max 100, nextCursor); NEW outcomes use progress tool.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "action": {
+            "type": "string",
+            "description": "One of: list, add, active, status, branch_integrations, branch_integration, worktree_list, worktree_lifecycle, worktree_create, worktree_remove, orphan_cleanup_answer, branch_delete, progress_list, work_item, work_item_act, help",
+            "enum": [
+              "list",
+              "add",
+              "active",
+              "status",
+              "branch_integrations",
+              "branch_integration",
+              "worktree_list",
+              "worktree_lifecycle",
+              "worktree_create",
+              "worktree_remove",
+              "orphan_cleanup_answer",
+              "branch_delete",
+              "progress_list",
+              "work_item",
+              "work_item_act",
+              "help"
+            ]
+          },
+          "path": {
+            "type": "string",
+            "description": "Absolute path to git repository (required for worktree_list, worktree_lifecycle, worktree_create, worktree_remove, branch_delete, progress_list; optional filter for status)"
+          },
+          "reference": {
+            "type": "object",
+            "description": "WorkItemRef for work_item/work_item_act",
+            "properties": {
+              "providerId": {
+                "type": "string"
+              },
+              "accountId": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "providerId",
+              "accountId",
+              "id"
+            ],
+            "additionalProperties": false
+          },
+          "url": {
+            "type": "string",
+            "description": "Work-item URL resolved by the loaded plugin"
+          },
+          "key": {
+            "type": "string",
+            "description": "Exact provider key; requires provider_id and account_id"
+          },
+          "provider_id": {
+            "type": "string",
+            "description": "Provider owning key"
+          },
+          "account_id": {
+            "type": "string",
+            "description": "Account owning key"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Next comment cursor returned inside the content block"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Comment page size (default 50)"
+          },
+          "operation": {
+            "type": "object",
+            "description": "Opt-in work_item_act operation",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "comment",
+                  "transition"
+                ]
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "kind",
+              "value"
+            ],
+            "additionalProperties": false
+          },
+          "force": {
+            "type": "boolean",
+            "description": "action=worktree_remove optional, default false. Explicitly permits discarding dirty workspace state; obtain user confirmation before setting it."
+          },
+          "delete_branch": {
+            "type": "boolean",
+            "description": "action=worktree_remove optional. Defaults to true unless force is true; an explicit true still requires branch safety proof."
+          },
+          "override_lock": {
+            "type": "boolean",
+            "description": "action=worktree_remove optional, default false. Override a locked worktree only after explicit user confirmation."
+          },
+          "expected_fingerprint": {
+            "type": "string",
+            "description": "action=worktree_remove: lifecycle fingerprint shown at force confirmation. Removal refuses if the worktree changed."
+          },
+          "branch": {
+            "type": "string",
+            "description": "Local branch name (required for worktree_lifecycle, worktree_remove and branch_delete; optional for worktree_create)"
+          },
+          "worktree_path": {
+            "type": "string",
+            "description": "action=worktree_remove: absolute path of a detached (orphan) checkout, instead of branch"
+          },
+          "decision": {
+            "type": "string",
+            "description": "action=orphan_cleanup_answer: remove or keep the pending orphan cleanup for path"
+          },
+          "base_ref": {
+            "type": "string",
+            "description": "Base ref to branch from, default HEAD (action=worktree_create)"
+          },
+          "spawn_session": {
+            "type": "boolean",
+            "description": "Auto-create a PTY session in the worktree (action=worktree_create, default false)"
+          },
+          "input": {
+            "type": "object",
+            "description": "Typed action payload for progress_list. Defaults to 8 entries; follow nextCursor until null. Unknown fields are rejected.",
+            "properties": {
+              "blockedOnly": {
+                "type": "boolean",
+                "description": "Only blocked entries, applied before paging."
+              },
+              "ptyId": {
+                "type": "string",
+                "description": "Only this terminal's entries, applied before paging."
+              },
+              "limit": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Entries per page, default 8; clamped to 1..100."
+              },
+              "cursor": {
+                "type": "integer",
+                "description": "The previous page's nextCursor; omit for the newest page."
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "description": " Action-specific requirements (checked by the server before dispatch): [{\"if\":{\"properties\":{\"action\":{\"enum\":[\"add\",\"branch_integrations\",\"branch_integration\",\"worktree_list\",\"worktree_lifecycle\",\"worktree_create\",\"worktree_remove\",\"orphan_cleanup_answer\",\"branch_delete\",\"progress_list\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"path\"]}},{\"if\":{\"properties\":{\"action\":{\"enum\":[\"branch_integration\",\"worktree_lifecycle\",\"branch_delete\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"branch\"]}},{\"if\":{\"properties\":{\"action\":{\"enum\":[\"orphan_cleanup_answer\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"decision\"]}},{\"if\":{\"properties\":{\"action\":{\"enum\":[\"work_item_act\"]}},\"required\":[\"action\"]},\"then\":{\"required\":[\"operation\"]}},{\"if\":{\"properties\":{\"action\":{\"const\":\"worktree_remove\"}},\"required\":[\"action\"]},\"then\":{\"anyOf\":[{\"required\":[\"branch\"]},{\"required\":[\"worktree_path\"]}]}}]"
+      }
+    },
+    {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get the graph database schema: node labels, relationship types, counts, and properties. Call this first to understand the graph model before writing Cypher queries.",
+      "inputSchema": {
+        "properties": {
+          "output": {
+            "description": "Response format: 'json' (default) or 'yaml'",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "quill__describe_graph_schema"
+    },
+    {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Get the database schema: tables, columns, types, and comments. Only returns objects that have COMMENT ON annotations. Call this first to understand the data model before writing SQL queries.",
+      "inputSchema": {
+        "properties": {
+          "output": {
+            "description": "Response format: 'json' (default) or 'yaml'",
+            "type": "string"
+          }
+        },
+        "required": [],
+        "type": "object"
+      },
+      "name": "quill__describe_schema"
+    },
+    {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Fetch the content of a Confluence page from the doc embeddings store. Use this instead of get_file when the source is a Confluence page (filename format: SPACE_KEY/PAGE_ID.md, e.g. SUP/3631908609.md). The response also includes last_modified (RFC3339) and document_age (human-readable, e.g. \"2 days ago\") when available \u2014 prefer the most recently modified page when multiple Confluence sources give conflicting information.",
+      "inputSchema": {
+        "properties": {
+          "filename": {
+            "description": "Confluence page filename (e.g. SUP/3631908609.md)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "filename"
+        ],
+        "type": "object"
+      },
+      "name": "quill__get_confluence_page"
+    },
+    {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Fetch a specific file from any repo, optionally a line range.",
+      "inputSchema": {
+        "properties": {
+          "end_line": {
+            "description": "End line (1-indexed, inclusive)",
+            "type": "number"
+          },
+          "path": {
+            "description": "File path within the repo",
+            "type": "string"
+          },
+          "repo": {
+            "description": "Repository name",
+            "type": "string"
+          },
+          "start_line": {
+            "description": "Start line (1-indexed, inclusive)",
+            "type": "number"
+          }
+        },
+        "required": [
+          "repo",
+          "path"
+        ],
+        "type": "object"
+      },
+      "name": "quill__get_file"
+    },
+    {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Execute a read-only Cypher query against the service dependency graph. Supports MATCH, RETURN, WHERE, WITH, OPTIONAL MATCH, UNWIND, shortestPath, variable-length paths. Parameters use $name placeholders. Write operations (CREATE, MERGE, DELETE, SET) are rejected.",
+      "inputSchema": {
+        "properties": {
+          "cypher": {
+            "description": "Cypher query (read-only: MATCH, RETURN, WHERE, etc.)",
+            "type": "string"
+          },
+          "params": {
+            "description": "JSON object of query parameters. Example: {\"name\": \"asset-service\", \"depth\": 3}",
+            "type": "string"
+          }
+        },
+        "required": [
+          "cypher"
+        ],
+        "type": "object"
+      },
+      "name": "quill__graph_query"
+    },
+    {
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "description": "Execute a read-only SQL query against the database. Supports SELECT and WITH (CTE) statements. Parameters use $1, $2, etc. placeholders. Set embed:true on a parameter to convert its text value to a 512-dim vector embedding for semantic search (use with <=> cosine distance operator).",
+      "inputSchema": {
+        "properties": {
+          "params": {
+            "description": "JSON array of parameters. Each element: {\"value\": <any>, \"embed\": <bool>}. Example: [{\"value\": \"auth middleware\", \"embed\": true}, {\"value\": 10, \"embed\": false}]",
+            "type": "string"
+          },
+          "sql": {
+            "description": "SQL query (SELECT or WITH only)",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sql"
+        ],
+        "type": "object"
+      },
+      "name": "quill__query"
+    }
+  ]
+}

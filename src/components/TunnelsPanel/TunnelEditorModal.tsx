@@ -8,6 +8,7 @@ import { tunnelsStore } from "../../stores/tunnels";
 import { openDialog as openFileDialog } from "../../utils/nativeDialog";
 import s from "../SettingsPanel/Settings.module.css";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import layout from "./TunnelEditorModal.module.css";
@@ -246,23 +247,16 @@ export const TunnelEditorModal: Component<TunnelEditorModalProps> = (props) => {
 								onInput={(e) => setIdentityFile(e.currentTarget.value)}
 								placeholder="Leave empty to use SSH agent"
 							/>
-							<button
+							<Button
 								data-non-setting="Choose a key-file path for the existing tunnel draft"
 								type="button"
 								class={d.cancelBtn}
-								style={{
-									flex: "none",
-									padding: "4px 10px",
-									"font-size": "var(--font-sm)",
-									border: "none",
-									"border-radius": "var(--radius-md)",
-									cursor: "pointer",
-								}}
+								style={{ flex: "none" }}
 								onClick={browseIdentityFile}
 								title="Browse for key file"
 							>
 								Browse…
-							</button>
+							</Button>
 						</div>
 						<Show when={agentInfo().agent_type}>
 							<div style={{ "margin-top": "6px", "font-size": "var(--font-sm)", color: "var(--fg-muted)" }}>
@@ -282,22 +276,15 @@ export const TunnelEditorModal: Component<TunnelEditorModalProps> = (props) => {
 					<div style={{ display: "flex", "flex-direction": "column", gap: "6px" }}>
 						<div style={{ display: "flex", "align-items": "center", "justify-content": "space-between" }}>
 							<label class={s.label}>Port Forwards</label>
-							<button
+							<Button
 								data-non-setting="Add or remove a typed forward in the tunnel draft"
 								type="button"
 								class={d.cancelBtn}
-								style={{
-									flex: "none",
-									padding: "2px 10px",
-									"font-size": "var(--font-sm)",
-									border: "none",
-									"border-radius": "var(--radius-md)",
-									cursor: "pointer",
-								}}
+								style={{ flex: "none" }}
 								onClick={addForward}
 							>
 								+ Add
-							</button>
+							</Button>
 						</div>
 						<For each={forwards()}>
 							{(fw, idx) => (
@@ -368,23 +355,16 @@ export const TunnelEditorModal: Component<TunnelEditorModalProps> = (props) => {
 											)
 										}
 									/>
-									<button
+									<Button
 										data-non-setting="Add or remove a typed forward in the tunnel draft"
 										type="button"
 										class={d.cancelBtn}
-										style={{
-											flex: "none",
-											height: "22px",
-											padding: "0 8px",
-											"font-size": "var(--font-sm)",
-											border: "none",
-											"border-radius": "var(--radius-md)",
-											cursor: "pointer",
-										}}
+										style={{ flex: "none" }}
+										size="compact"
 										onClick={() => removeForward(idx())}
 									>
 										x
-									</button>
+									</Button>
 								</div>
 							)}
 						</For>
@@ -461,21 +441,22 @@ export const TunnelEditorModal: Component<TunnelEditorModalProps> = (props) => {
 				</div>
 
 				<div class={d.actions}>
-					<button
+					<Button
 						data-non-setting="Cancel the tunnel editor without persistence"
 						class={d.cancelBtn}
 						onClick={props.onClose}
 					>
 						Cancel
-					</button>
-					<button
+					</Button>
+					<Button
 						data-non-setting="Commit the complete typed tunnel draft through its owner"
+						variant="primary"
 						class={d.primaryBtn}
 						onClick={handleSave}
 						disabled={saving()}
 					>
 						{saving() ? "Saving..." : "Save"}
-					</button>
+					</Button>
 				</div>
 			</div>
 		</div>

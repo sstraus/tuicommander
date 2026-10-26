@@ -52,14 +52,14 @@ async fn busy_capable_text_steers_current_turn_and_only_echoes_once() {
         .await
         .unwrap();
     assert_eq!(first, steered);
-    assert!(
+    assert_eq!(
         fixture
             .manager
             .snapshot(connection.connection_id)
             .unwrap()
             .attachments[0]
-            .queued_prompts
-            .is_empty()
+            .queued_prompts,
+        [] as [tuicommander_lib::acp::AcpQueuedPrompt; 0]
     );
     fixture
         .manager

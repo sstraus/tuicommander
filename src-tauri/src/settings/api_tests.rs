@@ -111,7 +111,10 @@ async fn connection_credential_dispatch_rejects_foreign_target_before_write() {
     let result = api::execute(&state, action(&connection.id, "set_password"), remote).await;
     assert_eq!(result["error"]["code"], "forbidden_origin", "{result}");
     assert!(!crate::remote_connection::connection_password_exists(&connection.id).unwrap());
-    assert!(state.remote.snapshot().is_empty());
+    assert_eq!(
+        state.remote.snapshot(),
+        [] as [crate::remote_runtime::RemoteConnectionStatus; 0]
+    );
 }
 
 // Catches: credential rotation retaining an old runtime token or reconnecting a sibling target.
@@ -202,7 +205,10 @@ async fn connection_credential_dispatch_clear_keeps_disconnected_owner_down() {
         "operation":{"action":"clear_password","id":connection.id}});
     let result = api::execute(&state, request, Caller::native()).await;
     assert_eq!(result["password"]["status"], "unset", "{result}");
-    assert!(state.remote.snapshot().is_empty());
+    assert_eq!(
+        state.remote.snapshot(),
+        [] as [crate::remote_runtime::RemoteConnectionStatus; 0]
+    );
 }
 
 // Catches: new typed stores being omitted from the persistent shared registry.

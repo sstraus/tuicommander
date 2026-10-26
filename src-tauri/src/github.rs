@@ -973,6 +973,19 @@ pub(crate) async fn get_all_batch_impl(
             .push((path.clone(), owner, repo));
     }
 
+    let active_keys: std::collections::HashSet<_> = by_account
+        .values()
+        .flat_map(|(account, repos)| {
+            repos
+                .iter()
+                .map(|(_, owner, repo)| cooldown_key(account, owner, repo))
+        })
+        .collect();
+    state
+        .git_cache
+        .github_repo_access_errors
+        .retain(|key, _| active_keys.contains(key));
+
     let mut pr_results: std::collections::HashMap<String, Vec<BranchPrStatus>> = Default::default();
     let mut issue_results: std::collections::HashMap<String, Vec<GitHubIssue>> = Default::default();
 
@@ -1039,8 +1052,52 @@ pub(crate) async fn get_all_batch_impl(
     })
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct RepoAccessFailure {
+    pub account_id: String,
+    pub host: String,
+    pub owner: String,
+    pub error: tuic_git::github_access::RepoAccessError,
+    pub oauth_app: bool,
+}
+
+fn record_repo_access(
+    state: &AppState,
+    account: &crate::github_account::GitHubAccount,
+    owner: &str,
+    name: &str,
+    response: &serde_json::Value,
+    alias: &str,
+) {
+    use tuic_git::github_access::{RepoAccessReason, repo_access_error};
+    let key = cooldown_key(account, owner, name);
+    if let Some(error) = repo_access_error(response, alias, name) {
+        if error.reason == RepoAccessReason::NotFound {
+            state.git_cache.github_repo_cooldown.insert(
+                key.clone(),
+                Instant::now() + std::time::Duration::from_secs(24 * 3600),
+            );
+        } else {
+            state.git_cache.github_repo_cooldown.remove(&key);
+        }
+        state.git_cache.github_repo_access_errors.insert(
+            key,
+            RepoAccessFailure {
+                oauth_app: account.kind == crate::github_account::AccountKind::GithubComOauth,
+                account_id: account.id.clone(),
+                host: account.host.as_str().to_string(),
+                owner: owner.to_string(),
+                error,
+            },
+        );
+    } else {
+        state.git_cache.github_repo_cooldown.remove(&key);
+        state.git_cache.github_repo_access_errors.remove(&key);
+    }
+}
+
 /// Run one batched poll for a single account, merging its PRs/issues into the
-/// shared result maps. Stores the account's rate budget and cooldowns null repos.
+/// shared result maps. Stores the account's rate budget and per-alias access failures.
 #[allow(clippy::too_many_arguments)]
 async fn poll_one_account(
     state: &AppState,
@@ -1081,6 +1138,35 @@ async fn poll_one_account(
     )
     .await?;
 
+    adopt_batch_response(
+        state,
+        account,
+        repos,
+        &aliases,
+        include_merged,
+        include_issues,
+        &viewer,
+        &response,
+        pr_results,
+        issue_results,
+    )
+    .await
+}
+
+/// Adopt each accessible alias independently; a denied alias must not erase its siblings.
+#[allow(clippy::too_many_arguments)] // The poll response carries the request's alias and filter context.
+async fn adopt_batch_response(
+    state: &AppState,
+    account: &crate::github_account::GitHubAccount,
+    repos: &[(String, String, String)],
+    aliases: &[(String, String)],
+    include_merged: bool,
+    include_issues: bool,
+    viewer: &str,
+    response: &serde_json::Value,
+    pr_results: &mut std::collections::HashMap<String, Vec<BranchPrStatus>>,
+    issue_results: &mut std::collections::HashMap<String, Vec<GitHubIssue>>,
+) -> Result<(), String> {
     // Store rate-limit budget for proactive throttling in the poller.
     if let Some(remaining) = response["data"]["rateLimit"]["remaining"].as_u64() {
         let budget = remaining as u32;
@@ -1106,28 +1192,13 @@ async fn poll_one_account(
         .map(|(i, (_path, owner, name))| (aliases[i].0.as_str(), (owner.as_str(), name.as_str())))
         .collect();
 
-    for (alias, path) in &aliases {
+    for (alias, path) in aliases {
         let repo_json = &response["data"][alias];
 
+        if let Some((owner, name)) = alias_repo_names.get(alias.as_str()) {
+            record_repo_access(state, account, owner, name, response, alias);
+        }
         if repo_json.is_null() {
-            if let Some((owner, name)) = alias_repo_names.get(alias.as_str()) {
-                let cooldown_key = cooldown_key(account, owner, name);
-                let was_known = state
-                    .git_cache
-                    .github_repo_cooldown
-                    .contains_key(&cooldown_key);
-                let expiry = Instant::now() + std::time::Duration::from_secs(24 * 3600);
-                state
-                    .git_cache
-                    .github_repo_cooldown
-                    .insert(cooldown_key, expiry);
-                if !was_known {
-                    let msg =
-                        format!("Repository {owner}/{name} not found on GitHub — cooldown 24h");
-                    let mut buf = state.log_buffer.lock();
-                    buf.push("warn".into(), "github".into(), msg, None);
-                }
-            }
             continue;
         }
 
@@ -3290,6 +3361,10 @@ pub(crate) async fn get_pr_diff(
 #[cfg(test)]
 #[path = "github_writes_tests.rs"]
 mod write_tests;
+
+#[cfg(test)]
+#[path = "github_partial_tests.rs"]
+pub(crate) mod partial_tests;
 
 #[cfg(test)]
 mod tests {
@@ -5509,6 +5584,180 @@ mod tests {
         assert_eq!(rate_limit_wait_secs(Some(1000), None), 60);
     }
 
+    #[test]
+    fn access_denials_keep_exact_messages_without_entering_not_found_cooldown() {
+        // Catches FORBIDDEN disappearing into the 24-hour NOT_FOUND exclusion.
+        let state = crate::state::tests_support::make_test_app_state();
+        let account = cloud_account();
+        let response = serde_json::from_str(include_str!(
+            "../crates/tuic-git/src/fixtures/github/access-errors.json"
+        ))
+        .unwrap();
+        record_repo_access(
+            &state,
+            &account,
+            "stefanostraus",
+            "caplock",
+            &response,
+            "missing",
+        );
+        record_repo_access(
+            &state,
+            &account,
+            "Lansweeper",
+            "audit",
+            &response,
+            "restricted",
+        );
+        assert!(
+            state
+                .git_cache
+                .github_repo_cooldown
+                .contains_key("stefanostraus/caplock")
+        );
+        assert!(
+            !state
+                .git_cache
+                .github_repo_cooldown
+                .contains_key("Lansweeper/audit")
+        );
+        let diagnostics = crate::github_auth::compute_diagnostics(&state);
+        assert_eq!(diagnostics.repos_not_found, vec!["stefanostraus/caplock"]);
+        let group = diagnostics
+            .repo_access_errors
+            .iter()
+            .find(|g| g.owner == "Lansweeper")
+            .unwrap();
+        assert_eq!(
+            group.repos[0].message,
+            "sstraus does not have permission to retrieve auditLog information."
+        );
+        assert_eq!(
+            group.repos[0].reason,
+            tuic_git::github_access::RepoAccessReason::Forbidden
+        );
+        // A successful later poll clears the denial without changing login or waiting a day.
+        record_repo_access(
+            &state,
+            &account,
+            "Lansweeper",
+            "audit",
+            &serde_json::json!({"data":{"restricted":{"name":"audit"}}}),
+            "restricted",
+        );
+        assert!(
+            !state
+                .git_cache
+                .github_repo_access_errors
+                .contains_key("Lansweeper/audit")
+        );
+        assert!(
+            state
+                .git_cache
+                .github_repo_access_errors
+                .contains_key("stefanostraus/caplock")
+        );
+    }
+
+    #[tokio::test]
+    async fn refresh_status_clears_not_found_cooldowns_for_all_accounts() {
+        // Catches a manual refresh leaving org-granted repositories in the 24-hour exclusion.
+        use axum::body::Body;
+        use axum::http::{Request, StatusCode};
+        use tower::ServiceExt;
+
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let response = serde_json::from_str(include_str!(
+            "../crates/tuic-git/src/fixtures/github/access-errors.json"
+        ))
+        .unwrap();
+        let accounts = [
+            cloud_account(),
+            GitHubAccount::github_com_named("alice"),
+            ghe_account(),
+        ];
+        for account in &accounts {
+            record_repo_access(
+                &state,
+                account,
+                "stefanostraus",
+                "caplock",
+                &response,
+                "missing",
+            );
+        }
+        assert_eq!(state.git_cache.github_repo_cooldown.len(), 3);
+        let router = crate::mcp_http::build_router(state.clone(), false, false);
+        let request = |method| {
+            Request::builder()
+                .method(method)
+                .uri("/github/diagnostics")
+                .body(Body::empty())
+                .unwrap()
+        };
+        assert_eq!(
+            router
+                .clone()
+                .oneshot(request("GET"))
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+        assert_eq!(
+            state.git_cache.github_repo_cooldown.len(),
+            3,
+            "ordinary diagnostics must not reset retry policy"
+        );
+        let refreshed = router.clone().oneshot(request("POST")).await.unwrap();
+        assert_eq!(refreshed.status(), StatusCode::OK);
+        assert!(
+            state.git_cache.github_repo_cooldown.is_empty(),
+            "manual Refresh status must release every account's NOT_FOUND exclusion"
+        );
+        // Repeating refresh remains safe, and a subsequent missing result may restore cooldown.
+        assert_eq!(
+            router.oneshot(request("POST")).await.unwrap().status(),
+            StatusCode::OK
+        );
+        record_repo_access(
+            &state,
+            &accounts[0],
+            "stefanostraus",
+            "caplock",
+            &response,
+            "missing",
+        );
+        assert_eq!(state.git_cache.github_repo_cooldown.len(), 1);
+    }
+
+    #[test]
+    fn oauth_not_found_group_offers_the_oauth_app_page() {
+        // Catches the real pending-org-approval case (GitHub hides such repos as NOT_FOUND)
+        // showing no recovery action because the URL is only offered for SSO/restriction wording.
+        let state = crate::state::tests_support::make_test_app_state();
+        let response = serde_json::json!({
+            "data": {"repo0": null},
+            "errors": [{"type": "NOT_FOUND", "path": ["repo0"],
+                "message": "Could not resolve to a Repository with the name 'Lansweeper/gate-os'."}]
+        });
+        record_repo_access(
+            &state,
+            &cloud_account(),
+            "Lansweeper",
+            "gate-os",
+            &response,
+            "repo0",
+        );
+        let diagnostics = crate::github_auth::compute_diagnostics(&state);
+        let group = diagnostics
+            .repo_access_errors
+            .iter()
+            .find(|g| g.owner == "Lansweeper")
+            .unwrap();
+        assert!(group.oauth_app_url.is_some());
+    }
+
     // --- check_graphql_errors tests ---
 
     #[test]
@@ -5978,7 +6227,7 @@ mod tests {
         assert_eq!(issue.number, 1);
         assert_eq!(issue.milestone, None);
         assert!(issue.labels.is_empty());
-        assert!(issue.assignees.is_empty());
+        assert_eq!(issue.assignees, [] as [std::string::String; 0]);
     }
 
     #[test]

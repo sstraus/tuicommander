@@ -10,7 +10,7 @@
   font-weight: 500;
 }
 
-.action {
+.signIn {
   flex-shrink: 0;
   padding: 4px 12px;
   border: 1px solid currentColor;
@@ -20,3 +20,20 @@
   font: inherit;
   text-decoration: none;
 }
+
+.landing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+  max-height: 60%;
+  overflow-y: auto;
+  padding: 32px 24px;
+  background: var(--bg-secondary);
+  color: var(--fg-primary);
+  text-align: center;
+}
+.landing h1 { font-size: var(--font-2xl); font-weight: 600; }
+.landing p { color: var(--fg-secondary); line-height: 1.5; }
+.server { overflow-wrap: anywhere; max-width: 100%; }

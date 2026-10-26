@@ -2330,7 +2330,10 @@ mod tests {
         // A repo with no linked worktrees (no `.git/worktrees`) must not error and
         // must hash the same as one whose worktrees were all removed.
         let dir = tempfile::tempdir().unwrap();
-        assert!(worktree_admin_names(dir.path()).is_empty());
+        assert_eq!(
+            worktree_admin_names(dir.path()),
+            [] as [std::string::String; 0]
+        );
     }
 
     /// End-to-end proof of the fix: an edit inside a linked worktree, made by
@@ -2545,7 +2548,10 @@ mod tests {
     #[test]
     fn test_linked_worktree_roots_empty_without_worktrees_dir() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(linked_worktree_roots(dir.path()).is_empty());
+        assert_eq!(
+            linked_worktree_roots(dir.path()),
+            [] as [std::path::PathBuf; 0]
+        );
     }
 
     /// The watch target for a linked worktree comes from `.git/worktrees/*/gitdir`
@@ -2577,7 +2583,10 @@ mod tests {
         git(&["commit", "-m", "init"], &repo);
 
         let git_dir = repo.join(".git");
-        assert!(linked_worktree_roots(&git_dir).is_empty());
+        assert_eq!(
+            linked_worktree_roots(&git_dir),
+            [] as [std::path::PathBuf; 0]
+        );
 
         let wt = dir.path().join("wt-feat");
         git(

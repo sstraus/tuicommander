@@ -4,6 +4,7 @@ import { chatErrorView } from "../../components/AIChatPanel/chatError";
 import { Interactions } from "../../components/AIChatPanel/Interactions";
 import { Transcript } from "../../components/AIChatPanel/Transcript";
 import { createAcpChat } from "../../components/AIChatPanel/useAcpChat";
+import { Button } from "../../components/ui";
 import { ContentRenderer } from "../../components/ui/ContentRenderer";
 import { Select } from "../../components/ui/Select";
 import { acpTranscript } from "../../stores/acpTranscript";
@@ -52,7 +53,7 @@ export function MobileChatScreen(props: {
 		if (sharedKey && /^[a-zA-Z0-9-]+$/.test(sharedKey)) {
 			void (async () => {
 				try {
-					const cache = await caches.open("tuic-shell-v1");
+					const cache = await caches.open("tuic-shell-v2");
 					const key = `/_shared/${sharedKey}`;
 					const response = await cache.match(key);
 					if (!response) throw new Error("Shared file is no longer available.");
@@ -117,9 +118,9 @@ export function MobileChatScreen(props: {
 				{(gap) => (
 					<div class={styles.banner}>
 						Missed part of this conversation: {gap().message}{" "}
-						<button type="button" onClick={() => void chat.recover()}>
+						<Button variant="ghost" onClick={() => void chat.recover()}>
 							Recover
-						</button>
+						</Button>
 					</div>
 				)}
 			</Show>
@@ -130,14 +131,14 @@ export function MobileChatScreen(props: {
 						<div class={styles.banner} role="alert">
 							{view().text}{" "}
 							<Show when={view().retryable}>
-								<button type="button" onClick={() => void chat.recover()}>
+								<Button variant="ghost" onClick={() => void chat.recover()}>
 									Retry
-								</button>
+								</Button>
 							</Show>
 							<Show when={view().startNew}>
-								<button type="button" onClick={() => void startNewChat()}>
+								<Button variant="ghost" onClick={() => void startNewChat()}>
 									Start new chat
-								</button>
+								</Button>
 							</Show>
 						</div>
 					);
@@ -164,9 +165,9 @@ export function MobileChatScreen(props: {
 							</For>
 						</Select>
 					</label>
-					<button type="button" onClick={() => void chat.startSession()}>
+					<Button variant="ghost" onClick={() => void chat.startSession()}>
 						New
-					</button>
+					</Button>
 				</div>
 			</Show>
 			<div class={styles.reading} data-mobile-reading style={mobileChatReadingStyle()}>
@@ -220,9 +221,9 @@ export function MobileChatScreen(props: {
 						<section class={styles.tableDocument} role="dialog" aria-modal="true" aria-label="AI Chat table">
 							<header class={styles.header}>
 								<strong>AI Chat table</strong>
-								<button type="button" onClick={() => setTableDocument(null)}>
+								<Button variant="ghost" onClick={() => setTableDocument(null)}>
 									Back to Chat
-								</button>
+								</Button>
 							</header>
 							<ContentRenderer
 								content={source()}

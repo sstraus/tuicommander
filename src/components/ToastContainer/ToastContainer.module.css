@@ -136,18 +136,6 @@
   overflow: hidden;
 }
 
-.action {
-  flex-shrink: 0;
-  padding: 2px 8px;
-  font-size: var(--font-sm);
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-weight: 600;
-}
-
 /* Second row, under the text, aligned right. Empty when a toast carries no
    action — the row collapses because the span has no content. */
 .actions {
@@ -160,16 +148,6 @@
 
 .actions:empty {
   display: none;
-}
-
-.repoAction {
-  background: var(--bg-tertiary);
-  color: var(--fg-secondary);
-  border: 1px solid var(--border);
-}
-
-.action:hover {
-  opacity: 0.85;
 }
 
 @keyframes slideIn {

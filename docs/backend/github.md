@@ -142,6 +142,20 @@ and issues for the rest of the session. Named accounts cache their own login in
 | `github_set_issue_filter` | `(filter: String) -> ()` | Change the issue filter mode live |
 | `github_set_pr_hide_drafts` | `(hide: bool) -> ()` | Toggle draft-PR filtering live |
 
+The diagnostics `repos_monitored` gauge counts repository paths with successful
+PR snapshots in the running poller's transition history, including empty snapshots.
+It does not count entries in the TTL query cache. Cache expiry and failed poll ticks
+do not remove monitoring identity. Removing a configured path drops its transition
+and change-detection history and queued on-demand requests. Late on-demand requests
+for unconfigured paths are ignored, so completed asynchronous actions cannot restore
+a retired monitor. Stopping the poller resets the gauge to zero. A new
+poller starts with no successful snapshots, even if old query payloads remain cached.
+
+For the distinction between configured paths, successful monitoring history, and
+rendered sidebar data, see the [2336 investigation](github-monitoring-investigation-2336.md).
+It records why the old TTL-cache gauge could report zero without deregistration
+and which observations are still required to prove the historical empty sidebar.
+
 ## Data Types
 
 ### GitHubStatus
@@ -463,7 +477,7 @@ finish even if the window closes; a consumed nonce cannot be replayed. Rotation
 invalidates the same GitHub Enterprise runtime cache as the account owner API.
 Native inspection remains blocked until the private window is destroyed.
 
-GitHub OAuth device flow requests `repo read:project`. Existing account tokens retain their previous scopes until the user signs in again. GitHub Projects v2 permission failures retain the API error, including `INSUFFICIENT_SCOPES`; they are not empty boards.
+GitHub OAuth device flow requests `repo read:project`. The request builder and the Settings permission text read the same value from `src/data/github-oauth-scopes.txt` (Rust `include_str!` and Vite raw import). Existing account tokens retain their previous scopes until the user signs in again. GitHub Projects v2 permission failures retain the API error, including `INSUFFICIENT_SCOPES`; they are not empty boards.
 
 ## GitHub settings owner adapter
 
@@ -537,3 +551,36 @@ nullable overrides in `repo-settings.json`: null inherits the current global
 value, true hides the matching PRs, and false explicitly shows them. Settings
 owner transactions preserve unrelated fields, and settings refresh adopts owner
 readback without saving it again. The Rust settings catalogue describes both scopes.
+
+### Repository access diagnostics
+
+The unified batch poll preserves `errors[].path`, `type` and the exact message
+per repository alias, including nested-field errors. Only a root-level explicit
+`NOT_FOUND` enters the account-scoped 24-hour exclusion. `FORBIDDEN` and unexplained
+nulls remain eligible for the next normal poll, and a successful poll clears the
+failure. A `NOT_FOUND` can mean a repository is not visible to the token; it does
+not prove that the repository was deleted.
+
+`github_diagnostics` (IPC and HTTP) retains `repos_not_found` and adds
+`repo_access_errors`, grouped by account, host and owner. Each repository carries
+`repo`, `reason` and `message`. Reasons are `not_found`, `forbidden` and
+`unknown`; message wording does not infer organization policy or SSO.
+Every github.com OAuth group offers the app's authorized-app page, including
+NOT_FOUND groups because GitHub can hide private repositories until org approval.
+Settings renders these backend groups without reclassifying them. Refresh status clears the NOT_FOUND retry cache for all accounts through an
+explicit mutation, then reads diagnostics. Opening Settings and ordinary GET
+diagnostics remain read-only. Refresh does not log in, grant access, reset rate
+limits or bypass the monitoring cadence; the next poll retries the repositories.
+
+### Partial-response regression evidence
+
+BatchPoll does not select Projects fields. Routine PR and issue monitoring does
+not require Projects access. The generated-query regression checks this boundary
+for every issue filter and PR visibility combination.
+
+`fixtures/github-partial-monitoring-2336.json` records a real GitHub GraphQL
+response with an accessible repository and a `NOT_FOUND` sibling. The replay
+passes through `graphql_request` and the same response-adoption function used by
+`poll_one_account`, and checks both PR and issue output. The fixture records its
+request, timestamp and source; it contains no headers or credentials. It is not
+a recorded missing-scope or organization-policy response.

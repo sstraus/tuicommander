@@ -311,6 +311,7 @@ fn event_type_name(event: &AppEvent) -> &str {
         AppEvent::AcpNotice(_) => "acp-notice",
         AppEvent::SettingsChanged(_) => "settings-changed",
         AppEvent::RepositoriesChanged => "repositories-changed",
+        AppEvent::IdeasChanged => "ideas-changed",
         AppEvent::OpenMarkdownTabsChanged => "open-markdown-tabs-changed",
         AppEvent::DirChanged { .. } => "dir-changed",
         AppEvent::SessionWorktreeDeclared { .. } => "session-worktree-declared",
@@ -510,7 +511,7 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
         AppEvent::AcpNotice(notice) => serde_json::json!(notice),
         // Payload-free: the receiver re-reads `repositories.json` itself.
         AppEvent::SettingsChanged(notice) => serde_json::json!(notice),
-        AppEvent::RepositoriesChanged => serde_json::json!({}),
+        AppEvent::RepositoriesChanged | AppEvent::IdeasChanged => serde_json::json!({}),
         AppEvent::DirChanged { dir_path } => {
             serde_json::json!({ "dir_path": dir_path })
         }
@@ -534,6 +535,7 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
             pinned,
             focus,
             origin_repo_path,
+            opener_tuic_session,
         } => {
             let mut v = serde_json::json!({ "id": id, "title": title, "html": html, "pinned": pinned, "focus": focus });
             if let Some(u) = url {
@@ -541,6 +543,9 @@ fn event_payload(event: &AppEvent) -> serde_json::Value {
             }
             if let Some(p) = origin_repo_path {
                 v["origin_repo_path"] = serde_json::Value::String(p.clone());
+            }
+            if let Some(session) = opener_tuic_session {
+                v["opener_tuic_session"] = serde_json::Value::String(session.clone());
             }
             v
         }

@@ -61,7 +61,8 @@ export type RemoteTransport =
 			identity_file: string | null;
 			remote_daemon_port: number;
 	  }
-	| { type: "Direct"; url: string };
+	| { type: "Direct"; url: string }
+	| { type: "Relay" };
 
 /**
  * `unauthenticated` is deliberately not `error`: the daemon is reachable and
@@ -82,6 +83,8 @@ export interface ConnectionState {
 	error?: string;
 	retryAfterSecs?: number;
 	deployStep?: string;
+	/** Why a relay connection is down: relay_unreachable, daemon_offline, pairing_rejected or link_lost. */
+	relayFailure?: string;
 }
 
 /** One connection as the backend reports it. Snake case: it is a Rust struct. */
@@ -98,6 +101,7 @@ interface RemoteConnectionStatusPayload {
 	error?: string;
 	retry_after_secs?: number;
 	step?: string;
+	relay_failure?: string;
 }
 
 interface RemoteConnectionsState {
@@ -200,6 +204,7 @@ function createRemoteConnectionsStore() {
 			error: payload.error,
 			retryAfterSecs: payload.retry_after_secs,
 			deployStep: payload.step,
+			relayFailure: payload.relay_failure,
 		});
 
 		// A machine's run configs belong to the machine, and a daemon that went
@@ -382,6 +387,15 @@ function createRemoteConnectionsStore() {
 		 */
 		async setPassword(id: string, password: string): Promise<void> {
 			await invoke("set_remote_connection_password", { id, password });
+		},
+
+		/**
+		 * Import the pairing bundle printed by `tuic-remote --relay-pair`, or forget
+		 * the pairing when given an empty string. Like the password, it goes straight
+		 * to the Rust credential vault and is never read back.
+		 */
+		async setRelayPairing(id: string, bundle: string): Promise<void> {
+			await invoke("set_remote_connection_relay_pairing", { id, bundle });
 		},
 
 		/** Whether a password is stored for this connection. */

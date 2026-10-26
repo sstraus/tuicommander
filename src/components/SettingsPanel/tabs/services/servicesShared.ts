@@ -43,6 +43,7 @@ export interface AppConfig {
 	mcp_capabilities: { denied: string[]; migration_unknown_tools: string[] };
 	settings_mcp_enabled: boolean;
 	collapse_tools: boolean;
+	mcp_call_audit_enabled: boolean;
 }
 
 /** Save a single config field (load-modify-save pattern matching other tabs) */
@@ -64,10 +65,16 @@ export interface McpCapability {
 	name: string;
 	title: string;
 	description: string;
-	optional: boolean;
+	domain: string;
+	parent: string | null;
+	section: "always" | "rare" | "conditional";
+	available?: boolean;
+	availability?: string;
 }
 
 export interface McpStatus {
+	/** True only while the backend TCP task serves with loaded TLS configuration. */
+	tls_active: boolean;
 	native_capabilities: McpCapability[];
 	/** Unfiltered native registry, including tools disabled in config. */
 	native_tools: NativeMcpTool[];

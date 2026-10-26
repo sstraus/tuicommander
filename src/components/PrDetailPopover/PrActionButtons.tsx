@@ -6,6 +6,8 @@ import type { BranchPrStatus, CheckDetail } from "../../types";
 import { getCiClass } from "../../utils/ciDisplay";
 import { effectiveMergeMethod } from "../../utils/prMerge";
 import { preferredMergeStrategy } from "../../utils/prMergeStrategy";
+import { Button } from "../ui/Button";
+import { Textarea } from "../ui/Textarea";
 import s from "./PrDetailPopover.module.css";
 
 /** Backend `PrActionState` (github_pr_actions.rs); only the fields the buttons read. */
@@ -135,32 +137,27 @@ export const PrActionButtons: Component<PrActionButtonsProps> = (props) => {
 		<Show when={open()}>
 			<div class={s.actions} data-testid="pr-action-buttons">
 				<Show when={runIds().length > 0}>
-					<button class={s.viewDiffBtn} type="button" disabled={busy()} onClick={rerun}>
+					<Button type="button" disabled={busy()} onClick={rerun}>
 						{t("prDetail.rerunFailed", "Re-run failed jobs")}
-					</button>
+					</Button>
 				</Show>
 				<Show when={mergeable()}>
-					<button
-						class={s.viewDiffBtn}
-						type="button"
-						disabled={busy() || actionState.loading}
-						onClick={toggleAutoMerge}
-					>
+					<Button type="button" disabled={busy() || actionState.loading} onClick={toggleAutoMerge}>
 						{autoMergeOn()
 							? t("prDetail.disableAutoMerge", "Disable auto-merge")
 							: t("prDetail.enableAutoMerge", "Enable auto-merge")}
-					</button>
+					</Button>
 					<Show when={queueRequired() || queued()}>
-						<button class={s.viewDiffBtn} type="button" disabled={busy()} onClick={toggleQueue}>
+						<Button type="button" disabled={busy()} onClick={toggleQueue}>
 							{queued()
 								? t("prDetail.leaveQueue", "Remove from merge queue")
 								: t("prDetail.joinQueue", "Add to merge queue")}
-						</button>
+						</Button>
 					</Show>
 				</Show>
-				<button class={s.viewDiffBtn} type="button" disabled={busy()} onClick={() => setRequesting((value) => !value)}>
+				<Button type="button" disabled={busy()} onClick={() => setRequesting((value) => !value)}>
 					{t("prDetail.requestChanges", "Request changes")}
-				</button>
+				</Button>
 				<Show when={requesting()}>
 					<form
 						class={s.requestForm}
@@ -169,15 +166,15 @@ export const PrActionButtons: Component<PrActionButtonsProps> = (props) => {
 							if (body().trim()) void requestChanges();
 						}}
 					>
-						<textarea
+						<Textarea
 							aria-label={t("prDetail.requestChangesBody", "Review summary")}
 							placeholder={t("prDetail.requestChangesBody", "Review summary")}
 							value={body()}
 							onInput={(event) => setBody(event.currentTarget.value)}
 						/>
-						<button class={s.postReviewBtn} type="submit" disabled={busy() || !body().trim()}>
+						<Button type="submit" disabled={busy() || !body().trim()}>
 							{t("prDetail.submitRequestChanges", "Submit")}
-						</button>
+						</Button>
 					</form>
 				</Show>
 				<Show when={notice()}>{(text) => <div role="status">{text()}</div>}</Show>

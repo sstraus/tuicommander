@@ -1,0 +1,17 @@
+{
+  "diagnostics": [
+    {
+      "path": "/home/rb/Gits/.tmp/r-54a9d98cs1/tuic-run.arx7Kq/.tmpLjvh2d/deleted-detached",
+      "branch": null,
+      "state": "missing",
+      "guidance": "Checkout unavailable or registration broken. Restore the checkout or run git worktree repair from its new location. Review git worktree list --porcelain before manually pruning a deleted registration."
+    },
+    {
+      "path": "/home/rb/Gits/.tmp/r-54a9d98cs1/tuic-run.arx7Kq/.tmpLjvh2d/moved-detached",
+      "branch": null,
+      "state": "missing",
+      "guidance": "Checkout unavailable or registration broken. Restore the checkout or run git worktree repair from its new location. Review git worktree list --porcelain before manually pruning a deleted registration."
+    }
+  ],
+  "assessments": []
+}

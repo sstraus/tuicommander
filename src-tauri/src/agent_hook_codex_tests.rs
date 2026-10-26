@@ -1,3 +1,4 @@
+#[cfg(unix)]
 use super::*;
 
 // Catches: shell quoting/base64 changes losing native identity or allowing paths to split OSC frames.

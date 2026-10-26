@@ -14,6 +14,8 @@ import { useRepository } from "../../hooks/useRepository";
 import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { keyFor } from "../../utils/hotkey";
+import { Button } from "../ui/Button";
+import { ButtonGroup } from "../ui/ButtonGroup";
 import s from "./IdeLauncher.module.css";
 
 export interface IdeLauncherProps {
@@ -194,26 +196,28 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
 
 	return (
 		<div class={s.launcher} ref={dropdownRef}>
-			<div class={s.split}>
+			<ButtonGroup>
 				{/* Main button - launches current IDE */}
-				<button
-					class={cx(s.btn, s.main)}
+				<Button
+					class={s.btn}
 					onClick={handleLaunchCurrent}
 					disabled={!props.repoPath}
 					title={`Open in ${IDE_NAMES[currentIde()]}`}
 				>
 					<IdeIcon ide={currentIde()} />
 					<span class={s.name}>{IDE_NAMES[currentIde()]}</span>
-				</button>
+				</Button>
 				{/* Arrow button - opens dropdown */}
-				<button
-					class={cx(s.btn, s.arrowBtn)}
+				<Button
+					class={s.btn}
+					shape="icon"
+					aria-label={t("ideLauncher.chooseEditor", "Choose editor")}
 					onClick={() => setIsOpen(!isOpen())}
 					title={t("ideLauncher.chooseEditor", "Choose editor")}
 				>
 					<span class={s.arrow}>{isOpen() ? "▲" : "▼"}</span>
-				</button>
-			</div>
+				</Button>
+			</ButtonGroup>
 
 			<Show when={isOpen()}>
 				<div class={s.dropdown}>
@@ -229,7 +233,8 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
 										<div class={s.sectionTitle}>{cat.label}</div>
 										<For each={items()}>
 											{(ide) => (
-												<button
+												<Button
+													variant="ghost"
 													class={cx(s.item, currentIde() === ide && s.selected)}
 													onClick={() => handleOpenIn(ide)}
 													disabled={!props.repoPath}
@@ -239,7 +244,7 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
 													<Show when={currentIde() === ide}>
 														<span class={s.itemCheck}>✓</span>
 													</Show>
-												</button>
+												</Button>
 											)}
 										</For>
 									</div>
@@ -255,10 +260,15 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
 							<div class={s.sectionTitle}>{t("ideLauncher.custom", "Custom")}</div>
 							<For each={customLaunchers()}>
 								{(launcher) => (
-									<button class={s.item} onClick={() => handleOpenCustom(launcher)} disabled={!props.repoPath}>
+									<Button
+										variant="ghost"
+										class={s.item}
+										onClick={() => handleOpenCustom(launcher)}
+										disabled={!props.repoPath}
+									>
 										<CustomToolIcon />
 										<span class={s.itemName}>{launcher.name}</span>
-									</button>
+									</Button>
 								)}
 							</For>
 						</div>
@@ -267,11 +277,11 @@ export const IdeLauncher: Component<IdeLauncherProps> = (props) => {
 					{/* Actions */}
 					<div class={s.divider} />
 					<div class={s.section}>
-						<button class={cx(s.item, s.action)} onClick={handleRun} disabled={!props.repoPath}>
+						<Button variant="ghost" class={s.item} onClick={handleRun} disabled={!props.repoPath}>
 							<span class={cx(s.icon, s.iconEmoji)}>▶</span>
 							<span class={s.itemName}>{runLabel()}</span>
 							<span class={s.shortcut}>{keyFor("run-command")}</span>
-						</button>
+						</Button>
 					</div>
 				</div>
 			</Show>

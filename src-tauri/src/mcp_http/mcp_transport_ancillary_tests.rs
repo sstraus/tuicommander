@@ -584,6 +584,7 @@ async fn native_mcp_worktree_list_never_queries_uncached_github_proofs() {
 /// worktrees on the listing path; fresh dirt and fingerprints must still move.
 #[tokio::test]
 async fn native_mcp_worktree_list_reuses_merge_proofs_for_forty_worktrees() {
+    // DEFERRED (2026-10-25) — Windows repeat listing takes 13.621s with the fork budget satisfied; profile per-checkout reads there, not a larger response deadline.
     let (_temp, repo, _) = branch_delete_fixture();
     crate::git_cli::git_cmd(&repo)
         .args(["checkout", "main"])
@@ -614,6 +615,7 @@ async fn native_mcp_worktree_list_reuses_merge_proofs_for_forty_worktrees() {
         .to_owned();
     std::fs::write(checkouts[0].join("untracked.txt"), "fresh dirt\n").unwrap();
 
+    super::super::mcp_transport_ancillary::WORKTREE_LIST_TIMINGS.remove(repo.to_str().unwrap());
     let before = tuic_git::git_cli::git_cmd_forks(&repo);
     let started = std::time::Instant::now();
     let second = handle_worktree(&state, &args, false).await;
@@ -645,7 +647,10 @@ async fn native_mcp_worktree_list_reuses_merge_proofs_for_forty_worktrees() {
     );
     assert!(
         elapsed < std::time::Duration::from_secs(3),
-        "40-worktree repeat listing exceeded the CLI response window: {elapsed:?}"
+        "40-worktree repeat listing exceeded the CLI response window: {elapsed:?}; per-checkout timings={:#?}",
+        super::super::mcp_transport_ancillary::WORKTREE_LIST_TIMINGS
+            .get(repo.to_str().unwrap())
+            .map(|entry| entry.value().clone())
     );
 
     // Changed refs must invalidate monitoring proofs, unlike a plain file save.
@@ -902,6 +907,64 @@ fn story_tool_refuses_an_unbound_caller() {
         result["error"],
         "story requires a bound live managed session"
     );
+}
+
+// Catches: the MCP workflow envelope dropping the typed amendment or caller project.
+#[cfg(unix)]
+#[tokio::test]
+async fn update_story_mcp_persists_priority_for_bound_caller() {
+    let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+    let project = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let state = test_state();
+    state
+        .mcp
+        .to_session
+        .insert("update-story-mcp".into(), TEST_UUID_A.into());
+    insert_managed_test_session(
+        &state,
+        "update-story-pty",
+        &project.path().to_string_lossy(),
+    );
+    state.bind_live_pty(TEST_UUID_A, "update-story-pty");
+    crate::repo_watcher::start_watching(&project.path().to_string_lossy(), &state).unwrap();
+    let stories = crate::stories::StoryStore::open().unwrap();
+    let plan = stories
+        .create_plan(crate::stories::NewPlan {
+            project: project
+                .path()
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .into(),
+            title: "Plan".into(),
+            source: "feature.md".into(),
+        })
+        .unwrap();
+    let story = stories
+        .create_story(crate::stories::NewStory {
+            plan_id: plan.id,
+            title: "Story".into(),
+            criteria: vec!["Done".into()],
+            priority: 1,
+            story_type: None,
+            origin: crate::stories::StoryOrigin::Native,
+            file_scope: vec![],
+        })
+        .unwrap();
+    let result = handle_mcp_tool_call(
+        &state,
+        "127.0.0.1:12345".parse().unwrap(),
+        "workflow",
+        &serde_json::json!({"action": "story", "input": {
+            "action": "update_story", "story_id": story.id,
+            "expected_revision": story.revision, "patch": {"priority": 3}
+        }}),
+        Some("update-story-mcp"),
+    )
+    .await;
+    assert_eq!(result["Ok"]["value"]["priority"], 3, "{result}");
+    assert_eq!(stories.get_story(&story.id).unwrap().priority, 3);
 }
 
 #[cfg(unix)]
@@ -1386,6 +1449,7 @@ fn ui_tab_emits_event() {
             pinned,
             focus,
             origin_repo_path,
+            ..
         } => {
             assert_eq!(id, "test-panel");
             assert_eq!(title, "Test");
@@ -1634,6 +1698,31 @@ fn ui_tab_falls_back_to_mcp_session_repo_path() {
         }
         other => panic!("Expected UiTab, got {:?}", other),
     }
+}
+
+// Catches: desktop receives opener metadata but the browser/mobile SSE payload drops it.
+#[test]
+fn ui_tab_carries_opener_identity_on_both_transports() {
+    let state = test_state();
+    state.mcp.to_session.insert("mcp-b".into(), "tuic-b".into());
+    let mut rx = state.event_bus.subscribe();
+    let result = handle_ui(
+        &state,
+        &serde_json::json!({
+            "action": "tab", "id": "review", "title": "Review", "url": "tuic://open/review.md"
+        }),
+        Some("mcp-b"),
+    );
+    assert_eq!(result["ok"], true);
+    let event = rx.try_recv().expect("ui-tab event");
+    assert_eq!(
+        serde_json::to_value(&event).unwrap()["payload"]["opener_tuic_session"],
+        "tuic-b"
+    );
+    assert_eq!(
+        super::super::sse_routes::event_payload_for_test(&event)["opener_tuic_session"],
+        "tuic-b"
+    );
 }
 
 #[test]
@@ -2389,6 +2478,7 @@ async fn workflow_proposal_create_retries_create_one_story() {
     )
     .unwrap();
     let story = NewStory {
+        story_type: None,
         plan_id: plan.id.clone(),
         title: "One proposal".into(),
         criteria: vec!["Delivered".into()],
@@ -2547,4 +2637,97 @@ async fn workflow_denials_preserve_members_and_leave_automations_independent() {
         denied["error"],
         "Tool 'workflow' is disabled by configuration"
     );
+}
+
+fn register_git_repo(root: &std::path::Path, name: &str) -> String {
+    let dir = root.join(name);
+    std::fs::create_dir(&dir).unwrap();
+    crate::git_cli::git_cmd(&dir).args(["init"]).run().unwrap();
+    let path = dir.canonicalize().unwrap();
+    let path = tuic_core::path_spelling::portable_spelling(&path.to_string_lossy());
+    crate::config::register_repository(&crate::git::get_repo_info_impl(&path)).unwrap();
+    path
+}
+
+// Catches: repo status ignores `path` and answers an unregistered path with the full repository list.
+#[tokio::test]
+async fn repo_status_with_unregistered_path_names_the_path() {
+    let root = tempfile::tempdir().unwrap();
+    let _config = crate::config::set_config_dir_override(root.path().join("config"));
+    register_git_repo(root.path(), "known");
+    let bogus = root
+        .path()
+        .join("not-registered")
+        .to_string_lossy()
+        .into_owned();
+
+    let result = handle_github(
+        &test_state(),
+        &serde_json::json!({"action": "status", "path": bogus}),
+    )
+    .await;
+
+    let error = result["error"]
+        .as_str()
+        .unwrap_or_else(|| panic!("expected error: {result}"));
+    assert!(error.contains(&bogus), "error must name the path: {error}");
+}
+
+// Catches: a registered `path` still returns every repository instead of that repository only.
+#[tokio::test]
+async fn repo_status_with_registered_path_returns_that_repo_only() {
+    let root = tempfile::tempdir().unwrap();
+    let _config = crate::config::set_config_dir_override(root.path().join("config"));
+    let first = register_git_repo(root.path(), "first");
+    register_git_repo(root.path(), "second");
+
+    let result = handle_github(
+        &test_state(),
+        &serde_json::json!({"action": "status", "path": first}),
+    )
+    .await;
+
+    let rows = result
+        .as_array()
+        .unwrap_or_else(|| panic!("expected list: {result}"));
+    assert_eq!(rows.len(), 1, "{result}");
+    assert_eq!(rows[0]["path"], first);
+}
+
+// Catches: omitting `path` stops returning the cross-repo aggregate.
+#[tokio::test]
+async fn repo_status_without_path_returns_every_repo() {
+    let root = tempfile::tempdir().unwrap();
+    let _config = crate::config::set_config_dir_override(root.path().join("config"));
+    register_git_repo(root.path(), "first");
+    register_git_repo(root.path(), "second");
+
+    let result = handle_github(&test_state(), &serde_json::json!({"action": "status"})).await;
+
+    assert_eq!(result.as_array().unwrap().len(), 2, "{result}");
+}
+
+// Catches: exact string comparison rejects a registered repo given with a trailing slash or via a symlink.
+#[cfg(unix)]
+#[tokio::test]
+async fn repo_status_matches_registered_path_through_slash_and_symlink() {
+    let root = tempfile::tempdir().unwrap();
+    let _config = crate::config::set_config_dir_override(root.path().join("config"));
+    let first = register_git_repo(root.path(), "first");
+    register_git_repo(root.path(), "second");
+    let link = root.path().join("link");
+    std::os::unix::fs::symlink(&first, &link).unwrap();
+
+    for spelling in [format!("{first}/"), link.to_string_lossy().into_owned()] {
+        let result = handle_github(
+            &test_state(),
+            &serde_json::json!({"action": "status", "path": spelling}),
+        )
+        .await;
+        let rows = result
+            .as_array()
+            .unwrap_or_else(|| panic!("{spelling}: {result}"));
+        assert_eq!(rows.len(), 1, "{spelling}: {result}");
+        assert_eq!(rows[0]["path"], first, "{spelling}");
+    }
 }

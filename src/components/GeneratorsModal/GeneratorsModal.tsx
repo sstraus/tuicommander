@@ -3,6 +3,10 @@ import { invoke } from "../../invoke";
 import { registerModal } from "../../stores/modalStack";
 import { writeClipboard } from "../../utils/clipboard";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
+import { Slider } from "../ui/Slider";
+import { Textarea } from "../ui/Textarea";
 import s from "./GeneratorsModal.module.css";
 
 type GeneratorId =
@@ -135,9 +139,14 @@ export const GeneratorsModal: Component<{ onClose: () => void }> = (props) => {
 					<nav class={s.sidebar}>
 						<For each={GENERATORS}>
 							{(gen) => (
-								<button class={`${s.tab} ${active() === gen.id ? s.active : ""}`} onClick={() => setActive(gen.id)}>
+								<Button
+									class={s.tab}
+									variant={active() === gen.id ? "primary" : "ghost"}
+									aria-pressed={active() === gen.id}
+									onClick={() => setActive(gen.id)}
+								>
 									{gen.label}
-								</button>
+								</Button>
 							)}
 						</For>
 					</nav>
@@ -151,8 +160,8 @@ export const GeneratorsModal: Component<{ onClose: () => void }> = (props) => {
 							<div class={s.options}>
 								<div class={s.optionRow}>
 									<label>Length: {pwLen()}</label>
-									<input
-										type="range"
+									<Slider
+										aria-label="Password length"
 										min={4}
 										max={128}
 										value={pwLen()}
@@ -201,7 +210,8 @@ export const GeneratorsModal: Component<{ onClose: () => void }> = (props) => {
 							<div class={s.options}>
 								<div class={s.optionRow}>
 									<label>Length</label>
-									<input
+									<Input
+										aria-label="Nano ID length"
 										type="number"
 										min={4}
 										max={64}
@@ -215,7 +225,7 @@ export const GeneratorsModal: Component<{ onClose: () => void }> = (props) => {
 						{/* Single value output */}
 						<Show when={!isKeypair()}>
 							<div class={s.outputGroup}>
-								<textarea class={s.output} readOnly value={loading() ? "Generating…" : value()} />
+								<Textarea class={s.output} readOnly value={loading() ? "Generating…" : value()} />
 							</div>
 						</Show>
 
@@ -223,11 +233,11 @@ export const GeneratorsModal: Component<{ onClose: () => void }> = (props) => {
 						<Show when={isKeypair()}>
 							<div class={s.outputGroup}>
 								<span class={s.outputGroupLabel}>Private key (PKCS#8)</span>
-								<textarea class={s.output} readOnly value={loading() ? "Generating…" : value()} />
+								<Textarea class={s.output} readOnly value={loading() ? "Generating…" : value()} />
 							</div>
 							<div class={s.outputGroup}>
 								<span class={s.outputGroupLabel}>Public key (SPKI)</span>
-								<textarea class={s.output} readOnly value={loading() ? "Generating…" : extra()} />
+								<Textarea class={s.output} readOnly value={loading() ? "Generating…" : extra()} />
 							</div>
 							<p class={s.note}>Not OpenSSH format — for SSH keys use ssh-keygen -t ed25519</p>
 						</Show>
@@ -239,34 +249,34 @@ export const GeneratorsModal: Component<{ onClose: () => void }> = (props) => {
 						when={!isKeypair()}
 						fallback={
 							<>
-								<button
-									class={s.copyBtn}
+								<Button
+									variant="primary"
 									disabled={!value() || loading()}
 									onClick={() => void copy(value(), setCopied)}
 								>
 									{copied() ? "Copied!" : "Copy Private"}
-								</button>
-								<button
-									class={s.copyBtn}
+								</Button>
+								<Button
+									variant="primary"
 									disabled={!extra() || loading()}
 									onClick={() => void copy(extra(), setCopiedExtra)}
 								>
 									{copiedExtra() ? "Copied!" : "Copy Public"}
-								</button>
+								</Button>
 							</>
 						}
 					>
-						<button class={s.copyBtn} disabled={!value() || loading()} onClick={() => void copy(value(), setCopied)}>
+						<Button variant="primary" disabled={!value() || loading()} onClick={() => void copy(value(), setCopied)}>
 							{copied() ? "Copied!" : "Copy"}
-						</button>
+						</Button>
 					</Show>
-					<button class={s.secondaryBtn} disabled={loading()} onClick={() => void generate()}>
+					<Button variant="secondary" disabled={loading()} onClick={() => void generate()}>
 						Regenerate
-					</button>
+					</Button>
 					<div class={s.spacer} />
-					<button class={s.secondaryBtn} onClick={props.onClose}>
+					<Button variant="secondary" onClick={props.onClose}>
 						Close
-					</button>
+					</Button>
 				</div>
 			</div>
 		</div>

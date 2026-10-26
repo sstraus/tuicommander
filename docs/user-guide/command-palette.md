@@ -136,3 +136,9 @@ The dashboard is useful when running many agents in parallel — you can spot at
 **Automations** opens scheduled agent runs on the connected app's machine.
 The entry is available in desktop and browser mode. See the
 [Automations guide](automations.md). It requires the Automations backend API.
+
+### Plans and Stories
+
+**Plans and Stories** opens the Plans and Stories dialog for the active repository.
+It does nothing when no repository is active. The entry is available in desktop and browser mode. See
+[Native Stories](native-stories.md).

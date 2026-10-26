@@ -5,15 +5,11 @@ async fn repo_add_persists_workspace_and_preserves_repeat_registration() {
     let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
     let _guard = crate::config::set_config_dir_override(config.path().into());
     let project = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-    let path = project
-        .path()
-        .canonicalize()
-        .unwrap()
-        .to_string_lossy()
-        .into_owned();
+    let input_path = project.path().canonicalize().unwrap();
+    let path = tuic_core::path_spelling::portable_spelling(&input_path.to_string_lossy());
     let state = test_state();
     let mut events = state.event_bus.subscribe();
-    let args = serde_json::json!({"action":"add", "path":path});
+    let args = serde_json::json!({"action":"add", "path":input_path});
     let result = handle_repo(&state, &args, false).await;
     assert!(result.get("error").is_none(), "{result}");
     let mut saved = crate::config::load_repositories();
@@ -89,16 +85,12 @@ async fn repo_add_uses_real_git_head_and_invalid_paths_do_not_change_config() {
         .args(["init", "-b", "feature-registration"])
         .run()
         .unwrap();
-    let path = project
-        .path()
-        .canonicalize()
-        .unwrap()
-        .to_string_lossy()
-        .into_owned();
+    let input_path = project.path().canonicalize().unwrap();
+    let path = tuic_core::path_spelling::portable_spelling(&input_path.to_string_lossy());
     let state = test_state();
     let result = handle_repo(
         &state,
-        &serde_json::json!({"action":"add", "path":path}),
+        &serde_json::json!({"action":"add", "path":input_path}),
         false,
     )
     .await;

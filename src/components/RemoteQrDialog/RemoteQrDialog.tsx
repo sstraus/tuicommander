@@ -5,6 +5,7 @@ import { registerModal } from "../../stores/modalStack";
 import { rpc } from "../../transport";
 import { writeClipboard } from "../../utils/clipboard";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 import s from "./RemoteQrDialog.module.css";
 
@@ -123,13 +124,7 @@ export const RemoteQrDialog: Component<{ onClose: () => void }> = (props) => {
 						<div class={s.discoveryFailure}>
 							<p role="alert">Local IP discovery failed: {String(localIps.error)}</p>
 							<div class={`${d.actions} ${s.retryActions}`}>
-								<button
-									type="button"
-									class={d.cancelBtn}
-									onClick={() => void Promise.resolve(refetchLocalIps()).catch(() => {})}
-								>
-									Retry
-								</button>
+								<Button onClick={() => void Promise.resolve(refetchLocalIps()).catch(() => {})}>Retry</Button>
 							</div>
 						</div>
 					</Show>
@@ -149,9 +144,12 @@ export const RemoteQrDialog: Component<{ onClose: () => void }> = (props) => {
 					</Show>
 
 					<Show when={connectUrl()}>
-						<button type="button" class={s.url} onClick={copyUrl} title="Copy connection URL">
-							{copied() ? "Copied to clipboard" : connectUrl()}
-						</button>
+						<div class={s.connection}>
+							<code class={s.url}>{connectUrl()}</code>
+							<Button variant="secondary" onClick={copyUrl} aria-label="Copy connection URL">
+								{copied() ? "Copied" : "Copy URL"}
+							</Button>
+						</div>
 					</Show>
 				</div>
 			</div>

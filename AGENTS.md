@@ -160,6 +160,9 @@ You can exercise features through the **web UI** instead of the Tauri desktop ap
 
 ## Visual
 
+- UI controls use `src/components/ui` primitives (Button, Select, Input, Textarea, SegmentedControl, Dropdown); do not resize controls in feature CSS.
+- Clickable list rows and cards are layout, not form actions. Keep their native buttons and mark them with `data-control-layout="row"` or `data-control-layout="card"`. Geometry CSS must explicitly target `button[data-control-layout="row"]` or `button[data-control-layout="card"]` (additional classes are allowed). The guard exempts only these target compounds, never an entire file or an unmarked action. Do not use this marker for toolbar, form, view-switch or dialog actions.
+
 - All UI work MUST follow [`docs/frontend/STYLE_GUIDE.md`](docs/frontend/STYLE_GUIDE.md).
 - **Plugin dashboards MUST follow [`docs/plugins-style.md`](docs/plugins-style.md)** — use the shared `.dashboard`/`.dash-*` classes from `PLUGIN_BASE_CSS`, never hand-roll inline layout CSS. The built-in Claude Usage dashboard is the reference.
 - Icons: monochrome inline SVGs with `fill="currentColor"` — never emoji.
@@ -497,8 +500,8 @@ whatever sets it owns nothing until something retracts it. These paths clear it:
 | `status-line` | a parsed busy tick (low-confidence only) | busy is inferred from screen movement |
 | `resolve_choice_prompt_input` | an option keypress | no `choice_prompt` was ever set |
 | `question-cleared` | silence timer sees the question gone from the screen | — (the backstop; low-confidence only) |
-| `protocol-question-cleared` | Claude renders `User declined to answer questions` after Esc and returns to a ready composer | a dialog is still open or a different question replaced it |
-| `progress-superseded` | the same PTY reports `progress done` or journals a `delegated` hand-off after a `progress blocked` | a dialog or any other confident question replaced the blocked one — only `source=progress-blocked` evidence clears |
+| `protocol-question-cleared` | Claude renders `User declined to answer questions` after Esc and returns to a ready composer; or an accepted foreground observation revokes the agent on confirmed shell return | cancellation requires the matching dialog; exit withdrawal is turn-epoch scoped and does not fire for unknown helpers, stale samples or an unobserved startup preset |
+| `progress-superseded` | the same PTY reports `progress done`, journals a `delegated` hand-off, or successfully receives a queued user reply after a `progress blocked` | a dialog or any other confident question replaced the blocked one — only `source=progress-blocked` evidence clears |
 
 `question-cleared` is the backstop that catches the rest. It never touches a
 confident question: grok repaints while it waits, so "not on screen this tick"

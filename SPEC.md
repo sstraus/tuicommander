@@ -1,10 +1,17 @@
 # TUICommander Specification
 
+Development builds show a dismissible restart warning when Cargo dep-info inputs are newer than the backend executable, or that executable was rebuilt after application entry. Main and used bridge inputs are checked independently; unrelated frontend-only changes stay quiet. An edit followed by a revert still warns, as Cargo would rebuild. Missing build artifacts report identity unavailable. Release builds contain no warning module or debug identity (#2332-3eef).
+
+The Plans column exposes Edit plan with Save/Cancel and conflict-safe draft retention. Native plan title/source corrections use atomic `update_plan` patches with a stored expected revision across MCP, HTTP, IPC, and CLI. Workflow planning and verification subjects include current plan metadata. Source changes wait until any running plan coordinator/planner finishes or is cancelled; title-only corrections stay available (#2170-d828).
+
+Native story list service (#2174-6b3f): optional state/priority/story_type filters combine server-side. Optional limit 1–100 and a plan/filter-bound keyset cursor page id-ordered records with additive next_cursor; absent limit preserves full filtered reads. Dispatch retains the existing complete plan and priority/id order.
+
 Agent desktop verification (#2086-269b): `make agent-test` uses a dedicated macOS debug binary, named config namespace and explicit loopback port. Global input, dictation, Telegram, updater, deep links, global MCP writes, global CLI installation/update/removal, shared agent hook changes and sleep inhibition are disabled. Dry-run and supervised instance-only stop are available; simultaneous desktop/TCC proof remains an operator validation step.
 
 MCP capability cutover (#2068-63b9): persist `mcp_capabilities`, migrate saved tool denials once with visible unknown-name diagnostics, enforce parent/member restrictions on discovery and dispatch, and remove retired names without aliases. Clients must reconnect and review external allow rules.
 
 Native MCP guidance (#2069-7347): session, agent, repo, ui, voice, telegram and automations expose compact agent-facing action contracts. Their action=help returns every displaced rule from the full native guide. Existing action validation, conditional availability, disabled-tool gates and Settings copy remain unchanged.
+Design Mode optional capture (#1724-fe7e): the extension declares `<all_urls>` only in optional host permissions. **Let agents capture any site** requests that grant from a user click; after consent Chrome capture needs no further action gesture. Without consent, preserve `activeTab` capture and return a typed error naming the option. Capture consent does not grant agent eval or opt into remote error injection. Remote error reads require explicit host consent; the panel confirms actual eval grant origins instead of trusting request success alone.
 UI Design Mode actions (#2067-e708): `ui design_start/stop/status/reload/navigate/screenshot/errors/eval` reuse the Design Mode owner, armed caller/repository checks and extension host grants. Saved `design_mode` denials apply to the grouped actions. The old tool is removed by the 2068 capability cutover; use `ui design_*`.
 
 
@@ -37,7 +44,7 @@ Agent capture tooling: `scripts/agent_capture/run.py` records real installed CLI
 
 Published story workflows can start in Plans and Stories through the owning daemon. Run history renders graph positions, decisions, evidence and paged event payloads, with explicit graph recovery and cancellation. IPC/HTTP and the generated `workflow action=run` MCP schema share the native run service. Plan start remains visibly unavailable pending plan dispatch. The grouped `workflow` MCP tool exposes typed story, run, proposal_create, report and launch actions through existing service owners. Proposal retries preserve coordinator ownership and proposal-key idempotency. Legacy workflow tool names are removed without aliases; scheduled automations stay separate. `tuic workflow` forwards the same envelope.
 
-**Version:** 2.0.0-beta.1
+**Version:** 2.0.0-beta.3
 **Last Updated:** 2026-09-16
 
 ## Shared form controls — Implemented (#1815-01c9)
@@ -87,7 +94,7 @@ TUICommander is a multi-agent terminal orchestrator designed to manage supported
 
 1. **Parallel Agent Orchestration** - Run 50+ coding agents simultaneously
 2. **Git Worktree Isolation** - Each task gets its own isolated workspace
-3. **Per-Pane Font Control** - Independent zoom levels for each terminal
+3. **Per-Pane Font Control** - Independent zoom levels for each terminal, shared by its CLI and Chat views
 4. **Rate Limit Resilience** - Detection and countdown display when agents hit rate limits
 5. **Productivity Features** - Prompt library, keyboard shortcuts, IDE integration
 
@@ -129,7 +136,7 @@ renderer data loss.
 
 Desktop and HTTP/PWA interactive input arm a 100ms priority window before the
 PTY write. Only subsequent reader-applied output can wake the existing frame
-ticker early. Priority uses a rolling budget of two bypass cuts per 100ms and
+ticker early. Priority uses a rolling budget of four bypass cuts per 100ms and
 8ms coalescing from the previous ticker cut; repeated input does not reset the
 budget. The normal animation/load floors, desktop receipt gate, DEC-2026
 buffering, ordering and shared-damage repair remain on that same serializer.
@@ -505,7 +512,14 @@ Any inspection failure is `Unknown` and cannot authorize removal. Destructive
 UI obtains a fresh verdict, and deletion repeats the safety checks so a stale
 confirmation cannot authorize changed state.
 
-For detached orphan worktrees, the Ask dialog automatically removes after a
+Detached checkouts under OS/environment temporary roots, `~/Gits/.tmp` and
+Unix `/tmp`, `/private/tmp`, `/var/folders`, `/private/var/folders` are excluded
+from orphan scans and orphan removal. Registered and resolved paths are checked,
+including missing checkouts. Detached sidebar inventory stays independent of
+cleanup eligibility. Repository refresh triggers cleanup; there is no separate
+orphan scan timer.
+
+For eligible detached orphan worktrees, the Ask dialog automatically removes after a
 configurable countdown only when every checkout is clean (including untracked
 files) and its HEAD is reachable from a branch. Otherwise it lists the unsafe
 reasons without a countdown. Keep and Escape cancel. An agent can answer the
@@ -516,7 +530,12 @@ backend safety check.
 
 Native plan and story records have a separate config-directory SQLite authority (`stories.sqlite3`). Progress remains a human-readable journal and does not determine story status. Manual story actions use the shared Rust service across IPC, HTTP, MCP, and CLI. The desktop and browser UI exposes plan and story lists, criteria, dependencies, and manual transitions. For manual plans, WontFix is terminal for plan aggregation but does not satisfy a dependency or promote a dependent; a nonempty plan with only Done/WontFix stories is Done, while an empty plan is Draft. Any trusted caller can remove a direct WontFix dependency only from a Backlog story with a current revision. In plans with no workflow run, a dependent becomes Ready when every remaining dependency is Done; workflow-owned plans additionally require current integration receipts. An explicitly Blocked story is never auto-unblocked. Rust derives direct and transitive abandoned dependency indicators and the WontFix count on `plan_view` reads; the UI renders them. Any trusted caller may approve after checking the acceptance criteria. Actor identity is tracking only and never restricts story or workflow actions. Desktop IPC and credential-authenticated HTTP record `human`, sessionless local HTTP records `local_api`, and managed transitions record the acting session. Local token exchange is accepted. The optional workflow engine described in `plans/native-story-workflows.md` remains in development; import/export is excluded.
 
-Workflow definitions have their own config-directory database (`workflows.sqlite3`): editable drafts and immutable published revisions. Graph validation gates publication; the seeded `Resolve plan` definition pins a published `Story delivery` revision. The existing `human` closure policy requires an explicit approval transition, which may come from any trusted caller; `automatic` closure cannot be published until a TUIC-owned evidence gate exists. Definitions pin bounded direct-executable check commands. TUIC runs independent checks outside the global receipt-service lock. Completion probes the assigned worktree and Git artifact before the receipt transaction, then revalidates persisted run sequence, story revisions and command identity inside it; unrelated run events do not discard a valid result, and retries keep their original request cursor. TUIC records durable commit/tree-bound check receipts, then verifies an operator-created merge on the canonical branch against the clean tree computed by Git from its exact parents and runs the checks again on its result before recording `StoryIntegrated`. Extra or omitted merge content is rejected. A conflicted merge requires explicit human review or a separately verified artifact; the current receipt path cannot certify it. A later canonical commit requires a TUIC-computed `CanonicalRecertified` event with successful checks at the clean new tip and ancestry of every integrated source. Durable run records and event projections exist in `workflow_runs.sqlite3`, with idempotent actions and recovery of uncertain effects after restart. Runtime reconciliation preserves live attempts and in-flight effects; restart-only recovery logs each failed run and continues recovering healthy runs. Explicit story dispatch enforces bounded concurrency and conservative file-scope exclusion, while a managed coordinator assigns registered isolated worktrees before spawn. Dependents and final run completion require a current integration receipt at each accepted story revision. The Plans and Stories dialog reads a plan's run list and ordered event timeline. The owning daemon executes the published serial story and plan graphs; public graph start controls remain in development.
+Story details show the persisted origin, plan step, revision and claiming session. A live terminal name appears beside the stable session ID; closed or unavailable terminals retain the ID. Transition history shows committed commands, revisions and actors in backend order, with Refresh history and explicit loading, error and empty states. New story offers Native or Plan step origin; a plan-step story requires a step label.
+
+Native stories have an optional persisted story type (feature, fix, refactor, chore, task). Old and omitted values remain untyped. Rust derives combined open/closed/type filters and per-status board membership without filtering dependency records or plan aggregation. Open excludes only Done and WontFix. The dialog retains filters and the List/Kanban switch for the application session, including detach and reattach through panel parameters and return actions. The core Solid board follows the separate Wiz plugin layout without importing its code; native cards open details without plugin drag/status mutation.
+
+
+Workflow definitions have their own config-directory database (`workflows.sqlite3`): editable drafts and immutable published revisions. Graph validation gates publication; the seeded `Resolve plan` definition pins a published `Story delivery` revision. The existing `human` closure policy requires an explicit approval transition, which may come from any trusted caller; `automatic` closure cannot be published until a TUIC-owned evidence gate exists. Definitions pin bounded direct-executable check commands. TUIC runs independent checks outside the global receipt-service lock. Completion probes the assigned worktree and Git artifact before the receipt transaction, then revalidates persisted run sequence, story revisions and command identity inside it; unrelated run events do not discard a valid result, and retries keep their original request cursor. TUIC records durable commit/tree-bound check receipts, then verifies an operator-created merge on the canonical branch against the clean tree computed by Git from its exact parents and runs the checks again on its result before recording `StoryIntegrated`. Extra or omitted merge content is rejected. A conflicted merge requires explicit human review or a separately verified artifact; the current receipt path cannot certify it. A later canonical commit requires a TUIC-computed `CanonicalRecertified` event with successful checks at the clean new tip and ancestry of every integrated source. Durable run records and event projections exist in `workflow_runs.sqlite3`, with idempotent actions and recovery of uncertain effects after restart. Runtime reconciliation preserves live attempts and in-flight effects; restart-only recovery logs each failed run and continues recovering healthy runs. Explicit story dispatch enforces bounded concurrency and conservative file-scope exclusion, while a managed coordinator assigns registered isolated worktrees before spawn. Dependents and final run completion require a current integration receipt at each accepted story revision. Plans and Stories keeps a stable, viewport-bounded size while tabs and selections change; long content scrolls inside. On desktop, its header can detach it into a resizable window and bring it back through the shared panel controls. The Plans and Stories dialog reads a plan's run list and ordered event timeline. The owning daemon executes the published serial story and plan graphs; public graph start controls remain in development.
 
 Progress is one append-only journal per project, read from a dialog. The dialog
 opens on the active PTY and can switch to another PTY or the repository aggregate.
@@ -585,6 +604,8 @@ is not inferred, and nothing groups entries into workstreams.
 
 ## Native plans and stories
 
+`update_story` takes `story_id`, `expected_revision`, and a camel-case `patch`. Omitted fields stay unchanged. The patch accepts `title`, `priority` (1–3), `fileScope`, `origin` (including a plan step), nullable `storyType` (`feature`, `fix`, `refactor`, `chore`, `task`), optional `problem` and `risk` (`low`, `medium`, `high`), ordered `criteria`, and the final `dependencies` set. Null clears `storyType`, `problem` or `risk`; old story records default both to absent. Unknown fields, invalid values, cross-plan dependencies, duplicates, cycles and stale revisions are rejected without partial story writes. Only unclaimed Backlog/Ready stories without active or paused workflow ownership can be amended. Unique byte-identical criteria retain their checks after reorder; changed, new or ambiguous duplicate criteria become unchecked. A priority-only patch preserves all checks. Dependency changes recompute readiness. Planning and execution fingerprints include the amended requirements/revision, so existing evidence cannot certify changed work. StoriesDialog amendments use a fixed revision snapshot and changed-field patch, with Save/Cancel and retained drafts on conflict. QA is not amendment-eligible. Criteria use separate ordered entries so multiline requirement text is preserved during edits.
+
 The story service stores plan and story records outside the repository. It discovers
 existing Markdown plan documents from the project's top-level `plans/` and
 `.claude/plans/` directories on each `list_plan_sources` call. The Plans and Stories
@@ -642,6 +663,11 @@ Repository state is persisted by the Rust backend in `repositories.json`, in
 the single platform config directory shared by debug and release builds,
 written through the locked/atomic `ConfigFile` path.
 
+The desktop and headless HTTP routers share GitHub poller controls and repository
+status, PR and issue reads. Poller startup and event delivery do not require a
+WebView; TCP authentication and the trusted local Unix transport are unchanged.
+GitHub account/auth and mutation routes are not part of this shared surface.
+
 At bootstrap, `tuic-remote` may select one immutable named application instance
 with `--instance <id>`. Omitting it preserves the existing platform config path,
 keyring tuple (`tuicommander`/`vault`), and migrations. A named ID is a lowercase
@@ -698,6 +724,7 @@ Some frontend-only stores persist to localStorage:
 - [x] GitHub integration
 - [x] Sidebar PR badges retain `#number` while showing lifecycle, conflict, CI, and review state
 - [x] Parallel agent orchestration
+- [x] Optional subagent sounds and OS notifications through the existing silence control; preserve Activity, bell entries and urgent user cards
 - [x] Orchestrated PTY task descriptions with prompt-derived fallback metadata
 - [x] Agent task_get/task_cancel share the existing task service, spawning-owner checks and immutable outcomes; task cancellation leaves the PTY alive. The current task tool stays until catalogue cutover (#2064-6385).
 - [x] Page retained MCP terminal output through text/byte offsets, with continuation instructions and eviction-gap reporting
@@ -719,6 +746,7 @@ Some frontend-only stores persist to localStorage:
 - [x] Prompt library with variables
 - [x] Keyboard redirect to terminal
 - [x] Ideas panel (formerly Notes) with send-to-terminal and delete actions
+- [x] Planner `add_idea`, `list_ideas`, and `update_idea` share the locked notes writer across IPC, HTTP, CLI and MCP. Source/project provenance persists; desktop/SSE notices reload panels and keyed UI deltas preserve concurrent agent additions.
 - [x] Terminal session persistence across app restarts
 - [x] GitHub GraphQL API (replaces gh CLI for PR/CI data)
 - [x] Multi-account GitHub: multiple github.com logins + GitHub Enterprise Server (PAT), per-repo account bindings with ambiguity chooser, isolated per-account polling/rate-limits/circuit-breaker (see FEATURES.md 8.14)
@@ -757,7 +785,7 @@ Some frontend-only stores persist to localStorage:
 - [x] Mobile Send long-press Queue transfers the live draft to the shared server ready-window queue; taps still submit immediately.
 - [x] Session uploads live under TUIC data, with launch grants and session-end cleanup; startup reclaims only provably dead owners, preserving concurrent instances; ego invocation-scoped binary-file read roots remain unsupported (#1833-aa60).
 - [x] Shared mobile composer + menu: attach file, camera capture, supported queue/commands and Chat draft parking; browser mic inside the text box (#1880-d7ff).
-- [x] Mobile Companion PWA (searchable sessions, live output, question reply including Codex interactive choices, activity feed)
+- [x] Mobile Companion PWA (cached connection-test landing on unreachable navigation; visible API/stream outage state with retry and automatic recovery; Working/Idle/Awaiting header counts share row badge state and the Working hold across poll updates, include Sub-tasks as Working and exclude Finished rows; searchable sessions, live output, question reply including Codex interactive choices, activity feed)
 - [x] Mobile blocked reports keep their Input state while current suggested actions replace generic Yes/No controls; native dialog choices retain priority (#2082-f782).
 - [x] Automatic mobile resume evidence: bounded per-tab lifecycle/viewport/root/stream trail, acknowledged backend-log upload after an abnormal prior document; original iPhone grey-screen cause remains unproven (#1900-5ff6)
 - [x] Mobile shell re-measures viewport height and top on pageshow, foreground visibility and document resume, using the existing coalesced animation-frame update; conditional stale-geometry regression does not prove the physical iPhone cause (#1900-5ff6)
@@ -858,6 +886,7 @@ Some frontend-only stores persist to localStorage:
 ### Completed (P3)
 - [x] Markdown rendering (MarkdownPanel, not inline terminal), with in-app local links and guarded WebView navigation
 - [x] Task queue UI
+- [x] Queued user commands answer an idle agent's progress-blocked wait in FIFO order; native dialogs, busy state, uncertain delivery and partial drafts still block delivery (#2177-053d).
 - [x] Advanced keyboard shortcuts
 
 ### Pending (P3)
@@ -889,11 +918,26 @@ excluded from this protocol and local mail survives hub loss.
 
 ## Telegram channel implementation status (#1438-79b4)
 
-The headless daemon provides native Telegram mail, correlated drafts, exact final replies, done/blocked notices and opaque callbacks. Any MCP-bound TUIC agent opts in with `telegram register`; one volatile registration replaces the previous agent with one mail notice. Registration ends on MCP session end, PTY close or agent exit while its shell remains. No configured agent UUID is required. Without explicit registration, allowed inbound reaches the latest-connected live AI Chat peer; connection order, not selected tab, resolves multiple live chats. Explicit registration always wins. Allowed inbound with neither kind of agent replies "No agent is listening. Ask an agent in TUICommander to register for Telegram." and drops; strangers stay silent. Only the cursor persists, so restart may lose unread mail and requires registration again. Single-destination sends and private token/allowlist authorization remain. See [Telegram channel](docs/design/telegram-channel.md). Live mint deployment remains pending.
+The headless daemon provides native Telegram mail, correlated drafts, exact final replies, done/blocked notices and opaque callbacks. Any MCP-bound TUIC agent opts in with `telegram register`; one volatile registration replaces the previous agent with one mail notice. Registration ends on MCP session end, PTY close or agent exit while its shell remains. No configured agent UUID is required. Without explicit registration, allowed inbound reaches the latest-connected live AI Chat peer; connection order, not selected tab, resolves multiple live chats. Explicit registration always wins. Allowed inbound with neither kind of agent replies "No agent is listening. Ask an agent in TUICommander to register for Telegram." and drops; strangers stay silent. Only the cursor persists, so restart may lose unread mail and requires registration again. Any live MCP-bound agent may send without registration or changing inbound ownership. Non-owner sends have server-derived name prefixes on every chunk, owner-only buttons, and a 30-second per-peer interval. Telegram Replies select the unique live exact-name peer from replied-to text, otherwise the inbound owner; no message-ID cache is retained. Owner text remains byte-exact, including leading brackets. Single-destination sends and private token/allowlist authorization remain. See [Telegram channel](docs/design/telegram-channel.md). Live mint deployment remains pending.
 
 Workflow safety: pinned checks own process trees and stop on timeout, run cancellation, and shutdown. Operator decisions and workflow policy mutations require host Human authority (desktop IPC or credential-authenticated HTTP). Workflow plan Done requires current integration evidence for every approved story; stale canonical refs reopen its derived state until recertification.
 
 Graph runtime slice A adds version-2 serial activation/predecessor/decision history and executable start validation with pinned Pause targets and deterministic final checks. History is bounded to 4096 activations per execution. Fork/all-Join schema and execution are deferred to slice G. Pre-contract runs support inspect/cancel only. Autonomous scheduling remains disabled pending slice B and authorization story 956-9745.
+
+Native stories expose `qa` for work that waits on manual checks. A criterion starts with `[MANUAL]`, or is marked through `set_criterion_manual {index,manual}`. Active work automatically enters QA when all unchecked criteria are manual; `submit_qa` explicitly requests that state. `reject_qa` returns QA to In progress; `approve` requires every criterion checked. QA keeps plans Active and dependencies blocked. All transitions retain expected-revision checks. See the [native stories guide](docs/user-guide/native-stories.md#manual-qa).
+
+### Reversible native record archival
+
+In Plans and Stories, **Archive plan** and **Archive story** move the selected record out of the default list. Use **Archived plans** or **Archived stories** to select archived records, then choose **Restore plan** or **Restore story**. The toggles are independent, so archived stories remain reachable inside active plans. Archived detail stays readable; restore before starting work. Backend refusal messages remain visible when a claim or active run owns the record.
+
+All native story transports share `archive_story`, `unarchive_story`, `archive_plan`, and `unarchive_plan`. Story actions take `story_id`; plan actions take `plan_id`. Each requires `expected_revision` and returns the updated record with its incremented `revision` and `archived` flag. Stale revisions fail without a write. Archival preserves status, criteria, dependencies, and child archive flags; it never deletes records or cascades to children.
+
+`list_plans` and `list_stories` default to `archived: false`. Set `archived: true` to select archived records. The story filter combines with the other filters and is bound into pagination cursors. Direct reads remain available. Default plan views and workflow dispatch omit archived stories; archived plans and stories cannot start manual or workflow work. Restore the parent plan before starting its stories.
+
+Both archive and restore refuse claimed stories and plans that contain a claimed story. An active or paused plan-root workflow owns the plan's story set. A story-root workflow owns its target and execution stories, not unrelated siblings. Cleanup of an owned story or its parent plan is refused until the run ends. The workflow writer lock remains held through the archive transaction, so a concurrent run cannot start between the ownership check and the write.
+
+`story_archive_history` (`story_id`) and `plan_archive_history` (`plan_id`) return `{type:"archive_history",value:[{revision,archived,actor}]}` in revision order. Events commit atomically with the record and retain caller provenance. Existing status transition history remains separate. Consecutive archive-only revisions preserve accepted-work integration receipts; a work change or a moved canonical Git ref still invalidates them. Example: `tuic story '{"action":"archive_story","story_id":"<id>","expected_revision":1}' --project /absolute/project`.
+
 
 Workflow graph slice B: AppState owns the serial daemon executor and OS database owner lock on desktop and headless boot. Initial graph position is atomic and start-key idempotent; per-run mailboxes and durable deadlines drive controls without a frontend. Graph roots reserve native stories, and manual claim/start shares the run writer lock. No Agent effects, delivery policy or new UI are enabled; unsupported graphs cannot start as executable workflows.
 
@@ -1333,3 +1377,29 @@ Mobile offers the **Chat** tab only when the host has a configured ego executabl
 Desktop sidebar session rows and mobile session cards mark a parentless plain shell as **Abandoned** after one idle hour and show its idle age. The five-second backend sweep requires a fresh OS process inventory: the PTY child must be an interactive shell with no child processes. An unknown inventory, script, foreground command, background child, detached TUIC job, managed identity, live child session, pending input or keep-open hold prevents closure. Unsupported or incomplete OS process observations fail closed.
 
 Settings → Agents → Idle agent hibernation (Expert Mode) includes **Close abandoned shells after (hours)** (`agents.abandoned_shell_hours`). The machine-owned value defaults to **0 (off)**; whole hours from 1 to 65535 enable closure. Idle age is measured from the most recent input, output or semantic activity, including elapsed time while the machine sleeps. Closure rechecks the process inventory and activity at the destructive boundary, and uses the normal session close/tombstone path. The sweep can lag the threshold by one five-second tick. A remote daemon applies its own setting, not the desktop host's value.
+
+GitHub Settings preserves per-alias API access errors by owner/account. Only explicit root NOT_FOUND responses receive the 24-hour exclusion; other denials retry on the normal poll and clear on success.
+
+### Detached checkout inventory
+
+Structure and summary snapshots include a separate detached-checkout vector (path, HEAD SHA, short SHA, directory name, detached state). The sidebar renders it without branch selection or actions and retains a header count when folded. Existing branch-workspace IDs and rich idle-session folding stay unchanged. Discovery excludes the configured TUIC archive pool, not every directory named `__archived`.
+
+### Session-owned mobile usage (#2150-4e0c)
+
+`get_session_usage(session_id)` / `GET /sessions/{id}/usage` returns display-ready
+Rust lines with agent, verified model when available, scope, source, availability,
+optional observation time and a stale flag. The overflow fetches on open and drops
+responses after its session changes or it closes. Unknown values are not zero.
+Claude uses profile-bound cache or its primary non-generating OAuth usage GET.
+Codex quota uses the live process home/profile and App Server rate-limits read;
+unbound configuration overrides are unavailable. ego uses exact PID/store/session
+binding and its v3 report, not workspace totals or native status text. The model
+is the latest admitted model, while session totals can span multiple models.
+Remote PTYs route to their owner or return unavailable with reason `remote session`.
+ACP usage is unchanged.
+
+Worktree discovery preserves existing branch workspace IDs. Forced duplicates use a deterministic primary checkout and read-only diagnostics for additional paths. Missing registrations are non-selectable with repair guidance, never auto-pruned by discovery. Cached discovery errors remain errors. Bisect and relative-gitdir rebase retain the branch recorded by Git.
+
+Unavailable detached registrations are excluded from automatic orphan cleanup in both Ask and On modes, including the Ask countdown. They remain repair diagnostics until restored or explicitly removed. Safe-only removal rechecks availability, so a directory moved after assessment cannot be pruned automatically. Explicit user-confirmed removal remains available.
+
+Native story notes: the shared project-scoped story service appends immutable commentary with backend actor provenance, Unix-millisecond time and the current subject revision. Notes do not advance story revisions. Optional workflow evidence stores validated `{runId, commandId}` references to persisted receipts in the same project and plan, not copied payloads. Story detail lists notes with author/time/revision provenance and receipt IDs, provides an append-only add field, and has an explicit Refresh notes control for external additions. Drafts and pending replies stay scoped to the selected story.

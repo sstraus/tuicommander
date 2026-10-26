@@ -3328,7 +3328,10 @@ mod tests {
         let rule = matching_rule(".venv", &[]).unwrap();
 
         assert!(rule.trim.is_empty(), ".venv has no trim rules yet");
-        assert!(trim_targets(&repo.join(".venv"), rule).is_empty());
+        assert_eq!(
+            trim_targets(&repo.join(".venv"), rule),
+            [] as [std::path::PathBuf; 0]
+        );
     }
 
     // -- delete_build_artifact tests --

@@ -116,6 +116,20 @@ describe("SettingsPanel — Smart Prompts navigation", () => {
 		expect(container.querySelector(".section h2")?.textContent).toBe("Smart Prompts");
 	});
 
+	// Catches: migrating the variable trigger or native rows loses selection replacement or leaves the menu open.
+	it("inserts a variable at the current content selection and closes the list", () => {
+		const { getByRole, queryByRole } = render(() => (
+			<SettingsPanel visible onClose={() => {}} initialTab="smart-prompts" />
+		));
+		fireEvent.click(getByRole("button", { name: "Edit Test Smart Prompt" }));
+		const content = getByRole("textbox", { name: "Content *" }) as HTMLTextAreaElement;
+		content.setSelectionRange(3, 6);
+		fireEvent.click(getByRole("button", { name: "Insert variable... ▼" }));
+		fireEvent.click(getByRole("button", { name: "{branch} Current branch name" }));
+		expect(updatePrompt).toHaveBeenCalledWith("sp-test", { content: "Do {branch} thing" });
+		expect(queryByRole("button", { name: "{branch} Current branch name" })).toBeNull();
+	});
+
 	it("exposes editable Execution Mode and Auto-execute controls in the expanded editor", () => {
 		const { container } = render(() => <SettingsPanel visible={true} onClose={() => {}} initialTab="smart-prompts" />);
 

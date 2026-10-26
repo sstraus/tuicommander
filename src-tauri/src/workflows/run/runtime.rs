@@ -495,7 +495,9 @@ fn pause_failure(state: &Arc<AppState>, store: &RunStore, run_id: &str, error: &
     match store.command(
         run_id,
         &format!("daemon:failure:{}", snapshot.sequence),
-        RunCommand::Pause,
+        RunCommand::PauseFor {
+            cause: error.into(),
+        },
     ) {
         Ok(receipt) => {
             emit_run_changed(state, &snapshot.project, run_id, receipt.sequence);

@@ -344,12 +344,9 @@ async fn automation_create_rejects_unresolvable_run_config() {
             "missing repair choices: {error}"
         );
     }
-    assert!(
-        DefinitionStore::new()
-            .load()
-            .unwrap()
-            .definitions
-            .is_empty()
+    assert_eq!(
+        DefinitionStore::new().load().unwrap().definitions,
+        [] as [crate::automations::model::AutomationDefinition; 0]
     );
     let mut valid = definition("valid");
     valid["run_config"] = json!("rEvIeW PrOfIlE");

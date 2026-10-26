@@ -3,35 +3,9 @@
   flex-shrink: 0;
 }
 
-.trigger {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-}
-
 .trigger[aria-expanded="true"] {
   color: var(--accent);
   background: var(--bg-highlight);
-}
-
-.trigger:disabled,
-.menu button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.trigger:focus-visible,
-.menu button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
 }
 
 .menu {
@@ -49,20 +23,8 @@
   z-index: 20;
 }
 
-.menu button {
-  display: block;
+.action {
+  display: flex;
   width: 100%;
-  min-height: 44px;
-  padding: 8px 12px;
-  text-align: left;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--fg-primary);
-  font: inherit;
-  cursor: pointer;
-}
-
-.menu button:hover:not(:disabled) {
-  background: var(--bg-highlight);
+  justify-content: flex-start;
 }

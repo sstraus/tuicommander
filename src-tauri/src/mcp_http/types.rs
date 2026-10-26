@@ -1129,6 +1129,11 @@ pub(super) struct RemoteConnectionPasswordRequest {
 }
 
 #[derive(Deserialize)]
+pub(super) struct RemoteConnectionRelayPairingRequest {
+    pub bundle: String,
+}
+
+#[derive(Deserialize)]
 pub(super) struct RemoteConnectionTokenRequest {
     #[serde(rename = "baseUrl")]
     pub base_url: String,

@@ -211,28 +211,6 @@
   padding: 8px;
 }
 
-.loadMoreBtn {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  font-family: var(--font-ui);
-  padding: 4px 16px;
-  cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
-}
-
-.loadMoreBtn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.loadMoreBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 /* Empty / loading states */
 .empty {
   composes: empty from "./panel.module.css";

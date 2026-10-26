@@ -97,59 +97,24 @@
   color: var(--error);
 }
 
-/* Filename/content search mode toggle (inline with search, shared visual with FileBrowser) */
-.modeToggle {
+/* Shared controls arranged without feature-owned sizing. */
+.searchRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 22px;
-  height: 22px;
-  margin-right: 6px;
-  padding: 0;
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-secondary);
-  cursor: pointer;
+  gap: 4px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border);
 }
 
-.modeToggle:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
+.searchInput {
+  flex: 1;
+  min-width: 80px;
 }
 
-.modeToggleActive,
-.modeToggleActive:hover {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border-color: var(--accent);
-}
-
-/* Sort control (inline with search) */
 .sortControl {
   position: relative;
   flex-shrink: 0;
-}
-
-.sortTrigger {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  background: none;
-  border: 1px solid transparent;
-  border-radius: var(--radius-sm);
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition: color 0.1s, background 0.1s;
-}
-
-.sortTrigger:hover {
-  color: var(--fg-secondary);
-  background: var(--bg-highlight);
-  border-color: var(--border);
 }
 
 .filePath {

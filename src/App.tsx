@@ -83,6 +83,7 @@ import { ideasPanelAdapter } from "./panelAdapters/ideas";
 import { markdownPanelAdapter } from "./panelAdapters/markdown";
 import { createMarkdownDocumentPanelAdapter } from "./panelAdapters/markdownDocument";
 import { outlinePanelAdapter } from "./panelAdapters/outline";
+import { storiesPanelAdapter } from "./panelAdapters/stories";
 import { detachPanel, reattachPanel, registerPanel, renderPanelMode, togglePanel } from "./panelRouter";
 import { activityDashboardStore } from "./stores/activityDashboard";
 import { activityStore } from "./stores/activityStore";
@@ -132,6 +133,7 @@ registerPanel(fileBrowserPanelAdapter);
 registerPanel(markdownPanelAdapter);
 registerPanel(ideasPanelAdapter);
 registerPanel(outlinePanelAdapter);
+registerPanel(storiesPanelAdapter);
 registerPanel(aiChatPanelAdapter);
 
 const App: Component = () => {
@@ -744,8 +746,9 @@ const App: Component = () => {
 				onBranchClick={() => {
 					const activeRepo = repositoriesStore.getActive();
 					if (activeRepo?.activeWorkspaceId) {
-						gitOps.handleOpenRenameBranchDialog(activeRepo.path, activeRepo.activeWorkspaceId);
-						setRenameBranchDialogVisible(true);
+						if (gitOps.handleOpenRenameBranchDialog(activeRepo.path, activeRepo.activeWorkspaceId)) {
+							setRenameBranchDialogVisible(true);
+						}
 					}
 				}}
 				onRun={(shiftKey) => gitOps.handleRunCommand(shiftKey, () => setRunCommandDialogVisible(true))}
@@ -782,8 +785,9 @@ const App: Component = () => {
 					onAddTerminal={gitOps.handleAddTerminalToWorkspace}
 					onRemoveBranch={gitOps.handleRemoveWorkspace}
 					onRenameBranch={(repoPath, branchName) => {
-						gitOps.handleOpenRenameBranchDialog(repoPath, branchName);
-						setRenameBranchDialogVisible(true);
+						if (gitOps.handleOpenRenameBranchDialog(repoPath, branchName)) {
+							setRenameBranchDialogVisible(true);
+						}
 					}}
 					onCreateBranch={(repoPath, fromBranch) => {
 						gitOps.handleOpenCreateBranchDialog(repoPath, fromBranch);

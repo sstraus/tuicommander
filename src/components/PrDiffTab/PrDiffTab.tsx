@@ -3,9 +3,9 @@ import { type Component, createEffect, createMemo, createSignal, For, Index, on,
 import { t } from "../../i18n";
 import { invoke } from "../../invoke";
 import { type DiffViewMode, uiStore } from "../../stores/ui";
-import { cx } from "../../utils";
 import { classifyDiffFile, parseLinguistGenerated } from "../../utils/diffFileScope";
 import { DiffFileList } from "../shared/DiffFileList";
+import { Button } from "../ui/Button";
 import { type DiffFileSection, type DiffViewerProps, parseDiffFiles } from "../ui/DiffViewer";
 import { DraftCommentView, NewDraftForm } from "./DraftCommentView";
 import s from "./PrDiffTab.module.css";
@@ -126,24 +126,28 @@ export const PrDiffTab: Component<PrDiffTabProps> = (props) => {
 				</span>
 			</Show>
 			<div class={s.modeToggle}>
-				<button
-					class={cx(s.modeBtn, mode() === "split" && s.modeBtnActive)}
+				<Button
+					variant="ghost"
+					size="compact"
+					aria-pressed={mode() === "split"}
 					onClick={() => uiStore.setDiffViewMode("split")}
 					title={t("diffTab.splitView", "Side-by-side")}
 				>
 					<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
 						<path d="M1 2h6v12H1V2zm8 0h6v12H9V2zM2 3v10h4V3H2zm8 0v10h4V3h-4z" />
 					</svg>
-				</button>
-				<button
-					class={cx(s.modeBtn, mode() === "unified" && s.modeBtnActive)}
+				</Button>
+				<Button
+					variant="ghost"
+					size="compact"
+					aria-pressed={mode() === "unified"}
 					onClick={() => uiStore.setDiffViewMode("unified")}
 					title={t("diffTab.unifiedView", "Inline")}
 				>
 					<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
 						<path d="M1 2h14v12H1V2zm1 1v10h12V3H2z" />
 					</svg>
-				</button>
+				</Button>
 			</div>
 		</div>
 	);

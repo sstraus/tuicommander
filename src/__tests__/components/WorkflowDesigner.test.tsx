@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WorkflowDesigner } from "../../components/WorkflowDesigner/WorkflowDesigner";
 import { invoke } from "../../invoke";
+import { HttpRpcError } from "../../transport";
 
 vi.mock("../../invoke", () => ({ invoke: vi.fn() }));
 
@@ -12,6 +13,7 @@ const draft = {
 	kind: "story",
 	draftRevision: 1,
 	latestPublishedRevision: 0,
+	lastPublishedDraftRevision: 0,
 	builtinKey: null,
 	graph: {
 		nodes: [
@@ -89,6 +91,45 @@ describe("WorkflowDesigner", () => {
 				action: { action: "publish", id: "flow-1", expected_revision: 2 },
 			}),
 		);
+	});
+	// Catches: Publish enabled for a draft already published, so the click fails with a server error.
+	it("disables Publish while the draft has no changes since its last publication", async () => {
+		vi.mocked(invoke).mockImplementation(async () => ({
+			type: "drafts",
+			value: [{ ...draft, latestPublishedRevision: 1, lastPublishedDraftRevision: 1 }],
+		}));
+		render(() => <WorkflowDesigner project="/repo" />);
+		await screen.findByRole("button", { name: "Node work" });
+		expect((screen.getByRole("button", { name: "Publish" }) as HTMLButtonElement).disabled).toBe(true);
+	});
+	// Catches: Publish left enabled right after it published, so a second click fails.
+	it("enables Publish for an unpublished draft and disables it again once published", async () => {
+		render(() => <WorkflowDesigner project="/repo" />);
+		await screen.findByRole("button", { name: "Node work" });
+		const publish = screen.getByRole("button", { name: "Publish" }) as HTMLButtonElement;
+		expect(publish.disabled).toBe(false);
+		fireEvent.click(publish);
+		await screen.findByText("Published revision 2.");
+		expect(publish.disabled).toBe(true);
+	});
+	// Catches: raw "HttpRpcError: RPC … failed: 422 {…}" text shown to the user.
+	it("shows only the plain message of a rejected publish", async () => {
+		const base = vi.mocked(invoke).getMockImplementation();
+		vi.mocked(invoke).mockImplementation(async (command, args) => {
+			if ((args as { action: { action: string } }).action.action === "publish") {
+				throw new HttpRpcError(
+					"workflow_definition_action",
+					422,
+					'{"error":"invalid workflow definition: unreachable nodes"}',
+				);
+			}
+			return base?.(command, args);
+		});
+		render(() => <WorkflowDesigner project="/repo" />);
+		await screen.findByRole("button", { name: "Node work" });
+		fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+		const alert = await screen.findByRole("alert");
+		expect(alert.textContent).toBe("invalid workflow definition: unreachable nodes");
 	});
 	// Catches: a Pause whose resume target cannot be edited and persisted by the Designer.
 	it("edits and saves a Pause resume target", async () => {

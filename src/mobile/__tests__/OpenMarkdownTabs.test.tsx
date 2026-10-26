@@ -63,7 +63,7 @@ const tab = {
 	absolute_path: "/repo/docs/guide.md",
 	fs_root: "/repo",
 };
-let tabs = [tab];
+let tabs: (typeof tab & { opener_tuic_session?: string })[] = [tab];
 const session: SessionInfo = {
 	session_id: "session-1",
 	cwd: "/repo/src",
@@ -85,6 +85,7 @@ beforeEach(() => {
 	events.handlers = {};
 	rpc.mockReset();
 	rpc.mockImplementation(async (command: string) => {
+		if (command === "get_hands_free_status") throw new Error("Voice unavailable in the headless test backend");
 		if (command === "list_open_markdown_tabs") return tabs;
 		if (command === "load_repositories") return { repos: { "/repo": {}, "/other": {} } };
 		if (command === "resolve_terminal_path") return { absolute_path: "/repo/docs/guide.md", is_directory: false };
@@ -288,4 +289,26 @@ it("opens a wide-screen dropdown entry in the mobile Markdown viewer", async () 
 	await fireEvent.click(await waitFor(() => view.getByRole("button", { name: "Markdown" })));
 	await fireEvent.click(await waitFor(() => view.getByRole("button", { name: "guide.md docs/guide.md" })));
 	await waitFor(() => expect(view.container.querySelector("#markdown-content h1")?.textContent).toBe("Desktop guide"));
+});
+
+// Catches: mobile uses the session viewing the menu instead of the agent that opened the document.
+it("preselects the desktop tab opener when opening its entry from another session", async () => {
+	tabs = [{ ...tab, opener_tuic_session: "tuic-b" }];
+	mockSessions.current = [
+		{ ...session, state: { ...session.state!, agent_type: "ego" } },
+		{ ...session, session_id: "pty-b", tuic_session: "tuic-b", state: { ...session.state!, agent_type: "ego" } },
+	];
+	const original = rpc.getMockImplementation()!;
+	rpc.mockImplementation(async (command: string) =>
+		command === "fs_read_file"
+			? "<!--tweak:block:c1 @2026-10-25T12:00:00.000Z\nReview-->\n# Desktop guide"
+			: original(command),
+	);
+	const view = render(() => <MobileApp />);
+	await openMenu(view);
+	await fireEvent.click(await waitFor(() => view.getByRole("button", { name: "guide.md docs/guide.md" })));
+	const select = await waitFor(() => view.getByRole("combobox", { name: "Review agent" }));
+	expect(select).toHaveValue("pty-b");
+	fireEvent.change(select, { target: { value: "session-1" } });
+	expect(select).toHaveValue("session-1");
 });

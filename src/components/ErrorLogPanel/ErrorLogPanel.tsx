@@ -8,6 +8,7 @@ import {
 } from "../../stores/appLogger";
 import { errorLogStore } from "../../stores/errorLog";
 import { writeClipboard } from "../../utils/clipboard";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import s from "./ErrorLogPanel.module.css";
@@ -194,9 +195,9 @@ export const ErrorLogPanel: Component = () => {
 					{/* Header */}
 					<div class={s.header}>
 						<h3>Error Log</h3>
-						<button class={s.close} onClick={() => errorLogStore.close()}>
+						<Button shape="icon" aria-label="Close error log" variant="ghost" onClick={() => errorLogStore.close()}>
 							&times;
-						</button>
+						</Button>
 					</div>
 
 					{/* Filters */}
@@ -204,8 +205,9 @@ export const ErrorLogPanel: Component = () => {
 						<div class={s.levelFilters}>
 							<For each={AUDIENCE_OPTIONS}>
 								{(opt) => (
-									<button
-										class={`${s.levelBtn} ${audienceFilter() === opt.value ? s.levelBtnActive : ""}`}
+									<Button
+										variant={audienceFilter() === opt.value ? "primary" : "secondary"}
+										aria-pressed={audienceFilter() === opt.value}
 										onClick={() => setAudienceFilter(opt.value)}
 										title={
 											opt.value === "user"
@@ -217,7 +219,7 @@ export const ErrorLogPanel: Component = () => {
 									>
 										{opt.label}
 										{opt.value === "diagnostic" && diagnosticCount() > 0 ? ` (${diagnosticCount()})` : ""}
-									</button>
+									</Button>
 								)}
 							</For>
 						</div>
@@ -225,19 +227,19 @@ export const ErrorLogPanel: Component = () => {
 						<div class={s.levelFilters}>
 							<For each={LEVEL_OPTIONS}>
 								{(opt) => (
-									<button
-										class={`${s.levelBtn} ${levelFilter() === opt.value ? s.levelBtnActive : ""}`}
+									<Button
+										variant={levelFilter() === opt.value ? "primary" : "secondary"}
+										aria-pressed={levelFilter() === opt.value}
 										onClick={() => setLevelFilter(opt.value)}
 										title={opt.value === "all" ? "Show all log levels" : `Show ${opt.label} and more severe levels`}
 									>
 										{opt.label}
-									</button>
+									</Button>
 								)}
 							</For>
 						</div>
 
 						<Select
-							compact
 							class={s.sourceSelect}
 							value={sourceFilter()}
 							onChange={(e) => setSourceFilter(e.currentTarget.value as AppLogSource | "all")}
@@ -246,7 +248,6 @@ export const ErrorLogPanel: Component = () => {
 						</Select>
 
 						<Input
-							compact
 							ref={searchRef}
 							class={s.searchInput}
 							type="text"
@@ -255,9 +256,9 @@ export const ErrorLogPanel: Component = () => {
 							onInput={(e) => setSearchText(e.currentTarget.value)}
 						/>
 
-						<button class={s.clearBtn} onClick={() => appLogger.clear()}>
+						<Button variant="secondary" onClick={() => appLogger.clear()}>
 							Clear
-						</button>
+						</Button>
 					</div>
 
 					{/* Log list */}
@@ -283,11 +284,18 @@ export const ErrorLogPanel: Component = () => {
 											</span>
 										)}
 									</span>
-									<button class={s.copyBtn} onClick={() => handleCopy(entry)} title="Copy to clipboard">
+									<Button
+										shape="icon"
+										aria-label="Copy to clipboard"
+										variant="ghost"
+										class={s.copyBtn}
+										onClick={() => handleCopy(entry)}
+										title="Copy to clipboard"
+									>
 										<svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
 											<path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z" />
 										</svg>
-									</button>
+									</Button>
 								</div>
 							)}
 						</For>
@@ -299,9 +307,9 @@ export const ErrorLogPanel: Component = () => {
 							{filteredEntries().length} of {appLogger.entryCount()} entries
 						</span>
 						<span style={{ "margin-left": "auto", display: "flex", "align-items": "center", gap: "12px" }}>
-							<button class={s.clearBtn} onClick={handleCopyAll} title="Copy all visible entries">
+							<Button variant="secondary" onClick={handleCopyAll} title="Copy all visible entries">
 								Copy All
-							</button>
+							</Button>
 							<span>Esc to close</span>
 						</span>
 					</div>

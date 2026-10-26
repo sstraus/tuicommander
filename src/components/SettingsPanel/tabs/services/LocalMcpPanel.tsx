@@ -5,11 +5,14 @@ import { settingsRefresh } from "../../../../services/settingsRefresh";
 import { appLogger } from "../../../../stores/appLogger";
 import { rpc } from "../../../../transport";
 import { writeClipboard } from "../../../../utils/clipboard";
+import { Button } from "../../../ui/Button";
 import { StatusBadge } from "../../../ui/StatusBadge";
+import { Switch } from "../../../ui/Switch";
 import { ContextualHelp } from "../../ContextualHelp";
 import { ExpertSetting } from "../../ExpertSetting";
 import s from "../../Settings.module.css";
 import { SectionCard, SettingPageHeader, SettingRow } from "../../SettingsPrimitives";
+import { McpAuditPanel } from "./McpAuditPanel";
 import layout from "./ServiceRestyle.module.css";
 import { type AppConfig, type McpCapability, saveConfigField, useMcpStatusPoll } from "./servicesShared";
 import { UpstreamMcpPanel } from "./UpstreamMcpPanel";
@@ -31,6 +34,7 @@ export const LocalMcpPanel: Component = () => {
 	const [migrationUnknownTools, setMigrationUnknownTools] = createSignal<string[]>([]);
 	const [settingsEnabled, setSettingsEnabled] = createSignal(false);
 	const [collapseTools, setCollapseTools] = createSignal<boolean>(false);
+	const [callAuditEnabled, setCallAuditEnabled] = createSignal(false);
 	const [bridgeInfo, setBridgeInfo] = createSignal<{ bridge_path: string; config_snippet: string } | null>(null);
 	const [bridgeInfoOpen, setBridgeInfoOpen] = createSignal(false);
 	const [snippetCopied, setSnippetCopied] = createSignal(false);
@@ -49,10 +53,44 @@ export const LocalMcpPanel: Component = () => {
 				setMigrationUnknownTools(config.mcp_capabilities.migration_unknown_tools);
 				setSettingsEnabled(config.settings_mcp_enabled ?? false);
 				setCollapseTools(config.collapse_tools ?? false);
+				setCallAuditEnabled(config.mcp_call_audit_enabled ?? false);
 				setNativeToolsLoaded(true);
 			},
 		}),
 	);
+
+	const capabilityRow = (capability: McpCapability) => {
+		const disabled = () =>
+			deniedCapabilities().includes(capability.name) || (capability.name === "settings" && !settingsEnabled());
+		return (
+			<SettingRow label={capability.title} hint={capability.description}>
+				{(id, descriptionId) => (
+					<Switch
+						role="checkbox"
+						data-setting-id="app.mcp_capabilities.denied"
+						id={id}
+						aria-describedby={descriptionId()}
+						aria-label={capability.title}
+						checked={!disabled()}
+						onChange={(event) => {
+							const enabled = event.currentTarget.checked;
+							const updated = enabled
+								? deniedCapabilities().filter((name) => name !== capability.name)
+								: [...deniedCapabilities(), capability.name];
+							setDeniedCapabilities(updated);
+							saveConfigField((config) => {
+								config.mcp_capabilities.denied = updated;
+								if (capability.name === "settings") {
+									config.settings_mcp_enabled = enabled;
+									setSettingsEnabled(enabled);
+								}
+							});
+						}}
+					/>
+				)}
+			</SettingRow>
+		);
+	};
 
 	return (
 		<div class={`${s.section} ${layout.page}`}>
@@ -82,7 +120,8 @@ export const LocalMcpPanel: Component = () => {
 			</SectionCard>
 			<SectionCard title="TUIC Tools">
 				<div class={s.group}>
-					<button
+					<Button
+						variant="ghost"
 						data-non-setting="Show the bridge integration instructions; not a preference"
 						class={s.mcpDisclosure}
 						onClick={() => {
@@ -97,7 +136,7 @@ export const LocalMcpPanel: Component = () => {
 					>
 						<span class={s.mcpDisclosureArrow}>{bridgeInfoOpen() ? "▼" : "▶"}</span>
 						Manual MCP configuration
-					</button>
+					</Button>
 					<Show when={bridgeInfoOpen() && bridgeInfo()}>
 						<div class={s.mcpDisclosureBody}>
 							<p class={s.hint} style={{ margin: "0 0 4px" }}>
@@ -109,7 +148,7 @@ export const LocalMcpPanel: Component = () => {
 							</p>
 							<div class={s.mcpSnippetWrap}>
 								<pre class={s.mcpSnippetPre}>{bridgeInfo()!.config_snippet}</pre>
-								<button
+								<Button
 									data-non-setting="Copy the existing MCP bridge integration snippet"
 									class={s.mcpSnippetCopy}
 									onClick={() => {
@@ -124,7 +163,7 @@ export const LocalMcpPanel: Component = () => {
 									}}
 								>
 									{snippetCopied() ? "Copied" : "Copy"}
-								</button>
+								</Button>
 							</div>
 						</div>
 					</Show>
@@ -133,12 +172,11 @@ export const LocalMcpPanel: Component = () => {
 				<ExpertSetting configKey="app.collapse_tools" value={collapseTools()}>
 					<SettingRow label="Collapse tools — Speakeasy MCP (reduces AI context ~98%)">
 						{(id, descriptionId) => (
-							<input
+							<Switch
+								role="checkbox"
 								data-setting-id="app.collapse_tools"
 								id={id}
 								aria-describedby={descriptionId()}
-								class={s.rowSwitch}
-								type="checkbox"
 								checked={collapseTools()}
 								onChange={(e) => {
 									const enabled = e.currentTarget.checked;
@@ -163,61 +201,74 @@ export const LocalMcpPanel: Component = () => {
 							not discarded.
 						</p>
 					</Show>
-					<For each={[true, false]}>
-						{(optional) => {
-							const rows = () => capabilities.filter((capability) => capability.optional === optional);
-							const controls = () => (
-								<For each={rows()}>
-									{(capability) => {
-										const disabled = () =>
-											deniedCapabilities().includes(capability.name) ||
-											(capability.name === "settings" && !settingsEnabled());
-										return (
-											<SettingRow label={capability.title} hint={capability.description}>
-												{(id, descriptionId) => (
-													<input
-														data-setting-id="app.mcp_capabilities.denied"
-														id={id}
-														aria-describedby={descriptionId()}
-														class={s.rowSwitch}
-														type="checkbox"
-														aria-label={capability.title}
-														checked={!disabled()}
-														onChange={(event) => {
-															const enabled = event.currentTarget.checked;
-															const updated = enabled
-																? deniedCapabilities().filter((name) => name !== capability.name)
-																: [...deniedCapabilities(), capability.name];
-															setDeniedCapabilities(updated);
-															saveConfigField((config) => {
-																config.mcp_capabilities.denied = updated;
-																if (capability.name === "settings") {
-																	config.settings_mcp_enabled = enabled;
-																	setSettingsEnabled(enabled);
-																}
-															});
-														}}
-													/>
-												)}
-											</SettingRow>
-										);
-									}}
-								</For>
-							);
-							return (
-								<Show when={rows().length}>
-									{optional ? (
-										controls()
-									) : (
-										<details class={s.group}>
-											<summary>Additional restrictions</summary>
-											{controls()}
-										</details>
+					<For
+						each={[
+							{ name: "always", title: "Always listed" },
+							{ name: "rare", title: "Rarely needed" },
+							{ name: "conditional", title: "Conditional" },
+						]}
+					>
+						{(section) => (
+							<section class={layout.nativeToolGroup} aria-label={section.title}>
+								<h4>{section.title}</h4>
+								<For
+									each={capabilities.filter(
+										(capability) => capability.section === section.name && capability.parent === null,
 									)}
-								</Show>
-							);
-						}}
+								>
+									{(parent) => (
+										<div role="group" aria-label={parent.title}>
+											{capabilityRow(parent)}
+											<Show when={parent.availability}>
+												<p class={s.hint} role="status">
+													{parent.availability}
+												</p>
+											</Show>
+											<div class={layout.nativeToolChildren}>
+												<For
+													each={capabilities.filter(
+														(capability) => capability.domain === parent.domain && capability.name !== parent.name,
+													)}
+												>
+													{capabilityRow}
+												</For>
+											</div>
+										</div>
+									)}
+								</For>
+							</section>
+						)}
 					</For>
+				</Show>
+			</SectionCard>
+			<SectionCard title={t("mcpAudit.title", "Call audit")}>
+				<SettingRow
+					label={t("mcpAudit.toggle", "Record MCP call outcomes")}
+					hint={t(
+						"mcpAudit.toggleHint",
+						"Keeps a body-free log of recent agent tool calls (operation, outcome, size, effect) in memory. Off by default in release builds.",
+					)}
+				>
+					{(id, descriptionId) => (
+						<Switch
+							role="checkbox"
+							data-setting-id="app.mcp_call_audit_enabled"
+							id={id}
+							aria-describedby={descriptionId()}
+							checked={callAuditEnabled()}
+							onChange={async (e) => {
+								const enabled = e.currentTarget.checked;
+								// The view fetches on mount: persist first, or it reads "disabled".
+								await saveConfigField((c) => {
+									c.mcp_call_audit_enabled = enabled;
+								});
+								setCallAuditEnabled(enabled);
+							}}
+						/>
+					)}
+				</SettingRow>
+				<Show when={callAuditEnabled()}>
+					<McpAuditPanel />
 				</Show>
 			</SectionCard>
 		</div>

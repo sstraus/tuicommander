@@ -2,6 +2,7 @@ import { batch, createSignal } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
 import { invoke } from "../invoke";
 import { showNativeNotice } from "../services/nativeNotifications";
+import { notificationsStore } from "./notifications";
 import { repositoriesStore } from "./repositories";
 import { terminalsStore } from "./terminals";
 import { toastsStore } from "./toasts";
@@ -98,6 +99,7 @@ export interface ProgressRecordedPayload {
 
 export interface ProjectProgressState {
 	entries: ProgressEntry[];
+	nextCursor: number | null;
 	ptyIds: string[];
 	/// The divider position, frozen when the dialog opened. The stored value
 	/// moves on close; redrawing the line under the reader's cursor while they
@@ -128,6 +130,8 @@ export function createProgressStore() {
 	// answered with one red block per repository that no longer existed.
 	const [arrivedSinceOpen, setArrivedSinceOpen] = createSignal(0);
 	const visitedScopes = new Set<string | null>();
+	// A refresh/selection change invalidates older-page responses, even for A → B → A.
+	let listEpoch = 0;
 	// The rich sidebar's own copy of each project's flow. Kept apart from
 	// `flows` because the dialog scopes that one to a terminal and guards it
 	// against the dialog's selection; the sidebar always wants the whole project.
@@ -145,36 +149,50 @@ export function createProgressStore() {
 
 	function ensure(project: string): void {
 		if (state.projects[project]) return;
-		setState("projects", project, { entries: [], ptyIds: [], loading: false, error: null });
+		setState("projects", project, { entries: [], nextCursor: null, ptyIds: [], loading: false, error: null });
 	}
 
-	async function refreshProject(project: string, freezeDivider = true): Promise<void> {
+	async function readProject(project: string, older: boolean, freezeDivider = true): Promise<void> {
+		// A previous project's deletion may finish after selection moved elsewhere.
+		if (requestedProject() !== project) return;
 		ensure(project);
+		const current = state.projects[project];
+		if (older && (current.loading || current.nextCursor == null)) return;
+		const cursor = older ? current.nextCursor : null;
+		const epoch = older ? listEpoch : ++listEpoch;
 		const ptyId = selectedPtyId();
 		const blocked = blockedOnly();
-		setState("projects", project, { loading: true, error: null });
+		const isCurrent = () =>
+			epoch === listEpoch && requestedProject() === project && selectedPtyId() === ptyId && blockedOnly() === blocked;
+		setState("projects", project, { loading: true, error: null, ...(!older ? { nextCursor: null } : {}) });
 		try {
-			const input = { blockedOnly: blocked, ...(ptyId ? { ptyId } : {}), limit: 100 };
-			let page = await invoke<ProgressList>("progress_list", {
+			const page = await invoke<ProgressList>("progress_list", {
 				project,
-				input,
+				input: { blockedOnly: blocked, ...(ptyId ? { ptyId } : {}), limit: 100, ...(cursor != null ? { cursor } : {}) },
 			});
-			const first = page;
-			const entries = [...page.entries];
-			while (page.nextCursor != null) {
-				if (requestedProject() !== project || selectedPtyId() !== ptyId || blockedOnly() !== blocked) return;
-				page = await invoke<ProgressList>("progress_list", { project, input: { ...input, cursor: page.nextCursor } });
-				entries.push(...page.entries);
-			}
-			if (requestedProject() !== project || selectedPtyId() !== ptyId || blockedOnly() !== blocked) return;
-			const frozen = freezeDivider ? (state.projects[project]?.dividerMs ?? first.lastViewedMs) : first.lastViewedMs;
-			setState("projects", project, { loading: false, error: null, dividerMs: frozen });
-			setState("projects", project, "entries", reconcile(entries));
-			setState("projects", project, "ptyIds", reconcile(first.ptyIds ?? []));
+			if (!isCurrent()) return;
+			const frozen = freezeDivider ? (state.projects[project]?.dividerMs ?? page.lastViewedMs) : page.lastViewedMs;
+			setState("projects", project, {
+				loading: false,
+				error: null,
+				dividerMs: frozen,
+				nextCursor: page.nextCursor ?? null,
+			});
+			setState("projects", project, "entries", reconcile(older ? [...current.entries, ...page.entries] : page.entries));
+			setState("projects", project, "ptyIds", reconcile(page.ptyIds ?? []));
 		} catch (error) {
-			if (requestedProject() !== project || selectedPtyId() !== ptyId || blockedOnly() !== blocked) return;
+			if (!isCurrent()) return;
 			setState("projects", project, { loading: false, error: messageOf(error) });
 		}
+	}
+
+	function refreshProject(project: string, freezeDivider = true): Promise<void> {
+		return readProject(project, false, freezeDivider);
+	}
+
+	function loadOlder(): Promise<void> {
+		const project = requestedProject();
+		return project ? readProject(project, true) : Promise.resolve();
 	}
 
 	/// The Flow view's read. The backend builds the whole sequence — columns,
@@ -199,7 +217,11 @@ export function createProgressStore() {
 	/// lines. Rows of one repo ask together, so asks closer than the gap collapse
 	/// into one trailing refresh.
 	async function refreshSidebarFlow(project: string): Promise<void> {
-		const wait = SIDEBAR_FLOW_MIN_GAP_MS - (Date.now() - (sidebarFlowFetchedAt.get(project) ?? 0));
+		const elapsed = Date.now() - (sidebarFlowFetchedAt.get(project) ?? 0);
+		// A last read stamped in the future means the clock went back: read now. Waiting
+		// out the skew could exceed setTimeout's 2^31-1 ms limit, which fires after 1 ms
+		// and re-arms the trailing timer in a busy loop.
+		const wait = elapsed < 0 ? 0 : SIDEBAR_FLOW_MIN_GAP_MS - elapsed;
 		if (wait > 0) {
 			if (!sidebarFlowTrailing.has(project)) {
 				sidebarFlowTrailing.set(
@@ -269,7 +291,7 @@ export function createProgressStore() {
 			// A project opened for the first time in this session has no frozen
 			// divider yet, so the stored one is adopted here and held until close.
 			setState("projects", target, (current) => ({
-				...(current ?? { entries: [], ptyIds: [], loading: false, error: null }),
+				...(current ?? { entries: [], nextCursor: null, ptyIds: [], loading: false, error: null }),
 			}));
 			setState("projects", target, "entries", []);
 			refreshVisible(target, false);
@@ -290,6 +312,7 @@ export function createProgressStore() {
 	async function close(): Promise<void> {
 		const project = requestedProject();
 		setDialogVisible(false);
+		listEpoch++;
 		if (!project) return;
 		let failure: unknown;
 		for (const ptyId of visitedScopes) {
@@ -349,12 +372,15 @@ export function createProgressStore() {
 			repositoriesStore.get(payload.repo_path)?.displayName ??
 			payload.repo_path.split(/[\\/]/).pop() ??
 			payload.repo_path;
-		void showNativeNotice({
-			title: `${projectName} · Progress ${entry.type}`,
-			body: entry.text,
-			key: `progress:${payload.repo_path}:${entry.type}:${entry.text}`,
-			target: { kind: "progress", project: payload.repo_path, ptyId: entry.ptyId ?? null },
-		});
+		if (!notificationsStore.isSessionSilenced(entry.ptyId)) {
+			void showNativeNotice({
+				title: `${projectName} · Progress ${entry.type}`,
+				body: entry.text,
+				key: `progress:${payload.repo_path}:${entry.type}:${entry.text}`,
+				target: { kind: "progress", project: payload.repo_path, ptyId: entry.ptyId ?? null },
+				isCurrent: () => !notificationsStore.isSessionSilenced(entry.ptyId),
+			});
+		}
 		toastsStore.add(
 			// The repo badge already names the project (it is passed below), so a
 			// title of "<project> · <step>" printed it twice and spent half the
@@ -384,7 +410,10 @@ export function createProgressStore() {
 		setBlockedOnly: (value: boolean) => {
 			setBlockedOnly(value);
 			const project = requestedProject();
-			if (project) void refreshProject(project);
+			if (project) {
+				setState("projects", project, "entries", []);
+				void refreshProject(project);
+			}
 		},
 		view,
 		setView: (next: ProgressView) => {
@@ -402,6 +431,7 @@ export function createProgressStore() {
 		close,
 		toggle: () => (dialogVisible() ? void close() : open()),
 		refreshProject,
+		loadOlder,
 		deleteEntries,
 		presentLive,
 		/** Acknowledge the bell count without changing journal entries or view dividers. */
@@ -410,6 +440,7 @@ export function createProgressStore() {
 			return arrivedSinceOpen();
 		},
 		resetForTests() {
+			listEpoch++;
 			batch(() => {
 				setState("projects", reconcile({}));
 				setState("flows", reconcile({}));

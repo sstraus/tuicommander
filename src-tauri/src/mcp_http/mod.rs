@@ -133,6 +133,22 @@ fn json_result<T: serde::Serialize>(result: Result<T, String>) -> Response {
     }
 }
 
+/// Like [`json_result`], but an error `is_user_error` accepts is the caller's mistake
+/// and answers 422, so clients show it as a plain message instead of a server fault.
+fn user_error_result<T: serde::Serialize>(
+    result: Result<T, String>,
+    is_user_error: fn(&str) -> bool,
+) -> Response {
+    match result {
+        Err(error) if is_user_error(&error) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            Json(serde_json::json!({"error": error})),
+        )
+            .into_response(),
+        result => json_result(result),
+    }
+}
+
 /// Shorthand for a 500 Internal Server Error with `{"error": msg}` body.
 fn err_500(msg: &str) -> Response {
     (
@@ -602,7 +618,7 @@ async fn post_story_action(
     .await
     .map_err(|error| format!("story task failed: {error}"))
     .and_then(|result| result);
-    json_result(result)
+    user_error_result(result, crate::stories::is_user_error)
 }
 
 async fn get_story_capabilities() -> Json<bool> {
@@ -627,14 +643,7 @@ async fn post_workflow_definition_action(
             .await
             .map_err(|error| format!("workflow definition task failed: {error}"))
             .and_then(|result| result);
-    match result {
-        Err(error) if error.starts_with(crate::workflows::WORKFLOW_VALIDATION_ERROR_PREFIX) => (
-            StatusCode::UNPROCESSABLE_ENTITY,
-            Json(serde_json::json!({"error": error})),
-        )
-            .into_response(),
-        result => json_result(result),
-    }
+    user_error_result(result, crate::workflows::is_user_error)
 }
 async fn post_workflow_run_action(
     State(state): State<Arc<AppState>>,
@@ -1030,6 +1039,37 @@ fn shared_routes() -> Router<Arc<AppState>> {
         )
         .route("/accounts/action", post(account_routes::action))
         .route("/accounts/secret-form", post(account_routes::secret_form))
+        // GitHub monitoring: headless-capable controls and read-only data.
+        .route("/repo/github", get(github_routes::repo_github_status))
+        .route("/repo/prs", get(github_routes::repo_pr_statuses))
+        .route("/repo/prs/batch", post(github_routes::repo_all_pr_statuses))
+        .route("/repo/issues", get(github_routes::repo_issues))
+        // GitHub poller
+        .route(
+            "/repo/github-poller/start",
+            post(github_routes::poller_start),
+        )
+        .route("/repo/github-poller/stop", post(github_routes::poller_stop))
+        .route(
+            "/repo/github-poller/visibility",
+            post(github_routes::poller_set_visibility),
+        )
+        .route(
+            "/repo/github-poller/poll-repo",
+            post(github_routes::poller_poll_repo),
+        )
+        .route(
+            "/repo/github-poller/update-paths",
+            post(github_routes::poller_update_paths),
+        )
+        .route(
+            "/repo/github-poller/set-issue-filter",
+            post(github_routes::poller_set_issue_filter),
+        )
+        .route(
+            "/repo/github-poller/api-debug",
+            get(github_routes::api_debug_get).post(github_routes::api_debug_set),
+        )
         // Version (authenticated)
         .route("/api/version", get(session::app_version))
         // Shared on purpose: this is how a remote client escapes the header-only
@@ -1120,6 +1160,7 @@ fn shared_routes() -> Router<Arc<AppState>> {
         )
         .route("/sessions/{id}/name", put(session::set_session_name))
         .route("/sessions/{id}/resize", post(session::resize_session))
+        .route("/sessions/{id}/usage", get(session::get_session_usage))
         .route("/sessions/{id}/output", get(session::get_output))
         .route("/sessions/{id}/raw-ring", get(session::get_raw_ring))
         .route("/sessions/{id}/pause", post(session::pause_session))
@@ -1705,8 +1746,6 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         // Health
         .route("/health", get(session::health))
         // Git/GitHub (desktop-only)
-        .route("/repo/github", get(github_routes::repo_github_status))
-        .route("/repo/prs", get(github_routes::repo_pr_statuses))
         .route("/repo/ci", get(github_routes::repo_ci_checks))
         .route(
             "/repo/pr-review-threads",
@@ -1772,39 +1811,11 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             "/repo/post-pr-review",
             post(github_routes::repo_post_pr_review),
         )
-        .route("/repo/prs/batch", post(github_routes::repo_all_pr_statuses))
-        .route("/repo/issues", get(github_routes::repo_issues))
         .route("/repo/issue-detail", get(github_routes::repo_issue_detail))
         .route("/repo/issues/close", post(github_routes::repo_close_issue))
         .route(
             "/repo/issues/reopen",
             post(github_routes::repo_reopen_issue),
-        )
-        // GitHub poller
-        .route(
-            "/repo/github-poller/start",
-            post(github_routes::poller_start),
-        )
-        .route("/repo/github-poller/stop", post(github_routes::poller_stop))
-        .route(
-            "/repo/github-poller/visibility",
-            post(github_routes::poller_set_visibility),
-        )
-        .route(
-            "/repo/github-poller/poll-repo",
-            post(github_routes::poller_poll_repo),
-        )
-        .route(
-            "/repo/github-poller/update-paths",
-            post(github_routes::poller_update_paths),
-        )
-        .route(
-            "/repo/github-poller/set-issue-filter",
-            post(github_routes::poller_set_issue_filter),
-        )
-        .route(
-            "/repo/github-poller/api-debug",
-            get(github_routes::api_debug_get).post(github_routes::api_debug_set),
         )
         // GitHub auth (device-code flow) + misc — browser/PWA via loopback
         .route(
@@ -1842,7 +1853,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
         )
         .route(
             "/github/diagnostics",
-            get(github_routes::github_diagnostics),
+            get(github_routes::github_diagnostics).post(github_routes::github_refresh_diagnostics),
         )
         // Multi-account repo bindings (IPC/HTTP parity). Accounts + repo resolution
         // are gated to desktop below — their impls are #[cfg(feature = "desktop")].
@@ -1996,6 +2007,10 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             "/config/remote-connections/{id}/password",
             put(config_routes::put_remote_connection_password)
                 .get(config_routes::get_remote_connection_password_exists),
+        )
+        .route(
+            "/config/remote-connections/{id}/relay-pairing",
+            put(config_routes::put_remote_connection_relay_pairing),
         )
         .route(
             "/config/remote-connections/{id}/token",
@@ -2236,7 +2251,7 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
 
     // Multi-account accounts + repo resolution — desktop-only: add/remove/resolve go
     // through the keychain-backed #[cfg(feature = "desktop")] impls in github_account.rs.
-    // The remote daemon never serves GitHub routes (build_remote_router omits them), so
+    // The remote daemon omits GitHub account management routes, so
     // gate these out of the always-compiled build_router so the lib builds for
     // tuic-remote (#094-ec55 remote-target fix).
     #[cfg(feature = "desktop")]
@@ -2449,10 +2464,12 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
 ///
 /// Includes all per-repo routes needed for remote terminal management:
 /// sessions (CRUD + stream), terminal grid, git, worktrees, file system,
-/// agents, watchers, events (SSE), and repo info.
+/// agents, watchers, events (SSE), repo info, and GitHub monitoring
+/// (poller controls, repository status, PR snapshots, and issues).
 ///
 /// Excludes desktop-only routes: config management, MCP bridge, plugins,
-/// push notifications, prompt processing, AI chat, GitHub poller, and
+/// push notifications, prompt processing, AI chat, GitHub account/auth and
+/// mutation routes, and
 /// static file serving (no frontend embedded in the remote binary).
 ///
 /// Auth and compression layers are applied identically to `build_router()`.
@@ -2825,6 +2842,7 @@ pub async fn start_server(
     tls_config: Option<axum_server::tls_rustls::RustlsConfig>,
 ) -> bool {
     let config = state.config.read().clone();
+    *state.tls_listener.write() = std::sync::Weak::new();
 
     // Register shutdown channel so save_config can restart server. Only the
     // TCP listener + TLS renewal task listen to this signal: IPC listeners
@@ -2962,6 +2980,7 @@ pub async fn start_server(
 
             if let Some(tls) = tls_config.clone() {
                 tracing::info!(source = "mcp_http", %addr, "TCP listening with dual-protocol HTTP+HTTPS");
+                let tls_state = state.clone();
                 Some(tokio::spawn(async move {
                     use axum_server_dual_protocol::ServerExt;
                     // axum-server 0.8 moved the non-blocking-mode switch into
@@ -2979,9 +2998,14 @@ pub async fn start_server(
                                 return;
                             }
                         };
+                    // The weak token expires on error, cancellation, or shutdown. An
+                    // older task dropping its token cannot clear a replacement.
+                    let tls_lifetime = Arc::new(());
+                    *tls_state.tls_listener.write() = Arc::downgrade(&tls_lifetime);
                     if let Err(e) = server.set_upgrade(false).serve(svc).await {
                         tracing::error!(source = "mcp_http", "TCP/TLS server error: {e}");
                     }
+                    drop(tls_lifetime);
                 }))
             } else {
                 tracing::info!(source = "mcp_http", %addr, "TCP listening (HTTP only, remote access enabled)");
@@ -3138,7 +3162,9 @@ mod tests {
         let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
         let project = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let project = project.path().to_str().unwrap();
+        let owner = crate::progress::resolve_owning_project(Some(project.path().to_str().unwrap()))
+            .unwrap();
+        let project = owner.to_str().unwrap();
         let store = WorkflowStore::open().unwrap();
         let draft = store
             .seed_templates(project)
@@ -3266,6 +3292,25 @@ mod tests {
         state
     }
 
+    /// Catches CertDomains being mistaken for a successfully loaded TLS listener.
+    #[tokio::test]
+    async fn mcp_status_does_not_promote_tailscale_capability_to_active_tls() {
+        let state = test_state();
+        *state.tailscale_state.write() = crate::tailscale::parse_status_json(include_bytes!(
+            "../fixtures/tailscale-2165/status.json"
+        ));
+        let response = build_router(state, false, true)
+            .oneshot(get_localhost("/mcp/status"))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let status: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(status["tls_active"], false);
+    }
+
     #[tokio::test]
     async fn push_test_does_not_claim_delivery_when_push_is_disabled() {
         let state = test_state();
@@ -3390,6 +3435,52 @@ mod tests {
         assert_eq!(json["build"]["version"], env!("CARGO_PKG_VERSION"));
         assert_eq!(json["build"]["target"], env!("TUIC_TARGET_TRIPLE"));
         assert_eq!(json["build"]["sha256"].as_str().unwrap().len(), 64);
+    }
+
+    /// Catches: moving GitHub monitoring outside the remote authentication boundary.
+    #[tokio::test]
+    async fn remote_github_monitoring_requires_authentication() {
+        let state = test_state();
+        *state.session_token.write() = "github-monitor-secret".to_string();
+        state.config.write().services.auth.lan_auth_bypass = false;
+        let app = build_remote_router(state);
+        for path in [
+            "/repo/github",
+            "/repo/prs",
+            "/repo/prs/batch",
+            "/repo/issues",
+            "/repo/github-poller/start",
+            "/repo/github-poller/stop",
+            "/repo/github-poller/visibility",
+            "/repo/github-poller/poll-repo",
+            "/repo/github-poller/update-paths",
+            "/repo/github-poller/set-issue-filter",
+            "/repo/github-poller/api-debug",
+        ] {
+            for (query, expected) in [
+                ("", StatusCode::UNAUTHORIZED),
+                (
+                    "?token=github-monitor-secret",
+                    StatusCode::METHOD_NOT_ALLOWED,
+                ),
+            ] {
+                // PATCH probes registration without invoking a GitHub API handler.
+                let mut request = Request::builder()
+                    .method("PATCH")
+                    .uri(format!("{path}{query}"))
+                    .header(header::HOST, "127.0.0.1:9877")
+                    .body(Body::empty())
+                    .unwrap();
+                request
+                    .extensions_mut()
+                    .insert(ConnectInfo(std::net::SocketAddr::from((
+                        [203, 0, 113, 5],
+                        5555,
+                    ))));
+                let response = app.clone().oneshot(request).await.unwrap();
+                assert_eq!(response.status(), expected, "{path}{query}");
+            }
+        }
     }
 
     #[tokio::test]
@@ -3957,6 +4048,269 @@ mod tests {
         assert_eq!(reply["value"]["title"], "Route plan");
     }
 
+    /// Catches: planner/UI HTTP writes not notifying clients, or stale UI writes losing Ideas.
+    #[tokio::test]
+    async fn planner_ideas_http_writes_publish_reload_and_preserve_stale_ui_intent() {
+        let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(config.path().into());
+        let project = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let path = format!("/stories/action?path={}", project.path().display());
+        let local = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
+        let state = test_state();
+        let mut events = state.event_bus.subscribe();
+        let app = build_router(state, false, true);
+        let response = app.clone().oneshot(mcp_post_from(&path,
+            &serde_json::json!({"action":{"action":"add_idea","text":"From CLI","source":"ego"}}), local)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["type"], "idea");
+        assert_eq!(body["value"]["source"], "ego");
+        assert!(matches!(
+            events.try_recv().unwrap(),
+            crate::state::AppEvent::IdeasChanged
+        ));
+        let mut request = mcp_post_from(
+            "/config/notes",
+            &serde_json::json!({"base":{"notes":[]},"config":{"notes":[{"id":"panel","text":"UI idea"}]}}),
+            local,
+        );
+        *request.method_mut() = axum::http::Method::PUT;
+        let response = app.clone().oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(matches!(
+            events.try_recv().unwrap(),
+            crate::state::AppEvent::IdeasChanged
+        ));
+        let response = app
+            .clone()
+            .oneshot(mcp_post_from(
+                &path,
+                &serde_json::json!({"action":{"action":"list_ideas"}}),
+                local,
+            ))
+            .await
+            .unwrap();
+        let body: serde_json::Value = serde_json::from_slice(
+            &axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(body["type"], "ideas");
+        assert_eq!(body["value"].as_array().unwrap().len(), 2);
+        assert!(events.try_recv().is_err(), "reads do not publish writes");
+        let response = app
+            .oneshot(mcp_post_from(
+                &path,
+                &serde_json::json!({"action":{"action":"add_idea","text":" "}}),
+                local,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        assert!(
+            events.try_recv().is_err(),
+            "failed writes do not publish changes"
+        );
+    }
+
+    async fn story_error_body(
+        app: &axum::Router,
+        path: &str,
+        action: serde_json::Value,
+    ) -> (StatusCode, String) {
+        let local = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
+        let response = app
+            .clone()
+            .oneshot(mcp_post_from(
+                path,
+                &serde_json::json!({ "action": action }),
+                local,
+            ))
+            .await
+            .expect("story response");
+        let status = response.status();
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("read story response");
+        let body: serde_json::Value = serde_json::from_slice(&bytes).expect("story JSON");
+        (
+            status,
+            body["error"].as_str().unwrap_or_default().to_owned(),
+        )
+    }
+
+    // Catches: HTTP/CLI transport failing to route the shared amendment action to persisted state.
+    #[tokio::test]
+    async fn update_story_http_persists_priority_for_cli_clients() {
+        use crate::stories::{NewPlan, NewStory, StoryOrigin, StoryStore};
+        let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let project = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let store = StoryStore::open().unwrap();
+        let plan = store
+            .create_plan(NewPlan {
+                project: project
+                    .path()
+                    .canonicalize()
+                    .unwrap()
+                    .to_string_lossy()
+                    .into(),
+                title: "Plan".into(),
+                source: "feature.md".into(),
+            })
+            .unwrap();
+        let story = store
+            .create_story(NewStory {
+                plan_id: plan.id,
+                title: "Story".into(),
+                criteria: vec!["Done".into()],
+                priority: 1,
+                story_type: None,
+                origin: StoryOrigin::Native,
+                file_scope: vec![],
+            })
+            .unwrap();
+        let path = format!("/stories/action?path={}", project.path().display());
+        let app = build_router(test_state(), false, true);
+        let (status, error) = story_error_body(
+            &app,
+            &path,
+            serde_json::json!({
+                "action": "update_story", "story_id": story.id,
+                "expected_revision": story.revision, "patch": {"priority": 3}
+            }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "{error}");
+        assert_eq!(store.get_story(&story.id).unwrap().priority, 3);
+        let rejected = app
+            .oneshot(mcp_post_from(
+                &path,
+                &serde_json::json!({"action": {
+                    "action": "update_story", "story_id": story.id,
+                    "expected_revision": story.revision + 1, "patch": {"prioirty": 1}
+                }}),
+                SocketAddr::from(([127, 0, 0, 1], 0)),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(rejected.status(), StatusCode::UNPROCESSABLE_ENTITY);
+        let body = axum::body::to_bytes(rejected.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        assert!(
+            std::str::from_utf8(&body)
+                .unwrap()
+                .contains("unknown field")
+        );
+        assert_eq!(store.get_story(&story.id).unwrap().priority, 3);
+    }
+
+    // Catches: a missing plan file or unchecked criteria answered as HTTP 500 (a server fault)
+    // when the user made a fixable mistake.
+    #[tokio::test]
+    async fn story_user_errors_are_client_errors_with_a_plain_message() {
+        use crate::stories::{NewPlan, NewStory, StoryOrigin, StoryStore};
+        let config = tempfile::tempdir().expect("config");
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let project = tempfile::tempdir().expect("project");
+        let store = StoryStore::open().expect("stories");
+        let plan = store
+            .create_plan(NewPlan {
+                project: project
+                    .path()
+                    .canonicalize()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string(),
+                title: "Plan".into(),
+                source: "plan.md".into(),
+            })
+            .unwrap();
+        let story = store
+            .create_story(NewStory {
+                story_type: None,
+                plan_id: plan.id,
+                title: "Story".into(),
+                criteria: vec!["Done".into()],
+                priority: 1,
+                origin: StoryOrigin::Native,
+                file_scope: vec![],
+            })
+            .unwrap();
+        let path = format!("/stories/action?path={}", project.path().display());
+        let app = build_router(test_state(), false, true);
+
+        let (status, error) = story_error_body(
+            &app,
+            &path,
+            serde_json::json!({"action": "add_plan_source", "source": "missing.md"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{error}");
+        assert!(error.starts_with("plan document not found: "), "{error}");
+
+        let (status, _) = story_error_body(
+            &app,
+            &path,
+            serde_json::json!({"action": "transition", "story_id": story.id, "expected_revision": story.revision, "command": "start_manual"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let started = store.get_story(&story.id).unwrap();
+        let (status, error) = story_error_body(
+            &app,
+            &path,
+            serde_json::json!({"action": "transition", "story_id": story.id, "expected_revision": started.revision, "command": "submit_review"}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{error}");
+        assert!(error.starts_with("criteria are incomplete"), "{error}");
+    }
+
+    // Catches: publishing an unchanged draft answered as HTTP 500.
+    #[tokio::test]
+    async fn publishing_an_unchanged_draft_is_a_client_error() {
+        use crate::workflows::{WorkflowAction, WorkflowKind, WorkflowStore};
+        let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let project = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let project = project.path().to_str().unwrap();
+        let draft = WorkflowStore::open()
+            .unwrap()
+            .seed_templates(project)
+            .unwrap()
+            .into_iter()
+            .find(|draft| draft.kind == WorkflowKind::Story)
+            .unwrap();
+        // The seeded draft is already published, so publishing it again changes nothing.
+        let response = post_workflow_definition_action(
+            None,
+            None,
+            Query(types::PathQuery {
+                path: project.into(),
+            }),
+            Json(WorkflowAction::Publish {
+                id: draft.id,
+                expected_revision: draft.draft_revision,
+            }),
+        )
+        .await;
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body = String::from_utf8(body.to_vec()).unwrap();
+        assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "{body}");
+        assert!(body.contains("already been published"), "{body}");
+    }
+
     #[tokio::test]
     async fn markdown_image_route_serves_nested_images_and_rejects_escapes_and_unauthenticated_peers()
      {
@@ -4092,6 +4446,7 @@ mod tests {
             .unwrap();
         let story = store
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id.clone(),
                 title: "Story".into(),
                 criteria: vec!["Done".into()],
@@ -4139,6 +4494,7 @@ mod tests {
         );
         let other = store
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id,
                 title: "Operator decision".into(),
                 criteria: vec!["Done".into()],
@@ -4399,6 +4755,18 @@ mod tests {
         // handler's own 404 (e.g. get_output 404s for a missing session, which would
         // false-fail a GET probe). Path params are filled with a placeholder segment.
         let must_exist = [
+            // Catches: GitHub monitoring remains desktop-only (#2345-49f0).
+            "/repo/github",
+            "/repo/prs",
+            "/repo/prs/batch",
+            "/repo/issues",
+            "/repo/github-poller/start",
+            "/repo/github-poller/stop",
+            "/repo/github-poller/visibility",
+            "/repo/github-poller/poll-repo",
+            "/repo/github-poller/update-paths",
+            "/repo/github-poller/set-issue-filter",
+            "/repo/github-poller/api-debug",
             "/config/defaults",
             "/api/version",
             // The remote client's only way onto a WebSocket: it trades Basic
@@ -4493,8 +4861,6 @@ mod tests {
             "/fs/read-editor",
             "/github/accounts",
             "/github/resolve-repo",
-            "/repo/github",
-            "/repo/prs",
             "/dictation/status",
             "/config/themes",
             "/mcp/status",
@@ -5130,6 +5496,67 @@ mod tests {
             );
         }
         assert!(!payload.to_string().contains("secret-canary"));
+    }
+
+    // Catches: the HTTP relay-pairing import storing an unparsable bundle, skipping
+    // the Settings refresh the IPC command shares, or echoing the bundle in the hint.
+    #[tokio::test]
+    #[serial_test::serial]
+    async fn relay_pairing_import_route_validates_and_refreshes() {
+        let tmp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(tmp.path().to_path_buf());
+        crate::credentials::reset_test_faults();
+        let state = test_state();
+        let app = build_router(state.clone(), false, true);
+        let mut events = state.event_bus.subscribe();
+        let id = "relay-pairing-import";
+        let request = |bundle: &str| {
+            put_from(
+                &format!("/config/remote-connections/{id}/relay-pairing"),
+                &serde_json::json!({ "bundle": bundle }),
+                std::net::SocketAddr::from(([127, 0, 0, 1], 0)),
+            )
+        };
+        let rejected = app.clone().oneshot(request("not-a-bundle")).await.unwrap();
+        assert_eq!(rejected.status(), StatusCode::INTERNAL_SERVER_ERROR);
+        assert!(
+            crate::remote_connection::relay_bundle(id)
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            events.try_recv().is_err(),
+            "a rejected bundle must not publish"
+        );
+
+        let bearer = crate::relay_tunnel::bundle::RelayBearer::new("R".into()).unwrap();
+        let bundle =
+            crate::relay_tunnel::bundle::PairingBundle::generate("ws://127.0.0.1:1", bearer)
+                .unwrap();
+        let accepted = app
+            .oneshot(request(bundle.to_text().as_str()))
+            .await
+            .unwrap();
+        assert_eq!(accepted.status(), StatusCode::OK);
+        assert_eq!(
+            crate::remote_connection::relay_bundle(id)
+                .unwrap()
+                .unwrap()
+                .room,
+            bundle.room
+        );
+        let crate::state::AppEvent::SettingsChanged(notice) =
+            events.try_recv().expect("an import must refresh Settings")
+        else {
+            panic!("expected Settings change")
+        };
+        assert_eq!(notice.section, "connections");
+        assert!(
+            !serde_json::to_string(&notice)
+                .unwrap()
+                .contains(&bundle.room)
+        );
+        crate::remote_connection::set_relay_pairing(id, "").unwrap();
     }
 
     // Catches: a successful direct credential write leaving other Settings readers stale.
@@ -6568,7 +6995,7 @@ mod tests {
                 // Catches: HTTP status retaining description prefixes while Settings
                 // switches to dedicated, concise native registry summaries.
                 let summary = entry["summary"].as_str().unwrap();
-                assert!(!summary.trim().is_empty());
+                assert_ne!(summary.trim(), "");
                 assert!(summary.chars().count() <= 70);
                 assert!(
                     !definition["description"]
@@ -7291,7 +7718,7 @@ mod tests {
     // safety verdict (untracked files must survive).
     #[tokio::test]
     async fn test_repo_worktree_remove_by_path_removes_clean_detached_and_refuses_untracked() {
-        let repo = create_temp_git_repo();
+        let repo = create_orphan_git_repo();
         let state = test_state();
         let add = |name: &str| {
             let linked = repo.path().join(name);
@@ -7442,7 +7869,18 @@ mod tests {
 
     /// Helper: create a temporary git repo with an initial commit for worktree tests.
     fn create_temp_git_repo() -> tempfile::TempDir {
-        let dir = tempfile::tempdir().expect("create temp dir");
+        create_git_repo_at(tempfile::tempdir().expect("create temp dir"))
+    }
+
+    /// Ordinary orphan fixtures must not qualify for the temporary-path exclusion.
+    fn create_orphan_git_repo() -> tempfile::TempDir {
+        create_git_repo_at(
+            tempfile::tempdir_in(tuic_test_support::non_temporary_fixture_root())
+                .expect("create non-temporary orphan fixture"),
+        )
+    }
+
+    fn create_git_repo_at(dir: tempfile::TempDir) -> tempfile::TempDir {
         let path = dir.path();
         std::process::Command::new("git")
             .args(["init"])
@@ -7475,7 +7913,7 @@ mod tests {
 
     #[tokio::test]
     async fn orphan_cleanup_assessment_rejects_untracked_files() {
-        let repo = create_temp_git_repo();
+        let repo = create_orphan_git_repo();
         let linked = repo.path().join("linked");
         crate::git_cli::git_cmd(repo.path())
             .args([
@@ -7522,7 +7960,7 @@ mod tests {
 
     #[tokio::test]
     async fn orphan_cleanup_assessment_rejects_commit_reachable_only_from_tag() {
-        let repo = create_temp_git_repo();
+        let repo = create_orphan_git_repo();
         let linked = repo.path().join("linked");
         crate::git_cli::git_cmd(repo.path())
             .args([
@@ -7633,7 +8071,7 @@ mod tests {
     /// A clean detached checkout with a live session registered in it.
     #[cfg(unix)]
     fn orphan_with_live_session() -> (tempfile::TempDir, std::path::PathBuf, Arc<AppState>) {
-        let repo = create_temp_git_repo();
+        let repo = create_orphan_git_repo();
         let linked = repo.path().join("linked");
         crate::git_cli::git_cmd(repo.path())
             .args([
@@ -7826,7 +8264,7 @@ mod tests {
     // blocking a removal that has no live session at all.
     #[tokio::test]
     async fn confirmed_orphan_removal_ignores_stale_confirmed_ids() {
-        let repo = create_temp_git_repo();
+        let repo = create_orphan_git_repo();
         let linked = repo.path().join("linked");
         crate::git_cli::git_cmd(repo.path())
             .args([
@@ -7879,7 +8317,7 @@ mod tests {
 
     #[tokio::test]
     async fn orphan_cleanup_answer_accepts_clean_branch_reachable_worktree() {
-        let repo = create_temp_git_repo();
+        let repo = create_orphan_git_repo();
         let linked = repo.path().join("linked");
         crate::git_cli::git_cmd(repo.path())
             .args([
@@ -7973,7 +8411,7 @@ mod tests {
     // so), naming it from the repo itself or from a linked worktree as `path`.
     #[tokio::test]
     async fn worktree_remove_by_path_never_removes_the_main_checkout_even_when_detached() {
-        let repo = create_temp_git_repo();
+        let repo = create_orphan_git_repo();
         let state = test_state();
         crate::git_cli::git_cmd(repo.path())
             .args(["checkout", "--detach"])
@@ -8004,7 +8442,7 @@ mod tests {
     #[tokio::test]
     async fn worktree_remove_by_path_refuses_staged_work_unreachable_commits_and_branch_checkouts()
     {
-        let repo = create_temp_git_repo();
+        let repo = create_orphan_git_repo();
         let state = test_state();
         let staged = critic_detached_checkout(repo.path(), "staged");
         std::fs::write(staged.join("new.txt"), "x").unwrap();
@@ -8055,7 +8493,7 @@ mod tests {
     // a `..` hop out of a real checkout), which would delete anything the caller names.
     #[tokio::test]
     async fn worktree_remove_by_path_refuses_anything_that_is_not_a_registered_worktree() {
-        let repo = create_temp_git_repo();
+        let repo = create_orphan_git_repo();
         let state = test_state();
         let linked = critic_detached_checkout(repo.path(), "linked");
         std::fs::create_dir(linked.join("sub")).unwrap();
@@ -8097,25 +8535,29 @@ mod tests {
         assert!(linked.exists());
     }
 
-    // Catches (critic-1367): a checkout whose directory vanished being refused with
-    // "needs force confirmation" on the path route, so the stale registration that
-    // keeps the orphan listed can never be dropped through MCP.
+    // Catches: the safe-only MCP path route pruning a vanished checkout registration
+    // instead of preserving it for repair or explicit removal.
     #[tokio::test]
-    async fn worktree_remove_by_path_drops_the_registration_of_a_vanished_checkout() {
-        let repo = create_temp_git_repo();
+    async fn worktree_remove_by_path_preserves_the_registration_of_a_vanished_checkout() {
+        let repo = create_orphan_git_repo();
         let state = test_state();
         let linked = critic_detached_checkout(repo.path(), "vanished");
         std::fs::remove_dir_all(&linked).unwrap();
 
         let result = critic_remove_by_path(&state, repo.path(), linked.to_str().unwrap()).await;
 
-        assert_eq!(result["ok"], true, "{result}");
+        let error = result["error"]
+            .as_str()
+            .expect("safe-only removal must refuse");
+        assert!(error.contains("checkout unavailable"), "{result}");
+        assert!(error.contains("git worktree repair"), "{result}");
+        assert!(error.contains("explicit removal is required"), "{result}");
         let listed = crate::git_cli::git_cmd(repo.path())
             .args(["worktree", "list", "--porcelain"])
             .run()
             .unwrap()
             .stdout;
-        assert!(!listed.contains(linked.to_str().unwrap()), "{listed}");
+        assert!(listed.contains(linked.to_str().unwrap()), "{listed}");
     }
 
     #[tokio::test]
@@ -10010,7 +10452,7 @@ mod tests {
 
         let (removed, retained) = evict_peers_for_reaped_mcp_session(&state, "mcp-3");
         assert_eq!(removed, vec!["ghost".to_string()]);
-        assert!(retained.is_empty());
+        assert_eq!(retained, [] as [std::string::String; 0]);
         assert!(!state.peer_agents.contains_key("ghost"));
         assert!(!state.orchestrator_peers.contains("ghost"));
     }
@@ -10055,8 +10497,8 @@ mod tests {
             .insert("mcp-live".to_string(), live_channel);
 
         let (removed, retained) = evict_peers_for_reaped_mcp_session(&state, "mcp-old");
-        assert!(removed.is_empty());
-        assert!(retained.is_empty());
+        assert_eq!(removed, [] as [std::string::String; 0]);
+        assert_eq!(retained, [] as [std::string::String; 0]);
         assert_eq!(
             state.peer_agents.get("shared").unwrap().mcp_session_id,
             "mcp-live"
@@ -11011,6 +11453,7 @@ mod workflow_authority_critic_tests {
             .unwrap();
         let story = store
             .create_story(crate::stories::NewStory {
+                story_type: None,
                 plan_id: plan.id,
                 title: "Operator decision".into(),
                 criteria: vec!["Approved by the operator".into()],
