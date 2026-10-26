@@ -794,11 +794,14 @@ mod tests {
         let manager = Arc::new(TunnelManager::new(audit));
         let marker = crate::test_support::test_temp_root().join("shutdown_in_flight_ssh.pid");
         let _ = std::fs::remove_file(&marker);
-        let script = fake_ssh_script(&format!(
-            "echo $$ > '{}'\nexec sleep 3600",
-            marker.display()
-        ));
-        let ssh_path = script.path().to_path_buf();
+        // The shared, pre-warmed script, not this module's `fake_ssh_script`:
+        // that one keeps its write fd open, and Linux refuses to exec a file
+        // open for writing (ETXTBSY), so ssh would never run there.
+        let ssh_path = crate::test_support::fake_ssh_script(
+            "manager_shutdown_in_flight",
+            &format!("echo $$ > '{}'\nexec sleep 3600", marker.display()),
+            "exit /b 0",
+        );
         let profile = test_profile("shutdown-while-starting");
         let id = profile.id.clone();
         let (release_tx, release_rx) = tokio::sync::oneshot::channel();
@@ -887,11 +890,17 @@ mod tests {
         let manager = Arc::new(TunnelManager::new(audit));
         let marker = crate::test_support::test_temp_root().join("abort_mid_cleanup_ssh.pid");
         let _ = std::fs::remove_file(&marker);
-        let script = fake_ssh_script(&format!(
-            "echo $$ > '{}'\ntrap '' TERM\nexec sleep 3600",
-            marker.display()
-        ));
-        let ssh_path = script.path().to_path_buf();
+        // Shared, pre-warmed script: this test awaits the exec, which this
+        // module's `fake_ssh_script` cannot provide on Linux (ETXTBSY: its
+        // write fd is still open). See that helper's doc comment.
+        let ssh_path = crate::test_support::fake_ssh_script(
+            "manager_abort_mid_cleanup",
+            &format!(
+                "echo $$ > '{}'\ntrap '' TERM\nexec sleep 3600",
+                marker.display()
+            ),
+            "exit /b 0",
+        );
         let marker_in_spawn = marker.clone();
         let profile = test_profile("abort-mid-cleanup");
         let id = profile.id.clone();
