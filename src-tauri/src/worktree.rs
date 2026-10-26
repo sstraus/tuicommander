@@ -2412,7 +2412,7 @@ mod tests {
     fn merge_and_archive_fast_forwards_by_default() {
         let (_repo, tip, parents) = merge_archive_with_ff_config("true", false);
         assert_eq!(parents, 1);
-        assert!(!tip.is_empty());
+        assert_ne!(tip, "");
     }
 
     #[test]
