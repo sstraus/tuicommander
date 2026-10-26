@@ -120,7 +120,10 @@ async fn workflow_launch_accepts_registered_branch_worktree() {
         rejected["error"].as_str().unwrap().contains("operation"),
         "{rejected}"
     );
-    assert!(store.snapshot(&run.id).unwrap().effects.is_empty());
+    assert_eq!(
+        store.snapshot(&run.id).unwrap().effects,
+        [] as [crate::workflows::EffectIntent; 0]
+    );
     // Exercise the real async transport boundary, which owns the blocking
     // workflow worker; the transaction awaits must not run on the test executor.
     let launched = handle_mcp_tool_call_with_context(

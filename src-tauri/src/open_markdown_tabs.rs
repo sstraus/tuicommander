@@ -10,6 +10,7 @@ pub(crate) struct DesktopMarkdownTab {
     pub repo_path: String,
     pub file_path: String,
     pub fs_root: Option<String>,
+    pub opener_tuic_session: Option<String>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -19,6 +20,8 @@ pub(crate) struct OpenMarkdownTab {
     pub relative_path: String,
     pub absolute_path: String,
     pub fs_root: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub opener_tuic_session: Option<String>,
 }
 
 fn normalized(path: &str) -> String {
@@ -107,6 +110,7 @@ fn select_tabs(
                 relative_path: relative.to_owned(),
                 absolute_path: absolute.clone(),
                 fs_root: root.to_owned(),
+                opener_tuic_session: tab.opener_tuic_session.clone(),
             })
         })
         .collect())

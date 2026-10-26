@@ -7,7 +7,7 @@
 	background: var(--bg-secondary);
 }
 
-.row {
+button[data-control-layout="row"].row {
 	display: flex;
 	align-items: center;
 	gap: 8px;

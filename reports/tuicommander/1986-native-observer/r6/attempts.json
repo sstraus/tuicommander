@@ -1,0 +1,13 @@
+[
+  {
+    "attempt": 1,
+    "exit": 0,
+    "evidence": "/Users/stefano.straus/Gits/.tmp/results/desk-1986-visible-r6-1",
+    "disposition": "Excluded: PlatformSSO interference during readiness was swallowed by the old setup retry; strict abort now fixed."
+  },
+  {
+    "attempt": 2,
+    "exit": 0,
+    "evidence": "/Users/stefano.straus/Gits/.tmp/results/desk-1986-visible-r6-2"
+  }
+]

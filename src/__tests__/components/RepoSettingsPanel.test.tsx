@@ -178,6 +178,17 @@ describe("SettingsPanel — repo context", () => {
 		expect(repoSettingsStore.reset).toHaveBeenCalledWith("/repo");
 	});
 
+	// Catches: replacing the consolidation checkbox drops its label, checked value or repository owner callback.
+	it("keeps consolidation as a labelled repository switch", () => {
+		const { getByRole } = render(() => <SettingsPanel {...defaultProps} />);
+		const control = getByRole("switch", {
+			name: "Show all worktrees of this repo in one consolidated screen",
+		}) as HTMLInputElement;
+		expect(control.checked).toBe(false);
+		fireEvent.click(control);
+		expect(repoSettingsStore.update).toHaveBeenLastCalledWith("/repo", { autoConsolidateWorktrees: true });
+	});
+
 	it("keeps explicit disabled fetch distinct from inherited defaults", () => {
 		// Catches coercing the nullable sentinel or explicit zero into the same override.
 		const { container } = render(() => <SettingsPanel {...defaultProps} />);

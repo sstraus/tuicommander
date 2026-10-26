@@ -36,6 +36,19 @@ class AgentTestPlanTests(unittest.TestCase):
         self.assertEqual(binary.stat() if binary.exists() else None, before,
                          "dry run must neither create nor replace an existing warm executable")
 
+    def test_speech_output_is_explicit_and_keeps_capture_disabled(self):
+        # Bug caught: speech reproduction enables the microphone or daily state.
+        plan = self.plan("AGENT_TEST_INSTANCE=agent-test-1996", "AGENT_TEST_SPEECH_OUTPUT=1")
+        self.assertEqual(plan["environment"]["TUIC_AGENT_TEST_SPEECH_OUTPUT"], "1")
+        self.assertIn("tauri/custom-protocol,dictation", plan["cargo"])
+        self.assertIn("microphone", plan["disabled"])
+        self.assertIn("global shortcuts", plan["disabled"])
+        result = subprocess.run(["make", "--no-print-directory", "agent-test",
+                                 "AGENT_TEST_DRY_RUN=1", "AGENT_TEST_SPEECH_OUTPUT=1"],
+                                cwd=ROOT, text=True, capture_output=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("agent-test-<name>", result.stderr)
+
     def test_agent_test_window_profile_contract(self):
         # Contract only: native visibility/paint/focus are observed separately
         # by agent-test-visible.py, not inferred from these settings/source checks.
@@ -46,8 +59,8 @@ class AgentTestPlanTests(unittest.TestCase):
             "visible": False,
             "focus": False,
             "focusable": False,
-            "width": 640,
-            "height": 420,
+            "width": 1400,
+            "height": 900,
             "minWidth": 640,
             "minHeight": 420,
             "alwaysOnTop": True,

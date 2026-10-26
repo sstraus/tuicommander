@@ -3,6 +3,7 @@ import { t } from "../../i18n";
 import type { AutomationsStore } from "../../stores/automations";
 import { terminalsStore } from "../../stores/terminals";
 import { navigateToTerminal } from "../../utils/navigateToTerminal";
+import { Button } from "../ui/Button";
 import s from "./AutomationsDialog.module.css";
 import { zonedTime } from "./ScheduleFields";
 
@@ -12,9 +13,9 @@ export function DetailHistory(props: { store: AutomationsStore }) {
 		<section class={s.history} aria-label={t("automations.history", "Recent runs")}>
 			<div class={s.row}>
 				<h3>{t("automations.history", "Recent runs")}</h3>
-				<button type="button" disabled={props.store.historyLoading()} onClick={() => void props.store.loadHistory()}>
+				<Button type="button" disabled={props.store.historyLoading()} onClick={() => void props.store.loadHistory()}>
 					{t("automations.refreshHistory", "Refresh history")}
-				</button>
+				</Button>
 			</div>
 			<Show when={props.store.historyLoading()}>
 				<p role="status">{t("automations.loadingHistory", "Loading history…")}</p>
@@ -30,7 +31,7 @@ export function DetailHistory(props: { store: AutomationsStore }) {
 							<strong>{run.status}</strong>
 							<span>{run.id}</span>
 							<Show when={run.session_id}>
-								<button
+								<Button
 									type="button"
 									disabled={!terminalsStore.findBySessionId(run.session_id!)}
 									onClick={() => {
@@ -39,7 +40,7 @@ export function DetailHistory(props: { store: AutomationsStore }) {
 									}}
 								>
 									{t("automations.openSession", "Open owning session")}
-								</button>
+								</Button>
 							</Show>
 							{/* DEFERRED (2026-10-10) — live browser screenshot verification timed out; coordinator must verify this run view before landing. */}
 							<Show when={run.stdout.text}>

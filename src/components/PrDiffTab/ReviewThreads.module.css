@@ -15,12 +15,8 @@
 .commentHeader time { color: var(--fg-muted); font-size: var(--font-xs); }
 .draftBody { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .composer { display: flex; flex-direction: column; gap: 8px; margin: 8px 12px; }
-.composer textarea { width: 100%; box-sizing: border-box; min-height: 64px; padding: 8px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-tertiary); color: var(--fg-primary); font: inherit; resize: vertical; }
+.composer textarea { width: 100%; }
 .row { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
-.action, .primary { min-height: var(--control-height, 36px); padding: 4px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-tertiary); color: var(--fg-secondary); font: inherit; cursor: pointer; }
-.action:hover:enabled { background: var(--bg-highlight); color: var(--fg-primary); }
-.primary { background: var(--accent); color: var(--text-on-accent); }
-.action:disabled, .primary:disabled { opacity: 0.5; cursor: not-allowed; }
 .thread :focus-visible, .composer :focus-visible, .submitBar :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .submitBar { padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); font-family: var(--font-ui); font-size: var(--font-sm); }
 .submitBar input { flex: 1; min-width: 120px; }

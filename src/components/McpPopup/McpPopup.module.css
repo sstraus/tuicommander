@@ -24,6 +24,7 @@
 }
 
 .header {
+ composes: toolbar from "../ui/FormControls.module.css";
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
   display: flex;
@@ -130,17 +131,4 @@
   border-top: 1px solid var(--border);
   display: flex;
   justify-content: center;
-}
-
-.footerLink {
-  font-size: 12px;
-  color: var(--accent);
-  cursor: pointer;
-  background: none;
-  border: none;
-  padding: 4px 8px;
-}
-
-.footerLink:hover {
-  text-decoration: underline;
 }

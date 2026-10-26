@@ -17,6 +17,7 @@ The binary is installed to:
 
 The CLI auto-updates silently when TUICommander starts — no manual update needed.
 Install and update stage the new executable beside the installed path, then rename it into place. A running `tuic` process keeps its original executable; installing over a symlink replaces the link without changing its target.
+The CLI status check probes the install directory with a temporary sibling file. It does not open the installed executable for writing: on macOS, even a write-open without changed bytes can invalidate its cached signature.
 
 ## Opening Files and Repos
 

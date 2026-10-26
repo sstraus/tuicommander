@@ -355,6 +355,61 @@ async fn cached_snapshot() -> Result<CodexSnapshot, String> {
     }
 }
 
+/// Query only quota through the existing App Server contract, with explicit process home/profile.
+pub(crate) async fn session_quota(
+    home: &str,
+    codex_home: &str,
+    profile: Option<&str>,
+) -> Result<CodexUsageApiResponse, String> {
+    let detection = crate::agent::detect_agent_binary("codex".into()).await;
+    let binary = detection.path.ok_or("Codex CLI unavailable")?;
+    session_quota_from_binary(Path::new(&binary), home, codex_home, profile).await
+}
+
+async fn session_quota_from_binary(
+    binary: &Path,
+    home: &str,
+    codex_home: &str,
+    profile: Option<&str>,
+) -> Result<CodexUsageApiResponse, String> {
+    let mut args = Vec::new();
+    if let Some(profile) = profile {
+        args.extend(["--profile", profile]);
+    }
+    args.push("app-server");
+    let messages = [
+        serde_json::json!({"method":"initialize","id":0,"params":{"clientInfo":{"name":"tuicommander","version":env!("CARGO_PKG_VERSION")}}}),
+        serde_json::json!({"method":"initialized","params":{}}),
+        serde_json::json!({"method":"account/rateLimits/read","id":1,"params":null}),
+    ];
+    let responses = crate::cli_usage_rpc::request_jsonl_with_env(
+        binary,
+        &args,
+        &messages,
+        &[1],
+        Duration::from_secs(20),
+        &[
+            ("HOME".into(), home.into()),
+            ("CODEX_HOME".into(), codex_home.into()),
+        ],
+    )
+    .await?;
+    let limits = crate::cli_usage_rpc::decode_result(&responses, 1, "Codex rate limits")?;
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64;
+    Ok(map_app_server_snapshot(
+        limits,
+        AppTokenUsageResponse {
+            summary: AppTokenSummary::default(),
+            daily_usage_buckets: None,
+        },
+        now,
+    )
+    .usage)
+}
+
 /// Fetch Codex rate-limit usage (powers the status bar ticker).
 #[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn get_codex_usage_api() -> Result<CodexUsageApiResponse, String> {
@@ -370,6 +425,52 @@ pub async fn get_codex_usage_stats() -> Result<CodexStatsResponse, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Catches: passing root --profile after app-server, which the real CLI rejects.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn codex_profile_quota_uses_root_arguments_at_process_boundary() {
+        // Syntax mirrors the installed CLI help captured by critic-2150r1.
+        let script = crate::test_support::fake_ssh_script(
+            "2150-codex-root-profile",
+            r#"
+case "$*" in
+  'app-server'|'--profile work app-server') ;;
+  *) exit 2 ;;
+esac
+while IFS= read -r request; do
+  case "$request" in
+    *account/rateLimits/read*)
+      printf '%s\n' '{"id":1,"result":{"rateLimits":{"primary":{"usedPercent":23.5,"windowDurationMins":300}}}}'
+      ;;
+  esac
+done
+"#,
+            "exit /b 2",
+        );
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let binary = dir.path().join("codex");
+        std::fs::copy(script, &binary).unwrap();
+        for profile in [Some("work"), None] {
+            let quota = session_quota_from_binary(
+                &binary,
+                dir.path().to_str().unwrap(),
+                dir.path().to_str().unwrap(),
+                profile,
+            )
+            .await
+            .expect("profiled CLI must return quota, not an argument error");
+            assert_eq!(
+                quota
+                    .rate_limit
+                    .unwrap()
+                    .primary_window
+                    .unwrap()
+                    .used_percent,
+                23.5
+            );
+        }
+    }
 
     #[test]
     fn maps_official_app_server_snapshot() {

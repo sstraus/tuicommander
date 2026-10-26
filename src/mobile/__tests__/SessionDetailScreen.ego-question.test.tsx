@@ -1,16 +1,19 @@
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import describedQuestion from "../__fixtures__/egoDescribedQuestion2176.json";
 import question from "../__fixtures__/egoQuestion.json";
 import { SessionDetailScreen } from "../screens/SessionDetailScreen";
 import type { ChoicePrompt, SessionInfo } from "../useSessions";
 
-vi.mock("../../transport", () => ({
+vi.mock("../../transport", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../transport")>()),
 	subscribeEvents: vi.fn(async () => () => {}),
 	rpc: vi.fn().mockResolvedValue(undefined),
 	buildHttpUrl: (path: string) => `http://localhost${path}`,
-	HttpRpcError: class extends Error {},
 }));
+const { toastAdd } = vi.hoisted(() => ({ toastAdd: vi.fn() }));
+vi.mock("../../stores/toasts", () => ({ toastsStore: { add: toastAdd } }));
 vi.mock("../components/OutputView", () => ({ OutputView: () => <div>Terminal output</div> }));
 vi.mock("../useMobileVoice", () => ({
 	useMobileVoice: () => ({
@@ -21,7 +24,7 @@ vi.mock("../useMobileVoice", () => ({
 	}),
 }));
 
-import { rpc } from "../../transport";
+import { HttpRpcError, rpc } from "../../transport";
 
 // Solid's development build warns when this isolated screen's lazy updates
 // run after the event owner. Capture and validate this known fixture warning;
@@ -68,6 +71,8 @@ it("opens the full recorded ego question on demand and submits the selected opti
 		/>
 	));
 	expect(view.container.textContent).toContain("Input");
+	expect(view.getByText(question.title)).toBeTruthy();
+	fireEvent.click(view.getByRole("button", { name: "Open ego question" }));
 	expect(view.queryByText(question.title)).toBeNull();
 	fireEvent.click(view.getByRole("button", { name: "Open ego question" }));
 	expect(view.getByText(question.title)).toBeTruthy();
@@ -160,7 +165,6 @@ it("toggles recorded ego multiple options and submits only on explicit request",
 			onOpenFiles={() => {}}
 		/>
 	));
-	fireEvent.click(view.getByRole("button", { name: "Open ego question" }));
 	fireEvent.click(view.getByRole("button", { name: /Parser regression/ }));
 	await waitFor(() =>
 		expect(
@@ -198,4 +202,117 @@ it("toggles recorded ego multiple options and submits only on explicit request",
 				.map(([, args]) => args?.data),
 		).toEqual(["1", "2", "\r"]),
 	);
+});
+
+// Catches: HTTP refusals not using the same recovery as non-submitted receipts.
+it("opens the closed question after an HTTP selection_required refusal", async () => {
+	const view = render(() => (
+		<SessionDetailScreen
+			subscribeChatWake={() => () => {}}
+			session={session}
+			sessionExists
+			onBack={() => {}}
+			onOpenFiles={() => {}}
+		/>
+	));
+	if (view.queryByText(question.options[0].label)) {
+		await fireEvent.click(view.getByRole("button", { name: "Open ego question" }));
+	}
+	vi.mocked(rpc).mockRejectedValueOnce(
+		new HttpRpcError(
+			"submit_agent_reply",
+			409,
+			JSON.stringify({ reason: "selection_required", submitted: false, detail: "Use the question controls." }),
+		),
+	);
+	const input = view.getByRole("textbox") as HTMLTextAreaElement;
+	await fireEvent.input(input, { target: { value: "A" } });
+	await fireEvent.click(view.getByRole("button", { name: "Send" }));
+	await waitFor(() => expect(view.queryByText(question.options[0].label)).not.toBeNull());
+	expect(input.value).toBe("A");
+	expect(toastAdd).toHaveBeenCalledWith("Reply not sent", "Use the question controls.", "error", true);
+	expect(vi.mocked(rpc).mock.calls.filter(([cmd]) => cmd === "write_pty")).toHaveLength(0);
+});
+
+// Catches: normal polling or cursor movement reopening a card the human closed.
+it("keeps a manually closed selector closed across equivalent snapshots", async () => {
+	const [current, setCurrent] = createSignal(session);
+	const view = render(() => (
+		<SessionDetailScreen
+			subscribeChatWake={() => () => {}}
+			session={current()}
+			sessionExists
+			onBack={() => {}}
+			onOpenFiles={() => {}}
+		/>
+	));
+	await fireEvent.click(view.getByRole("button", { name: "Open ego question" }));
+	setCurrent({
+		...session,
+		state: {
+			...session.state!,
+			choice_prompt: {
+				...question,
+				options: question.options.map((option, index) => ({ ...option, highlighted: index === 1 })),
+			} as ChoicePrompt,
+		},
+	});
+	expect(view.queryByText(question.options[0].label)).toBeNull();
+});
+
+// Catches: selection_required only showing a toast while answer controls stay closed.
+it("selection_required_reply_opens_question_controls", async () => {
+	const view = render(() => (
+		<SessionDetailScreen
+			subscribeChatWake={() => () => {}}
+			session={session}
+			sessionExists
+			onBack={() => {}}
+			onOpenFiles={() => {}}
+		/>
+	));
+	if (view.queryByText(question.options[0].label)) {
+		await fireEvent.click(view.getByRole("button", { name: "Open ego question" }));
+	}
+	vi.mocked(rpc).mockResolvedValueOnce({
+		status: "rejected",
+		submitted: false,
+		acknowledged: false,
+		reason: "selection_required",
+		detail: "This question requires an option selection. Open the question and use its answer controls.",
+	});
+	const input = view.getByRole("textbox") as HTMLTextAreaElement;
+	await fireEvent.input(input, { target: { value: "A" } });
+	await fireEvent.click(view.getByRole("button", { name: "Send" }));
+	await waitFor(() => expect(view.queryByText(question.options[0].label)).not.toBeNull());
+	expect(input.value).toBe("A");
+	expect(toastAdd).toHaveBeenCalledWith(
+		"Reply not sent",
+		"This question requires an option selection. Open the question and use its answer controls.",
+		"error",
+		true,
+	);
+	expect(vi.mocked(rpc).mock.calls.filter(([cmd]) => cmd === "write_pty")).toHaveLength(0);
+});
+
+// Catches: a parsed native selector staying hidden behind the collapsed question action.
+it("mobile_ego_selector_with_descriptions_shows_answer_controls", () => {
+	const view = render(() => (
+		<SessionDetailScreen
+			subscribeChatWake={() => () => {}}
+			session={{
+				...session,
+				state: {
+					...session.state!,
+					question_text: describedQuestion.title,
+					choice_prompt: describedQuestion as ChoicePrompt,
+				},
+			}}
+			sessionExists
+			onBack={() => {}}
+			onOpenFiles={() => {}}
+		/>
+	));
+	for (const option of describedQuestion.options) expect(view.queryByText(option.label)).not.toBeNull();
+	expect(vi.mocked(rpc).mock.calls.filter(([cmd]) => cmd === "write_pty")).toHaveLength(0);
 });

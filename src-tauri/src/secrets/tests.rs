@@ -443,3 +443,143 @@ fn base64_payload_redacts_secret_at_every_alignment_without_hiding_unrelated_out
     let unrelated = "Basic dXNlcjpub3QtaXQ=";
     assert_eq!(mask::mask(unrelated, &needles), unrelated);
 }
+
+// Catches: successful deletion reported as a lookup failure, and MCP teardown
+// clearing backend-owned values before a replacement connection can remove them.
+#[tokio::test]
+async fn secret_remove_reports_completion_across_mcp_reconnects() {
+    use axum::{body::Body, extract::ConnectInfo, http::Request};
+    use tower::ServiceExt;
+    let state = std::sync::Arc::new(crate::state::tests_support::make_test_app_state());
+    state.config.write().mcp_capabilities.denied.clear();
+    let app = crate::mcp_http::build_router(state.clone(), false, true).layer(axum::Extension(
+        ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 12345))),
+    ));
+    let mut results = Vec::new();
+    for reconnect in [false, true] {
+        let initialize = || {
+            Request::builder()
+                .method("POST")
+                .uri("/mcp")
+                .header("content-type", "application/json")
+                .body(Body::from(
+                    serde_json::json!({
+                        "jsonrpc": "2.0", "id": 1, "method": "initialize",
+                        "params": {"protocolVersion": "2025-11-25", "capabilities": {},
+                            "clientInfo": {"name": "secret-scope-test", "version": "1"}}
+                    })
+                    .to_string(),
+                ))
+                .unwrap()
+        };
+        let response = app.clone().oneshot(initialize()).await.unwrap();
+        assert_eq!(response.status(), 200);
+        let original = response.headers()["mcp-session-id"]
+            .to_str()
+            .unwrap()
+            .to_owned();
+        // Existing form/HTTP seam: native bootstrap is deliberately unavailable
+        // to the main window. Submission still uses the real validation/store.
+        let form = state
+            .secrets
+            .open(
+                Form::request(
+                    ["TARGET", "KEEP"]
+                        .into_iter()
+                        .map(|name| Field {
+                            name: name.into(),
+                            kind: FieldKind::Password,
+                            display: None,
+                        })
+                        .collect(),
+                    "Scope regression".into(),
+                )
+                .unwrap(),
+            )
+            .unwrap();
+        let response = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/secrets/forms/submit")
+                    .header("content-type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "nonce": form.nonce, "status": "stored",
+                            "values": {"TARGET": "synthetic-target", "KEEP": "synthetic-keep"}
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), 200);
+        let bytes = axum::body::to_bytes(response.into_body(), 8192)
+            .await
+            .unwrap();
+        let stored: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(
+            stored,
+            serde_json::json!({"names": ["TARGET", "KEEP"], "status": "stored"})
+        );
+        let session = if reconnect {
+            let response = app
+                .clone()
+                .oneshot(
+                    Request::builder()
+                        .method("DELETE")
+                        .uri("/mcp")
+                        .header("mcp-session-id", &original)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert!(response.status().is_success());
+            let response = app.clone().oneshot(initialize()).await.unwrap();
+            assert_eq!(response.status(), 200);
+            let replacement = response.headers()["mcp-session-id"]
+                .to_str()
+                .unwrap()
+                .to_owned();
+            assert_ne!(original, replacement);
+            replacement
+        } else {
+            original
+        };
+        assert!(
+            state.secrets.environment(&["TARGET".into()]).is_ok(),
+            "connection teardown lost stored value"
+        );
+        for _ in 0..2 {
+            let response = app.clone().oneshot(Request::builder()
+                .method("POST").uri("/mcp")
+                .header("content-type", "application/json").header("mcp-session-id", &session)
+                .body(Body::from(serde_json::json!({
+                    "jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                    "params": {"name": "secret", "arguments": {"action": "remove", "names": ["TARGET", "ABSENT"]}}
+                }).to_string())).unwrap()).await.unwrap();
+            assert_eq!(response.status(), 200);
+            let bytes = axum::body::to_bytes(response.into_body(), 8192)
+                .await
+                .unwrap();
+            let reply: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+            assert_ne!(reply["result"]["isError"], true);
+            results.push(
+                serde_json::from_str::<serde_json::Value>(
+                    reply["result"]["content"][0]["text"].as_str().unwrap(),
+                )
+                .unwrap(),
+            );
+            assert!(state.secrets.environment(&["TARGET".into()]).is_err());
+            assert!(state.secrets.environment(&["KEEP".into()]).is_ok());
+        }
+    }
+    // Check all lifecycle/state assertions before the wording regression.
+    assert_eq!(
+        results,
+        vec![serde_json::json!({"names": ["TARGET", "ABSENT"], "status": "removed"}); 4]
+    );
+}

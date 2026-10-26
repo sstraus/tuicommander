@@ -43,6 +43,7 @@ When modifying PTY behavior, output parsing, shell state, or terminal UI:
 | `docs/backend/pty.md` | PTY session lifecycle, reader threads, output handling |
 | `docs/backend/output-parser.md` | Rate limits, structured events, parsing rules |
 | `docs/frontend/canvas-terminal-audit.md` | CanvasTerminal feature completeness audit |
+| `docs/frontend/terminal-features.md` | Consolidated terminal behaviors, shortcuts, configurable features |
 | `docs/FEATURES.md` | Section 1 (Terminal Management) |
 | `docs/user-guide/terminals.md` | User-facing terminal features |
 | `docs/api/tauri-commands.md` | PTY commands (create_pty, write_pty, resize_pty, etc.) |
@@ -78,6 +79,7 @@ When adding a new `app.emit(event_name, payload)` call, document it here and lis
 
 | Event | Payload | Emitted from | Frontend listener |
 |-------|---------|-------------|-------------------|
+| `ideas-changed` | `{}` | Planner and UI notes mutations after persistence; desktop plus `/events` SSE | `ideasStore.hydrate()` reloads after local writes; reconnect also reloads |
 | `open-markdown-tabs-changed` | `{}` | `open_markdown_tabs::publish`: desktop IPC and `/events` SSE after a changed metadata snapshot | `createOpenMarkdownTabs` refetches one session-owned list shared by the mobile menu and wide-screen dropdown |
 | `background-mode-changed` | `{ state: "hidden" \| "unloaded" \| "visible" }` | Rust background lifecycle, desktop + `/events` SSE | `useAppInit.ts` logs desktop state; remote clients may display it |
 | `close-dialog` | `{ kind: "ask" \| "confirm_quit", sessions: number, background_available: boolean }` | Rust background close policy; dual-emit to desktop and `/events` SSE | `useAppInit.ts` presents it on desktop only |
@@ -101,6 +103,7 @@ When adding a new `app.emit(event_name, payload)` call, document it here and lis
 | `mcp-toast` | `{ title, message, level, sound, urgency, origin_repo_path?, origin_session_id?, __tuic_origin?: { connection, name } }` | `mcp_transport.rs` — `ui action=toast`; derives origin from the calling MCP session rather than accepting caller-supplied scope. `origin_session_id` is the caller's TUIC session, absent for an unbound caller | `useAppInit.ts` → repository-scoped Messages bell item, even when transient mirroring is disabled; `urgency=urgent` additionally shows a transient card (upper-right container, never over the composer), `normal` or an absent urgency also shows a card when an origin session is present and not being viewed (inactive terminal or unfocused document), controlled by the default-on per-client **Show cards from other terminals** setting; no origin stays bell only, and a mirrored urgent notice keeps its `[connection]` label on the card; consecutive identical notices from the same origin and connection id within five seconds deduplicate both the item and requested sound; mirrored titles/messages must be string/string-or-null or the notice is discarded with a content-free debug log. The explicit Open terminal action resolves `origin_session_id` at click time. `remote_mirror.rs` forwards connected remote toasts on both transports, adds the locally saved connection name to the origin marker, and resolves the remote peer to its PTY UUID. Mirrored notices are labelled with that name and navigate only within the owning connection; disconnected frames are dropped |
 | `progress-recorded` | `{ repo_path, payload: { entry: { id, project, ptyId?, type, text, ... } } }` | `mcp_transport.rs emit_progress_entry()` after the SQLite transaction commits; dual-emitted to the desktop window and `event_bus` → `/events` SSE | `progressStore` refreshes the selected PTY or aggregate and routes the toast to that source |
 | `workflow-run-changed` | `{ repo_path, payload: { runId, sequence } }` | `workflows/run/api.rs emit_run_changed()` after operator mutations (also wakes the daemon actor), daemon transitions and deadline expiry, MCP agent launch/report, and bound PTY exit; dual-emitted to the desktop window and `event_bus` → `/events` SSE. It is a cursor wake hint, not a replacement for event replay | `useAppInit.ts` → `workflowRunSignals` keeps the highest sequence per project/run; reconnect increments a resync revision so run views can replay from their cursor |
+| `ui-tab` | `{id,title,html,url?,pinned,focus,origin_repo_path?,opener_tuic_session?}` | MCP UI tab handler; desktop emit plus SSE with the same optional stable caller identity | `useAppInit.ts` stores the opener on native Markdown tabs; desktop publication carries it to mobile Markdown menu metadata |
 | `mcp-confirm` | `{ request_id, title, message, origin_repo_path?, origin_session_id? }` | `mcp_transport.rs` — `ui action=confirm`, dual-emitted, plus a mobile push. It used to be a native OS dialog, which no remote human could answer; every client now gets the request and the first answer wins | `McpConfirmHost.tsx` (mounted by BOTH `ApplicationOverlays.tsx` and `MobileApp.tsx`) → `stores/mcpConfirm.ts` queue → `ConfirmDialog`; remote confirmations retain the origin connection, show its locally saved host name, route answers to that daemon, and clear on disconnect. Resolution is scoped by connection and request id |
 | `mcp-confirm-resolved` | `{ request_id, confirmed }` | `mcp_http/mod.rs` `resolve_mcp_confirm()` on an answer, and `mcp_transport.rs` when the 300 s wait expires | `McpConfirmHost.tsx` → drops that request from the queue, so the clients that lost the race take the dialog down |
 | `pty-description-changed` | `{ session_id: string, description: string | null }` | `state.rs` — MCP `agent spawn` / `session submit` / `session input` updates the orchestrator-owned PTY description | `useAppInit.ts` → `terminalsStore.ptyDescription` → Context bar |
@@ -642,6 +645,7 @@ When adding, renaming or moving a docs page:
 | `docs/frontend/stores.md` | SolidJS stores |
 | `docs/frontend/transport.md` | Tauri/HTTP dual-mode transport |
 | `docs/frontend/utilities.md` | Utility function reference |
+| `docs/frontend/terminal-features.md` | Consolidated terminal behaviors, shortcuts, configurable features |
 | `docs/features/ssh-tunnels.md` | SSH tunnel architecture and module map |
 | `docs/user-guide/*.md` | User-facing guides (20 files) |
 | **Code-embedded docs** | |

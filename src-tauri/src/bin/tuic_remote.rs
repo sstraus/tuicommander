@@ -3,6 +3,7 @@ struct ParsedArgs {
     instance: Option<String>,
     set_password: bool,
     build_info: bool,
+    relay_pair: Option<tuicommander_lib::RelayPairOptions>,
     remote: tuicommander_lib::RemoteOptions,
 }
 
@@ -15,6 +16,10 @@ where
     let mut instance = None;
     let mut set_password = false;
     let mut build_info = false;
+    let mut relay_pair: Option<tuicommander_lib::RelayPairOptions> = None;
+    let mut relay_register_seen = false;
+    let mut relay_out_seen = false;
+    let mut relay_pair_seen = false;
     let mut bind_seen = false;
     let mut survive_seen = false;
     let mut no_agent_configs_seen = false;
@@ -45,6 +50,35 @@ where
                     anyhow::bail!("--build-info may only be specified once");
                 }
                 build_info = true;
+            }
+            "--relay-pair" => {
+                if relay_pair_seen {
+                    anyhow::bail!("--relay-pair may only be specified once");
+                }
+                relay_pair_seen = true;
+                let url = args
+                    .next()
+                    .filter(|value| !value.starts_with("--"))
+                    .ok_or_else(|| anyhow::anyhow!("--relay-pair requires the relay URL"))?;
+                relay_pair.get_or_insert_with(Default::default).relay_url = url;
+            }
+            "--relay-register" => {
+                if relay_register_seen {
+                    anyhow::bail!("--relay-register may only be specified once");
+                }
+                relay_register_seen = true;
+                relay_pair.get_or_insert_with(Default::default).register = true;
+            }
+            "--relay-out" => {
+                if relay_out_seen {
+                    anyhow::bail!("--relay-out may only be specified once");
+                }
+                relay_out_seen = true;
+                let path = args
+                    .next()
+                    .filter(|value| !value.starts_with("--"))
+                    .ok_or_else(|| anyhow::anyhow!("--relay-out requires a file path"))?;
+                relay_pair.get_or_insert_with(Default::default).out = Some(path.into());
             }
             "--bind" => {
                 if bind_seen {
@@ -98,10 +132,14 @@ where
         }
     }
 
+    if relay_pair.as_ref().is_some_and(|o| o.relay_url.is_empty()) {
+        anyhow::bail!("--relay-register and --relay-out need --relay-pair <url>");
+    }
     Ok(ParsedArgs {
         instance,
         set_password,
         build_info,
+        relay_pair,
         remote,
     })
 }
@@ -137,6 +175,13 @@ fn main() -> anyhow::Result<()> {
 
     if parsed.set_password {
         return tuicommander_lib::set_password_interactive();
+    }
+
+    if let Some(options) = parsed.relay_pair.take() {
+        return tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+            .block_on(tuicommander_lib::relay_pair(options));
     }
 
     parsed.remote.port = match std::env::var("TUIC_PORT") {
@@ -184,6 +229,28 @@ mod tests {
         assert_eq!(parsed.remote.bind, IpAddr::V4(Ipv4Addr::LOCALHOST));
         assert_eq!(parsed.remote.survive_secs, Some(1800));
         assert!(!parsed.remote.agent_configs);
+    }
+
+    #[test]
+    fn relay_pair_flags_parse_and_reject_orphans() {
+        let parsed = parse_args([
+            "--relay-pair",
+            "wss://relay.example",
+            "--relay-register",
+            "--relay-out",
+            "bundle.txt",
+        ])
+        .expect("valid relay pairing");
+        let options = parsed.relay_pair.expect("relay options");
+        assert_eq!(options.relay_url, "wss://relay.example");
+        assert!(options.register);
+        assert_eq!(
+            options.out.as_deref(),
+            Some(std::path::Path::new("bundle.txt"))
+        );
+        assert!(parse_args(["--relay-register"]).is_err());
+        assert!(parse_args(["--relay-out", "x"]).is_err());
+        assert!(parse_args(["--relay-pair"]).is_err());
     }
 
     #[test]

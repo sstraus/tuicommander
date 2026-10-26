@@ -66,7 +66,9 @@ pub(crate) fn sanitize_pty_parent_env(cmd: &mut CommandBuilder) {
     // RUSTC_WORKSPACE_WRAPPER, RUSTDOC),
     // build-script metadata (HOST, TARGET, PROFILE, NUM_JOBS, OPT_LEVEL, DEBUG,
     // HOST_CC, HOST_CXX, DEP_*), and mbx's MBX_* session state. Keep user
-    // preferences such as CARGO_HOME.
+    // preferences such as CARGO_HOME. Rustup proxy selection and recursion
+    // state belong to the TUIC launch too: inheriting its selected toolchain
+    // would override the next repository's rust-toolchain.toml.
     for key in [
         "CARGO",
         "CARGO_TARGET_DIR",
@@ -87,6 +89,9 @@ pub(crate) fn sanitize_pty_parent_env(cmd: &mut CommandBuilder) {
         "RUSTC_WRAPPER",
         "RUSTC_WORKSPACE_WRAPPER",
         "RUSTDOC",
+        "RUSTUP_TOOLCHAIN",
+        "RUSTUP_TOOLCHAIN_SOURCE",
+        "RUST_RECURSION_COUNT",
         "HOST",
         "TARGET",
         "PROFILE",
@@ -1200,6 +1205,8 @@ pub(crate) struct SilenceState {
     /// blocked on read()) from "only chrome-only ticks arriving". The backup
     /// timer should only fire when truly no chunks arrive.
     pub(crate) last_chunk_at: std::time::Instant,
+    /// Monotonic input stamp; unlike idle clocks, never repaired after sleep.
+    pub(crate) last_input_at: Option<std::time::Instant>,
     /// When the last StatusLine (spinner) event was seen. If recent,
     /// silence-based question detection is suppressed — spinner means the agent is working.
     pub(crate) last_status_line_at: Option<std::time::Instant>,
@@ -1374,6 +1381,7 @@ impl SilenceState {
             pending_question_line: None,
             question_already_emitted: false,
             last_chunk_at: std::time::Instant::now(),
+            last_input_at: None,
             last_resize_at: None,
             suppress_echo_until: None,
             last_status_line_at: None,
@@ -3680,18 +3688,25 @@ pub(crate) async fn resize_session_off_thread(
     session_id: String,
     rows: u16,
     cols: u16,
+    origin: &'static str,
 ) -> Result<Option<crate::grid_gate::GridFrame>, String> {
     let state = Arc::clone(state);
-    tokio::task::spawn_blocking(move || resize_session_core(&state, &session_id, rows, cols))
-        .await
-        .map_err(|e| format!("resize failed: {e}"))?
+    tokio::task::spawn_blocking(move || {
+        resize_session_core(&state, &session_id, rows, cols, origin)
+    })
+    .await
+    .map_err(|e| format!("resize failed: {e}"))?
 }
 
+/// `origin` names the transport that asked (`ipc`, `http`, `mcp`) for the
+/// debug log: several viewers share one PTY and the last writer wins, so the log
+/// is the only record of which viewer set the size the child reads.
 pub(crate) fn resize_session_core(
     state: &AppState,
     session_id: &str,
     rows: u16,
     cols: u16,
+    origin: &'static str,
 ) -> Result<Option<crate::grid_gate::GridFrame>, String> {
     if rows == 0 || cols == 0 {
         return Err("Invalid dimensions: rows and cols must be > 0".to_string());
@@ -3712,22 +3727,30 @@ pub(crate) fn resize_session_core(
         .or_insert_with(|| Arc::new(Mutex::new((0, 0))))
         .clone();
     let mut applied = resize_lock.lock();
-    // Seed the last-applied dims from the live grid the first time we see this session:
-    // at creation the grid and PTY share the openpty size, so a first resize that only
-    // matches the startup dims no-ops instead of firing a gratuitous SIGWINCH. `(0, 0)`
-    // is the never-applied sentinel (real dims are guarded > 0 above).
+    // Seed from the kernel PTY size, not the grid: the grid may differ from what
+    // the child sees. If querying fails, leave the sentinel and attempt the resize.
+    // `(0, 0)` is the never-applied sentinel (real dims are guarded > 0 above).
     if *applied == (0, 0)
-        && let Some(vt_log) = state.grid.vt_log_buffers.get(session_id)
+        && let Some(session) = state.session_maps.sessions.get(session_id)
+        && let Ok(size) = session.lock().master.get_size()
     {
-        let vt = vt_log.lock();
-        *applied = (vt.grid_screen_lines() as u16, vt.grid_columns() as u16);
+        *applied = (size.rows, size.cols);
     }
     // No-op guard compares against the last dims that actually reached the PTY, not just
     // the grid: a prior call that resized the grid but then failed `master.resize` leaves
     // them divergent, and a grid-only guard would skip the PTY forever (CONC-B criterion 2).
     if *applied == (rows, cols) {
+        tracing::debug!(
+            source = "pty",
+            session_id,
+            origin,
+            rows,
+            cols,
+            "PTY resize no-op: already applied"
+        );
         return Ok(None);
     }
+    let previous = *applied;
     // Resize the grid and capture a fresh full frame, holding the vt lock so no
     // PTY chunk can land between the check and the resize. `resize`
     // marks the grid fully damaged, so `serialize_dirty_rows` yields the whole
@@ -3764,8 +3787,8 @@ pub(crate) fn resize_session_core(
         .sessions
         .get(session_id)
         .ok_or_else(|| format!("Session not found: {session_id}"))?;
-    entry
-        .lock()
+    let session = entry.lock();
+    session
         .master
         .resize(PtySize {
             rows,
@@ -3774,6 +3797,21 @@ pub(crate) fn resize_session_core(
             pixel_height: 0,
         })
         .map_err(|e| format!("Failed to resize PTY: {e}"))?;
+    // TIOCGWINSZ on the master reads the same winsize the child reads.
+    let child_size = session.master.get_size().ok();
+    drop(session);
+    tracing::debug!(
+        source = "pty",
+        session_id,
+        origin,
+        rows,
+        cols,
+        previous_rows = previous.0,
+        previous_cols = previous.1,
+        child_rows = child_size.map(|s| s.rows),
+        child_cols = child_size.map(|s| s.cols),
+        "PTY resize applied"
+    );
     // Record the dims only now that they've reached the PTY, still under `applied`, so
     // a racing resize either waits behind this lock or observes a consistent value.
     // On a `master.resize` failure above we return via `?` WITHOUT updating `applied`,

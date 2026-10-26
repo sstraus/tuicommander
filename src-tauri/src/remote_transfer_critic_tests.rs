@@ -575,7 +575,7 @@ async fn token_never_appears_in_error_text() {
         Ok(r) => r.errors.join("\n"),
         Err(e) => e,
     };
-    assert!(!text.is_empty());
+    assert_ne!(text, "");
     assert!(!text.contains("SECRET-TOKEN-1434"), "token leaked: {text}");
 }
 

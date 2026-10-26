@@ -1091,8 +1091,14 @@ mod tests {
 
     #[test]
     fn dedup_rollup_handles_missing_nodes() {
-        assert!(dedup_rollup_nodes(&serde_json::json!({})).is_empty());
-        assert!(dedup_rollup_nodes(&serde_json::json!({"nodes": []})).is_empty());
+        assert_eq!(
+            dedup_rollup_nodes(&serde_json::json!({})),
+            [] as [serde_json::Value; 0]
+        );
+        assert_eq!(
+            dedup_rollup_nodes(&serde_json::json!({"nodes": []})),
+            [] as [serde_json::Value; 0]
+        );
     }
 
     // --- truncate_ci_logs tests ---

@@ -174,7 +174,10 @@ mod automation_tests {
         runtime
             .automation_notice(owner.store(), &run, "notice")
             .await;
-        assert!(server.requests().is_empty());
+        assert_eq!(
+            server.requests(),
+            [] as [(std::string::String, serde_json::Value); 0]
+        );
         // Re-register the owning live PTY, then another run must remain quiet.
         let peer = crate::telegram::tests::PEER;
         crate::state::tests_support::insert_dummy_session(&runtime.state, peer);
@@ -190,7 +193,10 @@ mod automation_tests {
         runtime
             .automation_notice(owner.store(), &run, "foreign")
             .await;
-        assert!(server.requests().is_empty());
+        assert_eq!(
+            server.requests(),
+            [] as [(std::string::String, serde_json::Value); 0]
+        );
         let mut owned = run.clone();
         owned.session_id = Some(peer.into());
         runtime

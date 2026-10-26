@@ -1,0 +1,19 @@
+{"fixture":"src-tauri/src/fixtures/agent_prompts/ego-provider-failure-2335.tcap","agent":"ego","geometry":[41,128]}
+{"record":0,"event":{"type":"shell-state","state":"busy","agent_type":"ego"}}
+{"record":0,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":1,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":2,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":3,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":4,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":5,"event":{"type":"intent","text":"Report the word hello.","title":"εgo","_turn_epoch":0}}
+{"record":5,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
+{"record":5,"event":{"type":"progress","state":0,"value":0,"_turn_epoch":0}}
+{"record":5,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":6,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":7,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":8,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":9,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
+{"record":9,"event":{"type":"progress","state":2,"value":0,"_turn_epoch":0}}
+{"record":9,"event":{"type":"api-error","pattern_name":"ego-provider-failure","matched_text":"the response stream failed: HTTP response body failed (127.0.0.1), so the model never reported why the generation stopped; review the output, then send a new prompt to continue","error_kind":"server","_turn_epoch":0}}
+{"record":9,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"ring_len":1176}

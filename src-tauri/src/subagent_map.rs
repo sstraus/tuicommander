@@ -1406,7 +1406,10 @@ mod tests {
         subagent_flows(&mut cache, &dir, &parent);
         assert_eq!(cache.meta_reads, 3, "an evicted meta must be reread");
         std::fs::remove_file(&meta).unwrap();
-        assert!(subagent_flows(&mut cache, &dir, &parent).is_empty());
+        assert_eq!(
+            subagent_flows(&mut cache, &dir, &parent),
+            [] as [crate::subagent_map::SubagentFlow; 0]
+        );
     }
 
     fn flows(dir: &Path, parent: &Path) -> Vec<SubagentFlow> {

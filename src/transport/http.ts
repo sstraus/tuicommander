@@ -167,8 +167,15 @@ export function owningConnectionFor(command: string, args: Record<string, unknow
  * `explicitConnectionId` is for the callers that hold a connection but no repo
  * yet — probing a machine, or reading a path before it is registered. Everything
  * else leaves it out and is routed from its own arguments.
+ * A caller-owned signal bounds a health read without imposing deadlines on other
+ * commands. Signalled reads are not deduplicated: one caller cannot cancel another.
  */
-export function rpc<T>(command: string, args: Record<string, unknown> = {}, explicitConnectionId?: string): Promise<T> {
+export function rpc<T>(
+	command: string,
+	args: Record<string, unknown> = {},
+	explicitConnectionId?: string,
+	signal?: AbortSignal,
+): Promise<T> {
 	const connectionId = explicitConnectionId ?? owningConnectionFor(command, args);
 	// Serialize write_pty per session in browser mode to prevent letter reordering
 	if (command === "write_pty" && (!isTauri() || connectionId)) {
@@ -214,19 +221,19 @@ export function rpc<T>(command: string, args: Record<string, unknown> = {}, expl
 	// lookup (and a thrown+caught Error for every command not in that table,
 	// which is most of them) to work that out. Skip straight to invoke().
 	if (!connectionId && isTauri()) {
-		return rpcImpl<T>(command, args, connectionId);
+		return rpcImpl<T>(command, args, connectionId, signal);
 	}
-	if (isIdempotentRpc(command, args)) {
+	if (!signal && isIdempotentRpc(command, args)) {
 		const key = connectionId
 			? `${connectionId}:${command}:${JSON.stringify(args)}`
 			: `${command}:${JSON.stringify(args)}`;
 		const existing = _inflight.get(key) as Promise<T> | undefined;
 		if (existing) return existing;
-		const promise = rpcImpl<T>(command, args, connectionId).finally(() => _inflight.delete(key));
+		const promise = rpcImpl<T>(command, args, connectionId, signal).finally(() => _inflight.delete(key));
 		_inflight.set(key, promise as Promise<unknown>);
 		return promise;
 	}
-	return rpcImpl<T>(command, args, connectionId);
+	return rpcImpl<T>(command, args, connectionId, signal);
 }
 
 /** Cached after the first resolution — `import()` of an already-loaded module
@@ -234,7 +241,12 @@ export function rpc<T>(command: string, args: Record<string, unknown> = {}, expl
  *  pays a module-registry lookup + Promise wrap that a plain reference avoids. */
 let cachedTauriInvoke: typeof import("@tauri-apps/api/core").invoke | undefined;
 
-async function rpcImpl<T>(command: string, args: Record<string, unknown>, connectionId?: string): Promise<T> {
+async function rpcImpl<T>(
+	command: string,
+	args: Record<string, unknown>,
+	connectionId?: string,
+	signal?: AbortSignal,
+): Promise<T> {
 	// When connectionId is provided, always use HTTP fetch (remote daemon is accessed via HTTP)
 	if (!connectionId && isTauri()) {
 		if (!cachedTauriInvoke) {
@@ -261,6 +273,7 @@ async function rpcImpl<T>(command: string, args: Record<string, unknown>, connec
 	const init: RequestInit = {
 		method: mapping.method,
 		headers: { "Content-Type": "application/json" },
+		signal,
 	};
 	if (mapping.body !== undefined) {
 		init.body = JSON.stringify(mapping.body);

@@ -59,25 +59,17 @@
 
 .ipRow select { flex: 1; min-width: 0; }
 
-.url {
-	display: block;
-	width: 100%;
-	margin-top: 14px;
-	padding: 8px 10px;
-	font-family: monospace;
-	font-size: 11px;
-	text-align: center;
-	color: var(--fg-muted);
-	background: var(--bg-tertiary);
-	border: 1px solid var(--border);
-	border-radius: var(--radius-sm);
-	cursor: pointer;
-	word-break: break-all;
-}
+.connection { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
 
-.url:hover {
-	color: var(--fg-primary);
-	border-color: var(--accent);
+.url {
+ display: block;
+ width: 100%;
+ font-family: monospace;
+ font-size: 11px;
+ text-align: center;
+ color: var(--fg-muted);
+ word-break: break-all;
+ user-select: all;
 }
 
 .discoveryFailure { display: flex; flex-direction: column; gap: 8px; min-width: 0; }

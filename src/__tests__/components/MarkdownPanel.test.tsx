@@ -93,23 +93,35 @@ describe("MarkdownPanel", () => {
 		const input = container.querySelector(".searchInput") as HTMLInputElement;
 		expect(input).not.toBeNull();
 		expect(input.placeholder).toContain("Filter");
-		const toggle = container.querySelector(".modeToggle");
+		const toggle = container.querySelector("button[aria-pressed]");
 		expect(toggle).not.toBeNull();
-		expect(toggle!.classList.contains("modeToggleActive")).toBe(false);
+		expect(toggle).toHaveAttribute("aria-pressed", "false");
 	});
 
 	it("toggles to content search mode, switching placeholder and active state", () => {
 		const { container } = render(() => <MarkdownPanel visible={true} repoPath="/test/repo" onClose={() => {}} />);
-		const toggle = container.querySelector(".modeToggle")!;
+		const toggle = container.querySelector("button[aria-pressed]")!;
 		fireEvent.click(toggle);
 
 		const input = container.querySelector(".searchInput") as HTMLInputElement;
 		expect(input.placeholder).toContain("contents");
-		expect(toggle.classList.contains("modeToggleActive")).toBe(true);
+		expect(toggle).toHaveAttribute("aria-pressed", "true");
 
 		// Toggling back restores filename mode.
 		fireEvent.click(toggle);
 		expect(input.placeholder).toContain("Filter");
-		expect(toggle.classList.contains("modeToggleActive")).toBe(false);
+		expect(toggle).toHaveAttribute("aria-pressed", "false");
 	});
+});
+
+it("catches query clear losing the draft or sort selection failing to close the menu", () => {
+	const view = render(() => <MarkdownPanel visible repoPath={null} onClose={() => {}} />);
+	const input = view.getByRole("textbox") as HTMLInputElement;
+	fireEvent.input(input, { target: { value: "*.md" } });
+	fireEvent.click(view.getByRole("button", { name: "Clear search" }));
+	expect(input.value).toBe("");
+	fireEvent.click(view.getByRole("button", { name: "Sort by folder" }));
+	fireEvent.click(view.getByText("Date"));
+	expect(view.getByRole("button", { name: "Sort by date" })).toBeInTheDocument();
+	expect(view.queryByTestId("dropdown")).toBeNull();
 });

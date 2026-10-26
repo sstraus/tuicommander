@@ -1,5 +1,6 @@
 import { type Component, createEffect, createSignal, For, on, Show } from "solid-js";
 import { invoke } from "../../invoke";
+import { Button } from "../ui/Button";
 import s from "./StoriesDialog.module.css";
 
 interface Incident {
@@ -53,9 +54,9 @@ export const RunIncidents: Component<{ project: string; runId: string; sequence:
 		<section class={s.incidents} aria-label="Run incidents" aria-busy={loading()}>
 			<div class={s.detailHeader}>
 				<h4>Incidents and next steps</h4>
-				<button type="button" class={s.loadMore} disabled={loading()} onClick={() => void refresh()}>
+				<Button type="button" class={s.loadMore} disabled={loading()} onClick={() => void refresh()}>
 					Refresh incidents
-				</button>
+				</Button>
 			</div>
 			<p class={s.muted}>
 				Recorded outcomes for this run. Suggestions require your action. Session and task evidence is available only

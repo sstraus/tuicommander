@@ -12,7 +12,10 @@ use crate::git_cli::git_cmd;
 use crate::worktree::{WorktreeConfig, create_worktree_internal};
 
 pub fn setup_test_repo() -> TempDir {
-    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    setup_test_repo_at(TempDir::new().expect("Failed to create temp dir"))
+}
+
+pub fn setup_test_repo_at(temp_dir: TempDir) -> TempDir {
     let repo_path = temp_dir.path();
 
     git_cmd(repo_path)

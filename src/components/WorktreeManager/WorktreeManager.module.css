@@ -24,6 +24,7 @@
 }
 
 .header {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -40,12 +41,7 @@
 
 .close {
   background: none;
-  border: none;
   color: var(--fg-secondary);
-  font-size: var(--font-2xl);
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: var(--radius-md);
 }
 
 .close:hover {
@@ -54,6 +50,7 @@
 }
 
 .toolbar {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -74,15 +71,8 @@
 }
 
 .filterPill {
-  font-size: var(--font-xs);
-  font-family: var(--font-ui);
   color: var(--fg-secondary);
   background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  padding: 2px 8px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  white-space: nowrap;
   transition: background 0.1s ease, color 0.1s ease;
 }
 
@@ -94,7 +84,6 @@
 .filterPillActive {
   color: var(--fg-primary);
   background: var(--bg-highlight);
-  border-color: var(--accent);
 }
 
 .searchInput {
@@ -103,7 +92,9 @@
 }
 
 .batchBar {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
   padding: 6px 16px;
@@ -114,13 +105,8 @@
 }
 
 .batchMergeBtn {
-  font-size: var(--font-xs);
   color: var(--success);
   background: none;
-  border: 1px solid var(--success);
-  padding: 2px 10px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
   margin-left: auto;
 }
 
@@ -129,13 +115,8 @@
 }
 
 .batchDeleteBtn {
-  font-size: var(--font-xs);
   color: var(--error);
   background: none;
-  border: 1px solid var(--error);
-  padding: 2px 10px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
 }
 
 .batchDeleteBtn:hover {
@@ -160,6 +141,7 @@
 
 /* Column headers */
 .columnHeader {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: grid;
   grid-template-columns: 20px 120px 1fr auto auto auto auto;
   align-items: center;
@@ -304,28 +286,21 @@
 }
 
 .actions {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   gap: 2px;
   justify-content: flex-end;
 }
 
 .actionBtn {
-  font-size: var(--font-xs);
-  font-family: var(--font-ui);
   color: var(--fg-muted);
   background: none;
-  border: 1px solid transparent;
-  padding: 2px 6px;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  line-height: 1.2;
   transition: color 0.1s ease, background 0.1s ease;
 }
 
 .actionBtn:hover:not(:disabled) {
   background: var(--bg-highlight);
   color: var(--fg-primary);
-  border-color: var(--border);
 }
 
 .actionBtn:disabled {
@@ -352,13 +327,8 @@
 }
 
 .pruneBtn {
-  font-size: var(--font-xs);
   color: var(--fg-secondary);
   background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  padding: 1px 8px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
   flex-shrink: 0;
 }
 

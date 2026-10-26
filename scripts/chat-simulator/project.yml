@@ -1,0 +1,23 @@
+name: ChatMeasure1770
+options:
+  deploymentTarget:
+    iOS: '18.0'
+targets:
+  ChatMeasure1770:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - Measurement.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: local.tuic.chatmeasure1770.tests
+        GENERATE_INFOPLIST_FILE: YES
+        CODE_SIGNING_ALLOWED: NO
+schemes:
+  ChatMeasure1770:
+    build:
+      targets:
+        ChatMeasure1770: all
+    test:
+      targets:
+        - ChatMeasure1770

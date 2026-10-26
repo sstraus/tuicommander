@@ -292,6 +292,7 @@ async fn start_relay_with_rate_limit(limit: u32) -> SocketAddr {
         rate_limits: dashmap::DashMap::new(),
         rate_limit_per_hour: limit,
         max_sessions_per_token: 0,
+        timing: tuic_relay::relay::RelayTiming::default(),
     });
     let router = tuic_relay::routes::build_router(state);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

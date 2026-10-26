@@ -20,6 +20,8 @@ export const MD_DEFAULT_FONT_SIZE = 15;
 
 /** File-based markdown tab (reads content from the filesystem via Tauri) */
 export interface FileTab extends BaseTab {
+	/** Stable TUIC identity of the agent that opened this document. */
+	openerTuicSession?: string;
 	type: "file";
 	repoPath: string;
 	filePath: string;
@@ -208,11 +210,13 @@ function mcpFileTab(
 	filePath: string,
 	pinned: boolean,
 	branchKey: string | undefined,
+	openerTuicSession?: string,
 ): FileTab {
 	return {
 		type: "file",
 		id,
 		mcpUiId,
+		openerTuicSession,
 		repoPath,
 		filePath,
 		fileName: pathBasename(filePath) || filePath,
@@ -245,6 +249,7 @@ function createMdTabsStore() {
 				.filter((tab): tab is FileTab => tab?.type === "file" && !!tab.mcpUiId)
 				.map((tab) => ({
 					mcpUiId: tab.mcpUiId,
+					openerTuicSession: tab.openerTuicSession,
 					repoPath: tab.repoPath,
 					filePath: tab.filePath,
 					branchKey: tab.branchKey,
@@ -306,7 +311,15 @@ function createMdTabsStore() {
 					claimed.add(tab.mcpUiId);
 					const id = base._nextId("md");
 					restored.push(
-						mcpFileTab(id, tab.mcpUiId, tab.repoPath, tab.filePath, tab.pinned, tab.branchKey as string | undefined),
+						mcpFileTab(
+							id,
+							tab.mcpUiId,
+							tab.repoPath,
+							tab.filePath,
+							tab.pinned,
+							tab.branchKey as string | undefined,
+							typeof tab.openerTuicSession === "string" ? tab.openerTuicSession : undefined,
+						),
 					);
 					if (tab.mcpUiId === snapshot.activeMcpUiId) activeId = id;
 				}
@@ -397,7 +410,14 @@ function createMdTabsStore() {
 		},
 
 		/** Open a native Markdown tab using the MCP id, independent of its file path. */
-		addMcpFile(mcpUiId: string, repoPath: string, filePath: string, pinned: boolean, background: boolean): string {
+		addMcpFile(
+			mcpUiId: string,
+			repoPath: string,
+			filePath: string,
+			pinned: boolean,
+			background: boolean,
+			openerTuicSession?: string,
+		): string {
 			// An id that last showed an image still owns its preview tab; drop it.
 			const stale = Object.values(base.state.tabs).find(
 				(tab) => tab.type === "html-preview" && tab.mcpUiId === mcpUiId,
@@ -405,7 +425,7 @@ function createMdTabsStore() {
 			if (stale) base.remove(stale.id);
 			const existing = Object.values(base.state.tabs).find((tab) => tab.type === "file" && tab.mcpUiId === mcpUiId);
 			const id = existing?.id ?? base._nextId("md");
-			const tab = mcpFileTab(id, mcpUiId, repoPath, filePath, pinned, branchKeyFor(repoPath));
+			const tab = mcpFileTab(id, mcpUiId, repoPath, filePath, pinned, branchKeyFor(repoPath), openerTuicSession);
 			if (existing) {
 				base._setState("tabs", id, tab);
 				if (!background) base.setActive(id);

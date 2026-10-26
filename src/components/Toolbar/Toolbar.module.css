@@ -1,5 +1,6 @@
 /* Toolbar */
 .toolbar {
+  composes: toolbar from "../ui/FormControls.module.css";
   height: var(--toolbar-height);
   min-height: var(--toolbar-height);
   background: var(--bg-primary);
@@ -101,20 +102,9 @@
 /* Sidebar toggle */
 .sidebarToggle,
 .filterToggle {
-  width: 26px;
-  height: 26px;
-  /* Never give up width to the app name — the toggles are the only interactive
-     controls in this region, so the label yields first. */
   flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: transparent;
-  border: none;
-  border-radius: var(--radius-sm);
   color: var(--fg-secondary);
-  font-size: var(--font-xl);
-  cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;
   -webkit-app-region: no-drag;
 }
@@ -130,7 +120,6 @@
   background: transparent;
   color: var(--fg-secondary);
   opacity: 0.35;
-  cursor: default;
 }
 
 /* Repo filter icon — loud accent state when "active only" is engaged so it is
@@ -145,7 +134,6 @@
    without hover; the letter alone marks auto, which forces nothing. */
 .densityToggle {
   width: auto;
-  padding: 0 6px;
   gap: 3px;
 }
 
@@ -157,16 +145,8 @@
 
 /* Branch button */
 .branch {
-  display: flex;
-  align-items: center;
   gap: 6px;
-  height: 26px;
-  padding: 0 10px;
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  font-family: inherit;
   transition: background 0.15s ease;
   -webkit-app-region: no-drag;
 }
@@ -213,7 +193,6 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  height: 26px;
   position: relative;
   -webkit-app-region: no-drag;
 }
@@ -221,17 +200,8 @@
 .bell,
 .watcherBtn {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  height: 26px;
   background: transparent;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
   color: var(--fg-secondary);
-  font-size: var(--font-xs);
-  cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
@@ -260,6 +230,7 @@
 }
 
 .popover {
+  composes: form from "../ui/FormControls.module.css";
   position: absolute;
   top: 100%;
   right: 0;
@@ -284,6 +255,7 @@
 }
 
 .notifHeader {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -301,12 +273,7 @@
 
 .dismissAll {
   background: none;
-  border: none;
   color: var(--fg-secondary);
-  font-size: var(--font-xs);
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
 }
 
 .dismissAll:hover {
@@ -372,12 +339,7 @@
 
 .notifClose {
   background: none;
-  border: none;
   color: var(--fg-secondary);
-  font-size: var(--font-lg);
-  cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
   flex-shrink: 0;
 }
 
@@ -395,6 +357,7 @@
 
 /* Activity Center — generic plugin sections */
 .sectionHeader {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -414,12 +377,7 @@
 
 .activityDismissAll {
   background: none;
-  border: none;
   color: var(--fg-secondary);
-  font-size: var(--font-xs);
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
 }
 
 .activityDismissAll:hover {
@@ -435,13 +393,7 @@
 
 .pluginToggle {
   background: none;
-  border: none;
   color: var(--success);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: var(--radius-sm);
-  display: flex;
-  align-items: center;
   opacity: 0.7;
   transition: opacity 0.15s;
 }
@@ -521,12 +473,7 @@
 
 .activityItemDismiss {
   background: none;
-  border: none;
   color: var(--fg-secondary);
-  font-size: var(--font-lg);
-  cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
   flex-shrink: 0;
 }
 
@@ -536,18 +483,9 @@
 
 /* Last-item shortcut button (inside notifGroup) */
 .lastItemBtn {
-  display: inline-flex;
-  align-items: center;
   gap: 4px;
-  height: 26px;
-  padding: 0 8px;
   background: transparent;
   color: var(--fg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: var(--font-xs);
-  font-family: var(--font-ui);
   white-space: nowrap;
   max-width: 180px;
   -webkit-app-region: no-drag;
@@ -560,7 +498,6 @@
 /* Severity tints — the pill is a notification, not a neutral button: make the
    outcome readable at a glance (red = failure, green = success, amber = attention). */
 .lastItemError {
-  border-color: var(--error);
   color: var(--error);
   background: color-mix(in srgb, var(--error) 12%, transparent);
 }
@@ -570,7 +507,6 @@
 }
 
 .lastItemSuccess {
-  border-color: var(--success);
   color: var(--success);
   background: color-mix(in srgb, var(--success) 12%, transparent);
 }
@@ -580,7 +516,6 @@
 }
 
 .lastItemWarn {
-  border-color: var(--changes);
   color: var(--changes);
   background: color-mix(in srgb, var(--changes) 12%, transparent);
 }
@@ -607,9 +542,66 @@
   text-overflow: ellipsis;
 }
 
-/* Windows/Linux: slightly shorter toolbar */
-:global(.platform-windows) .toolbar,
-:global(.platform-linux) .toolbar {
-  height: 32px;
-  min-height: 32px;
+/* Windows/Linux: slightly shorter toolbar on desktop only. */
+@media (width > 600px) {
+  :global(.platform-windows) .toolbar,
+  :global(.platform-linux) .toolbar {
+    height: 32px;
+    min-height: 32px;
+  }
+}
+
+/* Plans and Stories button: widens from the bare 26px square into a pill while plans are active. */
+.bell.storiesPillBtn {
+  width: auto;
+  gap: 6px;
+}
+
+.storiesPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: var(--font-xs);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.storiesGlyph {
+  color: var(--accent);
+  margin-right: -1px;
+}
+
+.storiesTrack {
+  width: 24px;
+  height: 3px;
+  margin-left: 3px;
+  border-radius: 2px;
+  background: var(--bg-tertiary);
+  overflow: hidden;
+}
+
+.storiesFill {
+  display: block;
+  height: 100%;
+  background: var(--success);
+}
+
+/* Touch titlebar rows accommodate shared 44px targets without clipping them. */
+@media (max-width: 600px) {
+  .toolbar {
+    height: auto;
+    min-height: 44px;
+    flex-wrap: wrap;
+  }
+
+  .left {
+    width: 100%;
+    height: 44px;
+  }
+
+  .center,
+  .right {
+    height: 44px;
+  }
 }

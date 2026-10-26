@@ -29,7 +29,7 @@ async fn cloud_pat_cannot_bypass_login() {
             .unwrap()
             .contains("cloud-pat-canary")
     );
-    assert!(GitHubAccountRegistry::load().list().is_empty());
+    assert_eq!(GitHubAccountRegistry::load().list(), []);
 }
 
 // Catches: account removal leaving bindings, credentials, cooldowns and viewer caches alive.

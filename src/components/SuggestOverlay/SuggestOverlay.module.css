@@ -41,21 +41,10 @@
 }
 
 .chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
   min-width: 0;
   max-width: min(40ch, 22vw);
-  font-family: var(--font-ui);
+  flex-shrink: 1;
   font-size: var(--chip-font-size);
-  padding: 8px 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border);
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.1s ease, border-color 0.1s ease, font-size 0.08s ease;
 }
 
 .chipLabel {
@@ -65,37 +54,13 @@
   white-space: nowrap;
 }
 
-.chip:hover {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border-color: var(--accent);
-}
 
 .chip:hover .shortcut {
   background: rgba(0, 0, 0, 0.25);
   color: var(--text-on-accent);
 }
 
-.closeBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--fg-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: color 0.1s ease, background 0.1s ease;
-}
 
-.closeBtn:hover {
-  color: var(--fg-primary);
-  background: var(--bg-highlight);
-}
 
 .shortcut {
   display: inline-flex;

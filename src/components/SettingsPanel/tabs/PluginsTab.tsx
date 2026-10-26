@@ -15,7 +15,9 @@ import { openDialog as open } from "../../../utils/nativeDialog";
 import { handleOpenUrl } from "../../../utils/openUrl";
 import { ConfirmDialog } from "../../ConfirmDialog";
 import { InstallWorkItemPlugin } from "../../Tasks/setup/InstallWorkItemPlugin";
+import { Button } from "../../ui/Button";
 import { SegmentedControl } from "../../ui/SegmentedControl";
+import { Switch } from "../../ui/Switch";
 import { ContextualHelp } from "../ContextualHelp";
 import { SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
@@ -170,74 +172,75 @@ const PluginRow: Component<{ plugin: PluginState; onClose?: () => void; onOpenSe
 				<div class={ps.pluginActions}>
 					<div class={ps.pluginActionsRow}>
 						<Show when={props.onOpenSettings}>
-							<button
+							<Button
 								data-non-setting="Navigate to a plugin settings or dashboard page"
 								class={s.testBtn}
 								onClick={() => props.onOpenSettings?.()}
 							>
 								Settings
-							</button>
+							</Button>
 						</Show>
 						<Show when={updateEntry()}>
-							<button
+							<Button
 								data-non-setting="Plugin package installation, update or removal workflow"
-								class={ps.installBtn}
+								variant="primary"
 								onClick={handleUpdate}
 								disabled={updating()}
 							>
 								{updating() ? "..." : "Update"}
-							</button>
+							</Button>
 						</Show>
 						<Show when={hasReadme()}>
-							<button
+							<Button
 								data-non-setting="Open plugin documentation"
-								class={ps.docsBtn}
+								shape="icon"
+								circular
+								aria-label="View plugin documentation"
 								onClick={handleOpenReadme}
 								title="View plugin documentation"
 							>
 								?
-							</button>
+							</Button>
 						</Show>
 						<details>
 							<summary class={s.testBtn}>Manage plugin</summary>{" "}
 							<label class={s.toggle}>
-								<input
+								<Switch
+									role="checkbox"
 									data-setting-id="app.disabled_plugin_ids"
-									type="checkbox"
 									aria-label={`Enable ${props.plugin.manifest?.name ?? props.plugin.id}`}
 									checked={props.plugin.enabled}
 									disabled={toggling()}
 									onChange={handleToggle}
 								/>
 							</label>
-							<button
+							<Button
 								data-non-setting="Show or hide plugin runtime logs"
-								class={ps.logsBtn}
-								classList={{ [ps.logsActive]: showLogs() }}
+								aria-pressed={showLogs()}
 								onClick={() => setShowLogs(!showLogs())}
 								title="View logs"
 							>
 								Logs
-							</button>
+							</Button>
 							<Show when={!props.plugin.builtIn}>
-								<button
+								<Button
 									data-non-setting="Plugin package installation, update or removal workflow"
-									class={ps.uninstallBtn}
+									variant="danger"
 									onClick={handleUninstall}
 									disabled={uninstalling()}
 									title="Uninstall plugin"
 								>
 									{uninstalling() ? "..." : "Uninstall"}
-								</button>
+								</Button>
 							</Show>
 						</details>
 					</div>
 					<Show when={dashboardRegistry.get(props.plugin.id)}>
 						{(entry) => (
 							<div class={ps.pluginActionsRow}>
-								<button
+								<Button
 									data-non-setting="Navigate to a plugin settings or dashboard page"
-									class={ps.dashboardBtn}
+									variant="primary"
 									onClick={async () => {
 										// Close the Settings panel first so the dashboard becomes visible
 										// in the main area instead of being hidden behind Settings.
@@ -254,7 +257,7 @@ const PluginRow: Component<{ plugin: PluginState; onClose?: () => void; onOpenSe
 										<span class={ps.btnIcon} innerHTML={entry().icon} />
 									</Show>
 									{entry().label}
-								</button>
+								</Button>
 							</div>
 						)}
 					</Show>
@@ -333,14 +336,14 @@ const BrowseRow: Component<{ entry: RegistryEntry }> = (props) => {
 
 				<div class={ps.pluginActions}>
 					<Show when={!isInstalled() || updateAvailable()}>
-						<button
+						<Button
 							data-non-setting="Plugin package installation, update or removal workflow"
-							class={ps.installBtn}
+							variant="primary"
 							onClick={handleInstall}
 							disabled={installing()}
 						>
 							{installing() ? "..." : updateAvailable() ? "Update" : "Install"}
-						</button>
+						</Button>
 					</Show>
 				</div>
 			</div>
@@ -438,8 +441,9 @@ export const PluginsTab: Component<{
 		<div class={s.section}>
 			<div>
 				<SettingPageHeader title="Manage plugins" scope="Application defaults" breadcrumb="Plugins / Manage plugins" />
-				<button
+				<Button
 					data-non-setting="Open plugin documentation"
+					variant="ghost"
 					class={ps.docsLink}
 					onClick={() => {
 						if (isTauri()) {
@@ -451,7 +455,7 @@ export const PluginsTab: Component<{
 					title="Open plugin authoring guide"
 				>
 					Documentation
-				</button>
+				</Button>
 			</div>
 
 			<SegmentedControl
@@ -512,22 +516,22 @@ export const PluginsTab: Component<{
 					<Show when={isTauri()}>
 						<div class={ps.installRow}>
 							<ContextualHelp label="Local install" />
-							<button
+							<Button
 								data-non-setting="Plugin package installation, update or removal workflow"
 								class={s.testBtn}
 								onClick={handleInstallFromFolder}
 								disabled={installing()}
 							>
 								{installing() ? "Installing..." : "Install from folder..."}
-							</button>
-							<button
+							</Button>
+							<Button
 								data-non-setting="Plugin package installation, update or removal workflow"
 								class={s.testBtn}
 								onClick={handleInstallFromZip}
 								disabled={installing()}
 							>
 								{installing() ? "Installing..." : "Install from ZIP..."}
-							</button>
+							</Button>
 							<Show when={fileInstallError()}>
 								<p class={ps.pluginError}>Installation failed: {fileInstallError()}</p>
 							</Show>
@@ -543,14 +547,13 @@ export const PluginsTab: Component<{
 						<p class={s.hint} style={{ margin: "0" }}>
 							Discover plugins from the community registry.
 						</p>
-						<button
+						<Button
 							data-non-setting="Explicit plugin-registry discovery"
-							class={ps.refreshBtn}
 							onClick={() => registryStore.refresh()}
 							disabled={registryStore.state.loading}
 						>
 							{registryStore.state.loading ? "Loading..." : "Refresh"}
-						</button>
+						</Button>
 					</div>
 
 					<Show when={registryStore.state.error}>

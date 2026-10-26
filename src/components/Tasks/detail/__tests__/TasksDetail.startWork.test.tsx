@@ -6,6 +6,7 @@ import { TasksDetail } from "../TasksDetail";
 import { detail, provider, reference } from "./detailFixture";
 
 vi.mock("../../../../transport", () => ({
+	isTauri: () => false,
 	rpc: vi.fn().mockResolvedValue("DEMO-1: Inspect the work item\n\nA **clear** description."),
 }));
 const hostStartWork = vi.hoisted(() => vi.fn());

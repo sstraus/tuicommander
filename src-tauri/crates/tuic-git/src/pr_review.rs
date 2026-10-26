@@ -253,8 +253,11 @@ diff --git a/src/b.rs b/src/b.rs
 
     #[test]
     fn a_diff_with_no_files_splits_to_nothing() {
-        assert!(split_unified_diff("").is_empty());
-        assert!(split_unified_diff("not a diff at all\n").is_empty());
+        assert_eq!(split_unified_diff(""), [] as [UnifiedDiffFile; 0]);
+        assert_eq!(
+            split_unified_diff("not a diff at all\n"),
+            [] as [UnifiedDiffFile; 0]
+        );
     }
 
     #[test]
@@ -285,7 +288,10 @@ diff --git a/src/b.rs b/src/b.rs
     fn a_threshold_of_zero_still_rejects_an_impossible_confidence() {
         // Turning the gate all the way down is a reviewer's choice; accepting
         // a confidence of 2.0 is never one.
-        assert!(filter_findings_by_confidence(&[finding(2.0, Severity::Nit)], 0.0).is_empty());
+        assert_eq!(
+            filter_findings_by_confidence(&[finding(2.0, Severity::Nit)], 0.0),
+            [] as [Finding; 0]
+        );
         assert_eq!(
             filter_findings_by_confidence(&[finding(0.0, Severity::Nit)], 0.0).len(),
             1

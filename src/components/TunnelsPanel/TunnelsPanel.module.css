@@ -23,6 +23,7 @@
 }
 
 .header {
+ composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -37,6 +38,7 @@
 }
 
 .headerActions {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
@@ -94,16 +96,8 @@
 }
 
 .actionBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: none;
-  border: none;
   color: var(--fg-muted);
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-sm);
 }
 
 .actionBtn:hover {
@@ -112,13 +106,8 @@
 }
 
 .newBtn {
-  padding: 4px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
   background: var(--bg-tertiary);
   color: var(--fg-primary);
-  cursor: pointer;
-  font-size: var(--font-sm);
 }
 
 .newBtn:hover {
@@ -126,15 +115,8 @@
 }
 
 .closeBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: none;
-  border: none;
   color: var(--fg-muted);
-  cursor: pointer;
-  padding: 2px;
-  border-radius: var(--radius-sm);
 }
 
 .closeBtn:hover {

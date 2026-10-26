@@ -36,6 +36,8 @@ interface PanelWindowControlsProps {
 	panelId: string;
 	mode: "inline" | "detached";
 	onInlineClose?: () => void;
+	closeLabel?: string;
+	closeButtonRef?: (button: HTMLButtonElement) => void;
 }
 
 export const PanelWindowControls: Component<PanelWindowControlsProps> = (props) => {
@@ -55,6 +57,8 @@ export const PanelWindowControls: Component<PanelWindowControlsProps> = (props) 
 				class={s.btn}
 				onClick={() => (props.mode === "detached" ? closePanel(props.panelId) : props.onInlineClose?.())}
 				title="Close"
+				aria-label={props.closeLabel ?? "Close"}
+				ref={props.closeButtonRef}
 			>
 				<IconClose />
 			</button>

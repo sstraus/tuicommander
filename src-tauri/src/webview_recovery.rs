@@ -147,13 +147,13 @@ mod desktop {
     /// because it is the only place that knows whether this is a new loss or
     /// the same one fifteen seconds later.
     ///
-    /// `WebviewWindow::url` posts a message to the event loop and blocks on the
-    /// reply, so this must not run on the main thread (it would wait for itself)
-    /// nor on the diagnostics thread (a wedged event loop would take the CPU
-    /// watchdog down with it). Hence the dedicated thread in [`spawn`].
+    /// The nil-safe URL reader dispatches to the event loop and waits for its
+    /// reply from this worker. Keep the poll off the diagnostics thread: a wedged
+    /// event loop must not take the CPU watchdog down with it. Hence the
+    /// dedicated thread in [`spawn`].
     fn lost_document(state: &Arc<AppState>) -> Option<String> {
         let window = main_window(state)?; // No window yet — nothing to recover.
-        let url = window.url().ok()?; // A failed probe is not a lost document.
+        let url = crate::webview_url::read(&window).ok()??; // An unavailable probe is not a loss.
         let lost = is_lost(url.as_str());
         record_boot_url(
             &state.webview_boot_url,

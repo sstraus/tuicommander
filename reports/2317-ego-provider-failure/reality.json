@@ -1,0 +1,283 @@
+[
+  {
+    "tool": "agent",
+    "args": {
+      "action": "register",
+      "name": "fixture-parent-2317",
+      "path": "/Users/stefano.straus/Gits/.tmp/2317/workspace"
+    },
+    "result": {
+      "ok": true,
+      "tuic_session": "0ac7d11d-ee5f-4018-bd8d-a395a610b1d7",
+      "name": "fixture-parent-2317",
+      "linked_children": 0,
+      "identity_generated": true,
+      "terminal": false,
+      "orchestrator": false,
+      "mail_wake": "none",
+      "identity": "This identity has NO terminal behind it: nothing can be typed into it and no message can wake it. Incoming mail only lands in your inbox, so you MUST consume it yourself \u2014 `agent action=wait` (blocking) or `agent action=inbox`. To be reachable through a terminal, run inside a TUIC-managed PTY so the bridge asserts its $TUIC_SESSION, or let TUIC spawn you with agent action=spawn.",
+      "workflow": {
+        "spawn_same_repo": "agent action=spawn prompt=<task> cwd=<repo_path> \u2014 returns {session_id, name, task_id}. As orchestrator, prefer wait/inbox over raw session output to avoid token burn.",
+        "spawn_isolated": "repo action=worktree_create path=<repo> branch=<name> spawn_session=true \u2014 worktree + PTY in one call.",
+        "monitor": "Use blocking waits instead of polling: agent action=wait (wakes on new mail; the cursor is kept server-side) or session action=wait session_id=<id> until=idle|exited. Task results arrive through agent send/inbox. Use session output only as an anomaly fallback when a child failed to send.",
+        "auto_state_change": "Spawned peers auto-post state only: {type:state_change, state:idle|completed|exited|awaiting_input, session_id, exit_code?, prompt?}. This is not task output. awaiting_input means the child hit an interactive prompt and is parked with nobody at its keyboard \u2014 it will NOT progress until you answer it with session action=input (the `prompt` field carries the question). Every child must report its result or blocker with agent action=send; use session output only when a child anomalously failed to send.",
+        "send": "agent action=send to=<peer tuic_session | its registered name | its PTY id | that terminal's alias, e.g. tu-1> message=<text, max 64KB> [urgency=normal|urgent|interrupt]. Normal is the default; urgent writes only a payload-free inbox notice to a safe busy Claude/Codex/ego composer for its next tool boundary and returns urgent_delivered or urgent_fallback_reason. The message is always buffered in the inbox. Opt-in urgency=interrupt sends Esc to a safe working Claude Code, Codex or ego, waits up to 10 seconds for confirmed idle, then submits the full message as one new input (including for an orchestrator). An already idle recipient needs no Esc. A dialog/approval or draft blocks both Esc and payload. Unsupported agents, no PTY and idle timeout use the existing urgent notice/inbox fallback. The result adds interrupt_delivered and interrupt_fallback_reason; delivery_path=interrupt_payload_and_inbox means the full input was written, not that the model acted. Interrupted tools can leave partial work; child processes may continue. An active waiter owns delivery and needs no interrupt. A peer explicitly registered with orchestrator=true keeps payloads out of its active turn and composer; managed idle/completed lifecycle, or a confirmed-ready empty composer held working only by background work, may submit one coalesced, payload-free wake instructing `agent action=inbox`. Busy, questioning, partially typed, external without a subscribed ACP inbox, or unknown state stays inbox-only. An active agent wait owns delivery and suppresses that wake. Check `delivered` and `delivery_path` (the only route field); a message reaching the inbox is not delivery.",
+        "list_peers": "agent action=list_peers path=<optional filter> \u2014 see who else is connected.",
+        "conflict_control": "Use send/inbox to serialize shared-file edits: child sends 'claim <path>', orchestrator replies 'ack'/'deny'; child sends 'release <path>' on commit. Orchestrator is the arbiter \u2014 children never ack each other directly.",
+        "cleanup": "On MCP session close, peer routes and inbox are drained. Managed PTY lifecycle remains separate; an MCP-scoped external identity has no PTY to reap."
+      }
+    }
+  },
+  {
+    "tool": "agent",
+    "args": {
+      "action": "spawn",
+      "name": "fixture-failure-2317",
+      "agent_type": "ego",
+      "binary_path": "/Users/stefano.straus/.local/bin/ego",
+      "cwd": "/Users/stefano.straus/Gits/.tmp/2317/workspace",
+      "rows": 41,
+      "cols": 128,
+      "prompt": "Run fixture failure.",
+      "args": [
+        "--bare",
+        "--mode",
+        "default",
+        "--sandbox",
+        "off",
+        "--thinking",
+        "off",
+        "--retry",
+        "0",
+        "-m",
+        "ollama/qwen3"
+      ],
+      "keep_open": true
+    },
+    "result": {
+      "session_id": "20a08c0b-302e-482b-a05f-439954f5385a",
+      "task_id": "2b6ca367-2f63-40ef-80d4-87dde6b1370d",
+      "poll_interval_ms": 1000,
+      "name": "fixture-failure-2317",
+      "server_ts": 1792966138345,
+      "parent_session_id": "0ac7d11d-ee5f-4018-bd8d-a395a610b1d7"
+    }
+  },
+  {
+    "failure_state": {
+      "session_id": "20a08c0b-302e-482b-a05f-439954f5385a",
+      "child_pid": 24536,
+      "cwd": "/Users/stefano.straus/Gits/.tmp/2317/workspace",
+      "worktree_path": null,
+      "worktree_branch": null,
+      "display_name": "fixture-failure-2317",
+      "display_name_is_custom": true,
+      "display_name_from_spawn": true,
+      "is_remote": true,
+      "pty_description": "Run fixture failure.",
+      "alias": "wo-1",
+      "tuic_session": "20a08c0b-302e-482b-a05f-439954f5385a",
+      "parent_session": "0ac7d11d-ee5f-4018-bd8d-a395a610b1d7",
+      "state": {
+        "awaiting_input": false,
+        "rate_limited": false,
+        "shell_state": "idle",
+        "agent_state": "idle",
+        "last_activity_ms": 1792966138649,
+        "agent_type": "ego",
+        "agent_intent": "## TUICommander Multi-Agent Context",
+        "progress": 0
+      }
+    }
+  },
+  {
+    "tool": "session",
+    "args": {
+      "action": "submit",
+      "session_id": "20a08c0b-302e-482b-a05f-439954f5385a",
+      "input": "SUBMIT_AFTER_FAILURE_2317",
+      "timeout_ms": 5000
+    },
+    "result": {
+      "status": "acknowledged",
+      "submission_id": "dd572013-f2ad-48fa-b27b-c042522b13c1",
+      "submitted": true,
+      "write_state": "complete",
+      "acknowledged": true,
+      "retry_safe": false,
+      "turn_epoch": 1,
+      "composer_state": "cleared",
+      "acknowledgement": {
+        "kind": "terminal_movement",
+        "screen_state": "terminal_output",
+        "output_offset": 2503
+      }
+    }
+  },
+  {
+    "tool": "agent",
+    "args": {
+      "action": "send",
+      "to": "20a08c0b-302e-482b-a05f-439954f5385a",
+      "message": "WAKE_AFTER_FAILURE_2317",
+      "keep_open": true
+    },
+    "result": {
+      "message_id": "d663f482-8861-47a8-ae59-8316eee7745c",
+      "delivered": true,
+      "delivery_path": "wake_notification_and_inbox",
+      "recipient_state": {
+        "shell_state": "busy",
+        "agent_state": "working"
+      }
+    }
+  },
+  {
+    "mail_wake_state": {
+      "session_id": "20a08c0b-302e-482b-a05f-439954f5385a",
+      "child_pid": 24536,
+      "cwd": "/Users/stefano.straus/Gits/.tmp/2317/workspace",
+      "worktree_path": null,
+      "worktree_branch": null,
+      "display_name": "fixture-failure-2317",
+      "display_name_is_custom": true,
+      "display_name_from_spawn": true,
+      "is_remote": true,
+      "pty_description": "Run fixture failure.",
+      "alias": "wo-1",
+      "tuic_session": "20a08c0b-302e-482b-a05f-439954f5385a",
+      "parent_session": "0ac7d11d-ee5f-4018-bd8d-a395a610b1d7",
+      "state": {
+        "awaiting_input": false,
+        "rate_limited": false,
+        "shell_state": "idle",
+        "agent_state": "idle",
+        "last_activity_ms": 1792966139748,
+        "agent_type": "ego",
+        "agent_intent": "[TUIC] message available \u2014 read it with: agent action=inbox",
+        "progress": 0
+      }
+    }
+  },
+  {
+    "tool": "agent",
+    "args": {
+      "action": "spawn",
+      "name": "fixture-approval-2317",
+      "agent_type": "ego",
+      "binary_path": "/Users/stefano.straus/.local/bin/ego",
+      "cwd": "/Users/stefano.straus/Gits/.tmp/2317/workspace",
+      "rows": 41,
+      "cols": 128,
+      "prompt": "Run fixture approval.",
+      "args": [
+        "--bare",
+        "--mode",
+        "default",
+        "--sandbox",
+        "off",
+        "--thinking",
+        "off",
+        "--retry",
+        "0",
+        "-m",
+        "ollama/qwen3"
+      ],
+      "keep_open": true
+    },
+    "result": {
+      "session_id": "07cad1f4-ec3b-434e-88d0-0a3e6b60879a",
+      "task_id": "fa1468ab-0ecd-4b55-9cf5-ce605fd09e79",
+      "poll_interval_ms": 1000,
+      "name": "fixture-approval-2317",
+      "server_ts": 1792966139919,
+      "parent_session_id": "0ac7d11d-ee5f-4018-bd8d-a395a610b1d7"
+    }
+  },
+  {
+    "approval_state": {
+      "session_id": "07cad1f4-ec3b-434e-88d0-0a3e6b60879a",
+      "child_pid": 24686,
+      "cwd": "/Users/stefano.straus/Gits/.tmp/2317/workspace",
+      "worktree_path": null,
+      "worktree_branch": null,
+      "display_name": "fixture-approval-2317",
+      "display_name_is_custom": true,
+      "display_name_from_spawn": true,
+      "is_remote": true,
+      "pty_description": "Run fixture approval.",
+      "alias": "wo-2",
+      "tuic_session": "07cad1f4-ec3b-434e-88d0-0a3e6b60879a",
+      "parent_session": "0ac7d11d-ee5f-4018-bd8d-a395a610b1d7",
+      "state": {
+        "awaiting_input": true,
+        "question_text": "Allow run sh -c 'printf APPROVAL_2317'?",
+        "question_confident": true,
+        "rate_limited": false,
+        "shell_state": "busy",
+        "agent_state": "awaiting_input",
+        "last_activity_ms": 1792966140092,
+        "agent_type": "ego",
+        "agent_intent": "## TUICommander Multi-Agent Context",
+        "choice_prompt": {
+          "title": "Allow run sh -c 'printf APPROVAL_2317'?",
+          "options": [
+            {
+              "key": "y",
+              "label": "yes",
+              "highlighted": true,
+              "destructive": false
+            },
+            {
+              "key": "a",
+              "label": "yes, do not ask again for exec(sh -c printf\\ APPROVAL_2317)",
+              "highlighted": false,
+              "destructive": false
+            },
+            {
+              "key": "n",
+              "label": "no, say what to do instead",
+              "highlighted": false,
+              "destructive": true
+            },
+            {
+              "key": "e",
+              "label": "edit",
+              "highlighted": false,
+              "destructive": false
+            },
+            {
+              "key": "d",
+              "label": "details",
+              "highlighted": false,
+              "destructive": false
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "tool": "session",
+    "args": {
+      "action": "submit",
+      "session_id": "07cad1f4-ec3b-434e-88d0-0a3e6b60879a",
+      "input": "MUST_NOT_SUBMIT_2317",
+      "timeout_ms": 1000
+    },
+    "result": {
+      "status": "rejected",
+      "submission_id": "146d1d52-c92e-4294-9d93-c4e453ab64f3",
+      "submitted": false,
+      "write_state": "not_started",
+      "acknowledged": false,
+      "retry_safe": true,
+      "reason": "awaiting_input",
+      "detail": "An approval or question owns the composer. Have the user answer it, or use an explicit human reply; automated submit must wait.",
+      "turn_epoch": 0,
+      "composer_state": "empty",
+      "pending": [],
+      "prompt_kind": "approval"
+    }
+  }
+]

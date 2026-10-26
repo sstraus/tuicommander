@@ -1,6 +1,7 @@
 import { type Accessor, createEffect, onCleanup, Show } from "solid-js";
 import { t } from "../../i18n";
 import { closeDialogStore } from "../../stores/closeDialog";
+import { Button } from "../ui/Button";
 import qd from "./QuitDialog.module.css";
 
 /** Capture before terminal shortcuts; Enter keeps the safe Cancel default. */
@@ -60,21 +61,17 @@ export function CloseDialog() {
 						<p role="alert">{state.error}</p>
 					</Show>
 					<div class={qd.actions}>
-						<button class={qd.cancel} disabled={state.saving} onClick={cancel}>
+						<Button disabled={state.saving} onClick={cancel}>
 							{t("closeDialog.cancel", "Cancel")}
-						</button>
+						</Button>
 						<Show when={ask() && state.request?.background_available !== false}>
-							<button
-								class={qd.cancel}
-								disabled={state.saving}
-								onClick={() => void closeDialogStore.answer("background")}
-							>
+							<Button disabled={state.saving} onClick={() => void closeDialogStore.answer("background")}>
 								{t("closeDialog.background", "Background")}
-							</button>
+							</Button>
 						</Show>
-						<button class={qd.quit} disabled={state.saving} onClick={() => void closeDialogStore.answer("quit")}>
+						<Button variant="danger" disabled={state.saving} onClick={() => void closeDialogStore.answer("quit")}>
 							{t("closeDialog.quit", "Quit")}
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>

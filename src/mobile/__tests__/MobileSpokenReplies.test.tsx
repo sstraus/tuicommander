@@ -4,6 +4,12 @@ import { dictationStore } from "../../stores/dictation";
 import { SessionDetailScreen } from "../screens/SessionDetailScreen";
 import { SettingsScreen } from "../screens/SettingsScreen";
 
+vi.mock("../mobileTheme", () => ({
+	mobileTheme: () => "commander",
+	loadMobileTheme: async () => "commander",
+	setMobileTheme: vi.fn(),
+}));
+
 vi.mock("../components/OutputView", () => ({ OutputView: () => <div /> }));
 vi.mock("../components/TerminalKeybar", () => ({ TerminalKeybar: () => <div /> }));
 vi.mock("../../utils/browserVoice", () => ({
@@ -82,7 +88,7 @@ it("persists the mobile Settings mute checkbox without ending the armed conversa
 	fireEvent.click(await screen.findByRole("button", { name: "Start voice call" }));
 	await screen.findByRole("button", { name: "Stop voice call" });
 	render(() => <SettingsScreen isConnected={true} />);
-	const checkbox = (await screen.findByRole("checkbox", { name: "Spoken replies" })) as HTMLInputElement;
+	const checkbox = (await screen.findByRole("switch", { name: "Spoken replies" })) as HTMLInputElement;
 	expect(checkbox.checked).toBe(true);
 	fireEvent.click(checkbox);
 	await waitFor(() => expect(config.hands_free_spoken_replies).toBe(false));

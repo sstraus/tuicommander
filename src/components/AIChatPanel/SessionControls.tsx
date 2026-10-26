@@ -1,3 +1,4 @@
+import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 /**
  * The knobs a session publishes, and the three verbs ego adds to a turn.
@@ -135,9 +136,7 @@ const SessionSettingsDialog: Component<{ chat: AcpChat; options: SelectOption[];
 					</Show>
 				</div>
 				<div class={d.actions}>
-					<button type="button" class={d.cancelBtn} onClick={props.onClose}>
-						Done
-					</button>
+					<Button onClick={props.onClose}>Done</Button>
 				</div>
 			</div>
 		</div>
@@ -167,8 +166,9 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 						<path d="m3 5 5 5 5-5H3Z" />
 					</svg>
 				</span>
+				{/* Keep the native picker over the visible frame; both share its full hit region. */}
 				<Select
-					compact
+					data-control-layout="overlay-picker"
 					class={s.modelPicker}
 					title="Conversation"
 					aria-label="Conversation"
@@ -199,7 +199,8 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 				</Select>
 			</div>
 
-			<button
+			<Button
+				variant="ghost"
 				type="button"
 				class={s.headerBtn}
 				aria-label="New chat tab"
@@ -211,7 +212,7 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 					<path d="M7 2h2v5h5v2H9v5H7V9H2V7h5V2Z" />
 				</svg>
 				New
-			</button>
+			</Button>
 			<details
 				class={s.actionsMenu}
 				onKeyDown={(event) => {
@@ -223,7 +224,12 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 					}
 				}}
 			>
-				<summary class={s.headerBtn} aria-label="Conversation actions" title="Conversation actions">
+				<summary
+					data-control-layout="disclosure"
+					class={s.headerBtn}
+					aria-label="Conversation actions"
+					title="Conversation actions"
+				>
 					<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
 						<circle cx="3" cy="8" r="1" />
 						<circle cx="8" cy="8" r="1" />
@@ -231,15 +237,17 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 					</svg>
 				</summary>
 				<div class={s.actionsMenuItems}>
-					<button
+					<Button
+						variant="ghost"
 						type="button"
 						class={s.headerBtn}
 						disabled={props.chat.phase() === "unconfigured"}
 						onClick={() => void props.chat.startSession()}
 					>
 						New conversation<span class={s.menuHint}>⌘T</span>
-					</button>
-					<button
+					</Button>
+					<Button
+						variant="ghost"
 						type="button"
 						class={s.headerBtn}
 						aria-label="New conversation with options"
@@ -247,13 +255,14 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 						onClick={props.onNewOptions}
 					>
 						New conversation with options…
-					</button>
+					</Button>
 					<hr class={s.menuSeparator} />
 					<Show when={holdOffered()}>
 						<Show
 							when={props.chat.held()}
 							fallback={
-								<button
+								<Button
+									variant="ghost"
 									type="button"
 									class={s.headerBtn}
 									aria-label="Pause the turn"
@@ -265,23 +274,26 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 									<Show when={!props.chat.busy()}>
 										<span class={s.menuHint}>only while running</span>
 									</Show>
-								</button>
+								</Button>
 							}
 						>
-							<button
+							<Button
+								variant="ghost"
 								type="button"
-								class={cx(s.headerBtn, s.headerBtnActive)}
+								class={s.headerBtn}
+								aria-pressed={true}
 								aria-label="Resume the turn"
 								title="Resume the turn"
 								onClick={() => void props.chat.resume()}
 							>
 								Resume the turn
-							</button>
+							</Button>
 						</Show>
 					</Show>
 
 					<Show when={compactOffered()}>
-						<button
+						<Button
+							variant="ghost"
 							type="button"
 							class={s.headerBtn}
 							aria-label="Compact the conversation"
@@ -290,11 +302,12 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 							onClick={() => void props.chat.compact()}
 						>
 							Compact context
-						</button>
+						</Button>
 					</Show>
 
 					<Show when={forkOffered()}>
-						<button
+						<Button
+							variant="ghost"
 							type="button"
 							class={s.headerBtn}
 							aria-label="Fork the conversation"
@@ -303,11 +316,12 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 							onClick={() => void props.chat.fork()}
 						>
 							Fork conversation
-						</button>
+						</Button>
 					</Show>
 					<hr class={s.menuSeparator} />
 					<Show when={selectOptions().length > 0}>
-						<button
+						<Button
+							variant="ghost"
 							type="button"
 							class={s.headerBtn}
 							aria-label="Session settings"
@@ -315,10 +329,11 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 							onClick={() => setSettingsOpen(true)}
 						>
 							Session settings — model, reasoning
-						</button>
+						</Button>
 					</Show>
 
-					<button
+					<Button
+						variant="ghost"
 						type="button"
 						class={s.headerBtn}
 						disabled={!props.detached && !isTauri()}
@@ -326,7 +341,7 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 						onClick={() => (props.detached ? reattachPanel("ai-chat") : detachPanel("ai-chat"))}
 					>
 						{props.detached ? "Bring back to main window" : "Open in separate window"}
-					</button>
+					</Button>
 					<Show when={props.chat.launch()}>
 						{(launch) => (
 							<p class={s.sessionSettingDescription}>
@@ -337,24 +352,29 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 					<hr class={s.menuSeparator} />
 					<Show when={props.chat.capabilities()?.delete && sessions().length > 0}>
 						<details class={s.conversationList}>
-							<summary class={s.headerBtn}>Delete conversation…</summary>
+							<summary data-control-layout="disclosure" class={s.headerBtn}>
+								Delete conversation…
+							</summary>
 							<div class={s.conversationRows}>
 								<For each={sessions()}>
 									{(session) => (
 										<div class={s.conversationRow}>
-											<button
+											<Button
+												variant="ghost"
 												type="button"
 												class={s.conversationName}
 												disabled={session._meta?.tuicommander?.deleted === true}
 												onClick={() => void props.chat.selectSession(session.sessionId)}
 											>
 												{conversationLabel(session)}
-											</button>
+											</Button>
 											<Show when={!session._meta?.tuicommander?.deleted}>
-												<button
+												<Button
+													variant="ghost"
 													type="button"
 													class={s.headerBtn}
 													disabled={deleting()}
+													shape="icon"
 													aria-label={`Delete ${conversationLabel(session)}`}
 													title="Delete conversation"
 													onClick={() => setDeleteTarget(session)}
@@ -362,7 +382,7 @@ export const SessionControls: Component<{ chat: AcpChat; onNewOptions: () => voi
 													<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
 														<path d="M6 1h4l1 2h3v1H2V3h3l1-2ZM3 5h10l-1 10H4L3 5Zm3 2v6h1V7H6Zm3 0v6h1V7H9Z" />
 													</svg>
-												</button>
+												</Button>
 											</Show>
 										</div>
 									)}

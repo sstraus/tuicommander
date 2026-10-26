@@ -1,5 +1,6 @@
 import type { Component } from "solid-js";
 import type { AgentType } from "../../../agents";
+import { Switch } from "../../ui/Switch";
 import a from "./AgentsTab.module.css";
 import { useAgentConfig } from "./agentConfigContext";
 
@@ -11,9 +12,9 @@ export const LaunchModuleSettings: Component<{ agentType?: AgentType }> = (props
 		!store.state.loaded || store.state.launch_instructions_disabled || (own()?.launch_instructions_disabled ?? false);
 	const ModuleToggle: Component<{ id: string; label: string }> = (toggle) => (
 		<label class={a.toggleRow}>
-			<input
+			<Switch
+				role="checkbox"
 				data-setting-id={props.agentType ? "agents.agents.{key}.launch_modules.{key}" : "agents.launch_modules.{key}"}
-				type="checkbox"
 				checked={(store.state.launch_modules[toggle.id] ?? true) && (own()?.launch_modules?.[toggle.id] ?? true)}
 				disabled={disabled() || (!!props.agentType && store.state.launch_modules[toggle.id] === false)}
 				onChange={(e) => void store.setLaunchModule(toggle.id, e.currentTarget.checked, props.agentType)}
@@ -25,11 +26,11 @@ export const LaunchModuleSettings: Component<{ agentType?: AgentType }> = (props
 		<div class={a.expandedSection}>
 			<h3>Launch modules</h3>
 			<label class={a.toggleRow}>
-				<input
+				<Switch
+					role="checkbox"
 					data-setting-id={
 						props.agentType ? "agents.agents.{key}.launch_instructions_disabled" : "agents.launch_instructions_disabled"
 					}
-					type="checkbox"
 					checked={store.state.launch_instructions_disabled || (own()?.launch_instructions_disabled ?? false)}
 					disabled={!store.state.loaded || (!!props.agentType && store.state.launch_instructions_disabled)}
 					onChange={(e) => void store.setLaunchInstructionsDisabled(e.currentTarget.checked, props.agentType)}

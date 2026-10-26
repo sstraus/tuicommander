@@ -1,5 +1,6 @@
 import { type Component, createSignal, Show } from "solid-js";
 import { t } from "../../i18n";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import s from "./ReviewThreads.module.css";
@@ -48,16 +49,16 @@ export const ReviewSubmitBar: Component<{ session: ReviewSession }> = (props) =>
 					value={body()}
 					onInput={(e) => setBody(e.currentTarget.value)}
 				/>
-				<button
+				<Button
 					type="button"
-					class={s.primary}
+					variant="primary"
 					disabled={blocked()}
 					onClick={async () => {
 						if (await props.session.submit(body().trim(), event())) setBody("");
 					}}
 				>
 					{t("prDiff.submitReview", "Submit review")}
-				</button>
+				</Button>
 			</div>
 		</div>
 	);

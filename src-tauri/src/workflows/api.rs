@@ -77,6 +77,12 @@ fn check_draft_size(graph: &WorkflowGraph) -> Result<(), String> {
 
 pub const WORKFLOW_VALIDATION_ERROR_PREFIX: &str = "invalid workflow definition: ";
 
+/// True for an error the user can fix: an invalid graph or a publish with no changes.
+pub fn is_user_error(message: &str) -> bool {
+    message.starts_with(WORKFLOW_VALIDATION_ERROR_PREFIX)
+        || message == super::PUBLISH_UNCHANGED_ERROR
+}
+
 fn validation_error(error: String) -> String {
     format!("{WORKFLOW_VALIDATION_ERROR_PREFIX}{error}")
 }

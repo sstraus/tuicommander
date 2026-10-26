@@ -23,6 +23,7 @@ import { isTauri } from "../transport";
 import { openDialog, saveDialog } from "../utils/nativeDialog";
 import { navigateToTerminal } from "../utils/navigateToTerminal";
 import { nextWaitingTerminal } from "../utils/nextWaitingTerminal";
+import { runWithFeedback } from "../utils/promptContext";
 import type { useGitOperations } from "./useGitOperations";
 import type { ShortcutHandlers } from "./useKeyboardShortcuts";
 import type { useQuickSwitcher } from "./useQuickSwitcher";
@@ -259,15 +260,7 @@ export function useAppShortcutHandlers(options: AppShortcutHandlerOptions): Shor
 				);
 			if (!prompt) return false;
 			promptLibraryStore.markAsUsed(prompt.id);
-			options
-				.executeSmartPrompt(prompt)
-				.then((result) => {
-					if (!result.ok) toastsStore.add(prompt.name, result.reason ?? "Failed", "warn");
-				})
-				.catch((error) => {
-					appLogger.error("prompts", `Failed to run "${prompt.name}" via shortcut`, error);
-					toastsStore.add(prompt.name, String(error), "error");
-				});
+			void runWithFeedback(prompt, () => options.executeSmartPrompt(prompt));
 			return true;
 		},
 	};

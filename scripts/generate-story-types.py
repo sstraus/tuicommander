@@ -11,7 +11,7 @@ OUTPUT = ROOT / "src/types/stories.gen.ts"
 def generate():
     source = (ROOT / "src-tauri/src/stories/model.rs").read_text()
     declarations = []
-    for name in ("StoryStatus", "PlanState"):
+    for name in ("StoryStatus", "PlanState", "StoryType", "StoryVisibility", "StoryRisk"):
         match = re.search(
             rf'#\[serde\(rename_all = "snake_case"\)\]\s*pub enum {name} \{{([^}}]+)\}}',
             source,
@@ -20,6 +20,8 @@ def generate():
             raise ValueError(f"Unsupported serde declaration for {name}")
         variants = []
         for line in match[1].strip().splitlines():
+            if line.strip() == "#[default]":
+                continue
             variant = re.fullmatch(r"\s*(\w+),\s*", line)
             if not variant:
                 raise ValueError(f"Unsupported {name} variant: {line}")

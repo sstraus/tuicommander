@@ -17,68 +17,12 @@
   flex-shrink: 0;
 }
 
-.commitTextarea {
-  width: 100%;
-  min-height: 38px;
-  max-height: 114px;
-  overflow-y: hidden;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--fg-primary);
-  font-size: var(--font-sm);
-  font-family: var(--font-mono);
-  padding: 6px 8px;
-  resize: none;
-  line-height: 1.6;
-  box-sizing: border-box;
-  transition: border-color 0.15s ease, height 0.1s ease;
-}
-
-.commitTextarea:focus {
-  border-color: var(--accent);
-  outline: none;
-}
-
-.commitTextarea:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+.commitTextarea { width: 100%; }
 
 .commitRow {
   display: flex;
   align-items: center;
   gap: 8px;
-}
-
-.commitBtn {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: var(--font-sm);
-  font-family: var(--font-ui);
-  font-weight: 600;
-  padding: 4px 12px;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  transition: opacity 0.15s ease;
-}
-
-.commitBtn:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.commitBtn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.commitBtnDisabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .amendLabel {
@@ -107,37 +51,6 @@
 .textareaRow .commitTextarea {
   flex: 1;
   min-width: 0;
-}
-
-.generateBtn {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  margin-top: 5px; /* align with textarea padding */
-  background: none;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--fg-muted);
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-}
-
-.generateBtn:hover:not(:disabled) {
-  color: var(--accent);
-  border-color: var(--accent);
-}
-
-.generateBtn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
-.generateBtnBusy {
-  color: var(--accent);
-  border-color: var(--accent);
 }
 
 .commitError {
@@ -176,54 +89,19 @@
 
 /* Filter input */
 .filterRow {
-  position: relative;
+  composes: toolbar from "../ui/FormControls.module.css";
+  display: flex;
+  align-items: center;
+  gap: 4px;
   padding: 4px 12px;
   flex-shrink: 0;
 }
 
-.filterInput {
-  width: 100%;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--fg-primary);
-  font-size: var(--font-sm);
-  font-family: var(--font-ui);
-  padding: 4px 24px 4px 8px;
-  box-sizing: border-box;
-  transition: border-color 0.15s ease;
-}
-
-.filterInput:focus {
-  border-color: var(--accent);
-  outline: none;
-}
-
-.filterInput::placeholder {
-  color: var(--fg-muted);
-  opacity: 0.5;
-}
-
-.filterClear {
-  position: absolute;
-  right: 16px;
-  top: 50%;
-  transform: translateY(-50%);
-  background: none;
-  border: none;
-  color: var(--fg-muted);
-  font-size: var(--font-md);
-  cursor: pointer;
-  padding: 0 4px;
-  line-height: 1;
-}
-
-.filterClear:hover {
-  color: var(--fg-primary);
-}
+.filterInput { width: 100%; flex: 1; }
 
 /* Section headers (STAGED, CHANGES) */
 .sectionHeader {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 6px;
@@ -265,16 +143,8 @@
 }
 
 .sectionAction {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: var(--font-xs);
-  font-family: var(--font-ui);
-  cursor: pointer;
-  padding: 1px 6px;
-  border-radius: var(--radius-sm);
   opacity: 0;
-  transition: opacity 0.15s ease, background 0.1s ease, color 0.1s ease;
+  transition: opacity 0.15s ease;
 }
 
 .sectionAction:first-of-type {
@@ -283,11 +153,6 @@
 
 .sectionHeader:hover .sectionAction {
   opacity: 1;
-}
-
-.sectionAction:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
 }
 
 /* File entries */
@@ -401,6 +266,7 @@
 
 /* Action buttons — overlay on hover, replacing diff stats */
 .actions {
+  composes: toolbar from "../ui/FormControls.module.css";
   position: absolute;
   right: 12px;
   top: 50%;
@@ -421,36 +287,12 @@
   opacity: 0;
 }
 
-.actionBtn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  padding: 0;
-  transition: background 0.1s ease, color 0.1s ease;
-}
-
-.actionBtn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.actionBtnDanger:hover {
-  color: var(--error);
-}
-
-.actionBtnStage:hover {
-  color: var(--success);
-}
-
 /* Empty state */
 .empty {
   composes: empty from "./panel.module.css";
   font-family: var(--font-ui);
+}
+
+@media (max-width: 600px) {
+  .fileEntry { min-height: 44px; }
 }

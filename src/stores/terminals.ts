@@ -375,7 +375,7 @@ function createTerminalsStore() {
 			}
 			busyDurationMap.delete(id);
 			// Error state is NOT cleared here: API errors are persistent and should only
-			// be cleared by explicit agent activity (status-line, user-input) or process exit.
+			// be cleared by backend recovery evidence (working status/native busy) or process exit.
 			// Low-confidence question state IS cleared: idle→busy means the agent resumed
 			// work, so any pending (heuristic) question notification is stale.
 			// CONFIDENT questions are preserved (awaitingInputConfident): a confident prompt
@@ -385,7 +385,11 @@ function createTerminalsStore() {
 			// instead clear on real user-input (Terminal.tsx) or process exit (below) —
 			// the same policy the backend applies in state.rs (`question_confident` is
 			// sticky across busy status-line ticks, cleared by the user-input arm).
-			if (prev === "idle" && state.terminals[id]?.awaitingInput && !state.terminals[id]?.awaitingInputConfident) {
+			if (
+				prev === "idle" &&
+				state.terminals[id]?.awaitingInput === "question" &&
+				!state.terminals[id]?.awaitingInputConfident
+			) {
 				setState("terminals", id, "awaitingInput", null);
 				setState("terminals", id, "awaitingInputConfident", false);
 			}

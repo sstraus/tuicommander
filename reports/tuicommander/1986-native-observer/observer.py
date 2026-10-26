@@ -28,7 +28,20 @@ socket = launch['socket']
 def api(path, body=None, method=None):
     return api0(socket, path, body, method)
 
+def check_frontmost():
+    observation = {"wall": time.time(), **frontmost()}
+    with (P / "frontmost-observations.jsonl").open("a") as output:
+        output.write(json.dumps(observation) + "\n")
+    name = observation["name"]
+    if name == "PlatformSSOUIAgent" or (
+        name == "tuicommander-agent-test" and observation["pid"] != owned_pid
+    ):
+        raise RuntimeError("INTERFERENCE: " + json.dumps(observation))
+    return observation
+
+
 def js(script, name):
+    check_frontmost()
     r = evaluate(socket, script, P)
     (P / (name + '.json')).write_text(json.dumps(r, indent=2))
     return r
@@ -45,7 +58,7 @@ try:
         raise RuntimeError('BUILD_FREEZE present')
     if pathlib.Path(launch['pid_file']).exists():
         raise RuntimeError('instance already running')
-    front = frontmost()
+    front = check_frontmost()
     (P / 'front-before.json').write_text(json.dumps(front, indent=2))
     if front['name'] == 'loginwindow':
         raise RuntimeError('Mac is locked; visible native measurement unavailable')
@@ -73,8 +86,9 @@ try:
         try:
             if js('return !!(window.__TUIC__&&document.querySelector(\'button[title^="New Tab"]\'));', 'frontend-ready'):
                 break
-        except Exception:
-            pass
+        except Exception as error:
+            if str(error).startswith('INTERFERENCE:'):
+                raise
         time.sleep(0.2)
     else:
         raise RuntimeError('frontend not ready')
@@ -147,6 +161,7 @@ try:
     observations = []
     deadline = time.monotonic() + 240
     while time.monotonic() < deadline:
+        check_frontmost()
         ps = subprocess.check_output(['ps', '-p', str(shell_pid), '-o', 'pid=,ppid=,pgid=,state=,command='], text=True).strip()
         observations.append({'wall': time.time(), 'ps': ps})
         if 'T' in ps.split()[3]:

@@ -297,7 +297,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 	{
 		tab: "notifications",
 		section: "Notification Settings",
-		label: "Silence completions from MCP sessions",
+		label: "Silence subagent sounds and notifications",
 		labelKey: "notifications.label.silenceRemoteCompletions",
 	},
 	{
@@ -645,6 +645,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 	{ tab: "mcp", section: "MCP" },
 	{ tab: "mcp", section: "Server connections" },
 	{ tab: "mcp", section: "TUIC Tools" },
+	{ tab: "mcp", section: "Call audit", sectionKey: "mcpAudit.title" },
 	{ tab: "mcp", section: "Upstream MCP Servers" },
 	{ tab: "mcp", section: "Server connections", label: "Server Status", labelKey: "services.label.serverStatus" },
 	{ tab: "mcp", section: "Server connections", label: "MCP Connection", labelKey: "services.label.mcpConnection" },
@@ -656,6 +657,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 		configKey: "app.collapse_tools",
 	},
 	{ tab: "mcp", section: "TUIC Tools", label: "Capabilities" },
+	{ tab: "mcp", section: "Call audit", label: "Record MCP call outcomes", labelKey: "mcpAudit.toggle" },
 	{ tab: "mcp", section: "Upstream MCP Servers", label: "Upstreams on" },
 	{ tab: "mcp", section: "Upstream MCP Servers", label: "Authentication" },
 	{ tab: "mcp", section: "Upstream MCP Servers", label: "Timeout (s):" },
@@ -733,6 +735,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 	{ tab: "remote-machines", section: "Name and transport", label: "Identity file" },
 	{ tab: "remote-machines", section: "Name and transport", label: "Remote daemon port" },
 	{ tab: "remote-machines", section: "Name and transport", label: "URL" },
+	{ tab: "remote-machines", section: "Name and transport", label: "Pairing bundle" },
 	{ tab: "remote-machines", section: "Deployment and lifetime", label: "Deployment" },
 	{ tab: "remote-machines", section: "Deployment and lifetime", label: "Keep ephemeral daemon alive (minutes)" },
 	{ tab: "remote-machines", section: "Deployment and lifetime", label: "Auto-update remote daemons" },

@@ -2,13 +2,19 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { showNativeNotice, state } = vi.hoisted(() => ({
 	showNativeNotice: vi.fn().mockResolvedValue(undefined),
-	state: { activeId: "term-A" as string | null, detached: false, focused: true },
+	state: {
+		activeId: "term-A" as string | null,
+		detached: false,
+		focused: true,
+		parentSession: undefined as string | undefined,
+	},
 }));
 
 vi.mock("../../services/nativeNotifications", () => ({ showNativeNotice }));
 vi.mock("@tauri-apps/api/window", () => ({
 	getCurrentWindow: () => ({ setBadgeCount: vi.fn().mockResolvedValue(undefined) }),
 }));
+vi.mock("../../stores/appLogger", () => ({ appLogger: { debug: vi.fn(), warn: vi.fn() } }));
 vi.mock("../../invoke", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../../stores/terminals", () => ({
 	terminalsStore: {
@@ -17,13 +23,14 @@ vi.mock("../../stores/terminals", () => ({
 				return state.activeId;
 			},
 		},
-		get: (id: string) => ({ name: `tab-${id}` }),
+		get: (id: string) => ({ name: `tab-${id}`, parentSession: state.parentSession }),
 		isDetached: () => state.detached,
 	},
 }));
 vi.mock("../../notifications", () => ({
 	DEFAULT_NOTIFICATION_CONFIG: {
 		enabled: true,
+		silence_remote_completions: true,
 		volume: 0.5,
 		sounds: { question: true, error: true, completion: true, warning: true, info: true },
 	},
@@ -52,6 +59,7 @@ describe("question reminder OS notice — critic round 2", () => {
 		state.activeId = "term-A";
 		state.detached = false;
 		state.focused = true;
+		state.parentSession = undefined;
 		vi.spyOn(document, "hasFocus").mockImplementation(() => state.focused);
 		localStorage.clear();
 		store = (await import("../../stores/notifications")).notificationsStore;
@@ -105,7 +113,10 @@ describe("question reminder OS notice — critic round 2", () => {
 		const notice = showNativeNotice.mock.calls[0][0];
 		expect(notice.ignoreFocus).toBeUndefined();
 		expect(notice.key).toBe("question:term-B");
-		expect(notice.isCurrent).toBeUndefined();
+		// Catches: ordinary notices bypassing a newly applied parent-session mute.
+		expect(notice.isCurrent()).toBe(true);
+		state.parentSession = "parent";
+		expect(notice.isCurrent()).toBe(false);
 	});
 
 	it("reminder does not bump the dock badge while the window is focused", async () => {

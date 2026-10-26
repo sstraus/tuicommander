@@ -1,6 +1,7 @@
 import { type Component, createMemo, createSignal, Show } from "solid-js";
 import type { AcpTranscriptEntry } from "../../stores/acpTranscript";
 import type { AcpToolCall } from "../../types/acp";
+import { Button } from "../ui";
 import s from "./ChatPresentation.module.css";
 
 /**
@@ -78,14 +79,15 @@ export const TerminalUserText: Component<{ text: string; prose: (text: string) =
 			<div class={s.paste}>
 				<pre>{(expanded() ? lines() : lines().slice(0, 2)).join("\n")}</pre>
 				<Show when={extra() > 0}>
-					<button
+					<Button
+						variant="ghost"
 						type="button"
 						aria-expanded={expanded()}
 						aria-label={expanded() ? "Collapse pasted output" : `Show ${extra()} more lines`}
 						onClick={() => setExpanded(!expanded())}
 					>
 						{expanded() ? "Show less" : `+ ${extra()} lines`}
-					</button>
+					</Button>
 				</Show>
 			</div>
 		</Show>

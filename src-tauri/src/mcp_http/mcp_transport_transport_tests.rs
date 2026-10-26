@@ -546,7 +546,10 @@ fn story_tool_publishes_its_input_schema_and_tracking_only_actor_contract() {
     let input = &definition["inputSchema"]["properties"]["input"];
     assert!(
         input.to_string().contains("create_story")
-            && input.to_string().contains("remove_dependency"),
+            && input.to_string().contains("remove_dependency")
+            && input.to_string().contains("set_criterion_manual")
+            && input.to_string().contains("submit_qa")
+            && input.to_string().contains("reject_qa"),
         "the StoryAction variants must be published: {input}"
     );
     let description = definition["description"].as_str().unwrap_or_default();
@@ -5874,6 +5877,178 @@ async fn runtime_audit_projection(state: Arc<AppState>) -> serde_json::Value {
     serde_json::from_slice(&bytes).unwrap()
 }
 
+// Catches: audit rows still recorded or returned while the feature is disabled.
+#[tokio::test]
+async fn mcp_call_audit_disabled_records_nothing_and_endpoint_reports_disabled() {
+    let state = test_state();
+    state.config.write().mcp_call_audit_enabled = false;
+    post_test_tool_call(
+        state.clone(),
+        "audit-off",
+        "session",
+        serde_json::json!({"action":"list"}),
+    )
+    .await;
+    let off = runtime_audit_projection(state.clone()).await;
+    assert_eq!(off["enabled"], false);
+    assert_eq!(off["records"], serde_json::json!([]));
+    state.config.write().mcp_call_audit_enabled = true;
+    let on = runtime_audit_projection(state).await;
+    assert_eq!(on["enabled"], true);
+    assert_eq!(
+        on["retained"], 0,
+        "the call made while disabled left no row"
+    );
+}
+
+// Catches: the row outcome hides an application error, or labels a reply as success of the effect.
+#[tokio::test]
+async fn mcp_call_audit_outcome_names_reply_and_error_not_effect() {
+    let state = test_state();
+    state.config.write().mcp_call_audit_enabled = true;
+    post_test_tool_call(
+        state.clone(),
+        "audit-outcome",
+        "session",
+        serde_json::json!({"action":"list"}),
+    )
+    .await;
+    post_test_tool_call(
+        state.clone(),
+        "audit-outcome",
+        "progress",
+        serde_json::json!({"type":"done","text":"x".repeat(600)}),
+    )
+    .await;
+    let projection = runtime_audit_projection(state).await;
+    assert_eq!(projection["records"][0]["outcome"], "error");
+    assert_eq!(projection["records"][1]["outcome"], "replied");
+}
+
+// Catches: private-form refusals claim uncertain execution despite never dispatching.
+#[tokio::test]
+async fn mcp_call_audit_secret_form_refusals_are_not_started() {
+    use crate::secrets::{Field, FieldKind, Form};
+    let state = test_state();
+    state.config.write().mcp_call_audit_enabled = true;
+    state
+        .secrets
+        .open(
+            Form::request(
+                vec![Field {
+                    name: "TOKEN".into(),
+                    kind: FieldKind::Password,
+                    display: None,
+                }],
+                "audit refusal regression".into(),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    for (name, args) in [
+        ("ui", serde_json::json!({"action":"screenshot"})),
+        ("maccontrol__capture_screen", serde_json::json!({})),
+        (
+            "call_tool",
+            serde_json::json!({"tool_name":"maccontrol__capture_screen","arguments":{}}),
+        ),
+    ] {
+        let response = post_test_tool_call(state.clone(), "audit-refusal", name, args).await;
+        assert_eq!(response["result"]["isError"], true, "{response}");
+        assert!(
+            response["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains("private secret form"),
+            "{response}"
+        );
+    }
+    let projection = runtime_audit_projection(state).await;
+    let rows = projection["records"].as_array().unwrap();
+    assert_eq!(rows.len(), 3);
+    for row in rows {
+        assert_eq!(row["outcome"], "error");
+        assert_eq!(row["effect"], "not_started", "{row}");
+    }
+}
+
+// Catches: successful dispatch replies never classify their effects after handlers return.
+#[cfg(unix)]
+#[tokio::test]
+async fn mcp_call_audit_classifies_real_read_and_rename_dispatch() {
+    let state = test_state();
+    state.config.write().mcp_call_audit_enabled = true;
+    insert_managed_test_session(&state, "audit-target", env!("CARGO_MANIFEST_DIR"));
+    let list = post_test_tool_call(
+        state.clone(),
+        "audit-effects",
+        "session",
+        serde_json::json!({"action":"list"}),
+    )
+    .await;
+    assert_eq!(list["result"]["isError"], false);
+    let rename = post_test_tool_call(state.clone(), "audit-effects", "call_tool", serde_json::json!({"tool_name":"session","arguments":{"action":"rename","session_id":"audit-target","name":"Audit worker"}})).await;
+    assert_eq!(rename["result"]["isError"], false);
+    assert_eq!(
+        state
+            .session_maps
+            .sessions
+            .get("audit-target")
+            .unwrap()
+            .lock()
+            .display_name
+            .as_deref(),
+        Some("Audit worker")
+    );
+    let projection = runtime_audit_projection(state).await;
+    let rows = projection["records"].as_array().unwrap();
+    assert_eq!(rows[0]["operation"], "session.rename");
+    assert_eq!(rows[0]["effect"], "completed");
+    assert_eq!(rows[0]["target"]["id"], "audit-target");
+    assert_eq!(rows[0]["target"]["name"], "Audit worker");
+    assert_eq!(rows[1]["operation"], "session.list");
+    assert_eq!(rows[1]["effect"], "read_only");
+}
+
+// Catches: discovery or known upstream names are hashed despite a catalog identity,
+// or a definite upstream preflight refusal is mislabeled as uncertain execution.
+#[tokio::test]
+async fn mcp_call_audit_names_discovery_and_upstream_operations_without_argument_bodies() {
+    let state = test_state();
+    state.config.write().mcp_call_audit_enabled = true;
+    post_test_tool_call(
+        state.clone(),
+        "audit-names",
+        "get_tool_schema",
+        serde_json::json!({"tool_name":"session"}),
+    )
+    .await;
+    let url = spawn_upstream_passthrough_mock().await;
+    state
+        .mcp
+        .upstream_registry
+        .inject_ready_http_upstream("audit-upstream", &url, &["probe"]);
+    let response = post_test_tool_call(state.clone(), "audit-names", "call_tool", serde_json::json!({"tool_name":"audit-upstream__probe","arguments":{"token":"PRIVATE_TOKEN"}})).await;
+    assert_eq!(response["result"]["isError"], true); // recorded upstream application error, not a lost reply
+    post_test_tool_call(
+        state.clone(),
+        "audit-names",
+        "missing__tool",
+        serde_json::json!({}),
+    )
+    .await;
+    let projection = runtime_audit_projection(state).await;
+    assert_eq!(projection["records"][0]["effect"], "not_started");
+    assert_eq!(
+        projection["records"][1]["operation"],
+        "audit-upstream__probe"
+    );
+    assert_eq!(projection["records"][1]["effect"], "failed");
+    assert_eq!(projection["records"][2]["operation"], "get_tool_schema");
+    assert_eq!(projection["records"][2]["effect"], "read_only");
+    assert!(!projection.to_string().contains("PRIVATE"));
+}
+
 // Catches: cancelling real dispatch records rollback/no effect, or leaks body values.
 #[tokio::test]
 async fn mcp_outcome_record_cancelled_call_keeps_unknown_effect_without_bodies() {
@@ -5957,7 +6132,15 @@ async fn mcp_outcome_record_groups_parent_but_preserves_targets_and_utf8_cost() 
         assert_eq!(row["response_text_bytes"], *cost);
         assert_eq!(row["application_error"], false);
     }
-    assert!(!projection.to_string().contains("recipient-"));
+    for row in rows {
+        assert!(
+            row["target"]["id"]
+                .as_str()
+                .unwrap()
+                .starts_with("recipient-")
+        );
+    }
+    assert!(!projection.to_string().contains("é"));
 }
 
 // Catches: UI regrouping bypasses the armed caller/repository boundary or the

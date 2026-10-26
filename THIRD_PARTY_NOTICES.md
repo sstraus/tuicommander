@@ -87,6 +87,7 @@ authors and communities behind each project.
 | serde_json | 1.0.151 | MIT OR Apache-2.0 |
 | serde_yaml | 0.9.34+deprecated | MIT OR Apache-2.0 |
 | sha2 | 0.11.0 | MIT OR Apache-2.0 |
+| snow | 0.10.0 | Apache-2.0 OR MIT |
 | sourcemap | 9.3.2 | BSD-3-Clause |
 | ssh2-config | 0.8.2 | MIT |
 | stop-words | 0.9.0 | MIT OR Apache-2.0 |
@@ -234,7 +235,7 @@ Counts below collapse equivalent SPDX expressions (`MIT OR Apache-2.0` ≡ `Apac
 <!-- BEGIN GENERATED:summary -->
 | License | Count |
 |---------|-------|
-| MIT OR Apache-2.0 | 80 |
+| MIT OR Apache-2.0 | 81 |
 | MIT | 70 |
 | Apache-2.0 | 8 |
 | Unlicense OR MIT | 7 |

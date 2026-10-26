@@ -19,7 +19,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/health", get(health))
         .route("/register", post(register))
         .route("/stats", get(stats))
-        .route("/push/subscribe", post(push_subscribe).delete(push_unsubscribe))
+        .route(
+            "/push/subscribe",
+            post(push_subscribe).delete(push_unsubscribe),
+        )
         .route("/ws/{session_id}", get(ws_upgrade))
         .with_state(state)
 }
@@ -91,10 +94,7 @@ struct StatsResponse {
 }
 
 /// Per-user stats endpoint (requires bearer auth).
-async fn stats(
-    headers: axum::http::HeaderMap,
-    State(state): State<Arc<AppState>>,
-) -> Response {
+async fn stats(headers: axum::http::HeaderMap, State(state): State<Arc<AppState>>) -> Response {
     let Some(token) = extract_bearer(&headers) else {
         return StatusCode::UNAUTHORIZED.into_response();
     };
@@ -104,13 +104,16 @@ async fn stats(
     };
 
     let Some(conn) = &state.db else {
-        return (StatusCode::OK, Json(StatsResponse {
-            total_sessions: 0,
-            total_bytes: 0,
-            created_at: 0,
-            last_seen: 0,
-        }))
-        .into_response();
+        return (
+            StatusCode::OK,
+            Json(StatsResponse {
+                total_sessions: 0,
+                total_bytes: 0,
+                created_at: 0,
+                last_seen: 0,
+            }),
+        )
+            .into_response();
     };
 
     match db::token_stats(conn, &hash).await {
@@ -148,7 +151,15 @@ async fn push_subscribe(
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
 
-    match db::insert_push_sub(conn, &hash, &body.endpoint, &body.keys.p256dh, &body.keys.auth).await {
+    match db::insert_push_sub(
+        conn,
+        &hash,
+        &body.endpoint,
+        &body.keys.p256dh,
+        &body.keys.auth,
+    )
+    .await
+    {
         Ok(()) => StatusCode::CREATED.into_response(),
         Err(e) => {
             tracing::error!(error = %e, "failed to store push subscription");
@@ -199,5 +210,7 @@ async fn ws_upgrade(
         return StatusCode::BAD_REQUEST.into_response();
     }
 
-    ws.on_upgrade(move |socket| relay::handle_ws(state, session_id, socket))
+    ws.max_message_size(relay::MAX_WS_MESSAGE_BYTES)
+        .max_frame_size(relay::MAX_WS_MESSAGE_BYTES)
+        .on_upgrade(move |socket| relay::handle_ws(state, session_id, socket))
 }

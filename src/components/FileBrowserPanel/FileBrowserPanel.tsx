@@ -28,7 +28,9 @@ import { ContextMenu, type ContextMenuItem, createContextMenu } from "../Context
 import { PromptDialog } from "../PromptDialog";
 import g from "../shared/git-status.module.css";
 import p from "../shared/panel.module.css";
+import { Button } from "../ui/Button";
 import { Dropdown } from "../ui/Dropdown";
+import { Input } from "../ui/Input";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { PanelWindowControls } from "../ui/PanelWindowControls";
 import s from "./FileBrowserPanel.module.css";
@@ -399,7 +401,9 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 							e.path !== c.path ||
 							e.git_status !== c.git_status ||
 							e.modified_at !== c.modified_at ||
-							e.is_ignored !== c.is_ignored
+							e.is_ignored !== c.is_ignored ||
+							e.symlink_target !== c.symlink_target ||
+							e.symlink_target_kind !== c.symlink_target_kind
 						);
 					});
 				if (changed) {
@@ -680,6 +684,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 			refresh();
 		} catch (err) {
 			appLogger.error("app", "Failed to delete", err);
+			toastsStore.add(t("fileBrowser.deleteFailed", "Delete failed"), String(err), "error");
 		}
 	};
 
@@ -1112,6 +1117,33 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 		contextMenu.open(e);
 	};
 
+	/** Right-click on the empty area (rows stop propagation): menu for the tree root. */
+	const getRootContextMenuItems = (): ContextMenuItem[] => {
+		const mod = getModifierSymbol();
+		const parent = parentDirFor(null);
+		return [
+			{ label: t("fileBrowser.newFolder", "New Folder\u2026"), action: () => openCreateDialog("folder", parent) },
+			{
+				label: t("fileBrowser.newFile", "New File\u2026"),
+				action: () => openCreateDialog("file", parent),
+				separator: true,
+			},
+			{
+				label: t("fileBrowser.paste", "Paste"),
+				shortcut: `${mod}V`,
+				action: handlePaste,
+				disabled: !clipboard(),
+			},
+		];
+	};
+
+	const handleEmptyAreaContextMenu = (e: MouseEvent) => {
+		e.preventDefault();
+		if (!root()) return;
+		setContextEntry(null);
+		contextMenu.open(e);
+	};
+
 	// Keyboard navigation
 	createEffect(() => {
 		if (!props.visible) return;
@@ -1227,22 +1259,25 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 						<span class={s.externalRootPath} title={externalRoot()}>
 							{externalRoot()}
 						</span>
-						<button
+						<Button
 							type="button"
 							class={s.externalRootBack}
 							title={t("fileBrowser.backToRepo", "Back to the active repository")}
 							onClick={() => uiStore.setFileBrowserExternalRoot(null)}
 						>
 							{t("fileBrowser.backToRepoLabel", "Back to repository")}
-						</button>
+						</Button>
 					</div>
 				)}
 			</Show>
 
 			{/* Search filter with F/C mode toggle */}
 			<div class={s.searchBar}>
-				<button
-					class={cx(s.modeToggle, searchMode() === "content" && s.modeToggleActive)}
+				<Button
+					shape="icon"
+					class={s.modeToggle}
+					aria-label={searchMode() === "filename" ? "Switch to content search" : "Switch to filename search"}
+					variant={searchMode() === "content" ? "primary" : "ghost"}
 					onClick={() => {
 						const next = searchMode() === "filename" ? "content" : "filename";
 						setSearchMode(next);
@@ -1261,11 +1296,11 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 					<Show when={searchMode() === "filename"} fallback={<ContentModeIcon />}>
 						<FilenameModeIcon />
 					</Show>
-				</button>
-				<input
+				</Button>
+				<Input
 					ref={searchInputRef}
 					type="text"
-					class={p.searchInput}
+					class={s.searchField}
 					data-focus-target="file-browser-search"
 					data-repo-path={props.repoPath ?? ""}
 					placeholder={
@@ -1283,31 +1318,45 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 					}}
 				/>
 				<Show when={searchMode() === "content"}>
-					<button
-						class={cx(s.toggleBtn, caseSensitive() && s.toggleActive)}
+					<Button
+						shape="icon"
+						class={s.toggleBtn}
+						aria-label="Match Case"
+						aria-pressed={caseSensitive()}
+						variant={caseSensitive() ? "primary" : "ghost"}
 						onClick={() => setCaseSensitive((v) => !v)}
 						title="Match Case"
 					>
 						<CaseSensitiveIcon />
-					</button>
-					<button
-						class={cx(s.toggleBtn, useRegex() && s.toggleActive)}
+					</Button>
+					<Button
+						shape="icon"
+						class={s.toggleBtn}
+						aria-label="Use Regular Expression"
+						aria-pressed={useRegex()}
+						variant={useRegex() ? "primary" : "ghost"}
 						onClick={() => setUseRegex((v) => !v)}
 						title="Use Regular Expression"
 					>
 						<RegexIcon />
-					</button>
-					<button
-						class={cx(s.toggleBtn, wholeWord() && s.toggleActive)}
+					</Button>
+					<Button
+						shape="icon"
+						class={s.toggleBtn}
+						aria-label="Match Whole Word"
+						aria-pressed={wholeWord()}
+						variant={wholeWord() ? "primary" : "ghost"}
 						onClick={() => setWholeWord((v) => !v)}
 						title="Match Whole Word"
 					>
 						<WholeWordIcon />
-					</button>
+					</Button>
 				</Show>
 				<Show when={searchQuery()}>
-					<button
-						class={p.searchClear}
+					<Button
+						shape="icon"
+						aria-label="Clear search"
+						variant="ghost"
 						onClick={() => {
 							setSearchQuery("");
 							setSelectedIndex(0);
@@ -1317,7 +1366,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 						}}
 					>
 						&times;
-					</button>
+					</Button>
 				</Show>
 			</div>
 
@@ -1347,17 +1396,23 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 				</Show>
 				<div class={s.sortControl}>
 					{/* Flat/tree toggle */}
-					<button
-						class={cx(s.viewModeBtn, viewMode() === "flat" && s.viewModeBtnActive)}
+					<Button
+						shape="icon"
+						aria-label="List view"
+						aria-pressed={viewMode() === "flat"}
+						variant={viewMode() === "flat" ? "primary" : "ghost"}
 						onClick={() => uiStore.setFileBrowserViewMode("flat")}
 						title="List view"
 					>
 						<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
 							<path d="M2 3h12v1H2zm0 3h12v1H2zm0 3h12v1H2zm0 3h12v1H2z" />
 						</svg>
-					</button>
-					<button
-						class={cx(s.viewModeBtn, viewMode() === "tree" && s.viewModeBtnActive)}
+					</Button>
+					<Button
+						shape="icon"
+						aria-label="Tree view"
+						aria-pressed={viewMode() === "tree"}
+						variant={viewMode() === "tree" ? "primary" : "ghost"}
 						onClick={() => {
 							uiStore.setFileBrowserViewMode("tree");
 							setCurrentSubdir(".");
@@ -1368,16 +1423,18 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 						<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
 							<path d="M2 2h3v1H2zm4 2h5v1H6zm4 2h4v1h-4zM6 8h5v1H6zM2 10h3v1H2zm4 2h5v1H6z" />
 						</svg>
-					</button>
-					<button
-						class={s.sortTrigger}
+					</Button>
+					<Button
+						shape="icon"
+						aria-label={`${t("fileBrowser.sortBy", "Sort by")} ${sortBy()}`}
+						variant="ghost"
 						onClick={() => setSortDropdownOpen((v) => !v)}
 						title={`${t("fileBrowser.sortBy", "Sort by")} ${sortBy()}`}
 					>
 						<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
 							<path d="M1 2h14L9.5 8.5V13l-3 1.5V8.5z" />
 						</svg>
-					</button>
+					</Button>
 					<Dropdown
 						items={[
 							{ id: "name", label: t("fileBrowser.sortName", "Name") },
@@ -1416,7 +1473,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 				</div>
 			</Show>
 
-			<div class={p.content} ref={contentRef}>
+			<div class={p.content} ref={contentRef} onContextMenu={handleEmptyAreaContextMenu}>
 				<Show when={loading() || (searching() && searchMode() === "filename")}>
 					<div class={s.empty}>
 						{searching() ? t("fileBrowser.searching", "Searching\u2026") : t("fileBrowser.loading", "Loading...")}
@@ -1577,14 +1634,24 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 											}}
 											onContextMenu={(e) => handleContextMenu(e, entry)}
 										>
-											<FileIcon name={entry.name} isDir={entry.is_dir} class={s.entryIcon} />
+											<FileIcon
+												name={entry.name}
+												isDir={entry.is_dir}
+												isLink={entry.symlink_target_kind !== undefined}
+												class={s.entryIcon}
+											/>
 											<span class={s.entryName} title={fileTooltip(entry)}>
 												{isSearch ? entry.path : entry.name}
+												<Show when={entry.symlink_target_kind}>
+													<span class={s.entryLink}>
+														{entry.symlink_target_kind} link → {entry.symlink_target ?? "Target unavailable"}
+													</span>
+												</Show>
 											</span>
 											<Show when={entry.git_status}>
 												<span class={cx(g.dot, getStatusClass(entry.git_status))} title={entry.git_status} />
 											</Show>
-											<Show when={!entry.is_dir && entry.size > 0}>
+											<Show when={!entry.is_dir && !entry.symlink_target_kind && entry.size > 0}>
 												<span class={s.entrySize}>{formatSize(entry.size)}</span>
 											</Show>
 										</div>
@@ -1598,7 +1665,7 @@ export const FileBrowserPanel: Component<FileBrowserPanelProps> = (props) => {
 
 			{/* Context menu */}
 			<ContextMenu
-				items={contextEntry() ? getContextMenuItems(contextEntry()!) : []}
+				items={contextEntry() ? getContextMenuItems(contextEntry()!) : getRootContextMenuItems()}
 				x={contextMenu.position().x}
 				y={contextMenu.position().y}
 				visible={contextMenu.visible()}

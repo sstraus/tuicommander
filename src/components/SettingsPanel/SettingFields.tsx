@@ -8,6 +8,8 @@ import {
 } from "../../services/settingsCatalogue";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
+import { Slider } from "../ui/Slider";
+import { Switch } from "../ui/Switch";
 import { ContextualHelp } from "./ContextualHelp";
 import s from "./Settings.module.css";
 import { SettingRow } from "./SettingsPrimitives";
@@ -35,12 +37,13 @@ export const SettingToggle: Component<{
 		fallback={
 			<div class={s.group}>
 				<div class={s.toggle}>
-					<input
+					<Switch
+						role="checkbox"
+						aria-label={settingLabel(props.settingId, props.label)}
 						disabled={props.disabled}
 						data-setting-id={props.settingId}
 						data-non-setting={props["data-non-setting"]}
 						data-setting-exclusion={props["data-setting-exclusion"]}
-						type="checkbox"
 						checked={props.checked}
 						onChange={(e) => props.onChange(e.currentTarget.checked)}
 					/>
@@ -64,15 +67,13 @@ export const SettingToggle: Component<{
 			hint={settingHint(props.settingId, props.hint)}
 		>
 			{(id, descriptionId) => (
-				<input
+				<Switch
 					disabled={props.disabled}
 					data-setting-id={props.settingId}
 					data-non-setting={props["data-non-setting"]}
 					data-setting-exclusion={props["data-setting-exclusion"]}
 					id={id}
 					aria-describedby={descriptionId()}
-					type="checkbox"
-					class={s.rowSwitch}
 					role="switch"
 					checked={props.checked}
 					onChange={(e) => props.onChange(e.currentTarget.checked)}
@@ -191,12 +192,11 @@ export const SettingSlider: Component<{
 					/>
 				</div>
 				<div class={s.slider}>
-					<input
+					<Slider
 						disabled={props.disabled}
 						data-setting-id={props.settingId}
 						data-non-setting={props["data-non-setting"]}
 						data-setting-exclusion={props["data-setting-exclusion"]}
-						type="range"
 						min={props.min}
 						max={props.max}
 						step={props.step}
@@ -219,14 +219,13 @@ export const SettingSlider: Component<{
 		>
 			{(id, descriptionId) => (
 				<div class={s.slider}>
-					<input
+					<Slider
 						disabled={props.disabled}
 						data-setting-id={props.settingId}
 						data-non-setting={props["data-non-setting"]}
 						data-setting-exclusion={props["data-setting-exclusion"]}
 						id={id}
 						aria-describedby={descriptionId()}
-						type="range"
 						min={props.min}
 						max={props.max}
 						step={props.step}

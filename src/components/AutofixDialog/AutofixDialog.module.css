@@ -24,6 +24,7 @@
 }
 
 .header {
+ composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
@@ -46,12 +47,9 @@
 
 .close {
   background: none;
-  border: none;
   color: var(--fg-secondary);
   font-size: var(--font-xl);
   cursor: pointer;
-  padding: 2px 6px;
-  border-radius: var(--radius-md);
   flex-shrink: 0;
 }
 
@@ -98,7 +96,6 @@
 
 .textarea {
   width: 100%;
-  min-height: 220px;
   resize: vertical;
   box-sizing: border-box;
   font-family: var(--font-mono);
@@ -106,15 +103,9 @@
   line-height: 1.5;
   color: var(--fg-primary);
   background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 8px 10px;
 }
 
-.textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-}
+
 
 .loading {
   color: var(--fg-muted);
@@ -158,52 +149,8 @@
   flex: 1;
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  font-size: var(--font-xs);
-  font-weight: 600;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: none;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
-}
 
-.btn:hover:not(:disabled) {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
 
-.btnPrimary {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
-  font-size: var(--font-xs);
-  font-weight: 600;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: var(--accent-fg, #fff);
-  cursor: pointer;
-  transition: opacity 0.1s;
-}
 
-.btnPrimary:hover:not(:disabled) {
-  opacity: 0.9;
-}
 
-.btnPrimary:disabled,
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
 
-.btnPrimary svg,
-.btn svg {
-  flex-shrink: 0;
-}

@@ -1,5 +1,14 @@
 # MCP & HTTP Server
 
+## Headless GitHub monitoring
+
+Both routers mount one shared GitHub monitoring surface: poller start/stop, visibility, immediate poll, path updates, issue filter and API-debug controls; repository status (`/repo/github`), PR snapshots (`/repo/prs`, `/repo/prs/batch`) and issues (`/repo/issues`). The poller does not require an AppHandle. It publishes through the event bus and `/events` SSE without a window. TCP keeps the existing authentication and request-boundary middleware; the trusted Unix socket uses the local router. GitHub account/auth, mutation and AI routes stay outside this shared surface. A credential-free no-remote smoke proves transport and lifecycle, not authenticated GitHub fetching.
+
+
+Planner Ideas use the same `StoryAction` envelope as plans and stories: `add_idea {text,source?}`, `list_ideas`, and `update_idea {idea_id,text}`. IPC `story_action_command`, HTTP `POST /stories/action?path=<project>` (`{action:<StoryAction>,sessionId?:string}`), CLI `tuic story`, and MCP `workflow action=story input=<StoryAction>` share the Rust owner. Add/update return `{type:"idea",value:<camelCase Idea>}`; list returns `{type:"ideas",value:[...]}`. The project sets `repoPath`; list also includes global Ideas, while update requires project ownership. Source defaults to the bound session id or `local-api`. Text is trimmed to a nonblank maximum of 16000 characters; source is nonblank with a maximum of 256. Writes use the strict locked `notes.json` owner and publish payload-free `ideas-changed` on desktop and `/events` SSE. UI `save_notes(base,config)` / `PUT /config/notes` applies per-id and per-field intent instead of replacing stale arrays. See [Ideas through the planner](../user-guide/native-stories.md#ideas-through-the-planner).
+
+Native plans have a stored `revision`. `update_plan` takes `plan_id`, `expected_revision`, and `patch` with optional `title` and `source`. At least one field is required. The shared service validates both fields and commits them with one revision increment in one transaction; stale revisions leave the plan unchanged. Existing records start at revision 1. A metadata change changes the workflow planning and verification fingerprints, including plans with no stories. Source prose stays in the external document; the update does not move or rewrite that file. Source-changing edits are refused with a user error while a plan coordinator/planner attempt is running, including an unbound attempt or a paused run. Finish the coordinator or cancel its run first. Title-only and unchanged-source edits remain allowed. The same action is available through MCP, HTTP, desktop IPC, and `tuic story`.
+
 The compact `ui` description includes `design_start`, `design_stop`, `design_status`,
 `design_reload`, `design_navigate`, `design_screenshot`, `design_errors` and
 `design_eval`. `ui action=help` retains their full usage guidance together with
@@ -59,7 +68,20 @@ verify the selected check against that PR head.
 
 ## Native stories
 
-The `workflow action=story` MCP entry accepts `{ action: "story", input: StoryAction }`. It resolves the owning project and live PTY from the bound MCP caller; caller-supplied project and session IDs are ignored. The shared Rust story service enforces revision and project checks. `list_plan_sources` discovers Markdown plans in the project's `plans/` and `.claude/plans/` roots; `add_plan_source` derives a title from the selected document and reuses an existing record for that source. The dialog calls the same actions, so agents and users see one discovery result. Its `remove_dependency` action is refused for bound agent sessions: only a human may remove a direct WontFix prerequisite from a Backlog story. The `plan_view` action returns Rust-derived story abandonment and cancellation summary without storing those projections. The HTTP route `/stories/action` and desktop command `story_action_command` use the same service. `tuic story '<JSON action>' [--project PATH] [--session-id PTY]` provides a local CLI path. The first native slice does not include story import/export.
+Native stories expose `qa` for work that waits on manual checks. A criterion starts with `[MANUAL]`, or is marked through `set_criterion_manual {index,manual}`. Active work automatically enters QA when all unchecked criteria are manual; `submit_qa` explicitly requests that state. `reject_qa` returns QA to In progress; `approve` requires every criterion checked. QA keeps plans Active and dependencies blocked. All transitions retain expected-revision checks. See the [native stories guide](../user-guide/native-stories.md#manual-qa).
+
+### Reversible native record archival
+
+All native story transports share `archive_story`, `unarchive_story`, `archive_plan`, and `unarchive_plan`. Story actions take `story_id`; plan actions take `plan_id`. Each requires `expected_revision` and returns the updated record with its incremented `revision` and `archived` flag. Stale revisions fail without a write. Archival preserves status, criteria, dependencies, and child archive flags; it never deletes records or cascades to children.
+
+`list_plans` and `list_stories` default to `archived: false`. Set `archived: true` to select archived records. The story filter combines with the other filters and is bound into pagination cursors. `filtered_plan_view` also accepts camel-case `filter.archived` (default false), which selects archived list ids and board columns without changing the active-plan state calculation. Direct reads remain available. Default plan views and workflow dispatch omit archived stories; archived plans and stories cannot start manual or workflow work. Restore the parent plan before starting its stories.
+
+Both archive and restore refuse claimed stories and plans that contain a claimed story. An active or paused plan-root workflow owns the plan's story set. A story-root workflow owns its target and execution stories, not unrelated siblings. Cleanup of an owned story or its parent plan is refused until the run ends. The workflow writer lock remains held through the archive transaction, so a concurrent run cannot start between the ownership check and the write.
+
+`story_archive_history` (`story_id`) and `plan_archive_history` (`plan_id`) return `{type:"archive_history",value:[{revision,archived,actor}]}` in revision order. Events commit atomically with the record and retain caller provenance. Existing status transition history remains separate. Consecutive archive-only revisions preserve accepted-work integration receipts; a work change or a moved canonical Git ref still invalidates them. Example: `tuic story '{"action":"archive_story","story_id":"<id>","expected_revision":1}' --project /absolute/project`.
+
+
+The `workflow action=story` MCP entry accepts `{ action: "story", input: StoryAction }`. It resolves the owning project and live PTY from the bound MCP caller; caller-supplied project and session IDs are ignored. The shared Rust story service enforces revision and project checks. `list_plan_sources` discovers Markdown plans in the project's `plans/` and `.claude/plans/` roots; `add_plan_source` derives a title from the selected document and reuses an existing record for that source. The dialog calls the same actions, so agents and users see one discovery result. Any trusted caller may remove a direct WontFix prerequisite from a Backlog story with its current revision. The `plan_view` action returns Rust-derived story abandonment and cancellation summary without storing those projections. The HTTP route `/stories/action` and desktop command `story_action_command` use the same service. `tuic story '<JSON action>' [--project PATH] [--session-id PTY]` provides a local CLI path. The first native slice does not include story import/export.
 
 `GET /stories/capabilities` mirrors the desktop `story_capabilities` probe. It returns JSON `true` without opening the story database; the dialog uses it to distinguish an outdated backend from an action error.
 
@@ -76,6 +98,12 @@ The catalogue cutover removes the old `story` and `workflow_*` tool names withou
 For `workflow action=report`, a `needs_input` outcome requires `inputRequest {question,options}`. A completed reviewer report requires `review {decision,artifactDigest,findings}` with criterion-indexed findings. These fields are durable evidence; they do not promote a story to Done. After a committed story report, the active coordinator's inbox receives a `workflow_event` cursor with `runId`, `storyId` and `sequence`; the coordinator replays the run log rather than treating mail as an outcome.
 
 `workflow action=proposal_create` takes `{input:{runId,proposalKey,story}}` from the active bound plan coordinator. The story belongs to the run's plan and uses a `plan_step` origin. A proposal key is durable across retries: the same payload returns the same story, while a changed payload is rejected. The run records a bounded CreateStory effect before the story transaction and its outcome afterward.
+
+`list_stories` shares optional top-level `state`, `priority`, `story_type`, `limit` (1–100), and `cursor` across all transports. Without a limit it returns every matching story; limited responses retain the `value` array and add `next_cursor` only when more matches remain. Cursors require a limit and the same plan/filters. See the HTTP API for bounds and live-read semantics.
+
+`filtered_plan_view` uses the same service on IPC, HTTP, MCP, and CLI. It takes `plan_id` and `filter` (camel-case `visibility`, `storyType`, `untypedOnly`), and returns the full plan with filtered list ids and per-status board ids. Optional `storyType` on create input and persisted stories is feature, fix, refactor, chore, or task; omitted types stay untyped. See the HTTP API for defaults and combined-filter rules.
+
+`update_story` takes `story_id`, `expected_revision`, and a camel-case `patch`. Omitted fields stay unchanged. The patch accepts `title`, `priority` (1–3), `fileScope`, `origin` (including a plan step), nullable `storyType` (`feature`, `fix`, `refactor`, `chore`, `task`), optional `problem` and `risk` (`low`, `medium`, `high`), ordered `criteria`, and the final `dependencies` set. Null clears `storyType`, `problem` or `risk`; old story records default both to absent. Unknown fields, invalid values, cross-plan dependencies, duplicates, cycles and stale revisions are rejected without partial story writes. Only unclaimed Backlog/Ready stories without active or paused workflow ownership can be amended. Unique byte-identical criteria retain their checks after reorder; changed, new or ambiguous duplicate criteria become unchecked. A priority-only patch preserves all checks. Dependency changes recompute readiness. Planning and execution fingerprints include the amended requirements/revision, so existing evidence cannot certify changed work.
 
 ## Project Progress reporting
 
@@ -726,6 +754,8 @@ When `collapse_tools: true` in `config.json` (or via Settings > MCP > TUIC Tools
 | `get_tool_schema` | Returns the full `{name, description, inputSchema}` for a specific tool |
 | `call_tool` | Dispatches to the named tool — routes to the native handler or `proxy_tool_call` for `{upstream}__{tool}` names |
 
+Search grammar is server-owned. Plain words rank names and descriptions with BM25. Each `+term` is a required, case-insensitive substring of the tool name (including any upstream or server alias prefix); several required terms use AND. Remaining plain words rank the matching names but do not exclude them. Filtering happens before the result limit, and a required term with no name match returns no results. `select:<name>` selects one exact catalogue name without ranked fallback.
+
 Rationale, measured 2026-09-13 on the running desktop instance with 190 tools connected (see [Measuring the surfaces](#measuring-the-surfaces) for the method): the full list is 154,117 bytes / 35,104 tokens in every agent turn, against 2,810 bytes / 615 tokens for the collapsed surface — which does not grow with the upstream count, because the upstream tools are no longer in the list. The agent fetches other schemas on demand. `progress` stays direct so routine reporting needs no search/schema preflight. Toggling `collapse_tools` fires `notifications/tools/list_changed` so connected clients refresh their tool cache.
 
 TUIC also selects this three-tool surface automatically for two clients
@@ -1285,6 +1315,13 @@ text it treats as a paste and then refuses the Enter. The existing
 `InputLineBuffer`, slash-mode tracking, submitted-input lifecycle, and
 `turn_epoch` advance exactly once after the full write.
 
+An ego empty composer painted after the last edit and quiet for 1.5 seconds
+supersedes stale tracked input. Retained drafts and pre-edit screens still block.
+Full local `session action=list` rows include `queued_commands` when entries
+are parked, including server wakes, and `queue_blocker` when a current composer
+gate prevents delivery. Ready observations retry existing queues and mail wakes;
+rejected submits are never silently added to a queue.
+
 `session action=suspend session_id=<id>` asks the UI to end a tab's PTY and agent
 while keeping the tab restorable like after a restart (the user resumes it from
 the tab). It is refused with `Cannot suspend: <reason>` while the agent is
@@ -1311,9 +1348,17 @@ immediately before Enter. One response returns:
 | `acknowledged` | Child terminal output moved after Enter |
 | `retry_safe` | True only when no byte was written |
 | `turn_epoch` | Epoch advanced by the shared input FSM |
-| `composer_state` | Tracked `InputLineBuffer`: `cleared`, `partial`, `empty`, or `unknown`; not the application's semantic state |
+| `composer_state` | Composer safety verdict: `cleared`, `partial`, `empty`, or `unknown`; normally from `InputLineBuffer`, with fresh, settled native ego empty-screen reconciliation |
 | `acknowledgement` / `reason` | Terminal-movement evidence or the precise rejection/timeout |
 | `detail` | For pre-write rejections, a human-readable cause and corrective action; unknown agent identity includes the current foreground process |
+
+Direct submits may answer an idle conversational question, including a
+`progress blocked` report. That report is not a native dialog: its ranked
+`progress-blocked` ownership permits an explicit command while server notices
+remain parked. Ordinary low-confidence prose questions also permit submit.
+Native selectors, approvals and free-text dialogs still return `awaiting_input`;
+these refusals include `prompt_kind` (`choice`, `approval`, `free_text`, or
+`question`). Explicit human replies retain their separate busy-dialog path.
 
 The acknowledgement does not claim semantic application acceptance or task
 success. Default acknowledgement timeout is 3,000 ms; callers may request
@@ -2209,7 +2254,13 @@ The mobile entry point shares `transport.ts` and `invoke.ts` with the desktop �
 ## Secret form security boundary
 
 `secret` supports `request`, `run` and `remove`; no action reads values. The
-backend owns the zeroizing store and process spawn. Native-window bootstrap
+backend owns the zeroizing store and process spawn. Values are shared by name
+across that backend's callers, not keyed by MCP connection or TUIC session;
+MCP disconnect/reconnect leaves them intact. `remove` returns the requested
+`names` and `status: "removed"` after idempotent deletion, even for absent names.
+Older builds returned `missing` to describe the post-deletion state, not a lookup
+failure. `run` still returns `missing` when a requested value is unavailable.
+Native-window bootstrap
 privately distributes a per-form capability. Browser entry uses
 `/index.html#/secret-form?nonce=<capability>` on the existing application router,
 with the same authentication and transport policy. Requests require a desktop
@@ -2548,7 +2599,7 @@ No live write or desktop-load verification is implied by recorded-fixture tests.
 
 `POST /settings/action` is registered once in `shared_routes()`, so desktop and headless daemons use the same handler, authentication policy and value-free Settings event publisher. Upstream OAuth startup requires a desktop host; the headless owner returns `unavailable` before upstream lookup or network access.
 
-`settings` replaces the removed MCP `config` tool without an alias. Its schema is generated from Rust action DTOs. `settings_action(request)` and `POST /settings/action` use the same envelope and owner services. Describe has optional area/store/id filters and cursor pagination (1–128 fields). Reads and edits use an explicit target; edits require expectedRevision. Prompts remain available through the stable-ID `prompts` store; get `/prompts` lists id/label/text/pinned records, while keyed leaf reads and create/remove patches retain stable identities. Typed workflows use perform with an explicit machine target and a store-selected operation DTO for github_accounts, ego (also expectedRevision), upstreams, connections, circleci, telegram and voice in dictation builds. Targeted describe/refresh uses target/store/paths through the registered owner resolver. Connection credential reads use /{id}/credential and return separate password/pairingToken presence. Credential writes retire only that runtime and reconnect it only when it was active; an explicit later disconnect retires the queued reconnect. Explicit refresh for ego refreshes the configured owner's provider catalogue; describe never performs a network refresh.
+`settings` replaces the removed MCP `config` tool without an alias. Its schema is generated from Rust action DTOs. `settings_action(request)` and `POST /settings/action` use the same envelope and owner services. Describe has optional area/store/id filters and cursor pagination (1–128 fields). Reads and edits use an explicit target; edits require expectedRevision. Prompts remain available through the stable-ID `prompts` store; get `/prompts` lists id/label/text/pinned records, while keyed leaf reads and create/remove patches retain stable identities. Typed workflows use perform with an explicit machine target and a store-selected operation DTO for github_accounts, ego (also expectedRevision), upstreams, connections, circleci, telegram and voice in dictation builds. Targeted describe/refresh uses target/store/paths through the registered owner resolver. Connection credential reads use /{id}/credential and return separate password/pairingToken/relayPairing presence; the `set_relay_pairing` action stores the bundle printed by `tuic-remote --relay-pair` after parsing it (an unparsable bundle is `out_of_range`). Credential writes retire only that runtime and reconnect it only when it was active; an explicit later disconnect retires the queued reconnect. Explicit refresh for ego refreshes the configured owner's provider catalogue; describe never performs a network refresh.
 
 MCP access requires settings_mcp_enabled, enabled only by trusted UI; legacy config enablement grants no settings authority. MCP mutations remain loopback-only. HTTP retains local-or-authenticated access and IPC retains native host trust. Exposure proposals use ui confirm proposalId and an exact replay with approval. Secrets remain write-only. Owner transactions and perform remain unavailable while the native inventory gap ledger is nonempty; describe reports inventoryComplete.
 
@@ -2715,6 +2766,8 @@ The loopback-only `debug action=frame_workload_dump` schedules the enabled front
 
 ## Runtime call outcome audit (#2010-30a7)
 
+Gated by the persisted `mcp_call_audit_enabled` setting (#2136-dc79): default `false` in release builds, `true` when `cfg!(debug_assertions)`. While off, `tools/call` ingress records nothing and `GET /mcp/audit` (IPC `get_mcp_audit`) returns `{"enabled":false,"records":[]}`; retained rows are not returned. Each row also carries `outcome` (`replied`, `error`, `cancelled`), which describes the reply, never the effect. Settings > MCP > Call audit shows the rows; it fetches on open and on Refresh only.
+
 `GET /mcp/audit` returns at most 100 newest completed/cancelled `tools/call`
 observations from an instance-local 1024-record memory ring. `retained`, `evicted`,
 `capacity` and `limit` describe retention. Restart clears the ring. HTTP and ACP
@@ -2722,9 +2775,9 @@ both enter `mcp_post`, so a collapsed call is one runtime ingress record, not an
 extra inferred hop. Existing inbox-read audit records are unchanged.
 
 Each row has a server `call_id`, optional UUID `client_call_id` and
-`parent_operation_id`, catalogue-recognized native `operation`, optional SHA-256
-`target_digest`, start time, `response_text_bytes`, `application_error`,
-`transport_error` and `effect`. Unknown/upstream tool names are digested. Arguments,
+`parent_operation_id`, catalogue-recognized native, discovery or connected-upstream `operation`, optional resolved
+`target` (`kind`, `id`, `name`), optional SHA-256 `target_digest`, start time, `response_text_bytes`, `application_error`,
+`transport_error` and `effect`. Unrecognized tool names are digested. Known runtime session/peer identities may be retained; arbitrary target arguments are not. Arguments,
 response bodies, arbitrary metadata and error messages are never retained.
 The target digest covers the first string target among `to`, `session_id`, `path`,
 `worktree_path`, `id`, including the field name and a NUL separator. It is a grouping
@@ -2740,8 +2793,15 @@ Text cost is the sum of UTF-8 byte lengths of top-level MCP `content` blocks who
 `type` is `text`, after response formatting. It excludes JSON escaping, envelopes,
 resources, images and transport overhead. A native `error:null` is not an
 application error; upstream `isError` is preserved. Error text is not copied.
-Only explicit native `effect=not_started|completed` is retained; other effects
-remain `unknown`, including application refusals without an effect contract.
+Effects classify the handler observation: `read_only` for a recognized read-only action,
+`completed` for a successful handler return, `failed` for an application-error reply,
+and `not_started` for an explicit preflight refusal, including private-secret-form
+inspection refusals on native, direct-upstream and wrapped-upstream calls. Explicit handler effect contracts
+remain authoritative. `completed` does not mean a submitted command finished, queued
+speech was heard, a remote job finished, or the client received the reply. Native
+handler interruption and upstream failures after dispatch remain `unknown`; the
+proxy carries a typed effect so pre-send policy/configuration refusals are not confused
+with a lost upstream reply. No classification parses error prose.
 A cancelled dispatch has unknown application outcome, no observed response bytes,
 `transport_error=cancelled_before_reply` and unknown effect. A constructed reply
 has `transport_error=unobserved_after_reply_construction`: this does not prove
@@ -2903,3 +2963,28 @@ bridge whose agent removed the marker from the bridge environment. Ordinary
 foreground ego ancestry recovery and explicit identity headers are unchanged.
 The detached runner keeps its caller identity for completion queueing and mail.
 This is an identity boundary, not a security sandbox or a delivery-policy bypass.
+
+### Session usage reads
+
+`GET /sessions/{id}/usage` and `get_session_usage` share `session_usage.rs`.
+The owner check precedes all local process/cache/provider reads. Connected
+remote PTYs forward to the owning daemon; an absent/failed route returns
+`remote session` unavailability. No local-account fallback is allowed. The
+frontend transport table also supports the normal session-owner routing.
+
+### TLS readiness
+
+`get_mcp_status` and `GET /mcp/status` expose `tls_active`. The loaded dual-protocol
+serving task owns a strong lifetime token; AppState holds only a weak token.
+Provisioning failure, no TCP listener, task completion, and cancellation do not
+leave HTTPS active. Replacing the token prevents an old task's exit from clearing
+a replacement listener. Tailscale detection retains its separate capability
+state for provisioning and Host trust. Settings and connect URLs use live TLS
+readiness, not that capability. The CLI provisioning fallback reads each PEM
+stream from stdout, because the sandboxed macOS app CLI cannot write into the
+caller's temporary directory.
+
+
+### Append-only story notes
+
+`add_note` and `list_notes` use the same shared story service on all transports. Notes retain backend actor/time and the subject revision without advancing it. Optional `{runId, commandId}` receipt references are validated against the same project and plan. See [Native stories in the HTTP API](../api/http-api.md#append-only-story-notes) for fields, replies, bounds, and append-only semantics.

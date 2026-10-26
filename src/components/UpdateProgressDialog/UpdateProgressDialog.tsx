@@ -1,6 +1,7 @@
 import { type Component, Show } from "solid-js";
 import { updaterStore } from "../../stores/updater";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
 import s from "./UpdateProgressDialog.module.css";
 
 /**
@@ -38,9 +39,9 @@ export const UpdateProgressDialog: Component = () => {
 					</div>
 					<Show when={error()}>
 						<div class={d.actions}>
-							<button class={d.cancelBtn} onClick={() => updaterStore.dismiss()}>
+							<Button class={d.cancelBtn} onClick={() => updaterStore.dismiss()}>
 								Close
-							</button>
+							</Button>
 						</div>
 					</Show>
 				</div>

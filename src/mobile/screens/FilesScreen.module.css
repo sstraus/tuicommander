@@ -28,21 +28,10 @@
 	font-size: var(--font-lg);
 }
 
-.back,
-.action {
-	min-height: 44px;
-	min-width: 44px;
-	border: 1px solid var(--border);
-	border-radius: var(--radius-md);
-	background: var(--bg-tertiary);
-	color: var(--fg-primary);
-	padding: 8px 10px;
-	font: inherit;
-}
-
 .back { flex-shrink: 0; }
 
-.row {
+button[data-control-layout="row"].row {
+	min-height: 44px;
 	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
@@ -57,7 +46,7 @@
 	font: inherit;
 }
 
-.row:active { background: var(--bg-highlight); }
+button[data-control-layout="row"].row:active { background: var(--bg-highlight); }
 
 .name { font-size: var(--font-base); }
 .path {
@@ -79,17 +68,7 @@
 	border-bottom: 1px solid var(--border);
 }
 
-.search input {
-	box-sizing: border-box;
-	width: 100%;
-	min-height: 44px;
-	padding: 8px 12px;
-	border: 1px solid var(--border);
-	border-radius: var(--radius-md);
-	background: var(--bg-tertiary);
-	color: var(--fg-primary);
-	font: inherit;
-}
+.search input { width: 100%; }
 
 .pathPreviewBackdrop {
 	position: fixed;
@@ -112,6 +91,7 @@
 	overflow-wrap: anywhere;
 }
 
+/* Native full-pane source editor layout, not a standalone form field. */
 .viewer,
 .editor {
 	box-sizing: border-box;

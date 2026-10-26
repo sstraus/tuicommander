@@ -3,6 +3,7 @@ import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
 import { registerModal } from "../../stores/modalStack";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
 import s from "./ProcessManagerModal.module.css";
 
 interface ProcessStats {
@@ -108,9 +109,9 @@ export const ProcessManagerModal: Component<ProcessManagerModalProps> = (props) 
 					<div class={d.headerText}>
 						<h4>Process Manager</h4>
 					</div>
-					<button class={s.close} onClick={props.onClose} title="Close" aria-label="Close">
+					<Button variant="ghost" class={s.close} onClick={props.onClose} title="Close" aria-label="Close">
 						&times;
-					</button>
+					</Button>
 				</div>
 				<div class={s.scrollBody}>
 					<Show when={processes().length > 0} fallback={<div class={s.empty}>Loading...</div>}>

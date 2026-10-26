@@ -1,5 +1,26 @@
 import type { DecodedRow } from "./canvasTerminalUtils";
 
+/** Floor of the gesture acceleration ramp — the damping applied to the first screenful of travel. */
+export const GESTURE_ACCEL_MIN = 0.5;
+/**
+ * Ceiling of the gesture acceleration ramp.
+ *
+ * The ramp reaches 1.0 (exact 1:1 pixel tracking, the direct-manipulation baseline)
+ * after 2 screens of cumulative travel, and this 2.0 ceiling after 4. Past 1:1 the
+ * content no longer tracks the gesture at all, and macOS has already applied its own
+ * momentum curve underneath us, so 2.0 is a hard ceiling on top of an already
+ * accelerated input. Left uncapped, a long momentum fling could ramp past 5x, which is
+ * part of what made scrolling back to a specific line unreliable.
+ */
+export const GESTURE_ACCEL_MAX = 2;
+
+/** Progressive acceleration factor for a gesture that has traveled `distancePx` cumulative pixels. */
+export function gestureAccelFactor(distancePx: number, screenPx: number): number {
+	if (screenPx <= 0) return GESTURE_ACCEL_MIN;
+	const excess = Math.max(0, distancePx - screenPx);
+	return Math.min(GESTURE_ACCEL_MAX, GESTURE_ACCEL_MIN + 0.5 * (excess / screenPx));
+}
+
 /**
  * How many decoded rows the smooth-scroll cache may hold. At roughly 2.6 KB per
  * row in the base typed arrays (three `Uint32Array(cols)` plus a
@@ -64,6 +85,14 @@ export interface CanvasScrollController {
 	 * true when the backend at `backendOffset` has to be sent the rebased offset.
 	 */
 	followHistory: (grownLines: number, historySize: number, backendOffset: number) => boolean;
+	/**
+	 * Accumulate |dy| into the gesture-acceleration ramp and return the new cumulative
+	 * distance. A direction reversal restarts the ramp from |dy| instead of adding to
+	 * it — otherwise turning the gesture around would still be accelerated by distance
+	 * traveled in the OPPOSITE direction, which is part of what made "scroll back
+	 * accurately" hard.
+	 */
+	accumulateGesture: (dy: number) => number;
 	snap: () => number | null;
 	acceptSettledFrame: (displayOffset: number) => boolean;
 	cancel: () => void;
@@ -78,6 +107,7 @@ export function createCanvasScrollController(): CanvasScrollController {
 	let scrolling = false;
 	let settleTarget: number | null = null;
 	let gestureDistancePx = 0;
+	let gestureSign = 0;
 	let cacheGeneration = 0;
 	let liveEpoch = 0;
 
@@ -191,9 +221,17 @@ export function createCanvasScrollController(): CanvasScrollController {
 			pendingOffset = target;
 			return true;
 		},
+		accumulateGesture(dy) {
+			const sign = dy > 0 ? 1 : dy < 0 ? -1 : 0;
+			if (sign !== 0 && gestureSign !== 0 && sign !== gestureSign) gestureDistancePx = 0;
+			if (sign !== 0) gestureSign = sign;
+			gestureDistancePx += Math.abs(dy);
+			return gestureDistancePx;
+		},
 		snap() {
 			scrolling = false;
 			gestureDistancePx = 0;
+			gestureSign = 0;
 			if (position === null) return null;
 			const target = Math.round(position);
 			position = target;
@@ -213,6 +251,7 @@ export function createCanvasScrollController(): CanvasScrollController {
 			scrolling = false;
 			settleTarget = null;
 			gestureDistancePx = 0;
+			gestureSign = 0;
 		},
 	};
 }

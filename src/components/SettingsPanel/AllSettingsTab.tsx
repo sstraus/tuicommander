@@ -4,6 +4,7 @@ import { invoke } from "../../invoke";
 import { hasCatalogueEditor, type SettingId, settingHint, settingLabel } from "../../services/settingsCatalogue";
 import { settingsRefresh } from "../../services/settingsRefresh";
 import { repositoriesStore } from "../../stores/repositories";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { SettingList } from "./fields/SettingList";
@@ -239,51 +240,51 @@ export const CatalogueFieldEditor: Component<{ field: Field; path: string; repos
 			<div class={s.catalogueActions} role="group" aria-label="Setting actions">
 				<Show when={revision()}>
 					<Show when={field().nullable && !options()}>
-						<button
+						<Button
 							data-setting-id={field().id as SettingId}
 							class={s.testBtn}
 							disabled={busy()}
 							onClick={() => edit(null)}
 						>
 							Use null / inherit
-						</button>
+						</Button>
 					</Show>
-					<button
+					<Button
 						data-setting-id={field().id as SettingId}
 						class={s.testBtn}
 						disabled={busy() || !dirty()}
 						onClick={() => void save()}
 					>
 						Save setting
-					</button>
+					</Button>
 					<Show when={(field().operations as readonly string[]).includes("reset")}>
-						<button
+						<Button
 							data-setting-id={field().id as SettingId}
 							class={s.testBtn}
 							disabled={busy()}
 							onClick={() => void save(true)}
 						>
 							Reset to owner default
-						</button>
+						</Button>
 					</Show>
 				</Show>
-				<button
+				<Button
 					data-non-setting="Read the owner snapshot; optionally discard this editor draft"
 					class={s.testBtn}
 					disabled={busy()}
 					onClick={() => void reload()}
 				>
 					{dirty() ? "Discard draft and reload" : "Reload owner"}
-				</button>
+				</Button>
 				<Show when={proposal()}>
-					<button
+					<Button
 						data-setting-id={field().id as SettingId}
 						class={s.testBtn}
 						disabled={busy()}
 						onClick={() => void save(false, true)}
 					>
 						Ask for confirmation
-					</button>
+					</Button>
 				</Show>
 			</div>
 			<p class={s.hint} role="status">

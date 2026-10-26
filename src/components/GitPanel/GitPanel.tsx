@@ -5,6 +5,7 @@ import { onClickKeyDown } from "../../utils/a11y";
 import p from "../shared/panel.module.css";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { PanelWindowControls } from "../ui/PanelWindowControls";
+import { SegmentedControl } from "../ui/SegmentedControl";
 import { BlameTab } from "./BlameTab";
 import { BranchesTab } from "./BranchesTab";
 import { ChangesTab } from "./ChangesTab";
@@ -88,11 +89,7 @@ export const GitPanel: Component<GitPanelProps> = (props) => {
 						e.preventDefault();
 					}}
 				>
-					{TABS.map((tab) => (
-						<button class={cx(s.tab, activeTab() === tab.id && s.tabActive)} onClick={() => setActiveTab(tab.id)}>
-							{tab.label}
-						</button>
-					))}
+					<SegmentedControl options={TABS} value={activeTab()} onChange={setActiveTab} aria-label="Git views" />
 				</div>
 				<PanelWindowControls panelId="git" mode={mode()} onInlineClose={props.onClose} />
 			</div>

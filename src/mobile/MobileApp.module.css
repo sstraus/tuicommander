@@ -5,8 +5,8 @@
   top: var(--app-top, 0px);
   left: 0;
   right: 0;
-  /* DEFERRED (2026-10-21) — 2116: measure iPhone viewport/safe-area geometry
-     before changing keyboard-critical sizing; screenshots alone show a 62pt band. */
+  /* Keep viewport sizing: the recorded iOS band came from translucent
+     status-bar metadata, not a missing amount to add to this height. */
   height: var(--app-height, 100dvh);
   padding-top: env(safe-area-inset-top, 0px);
   background: var(--bg-primary);

@@ -224,6 +224,8 @@ pub struct VtLogBuffer {
     /// Caller-computed secrets of the retained log, valid while `total_pushed`
     /// and the wrap flags are unchanged.
     secret_cache: Option<(usize, Vec<String>)>,
+    /// Last reader-originated visible ego composer-row change.
+    last_composer_paint_at: Option<std::time::Instant>,
 }
 
 /// Internal scrollback capacity for the terminal grid. Must be large enough
@@ -246,7 +248,13 @@ impl VtLogBuffer {
             suppress_capture: false,
             next_head_lost: false,
             secret_cache: None,
+            last_composer_paint_at: None,
         }
+    }
+
+    /// Last child paint of the native ego composer, ordered with input stamps.
+    pub fn last_composer_paint_at(&self) -> Option<std::time::Instant> {
+        self.last_composer_paint_at
     }
 
     pub fn set_ansi_colors(&mut self, colors: &[[u8; 3]; 16]) {
@@ -263,7 +271,7 @@ impl VtLogBuffer {
         self.grid.reflow_history = on;
     }
 
-    /// Feed raw PTY bytes into the terminal grid.
+    /// Feed reader-originated child PTY bytes into the terminal grid.
     ///
     /// Returns the screen rows that changed since the previous call.  Changed
     /// rows are detected for **both** normal and alternate screen so that
@@ -276,6 +284,23 @@ impl VtLogBuffer {
     /// while mouse reporting is on the primary screen (`grok --no-alt-screen`):
     /// the app owns the viewport and its SU/line dumps are not shell output.
     pub fn process(&mut self, data: &[u8]) -> Vec<ChangedRow> {
+        self.process_inner(data, true)
+    }
+
+    /// Apply local cosmetic/repair bytes, never child paint evidence.
+    pub fn process_local(&mut self, data: &[u8]) -> Vec<ChangedRow> {
+        self.process_inner(data, false)
+    }
+
+    fn process_inner(&mut self, data: &[u8], child_output: bool) -> Vec<ChangedRow> {
+        let started_at = std::time::Instant::now();
+        // Resize clears the diff cache. Compare against the actual pre-read
+        // screen then, so a cursor-only first read cannot invent text damage.
+        let uncached_rows = self
+            .grid
+            .screen_text_rows_ref()
+            .is_none()
+            .then(|| self.grid.screen_text_rows());
         let is_alternate = self.grid.is_alternate_screen();
 
         // TerminalGrid::process handles changed-row detection internally,
@@ -286,6 +311,22 @@ impl VtLogBuffer {
         }
 
         let changed = self.grid.process(data);
+        if !child_output {
+            if !changed.is_empty() {
+                self.last_composer_paint_at = None;
+            }
+        } else if !changed.is_empty()
+            && let Some(rows) = self.grid.screen_text_rows_ref()
+            && let Some((prompt, _)) = crate::chrome::find_ego_composer(rows)
+            && changed.iter().any(|row| {
+                row.row_index == prompt
+                    && uncached_rows
+                        .as_ref()
+                        .is_none_or(|before| before.get(prompt) != Some(&row.text))
+            })
+        {
+            self.last_composer_paint_at = Some(started_at);
+        }
 
         let is_alternate = self.grid.is_alternate_screen();
         let inline_tui = !is_alternate && self.grid.is_mouse_reporting();
@@ -327,6 +368,7 @@ impl VtLogBuffer {
     /// and natural soft-wrap continuity for terminal and redaction readers.
     /// Alt screen and reflow_history=false disable reflow entirely.
     pub fn resize(&mut self, rows: u16, cols: u16) {
+        self.last_composer_paint_at = None;
         let prev = self.pty_cols;
         self.pty_cols = cols;
         if cols > self.max_cols {

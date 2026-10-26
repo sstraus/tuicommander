@@ -13,6 +13,7 @@ import {
 import { invoke } from "../../invoke";
 import { reportSettingsConflicts, settingsRefresh } from "../../services/settingsRefresh";
 import { pluginStore } from "../../stores/pluginStore";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { SettingField } from "./fields/SettingField";
@@ -137,7 +138,7 @@ export const PluginSettingsTab: Component<{ page: PluginSettingsPage }> = (props
 															JSON.stringify(current().values[field.path]?.effective) !== JSON.stringify(field.default))
 												}
 											>
-												<button
+												<Button
 													data-setting-id={field.id}
 													class={s.testBtn}
 													aria-label={`Reset ${pluginFieldLabel(field)}`}
@@ -146,7 +147,7 @@ export const PluginSettingsTab: Component<{ page: PluginSettingsPage }> = (props
 													onClick={() => void write(field, undefined, true)}
 												>
 													Reset
-												</button>
+												</Button>
 											</Show>
 										}
 									/>

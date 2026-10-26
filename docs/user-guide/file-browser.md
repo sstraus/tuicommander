@@ -18,6 +18,10 @@ The file browser opens in tree view by default. Use the toolbar buttons to switc
 - **`..` row** — Click to go up one level (appears when inside a subdirectory)
 - **Breadcrumb bar** — Click any path segment to jump directly to that directory; click the root `/` to return to the repo root
 
+Symbolic links show a link icon, target path and target kind (directory, file, or unavailable). The link text length is not shown as a file size. Opening a link outside the repository shows a target-specific refusal; it does not grant access to that target. Links inside the repository keep their existing open behavior.
+
+Delete removes the selected symbolic link, including an unavailable link, without deleting its target or target contents. A failed deletion shows the backend error in a persistent error notification.
+
 Directories are listed first, then files. The entry count is shown as a badge in the panel header.
 
 ### Sorting

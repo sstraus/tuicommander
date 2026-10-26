@@ -1,6 +1,7 @@
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { t } from "../../i18n";
 import { dictationStore, playbackState } from "../../stores/dictation";
+import { Button } from "../ui/Button";
 import styles from "./DictationToast.module.css";
 import { handsFreePhaseLabel } from "./handsFreePhaseLabel";
 
@@ -123,7 +124,9 @@ export function DictationToast() {
 						<Show
 							when={playback() === "paused"}
 							fallback={
-								<button
+								<Button
+									shape="icon"
+									variant="ghost"
 									type="button"
 									class={styles.control}
 									aria-label={t("dictation.pauseReply", "Pause reply")}
@@ -133,10 +136,12 @@ export function DictationToast() {
 										<rect x="3" y="2" width="3.5" height="12" rx="1" />
 										<rect x="9.5" y="2" width="3.5" height="12" rx="1" />
 									</svg>
-								</button>
+								</Button>
 							}
 						>
-							<button
+							<Button
+								shape="icon"
+								variant="ghost"
 								type="button"
 								class={styles.control}
 								aria-label={t("dictation.resumeReply", "Resume reply")}
@@ -145,9 +150,11 @@ export function DictationToast() {
 								<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
 									<path d="M4 2.5v11a.5.5 0 0 0 .76.43l9-5.5a.5.5 0 0 0 0-.86l-9-5.5A.5.5 0 0 0 4 2.5z" />
 								</svg>
-							</button>
+							</Button>
 						</Show>
-						<button
+						<Button
+							shape="icon"
+							variant="ghost"
 							type="button"
 							class={styles.control}
 							aria-label={t("dictation.stopReply", "Stop reply")}
@@ -156,11 +163,13 @@ export function DictationToast() {
 							<svg viewBox="0 0 16 16" width="14" height="14" fill="currentColor" aria-hidden="true">
 								<rect x="3" y="3" width="10" height="10" rx="1.5" />
 							</svg>
-						</button>
+						</Button>
 					</span>
 				</Show>
 				<Show when={handsFreeArmed()}>
-					<button
+					<Button
+						shape="icon"
+						variant="ghost"
 						type="button"
 						class={styles.control}
 						classList={{ [styles.controlOff]: !spokenReplies() }}
@@ -185,7 +194,7 @@ export function DictationToast() {
 								<path d="M11.9 4.2a5.5 5.5 0 0 1 0 7.6" stroke="currentColor" stroke-width="1.4" fill="none" />
 							</Show>
 						</svg>
-					</button>
+					</Button>
 				</Show>
 			</div>
 		</Show>

@@ -3,6 +3,8 @@ import { useSmartPrompts } from "../../hooks/useSmartPrompts";
 import { appLogger } from "../../stores/appLogger";
 import { promptLibraryStore, type SavedPrompt, type SmartPlacement } from "../../stores/promptLibrary";
 import { cx } from "../../utils";
+import { Button } from "../ui/Button";
+import { ButtonGroup } from "../ui/ButtonGroup";
 import s from "./SmartButtonStrip.module.css";
 
 const SparkleIcon = () => (
@@ -114,25 +116,33 @@ export const SmartButtonStrip: Component<SmartButtonStripProps> = (props) => {
 	return (
 		<Show when={activePrompt()}>
 			<div class={s.split} ref={rootRef}>
-				<button
-					class={cx(s.splitMain, busy() && s.splitBusy, !canExecute(activePrompt()!).ok && s.splitDisabled)}
-					disabled={busy() || !canExecute(activePrompt()!).ok}
-					onClick={() => runPrompt(activePrompt()!)}
-					title={activePrompt()!.description}
-				>
-					<Show when={busy()} fallback={<SparkleIcon />}>
-						<span class={s.spinner} />
-					</Show>
-					{activePrompt()!.name}
-				</button>
-				<Show when={prompts().length > 1}>
-					<button
-						class={cx(s.splitArrow, menuOpen() && s.splitArrowOpen)}
-						onClick={() => setMenuOpen(!menuOpen())}
-						title="More actions"
+				<ButtonGroup aria-label="Smart prompt actions">
+					<Button
+						size="compact"
+						variant="ghost"
+						class={cx(s.splitMain, busy() && s.splitBusy, !canExecute(activePrompt()!).ok && s.splitDisabled)}
+						disabled={busy() || !canExecute(activePrompt()!).ok}
+						onClick={() => runPrompt(activePrompt()!)}
+						title={activePrompt()!.description}
 					>
-						<ChevronIcon />
-					</button>
+						<Show when={busy()} fallback={<SparkleIcon />}>
+							<span class={s.spinner} />
+						</Show>
+						<span class={s.promptName}>{activePrompt()!.name}</span>
+					</Button>
+					<Show when={prompts().length > 1}>
+						<Button
+							size="compact"
+							variant="ghost"
+							class={cx(s.splitArrow, menuOpen() && s.splitArrowOpen)}
+							onClick={() => setMenuOpen(!menuOpen())}
+							title="More actions"
+						>
+							<ChevronIcon />
+						</Button>
+					</Show>
+				</ButtonGroup>
+				<Show when={prompts().length > 1}>
 					<Show when={menuOpen()}>
 						<div class={s.menu}>
 							<For each={prompts()}>
@@ -148,7 +158,8 @@ export const SmartButtonStrip: Component<SmartButtonStripProps> = (props) => {
 									// threading costs more than it buys. Clickable version lives in
 									// SmartPromptsDropdown (#706-8d98).
 									return (
-										<button
+										<Button
+											variant="ghost"
 											class={cx(s.menuItem, isActive() && s.menuItemActive, !check().ok && s.menuItemDisabled)}
 											disabled={!check().ok}
 											title={!check().ok ? check().reason : prompt.description}
@@ -161,7 +172,7 @@ export const SmartButtonStrip: Component<SmartButtonStripProps> = (props) => {
 											<Show when={isActive()}>
 												<CheckIcon />
 											</Show>
-										</button>
+										</Button>
 									);
 								}}
 							</For>

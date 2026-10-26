@@ -22,6 +22,8 @@ struct TextMail<'a> {
     chat_id: String,
     message_id: i64,
     text: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reply_to_text: Option<&'a str>,
 }
 
 pub(super) struct Update {
@@ -67,6 +69,9 @@ impl Update {
             chat_id: chat_id.to_string(),
             message_id,
             text,
+            reply_to_text: message
+                .get("reply_to_message")
+                .and_then(|reply| reply["text"].as_str()),
         })
         .map_err(|_| Error::Protocol)?;
         if content.len() > MAX_MAIL_BYTES {

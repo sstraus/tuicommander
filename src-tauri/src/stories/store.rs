@@ -1,6 +1,6 @@
 use super::model::{
-    NewPlan, NewStory, Plan, PlanState, PlanView, Story, StoryCommand, StoryOrigin, StoryRead,
-    StoryStatus, StoryTransition, StoryTransitionActor,
+    CRITERIA_INCOMPLETE, NewPlan, NewStory, Plan, PlanState, PlanView, Story, StoryCommand,
+    StoryOrigin, StoryPatch, StoryRead, StoryStatus, StoryTransition, StoryTransitionActor,
 };
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use sha2::{Digest, Sha256};
@@ -10,6 +10,13 @@ use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
 use uuid::Uuid;
 
+mod amendments;
+mod archive;
+mod notes;
+#[cfg(test)]
+mod plan_update_tests;
+#[cfg(test)]
+mod qa_tests;
 mod records;
 mod transitions;
 
@@ -17,7 +24,7 @@ use records::*;
 
 const STORE_FILE: &str = "stories.sqlite3";
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 5;
 
 #[derive(Debug)]
 pub struct StoryStore {
@@ -75,7 +82,7 @@ impl StoryStore {
     }
 
     fn open_connection(path: &Path) -> Result<Connection, String> {
-        let conn = Connection::open(path).map_err(|e| format!("open story store: {e}"))?;
+        let mut conn = Connection::open(path).map_err(|e| format!("open story store: {e}"))?;
         conn.busy_timeout(BUSY_TIMEOUT)
             .map_err(|e| format!("set story store timeout: {e}"))?;
         conn.pragma_update(None, "journal_mode", "WAL")
@@ -103,7 +110,7 @@ impl StoryStore {
                 plan_id TEXT NOT NULL REFERENCES plans(id),
                 document TEXT NOT NULL,
                 status TEXT NOT NULL CHECK(status IN
-                  ('backlog','ready','in_progress','review','done','blocked','wontfix')),
+                  ('backlog','ready','in_progress','review','qa','done','blocked','wontfix')),
                 revision INTEGER NOT NULL,
                 claim_session TEXT
             );
@@ -117,6 +124,13 @@ impl StoryStore {
                 input_sha256 TEXT NOT NULL,
                 PRIMARY KEY(run_id, proposal_key)
             );
+            CREATE TABLE IF NOT EXISTS archive_history (
+                entity_id TEXT NOT NULL,
+                revision INTEGER NOT NULL,
+                archived INTEGER NOT NULL,
+                actor_json TEXT NOT NULL,
+                PRIMARY KEY(entity_id, revision)
+            );
             CREATE TABLE IF NOT EXISTS story_transitions (
                 story_id TEXT NOT NULL REFERENCES stories(id),
                 revision INTEGER NOT NULL,
@@ -124,9 +138,71 @@ impl StoryStore {
                 actor_json TEXT NOT NULL,
                 PRIMARY KEY(story_id, revision)
             );
-            PRAGMA user_version = 1;",
+            ",
         )
         .map_err(|e| format!("prepare story schema: {e}"))?;
+        if version < SCHEMA_VERSION {
+            // SQLite cannot alter a CHECK constraint. Keep stored documents byte-identical.
+            conn.pragma_update(None, "foreign_keys", "OFF")
+                .map_err(|e| format!("disable foreign keys for story schema: {e}"))?;
+            let tx = immediate(&mut conn)?;
+            let current: i64 = tx
+                .pragma_query_value(None, "user_version", |row| row.get(0))
+                .map_err(|e| format!("read locked story schema: {e}"))?;
+            if current > SCHEMA_VERSION {
+                return Err(format!(
+                    "story schema version {current} is newer than supported version {SCHEMA_VERSION}"
+                ));
+            }
+            if current < 2 {
+                tx.execute_batch(
+                    "CREATE TABLE stories_qa (
+                        id TEXT PRIMARY KEY,
+                        plan_id TEXT NOT NULL REFERENCES plans(id),
+                        document TEXT NOT NULL,
+                        status TEXT NOT NULL CHECK(status IN
+                          ('backlog','ready','in_progress','review','qa','done','blocked','wontfix')),
+                        revision INTEGER NOT NULL,
+                        claim_session TEXT
+                    );
+                    INSERT INTO stories_qa SELECT * FROM stories;
+                    DROP TABLE stories;
+                    ALTER TABLE stories_qa RENAME TO stories;
+                    CREATE INDEX stories_by_plan ON stories(plan_id);
+                    CREATE UNIQUE INDEX one_story_per_session
+                      ON stories(claim_session) WHERE claim_session IS NOT NULL;"
+                ).map_err(|e| format!("expand story QA status constraint: {e}"))?;
+            }
+            if current < 3 {
+                tx.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS story_notes (
+                        id TEXT PRIMARY KEY,
+                        story_id TEXT NOT NULL REFERENCES stories(id),
+                        document TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS notes_by_story ON story_notes(story_id);",
+                )
+                .map_err(|e| format!("add story note schema: {e}"))?;
+            }
+            if current < 4 {
+                tx.execute_batch(
+                    "ALTER TABLE plans ADD COLUMN revision INTEGER NOT NULL DEFAULT 1;",
+                )
+                .map_err(|e| format!("add plan revision: {e}"))?;
+            }
+            if current < 5 {
+                tx.execute_batch(
+                    "ALTER TABLE plans ADD COLUMN archived INTEGER NOT NULL DEFAULT 0;",
+                )
+                .map_err(|e| format!("add plan archive metadata: {e}"))?;
+            }
+            tx.pragma_update(None, "user_version", SCHEMA_VERSION)
+                .map_err(|e| format!("save story schema version: {e}"))?;
+            tx.commit()
+                .map_err(|e| format!("commit story schema: {e}"))?;
+            conn.pragma_update(None, "foreign_keys", "ON")
+                .map_err(|e| format!("restore story foreign keys: {e}"))?;
+        }
         Ok(conn)
     }
 
@@ -138,6 +214,8 @@ impl StoryStore {
             return Err("project must be an absolute path".into());
         }
         let plan = Plan {
+            revision: 1,
+            archived: false,
             id: Uuid::now_v7().to_string(),
             project: input.project.trim().into(),
             title: input.title.trim().into(),
@@ -155,7 +233,7 @@ impl StoryStore {
     pub fn get_plan(&self, id: &str) -> Result<Plan, String> {
         self.connect()?
             .query_row(
-                "SELECT id,project,title,source FROM plans WHERE id=?1",
+                "SELECT id,project,title,source,revision,archived FROM plans WHERE id=?1",
                 [id],
                 |row| {
                     Ok(Plan {
@@ -163,6 +241,8 @@ impl StoryStore {
                         project: row.get(1)?,
                         title: row.get(2)?,
                         source: row.get(3)?,
+                        revision: row.get(4)?,
+                        archived: row.get(5)?,
                     })
                 },
             )
@@ -172,16 +252,22 @@ impl StoryStore {
     }
 
     pub fn list_plans(&self, project: &str) -> Result<Vec<Plan>, String> {
+        self.list_plans_archived(project, false)
+    }
+
+    pub fn list_plans_archived(&self, project: &str, archived: bool) -> Result<Vec<Plan>, String> {
         let conn = self.connect()?;
         let mut stmt = conn
-            .prepare("SELECT id,project,title,source FROM plans WHERE project=?1 ORDER BY rowid")
+            .prepare("SELECT id,project,title,source,revision,archived FROM plans WHERE project=?1 AND archived=?2 ORDER BY rowid")
             .map_err(|e| format!("prepare plan list: {e}"))?;
-        stmt.query_map([project], |row| {
+        stmt.query_map(params![project, archived], |row| {
             Ok(Plan {
                 id: row.get(0)?,
                 project: row.get(1)?,
                 title: row.get(2)?,
                 source: row.get(3)?,
+                revision: row.get(4)?,
+                archived: row.get(5)?,
             })
         })
         .map_err(|e| format!("list plans: {e}"))?
@@ -189,12 +275,94 @@ impl StoryStore {
         .map_err(|e| format!("read plans: {e}"))
     }
 
+    /// The immediate transaction serializes stale checks with both field writes.
+    pub fn update_plan(
+        &self,
+        id: &str,
+        expected_revision: i64,
+        patch: super::PlanPatch,
+    ) -> Result<Plan, String> {
+        if patch.title.is_none() && patch.source.is_none() {
+            return Err("plan patch must change title or source".into());
+        }
+        if let Some(title) = &patch.title {
+            validate_text("plan title", title, 200)?;
+        }
+        if let Some(source) = &patch.source {
+            validate_text("plan source", source, 4096)?;
+        }
+        let revision = expected_revision
+            .checked_add(1)
+            .ok_or("plan revision exhausted")?;
+        // Pre-read only decides whether a run guard is needed. The locked revision check below
+        // rejects any plan change between this read and the metadata transaction.
+        let _source_guard = if let Some(source) = &patch.source {
+            if source.trim() != self.get_plan(id)?.source {
+                let path = self
+                    .db_path
+                    .parent()
+                    .ok_or("story store has no parent directory")?
+                    .join("workflow_runs.sqlite3");
+                Some(crate::workflows::guard_plan_source_update_in(&path, id)?)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let mut conn = self.connect()?;
+        let tx = immediate(&mut conn)?;
+        let mut plan = tx
+            .query_row(
+                "SELECT id,project,title,source,revision,archived FROM plans WHERE id=?1",
+                [id],
+                |row| {
+                    Ok(Plan {
+                        id: row.get(0)?,
+                        project: row.get(1)?,
+                        title: row.get(2)?,
+                        source: row.get(3)?,
+                        revision: row.get(4)?,
+                        archived: row.get(5)?,
+                    })
+                },
+            )
+            .optional()
+            .map_err(|e| format!("read plan for update: {e}"))?
+            .ok_or_else(|| format!("plan not found: {id}"))?;
+        if plan.revision != expected_revision {
+            return Err(format!(
+                "stale plan revision: expected {expected_revision}, current {}",
+                plan.revision
+            ));
+        }
+        if let Some(title) = patch.title {
+            plan.title = title.trim().into();
+        }
+        if let Some(source) = patch.source {
+            plan.source = source.trim().into();
+        }
+        plan.revision = revision;
+        tx.execute(
+            "UPDATE plans SET title=?1,source=?2,revision=?3 WHERE id=?4 AND revision=?5",
+            params![plan.title, plan.source, revision, id, expected_revision],
+        )
+        .map_err(|e| format!("update plan: {e}"))?;
+        tx.commit()
+            .map_err(|e| format!("commit plan update: {e}"))?;
+        Ok(plan)
+    }
+
     pub fn create_story(&self, input: NewStory) -> Result<Story, String> {
         validate_new_story(&input)?;
-        self.get_plan(&input.plan_id)?;
+        self.require_unarchived_plan(&input.plan_id)?;
         let story = build_story(input);
-        let conn = self.connect()?;
-        insert_story(&conn, &story)?;
+        let mut conn = self.connect()?;
+        let tx = immediate(&mut conn)?;
+        require_active_plan(&tx, &story.plan_id)?;
+        insert_story(&tx, &story)?;
+        tx.commit().map_err(|e| format!("commit new story: {e}"))?;
         Ok(story)
     }
 
@@ -237,6 +405,7 @@ impl StoryStore {
         if !exists {
             return Err("story proposal plan not found".into());
         }
+        require_active_plan(&tx, &input.plan_id)?;
         let story = build_story(input);
         insert_story(&tx, &story)?;
         tx.execute(
@@ -287,8 +456,21 @@ impl StoryStore {
     }
 
     pub fn plan_view(&self, plan_id: &str) -> Result<PlanView, String> {
-        let stories = self.list_stories(plan_id)?;
-        let by_id: HashMap<&str, &Story> = stories
+        self.plan_view_archived(plan_id, false)
+    }
+
+    pub(super) fn plan_view_archived(
+        &self,
+        plan_id: &str,
+        archived: bool,
+    ) -> Result<PlanView, String> {
+        let all_stories = self.list_stories(plan_id)?;
+        let stories: Vec<_> = all_stories
+            .iter()
+            .filter(|story| !story.archived)
+            .cloned()
+            .collect();
+        let by_id: HashMap<&str, &Story> = all_stories
             .iter()
             .map(|story| (story.id.as_str(), story))
             .collect();
@@ -323,8 +505,9 @@ impl StoryStore {
         } else {
             PlanState::Active
         };
-        let reads = stories
+        let reads: Vec<StoryRead> = all_stories
             .iter()
+            .filter(|story| story.archived == archived)
             .map(|story| {
                 let mut stack = vec![story.id.as_str()];
                 let mut visited = HashSet::new();
@@ -347,7 +530,16 @@ impl StoryStore {
                 }
             })
             .collect();
+        let (visible_story_ids, columns) = super::filters::project(
+            &reads,
+            &super::StoryFilter {
+                archived,
+                ..Default::default()
+            },
+        );
         Ok(PlanView {
+            visible_story_ids,
+            columns,
             stories: reads,
             state,
             wont_fix_count,
@@ -367,7 +559,7 @@ impl StoryStore {
         expected_revision: i64,
     ) -> Result<Story, String> {
         validate_text("session", session, 200)?;
-        let preflight_plan = self.get_story(story_id)?.plan_id;
+        let preflight_plan = self.require_unarchived_story(story_id)?.plan_id;
         let project = self.get_plan(&preflight_plan)?.project;
         let preflight = DependencyPreflight::prepare(self, &preflight_plan)?;
         let _reservation_guard = crate::workflows::guard_manual_story_start(&project, story_id)?;
@@ -376,6 +568,7 @@ impl StoryStore {
         preflight.validate(&tx)?;
         let mut story = read_story(&tx, story_id)?;
         check_revision(&story, expected_revision)?;
+        require_active_story(&tx, &story)?;
         if story.status != StoryStatus::Ready {
             let unmet = unmet_dependencies(&tx, &story, &preflight)?;
             return Err(if unmet.is_empty() {
@@ -394,8 +587,12 @@ impl StoryStore {
         if !dependencies_integrated(&tx, &story, &preflight)? {
             return Err("story dependency lacks a current integration receipt".into());
         }
-        story.status = StoryStatus::InProgress;
-        story.claim_session = Some(session.into());
+        story.status = if transitions::only_manual_pending(&story) {
+            StoryStatus::Qa
+        } else {
+            StoryStatus::InProgress
+        };
+        story.claim_session = (story.status != StoryStatus::Qa).then(|| session.into());
         save_story(&tx, &mut story, expected_revision)?;
         tx.commit().map_err(|e| format!("commit claim: {e}"))?;
         Ok(story)
@@ -433,12 +630,7 @@ fn validate_new_story(input: &NewStory) -> Result<(), String> {
     if let StoryOrigin::PlanStep { step } = &input.origin {
         validate_text("plan step", step, 200)?;
     }
-    if input.criteria.is_empty() || input.criteria.len() > 100 {
-        return Err("story must have between 1 and 100 criteria".into());
-    }
-    for criterion in &input.criteria {
-        validate_text("criterion", criterion, 2000)?;
-    }
+    validate_criteria(&input.criteria)?;
     if !(1..=3).contains(&input.priority) {
         return Err("priority must be 1, 2 or 3".into());
     }
@@ -459,6 +651,7 @@ fn proposal_hash(input: &NewStory) -> Result<String, String> {
 
 fn build_story(input: NewStory) -> Story {
     Story {
+        archived: false,
         id: Uuid::now_v7().to_string(),
         plan_id: input.plan_id,
         title: input.title.trim().into(),
@@ -466,11 +659,14 @@ fn build_story(input: NewStory) -> Story {
         criteria: input.criteria,
         dependencies: Vec::new(),
         priority: input.priority,
+        story_type: input.story_type,
         origin: input.origin,
         file_scope: input.file_scope,
         status: StoryStatus::Ready,
         revision: 1,
         claim_session: None,
+        problem: None,
+        risk: None,
     }
 }
 

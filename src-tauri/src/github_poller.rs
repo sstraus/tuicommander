@@ -69,6 +69,9 @@ pub(crate) enum PollerCmd {
 
 pub(crate) struct GitHubPoller {
     pub(crate) cmd_tx: mpsc::Sender<PollerCmd>,
+    /// Successful PR snapshots also identify monitored repositories. Unlike the
+    /// query cache, this state lives until a path is removed or this poller stops.
+    pub(crate) previous_prs: Arc<parking_lot::RwLock<PrevState>>,
     /// Stop signal, raised by [`stop_poller`].
     ///
     /// Stop does not travel on `cmd_tx`: the loop only drains that channel
@@ -83,16 +86,31 @@ impl GitHubPoller {
     pub(crate) fn start(state: Arc<AppState>) -> Self {
         let (tx, rx) = mpsc::channel(32);
         let stop = Arc::new(Notify::new());
-        tokio::spawn(poll_loop(state, rx, Arc::clone(&stop)));
-        Self { cmd_tx: tx, stop }
+        let previous_prs = Arc::new(parking_lot::RwLock::new(HashMap::new()));
+        tokio::spawn(poll_loop(
+            state,
+            rx,
+            Arc::clone(&stop),
+            Arc::clone(&previous_prs),
+        ));
+        Self {
+            cmd_tx: tx,
+            stop,
+            previous_prs,
+        }
+    }
+
+    pub(crate) fn monitored_repo_count(&self) -> usize {
+        self.previous_prs.read().len()
     }
 }
 
 /// Per-repo previous PR state for transition comparison.
 type PrevState = HashMap<String, HashMap<String, BranchPrStatus>>;
 
+#[derive(Default)]
 struct PollMutableState {
-    prev: PrevState,
+    prev: Arc<parking_lot::RwLock<PrevState>>,
     fail_count: u32,
     last_changed: HashMap<String, Instant>,
     /// Per-repo max PR updated_at — `None` means known-empty PR set.
@@ -102,6 +120,21 @@ struct PollMutableState {
     /// When set, the next poll re-emits PR + issue state regardless of change
     /// detection, then clears. Set by `PollerCmd::ForceResync`.
     force_resync: bool,
+}
+
+impl PollMutableState {
+    fn retain_paths(&mut self, paths: &[String]) {
+        let retained: HashSet<&str> = paths.iter().map(String::as_str).collect();
+        self.prev
+            .write()
+            .retain(|path, _| retained.contains(path.as_str()));
+        self.last_changed
+            .retain(|path, _| retained.contains(path.as_str()));
+        self.last_pr_updated_at
+            .retain(|path, _| retained.contains(path.as_str()));
+        self.last_issue_updated_at
+            .retain(|path, _| retained.contains(path.as_str()));
+    }
 }
 
 /// Await a poll batch, giving up as soon as `stop` is raised.
@@ -117,18 +150,19 @@ async fn poll_batch_or_stop(stop: &Notify, batch: impl std::future::Future<Outpu
     }
 }
 
-async fn poll_loop(state: Arc<AppState>, mut rx: mpsc::Receiver<PollerCmd>, stop: Arc<Notify>) {
+async fn poll_loop(
+    state: Arc<AppState>,
+    mut rx: mpsc::Receiver<PollerCmd>,
+    stop: Arc<Notify>,
+    previous_prs: Arc<parking_lot::RwLock<PrevState>>,
+) {
     let mut visible = true;
     let mut paths: Vec<String> = Vec::new();
     let mut issue_filter = String::new();
     let mut pr_hide_drafts = false;
     let mut ps = PollMutableState {
-        prev: HashMap::new(),
-        fail_count: 0,
-        last_changed: HashMap::new(),
-        last_pr_updated_at: HashMap::new(),
-        last_issue_updated_at: HashMap::new(),
-        force_resync: false,
+        prev: previous_prs,
+        ..Default::default()
     };
     let mut startup = true;
     let mut poll_cycle: u32 = 0;
@@ -203,6 +237,10 @@ async fn poll_loop(state: Arc<AppState>, mut rx: mpsc::Receiver<PollerCmd>, stop
                         }
                     }
                     Some(PollerCmd::PollRepo(path)) => {
+                        // An asynchronous action may finish after its repo was removed.
+                        if !paths.contains(&path) {
+                            continue;
+                        }
                         if !pending_poll_paths.contains(&path) {
                             pending_poll_paths.push(path);
                         }
@@ -212,6 +250,8 @@ async fn poll_loop(state: Arc<AppState>, mut rx: mpsc::Receiver<PollerCmd>, stop
                         }
                     }
                     Some(PollerCmd::UpdatePaths(new_paths)) => {
+                        ps.retain_paths(&new_paths);
+                        pending_poll_paths.retain(|path| new_paths.contains(path));
                         paths = new_paths;
                     }
                     Some(PollerCmd::SetIssueFilter(filter)) => {
@@ -357,7 +397,8 @@ async fn poll_batch(
             ps.force_resync = false;
 
             for (repo_path, statuses) in result.prs {
-                let changed = process_repo_update(state, &repo_path, &statuses, &mut ps.prev);
+                let changed =
+                    process_repo_update(state, &repo_path, &statuses, &mut ps.prev.write());
                 if changed {
                     ps.last_changed.insert(repo_path.clone(), now);
                 } else {
@@ -722,6 +763,147 @@ struct IssuesUpdatePayload {
 mod tests {
     use super::*;
 
+    // Catches: expiring query payloads falsely reporting that a successfully polled repo is unmonitored.
+    #[tokio::test]
+    async fn monitored_repository_survives_query_cache_eviction() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        ensure_polling(&state, vec![], String::new(), false);
+        let previous = Arc::clone(&state.github.poller.lock().as_ref().unwrap().previous_prs);
+        state
+            .git_cache
+            .github_status
+            .insert("/monitored".into(), Arc::new(vec![]));
+        process_repo_update(&state, "/monitored", &[], &mut previous.write());
+        state.git_cache.github_status.run_pending_tasks();
+        assert_eq!(
+            crate::github_auth::compute_diagnostics(&state).repos_monitored,
+            1
+        );
+
+        state.git_cache.github_status.invalidate_all();
+        state.git_cache.github_status.run_pending_tasks();
+        assert!(state.git_cache.github_status.get("/monitored").is_none());
+        assert_eq!(
+            crate::github_auth::compute_diagnostics(&state).repos_monitored,
+            1,
+            "query payload eviction must not erase successful monitoring identity"
+        );
+        stop_poller(&state).await.unwrap();
+    }
+
+    // Catches: duplicate snapshots inflating the gauge, or retired paths/pollers keeping ghost monitors.
+    #[tokio::test]
+    async fn monitoring_count_follows_paths_and_poller_lifetime() {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        ensure_polling(
+            &state,
+            vec!["/kept".into(), "/removed".into()],
+            String::new(),
+            false,
+        );
+        let previous = Arc::clone(&state.github.poller.lock().as_ref().unwrap().previous_prs);
+        for path in ["/kept", "/removed", "/kept"] {
+            process_repo_update(&state, path, &[], &mut previous.write());
+        }
+        assert_eq!(
+            crate::github_auth::compute_diagnostics(&state).repos_monitored,
+            2
+        );
+        send_poller_cmd(&state, PollerCmd::UpdatePaths(vec!["/kept".into()])).unwrap();
+        // No setup-speed bound: nextest owns the outer hang limit.
+        while crate::github_auth::compute_diagnostics(&state).repos_monitored != 1 {
+            tokio::task::yield_now().await;
+        }
+        stop_poller(&state).await.unwrap();
+        assert_eq!(
+            crate::github_auth::compute_diagnostics(&state).repos_monitored,
+            0
+        );
+    }
+
+    // Catches: queued or late PollRepo resurrecting a retired monitor after UpdatePaths.
+    #[tokio::test]
+    async fn removed_paths_cannot_return_through_on_demand_polls() {
+        let mut fixture = crate::github::partial_tests::PollHttpFixture::start(true).await;
+        let scratch = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _config = crate::config::set_config_dir_override(scratch.path().join("config"));
+        let mut paths = Vec::new();
+        for name in ["removed", "kept"] {
+            let repo = scratch.path().join(name);
+            std::fs::create_dir(&repo).unwrap();
+            for args in [
+                vec!["init", "--quiet"],
+                vec![
+                    "remote",
+                    "add",
+                    "origin",
+                    "https://github.com/sstraus/tuicommander.git",
+                ],
+            ] {
+                let output = std::process::Command::new("git")
+                    .args(args)
+                    .current_dir(&repo)
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+            }
+            paths.push(repo.to_string_lossy().into_owned());
+        }
+        let mut events = fixture.state.event_bus.subscribe();
+        ensure_polling(&fixture.state, paths.clone(), "all".into(), false);
+        // Wait for a real successful snapshot, not a hand-populated history.
+        loop {
+            if matches!(
+                events.recv().await.unwrap(),
+                AppEvent::GitHubPrUpdate { .. }
+            ) && crate::github_auth::compute_diagnostics(&fixture.state).repos_monitored == 2
+            {
+                break;
+            }
+        }
+        fixture.requests.recv().await.unwrap();
+        while events.try_recv().is_ok() {}
+        for late in [false, true] {
+            if !late {
+                send_poller_cmd(&fixture.state, PollerCmd::PollRepo(paths[0].clone())).unwrap();
+                send_poller_cmd(
+                    &fixture.state,
+                    PollerCmd::UpdatePaths(vec![paths[1].clone()]),
+                )
+                .unwrap();
+            } else {
+                send_poller_cmd(&fixture.state, PollerCmd::PollRepo(paths[0].clone())).unwrap();
+            }
+            // A configured-path request gives an observable completion barrier
+            // for the same debounce batch, without sleeping or racing the network.
+            send_poller_cmd(&fixture.state, PollerCmd::PollRepo(paths[1].clone())).unwrap();
+            send_poller_cmd(
+                &fixture.state,
+                PollerCmd::SetIssueFilter(if late { "assigned" } else { "created" }.into()),
+            )
+            .unwrap();
+            loop {
+                if let AppEvent::GitHubIssuesUpdate { repo_path, .. } = events.recv().await.unwrap()
+                    && repo_path == paths[1]
+                {
+                    break;
+                }
+            }
+            let request = fixture.requests.recv().await.unwrap();
+            assert_eq!(
+                crate::github_auth::compute_diagnostics(&fixture.state).repos_monitored,
+                1,
+                "retired monitor returned (late={late}); request={request}"
+            );
+        }
+        stop_poller(&fixture.state).await.unwrap();
+        fixture.close().await;
+    }
+
     #[tokio::test]
     async fn headless_poller_cold_starts_without_an_app_handle() {
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
@@ -849,6 +1031,7 @@ mod tests {
         let stop = Arc::new(tokio::sync::Notify::new());
         *state.github.poller.lock() = Some(GitHubPoller {
             cmd_tx,
+            previous_prs: Default::default(),
             stop: Arc::clone(&stop),
         });
 
@@ -880,6 +1063,7 @@ mod tests {
         let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::channel(8);
         *state.github.poller.lock() = Some(GitHubPoller {
             cmd_tx,
+            previous_prs: Default::default(),
             stop: Arc::new(Notify::new()),
         });
 
@@ -1041,6 +1225,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(8);
         let poller = GitHubPoller {
             cmd_tx: tx,
+            previous_prs: Default::default(),
             stop: Arc::new(Notify::new()),
         };
         send_poller_config(
@@ -1069,6 +1254,7 @@ mod tests {
         let (tx, mut rx) = mpsc::channel(8);
         let poller = GitHubPoller {
             cmd_tx: tx,
+            previous_prs: Default::default(),
             stop: Arc::new(Notify::new()),
         };
         send_poller_config(&poller, vec![], String::new(), false, false);

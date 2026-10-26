@@ -27,6 +27,7 @@ import {
 	type StepStatus,
 } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
+import { Button } from "../ui/Button";
 import { ChevronIcon } from "../ui/ChevronIcon";
 import { Select } from "../ui/Select";
 import { PrSection } from "./PrSection";
@@ -397,14 +398,16 @@ export const GitHubPanel: Component<{
 					<Show when={circuitOpen()}>
 						<div class={s.ghRateLimitBanner}>
 							<span>{t("github.rateLimited", "GitHub API unavailable")}</span>
-							<button
+							<Button
+								size="compact"
+								variant="danger"
 								class={s.ghRetryBtn}
 								onClick={() => {
 									githubStore.pollIssues();
 								}}
 							>
 								{t("github.retry", "Retry")}
-							</button>
+							</Button>
 						</div>
 					</Show>
 					{/* Panel header */}
@@ -416,7 +419,9 @@ export const GitHubPanel: Component<{
 							/>
 						</svg>
 						<span>GitHub</span>
-						<button
+						<Button
+							size="compact"
+							variant="ghost"
 							class={s.ghChangelogBtn}
 							onClick={() => mdTabsStore.addGithubOps(props.repoPath)}
 							aria-label={t("github.opsDashboard", "Ops Dashboard")}
@@ -426,8 +431,10 @@ export const GitHubPanel: Component<{
 							<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 								<path d="M1.5 1a.5.5 0 0 0-.5.5v13a.5.5 0 0 0 .5.5h13a.5.5 0 0 0 .5-.5v-13a.5.5 0 0 0-.5-.5h-13ZM2 14V2h12v12H2Zm2.5-3a.5.5 0 0 1 .5.5v.5a.5.5 0 0 1-1 0v-.5a.5.5 0 0 1 .5-.5Zm2.5-3a.5.5 0 0 1 .5.5V12a.5.5 0 0 1-1 0V8.5a.5.5 0 0 1 .5-.5Zm3-3a.5.5 0 0 1 .5.5V12a.5.5 0 0 1-1 0V5.5a.5.5 0 0 1 .5-.5Z" />
 							</svg>
-						</button>
-						<button
+						</Button>
+						<Button
+							size="compact"
+							variant="ghost"
 							class={s.ghChangelogBtn}
 							onClick={() => setShowChangelog(true)}
 							aria-label={t("github.changelog", "Changelog")}
@@ -437,10 +444,10 @@ export const GitHubPanel: Component<{
 							<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 								<path d="M4 1.5A1.5 1.5 0 0 0 2.5 3v10A1.5 1.5 0 0 0 4 14.5h8a1.5 1.5 0 0 0 1.5-1.5V5.5L9.5 1.5H4Zm5 1.06L12.44 6H9.5a.5.5 0 0 1-.5-.5V2.56ZM5 8h6v1H5V8Zm0 2.5h6v1H5v-1ZM5 5.5h2v1H5v-1Z" />
 							</svg>
-						</button>
-						<button class={s.ghPanelClose} onClick={props.onClose}>
+						</Button>
+						<Button size="compact" variant="ghost" class={s.ghPanelClose} onClick={props.onClose}>
 							&times;
-						</button>
+						</Button>
 					</div>
 
 					<Show when={showChangelog()}>
@@ -575,7 +582,9 @@ export const GitHubPanel: Component<{
 																<div class={s.ghItemDetail} data-compact>
 																	<IssueDetailContent issue={issue} repoPath={props.repoPath}>
 																		<div class={s.ghItemActions}>
-																			<button
+																			<Button
+																				size="compact"
+																				variant="ghost"
 																				class={cx(
 																					s.ghActionBtn,
 																					issue.state?.toUpperCase() === "OPEN" ? s.ghCloseBtn : s.ghReopenBtn,
@@ -595,8 +604,10 @@ export const GitHubPanel: Component<{
 																					: issue.state?.toUpperCase() === "OPEN"
 																						? t("github.close", "Close")
 																						: t("github.reopen", "Reopen")}
-																			</button>
-																			<button
+																			</Button>
+																			<Button
+																				size="compact"
+																				variant="ghost"
 																				class={s.ghActionBtn}
 																				onClick={() => handleCopyIssueNumber(issue)}
 																				data-tooltip={t("github.copyNumber", "Copy issue number")}
@@ -604,9 +615,11 @@ export const GitHubPanel: Component<{
 																				data-tooltip-align="right"
 																			>
 																				#{issue.number}
-																			</button>
+																			</Button>
 																			<Show when={issue.url}>
-																				<button
+																				<Button
+																					size="compact"
+																					variant="ghost"
 																					class={cx(s.ghActionBtn, s.ghLinkBtn)}
 																					onClick={() => handleOpenUrl(issue.url)}
 																					data-tooltip={t("prDetail.openOnGithub", "Open on GitHub")}
@@ -614,10 +627,12 @@ export const GitHubPanel: Component<{
 																					data-tooltip-align="right"
 																				>
 																					GitHub {"↗"}
-																				</button>
+																				</Button>
 																			</Show>
 																			<Show when={issue.state?.toUpperCase() === "OPEN"}>
-																				<button
+																				<Button
+																					size="compact"
+																					variant="ghost"
 																					class={s.ghActionBtn}
 																					onClick={() => setAutofixIssue(issue.number)}
 																					data-tooltip={t("github.autofixTooltip", "Auto-fix in a worktree agent")}
@@ -625,8 +640,10 @@ export const GitHubPanel: Component<{
 																					data-tooltip-align="right"
 																				>
 																					{t("github.autofix", "Auto-fix")}
-																				</button>
-																				<button
+																				</Button>
+																				<Button
+																					size="compact"
+																					variant="ghost"
 																					class={s.ghActionBtn}
 																					onClick={() => handleCreatePr(issue)}
 																					disabled={creatingPr() === issue.number}
@@ -638,7 +655,7 @@ export const GitHubPanel: Component<{
 																					data-tooltip-align="right"
 																				>
 																					{creatingPr() === issue.number ? "..." : t("github.createPr", "Create PR")}
-																				</button>
+																				</Button>
 																			</Show>
 																			<SmartButtonStrip
 																				placement="issue-popover"

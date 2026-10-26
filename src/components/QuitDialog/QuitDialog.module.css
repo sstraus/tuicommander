@@ -36,35 +36,6 @@
   justify-content: flex-end;
 }
 
-.actions button {
-  padding: 8px 16px;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-md);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.cancel {
-  background: var(--bg-highlight);
-  color: var(--fg-secondary);
-}
-
-.cancel:hover {
-  background: var(--border);
-  color: var(--fg-primary);
-}
-
-.quit {
-  background: var(--error);
-  color: var(--text-on-error);
-}
-
-.quit:hover {
-  filter: brightness(1.1);
-}
-
 .remember {
   display: flex;
   align-items: center;

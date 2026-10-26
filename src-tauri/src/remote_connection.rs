@@ -73,6 +73,9 @@ pub(crate) enum RemoteTransport {
         #[schemars(extend("x-setting" = {"sensitivity":"private","apply":"live","effect":"Updates url for the current owner.","operations":["get","set"],"confirmationClass":"execution_authority"}))]
         url: String,
     },
+    /// Reached through a relay. Everything that identifies the pairing lives in
+    /// the vault bundle keyed by the connection id, not in this plain-text record.
+    Relay,
 }
 
 impl RemoteConnection {
@@ -133,8 +136,29 @@ impl RemoteConnection {
                     return Err("url must not be empty".to_string());
                 }
             }
+            RemoteTransport::Relay => {
+                // Nothing can be deployed through a relay: the tunnel carries
+                // only the daemon's own HTTP surface.
+                if self.deploy != DeployMode::Never {
+                    return Err("a relay connection cannot deploy the remote daemon".to_string());
+                }
+            }
         }
         Ok(())
+    }
+
+    /// Create a new relay connection. The pairing bundle is stored separately.
+    pub(crate) fn new_relay(name: impl Into<String>) -> Self {
+        Self {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.into(),
+            transport: RemoteTransport::Relay,
+            auth_username: "relay".to_string(),
+            enabled: true,
+            auto_update: false,
+            deploy: DeployMode::Never,
+            survive_secs: default_survive_secs(),
+        }
     }
 
     /// Create a new Direct connection.
@@ -331,17 +355,64 @@ pub(crate) fn pairing_token(id: &str) -> Result<Option<String>, String> {
 }
 
 pub(crate) fn delete_connection_credentials(id: &str) -> Result<(), String> {
-    let password = crate::credentials::delete(crate::credentials::Credential::RemoteConnection(id));
-    let pairing =
-        crate::credentials::delete(crate::credentials::Credential::RemotePairingToken(id));
-    match (password, pairing) {
-        (Ok(()), Ok(())) => Ok(()),
-        (Err(password), Ok(())) => Err(password),
-        (Ok(()), Err(pairing)) => Err(pairing),
-        (Err(password), Err(pairing)) => Err(format!(
-            "failed to delete remote password ({password}) and pairing token ({pairing})"
-        )),
+    use crate::credentials::{Credential, delete};
+    let failures: Vec<String> = [
+        ("remote password", delete(Credential::RemoteConnection(id))),
+        ("pairing token", delete(Credential::RemotePairingToken(id))),
+        ("relay pairing", delete(Credential::RelayPairing(id))),
+    ]
+    .into_iter()
+    .filter_map(|(what, result)| result.err().map(|e| format!("{what} ({e})")))
+    .collect();
+    match failures.as_slice() {
+        [] => Ok(()),
+        [only] => Err(only.clone()),
+        _ => Err(format!("failed to delete {}", failures.join(" and "))),
     }
+}
+
+/// Validate a relay pairing bundle and keep it in the vault for this connection.
+/// Nothing is stored when the text does not parse.
+pub(crate) fn set_relay_bundle(id: &str, text: &str) -> Result<(), String> {
+    let bundle = crate::relay_tunnel::bundle::PairingBundle::parse(text.trim())
+        .map_err(|e| format!("relay pairing bundle: {e}"))?;
+    crate::credentials::set(
+        crate::credentials::Credential::RelayPairing(id),
+        &bundle.to_text(),
+    )
+}
+
+/// Store the bundle text, or remove the pairing when `text` is empty — the same
+/// convention as [`set_pairing_token`].
+pub(crate) fn set_relay_pairing(id: &str, text: &str) -> Result<(), String> {
+    if text.is_empty() {
+        return crate::credentials::delete(crate::credentials::Credential::RelayPairing(id));
+    }
+    set_relay_bundle(id, text)
+}
+
+/// Both the IPC command and the HTTP route import a bundle through this.
+pub(crate) fn set_relay_pairing_with_refresh(
+    state: &crate::AppState,
+    id: &str,
+    text: &str,
+) -> Result<(), String> {
+    set_relay_pairing(id, text)?;
+    crate::settings::api::publish_change(state, "connections", true);
+    Ok(())
+}
+
+pub(crate) fn relay_bundle(
+    id: &str,
+) -> Result<Option<crate::relay_tunnel::bundle::PairingBundle>, String> {
+    let Some(text) = crate::credentials::get(crate::credentials::Credential::RelayPairing(id))?
+    else {
+        return Ok(None);
+    };
+    let text = zeroize::Zeroizing::new(text);
+    crate::relay_tunnel::bundle::PairingBundle::parse(&text)
+        .map(Some)
+        .map_err(|e| format!("stored relay pairing: {e}"))
 }
 
 /// Trade the stored Basic Auth credentials for the daemon's session token.
@@ -481,6 +552,16 @@ pub async fn set_remote_connection_password(
     password: String,
 ) -> Result<(), String> {
     set_connection_password_with_refresh(&state, &id, &password)
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub async fn set_remote_connection_relay_pairing(
+    state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
+    id: String,
+    bundle: String,
+) -> Result<(), String> {
+    set_relay_pairing_with_refresh(&state, &id, &bundle)
 }
 
 #[cfg(feature = "desktop")]
@@ -667,13 +748,12 @@ mod tests {
     // Catches: explicitly echoed base URLs or reqwest URLs leaking URL userinfo in token-request errors.
     #[tokio::test]
     async fn token_request_error_redacts_url_credentials() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        let address = listener.local_addr().expect("address");
-        drop(listener);
+        let socket = crate::test_support::resetting_tcp_peer();
+        let address = socket.local_addr().expect("address");
         let base = format!("http://username:URL_SECRET_1457@{address}");
         let error = request_session_token(&base, "user", "password")
             .await
-            .expect_err("closed port");
+            .expect_err("resetting peer");
         assert!(error.contains("failed"), "{error}");
         assert!(
             !error.contains("URL_SECRET_1457"),
@@ -943,5 +1023,29 @@ mod refresh_review_tests {
             matches!(event, crate::state::AppEvent::SettingsChanged(ref change) if change.section == "connections" && change.persisted && !change.applied)
         );
         assert!(events.try_recv().is_err());
+    }
+
+    // Catches: a relay connection that still honours a deploy mode (nothing can
+    // be deployed through the tunnel), a garbage bundle stored as a pairing, and
+    // a deleted connection leaving its relay pairing secret in the vault.
+    #[test]
+    fn relay_connection_rules_and_pairing_lifecycle() {
+        let mut connection = RemoteConnection::new_relay("phone");
+        connection.validate().unwrap();
+        connection.deploy = DeployMode::OnConnect;
+        assert!(connection.validate().is_err());
+
+        let id = connection.id.as_str();
+        assert!(set_relay_bundle(id, "not a bundle").is_err());
+        assert!(relay_bundle(id).unwrap().is_none());
+
+        let bearer = crate::relay_tunnel::bundle::RelayBearer::new("R".into()).unwrap();
+        let bundle =
+            crate::relay_tunnel::bundle::PairingBundle::generate("ws://127.0.0.1:1", bearer)
+                .unwrap();
+        set_relay_bundle(id, &format!("  {}\n", bundle.to_text().as_str())).unwrap();
+        assert_eq!(relay_bundle(id).unwrap().unwrap().room, bundle.room);
+        delete_connection_credentials(id).unwrap();
+        assert!(relay_bundle(id).unwrap().is_none());
     }
 }

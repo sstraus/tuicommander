@@ -82,5 +82,8 @@ import("./stores/dragDrop").then(({ initDragDrop }) => initDragDrop());
 document.addEventListener("click", handleExternalLinkClick);
 
 if (import.meta.env.DEV) {
+	if ("__TAURI_INTERNALS__" in window) {
+		import("./dev/backendSkew").then(({ startBackendSkewWarning }) => startBackendSkewWarning());
+	}
 	import("./dev/simulator");
 }

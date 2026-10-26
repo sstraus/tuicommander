@@ -3,6 +3,7 @@ import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import commander from "../../../../src-tauri/src/themes/commander.json";
 import paper from "../../../../src-tauri/src/themes/vscode-light.json";
+import { Button } from "../../ui/Button";
 import "../../../global.css";
 import { createMemo } from "solid-js";
 import { Input } from "../../ui/Input";
@@ -101,28 +102,28 @@ function Preview() {
 					name="TUIC CLI"
 					description="Control TUIC from a terminal or script."
 					badges={<StatusBadge label="Host state not checked" />}
-					actions={<button class={s.textBtn}>Manage CLI</button>}
+					actions={<Button class={s.textBtn}>Manage CLI</Button>}
 				/>
 				<ListRow
 					name="Code intelligence · MDKB"
 					description="Editor definitions, references, symbol outlines and persistent agent memory."
-					actions={<button class={s.textBtn}>Manage index</button>}
+					actions={<Button class={s.textBtn}>Manage index</Button>}
 				/>
 			</SectionCard>
 			<StatusSummary label="Status not available" source="Illustrative fixture" freshness="Not checked">
-				<button class={s.textBtn}>Reload status</button>
+				<Button class={s.textBtn}>Reload status</Button>
 			</StatusSummary>
 			<EmptyState
 				title="No custom launchers"
 				description="Add an installed editor when discovery does not list it."
-				action={<button class={s.textBtn}>Add launcher</button>}
+				action={<Button class={s.textBtn}>Add launcher</Button>}
 			/>
 			<DangerZone
 				title="Disconnect example"
 				scope="Illustrative connection only"
 				consequence="Connected clients would lose access. No action runs in this fixture."
 			>
-				<button class={s.textBtn}>Review disconnect</button>
+				<Button class={s.textBtn}>Review disconnect</Button>
 			</DangerZone>
 		</SettingsShell>
 	);

@@ -2,6 +2,7 @@ import { createSignal, Show } from "solid-js";
 import { t } from "../../i18n";
 import { invoke } from "../../invoke";
 import { rpc } from "../../transport";
+import { Button } from "../ui/Button";
 import type { AutomationRun } from "./contract";
 
 interface CleanupPreview {
@@ -41,9 +42,9 @@ export function WorktreeCleanup(props: { run: AutomationRun; connectionId?: stri
 	}
 	return (
 		<Show when={props.run.workspace_id && !removed()} fallback={<p role="status">{message()}</p>}>
-			<button type="button" disabled={busy()} onClick={() => void act(false)}>
+			<Button type="button" disabled={busy()} onClick={() => void act(false)}>
 				{t("automations.inspectCleanup", "Inspect worktree cleanup")}
-			</button>
+			</Button>
 			<Show when={preview()}>
 				{(value) => (
 					<div>
@@ -51,9 +52,9 @@ export function WorktreeCleanup(props: { run: AutomationRun; connectionId?: stri
 						<Show when={value().reason}>
 							<p role="status">{value().reason}</p>
 						</Show>
-						<button type="button" disabled={busy() || !value().can_remove} onClick={() => void act(true)}>
+						<Button type="button" disabled={busy() || !value().can_remove} onClick={() => void act(true)}>
 							{t("automations.removeWorktree", "Remove safe worktree and branch")}
-						</button>
+						</Button>
 					</div>
 				)}
 			</Show>

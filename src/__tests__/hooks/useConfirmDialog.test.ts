@@ -224,6 +224,71 @@ describe("useConfirmDialog", () => {
 			expect(await merged).toBe(false);
 		});
 
+		// Catches: a clean finished checkout is archived and its branch kept, yet the dialog still
+		// promises "Remove" and "safely delete the local branch" (audit B17).
+		it("says archive and branch kept when a clean finished checkout will be recycled", async () => {
+			for (const commitStatus of ["in_sync", "merged"] as const) {
+				const pending = dialog.confirmRemoveWorktree(
+					"finished",
+					{ dirtyFiles: 0, commitStatus, removalSafety: "safe" },
+					true,
+				);
+				const state = dialog.dialogState();
+				expect(state?.title).toBe("Archive workspace?");
+				expect(state?.confirmLabel).toBe("Archive");
+				expect(state?.message).toContain("archive");
+				expect(state?.message).toContain("The local branch will be kept.");
+				expect(state?.message).not.toContain("safely delete");
+				dialog.handleClose();
+				expect(await pending).toBe(false);
+			}
+		});
+
+		// Catches: the coordinator closes live terminals before the backend recycles, so a clean
+		// checkout with an open shell is archived too but the dialog still says Remove.
+		it("says archive for a clean finished checkout that has a live session", async () => {
+			const pending = dialog.confirmRemoveWorktree(
+				"finished",
+				{
+					dirtyFiles: 0,
+					commitStatus: "in_sync",
+					removalSafety: "safe",
+					liveSessions: [{ sessionId: "pty-1", name: "zsh" }],
+				},
+				true,
+			);
+			const state = dialog.dialogState();
+			expect(state?.title).toBe("Archive workspace?");
+			expect(state?.confirmLabel).toBe("Archive");
+			expect(state?.message).toContain("Live sessions in this worktree: zsh");
+			dialog.handleClose();
+			expect(await pending).toBe(false);
+		});
+
+		// Catches: the archive wording leaks onto removals that really delete (unmerged, dirty, keep-branch).
+		it("keeps the remove wording when the checkout is not recyclable", async () => {
+			for (const [status, deleteBranch] of [
+				[{ dirtyFiles: 0, commitStatus: "unmerged", removalSafety: "safe" }, true],
+				[{ dirtyFiles: 2, commitStatus: "merged", removalSafety: "requires_force" }, true],
+				[{ dirtyFiles: 0, commitStatus: "merged", removalSafety: "safe" }, false],
+				[
+					{
+						dirtyFiles: 0,
+						commitStatus: "merged",
+						removalSafety: "safe",
+						submoduleUnpushedCommits: [{ path: "sub", count: 1 }],
+					},
+					true,
+				],
+			] as const) {
+				const pending = dialog.confirmRemoveWorktree("other", status as never, deleteBranch);
+				expect(dialog.dialogState()?.confirmLabel).not.toBe("Archive");
+				expect(dialog.dialogState()?.title).not.toBe("Archive workspace?");
+				dialog.handleClose();
+				await pending;
+			}
+		});
+
 		it("names live sessions and counts untracked files before removing", async () => {
 			const pending = dialog.confirmRemoveWorktree(
 				"active",

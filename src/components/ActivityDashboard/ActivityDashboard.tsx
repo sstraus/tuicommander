@@ -8,8 +8,8 @@ import { terminalsStore } from "../../stores/terminals";
 import {
 	effectiveActivityState,
 	isActivityWorking,
-	projectName,
 	reconcileActivityOrder,
+	terminalProjectName,
 	terminalStatusLabel,
 } from "../../utils/activitySnapshot";
 import { displayTask } from "../../utils/displayTask";
@@ -17,6 +17,7 @@ import { navigateToTerminal } from "../../utils/navigateToTerminal";
 import { getRepoColor } from "../../utils/repoColor";
 import { formatRelativeTime } from "../../utils/time";
 import { GlobeIcon } from "../GlobeIcon";
+import { Button } from "../ui/Button";
 import { PanelWindowControls } from "../ui/PanelWindowControls";
 import { SubAgentIcon } from "../ui/SubAgentIcon";
 import s from "./ActivityDashboard.module.css";
@@ -176,7 +177,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 		return {
 			id,
 			name: term.name,
-			project: projectName(term.cwd),
+			project: terminalProjectName(id, term.cwd),
 			projectColor: repoPath ? getRepoColor(repoPath) : undefined,
 			agent: term.agentType || "shell",
 			status,
@@ -251,7 +252,11 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 										{(parent) => <SubAgentIcon parent={parent()} class={s.subAgentTag} />}
 									</Show>
 									<Show when={term.project}>
-										<span class={s.project} style={term.projectColor ? { color: term.projectColor } : undefined}>
+										<span
+											class={s.project}
+											title={term.project ?? undefined}
+											style={term.projectColor ? { color: term.projectColor } : undefined}
+										>
 											{term.project}
 										</span>
 									</Show>
@@ -259,7 +264,10 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 								<span class={s.agent}>{term.agent}</span>
 								<span class={`${s.status} ${term.status.className}`}>{term.status.label}</span>
 								<span class={s.lastActivity}>{term.isWorking ? "" : formatRelativeTime(term.idleSince)}</span>
-								<button
+								<Button
+									variant="ghost"
+									shape="icon"
+									aria-label={term.isPromoted ? "Remove from Global Workspace" : "Promote to Global Workspace"}
 									class={`${s.promoteBtn} ${term.isPromoted ? s.promoted : ""}`}
 									title={term.isPromoted ? "Remove from Global Workspace" : "Promote to Global Workspace"}
 									onClick={(e) => {
@@ -272,7 +280,7 @@ export const ActivityDashboard: Component<ActivityDashboardProps> = (props) => {
 									}}
 								>
 									<GlobeIcon />
-								</button>
+								</Button>
 							</div>
 							<Show when={term.currentTask}>
 								{(task) => (

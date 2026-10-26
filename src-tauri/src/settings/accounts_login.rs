@@ -274,7 +274,7 @@ mod tests {
                 assert_eq!(reply["persisted"], false);
                 assert!(!reply.to_string().contains("expired-device-private-canary"));
             }
-            assert!(owner.login.flow(id).unwrap().lock().await.code.is_empty());
+            assert_eq!(owner.login.flow(id).unwrap().lock().await.code, "");
         }
         assert_eq!(owner.read().await.unwrap(), before);
         assert_eq!(*state.github.token.read(), token);
