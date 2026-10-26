@@ -1,5 +1,10 @@
 # Remote Access
 
+## Headless GitHub monitoring
+
+`tuic-remote` supports the same GitHub poller controls and repository status, PR and issue reads as the desktop server. Use `/repo/github-poller/start` and `/repo/github-poller/stop` over its Unix socket or authenticated HTTP API. Poller events reach `/events` without a WebView. GitHub account setup and mutation routes are not exposed by the headless router. A repository without a GitHub remote needs no GitHub credentials for a lifecycle check.
+
+
 Access TUICommander from a browser on another device on your network.
 
 ## Setup
@@ -13,6 +18,24 @@ Access TUICommander from a browser on another device on your network.
 
 Once enabled, the settings panel shows the access URL: `http://<your-ip>:<port>`
 
+On macOS, TUICommander can use the installed Tailscale app when no `tailscale`
+CLI is on its PATH, including launches from Finder. Status detection, peer lookup
+and certificate requests run the app executable with `TAILSCALE_BE_CLI=1`.
+You do not need to set this variable globally. A standalone CLI on PATH keeps
+its existing environment.
+
+The **Tailscale HTTPS** status reports **HTTPS active** only while the server
+has loaded a certificate and its TLS listener is running. Tailscale's HTTPS
+capability alone is not enough. If it says **Running (HTTPS unavailable)**,
+enable Remote Access and select **Recheck**. If it remains unavailable, inspect
+the Tailscale certificate errors in the app logs. Connect URLs use HTTPS only
+while that listener is active.
+
+The macOS app's CLI runs in a filesystem sandbox. TUICommander reads certificate
+and key PEM from its stdout instead of asking it to write into the caller's
+temporary directory; this avoids `operation not permitted` on certificate writes.
+
+
 ## Connecting from Another Device
 
 1. Open a browser on any device on the same network
@@ -23,6 +46,9 @@ Once enabled, the settings panel shows the access URL: `http://<your-ip>:<port>`
 ### QR Code
 
 The settings panel shows a QR code for the access URL — scan it from a phone or tablet to connect quickly. The QR code uses your actual local IP address.
+
+The Remote Mobile Connection dialog shows the complete connection URL as selectable
+text. Use **Copy URL** to copy it; the action shows **Copied** after success.
 
 If local IP discovery fails, the settings controls and QR dialog remain open. The
 network address area shows the error and a **Retry** action. Retry repeats address
@@ -98,7 +124,9 @@ In **Sessions → New session**, the Agent picker lists installed CLI agents fro
 
 ### Add to Home Screen
 
-The terminal composer keeps the bottom safe-area inset inside its background so its controls stay above the Home Indicator. Shell height and position still follow `visualViewport.height` and `visualViewport.offsetTop` when the keyboard opens. This padding change does not establish the cause of a separate empty band below the shell; capture a full-screen device screenshot before reloading if that band occurs.
+The iOS PWA uses a non-overlay status bar. On the tested iPhone simulator, the previous translucent setting left a 62pt band outside the drawable content area; adding that height to the CSS shell only clipped the composer. The non-overlay setting removes the band while shell height and position continue to follow `visualViewport.height` and `visualViewport.offsetTop`. The CLI composer retains its compact 4px bottom padding; no extra safe-area gutter is added.
+
+**Existing iPhone Home Screen installs:** remove the installed PWA and add it from Safari again after this update. iOS reads the status-bar setting at installation; a normal page reload does not update that installed setting. Physical iPhone confirmation is still pending. If the band remains after reinstallation, capture the device screen, iOS version, orientation and keyboard state before reloading.
 
 The mobile UI supports PWA (Progressive Web App) installation:
 
@@ -107,7 +135,9 @@ The mobile UI supports PWA (Progressive Web App) installation:
 
 The app launches in standalone mode (no browser chrome) for a native-like experience.
 
-**The title can look faded on an iPhone.** In the installed PWA the "TUICommander" title in the top bar may look soft or faded, strongest at the top edge. We attribute this to the iOS status-bar edge effect, not to the app. Evidence: in a 390x844 mobile emulation with a 62 px top safe-area inset, the computed styles of the title and every ancestor up to `html` have `opacity: 1`, and `filter`, `backdrop-filter`, `text-shadow`, `mask-image` and `mix-blend-mode` all `none`, so nothing in our CSS fades it. Limit: this is an inference from the absence of a CSS cause; no iPhone layer inspection was possible, so it is not confirmed on a device.
+**Historical title-fade report, before the non-overlay status-bar change.** In the installed PWA the "TUICommander" title in the top bar may look soft or faded, strongest at the top edge. We attribute this to the iOS status-bar edge effect, not to the app. Evidence: in a 390x844 mobile emulation with a 62 px top safe-area inset, the computed styles of the title and every ancestor up to `html` have `opacity: 1`, and `filter`, `backdrop-filter`, `text-shadow`, `mask-image` and `mix-blend-mode` all `none`, so nothing in our CSS fades it. Limit: this is an inference from the absence of a CSS cause; no iPhone layer inspection was possible, so it is not confirmed on a device.
+
+Long file paths in mobile **CLI** output wrap inline with the surrounding text and keep the line's hanging indent. Tap a path to open it, or focus it and press Enter or Space.
 
 At phone widths up to 430 px, the session header keeps CLI/Chat one tap away.
 Open **More session actions** for **Start voice call** / **Stop voice call** (with the same handset icon as the header) and session tasks. Tablet
@@ -182,7 +212,9 @@ Mobile **Settings → Input → Autocorrect and spellcheck** is on by default. I
 
 ### Connection loss and recovery
 
-If the server cannot be reached, the mobile app shows one connection banner with **Retry now**. Tabs remain available, but their content stays hidden until the connection returns; mounted views and unsent drafts are retained. A successful automatic session poll or manual retry reloads failed view reads without restarting the app. Failed reads do not mean that repositories or ego are unconfigured. Files retains the repository and subdirectory you tried to open if the first read fails. After a linked file opens successfully, later recoveries do not reload it over an unsaved edit. An authentication refusal shows **Sign in** instead of repeating network retries.
+If navigation cannot reach the server within five seconds, the service worker shows its cached connection-test landing instead of the cached app shell. The landing shows the server address, test state and last error. **Retry Now** tests immediately; automatic probes back off from five to 30 seconds. The probe checks both the server version and the original mobile address within one five-second deadline. It reopens that address, including its session deep link, only when both requests succeed. A failing mobile route keeps the landing visible even if the version endpoint is healthy. No network assets are needed to render this landing.
+
+Inside the running app, a failed API read or a terminal stream that stays disconnected for five seconds shows a visible connection-test card with **Retry now**. Session health reads have a five-second deadline; other RPC calls keep their own deadlines. Tabs remain available, but their content stays hidden until the connection returns; mounted views and unsent drafts are retained. A successful automatic session poll or manual retry reloads failed view reads without restarting the app. A session that ends during a terminal handshake does not report a server outage. Failed reads do not mean that repositories or ego are unconfigured. Files retains the repository and subdirectory you tried to open if the first read fails. After a linked file opens successfully, later recoveries do not reload it over an unsaved edit. An authentication refusal shows **Sign in** instead of repeating network retries.
 
 ### Automatic mobile resume diagnostics
 
@@ -218,7 +250,7 @@ Hold Send with a finger or mouse, then select **Queue** to hold your current age
 
 - **Sessions list** — See all running agents with status (idle, busy, question, rate-limited, error)
 - **Return to latest output** — Scroll back in a session’s CLI or Chat output to show the down-arrow at the right end of the key bar, above Send. Tap it to return to the bottom without sending terminal input. It hides when you reach the bottom, including by manual scrolling.
-- **Question cards** — Single-choice, multiple-choice and free-text cards use the selected theme and open above the terminal key bar, leaving its keys available.
+- **Question cards** — Single-choice, multiple-choice and free-text cards use the selected theme and open above the terminal key bar, leaving its keys available. Native ego selectors open automatically; use the header question action to hide or reopen them. If a typed reply requires an option selection, the question controls reopen and the draft stays editable. Free-text cards still open on request.
 - **Session detail** — Opening an ego free-text question card preserves your unsent answer. Send submits the complete answer through the guarded human-reply path, whether the card is open or closed; a refused reply keeps the draft. Live output streaming, quick-reply chips (Yes/No/Enter/Ctrl-C), text input. The terminal keybar Ctrl button opens Ctrl+C, Ctrl+B, Ctrl+D and Ctrl+Enter. A choice sends once and closes; tap outside or press Escape to dismiss. Ctrl+C and Ctrl+D use danger colours. Ctrl+Enter is agent-aware: it submits in Claude Code and ego, and inserts a newline in Codex, OpenCode, Goose, Grok and pi. Other agents use documented or conservative fallback keys; ordinary Enter remains the submit key.
 - **Files** — Browse a configured repository, view `.md` files as rendered Markdown or other text as plain text, and tap Edit to change and save source files up to 1 MB
 - **Question banner** — Instant notification when any agent needs input, with quick-reply buttons
@@ -364,6 +396,18 @@ A URL that points back at the TUICommander you are configuring is refused with
 compares the `instance_id` in `GET /health` against this process's own, so a
 second daemon on the same machine (a different port) is still a valid peer.
 
+### Adding a Relay Connection
+
+Use this when the remote machine accepts no inbound connection.
+
+1. On the remote machine run `tuic-remote --relay-pair <relay-url> --relay-register`, or set `TUIC_RELAY_TOKEN` instead of `--relay-register`. Add `--relay-out <file>` to write the bundle to a private file.
+2. Restart `tuic-remote` so it registers with the relay.
+3. Copy the printed `tuic-pair-v1:` bundle to this machine over a trusted channel. It holds the end-to-end secret.
+4. Open **Settings** → **Remote Machines**, click **+**, and select **Relay**.
+5. Paste the bundle and save, then click **Connect**.
+
+If the status shows `pairing_rejected`, the daemon was paired again: import the new bundle. `daemon_offline` means the daemon is not connected to the relay. After `link_lost` or `relay_unreachable` TUICommander reconnects by itself. Running `--relay-pair` again replaces the pairing.
+
 ### Connect or Install
 
 **Connect** with **Deploy on connect** is the zero-setup path. If no compatible
@@ -401,8 +445,11 @@ The manual update button is disabled while an automatic update is running. The
 backend rejects concurrent manual requests from IPC, HTTP, or MCP, and skips an
 automatic update while a manual one is in progress. A stalled transfer reports
 a timeout, after which connection checks resume.
-Select **Update & restart remote** for either Direct or SSH transport. The
-preview reports the remote target and build, selected desktop build and source,
+For a connected Direct or SSH remote, **Update & restart remote** appears only
+while the backend reports that the remote build is out of date. The action and
+the warning use the same status flag. After an update, the desktop verifies the
+selected build through `/health` and clears both without requiring a reconnect.
+The preview reports the remote target and build, selected desktop build and source,
 and the number of live PTY sessions. Confirming ends those sessions. The
 desktop uses the matching release asset first; if that asset does not exist, a
 locally built `tuic-remote` beside the desktop executable is used only when its

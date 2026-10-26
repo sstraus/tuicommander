@@ -883,12 +883,9 @@ mod tests {
             vec![second.id, first.id, old.id]
         );
         assert_eq!(aggregate.entries[2].pty_id, None);
-        assert!(
-            store
-                .list("/other", &Default::default())
-                .unwrap()
-                .pty_ids
-                .is_empty()
+        assert_eq!(
+            store.list("/other", &Default::default()).unwrap().pty_ids,
+            [] as [std::string::String; 0]
         );
     }
 

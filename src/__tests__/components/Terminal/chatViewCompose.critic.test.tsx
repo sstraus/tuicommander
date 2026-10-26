@@ -102,14 +102,14 @@ describe("Chat Compose input", () => {
 		const id = addTerminal();
 		const view = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
 		expect(view.container.querySelector(".cm-editor")).toBeNull();
-		fireEvent.click(view.getByRole("button", { name: "Chat" }));
+		fireEvent.click(view.getByRole("tab", { name: "Chat" }));
 		const cm = await readyEditor(view.container);
 		expect(cm.hasFocus).toBe(true);
 		expect(view.container.querySelector('[class*="panelPinned"]')).not.toBeNull();
 		expect(view.queryByLabelText("Close compose panel")).toBeNull();
 		expect(view.queryByTitle("Unpin from the terminal bottom")).toBeNull();
 		typeDraft(view.container, "Unsent from Chat");
-		fireEvent.click(view.getByRole("button", { name: "CLI" }));
+		fireEvent.click(view.getByRole("tab", { name: "CLI" }));
 		expect(view.container.querySelector(".cm-editor")).toBeNull();
 		fireEvent.click(view.getByText(/^Compose /));
 		expect((await readyEditor(view.container)).state.doc.toString()).toBe("Unsent from Chat");
@@ -125,12 +125,12 @@ describe("Chat Compose input", () => {
 		typeDraft(view.container, "Keep this unsent draft\nincluding its second line.");
 		const cm = editor(view.container);
 		cm.contentDOM.blur();
-		fireEvent.click(view.getByRole("button", { name: "Chat" }));
+		fireEvent.click(view.getByRole("tab", { name: "Chat" }));
 		await waitFor(() => expect(cm.hasFocus).toBe(true));
 		expect(editor(view.container)).toBe(cm);
 		expect(cm.state.doc.toString()).toContain("second line.");
 		typeDraft(view.container, "Edited in Chat");
-		fireEvent.click(view.getByRole("button", { name: "CLI" }));
+		fireEvent.click(view.getByRole("tab", { name: "CLI" }));
 		expect(editor(view.container).state.doc.toString()).toBe("Edited in Chat");
 		expect(view.container.querySelector('[class*="panelPinned"]') !== null).toBe(pinned);
 		expect(view.getByLabelText("Close compose panel")).toBeDefined();
@@ -140,7 +140,7 @@ describe("Chat Compose input", () => {
 	it.each([false, true])("retains_chat_input_and_clears_text_after_queue_%s", async (queue) => {
 		const id = addTerminal();
 		const view = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
-		fireEvent.click(view.getByRole("button", { name: "Chat" }));
+		fireEvent.click(view.getByRole("tab", { name: "Chat" }));
 		const cm = await readyEditor(view.container);
 		typeDraft(view.container, "Next task");
 		fireEvent.keyDown(cm.contentDOM, { key: "Enter", ctrlKey: true, shiftKey: queue });
@@ -154,7 +154,7 @@ describe("Chat Compose input", () => {
 		);
 		expect(queue ? pty.sendCommand : pty.enqueueCommand).not.toHaveBeenCalled();
 		if (queue) expect(view.getByText("1 queued")).toBeDefined();
-		fireEvent.click(view.getByRole("button", { name: "CLI" }));
+		fireEvent.click(view.getByRole("tab", { name: "CLI" }));
 		expect(view.container.querySelector(".cm-editor")).toBeNull();
 	});
 
@@ -162,7 +162,7 @@ describe("Chat Compose input", () => {
 	it("replaces_chat_text_from_the_terminal_ref_without_opening_cli_compose", async () => {
 		const id = addTerminal();
 		const view = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
-		fireEvent.click(view.getByRole("button", { name: "Chat" }));
+		fireEvent.click(view.getByRole("tab", { name: "Chat" }));
 		const cm = await readyEditor(view.container);
 		typeDraft(view.container, "Old draft");
 		terminalsStore.get(id)?.ref?.openComposeWithText?.("Review this change");
@@ -170,7 +170,7 @@ describe("Chat Compose input", () => {
 		cm.contentDOM.blur();
 		terminalsStore.get(id)?.ref?.focus();
 		expect(cm.hasFocus).toBe(true);
-		fireEvent.click(view.getByRole("button", { name: "CLI" }));
+		fireEvent.click(view.getByRole("tab", { name: "CLI" }));
 		expect(view.container.querySelector(".cm-editor")).toBeNull();
 	});
 
@@ -178,7 +178,7 @@ describe("Chat Compose input", () => {
 	it("keeps_compose_active_on_its_shortcut_and_esc_returns_to_cli_with_the_draft", async () => {
 		const id = addTerminal();
 		const view = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
-		fireEvent.click(view.getByRole("button", { name: "Chat" }));
+		fireEvent.click(view.getByRole("tab", { name: "Chat" }));
 		const cm = await readyEditor(view.container);
 		typeDraft(view.container, "Keep on Escape");
 		terminalsStore.get(id)?.ref?.toggleCompose?.();
@@ -187,7 +187,7 @@ describe("Chat Compose input", () => {
 		fireEvent.keyDown(cm.contentDOM, { key: "Escape" });
 		expect(terminalsStore.get(id)?.viewMode).toBe("cli");
 		expect(view.container.querySelector(".cm-editor")).toBeNull();
-		fireEvent.click(view.getByRole("button", { name: "Chat" }));
+		fireEvent.click(view.getByRole("tab", { name: "Chat" }));
 		expect((await readyEditor(view.container)).state.doc.toString()).toBe("Keep on Escape");
 	});
 });

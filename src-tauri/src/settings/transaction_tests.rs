@@ -288,7 +288,7 @@ async fn omitted_optional_set_reset_and_other_fields_survive() {
         .await
         .unwrap();
     assert!(!same.persisted);
-    assert!(same.changed_ids.is_empty());
+    assert_eq!(same.changed_ids, [] as [std::string::String; 0]);
     assert_eq!(same.revision, reply.revision);
 }
 

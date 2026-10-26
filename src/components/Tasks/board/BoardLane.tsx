@@ -1,6 +1,7 @@
 import { createVirtualizer } from "@tanstack/solid-virtual";
 import { type Component, For, type JSX, Show } from "solid-js";
 import type { WorkItemBoardColumn } from "../../../types/work-items.gen";
+import { Button } from "../../ui/Button";
 import s from "./board.module.css";
 import { CardMoveMenu } from "./CardMoveMenu";
 import { type BoardCard, cardKey } from "./types";
@@ -67,9 +68,9 @@ export const BoardLane: Component<BoardLaneProps> = (props) => {
 											onPointerDown={(event) => props.onPointerDown(event, entry())}
 										>
 											<div class={s.cardHead}>
-												<button type="button" class={s.key} onClick={() => props.onOpen?.(entry())}>
+												<Button variant="ghost" type="button" class={s.key} onClick={() => props.onOpen?.(entry())}>
 													{entry().item.key}
-												</button>
+												</Button>
 												{props.cardActions?.(entry())}
 											</div>
 											<span class={s.title}>{entry().item.title}</span>
@@ -112,7 +113,7 @@ export const BoardLane: Component<BoardLaneProps> = (props) => {
 				</div>
 			</div>
 			<Show when={props.hasMore}>
-				<button
+				<Button
 					type="button"
 					class={s.more}
 					aria-label={`More in ${props.column.name}`}
@@ -121,7 +122,7 @@ export const BoardLane: Component<BoardLaneProps> = (props) => {
 					onClick={() => props.onMore?.()}
 				>
 					{props.loadingMore ? "Loading…" : "More"}
-				</button>
+				</Button>
 			</Show>
 		</section>
 	);

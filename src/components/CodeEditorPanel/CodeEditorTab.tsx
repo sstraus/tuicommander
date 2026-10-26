@@ -42,6 +42,7 @@ import { markPerf } from "../../utils/perfTrace";
 import { ContextMenu, createContextMenu } from "../ContextMenu";
 import e from "../shared/editor-header.module.css";
 import { createSearchVisibility } from "../shared/SearchBar";
+import { Button } from "../ui/Button";
 import s from "./CodeEditorTab.module.css";
 import { EditorSearch } from "./EditorSearch";
 import { editorLinkAt } from "./editorLinks";
@@ -865,9 +866,9 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 				<Show when={dirty()}>
 					<span class={e.dirtyDot} title={t("codeEditor.unsaved", "Unsaved changes")} />
 				</Show>
-				<button
+				<Button
 					class={e.btn}
-					classList={{ [e.active]: wrapEnabled() }}
+					variant={wrapEnabled() ? "primary" : "secondary"}
 					type="button"
 					onClick={toggleWrap}
 					aria-label={t("codeEditor.wrapLines", "Wrap lines")}
@@ -887,8 +888,8 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 						<path fill="none" d="M2 3h12M2 6h12M2 9h9a2 2 0 0 1 0 4H8m0 0 2-2m-2 2 2 2M2 13h3" />
 					</svg>
 					{t("codeEditor.wrapBtn", "Wrap")}
-				</button>
-				<button
+				</Button>
+				<Button
 					class={e.btn}
 					onClick={() => setIsReadOnly((v) => !v)}
 					title={isReadOnly() ? t("codeEditor.unlock", "Unlock editing") : t("codeEditor.lock", "Lock (read-only)")}
@@ -906,9 +907,9 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 						</svg>
 					)}
 					{isReadOnly() ? t("codeEditor.unlockBtn", "Unlock") : t("codeEditor.lockBtn", "Lock")}
-				</button>
+				</Button>
 				<Show when={!isExternal() && props.repoPath}>
-					<button
+					<Button
 						class={e.btn}
 						// Diff against fsRoot (the worktree) where the file actually lives and is
 						// modified — props.repoPath is the canonical repo, so on a worktree git diff
@@ -929,10 +930,10 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 							<path d="M12 12l2 2-2 2" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
 						</svg>
 						{t("codeEditor.diffBtn", "Diff")}
-					</button>
+					</Button>
 				</Show>
 				<Show when={!isReadOnly()}>
-					<button
+					<Button
 						class={e.btn}
 						onClick={handleSave}
 						disabled={!dirty()}
@@ -943,28 +944,28 @@ export const CodeEditorTab: Component<CodeEditorTabProps> = (props) => {
 							<path d="M13.354 1.146a.5.5 0 0 1 .146.354v12a1.5 1.5 0 0 1-1.5 1.5h-8A1.5 1.5 0 0 1 2.5 13.5v-11A1.5 1.5 0 0 1 4 1h8.5a.5.5 0 0 1 .354.146L13.354 1.146zM4 2.5a.5.5 0 0 0-.5.5v10.5a.5.5 0 0 0 .5.5h1V10a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4h1a.5.5 0 0 0 .5-.5V2.207L11.793 2H11v2.5A1.5 1.5 0 0 1 9.5 6h-3A1.5 1.5 0 0 1 5 4.5V2H4zm2 0v2.5a.5.5 0 0 0 .5.5h3a.5.5 0 0 0 .5-.5V2H6zm0 8v4h4v-4H6z" />
 						</svg>
 						{t("codeEditor.save", "Save")}
-					</button>
+					</Button>
 				</Show>
 			</div>
 
 			<Show when={diskConflict()}>
 				<div class={s.conflictBanner}>
 					<span>{t("codeEditor.fileChanged", "File changed on disk.")}</span>
-					<button class={e.btn} onClick={handleReloadFromDisk}>
+					<Button class={e.btn} onClick={handleReloadFromDisk}>
 						{t("codeEditor.reload", "Reload")}
-					</button>
-					<button class={e.btn} onClick={handleKeepLocal}>
+					</Button>
+					<Button class={e.btn} onClick={handleKeepLocal}>
 						{t("codeEditor.keepMine", "Keep mine")}
-					</button>
+					</Button>
 				</div>
 			</Show>
 
 			<Show when={largeFile()}>
 				<div class={s.conflictBanner}>
 					<span>{t("codeEditor.largeFileWarning", "Large file — editing may be slow.")}</span>
-					<button class={e.btn} onClick={() => setLargeFile(false)}>
+					<Button class={e.btn} onClick={() => setLargeFile(false)}>
 						{t("codeEditor.dismiss", "Dismiss")}
-					</button>
+					</Button>
 				</div>
 			</Show>
 

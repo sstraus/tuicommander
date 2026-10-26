@@ -91,7 +91,7 @@ fn grok_reasoning_summary_is_a_thought_and_comes_before_the_reply() {
 fn grok_orphan_tool_result_is_dropped() {
     let line = r#"{"type":"tool_result","tool_call_id":"call-gone","content":"x"}"#;
     let (updates, adapter) = run(line);
-    assert!(updates.is_empty());
+    assert_eq!(updates, [] as [serde_json::Value; 0]);
     assert_eq!(adapter.stats.unknown_rows, 0);
 }
 
@@ -172,7 +172,7 @@ fn grok_unknown_and_malformed_rows_are_counted_not_fatal() {
         r#"{"type":"system","content":"s"}"#,
     ];
     let (updates, adapter) = run(&rows.join("\n"));
-    assert!(updates.is_empty());
+    assert_eq!(updates, [] as [serde_json::Value; 0]);
     assert_eq!(adapter.stats.unknown_rows, 1, "system is plumbing");
     assert_eq!(adapter.stats.malformed_rows, 1);
 }

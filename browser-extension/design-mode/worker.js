@@ -1,5 +1,5 @@
 import {syncHostErrors} from './hostErrors.js';
-import {browserCommand} from './browserCommands.js';
+import {browserCommand, captureVisibleTab} from './browserCommands.js';
 import {addPick, editPick, deletePick, addError, clearErrors, draftForTab, recipient, deliverDraft, serverSession} from './cards.js';
 import {reviewAgents} from './reviewAgents.js';
 import {connectNative, nativeRequest} from './native.js';
@@ -121,7 +121,7 @@ async function capture(message, sender) {
   const r = message.raw.rect;
   if (![r.x,r.y,r.width,r.height].every(Number.isFinite) || r.width <= 0 || r.height <= 0) return {};
   try {
-    const data = await chrome.tabs.captureVisibleTab(tab.windowId, {format: 'png'});
+    const data = await captureVisibleTab(chrome, tab.windowId);
     const current = await chrome.tabs.get(tab.id);
     if (!current.active || current.url !== tab.url) return {captureError: 'Page changed during capture.'};
     const bitmap = await createImageBitmap(await (await fetch(data)).blob());

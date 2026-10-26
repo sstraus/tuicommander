@@ -23,7 +23,9 @@ import { pathBasename, pathDirname } from "../../utils/pathUtils";
 import { ContextMenu, type ContextMenuItem, createContextMenu } from "../ContextMenu";
 import g from "../shared/git-status.module.css";
 import p from "../shared/panel.module.css";
+import { Button } from "../ui/Button";
 import { Dropdown } from "../ui/Dropdown";
+import { Input } from "../ui/Input";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { PanelWindowControls } from "../ui/PanelWindowControls";
 import s from "./MarkdownPanel.module.css";
@@ -338,9 +340,16 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 			</div>
 
 			{/* Search filter (filename glob / full-text content) + sort control */}
-			<div class={p.search}>
-				<button
-					class={cx(s.modeToggle, searchMode() === "content" && s.modeToggleActive)}
+			<div class={s.searchRow}>
+				<Button
+					shape="icon"
+					variant={searchMode() === "content" ? "primary" : "ghost"}
+					aria-pressed={searchMode() === "content"}
+					aria-label={
+						searchMode() === "filename"
+							? t("markdownPanel.switchToContent", "Switch to content search")
+							: t("markdownPanel.switchToFilename", "Switch to filename search")
+					}
 					onClick={() => {
 						const next = searchMode() === "filename" ? "content" : "filename";
 						setSearchMode(next);
@@ -357,10 +366,10 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 					<Show when={searchMode() === "filename"} fallback={<ContentModeIcon />}>
 						<FilenameModeIcon />
 					</Show>
-				</button>
-				<input
+				</Button>
+				<Input
 					type="text"
-					class={p.searchInput}
+					class={s.searchInput}
 					placeholder={
 						searchMode() === "filename"
 							? t("markdownPanel.filter", "Filter... (*, ** wildcards)")
@@ -373,20 +382,27 @@ export const MarkdownPanel: Component<MarkdownPanelProps> = (props) => {
 					spellcheck={false}
 				/>
 				<Show when={searchQuery()}>
-					<button class={p.searchClear} onClick={() => setSearchQuery("")}>
+					<Button
+						shape="icon"
+						variant="ghost"
+						aria-label={t("markdownPanel.clearSearch", "Clear search")}
+						onClick={() => setSearchQuery("")}
+					>
 						&times;
-					</button>
+					</Button>
 				</Show>
 				<div class={s.sortControl}>
-					<button
-						class={s.sortTrigger}
+					<Button
+						shape="icon"
+						variant="ghost"
+						aria-label={`${t("markdownPanel.sortBy", "Sort by")} ${sortBy()}`}
 						onClick={() => setSortDropdownOpen((v) => !v)}
 						title={`${t("markdownPanel.sortBy", "Sort by")} ${sortBy()}`}
 					>
 						<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
 							<path d="M1 2h14L9.5 8.5V13l-3 1.5V8.5z" />
 						</svg>
-					</button>
+					</Button>
 					<Dropdown
 						items={[
 							{ id: "folder", label: t("markdownPanel.sortFolder", "Folder") },

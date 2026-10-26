@@ -10,15 +10,17 @@ import { promptLibraryStore, type SavedPrompt } from "../stores/promptLibrary";
 import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { updaterStore } from "../stores/updater";
+import { runWithFeedback } from "../utils/promptContext";
 import type { useGitOperations } from "./useGitOperations";
 import type { ShortcutHandlers } from "./useKeyboardShortcuts";
+import type { SmartPromptResult } from "./useSmartPrompts";
 import type { useSplitPanes } from "./useSplitPanes";
 
 interface CommandPaletteActionOptions {
 	shortcutHandlers: ShortcutHandlers;
 	gitOps: ReturnType<typeof useGitOperations>;
 	splitPanes: ReturnType<typeof useSplitPanes>;
-	executeSmartPrompt: (prompt: SavedPrompt) => Promise<unknown>;
+	executeSmartPrompt: (prompt: SavedPrompt) => Promise<SmartPromptResult>;
 }
 
 /** Builds the command palette's static registry plus reactive repository, plugin, terminal, and prompt actions. */
@@ -179,9 +181,7 @@ export function useCommandPaletteActions(options: CommandPaletteActionOptions): 
 				category: "Smart Prompts",
 				keybinding: prompt.shortcut ?? "",
 				execute: () => {
-					options
-						.executeSmartPrompt(prompt)
-						.catch((error) => appLogger.error("prompts", "Smart prompt execution failed", error));
+					void runWithFeedback(prompt, () => options.executeSmartPrompt(prompt));
 				},
 			});
 		}

@@ -19,26 +19,13 @@
   flex-shrink: 0;
 }
 
-.backBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border: none;
-  background: none;
-  color: var(--accent);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  padding: 0;
-  flex-shrink: 0;
-}
+.backBtn { color: var(--accent); }
 
 .backBtn:active {
   opacity: 0.7;
 }
 
-.headerInfo {
+button[data-control-layout="row"].headerInfo {
   flex: 1;
   min-width: 0;
   height: 44px;
@@ -98,20 +85,7 @@
 .stateDot[data-state="error"],
 .stateDot[data-state="rate-limited"] { background: var(--accent-red, #f44747); }
 
-.headerAction {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  flex-shrink: 0;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--fg-primary);
-  cursor: pointer;
-}
+.headerAction { position: relative; color: var(--fg-primary); }
 
 .voiceActive {
   color: var(--accent-red, #f44747);
@@ -131,6 +105,8 @@
 }
 
 .overflow {
+  display: flex;
+  flex-direction: column;
   position: absolute;
   z-index: 15;
   top: 56px;
@@ -145,7 +121,6 @@
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32);
 }
 
-.overflow button,
 .overflowInfo {
   display: flex;
   align-items: center;
@@ -161,7 +136,7 @@
   text-align: left;
 }
 
-.overflow button { cursor: pointer; }
+.overflow button { justify-content: space-between; text-align: left; }
 .overflow button:active { background: var(--bg-highlight); }
 .overflowInfo { color: var(--fg-muted); }
 .overflow .dangerAction { color: var(--accent-red, #f44747); }
@@ -226,16 +201,7 @@
   color: var(--fg-muted);
 }
 
-.endedBackBtn {
-  padding: 10px 28px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--bg-secondary);
-  color: var(--fg-primary);
-  font-size: 15px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
+.endedBackBtn { color: var(--fg-primary); }
 
 .endedBackBtn:active {
   opacity: 0.7;
@@ -251,41 +217,16 @@
   flex-shrink: 0;
 }
 
-.searchInput {
-  flex: 1;
-  height: 32px;
-  padding: 0 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-  font-size: 14px;
-  font-family: var(--font-mono);
-  outline: none;
-}
+.searchInput { flex: 1; font-family: var(--font-mono); }
 
-.searchInput:focus {
-  border-color: var(--accent);
-}
 
-.searchClear {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  padding: 0;
-}
 
-.markdownSection { border-block: 1px solid var(--border); }
+.searchClear { color: var(--fg-muted); }
+
+.markdownSection { display: flex; flex-direction: column; border-block: 1px solid var(--border); }
 .markdownHeading, .markdownStatus { padding: 8px 12px; color: var(--fg-muted); font-size: 12px; }
 .markdownHeading { font-weight: 600; }
-.overflow .markdownEntry { flex-direction: column; align-items: stretch; justify-content: center; gap: 4px; padding-block: 8px; }
+button[data-control-layout="row"].markdownEntry { display: flex; width: 100%; min-height: 44px; padding: 8px 12px; border: 0; background: transparent; color: var(--fg-primary); text-align: left; font: inherit; cursor: pointer; flex-direction: column; align-items: stretch; justify-content: center; gap: 4px; }
 .markdownEntry span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .markdownPath { color: var(--fg-muted); font-size: 11px; }
 
@@ -308,19 +249,7 @@
 }
 
 .markdownDropdown { position: relative; flex-shrink: 0; }
-.markdownTrigger {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-  font: inherit;
-  cursor: pointer;
-}
+
 .markdownTrigger[aria-expanded="true"] { background: var(--bg-highlight); }
 .markdownPopover {
   top: calc(100% + 4px);
@@ -329,3 +258,14 @@
   box-shadow: var(--shadow-dropdown);
 }
 .markdownPopover .markdownSection { border: 0; }
+
+.usageBlock {
+  padding: 8px 12px;
+  border-block: 1px solid var(--border);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+  overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

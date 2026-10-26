@@ -11,6 +11,7 @@ import { cx } from "../../utils";
 import { keyFor } from "../../utils/hotkey";
 import { handsFreePhaseLabel } from "../DictationToast/handsFreePhaseLabel";
 import { KeyComboCapture } from "../shared/KeyComboCapture";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { StatusBadge } from "../ui/StatusBadge";
@@ -72,25 +73,25 @@ const ModelRow: Component<{ model: ModelInfo }> = (props) => {
 				actions={
 					<>
 						<Show when={props.model.downloaded && !isSelected()}>
-							<button
+							<Button
 								data-setting-id="voice.model"
 								title="Use model"
 								class={s.testBtn}
 								onClick={() => dictationStore.setModel(props.model.name)}
 							>
 								{t("dictation.use", "Use")}
-							</button>
+							</Button>
 						</Show>
 
 						<Show when={!props.model.downloaded && !isDownloading()}>
-							<button
+							<Button
 								data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
 								title="Download model"
 								class={s.testBtn}
 								onClick={() => dictationStore.downloadModel(props.model.name)}
 							>
 								{t("dictation.download", "Download")}
-							</button>
+							</Button>
 						</Show>
 						<Show when={isDownloading()}>
 							<div class={d.downloadProgress}>
@@ -104,14 +105,14 @@ const ModelRow: Component<{ model: ModelInfo }> = (props) => {
 							</div>
 						</Show>
 						<Show when={props.model.downloaded}>
-							<button
+							<Button
 								data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
 								class={s.testBtn}
 								onClick={() => dictationStore.deleteModel(props.model.name)}
 								title={t("dictation.deleteModel", "Delete model")}
 							>
 								{t("dictation.removeModel", "Remove")}
-							</button>
+							</Button>
 						</Show>
 					</>
 				}
@@ -286,20 +287,20 @@ export const DictationSettings: Component = () => {
 				)}
 				actions={
 					<>
-						<button
+						<Button
 							data-setting-id="corrections.replacements.{from}.to"
 							class={s.testBtn}
 							onClick={handleImportCorrections}
 						>
 							{t("dictation.import", "Import")}
-						</button>
-						<button
+						</Button>
+						<Button
 							data-non-setting="Export the correction map without changing owner configuration"
 							class={s.testBtn}
 							onClick={handleExportCorrections}
 						>
 							{t("dictation.export", "Export")}
-						</button>
+						</Button>
 					</>
 				}
 			>
@@ -313,14 +314,14 @@ export const DictationSettings: Component = () => {
 						<ListRow
 							name={`${from} → ${to}`}
 							actions={
-								<button
+								<Button
 									data-setting-id="corrections.replacements.{from}.to"
 									class={s.testBtn}
 									onClick={() => handleRemoveCorrection(from)}
 									title={t("dictation.removeCorrection", "Remove correction")}
 								>
 									{t("dictation.removeCorrection", "Remove correction")}
-								</button>
+								</Button>
 							}
 						/>
 					)}
@@ -347,14 +348,14 @@ export const DictationSettings: Component = () => {
 								onInput={(e) => setNewTo(e.currentTarget.value)}
 								onKeyDown={(e) => e.key === "Enter" && handleAddCorrection()}
 							/>
-							<button
+							<Button
 								data-setting-id="corrections.replacements.{from}.to"
 								class={s.testBtn}
 								onClick={handleAddCorrection}
 								disabled={!newFrom().trim() || !newTo().trim()}
 							>
 								{t("dictation.addCorrection", "Add")}
-							</button>
+							</Button>
 						</div>
 					)}
 				</SettingRow>
@@ -441,13 +442,13 @@ const SpeechRecognition: Component = () => {
 										when={dictationStore.state.devices.length > 0}
 										fallback={
 											<div>
-												<button
+												<Button
 													data-non-setting="Explicit device discovery; does not select a device"
 													class={s.testBtn}
 													onClick={() => dictationStore.refreshDevices()}
 												>
 													{t("dictation.detectMicrophones", "Detect Microphones")}
-												</button>
+												</Button>
 											</div>
 										}
 									>
@@ -585,7 +586,7 @@ const SpeechRecognition: Component = () => {
 									</div>
 								</div>
 								<div class={d.controlRow}>
-									<button
+									<Button
 										data-non-setting="Preview audio or test recording without changing the stored preference"
 										class={s.testBtn}
 										onClick={toggleTest}
@@ -594,7 +595,7 @@ const SpeechRecognition: Component = () => {
 										{recording()
 											? t("dictation.tuningStop", "Stop test")
 											: t("dictation.tuningStart", "Start test recording")}
-									</button>
+									</Button>
 								</div>
 							</div>
 
@@ -859,13 +860,13 @@ const SpeechSetup: Component = () => {
 										</For>
 									</Select>
 								</Show>
-								<button
+								<Button
+									variant="primary"
 									data-non-setting="Preview audio or test recording without changing the stored preference"
-									class={d.modelDownload}
 									onClick={listen}
 								>
 									{t("dictation.listen", "Listen")}
-								</button>
+								</Button>
 							</div>
 							<Show when={!isEdge() && selectedMissingAsset()}>{(asset) => <SpeechAssetRow asset={asset()} />}</Show>
 							<Show when={isEdge() && dictationStore.state.edgeVoicesError}>
@@ -991,14 +992,14 @@ const VoiceLibrary: Component<{ language: string }> = (props) => {
 										<span class={d.modelName}>{voice.id}</span>
 									</div>
 									<div class={d.modelActions}>
-										<button
+										<Button
+											variant="ghost"
 											data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
-											class={d.modelDelete}
 											onClick={() => dictationStore.deleteSpeechVoice(props.language, voice.id)}
 											title={t("dictation.voiceDeleteUser", "Delete this voice file")}
 										>
 											&times;
-										</button>
+										</Button>
 									</div>
 								</div>
 							)}
@@ -1006,13 +1007,13 @@ const VoiceLibrary: Component<{ language: string }> = (props) => {
 					</div>
 				</Show>
 				<div class={d.controlRow}>
-					<button
+					<Button
+						variant="primary"
 						data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
-						class={d.modelDownload}
 						onClick={() => fileInput?.click()}
 					>
 						{t("dictation.addVoiceFile", "Add voice file…")}
-					</button>
+					</Button>
 					<input
 						data-non-setting="Speech asset file import, not persisted configuration"
 						ref={fileInput}
@@ -1071,38 +1072,38 @@ const SpeechAssetRow: Component<{ asset: SpeechAsset }> = (props) => {
 						</div>
 						<span class={d.progressText}>{percent() ?? 0}%</span>
 					</div>
-					<button
+					<Button
+						variant="ghost"
 						data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
-						class={d.modelDelete}
 						onClick={() => dictationStore.cancelSpeechDownload(props.asset.id)}
 						title={t("dictation.cancel", "Cancel")}
 					>
 						&times;
-					</button>
+					</Button>
 				</Show>
 				<Show when={!downloading() && speaking()}>
 					<span class={d.modelActiveLabel}>{t("dictation.active", "Active")}</span>
 				</Show>
 				<Show when={!downloading() && props.asset.state !== "ready"}>
-					<button
+					<Button
+						variant="primary"
 						data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
-						class={d.modelDownload}
 						onClick={() => dictationStore.downloadSpeechAsset(props.asset.id)}
 					>
 						{props.asset.state === "incomplete"
 							? t("dictation.speechRepair", "Repair")
 							: t("dictation.download", "Download")}
-					</button>
+					</Button>
 				</Show>
 				<Show when={!downloading() && props.asset.state !== "absent"}>
-					<button
+					<Button
+						variant="ghost"
 						data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
-						class={d.modelDelete}
 						onClick={() => dictationStore.deleteSpeechAsset(props.asset.id)}
 						title={t("dictation.speechDelete", "Delete this download")}
 					>
 						&times;
-					</button>
+					</Button>
 				</Show>
 			</div>
 		</div>
@@ -1211,24 +1212,24 @@ const HandsFreeControls: Component = () => {
 											<option value="">{t("dictation.handsFreeNoTarget", "Choose a terminal…")}</option>
 											<For each={targets()}>{(term) => <option value={term.sessionId ?? ""}>{term.name}</option>}</For>
 										</Select>
-										<button
+										<Button
+											variant="primary"
 											data-non-setting="Start or stop the current hands-free runtime conversation"
-											class={cx(s.testBtn, d.startConversation)}
 											onClick={start}
 											disabled={!target()}
 										>
 											{t("dictation.handsFreeStart", "Start conversation")}
-										</button>
+										</Button>
 									</div>
 								}
 							>
-								<button
+								<Button
+									variant="danger"
 									data-non-setting="Start or stop the current hands-free runtime conversation"
-									class={cx(s.testBtn, d.stopConversation)}
 									onClick={() => dictationStore.disarmHandsFree()}
 								>
 									{t("dictation.handsFreeStop", "Stop conversation")}
-								</button>
+								</Button>
 							</Show>
 						</>
 					)}
@@ -1394,7 +1395,7 @@ const HandsFreeControls: Component = () => {
 									onChange={(e) => dictationStore.setHandsFreeStartNotice(e.currentTarget.value)}
 								/>
 								<div class={d.controlRow}>
-									<button
+									<Button
 										data-setting-id="voice.hands_free_start_notice"
 										class={s.testBtn}
 										onClick={() => {
@@ -1405,7 +1406,7 @@ const HandsFreeControls: Component = () => {
 										disabled={!dictationStore.state.handsFreeStartNotice}
 									>
 										{t("dictation.startNoticeReset", "Reset to default")}
-									</button>
+									</Button>
 								</div>
 							</div>
 						)}

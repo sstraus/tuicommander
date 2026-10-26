@@ -39,6 +39,44 @@ fn incident(
     }
 }
 
+pub(super) fn read_incidents(
+    run: &RunSnapshot,
+    state: Option<&AppState>,
+) -> Result<Vec<RunIncident>, String> {
+    let stories = crate::stories::StoryStore::open()?.list_stories(&run.plan_id)?;
+    Ok(project_story_incidents(run, state, &stories))
+}
+
+fn project_story_incidents(
+    run: &RunSnapshot,
+    state: Option<&AppState>,
+    stories: &[crate::stories::Story],
+) -> Vec<RunIncident> {
+    let mut incidents = project_incidents(run, state);
+    for story in stories {
+        if story.status != crate::stories::StoryStatus::Qa
+            || matches!(&run.root_target, Some(super::RunTarget::Story(id)) if id != &story.id)
+        {
+            continue;
+        }
+        let attempt = run
+            .attempts
+            .iter()
+            .rev()
+            .find(|attempt| attempt.story_id == story.id);
+        let mut item = incident(
+            run,
+            attempt,
+            "story_qa",
+            format!("Story waits for manual QA: {}", story.title),
+            "Perform the manual checks, check each passing criterion and approve; use Reject QA if a check fails.",
+        );
+        item.story_id = Some(story.id.clone());
+        incidents.push(item);
+    }
+    incidents
+}
+
 pub(super) fn project_incidents(run: &RunSnapshot, state: Option<&AppState>) -> Vec<RunIncident> {
     let mut incidents = Vec::new();
     for attempt in &run.attempts {
@@ -120,13 +158,22 @@ pub(super) fn project_incidents(run: &RunSnapshot, state: Option<&AppState>) -> 
         }
     }
     if incidents.is_empty() && run.status == RunStatus::Paused {
-        incidents.push(incident(
-            run,
-            None,
-            "run_state",
-            "Run is paused; no more specific cause is retained".into(),
-            "Inspect the run timeline and evidence; use Resume run only when ready.",
-        ));
+        incidents.push(match run.pause_cause.as_deref() {
+            Some(cause) => incident(
+                run,
+                None,
+                "pause_cause",
+                cause.into(),
+                "Fix the cause, then use Resume run on the pending activation.",
+            ),
+            None => incident(
+                run,
+                None,
+                "run_state",
+                "Run is paused; no more specific cause is retained".into(),
+                "Inspect the run timeline and evidence; use Resume run only when ready.",
+            ),
+        });
     }
     incidents
 }

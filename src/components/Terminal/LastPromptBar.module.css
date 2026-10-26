@@ -29,7 +29,7 @@
 }
 
 /* The absolute CLI/Chat switch occupies the header's right-hand gutter. */
-:global([aria-label="Terminal view"]) ~ .bar .header {
+:global([data-terminal-view-toggle]) ~ .bar .header {
   padding-right: 116px;
 }
 

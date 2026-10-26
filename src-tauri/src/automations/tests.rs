@@ -71,7 +71,10 @@ fn absent_file_defaults_to_two_without_creating_a_definition_document() {
     let (dir, store) = store();
     let config = store.load().unwrap();
     assert_eq!(config.max_concurrent_runs, 2);
-    assert!(config.definitions.is_empty());
+    assert_eq!(
+        config.definitions,
+        [] as [crate::automations::model::AutomationDefinition; 0]
+    );
     assert!(!dir.path().join("automations.json").exists());
 }
 

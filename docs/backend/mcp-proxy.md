@@ -67,7 +67,7 @@ connect_upstream(config)
 | `Ready` | Handshake complete, tools available |
 | `CircuitOpen` | Too many failures, backoff timer active |
 | `Disabled` | Disabled by user in config (`enabled: false`) |
-| `Failed` | Permanently failed after max retries exceeded |
+| `Failed` | Retry budget exhausted; health recovery resumes after the extended backoff |
 | `NeedsAuth` | Upstream returned 401/challenge (or its OAuth token was rejected and could not be refreshed) — awaiting the user to click "Authorize". Tool calls are rejected with `-32001` until a user-initiated OAuth flow succeeds |
 | `Authenticating` | OAuth flow in progress (user clicked "Authorize") — tool calls rejected with `-32001` |
 
@@ -108,11 +108,24 @@ Each upstream has an independent circuit breaker with the following thresholds:
 State transitions:
 - **Closed → CircuitOpen:** 3 consecutive failures trigger the circuit. Backoff starts at 1s and doubles with each additional failure, capped at 60s.
 - **CircuitOpen → Ready:** A successful tool call or health check resets the failure count and closes the circuit.
-- **CircuitOpen → Failed:** After 10 total circuit re-opens without recovery, the entry is marked Failed and requires manual reconnect (`reconnect_mcp_upstream`).
+- **CircuitOpen → Failed:** After the retry budget is exhausted, the entry is marked Failed with a 10-minute backoff. Health checks can recover it after that backoff; manual reconnect (`reconnect_mcp_upstream`) is also available.
 
 ## Health Checks
 
-A background task (`spawn_health_checker`) runs every 60 seconds and probes all `Ready` upstreams via `tools/list` (HTTP) or `is_alive()` process check (stdio). `CircuitOpen` upstreams whose backoff has expired are also probed for recovery.
+A background task (`spawn_health_checker`) runs every 60 seconds and probes all
+`Ready` upstreams. HTTP probes use `tools/list`. Stdio probes check the child:
+if alive, they refresh `tools/list`; if dead, they respawn it and repeat the full
+initialize handshake and tool discovery. The existing client mutex serializes
+calls and recovery, and the 5-second spawn rate limit still applies.
+`CircuitOpen` and `Failed` upstreams are eligible after their backoff expires;
+stuck `Connecting` entries repeat initialization. Successful recovery replaces
+the cached tools, resets the circuit breaker, clears `last_error`, and publishes
+the restored ready status/tool-list notification. Disabled and authentication
+states are not probed.
+
+Before this recovery path, a dead stdio process was only reported as not running:
+repeated health checks could not create a new process. Reply timeouts also tore
+down the child, so a slow action could cause a persistent upstream outage.
 
 ## HTTP Client (`http_client.rs`)
 
@@ -149,7 +162,7 @@ Spawns a local process and communicates via newline-delimited JSON-RPC on stdin/
 
 1. **`spawn_and_initialize()`** — Rate-limited (minimum 5s between spawns), clears any existing process, spawns a new child with a sanitized environment, runs the MCP handshake.
 2. **`call_tool(name, args)`** — Sends `tools/call` JSON-RPC via stdin, reads response from stdout.
-3. **`is_alive()`** — Non-blocking `try_wait()` check on the child process.
+3. **`is_alive()`** — Non-blocking `try_wait()` check on the child process. `health_check()` respawns a dead child through `spawn_and_initialize()`; a live child receives `tools/list`.
 4. **`shutdown()`** — Closes stdin (signals EOF), waits up to 2s for voluntary exit, then kills.
 
 ### Reading stdout
@@ -190,9 +203,16 @@ alike. It is not a per-message count. Server notifications and log messages arri
 between are skipped, however many there are: a chatty upstream must not lose a
 reply it answered correctly. Being out of time outranks having a line ready to
 parse, or an upstream that refills the queue faster than TUIC drains it would keep
-a call alive forever. On timeout the client is torn down, because a request we gave
-up on may still be answered later and that stale reply must not be handed to the
-next call as its own.
+a call alive forever.
+
+**Timeout rule:** a reply timeout fails only that request and leaves the process
+running. A long tool action is not evidence that its server has died. Request ids
+increase across calls; a late reply to an abandoned request is skipped until the
+current request's matching reply arrives. No action is automatically retried or
+cancelled: a timed-out action may still complete and its external outcome is
+unknown. Set the upstream's `timeout_secs` high enough to receive the result of a
+known long action. A write timeout still tears down the client, because a partial
+JSON-RPC frame cannot safely be reused and the blocked writer must be released.
 
 ### Environment Sanitization
 

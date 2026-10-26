@@ -21,7 +21,7 @@
   overflow-wrap: anywhere;
 }
 
-.item {
+button.item[data-control-layout="row"] {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -84,4 +84,9 @@
   position: static;
   max-height: 35vh;
   border-radius: 0;
+}
+
+.submit {
+  width: 100%;
+  justify-content: flex-start;
 }

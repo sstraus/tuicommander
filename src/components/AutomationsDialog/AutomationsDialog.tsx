@@ -3,6 +3,7 @@ import { t } from "../../i18n";
 import { appLogger } from "../../stores/appLogger";
 import { automationsUi, createAutomationsStore } from "../../stores/automations";
 import { registerModal } from "../../stores/modalStack";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { AutomationCard } from "./AutomationCard";
 import s from "./AutomationsDialog.module.css";
@@ -95,11 +96,16 @@ export function AutomationsDialog(props: { onClose: () => void; adapter?: Automa
 						<h2 id="automations-title">{t("automations.title", "Automations")}</h2>
 						<p>{t("automations.machine", "Scheduled agent runs on this machine")}</p>
 					</div>
-					<button type="button" aria-label={t("automations.close", "Close automations")} onClick={props.onClose}>
+					<Button
+						shape="icon"
+						type="button"
+						aria-label={t("automations.close", "Close automations")}
+						onClick={props.onClose}
+					>
 						<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
 							<path d="m3 2 5 5 5-5 1 1-5 5 5 5-1 1-5-5-5 5-1-1 5-5-5-5z" />
 						</svg>
-					</button>
+					</Button>
 				</header>
 				<Show when={store.error()}>
 					<div role="alert" class={`${s.error} ${s.banner}`}>
@@ -125,12 +131,12 @@ export function AutomationsDialog(props: { onClose: () => void; adapter?: Automa
 				</Show>
 				<Show when={tab() === "definitions"}>
 					<div class={s.toolbar}>
-						<button type="button" disabled={store.busy()} onClick={() => store.create()}>
+						<Button type="button" disabled={store.busy()} onClick={() => store.create()}>
 							{t("automations.new", "New automation")}
-						</button>
-						<button type="button" disabled={store.busy() || store.loading()} onClick={() => void store.refresh()}>
+						</Button>
+						<Button type="button" disabled={store.busy() || store.loading()} onClick={() => void store.refresh()}>
 							{t("automations.refresh", "Refresh")}
-						</button>
+						</Button>
 						<Input
 							ref={searchInput}
 							aria-label={t("automations.search", "Search automations")}
@@ -210,40 +216,40 @@ export function AutomationsDialog(props: { onClose: () => void; adapter?: Automa
 							>
 								<div class={s.actions}>
 									<Show when={!store.isNew()}>
-										<button
+										<Button
 											type="button"
 											disabled={store.busy()}
 											onClick={() => void store.setEnabled(!store.draft()?.enabled)}
 										>
 											{store.draft()?.enabled ? t("automations.pause", "Pause") : t("automations.resume", "Resume")}
-										</button>
-										<button type="button" disabled={store.busy()} onClick={() => void store.runNow()}>
+										</Button>
+										<Button type="button" disabled={store.busy()} onClick={() => void store.runNow()}>
 											{t("automations.runNow", "Run now")}
-										</button>
+										</Button>
 									</Show>
-									<button type="button" class={s.primary} disabled={store.busy()} onClick={() => void store.save()}>
+									<Button type="button" variant="primary" disabled={store.busy()} onClick={() => void store.save()}>
 										{t("automations.save", "Save")}
-									</button>
+									</Button>
 									<Show when={!store.isNew()}>
-										<button
+										<Button
 											type="button"
-											class={s.danger}
+											variant="danger"
 											disabled={store.busy()}
 											onClick={() => setConfirmDelete(true)}
 										>
 											{t("automations.delete", "Delete")}
-										</button>
+										</Button>
 									</Show>
 								</div>
 								<Show when={confirmDelete()}>
 									<div class={s.confirm} role="group" aria-label={t("automations.confirmDelete", "Confirm delete")}>
 										<p>{t("automations.deleteHint", "Delete this automation? Saved run history is kept.")}</p>
-										<button type="button" class={s.danger} disabled={store.busy()} onClick={() => void store.remove()}>
+										<Button type="button" variant="danger" disabled={store.busy()} onClick={() => void store.remove()}>
 											{t("automations.confirmDelete", "Confirm delete")}
-										</button>
-										<button type="button" onClick={() => setConfirmDelete(false)}>
+										</Button>
+										<Button type="button" onClick={() => setConfirmDelete(false)}>
 											{t("automations.cancel", "Cancel")}
-										</button>
+										</Button>
 									</div>
 								</Show>
 								<Show when={store.draft()?.id} keyed>

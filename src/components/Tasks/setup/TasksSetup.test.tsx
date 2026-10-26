@@ -7,6 +7,7 @@ const reloadPlugin = vi.fn();
 vi.mock("../../../invoke", () => ({ invoke: (...args: unknown[]) => invoke(...args) }));
 vi.mock("../../../plugins/pluginLoader", () => ({ reloadPlugin: (...args: unknown[]) => reloadPlugin(...args) }));
 
+import { appLogger } from "../../../stores/appLogger";
 import { pluginStore } from "../../../stores/pluginStore";
 import { TasksSetup } from "./TasksSetup";
 
@@ -34,6 +35,7 @@ beforeEach(() => {
 afterEach(() => {
 	cleanup();
 	pluginStore.clear();
+	vi.restoreAllMocks();
 });
 
 describe("Tasks setup", () => {
@@ -87,6 +89,7 @@ describe("Tasks setup", () => {
 
 	// Catches: a save error being swallowed, leaving the form looking saved.
 	it("shows a save failure", async () => {
+		const logged = vi.spyOn(appLogger, "error").mockImplementation(() => {});
 		pluginStore.registerPlugin("github-work", { loaded: true });
 		invoke.mockImplementation(async (command: string) => {
 			if (command === "write_plugin_data") throw new Error("disk full");
@@ -98,6 +101,11 @@ describe("Tasks setup", () => {
 		fireEvent.input(screen.getByLabelText("Repository"), { target: { value: "owner/repo" } });
 		fireEvent.click(save);
 		expect(await screen.findByText(/disk full/)).toBeInTheDocument();
+		expect(logged).toHaveBeenCalledWith(
+			"plugin",
+			"Failed to save the GitHub Work setup",
+			expect.objectContaining({ message: "disk full" }),
+		);
 		expect(reloadPlugin).not.toHaveBeenCalled();
 	});
 

@@ -4,6 +4,7 @@ import { appLogger } from "../../stores/appLogger";
 import { repositoriesStore } from "../../stores/repositories";
 import { onClickKeyDown } from "../../utils/a11y";
 import { relativeTime } from "../../utils/time";
+import { Button } from "../ui/Button";
 import type { OpenDiffFn } from "./GitPanel";
 import s from "./HistoryTab.module.css";
 import type { CommitLogEntry } from "./types";
@@ -163,8 +164,7 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
 							{/* Load more button */}
 							<Show when={hasMore() && commits().length > 0}>
 								<div class={s.loadMore}>
-									<button
-										class={s.loadMoreBtn}
+									<Button
 										onClick={(e) => {
 											e.stopPropagation();
 											loadMore();
@@ -172,7 +172,7 @@ export const HistoryTab: Component<HistoryTabProps> = (props) => {
 										disabled={loadingMore()}
 									>
 										{loadingMore() ? "Loading..." : "Load more"}
-									</button>
+									</Button>
 								</div>
 							</Show>
 						</div>

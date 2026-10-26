@@ -105,7 +105,7 @@ For unrecognized agents, silence-based detection kicks in — if the terminal st
 
 ## Launch Instructions (TUIC Output Markers)
 
-TUICommander generates a launch playbook through the agent's native instruction channel: Markers, Working with the user, Waiting and long work, Git and worktrees, Process safety, and Children. The Children module is included only for spawned children; children do not receive follow-up suggestions. MCP initialize instructions retain live discovery, but do not repeat playbook obligations for launch-capable agents. Other clients retain the MCP marker fallback.
+TUICommander generates a launch playbook through the agent's native instruction channel: Markers, Working with the user, Waiting and long work, Git and worktrees, Process safety, and Children. The Children module is included only for spawned children; children do not receive follow-up suggestions. MCP initialize instructions retain live discovery, but do not repeat playbook obligations for launch-capable agents. Other clients retain the MCP marker fallback. When mdkb is installed, the launch playbook also carries a fixed "Code search" rule that tells the agent to search with MDKB first; without mdkb it is absent. TUICommander checks once when it writes the launch files (startup, settings change, mdkb install or uninstall).
 
 | Agent | Channel |
 |---|---|
@@ -325,6 +325,8 @@ echo "Last run: $(date)" > "/tmp/tuic-$TUIC_SESSION.log"
 
 When TUICommander restores saved terminals after a restart, only tabs that had an active agent session (`agentType` set) are restored. Plain shell tabs are discarded and a fresh terminal is spawned instead. For agent tabs, TUICommander checks whether the session file exists on disk before deciding the resume strategy:
 
+Resume command reconstruction removes expired TUIC attachment-directory grants. It resolves the configuration root on both sides, so a native Windows path or a configuration-directory alias does not retain an old grant. User-supplied directory grants stay unchanged.
+
 1. **Verified session** — If the terminal's saved agent session ID maps to an existing session file (e.g. `~/.claude/projects/…/<uuid>.jsonl`), the agent resumes with that agent's ID-specific command. On Windows, Claude's project slug replaces the drive colon with a dash: `C:\Users\foo\bar` becomes `C--Users-foo-bar`.
 2. **No saved session ID** — Falls back to the agent's default resume behavior (e.g. `claude --continue` for the last session)
 3. **Saved ID no longer verifies** — Refuses automatic resume instead of opening an unrelated last session
@@ -394,3 +396,21 @@ ego output is not hidden by an earlier submitted prompt during composer repaint.
 ## Settings startup and Ego transport
 
 Assisted configuration uses the published Settings owner contract, not agent-session keystrokes or direct credential-file edits. Ego AI Chat uses ACP; a missing settings owner or ACP capability does not select a PTY fallback. Typed Settings `begin_login` opens a human-operated terminal using the configured Ego executable/workspace. `login_status` reads credential presence after termination; an exited command is not proof of authentication. See [Settings startup workflows](../backend/settings-startup.md#ego).
+
+### Usage in the mobile session menu
+
+Open **More session actions** to load usage for that session. Claude and Codex
+show **Account quota** and reported reset times for the live session profile.
+These are shared account windows, not the selected model's session spend.
+
+ego shows **Session usage** from its own durable ledger, with **Cost** when
+reported. Terminal usage uses the terminal executable and does not require the
+AI Chat ego executable setting. **API-equivalent estimate** is a subscription estimate, not money
+spent. Unknown/partial costs retain their reasons. Session totals can include
+more than one model; the model label is ego's latest admitted model.
+
+The menu shows **Usage: loading…**, **Usage not available**, or an explicit
+stale label as applicable. **Model unavailable** means no verified model is
+available; it does not substitute a global default. The old terminal warning
+percentage is not presented as a fresh usage measurement. Remote sessions
+read their owning daemon's usage. No local account is used for a remote PTY.

@@ -1,5 +1,6 @@
 /* Shared Editor Header (CodeEditorTab, MarkdownTab) */
 .header {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
@@ -26,36 +27,6 @@
   border-radius: 50%;
   background: var(--warning);
   flex-shrink: 0;
-}
-
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-}
-
-.btn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn.active {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border-color: var(--accent);
 }
 
 .btn svg {

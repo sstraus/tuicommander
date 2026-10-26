@@ -135,6 +135,13 @@ cell's full text span, since native search points have no subcell index.
 - **`send_grid_frame` clone guard:** Frame is only cloned for the `grid_watch` channel when `receiver_count() > 0` (i.e. WS clients connected). Desktop-only path (Tauri Channel) is zero-copy.
 - **Raw bytes over the IPC:** the channel carries `tauri::ipc::Response`, not `Vec<u8>`. A bare `Vec<u8>` matches Tauri's blanket `IpcResponse` impl and is serialised as a JSON array of decimal numbers — a 110 KB frame becomes a ~250 KB string plus an extra IPC round trip, and JS receives a `number[]` to walk instead of an `ArrayBuffer`. Same for `terminal_styled_rows`. `toBinaryPayload` still accepts `number[]`, because Tauri's postMessage fallback (custom-protocol IPC blocked) delivers that shape.
 - **Frame acks are counters, not a flag:** the frontend echoes its total receipt count, so an ack for a frame the ticker already abandoned is a number in the past and cannot release a burst. See `tuic-terminal/src/grid_gate.rs` for pure ordering and `src-tauri/src/grid_watch.rs` for the Tokio adapter.
+- **Receipts are not damage:** desktop ACKs only release the gate. Paused ticks
+  retain actual damage, and a missed-frame recovery sends its
+  private full frame only to desktop and its delta only to browsers, without
+  offering the same snapshot to desktop twice; normal output batching and input quotas are unchanged.
+- **Retained input retry:** newer reader damage that arrives during a send keeps
+  its retry on the existing ticker. This does not add input credits, relax the
+  8 ms spacing or expiry, bypass desktop receipts, or change synchronized output.
 - **Visibility batches:** `IntersectionObserver` can deliver multiple states for
   a terminal in one callback after resize/layout changes. `latestIntersectionVisibility`
   selects the greatest `entry.time` (last entry wins ties), so a transient hidden
@@ -185,7 +192,7 @@ cell's full text span, since native search points have no subcell index.
 
 | Feature | Status | Notes |
 |---------|--------|-------|
-| Mouse wheel scroll | OK | `terminal_scroll` IPC |
+| Mouse wheel scroll | OK | Scrollback: fractional smooth scroll (`wheelDeltaToPixels` → `handleScrollDelta` → `applySmoothScroll`, acceleration capped at 2x via `gestureAccelFactor`), flushed through coalesced `terminal_scroll_to_anchor`. App-forwarded: whole-notch quantization (`quantizeWheelNotches` in `canvasTerminalWheel.ts`) written via `write_pty` as SGR notches |
 | Scrollbar visibility | OK | Shows when `historySize > 0` |
 | Scrollbar thumb drag | OK | Custom implementation |
 | Scrollbar track click-to-position | OK | |

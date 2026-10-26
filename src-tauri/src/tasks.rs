@@ -383,7 +383,10 @@ mod tests {
         assert!(!ids.contains(&cancelled));
         assert!(!ids.contains(&other_session));
         assert!(!ids.contains(&sessionless));
-        assert!(reg.live_ids_for_session("unknown-session").is_empty());
+        assert_eq!(
+            reg.live_ids_for_session("unknown-session"),
+            [] as [std::string::String; 0]
+        );
     }
 
     #[test]

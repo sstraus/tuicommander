@@ -22,6 +22,7 @@ fn request() -> Value {
         "workspace":{"existing_path":std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().unwrap()},
         "spawn":{"binary_path":"/bin/sh", "prompt":"perform task", "args":["-c", "exec cat", "{prompt}"]}})
 }
+#[cfg(unix)]
 fn close(state: &Arc<AppState>, id: &str) {
     super::super::mcp_transport_session_agent::handle_session(
         state,
@@ -29,6 +30,7 @@ fn close(state: &Arc<AppState>, id: &str) {
         None,
     );
 }
+#[cfg(unix)]
 fn repo(root: &std::path::Path) -> PathBuf {
     let repo = root.join("repo");
     std::fs::create_dir(&repo).unwrap();

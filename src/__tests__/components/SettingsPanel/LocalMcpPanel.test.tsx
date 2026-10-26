@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@solidjs/testing-library";
+import { fireEvent, render, within } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../../../stores/appLogger", () => ({
@@ -38,7 +38,14 @@ const nativeTools = [
 	"secret",
 	"progress",
 	"telegram",
-].map((name) => ({ name, title: name, description: `${name} full description`, optional: true }));
+].map((name) => ({
+	name,
+	title: name,
+	description: `${name} full description`,
+	domain: name,
+	parent: null,
+	section: "always",
+}));
 
 describe("LocalMcpPanel", () => {
 	beforeEach(() => {
@@ -108,6 +115,44 @@ describe("LocalMcpPanel", () => {
 		view.unmount();
 	});
 
+	// Catches: core permissions hidden in a disclosure, children promoted to domain rows,
+	// or unavailable domains omitted so the user cannot configure them.
+	it("shows domain sections with visible nested switches and backend availability", async () => {
+		const base = vi.mocked(rpc).getMockImplementation();
+		const capabilities = [
+			{ name: "agent", domain: "agent", parent: null, section: "always" },
+			{ name: "agent_tasks", domain: "agent", parent: "agent", section: "always" },
+			{ name: "diagnostics", domain: "debug", parent: null, section: "rare" },
+			{
+				name: "voice",
+				domain: "voice",
+				parent: null,
+				section: "conditional",
+				available: false,
+				availability: "Voice is not configured",
+			},
+		].map((capability) => ({ ...capability, title: capability.name, description: capability.name + " help" }));
+		vi.mocked(rpc).mockImplementation((command, args) =>
+			command === "get_mcp_status" ? Promise.resolve({ native_capabilities: capabilities }) : base!(command, args),
+		);
+		const view = render(() => <LocalMcpPanel />);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(view.container.querySelector("details")).toBeNull();
+		expect(
+			within(view.getByRole("region", { name: "Always listed" })).getByRole("group", { name: "agent" }),
+		).toBeDefined();
+		expect(
+			within(view.getByRole("group", { name: "agent" })).getByRole("checkbox", { name: "agent_tasks" }),
+		).toBeDefined();
+		expect(
+			within(view.getByRole("region", { name: "Rarely needed" })).getByRole("checkbox", { name: "diagnostics" }),
+		).toBeDefined();
+		expect(
+			within(view.getByRole("region", { name: "Conditional" })).getByText("Voice is not configured"),
+		).toBeDefined();
+		view.unmount();
+	});
+
 	// Catches: sibling edits drop migrated action denials or unresolved migration diagnostics.
 	it("preserves migrated restrictions and unknown names across edits and reload", async () => {
 		let saved = {
@@ -117,12 +162,16 @@ describe("LocalMcpPanel", () => {
 			},
 			settings_mcp_enabled: false,
 		};
-		const capabilities = ["agent", "agent_tasks", "workflow.reports", "diagnostics", "settings"].map((name) => ({
-			name,
-			title: name,
-			description: name + " help",
-			optional: true,
-		}));
+		const capabilities = ["agent", "agent_tasks", "workflow", "workflow.reports", "diagnostics", "settings"].map(
+			(name) => ({
+				name,
+				title: name,
+				description: name + " help",
+				domain: name === "agent_tasks" ? "agent" : name.startsWith("workflow.") ? "workflow" : name,
+				parent: name === "agent_tasks" ? "agent" : name.startsWith("workflow.") ? "workflow" : null,
+				section: "always",
+			}),
+		);
 		vi.mocked(rpc).mockImplementation(async (command) =>
 			command === "load_config"
 				? structuredClone(saved)

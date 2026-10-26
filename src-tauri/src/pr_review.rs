@@ -224,7 +224,7 @@ mod tests {
         let parsed = parse_review_output(r#"{"summary":"all fine","files":[]}"#, 0.7).unwrap();
 
         assert_eq!(parsed.summary.as_deref(), Some("all fine"));
-        assert!(parsed.files.is_empty());
+        assert_eq!(parsed.files, [] as [tuic_git::pr_review::ReviewedFile; 0]);
     }
 
     #[test]

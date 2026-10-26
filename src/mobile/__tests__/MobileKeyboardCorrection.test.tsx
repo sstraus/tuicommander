@@ -51,20 +51,20 @@ it("persists the Settings toggle across reloads and updates an open composer", (
 			</>
 		));
 	mount();
-	const toggle = () => screen.getByRole("button", { name: "Autocorrect and spellcheck" });
-	expect(toggle().getAttribute("aria-pressed")).toBe("true");
+	const toggle = () => screen.getByRole("switch", { name: "Autocorrect and spellcheck" });
+	expect((toggle() as HTMLInputElement).checked).toBe(true);
 	fireEvent.click(toggle());
 	expectCorrection(false);
 	expect(localStorage.getItem("tuic-mobile-keyboard-correction")).toBe("false");
 	cleanup();
 	mount();
-	expect(toggle().getAttribute("aria-pressed")).toBe("false");
+	expect((toggle() as HTMLInputElement).checked).toBe(false);
 	expectCorrection(false);
 	fireEvent.click(toggle());
 	expectCorrection(true);
 	expect(localStorage.getItem("tuic-mobile-keyboard-correction")).toBe("true");
 	cleanup();
 	mount();
-	expect(toggle().getAttribute("aria-pressed")).toBe("true");
+	expect((toggle() as HTMLInputElement).checked).toBe(true);
 	expectCorrection(true);
 });

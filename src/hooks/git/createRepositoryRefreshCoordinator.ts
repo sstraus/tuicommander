@@ -44,6 +44,8 @@ interface RepositoryRefreshCoordinatorDeps {
 		getInfo: (path: string) => Promise<{ branch: string; is_git_repo: boolean }>;
 		getRepoStructure: (repoPath: string) => Promise<{
 			worktree_paths: Record<string, import("../useRepository").WorkspaceWorktree>;
+			detached_worktrees?: import("../useRepository").DetachedWorktree[];
+			worktree_diagnostics?: import("../useRepository").WorktreeDiagnostic[];
 			merged_branches: string[];
 		}>;
 		getRepoDiffStats: (repoPath: string) => Promise<{
@@ -273,6 +275,8 @@ export function createRepositoryRefreshCoordinator(deps: RepositoryRefreshCoordi
 
 		const currentRepo = repositoriesStore.get(repoPath);
 		if (!currentRepo) return;
+		repositoriesStore.setDetachedWorktrees(repoPath, structure.detached_worktrees ?? []);
+		repositoriesStore.setWorktreeDiagnostics(repoPath, structure.worktree_diagnostics ?? []);
 
 		if (Object.keys(worktreePaths).length === 0) {
 			// Worktrees came back empty — either a transient backend error or the
@@ -558,7 +562,10 @@ export function createRepositoryRefreshCoordinator(deps: RepositoryRefreshCoordi
 			do {
 				const now = Date.now();
 				const startedAt = refreshStartedAt.get(repoPath);
-				const remaining = startedAt === undefined ? 0 : MIN_REFRESH_INTERVAL_MS - (now - startedAt);
+				// A start stamped in the future means the clock went back: refresh now rather
+				// than wait out the whole skew.
+				const sinceStart = startedAt === undefined ? Number.POSITIVE_INFINITY : now - startedAt;
+				const remaining = sinceStart < 0 ? 0 : MIN_REFRESH_INTERVAL_MS - sinceStart;
 				if (remaining > 0 && !refreshImmediate.has(repoPath)) {
 					await new Promise<void>((resolve) => {
 						const timer = setTimeout(resolve, remaining);

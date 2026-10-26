@@ -81,6 +81,7 @@ async fn parallel_plan_runs_share_project_reservations() {
         .unwrap();
     let second = stories
         .create_story(NewStory {
+            story_type: None,
             plan_id: plan.id,
             title: "Second".into(),
             criteria: vec!["Done".into()],
@@ -329,4 +330,58 @@ fn duplicate_plan_start_concurrent_requests_name_the_winner() {
         vec![winner.clone()]
     );
     assert_eq!(store.replay(&winner.id).unwrap(), winner);
+}
+
+/// Catches: ready stories reserved by a running or paused graph accepting amendments.
+#[test]
+fn update_story_refuses_running_and_paused_workflow_reservations() {
+    let (_config, project, _plan, story_id, _template, _guard) = fixture();
+    let store = RunStore::open().unwrap();
+    let published = definition(project.path().to_str().unwrap(), false, true);
+    let run = store
+        .start_graph_run(&request(
+            project.path().to_str().unwrap(),
+            &story_id,
+            &published,
+            "amendment-reservation",
+        ))
+        .unwrap();
+    let stories = StoryStore::open().unwrap();
+    let original = stories.get_story(&story_id).unwrap();
+    for paused in [false, true] {
+        if paused {
+            store
+                .command(&run.id, "pause-amendment", RunCommand::Pause)
+                .unwrap();
+        }
+        let error = stories
+            .update_story(
+                &story_id,
+                original.revision,
+                crate::stories::StoryPatch {
+                    priority: Some(3),
+                    ..Default::default()
+                },
+            )
+            .unwrap_err();
+        assert!(error.contains("reserved"), "{error}");
+        assert_eq!(stories.get_story(&story_id).unwrap(), original);
+    }
+    store
+        .command(&run.id, "cancel-amendment", RunCommand::Cancel)
+        .unwrap();
+    assert_eq!(
+        stories
+            .update_story(
+                &story_id,
+                original.revision,
+                crate::stories::StoryPatch {
+                    priority: Some(3),
+                    ..Default::default()
+                }
+            )
+            .unwrap()
+            .priority,
+        3
+    );
 }

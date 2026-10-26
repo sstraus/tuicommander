@@ -81,14 +81,77 @@ impl ToolSearchIndex {
         &self.generation
     }
 
-    /// Search for tools matching a query string, returning up to `limit` results
-    /// ranked by BM25 relevance score.
+    /// Rank plain words with BM25; require every `+term` in the tool name.
+    /// `select:<name>` performs exact selection without ranked fallback.
     pub fn search(&self, query: &str, limit: usize) -> Vec<&ToolEntry> {
-        let results: Vec<SearchResult<u32>> = self.engine.search(query, limit);
+        if limit == 0 {
+            return Vec::new();
+        }
+        let query = query.trim();
+        if let Some(name) = query.strip_prefix("select:") {
+            return self
+                .entries
+                .iter()
+                .find(|e| e.name == name)
+                .into_iter()
+                .collect();
+        }
+
+        let mut required = Vec::new();
+        let mut optional = Vec::new();
+        for word in query.split_whitespace() {
+            match word.strip_prefix('+').filter(|term| !term.is_empty()) {
+                Some(term) => required.push(term.to_lowercase()),
+                None => optional.push(word),
+            }
+        }
+        if required.is_empty() {
+            let results: Vec<SearchResult<u32>> = self.engine.search(query, limit);
+            return results
+                .into_iter()
+                .filter_map(|r| self.entries.get(r.document.id as usize))
+                .collect();
+        }
+
+        let matches: Vec<bool> = self
+            .entries
+            .iter()
+            .map(|entry| {
+                let name = entry.name.to_lowercase();
+                required.iter().all(|term| name.contains(term))
+            })
+            .collect();
+        let rank_query = if optional.is_empty() {
+            required.join(" ")
+        } else {
+            optional.join(" ")
+        };
+        // Search the whole corpus before filtering: a description-only hit
+        // must not consume the requested limit and hide a valid name match.
+        let ranked = self.engine.search(&rank_query, self.entries.len());
+        let mut seen = vec![false; self.entries.len()];
+        let mut results = Vec::new();
+        for hit in ranked {
+            let id = hit.document.id as usize;
+            if matches[id] {
+                seen[id] = true;
+                results.push(&self.entries[id]);
+                if results.len() == limit {
+                    return results;
+                }
+            }
+        }
+        // Plain words are optional. Name matches without a BM25 token hit
+        // (including alias substrings) remain eligible in catalogue order.
+        results.extend(
+            self.entries
+                .iter()
+                .enumerate()
+                .filter(|(id, _)| matches[*id] && !seen[*id])
+                .map(|(_, entry)| entry)
+                .take(limit - results.len()),
+        );
         results
-            .into_iter()
-            .filter_map(|r| self.entries.get(r.document.id as usize))
-            .collect()
     }
 
     /// Get the full tool definition by exact name match.
@@ -205,6 +268,59 @@ mod tests {
         let index = ToolSearchIndex::build(&sample_tools());
         let results = index.search("unknown xyz123 zzzzz", 3);
         assert!(results.is_empty(), "Expected no results for nonsense query");
+    }
+
+    // Catches OR-ing required terms, ignoring alias prefixes, or treating optional words as required.
+    #[test]
+    fn required_name_terms_all_match_including_alias_prefixes() {
+        let mut tools = sample_tools();
+        tools[1]["name"] = json!("tuicommander__repo");
+        let index = ToolSearchIndex::build(&tools);
+        for query in [
+            "+tuicommander +repo",
+            "+repo +tuicommander status",
+            "+TUICOMMANDER +REPO zzzunknown",
+        ] {
+            let names: Vec<_> = index
+                .search(query, 1)
+                .iter()
+                .map(|e| e.name.as_str())
+                .collect();
+            assert_eq!(names, ["tuicommander__repo"], "query: {query}");
+        }
+        assert!(index.search("+tuicommander +session", 10).is_empty());
+    }
+
+    // Catches dropping optional-word ranking after required names have been filtered.
+    #[test]
+    fn optional_words_rank_required_name_matches_before_limit() {
+        let index = ToolSearchIndex::build(&sample_tools());
+        let results = index.search("+o analytics costs", 1);
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "okm__get_claudecode_overview");
+    }
+
+    // Catches description-only fallback when a required name has no match.
+    #[test]
+    fn missing_required_name_never_returns_ranked_fallback() {
+        let index = ToolSearchIndex::build(&sample_tools());
+        assert!(index.search("+nonexistent terminal session", 10).is_empty());
+        assert!(index.search("+terminal", 10).is_empty());
+        assert!(index.search("+repo", 0).is_empty());
+    }
+
+    // Catches interpreting select as BM25 text, including fallback for absent exact names.
+    #[test]
+    fn select_name_is_exact_not_a_ranked_query() {
+        let index = ToolSearchIndex::build(&sample_tools());
+        let names: Vec<_> = index
+            .search("select:repo", 10)
+            .iter()
+            .map(|e| e.name.as_str())
+            .collect();
+        assert_eq!(names, ["repo"]);
+        assert!(index.search("select:repos", 10).is_empty());
+        assert!(index.search("select:repo", 0).is_empty());
     }
 
     #[test]

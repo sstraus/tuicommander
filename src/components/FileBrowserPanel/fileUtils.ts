@@ -4,9 +4,12 @@ import g from "../shared/git-status.module.css";
 
 /** Hover tooltip for a file/dir row: relative path plus last-modified time. */
 export function fileTooltip(entry: DirEntry): string {
+	const path = entry.symlink_target_kind
+		? `${entry.path}\n${entry.symlink_target_kind} link → ${entry.symlink_target ?? "Target unavailable"}`
+		: entry.path;
 	// modified_at is seconds since the epoch (see DirEntry); formatRelativeTime wants ms.
-	if (!entry.modified_at) return entry.path;
-	return `${entry.path}\nModified ${formatRelativeTime(entry.modified_at * 1000)}`;
+	if (!entry.modified_at) return path;
+	return `${path}\nModified ${formatRelativeTime(entry.modified_at * 1000)}`;
 }
 
 /** Map git_status string to CSS class for status dot */

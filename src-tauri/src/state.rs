@@ -392,6 +392,8 @@ pub enum AppEvent {
     /// every save — including the client that just wrote it.
     #[serde(rename = "repositories-changed")]
     RepositoriesChanged,
+    #[serde(rename = "ideas-changed")]
+    IdeasChanged,
     #[serde(rename = "settings-changed")]
     SettingsChanged(crate::settings::changes::SettingsChanged),
     #[serde(rename = "open-markdown-tabs-changed")]
@@ -429,6 +431,8 @@ pub enum AppEvent {
         /// is working in, not to whichever repo has focus in the frontend.
         #[serde(skip_serializing_if = "Option::is_none")]
         origin_repo_path: Option<String>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        opener_tuic_session: Option<String>,
     },
     /// GitHub PR statuses updated for a repo (from Rust poller)
     #[serde(rename = "github-pr-update")]
@@ -2335,6 +2339,8 @@ pub struct AppState {
     /// Updated by `start_server` after successful bind.
     #[cfg(unix)]
     pub(crate) bound_socket_path: parking_lot::RwLock<std::path::PathBuf>,
+    /// A live TLS serving task owns the strong token; capability detection does not.
+    pub(crate) tls_listener: parking_lot::RwLock<std::sync::Weak<()>>,
     /// Tailscale daemon state (detected at server startup)
     pub(crate) tailscale_state: parking_lot::RwLock<crate::tailscale::TailscaleState>,
     /// Push notification subscription store
@@ -3813,6 +3819,7 @@ impl AppState {
             orchestrator_peers: DashSet::new(),
             #[cfg(unix)]
             bound_socket_path: parking_lot::RwLock::new(std::path::PathBuf::new()),
+            tls_listener: parking_lot::RwLock::new(std::sync::Weak::new()),
             tailscale_state: parking_lot::RwLock::new(
                 crate::tailscale::TailscaleState::NotInstalled,
             ),
@@ -4305,13 +4312,13 @@ pub(crate) struct GitCacheState {
     pub(crate) branches_detail: GitCache<Vec<crate::git::BranchDetail>>,
     pub(crate) github_status: GitCache<Vec<crate::github::BranchPrStatus>>,
     pub(crate) git_status: GitCache<crate::github::GitHubStatus>,
-    pub(crate) worktree_paths:
-        GitCache<std::collections::HashMap<String, crate::worktree::WorkspaceWorktree>>,
-    /// Repos that returned null from GitHub GraphQL (not found / no access).
+    pub(crate) worktree_paths: GitCache<crate::worktree::WorktreeInventory>,
+    /// Repos explicitly reported NOT_FOUND by GitHub GraphQL.
     /// Keyed by "owner/name", value is the cooldown expiry time.
-    /// Excluded from batch queries until the cooldown expires (1 hour).
+    /// Excluded from batch queries until the cooldown expires (24 hours).
     /// NOT a TTL value cache — kept as a plain `DashMap` set with custom expiry.
     pub(crate) github_repo_cooldown: DashMap<String, Instant>,
+    pub(crate) github_repo_access_errors: DashMap<String, crate::github::RepoAccessFailure>,
     /// Settled review-thread totals of PRs with more threads than the batch poll reads, keyed by
     /// "host/owner/name#number". Not a TTL cache: an entry is valid while the PR's `updatedAt` and head
     /// are unchanged and it is younger than `SETTLED_THREADS_TTL`.
@@ -4333,6 +4340,7 @@ impl GitCacheState {
             git_status: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
             worktree_paths: build_git_cache(GIT_CACHE_TTL, Arc::clone(&ttl_fallbacks)),
             github_repo_cooldown: DashMap::new(),
+            github_repo_access_errors: DashMap::new(),
             settled_review_threads: DashMap::new(),
             ttl_fallbacks,
         }
@@ -4587,6 +4595,15 @@ impl AppState {
         #[cfg(feature = "desktop")]
         if let Some(ref app) = *self.app_handle.read() {
             let _ = app.emit("repositories-changed", serde_json::json!({}));
+        }
+    }
+
+    /// Ideas are persisted before either transport is told to reload.
+    pub(crate) fn notify_ideas_changed(&self) {
+        let _ = self.event_bus.send(AppEvent::IdeasChanged);
+        #[cfg(feature = "desktop")]
+        if let Some(ref app) = *self.app_handle.read() {
+            let _ = app.emit("ideas-changed", serde_json::json!({}));
         }
     }
 
@@ -5128,7 +5145,19 @@ impl AppState {
                         .session_maps
                         .silence_states
                         .get(session_id)
-                        .map(|sl| sl.lock().record_awaiting(rank, source))
+                        .map(|sl| {
+                            let mut silence = sl.lock();
+                            // Progress is a conversational wait, not ownership of
+                            // native dialog controls. A late report must not
+                            // relabel a live approval as a queued-answer target.
+                            if source == "progress-blocked"
+                                && silence.awaiting_rank() == Some(crate::pty::EvidenceRank::Protocol)
+                                && silence.awaiting_source() != Some("progress-blocked")
+                            {
+                                return false;
+                            }
+                            silence.record_awaiting(rank, source)
+                        })
                         .unwrap_or(true)
                 });
                 let push_ready = matches!(event_type, "question" | "choice-prompt") && {
@@ -5532,6 +5561,7 @@ impl AppState {
             | AppEvent::McpConfirmResolved { .. }
             | AppEvent::OpenMarkdownTabsChanged
             | AppEvent::SettingsChanged(_)
+            | AppEvent::IdeasChanged
             | AppEvent::RepositoriesChanged
             | AppEvent::DirChanged { .. }
             | AppEvent::SessionWorktreeDeclared { .. }
@@ -5657,7 +5687,6 @@ pub(crate) mod tests_support {
     /// A live `sessions` entry backed by a real PTY. `live_pty_for_peer` filters on
     /// liveness, so a resolver test needs a session that genuinely exists rather
     /// than a stub the filter would reject.
-    #[cfg(unix)]
     pub fn insert_dummy_session(state: &AppState, session_id: &str) {
         use portable_pty::{CommandBuilder, PtySize, native_pty_system};
         let pair = native_pty_system()
@@ -5668,8 +5697,9 @@ pub(crate) mod tests_support {
                 pixel_height: 0,
             })
             .expect("openpty");
-        let mut command = CommandBuilder::new("/bin/sh");
-        command.args(["-c", "sleep 30"]);
+        let (shell, flag) = crate::test_support::host_shell();
+        let mut command = CommandBuilder::new(shell);
+        command.args([flag, &tuic_test_support::wait_for_stdin_script()]);
         let child = pair.slave.spawn_command(command).expect("spawn shell");
         let writer = pair.master.take_writer().expect("writer");
         state.session_maps.sessions.insert(
@@ -5687,7 +5717,7 @@ pub(crate) mod tests_support {
                 display_name_is_custom: false,
                 display_name_from_spawn: false,
                 is_remote: false,
-                shell: "/bin/sh".to_string(),
+                shell: shell.to_string(),
             }),
         );
     }
@@ -6362,7 +6392,7 @@ mod tests {
         );
         drop(inbox);
         let finish = state.finish_agent_wait(recipient, lease, 0, false);
-        assert!(finish.terminal_handoff.is_empty());
+        assert_eq!(finish.terminal_handoff, [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -6957,18 +6987,18 @@ mod tests {
         let finish = state.finish_agent_wait(recipient, lease, 0, true);
         assert_eq!(finish.fresh_count, 1);
         assert_eq!(finish.messages, vec![make_msg("during-wait")]);
-        assert!(finish.terminal_handoff.is_empty());
+        assert_eq!(finish.terminal_handoff, [] as [std::string::String; 0]);
         assert_eq!(
             state.agent_delivery_owner(recipient, "during-wait"),
             Some(AgentDeliveryOwner::WaiterObserved)
         );
 
         let lease = state.begin_agent_wait(recipient);
-        assert!(
+        assert_eq!(
             state
                 .finish_agent_wait(recipient, lease, 1, false)
-                .terminal_handoff
-                .is_empty()
+                .terminal_handoff,
+            [] as [std::string::String; 0]
         );
         state.push_agent_inbox(
             recipient,
@@ -8082,14 +8112,14 @@ mod tests {
     fn test_utf8_buffer_ascii() {
         let mut buf = Utf8ReadBuffer::new();
         assert_eq!(buf.push(b"hello world"), "hello world");
-        assert!(buf.remainder.is_empty());
+        assert_eq!(buf.remainder, [] as [u8; 0]);
     }
 
     #[test]
     fn test_utf8_buffer_complete_multibyte() {
         let mut buf = Utf8ReadBuffer::new();
         assert_eq!(buf.push("€100".as_bytes()), "€100");
-        assert!(buf.remainder.is_empty());
+        assert_eq!(buf.remainder, [] as [u8; 0]);
     }
 
     #[test]
@@ -8101,7 +8131,7 @@ mod tests {
 
         let result2 = buf.push(&[0x82, 0xAC]);
         assert_eq!(result2, "€");
-        assert!(buf.remainder.is_empty());
+        assert_eq!(buf.remainder, [] as [u8; 0]);
     }
 
     #[test]
@@ -8117,7 +8147,7 @@ mod tests {
 
         let result2 = buf.push(&bytes[2..]);
         assert_eq!(result2, "🦀");
-        assert!(buf.remainder.is_empty());
+        assert_eq!(buf.remainder, [] as [u8; 0]);
     }
 
     #[test]
@@ -8133,7 +8163,7 @@ mod tests {
         chunk2.extend_from_slice(b" world");
         let result2 = buf.push(&chunk2);
         assert_eq!(result2, "€ world");
-        assert!(buf.remainder.is_empty());
+        assert_eq!(buf.remainder, [] as [u8; 0]);
     }
 
     #[test]
@@ -8185,7 +8215,7 @@ mod tests {
         let out = buf.push(&binary);
         assert_eq!(out.chars().count(), 64 * 1024);
         assert!(out.chars().all(|c| c == '\u{FFFD}'));
-        assert!(buf.remainder.is_empty());
+        assert_eq!(buf.remainder, [] as [u8; 0]);
     }
 
     /// `len()` must track what `read_last` would actually return, which stops
@@ -8242,7 +8272,7 @@ mod tests {
     fn test_ring_buffer_empty() {
         let rb = OutputRingBuffer::new(16);
         let (data, total) = rb.read_last(16);
-        assert!(data.is_empty());
+        assert_eq!(data, [] as [u8; 0]);
         assert_eq!(total, 0);
     }
 
@@ -8352,7 +8382,7 @@ mod tests {
         let mut rb = OutputRingBuffer::new(16);
         rb.write(b"abc");
         let (data, _) = rb.read_since(3);
-        assert!(data.is_empty());
+        assert_eq!(data, [] as [u8; 0]);
     }
 
     #[test]
@@ -8360,7 +8390,7 @@ mod tests {
         let mut rb = OutputRingBuffer::new(16);
         rb.write(b"abc");
         let (data, total) = rb.read_since(999);
-        assert!(data.is_empty());
+        assert_eq!(data, [] as [u8; 0]);
         assert_eq!(total, 3);
     }
 
@@ -8752,7 +8782,7 @@ mod tests {
     fn test_strip_kitty_plain_text_passthrough() {
         let (out, actions) = strip_kitty_sequences("hello world");
         assert_eq!(out, "hello world");
-        assert!(actions.is_empty());
+        assert_eq!(actions, [] as [crate::state::KittyAction; 0]);
     }
 
     #[test]
@@ -8806,7 +8836,7 @@ mod tests {
         let input = "\x1b[<0;35;16M";
         let (out, actions) = strip_kitty_sequences(input);
         assert_eq!(out, input);
-        assert!(actions.is_empty());
+        assert_eq!(actions, [] as [crate::state::KittyAction; 0]);
     }
 
     #[test]
@@ -8815,7 +8845,7 @@ mod tests {
         let input = "\x1b[?1049h";
         let (out, actions) = strip_kitty_sequences(input);
         assert_eq!(out, input);
-        assert!(actions.is_empty());
+        assert_eq!(actions, [] as [crate::state::KittyAction; 0]);
     }
 
     #[test]
@@ -8824,7 +8854,7 @@ mod tests {
         let input = "\x1b[31mRed\x1b[0m";
         let (out, actions) = strip_kitty_sequences(input);
         assert_eq!(out, input);
-        assert!(actions.is_empty());
+        assert_eq!(actions, [] as [crate::state::KittyAction; 0]);
     }
 
     #[test]
@@ -8833,7 +8863,7 @@ mod tests {
         let input = "\x1b[31m\x1b[0mhello";
         let (out, actions) = strip_kitty_sequences(input);
         assert_eq!(out, input);
-        assert!(actions.is_empty());
+        assert_eq!(actions, [] as [crate::state::KittyAction; 0]);
     }
 
     #[test]
@@ -8850,7 +8880,7 @@ mod tests {
         let (out, actions) = strip_kitty_sequences(input);
         // The ESC is emitted, then [>u follows as normal text
         assert_eq!(out, input);
-        assert!(actions.is_empty());
+        assert_eq!(actions, [] as [crate::state::KittyAction; 0]);
     }
 
     #[test]
@@ -8859,7 +8889,7 @@ mod tests {
         let input = "╭──────╮\n│ hello │\n╰──────╯";
         let (out, actions) = strip_kitty_sequences(input);
         assert_eq!(out, input);
-        assert!(actions.is_empty());
+        assert_eq!(actions, [] as [crate::state::KittyAction; 0]);
     }
 
     #[test]
@@ -8892,7 +8922,7 @@ mod tests {
         use std::borrow::Cow;
         let input = "hello world";
         let (out, actions) = strip_kitty_sequences(input);
-        assert!(actions.is_empty());
+        assert_eq!(actions, [] as [crate::state::KittyAction; 0]);
         assert!(
             matches!(out, Cow::Borrowed(_)),
             "fast path should return Cow::Borrowed"
@@ -8905,7 +8935,7 @@ mod tests {
         use std::borrow::Cow;
         let input = "before\x1b[>1uafter";
         let (out, actions) = strip_kitty_sequences(input);
-        assert!(!actions.is_empty());
+        assert_ne!(actions, [] as [crate::state::KittyAction; 0]);
         assert!(
             matches!(out, Cow::Owned(_)),
             "slow path should return Cow::Owned"

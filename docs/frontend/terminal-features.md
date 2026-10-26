@@ -39,12 +39,28 @@ Consolidated reference for all terminal behaviors, keyboard shortcuts, and confi
 | Shift+Wheel | Force scrollback scroll, never sent to the app |
 
 **Wheel vs. mouse-reporting apps.** When an app enables mouse tracking, the wheel
-is forwarded to it as SGR mouse codes — both in the alternate screen (vim,
-lazygit, htop) **and** on the primary screen (e.g. `grok --no-alt-screen`).
-Those apps own the viewport and scroll their own conversation. Hold **Shift**
-to force TUIC scrollback scrolling regardless of mouse mode (consistent with
-Shift bypassing mouse reporting for clicks/selection). The scrollbar thumb
-always moves TUIC history.
+is forwarded to it as SGR mouse codes whenever mouse reporting is on, in **either**
+buffer — the alternate screen (vim, lazygit, htop) and inline fullscreen TUIs in the
+main buffer alike (e.g. `grok --no-alt-screen`, or Claude Code, which enables mouse
+tracking without switching to the alt screen). Hold **Shift** to force scrollback
+scrolling regardless of mouse mode (consistent with Shift bypassing mouse reporting
+for clicks/selection). The scrollbar thumb always moves TUIC history.
+
+**Quantization (forwarded to an app).** A physical wheel notch or trackpad flick
+delivers a burst of many small-delta DOM wheel events (macOS reports the whole
+momentum decay, not just the initial motion). The forwarded path accumulates those
+pixel deltas and emits one SGR notch per full line height crossed, capped at 3 notches
+per event in pixel mode (to match native terminal behavior for a single discrete mouse
+click); the residual resets on direction reversal and when the gesture goes idle
+(200 ms). Line-mode devices (`deltaMode` 1) are rounded to whole lines and clamped to
+the viewport row count; page-mode devices (`deltaMode` 2) emit `viewportRows - 1`
+notches per event.
+
+**Scrollback scrolling.** The scrollback path (no mouse reporting, or Shift held) is
+not quantized: pixel deltas, normalized from line/page mode, drive smooth fractional
+scrolling. Gesture acceleration ramps from 0.5x (first screenful of travel) to 1.0x
+(after 2 screens) and is capped at 2.0x (after 4 screens); it resets on direction
+reversal and when the gesture ends.
 
 ### Split Panes
 

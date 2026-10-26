@@ -1,5 +1,7 @@
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
+import { Switch as CheckboxSwitch } from "../ui/Switch";
 /**
  * The two questions an agent can block on, and the only answers it will take.
  *
@@ -104,18 +106,18 @@ const PermissionCard: Component<{
 			{/* The agent's own options, in the agent's own order. */}
 			<For each={props.request.options}>
 				{(option) => (
-					<button
+					<Button
 						type="button"
 						class={cx(s.approvalBtn, PERMISSION_CLASS[option.kind])}
 						onClick={() => props.onAnswer(props.requestId, option.optionId)}
 					>
 						{option.name}
-					</button>
+					</Button>
 				)}
 			</For>
-			<button type="button" class={s.approvalBtn} onClick={() => props.onDismiss(props.requestId)}>
+			<Button type="button" class={s.approvalBtn} onClick={() => props.onDismiss(props.requestId)}>
 				Dismiss
-			</button>
+			</Button>
 		</div>
 	</div>
 );
@@ -162,8 +164,8 @@ const ElicitationCard: Component<{
 								</Select>
 							</Match>
 							<Match when={field.type === "boolean"}>
-								<input
-									type="checkbox"
+								<CheckboxSwitch
+									role="checkbox"
 									checked={Boolean(values()[field.name])}
 									onChange={(event) => set(field.name, event.currentTarget.checked)}
 								/>
@@ -189,30 +191,30 @@ const ElicitationCard: Component<{
 			<div class={s.approvalActions}>
 				<For each={quickChoice()?.choices ?? []}>
 					{(choice) => (
-						<button
+						<Button
 							type="button"
 							class={s.approvalBtn}
 							onClick={() => props.onAccept(props.requestId, { [quickChoice()!.name]: choice })}
 						>
 							{choice === "trusted" ? "Trust" : choice === "untrusted" ? "Don't trust" : choice}
-						</button>
+						</Button>
 					)}
 				</For>
 				<Show when={!quickChoice()}>
-					<button
+					<Button
 						type="button"
 						class={cx(s.approvalBtn, s.approveBtn)}
 						onClick={() => props.onAccept(props.requestId, values())}
 					>
 						Submit
-					</button>
-					<button type="button" class={cx(s.approvalBtn, s.denyBtn)} onClick={() => props.onDecline(props.requestId)}>
+					</Button>
+					<Button type="button" class={cx(s.approvalBtn, s.denyBtn)} onClick={() => props.onDecline(props.requestId)}>
 						Decline
-					</button>
+					</Button>
 				</Show>
-				<button type="button" class={s.approvalBtn} onClick={() => props.onCancel(props.requestId)}>
+				<Button type="button" class={s.approvalBtn} onClick={() => props.onCancel(props.requestId)}>
 					Cancel
-				</button>
+				</Button>
 			</div>
 		</div>
 	);

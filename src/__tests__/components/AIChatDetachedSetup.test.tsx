@@ -29,7 +29,15 @@ vi.mock("../../themes", () => ({
 	applyFontFamily: vi.fn(),
 }));
 
+// Import setup is not the behavior deadline. Prepare both WebView module graphs
+// before the test starts, while keeping their settings stores independent.
+const { initPanelWindow } = await import("../../hooks/initPanelWindow");
+const { AIChatPanel } = await import("../../components/AIChatPanel/AIChatPanel");
+vi.resetModules();
+const { settingsStore: mainSettings } = await import("../../stores/settings");
+
 afterEach(() => {
+	vi.useRealTimers();
 	cleanup();
 	disposePanel?.();
 	window.history.replaceState({}, "", "/");
@@ -37,11 +45,8 @@ afterEach(() => {
 
 // Catches: detached settings stay stale after main-window setup, leaving chat inactive until the window is reopened.
 it("activates the already-open detached composer after ego is configured in the main window", async () => {
-	vi.resetModules();
 	localStorage.clear();
 	window.history.replaceState({}, "", "/?mode=panel&panel=ai-chat");
-	const { initPanelWindow } = await import("../../hooks/initPanelWindow");
-	const { AIChatPanel } = await import("../../components/AIChatPanel/AIChatPanel");
 	await createRoot((dispose) => {
 		disposePanel = dispose;
 		return initPanelWindow();
@@ -51,11 +56,13 @@ it("activates the already-open detached composer after ego is configured in the 
 	await fireEvent.click(panel.getByRole("button", { name: "Configure ego" }));
 
 	// A second WebView has its own module instance and saves to the same backend.
-	vi.resetModules();
-	const { settingsStore: mainSettings } = await import("../../stores/settings");
 	await mainSettings.hydrate();
+	// The save debounce is setup for focus refresh, not a wall-clock assertion.
+	vi.useFakeTimers();
 	mainSettings.setEgoExecutable("/usr/local/bin/ego");
-	await waitFor(() => expect(backend.config.ego_executable).toBe("/usr/local/bin/ego"));
+	await vi.runOnlyPendingTimersAsync();
+	vi.useRealTimers();
+	expect(backend.config.ego_executable).toBe("/usr/local/bin/ego");
 	window.dispatchEvent(new Event("focus"));
 	document.dispatchEvent(new Event("visibilitychange"));
 	await waitFor(() => expect(panel.queryByRole("textbox")).not.toBeNull());

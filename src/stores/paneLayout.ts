@@ -1,4 +1,4 @@
-import { createSignal } from "solid-js";
+import { batch, createSignal } from "solid-js";
 import { createStore, produce, reconcile } from "solid-js/store";
 import { invoke } from "../invoke";
 import { reportSettingsConflicts, settingsRefresh } from "../services/settingsRefresh";
@@ -48,6 +48,15 @@ export interface PaneLayoutState {
 	root: PaneNode | null;
 	groups: Record<string, PaneGroup>;
 	activeGroupId: string | null;
+}
+
+/** Match the Rust PaneLayout defaults before adopting or restoring raw owner JSON. */
+function normalizeLayout(saved: Partial<PaneLayoutState> | null | undefined): PaneLayoutState {
+	return {
+		root: saved?.root ?? null,
+		groups: saved?.groups ?? {},
+		activeGroupId: saved?.activeGroupId ?? null,
+	};
 }
 
 // ---- Constants ----
@@ -336,12 +345,9 @@ function createPaneLayoutStore() {
 		startRemoteSync(): () => void {
 			return settingsRefresh.register({
 				section: "pane_layout",
-				read: () => invoke<PaneLayoutState>("load_pane_layout"),
+				read: () => invoke<Partial<PaneLayoutState> | null>("load_pane_layout"),
 				apply: (remote) => {
-					const merged = layoutWriter.adopt(
-						remote ?? { root: null, groups: {}, activeGroupId: null },
-						layoutSnapshot(),
-					);
+					const merged = layoutWriter.adopt(normalizeLayout(remote), layoutSnapshot());
 					const pendingSave = saveTimer !== null;
 					if (saveTimer) {
 						clearTimeout(saveTimer);
@@ -592,7 +598,8 @@ function createPaneLayoutStore() {
 		},
 
 		/** Restore layout from serialized state */
-		restore(saved: PaneLayoutState): void {
+		restore(snapshot: Partial<PaneLayoutState> | null): void {
+			const saved = normalizeLayout(snapshot);
 			const allIds = saved.root ? allLeafIds(saved.root) : [];
 			const maxNum = allIds.reduce((max, id) => {
 				const n = parseInt(id.replace("g", ""), 10);
@@ -600,17 +607,19 @@ function createPaneLayoutStore() {
 			}, 0);
 			groupCounter = maxNum;
 
-			tree = saved.root;
-			bumpTree();
-			// reconcile, not a wholesale node replace: `saved.groups` is always a
-			// fresh object, so a plain setState would hand every group and every
-			// PaneTab a new proxy and remount every CanvasTerminal in the layout.
-			setState(
-				reconcile({
-					groups: saved.groups,
-					activeGroupId: saved.activeGroupId,
-				}),
-			);
+			batch(() => {
+				tree = saved.root;
+				// reconcile, not a wholesale node replace: `saved.groups` is always a
+				// fresh object, so a plain setState would hand every group and every
+				// PaneTab a new proxy and remount every CanvasTerminal in the layout.
+				setState(
+					reconcile({
+						groups: saved.groups,
+						activeGroupId: saved.activeGroupId,
+					}),
+				);
+				bumpTree();
+			});
 		},
 
 		/** Remap terminal IDs in all groups (used after lazy restore creates new terminal IDs) */
@@ -661,9 +670,9 @@ function createPaneLayoutStore() {
 		/** Load pane layout from disk and restore (filtering non-terminal tabs) */
 		async loadFromDisk(): Promise<void> {
 			try {
-				const saved = await invoke<PaneLayoutState | null>("load_pane_layout");
-				layoutWriter.loaded(saved ?? { root: null, groups: {}, activeGroupId: null });
-				if (!saved?.root) return;
+				const saved = normalizeLayout(await invoke<Partial<PaneLayoutState> | null>("load_pane_layout"));
+				layoutWriter.loaded(saved);
+				if (!saved.root) return;
 
 				// Filter out non-terminal tabs (md/diff/editor are session-bound)
 				for (const group of Object.values(saved.groups)) {

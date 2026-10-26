@@ -4,6 +4,7 @@ import { mcpPopupStore } from "../../stores/mcpPopup";
 import { registerModal } from "../../stores/modalStack";
 import { onClickKeyDown } from "../../utils/a11y";
 import { SETTINGS_SECTION_UPSTREAM_MCP } from "../SettingsPanel/sections";
+import { Button } from "../ui/Button";
 import s from "./McpPopup.module.css";
 
 const STATUS_COLORS: Record<string, string> = {
@@ -165,9 +166,9 @@ export const McpPopup: Component<{ onOpenSettings: (tab: string, section?: strin
 					</div>
 
 					<div class={s.footer}>
-						<button class={s.footerLink} onClick={openServicesTab}>
+						<Button variant="ghost" onClick={openServicesTab}>
 							Manage in Settings
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>

@@ -98,14 +98,14 @@ Hold `Cmd` alone (`Ctrl` on Windows/Linux) for 450 ms to show shortcut badges on
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+=` (or `Cmd++`) | Zoom in (active terminal or code editor) |
-| `Cmd+-` | Zoom out (active terminal or code editor) |
-| `Cmd+0` | Reset zoom to default (active terminal or code editor) |
+| `Cmd+=` (or `Cmd++`) | Zoom in (active terminal CLI/Chat view or code editor) |
+| `Cmd+-` | Zoom out (active terminal CLI/Chat view or code editor) |
+| `Cmd+0` | Reset zoom to default (active terminal CLI/Chat view or code editor) |
 | `Cmd+Shift+=` (or `Cmd+Shift++`) | Zoom in all terminals |
 | `Cmd+Shift+-` | Zoom out all terminals |
 | `Cmd+Shift+0` | Reset zoom all terminals |
 
-Font size range: 8px to 32px, step 2px per action.
+Font size range: 8px to 32px, step 2px per action. A session shares one zoom level between its CLI and Chat views. The all-terminals shortcuts also update Chat views.
 
 ## Split Panes
 

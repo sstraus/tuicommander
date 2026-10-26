@@ -10,18 +10,13 @@
 .toggle input { order: 2; margin-left: auto; accent-color: var(--accent); flex-shrink: 0; }
 .toggle > span { flex: 1; font-weight: 600; }
 .teamActions { display: flex; flex-wrap: wrap; gap: 8px; }
-.teamActions button { min-height: 36px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-secondary); color: var(--fg-primary); padding: 6px 14px; font-size: 13px; cursor: pointer; }
 @media (max-width: 600px) { .group { grid-template-columns: 1fr; gap: 8px; } .group > input, .group > select { grid-column: 1; grid-row: auto; } }
 
 .page header p { overflow-wrap: anywhere; }
 
 .resetCard p { font-size: 12px; line-height: 1.5; color: var(--fg-secondary); }
-.rowSwitch { appearance: none; width: 32px; height: 18px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-highlight); position: relative; cursor: pointer; }
-.rowSwitch::after { content: ""; position: absolute; width: 12px; height: 12px; left: 2px; top: 2px; border-radius: 50%; background: var(--fg-secondary); }
-.rowSwitch:checked { background: var(--accent); border-color: var(--accent); }
-.rowSwitch:checked::after { left: 16px; background: var(--text-on-accent); }
 
 .switchGroup { border-top: 1px solid var(--border); }
-.switchGroup .rowSwitch { display: block; margin-left: auto; }
+.switchGroup .rowSwitch { margin-left: auto; }
 
 .page > [data-settings-page-header] { margin-bottom: 8px; }

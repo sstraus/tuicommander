@@ -7,6 +7,7 @@ import { cx } from "../../utils";
 import { savePastedImage } from "../../utils/pastedImage";
 import { formatRelativeTime } from "../../utils/time";
 import p from "../shared/panel.module.css";
+import { Button } from "../ui/Button";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { PanelWindowControls } from "../ui/PanelWindowControls";
 import { Select } from "../ui/Select";
@@ -185,8 +186,14 @@ export const IdeasPanel: Component<IdeasPanelProps> = (props) => {
 					</Show>
 				</div>
 				<div class={p.headerRight}>
-					<button
-						class={cx(p.headerBtn, showAllRepos() && s.headerBtnPressed)}
+					<Button
+						shape="icon"
+						variant="ghost"
+						aria-label={
+							showAllRepos()
+								? t("ideasPanel.showThisRepo", "Show this repository only")
+								: t("ideasPanel.showAllRepos", "Show ideas from all repositories")
+						}
 						onClick={() => setShowAllRepos((v) => !v)}
 						aria-pressed={showAllRepos()}
 						title={
@@ -198,17 +205,19 @@ export const IdeasPanel: Component<IdeasPanelProps> = (props) => {
 						<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 							<path d="M8 1 .5 4.5 8 8l7.5-3.5L8 1zm-6.1 7.3L.5 9l7.5 3.5L15.5 9l-1.4-.7L8 11.2 1.9 8.3zm0 3.5L.5 12.5 8 16l7.5-3.5-1.4-.7L8 14.7l-6.1-2.9z" />
 						</svg>
-					</button>
+					</Button>
 					<Show when={hasCompleted()}>
-						<button
-							class={p.headerBtn}
+						<Button
+							shape="icon"
+							variant="ghost"
+							aria-label={t("ideasPanel.clearCompleted", "Clear completed ideas")}
 							onClick={() => ideasStore.clearCompleted(listRepo())}
 							title={t("ideasPanel.clearCompleted", "Clear completed ideas")}
 						>
 							<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 								<path d="M6.5 1h3a.5.5 0 0 1 .5.5v1H6v-1a.5.5 0 0 1 .5-.5zM11 2.5V1.5A1.5 1.5 0 0 0 9.5 0h-3A1.5 1.5 0 0 0 5 1.5v1H1.5a.5.5 0 0 0 0 1h.538l.853 10.66A2 2 0 0 0 4.885 16h6.23a2 2 0 0 0 1.994-1.84l.853-10.66h.538a.5.5 0 0 0 0-1H11zm1.958 1l-.846 10.58a1 1 0 0 1-.997.92h-6.23a1 1 0 0 1-.997-.92L3.042 3.5h9.916z" />
 							</svg>
-						</button>
+						</Button>
 					</Show>
 					<PanelWindowControls panelId="notes" mode={mode()} onInlineClose={props.onClose} />
 				</div>
@@ -250,17 +259,17 @@ export const IdeasPanel: Component<IdeasPanelProps> = (props) => {
 									<Show
 										when={reassigningId() === idea.id}
 										fallback={
-											<button
+											<Button
+												variant="ghost"
 												class={cx(s.projectLabel, idea.repoPath ? s.projectTagged : s.projectGlobal)}
 												onClick={() => setReassigningId(idea.id)}
 												title="Click to reassign project"
 											>
 												{idea.repoDisplayName ?? "Global"}
-											</button>
+											</Button>
 										}
 									>
 										<Select
-											compact
 											class={s.reassignSelect}
 											value={idea.repoPath ?? "__global__"}
 											onChange={(e) => handleReassign(idea.id, e.currentTarget.value)}
@@ -274,38 +283,50 @@ export const IdeasPanel: Component<IdeasPanelProps> = (props) => {
 								</div>
 							</div>
 							<div class={s.actions}>
-								<button
-									class={cx(s.actionBtn, s.editBtn)}
+								<Button
+									variant="ghost"
+									shape="icon"
+									aria-label={t("ideasPanel.edit", "Edit idea")}
+									class={s.editBtn}
 									onClick={() => handleEdit(idea.id, idea.text, idea.images)}
 									title={t("ideasPanel.edit", "Edit idea")}
 								>
 									✎
-								</button>
+								</Button>
 								<Show when={props.onQueueToTerminal}>
-									<button
-										class={cx(s.actionBtn, s.queueBtn)}
+									<Button
+										variant="ghost"
+										shape="icon"
+										aria-label={t("ideasPanel.queue", "Queue for the agent's next idle moment")}
+										class={s.queueBtn}
 										onClick={() => handleQueue(idea)}
 										title={t("ideasPanel.queue", "Queue for the agent's next idle moment")}
 									>
 										<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
 											<path d="M2 3h12v2H2zM2 7h12v2H2zM2 11h8v2H2z" />
 										</svg>
-									</button>
+									</Button>
 								</Show>
-								<button
-									class={cx(s.actionBtn, s.sendBtn)}
+								<Button
+									variant="ghost"
+									shape="icon"
+									aria-label={t("ideasPanel.send", "Send to terminal")}
+									class={s.sendBtn}
 									onClick={() => handleSend(idea)}
 									title={t("ideasPanel.send", "Send to terminal")}
 								>
 									▶
-								</button>
-								<button
-									class={cx(s.actionBtn, s.deleteBtn)}
+								</Button>
+								<Button
+									variant="ghost"
+									shape="icon"
+									aria-label={t("ideasPanel.delete", "Delete idea")}
+									class={s.deleteBtn}
 									onClick={() => ideasStore.removeIdea(idea.id)}
 									title={t("ideasPanel.delete", "Delete idea")}
 								>
 									✕
-								</button>
+								</Button>
 							</div>
 						</div>
 					)}
@@ -327,9 +348,16 @@ export const IdeasPanel: Component<IdeasPanelProps> = (props) => {
 												e.currentTarget.parentElement)!.style.display = "none";
 										}}
 									/>
-									<button class={s.thumbnailRemove} onClick={() => removePendingImage(imgPath)} title="Remove image">
+									<Button
+										variant="danger"
+										shape="icon"
+										aria-label="Remove image"
+										class={s.thumbnailRemove}
+										onClick={() => removePendingImage(imgPath)}
+										title="Remove image"
+									>
 										✕
-									</button>
+									</Button>
 								</div>
 							)}
 						</For>
@@ -350,14 +378,16 @@ export const IdeasPanel: Component<IdeasPanelProps> = (props) => {
 					onKeyDown={handleKeyDown}
 					onPaste={handlePaste}
 				/>
-				<button
-					class={s.submitBtn}
+				<Button
+					variant="primary"
+					shape="icon"
+					aria-label={t("ideasPanel.submit", "Add idea (Enter)")}
 					onClick={handleSubmit}
 					disabled={!inputText().trim() && allPendingImages().length === 0}
 					title={t("ideasPanel.submit", "Add idea (Enter)")}
 				>
 					+
-				</button>
+				</Button>
 			</div>
 		</div>
 	);

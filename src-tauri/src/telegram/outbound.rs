@@ -7,14 +7,18 @@ pub(super) const PREVIEW_LABEL: &str = "Preview — not approved.";
 
 /// Deliberately conservative UTF-16 budget, including astral characters.
 pub(super) fn chunks(text: &str) -> Result<Vec<&str>, Error> {
-    if text.is_empty() {
+    chunks_with_budget(text, 4096)
+}
+
+fn chunks_with_budget(text: &str, budget: usize) -> Result<Vec<&str>, Error> {
+    if text.is_empty() || budget < 2 {
         return Err(Error::Config);
     }
     let mut result = Vec::new();
     let mut start = 0;
     let mut units = 0;
     for (index, ch) in text.char_indices() {
-        if units + ch.len_utf16() > 4096 {
+        if units + ch.len_utf16() > budget {
             result.push(&text[start..index]);
             start = index;
             units = 0;
@@ -274,10 +278,23 @@ impl Outbound {
         text: &str,
         keyboard: Option<Value>,
     ) -> Result<Vec<i64>, Error> {
-        let parts = chunks(text)?;
+        self.send_tagged(chat, text, keyboard, "").await
+    }
+
+    pub async fn send_tagged(
+        &mut self,
+        chat: i64,
+        text: &str,
+        keyboard: Option<Value>,
+        prefix: &str,
+    ) -> Result<Vec<i64>, Error> {
+        let budget = 4096usize
+            .checked_sub(prefix.encode_utf16().count())
+            .ok_or(Error::Config)?;
+        let parts = chunks_with_budget(text, budget)?;
         let mut ids = Vec::new();
         for (index, part) in parts.iter().enumerate() {
-            let mut body = json!({"chat_id":chat,"text":part});
+            let mut body = json!({"chat_id":chat,"text":format!("{prefix}{part}")});
             if index + 1 == parts.len()
                 && let Some(keyboard) = &keyboard
             {

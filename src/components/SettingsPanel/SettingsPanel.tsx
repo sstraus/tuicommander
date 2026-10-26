@@ -14,6 +14,7 @@ import { uiStore } from "../../stores/ui";
 import { isTauri } from "../../transport";
 import { pathBasename } from "../../utils/pathUtils";
 import { getRepoColor } from "../../utils/repoColor";
+import { Button } from "../ui/Button";
 import { AllSettingsTab } from "./AllSettingsTab";
 import { SettingsHelpScope } from "./ContextualHelp";
 import { DictationSettings } from "./DictationSettings";
@@ -310,13 +311,14 @@ export const SettingsPanel: Component<SettingsPanelProps> = (props) => {
 		return (
 			<div class={s.footer}>
 				<span />
-				<button
+				<Button
+					variant="primary"
 					data-non-setting="Navigate or close Settings without editing configuration"
 					class={s.footerDone}
 					onClick={props.onClose}
 				>
 					{t("settings.done", "Done")}
-				</button>
+				</Button>
 			</div>
 		);
 	};

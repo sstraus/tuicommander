@@ -1,4 +1,5 @@
 import type { Component } from "solid-js";
+import { Button } from "../../ui/Button";
 import s from "./fields.module.css";
 import { SettingField, type SettingFieldProps } from "./SettingField";
 
@@ -10,7 +11,7 @@ export interface SettingButtonProps extends SettingFieldProps {
 export const SettingButton: Component<SettingButtonProps> = (props) => (
 	<SettingField label={props.label} hint={props.hint} row={props.row} error={props.error} help={props.help}>
 		{(id, _hintId, descriptionId) => (
-			<button
+			<Button
 				id={id}
 				type="button"
 				class={s.button}
@@ -20,7 +21,7 @@ export const SettingButton: Component<SettingButtonProps> = (props) => (
 				onClick={props.onClick}
 			>
 				{props.value}
-			</button>
+			</Button>
 		)}
 	</SettingField>
 );

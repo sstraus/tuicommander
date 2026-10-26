@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { Button } from "../../components/ui";
 import { uploadAttachment } from "../../services/uploadAttachment";
 import { appLogger } from "../../stores/appLogger";
 import { toastsStore } from "../../stores/toasts";
@@ -21,6 +22,8 @@ interface CommandInputProps {
 	sessionId: string;
 	serverVoiceRecording?: boolean;
 	onBrowserDictating?: (recording: boolean) => void;
+	/** Reveal the native answer controls after an authoritative composer refusal. */
+	onSelectionRequired?: (sessionId: string) => void;
 	/** When set, prefills the textarea and focuses it. Seq counter ensures re-fire on same text. */
 	prefillValue?: { text: string; seq: number };
 	/** Current PTY input line text (synced from terminal prompt via WebSocket). */
@@ -349,6 +352,7 @@ export function CommandInput(props: CommandInputProps) {
 					detail?: string;
 				}>("submit_agent_reply", { sessionId, input: text });
 				if (!receipt.submitted) {
+					if (receipt.reason === "selection_required") props.onSelectionRequired?.(sessionId);
 					toastsStore.add(
 						"Reply not sent",
 						receipt.detail ?? receipt.reason ?? "The session is not ready for a reply",
@@ -376,6 +380,7 @@ export function CommandInput(props: CommandInputProps) {
 							typeof result === "object" && result !== null && "reason" in result ? result.reason : undefined;
 						const detail =
 							typeof result === "object" && result !== null && "detail" in result ? result.detail : undefined;
+						if (reason === "selection_required") props.onSelectionRequired?.(sessionId);
 						if (typeof detail === "string" && detail.trim()) msg = detail;
 						else if (reason === "session_not_found") msg = "This session has ended";
 						else if (reason === "agent_not_ready")
@@ -518,6 +523,7 @@ export function CommandInput(props: CommandInputProps) {
 
 			<div class={styles.composer}>
 				<textarea
+					data-control-layout="composer"
 					ref={textareaEl}
 					class={styles.input}
 					placeholder="Type a command..."
@@ -536,7 +542,10 @@ export function CommandInput(props: CommandInputProps) {
 					disabled={submitting() || !!props.serverVoiceRecording || props.sessionExists === false}
 				/>
 			</div>
-			<button
+			<Button
+				shape="icon"
+				variant="primary"
+				circular
 				class={styles.send}
 				type="button"
 				aria-label="Send"
@@ -563,7 +572,7 @@ export function CommandInput(props: CommandInputProps) {
 				<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
 					<path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
 				</svg>
-			</button>
+			</Button>
 		</div>
 	);
 }

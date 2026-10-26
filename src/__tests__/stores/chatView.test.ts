@@ -1,3 +1,4 @@
+import { createEffect, createRoot } from "solid-js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
@@ -85,6 +86,55 @@ describe("chatViewAvailability", () => {
 });
 
 describe("chatViewStore.refresh", () => {
+	// Catches: reset flashes an empty/partial history; delta chunks repeatedly
+	// rerender a growing answer; an empty reset leaves the old history visible.
+	it.each(["replacement", "delta", "empty reset"])("publishes %s as one coherent snapshot", async (mode) => {
+		const unwatch = await chatViewStore.watch(SID);
+		invokeMock.mockResolvedValueOnce(
+			snapshot({ updates: [{ sessionUpdate: "agent_message_chunk", messageId: "old", content: text("old") }] }),
+		);
+		await chatViewStore.refresh(SID);
+		const observed: string[][] = [];
+		let dispose!: () => void;
+		createRoot((stop) => {
+			dispose = stop;
+			createEffect(() => {
+				observed.push(
+					acpTranscript.entries(chatViewKey(SID)).map((entry) => ("text" in entry ? entry.text : entry.kind)),
+				);
+			});
+		});
+		observed.length = 0;
+		invokeMock.mockResolvedValueOnce(
+			snapshot({
+				reset: mode !== "delta",
+				updates:
+					mode === "empty reset"
+						? []
+						: [
+								{
+									sessionUpdate: "agent_message_chunk",
+									messageId: mode === "delta" ? "old" : "new",
+									content: text("first"),
+								},
+								{
+									sessionUpdate: "agent_message_chunk",
+									messageId: mode === "delta" ? "old" : "new",
+									content: text(" second"),
+								},
+							],
+			}),
+		);
+		try {
+			await chatViewStore.refresh(SID);
+			expect(observed).toEqual([
+				mode === "empty reset" ? [] : mode === "delta" ? ["oldfirst second"] : ["first second"],
+			]);
+		} finally {
+			dispose();
+			unwatch();
+		}
+	});
 	it("folds ACP updates into the terminal's conversation through the AI Chat reducer", async () => {
 		await chatViewStore.watch(SID);
 		invokeMock.mockResolvedValueOnce(

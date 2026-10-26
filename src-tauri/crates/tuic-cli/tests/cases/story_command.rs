@@ -101,7 +101,7 @@ fn story_command_reports_http_failure_with_nonzero_exit() {
     let (output, _, _, socket) = run_against_stub(403, r#"{"error":"denied"}"#);
     assert_checkout_socket(&socket);
     assert!(!output.status.success());
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
     assert_eq!(
         String::from_utf8_lossy(&output.stderr),
         "tuic: Story request failed (HTTP 403): {\"error\":\"denied\"}\n"

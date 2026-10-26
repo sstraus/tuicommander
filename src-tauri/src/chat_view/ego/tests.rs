@@ -137,22 +137,37 @@ fn ego_rejects_unversioned_cross_session_rows_and_tolerates_additive_kinds() {
         .find(|r| r["event"]["kind"] == "user_message")
         .unwrap();
     let mut adapter = EgoAdapter::default();
-    assert!(adapter.absorb(&prompt.to_string()).is_empty());
+    assert_eq!(
+        adapter.absorb(&prompt.to_string()),
+        [] as [serde_json::Value; 0]
+    );
     let mut header = root[0].clone();
     header["v"] = 2.into();
     adapter.absorb(&header.to_string());
-    assert!(adapter.absorb(&prompt.to_string()).is_empty());
+    assert_eq!(
+        adapter.absorb(&prompt.to_string()),
+        [] as [serde_json::Value; 0]
+    );
     adapter.absorb(&root[0].to_string());
     let mut other = prompt.clone();
     other["session"] = "other".into();
-    assert!(adapter.absorb(&other.to_string()).is_empty());
-    assert!(adapter.absorb("{broken").is_empty());
+    assert_eq!(
+        adapter.absorb(&other.to_string()),
+        [] as [serde_json::Value; 0]
+    );
+    assert_eq!(adapter.absorb("{broken"), [] as [serde_json::Value; 0]);
     let mut future = prompt.clone();
     future["seq"] = 1.into();
     future["event"]["type"] = "future_kind".into();
-    assert!(adapter.absorb(&future.to_string()).is_empty());
+    assert_eq!(
+        adapter.absorb(&future.to_string()),
+        [] as [serde_json::Value; 0]
+    );
     assert_eq!(adapter.absorb(&prompt.to_string()).len(), 1);
-    assert!(adapter.absorb(&prompt.to_string()).is_empty());
+    assert_eq!(
+        adapter.absorb(&prompt.to_string()),
+        [] as [serde_json::Value; 0]
+    );
     assert_eq!(adapter.stats.unknown_rows, 1);
 }
 

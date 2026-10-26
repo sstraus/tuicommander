@@ -1,25 +1,4 @@
-.toggle {
-  display: flex;
-  flex-shrink: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-}
-
-.toggle button {
-  min-height: 44px;
-  padding: 0 7px;
-  border: 0;
-  background: var(--bg-secondary);
-  color: var(--fg-secondary);
-  font-family: var(--font-ui);
-  font-size: 12px;
-}
-
-.toggle button[aria-pressed="true"] {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
+.toggle { flex-shrink: 0; }
 
 .notice {
   position: absolute;

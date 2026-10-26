@@ -281,6 +281,18 @@ function createRepoSettingsStore() {
 		branchLabels: (s) => s.branchLabels ?? {},
 	};
 
+	async function readLocalConfig(path: string): Promise<{ config: RepoLocalConfig | null; failed: boolean }> {
+		try {
+			return {
+				config: (await invoke<RepoLocalConfig | null>("load_repo_local_config", { repoPath: path })) ?? null,
+				failed: false,
+			};
+		} catch (err) {
+			appLogger.debug("config", "Failed to load .tuic.json", { path, err });
+			return { config: state.localConfigs[path] ?? null, failed: true };
+		}
+	}
+
 	const actions = {
 		startRemoteSync(): () => void {
 			const stopSettings = settingsRefresh.register({
@@ -299,16 +311,17 @@ function createRepoSettingsStore() {
 			});
 			const stopLocal = settingsRefresh.register({
 				section: "repo_local",
-				read: async () =>
-					Object.fromEntries(
-						await Promise.all(
-							Object.keys(state.localConfigs).map(
-								async (path) =>
-									[path, await invoke<RepoLocalConfig | null>("load_repo_local_config", { repoPath: path })] as const,
-							),
-						),
-					),
-				apply: (configs) => setState("localConfigs", reconcile(configs)),
+				read: async () => {
+					const entries = await Promise.all(
+						Object.keys(state.localConfigs).map(async (path) => [path, await readLocalConfig(path)] as const),
+					);
+					return {
+						configs: Object.fromEntries(entries.map(([path, result]) => [path, result.config])),
+						failed: entries.some(([, result]) => result.failed),
+					};
+				},
+				apply: ({ configs }) => setState("localConfigs", reconcile(configs)),
+				retryWhen: ({ failed }) => failed,
 			});
 			return () => {
 				stopSettings();
@@ -368,13 +381,7 @@ function createRepoSettingsStore() {
 
 		/** Load .tuic.json for a repository and cache the result */
 		async loadLocalConfig(path: string): Promise<void> {
-			try {
-				const config = await invoke<RepoLocalConfig | null>("load_repo_local_config", { repoPath: path });
-				setState("localConfigs", path, config ?? null);
-			} catch (err) {
-				appLogger.debug("config", "Failed to load .tuic.json", { path, err });
-				setState("localConfigs", path, null);
-			}
+			setState("localConfigs", path, (await readLocalConfig(path)).config);
 		},
 
 		/** Get fully resolved settings: per-repo > .tuic.json > global defaults */
@@ -450,6 +457,18 @@ function createRepoSettingsStore() {
 			invoke("set_branch_label", { repoPath, branchName, label: label?.trim() || null }).catch((err) =>
 				appLogger.error("config", "Failed to set branch label", err),
 			);
+		},
+
+		/**
+		 * Follow a branch rename: the label moves to the new name. In-memory only —
+		 * the backend `rename_branch` command already moved it in the config file.
+		 */
+		moveLabel(repoPath: string, oldName: string, newName: string): void {
+			const current = state.settings[repoPath];
+			const label = current?.branchLabels[oldName];
+			if (!current || label === undefined) return;
+			const { [oldName]: _, ...rest } = current.branchLabels;
+			setState("settings", repoPath, "branchLabels", reconcile({ ...rest, [newName]: label }));
 		},
 
 		/** Remove settings for a repository */

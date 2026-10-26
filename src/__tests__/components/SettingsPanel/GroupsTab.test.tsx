@@ -104,7 +104,7 @@ describe("AppearanceTab — Repository Groups", () => {
 	it("color picker shows presets", () => {
 		setGroups({ g1: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: [] } }, ["g1"]);
 		const { container } = render(() => <AppearanceTab />);
-		const swatches = container.querySelectorAll(".colorSwatch");
+		const swatches = container.querySelectorAll('[data-form-control="swatch"], [data-form-control="color"]');
 		// 8 presets + 1 custom + 1 clear
 		expect(swatches.length).toBe(10);
 	});
@@ -112,7 +112,7 @@ describe("AppearanceTab — Repository Groups", () => {
 	it("clicking color swatch calls setGroupColor", () => {
 		setGroups({ g1: { id: "g1", name: "Work", color: "", collapsed: false, repoOrder: [] } }, ["g1"]);
 		const { container } = render(() => <AppearanceTab />);
-		const firstSwatch = container.querySelector(".colorSwatch")!;
+		const firstSwatch = container.querySelector('[data-form-control="swatch"]:not([data-clear])')!;
 		fireEvent.click(firstSwatch);
 		expect(mockSetGroupColor).toHaveBeenCalledWith("g1", expect.any(String));
 	});

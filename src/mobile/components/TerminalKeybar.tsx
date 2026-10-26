@@ -1,5 +1,6 @@
 import { createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import { getCtrlEnterSequence } from "../../agents";
+import { Button } from "../../components/ui";
 import { appLogger } from "../../stores/appLogger";
 import { toastsStore } from "../../stores/toasts";
 import { rpc } from "../../transport";
@@ -130,7 +131,8 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
 				<div ref={ctrlMenu} class={styles.ctrlMenu} role="menu" aria-label="Control keys">
 					<For each={CONTROL_KEYS}>
 						{(k) => (
-							<button
+							<Button
+								geometry="stretch"
 								role="menuitem"
 								class={styles.key}
 								classList={{ [styles.danger]: !!k.danger }}
@@ -142,7 +144,7 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
 								}}
 							>
 								{k.label}
-							</button>
+							</Button>
 						)}
 					</For>
 				</div>
@@ -151,22 +153,31 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
 				<Show when={props.awaitingInput && !props.choicePromptOpen}>
 					<For each={confirmKeys()}>
 						{(k) => (
-							<button
+							<Button
+								geometry="stretch"
+								data-ready="true"
 								class={`${styles.key} ${styles.confirm}`}
 								classList={{ [styles.sending]: sending() }}
 								disabled={sending() || props.sessionExists === false}
 								onClick={() => send(k.seq, k.autoEnter)}
 							>
 								{k.label}
-							</button>
+							</Button>
 						)}
 					</For>
 					<div class={styles.divider} />
 				</Show>
-				<button class={`${styles.key} ${styles.accent}`} disabled={props.sessionExists === false} onClick={handleSlash}>
+				<Button
+					geometry="stretch"
+					data-ready="true"
+					class={`${styles.key} ${styles.accent}`}
+					disabled={props.sessionExists === false}
+					onClick={handleSlash}
+				>
 					/
-				</button>
-				<button
+				</Button>
+				<Button
+					geometry="stretch"
 					class={styles.key}
 					ref={ctrlButton}
 					aria-haspopup="menu"
@@ -176,10 +187,11 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
 					onClick={() => setCtrlOpen(!ctrlOpen())}
 				>
 					Ctrl
-				</button>
+				</Button>
 				<For each={STANDARD_KEYS}>
 					{(k) => (
-						<button
+						<Button
+							geometry="stretch"
 							class={styles.key}
 							classList={{ [styles.danger]: !!k.danger }}
 							disabled={props.sessionExists === false}
@@ -191,7 +203,7 @@ export function TerminalKeybar(props: TerminalKeybarProps) {
 							}}
 						>
 							{k.label}
-						</button>
+						</Button>
 					)}
 				</For>
 			</div>

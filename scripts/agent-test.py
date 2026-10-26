@@ -21,11 +21,13 @@ ROOT = Path(__file__).resolve().parent.parent
 BINARY = "tuicommander-agent-test"
 
 
-def plan(instance: str, port: str) -> dict:
+def plan(instance: str, port: str, speech_output: bool = False) -> dict:
     if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", instance) or instance == "default":
         raise ValueError("instance must be a non-default lowercase DNS label")
     if not port.isascii() or not port.isdecimal() or not 1024 <= int(port) <= 65535 or int(port) == 9876:
         raise ValueError("port must be in 1024..65535 and must not be 9876")
+    if speech_output and not instance.startswith("agent-test-"):
+        raise ValueError("speech output requires an agent-test-<name> instance")
     if os.environ.get("CARGO_TARGET_DIR"):
         raise ValueError("unset CARGO_TARGET_DIR; mbx owns the target directory")
     # Short, instance-specific runtime files stay under Gits, not the OS temp dir.
@@ -40,7 +42,7 @@ def plan(instance: str, port: str) -> dict:
     config = json.loads((ROOT / "src-tauri/tauri.conf.json").read_text())
     window = {**config["app"]["windows"][0], "visible": False, "focus": False,
               "focusable": False, "center": False, "alwaysOnTop": True,
-              "width": 640, "height": 420, "minWidth": 640, "minHeight": 420,
+              "width": 1400, "height": 900, "minWidth": 640, "minHeight": 420,
               "backgroundThrottling": "disabled"}
     override = {"identifier": "com.tuic.commander.agent-test",
                 "productName": "TUICommander Agent Test", "bundle": {"externalBin": []},
@@ -49,6 +51,8 @@ def plan(instance: str, port: str) -> dict:
                     "permissions": ["core:window:deny-set-focus", "core:window:deny-show"]
                 }]}}}
     cargo = ["cargo", "build", "--manifest-path", "src-tauri/Cargo.toml", "-p", "tuicommander", "-p", "tuic-bridge", "-p", "tuic-cli", "--bin", BINARY, "--bin", "tuic-bridge", "--bin", "tuic", "--features", "tauri/custom-protocol", "--message-format=json-render-diagnostics"]
+    if speech_output:
+        cargo[cargo.index("tauri/custom-protocol")] += ",dictation"
     return {
         "binary": str(executable),
         "config_dir": str(Path.home() / "Library/Application Support/com.tuic.commander/instances" / instance),
@@ -57,12 +61,12 @@ def plan(instance: str, port: str) -> dict:
         "connect": f"curl --unix-socket '{socket}' http://localhost/health # Agents use this socket; TCP requires Basic auth",
         "pid_file": str(runtime / "desktop.pid"),
         "stop_fifo": str(runtime / "stop.fifo"),
-        "environment": {"TUIC_APP_INSTANCE": instance, "TUIC_PORT": str(int(port)), "TMPDIR": str(runtime) + "/"},
+        "environment": {"TUIC_APP_INSTANCE": instance, "TUIC_PORT": str(int(port)), "TMPDIR": str(runtime) + "/", "TUIC_AGENT_TEST_SPEECH_OUTPUT": "1" if speech_output else "0"},
         "cargo": cargo,
         "frontend": ["pnpm", "exec", "vite", "build"],
         "build_environment": {"PATH_prefix": str(Path.home() / "Library/Application Support/mbx/bin"), "TAURI_CONFIG": json.dumps(override)},
         "launch": [str(executable)],
-        "disabled": ["global shortcuts", "dictation/microphone", "Telegram", "updater", "global MCP install", "global CLI mutations", "global agent hooks", "deep links", "sleep inhibition"],
+        "disabled": ["global shortcuts", "microphone" if speech_output else "dictation/microphone", "Telegram", "updater", "global MCP install", "global CLI mutations", "global agent hooks", "deep links", "sleep inhibition"],
     }
 
 
@@ -172,8 +176,9 @@ def main() -> int:
     parser.add_argument("--instance", default="agent-test")
     parser.add_argument("--port", default="19876")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("--speech-output", action="store_true", help="enable TTS only; microphone remains disabled")
     args = parser.parse_args()
-    launch = plan(args.instance, args.port)
+    launch = plan(args.instance, args.port, args.speech_output)
     if args.dry_run:
         print(json.dumps(launch, indent=2))
         return 0

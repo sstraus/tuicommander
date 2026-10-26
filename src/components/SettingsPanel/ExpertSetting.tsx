@@ -13,6 +13,7 @@ import {
 import { t } from "../../i18n";
 import { settingsExpertStore } from "../../stores/settingsExpert";
 import { uiStore } from "../../stores/ui";
+import { Switch } from "../ui/Switch";
 import s from "./Settings.module.css";
 
 interface ExpertSectionContext {
@@ -98,9 +99,8 @@ export const ExpertSection: Component<{ children: JSX.Element }> = (props) => {
 export const ExpertModeSwitch: Component = () => (
 	<label class={s.expertSwitch}>
 		<span>{t("settings.expert.switch", "Expert")}</span>
-		<input
+		<Switch
 			data-setting-id="preferences.settings_expert_mode"
-			type="checkbox"
 			role="switch"
 			checked={uiStore.state.settingsExpertMode}
 			onChange={(e) => uiStore.setSettingsExpertMode(e.currentTarget.checked)}

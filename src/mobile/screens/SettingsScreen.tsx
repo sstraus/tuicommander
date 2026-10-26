@@ -1,5 +1,5 @@
 import { createEffect, createSignal, For, onMount, Show } from "solid-js";
-import { Select } from "../../components/ui/Select";
+import { Button, Select, Switch } from "../../components/ui";
 import { t } from "../../i18n";
 import { appLogger } from "../../stores/appLogger";
 import { transcriptPreferences } from "../../stores/transcriptPreferences";
@@ -249,16 +249,11 @@ export function SettingsScreen(props: SettingsScreenProps) {
 				<h3 class={styles.sectionTitle}>{t("mobile.settings.input", "INPUT")}</h3>
 				<div class={styles.row}>
 					<span class={styles.label}>{t("mobile.settings.keyboardCorrection", "Autocorrect and spellcheck")}</span>
-					<button
-						type="button"
-						class={styles.toggle}
-						classList={{ [styles.toggleOn]: keyboardCorrection.enabled() }}
+					<Switch
 						aria-label={t("mobile.settings.keyboardCorrection", "Autocorrect and spellcheck")}
-						aria-pressed={keyboardCorrection.enabled()}
-						onClick={keyboardCorrection.toggle}
-					>
-						<span class={styles.toggleThumb} />
-					</button>
+						checked={keyboardCorrection.enabled()}
+						onChange={keyboardCorrection.toggle}
+					/>
 				</div>
 			</section>
 
@@ -267,19 +262,11 @@ export function SettingsScreen(props: SettingsScreenProps) {
 					<h3 class={styles.sectionTitle}>VOICE</h3>
 					<label class={styles.row}>
 						<span class={styles.label}>Hands-free listening</span>
-						<input
-							type="checkbox"
-							checked={voice.listening()}
-							onChange={(e) => voice.setListening(e.currentTarget.checked)}
-						/>
+						<Switch checked={voice.listening()} onChange={(e) => voice.setListening(e.currentTarget.checked)} />
 					</label>
 					<label class={`${styles.row} ${styles.spokenReplies}`}>
 						<span class={styles.label}>Spoken replies</span>
-						<input
-							type="checkbox"
-							checked={voice.spokenReplies()}
-							onChange={(e) => voice.setSpokenReplies(e.currentTarget.checked)}
-						/>
+						<Switch checked={voice.spokenReplies()} onChange={(e) => voice.setSpokenReplies(e.currentTarget.checked)} />
 					</label>
 				</section>
 			</Show>
@@ -298,46 +285,42 @@ export function SettingsScreen(props: SettingsScreenProps) {
 						<div class={styles.row}>
 							<span class={styles.label}>{label}</span>
 							<div class={styles.fontSizeControl} role="group" aria-label={`${label} font size`}>
-								<button
+								<Button
+									shape="icon"
 									type="button"
 									aria-label={`Smaller ${label} font`}
 									disabled={mobileFontSizes[surface]() === MIN_MOBILE_FONT_SIZE}
 									onClick={() => mobileFontSizes.step(surface, -1)}
 								>
 									−
-								</button>
+								</Button>
 								<output aria-label={`${label} font size`} aria-live="polite">
 									{mobileFontSizes[surface]()} px
 								</output>
-								<button
+								<Button
+									shape="icon"
 									type="button"
 									aria-label={`Larger ${label} font`}
 									disabled={mobileFontSizes[surface]() === MAX_MOBILE_FONT_SIZE}
 									onClick={() => mobileFontSizes.step(surface, 1)}
 								>
 									+
-								</button>
+								</Button>
 							</div>
 						</div>
 					)}
 				</For>
 				<div class={styles.row}>
 					<span class={styles.label}>New text indicator</span>
-					<button
-						type="button"
-						class={styles.toggle}
-						classList={{ [styles.toggleOn]: transcriptPreferences.enabled() }}
+					<Switch
 						aria-label="New text indicator"
-						aria-pressed={transcriptPreferences.enabled()}
-						onClick={() => transcriptPreferences.setEnabled(!transcriptPreferences.enabled())}
-					>
-						<span class={styles.toggleThumb} />
-					</button>
+						checked={transcriptPreferences.enabled()}
+						onChange={() => transcriptPreferences.setEnabled(!transcriptPreferences.enabled())}
+					/>
 				</div>
 				<label class={styles.row}>
 					<span class={styles.label}>Theme</span>
 					<Select
-						class={styles.select}
 						aria-label="Theme"
 						value={theme()}
 						disabled={!themeReady()}
@@ -372,15 +355,17 @@ export function SettingsScreen(props: SettingsScreenProps) {
 				<div class={styles.row}>
 					<span class={styles.label}>Push notifications</span>
 					<Show when={canTogglePush()} fallback={<span class={styles.value}>{pushStatusText()}</span>}>
-						<button
-							class={styles.toggle}
-							classList={{ [styles.toggleOn]: pushState() === "subscribed" }}
-							onClick={handleTogglePush}
+						<Switch
+							onChange={(event) => {
+								const control = event.currentTarget;
+								void handleTogglePush().finally(() => {
+									control.checked = pushState() === "subscribed";
+								});
+							}}
 							disabled={pushLoading()}
-							aria-pressed={pushState() === "subscribed"}
-						>
-							<span class={styles.toggleThumb} />
-						</button>
+							checked={pushState() === "subscribed"}
+							aria-label="Push notifications"
+						/>
 					</Show>
 				</div>
 				<Show when={pushState() === "requires-install"}>
@@ -393,25 +378,11 @@ export function SettingsScreen(props: SettingsScreenProps) {
 				</Show>
 				<div class={styles.row}>
 					<span class={styles.label}>Notification sounds</span>
-					<button
-						class={styles.toggle}
-						classList={{ [styles.toggleOn]: soundEnabled() }}
-						onClick={toggleSound}
-						aria-pressed={soundEnabled()}
-					>
-						<span class={styles.toggleThumb} />
-					</button>
+					<Switch onChange={toggleSound} checked={soundEnabled()} aria-label="Notification sounds" />
 				</div>
 				<div class={styles.row}>
 					<span class={styles.label}>Keep screen awake while dictating</span>
-					<button
-						class={styles.toggle}
-						classList={{ [styles.toggleOn]: keepAwake() }}
-						onClick={toggleKeepAwake}
-						aria-pressed={keepAwake()}
-					>
-						<span class={styles.toggleThumb} />
-					</button>
+					<Switch onChange={toggleKeepAwake} checked={keepAwake()} aria-label="Keep screen awake while dictating" />
 				</div>
 			</section>
 

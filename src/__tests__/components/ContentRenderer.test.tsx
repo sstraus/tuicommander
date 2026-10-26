@@ -5,6 +5,7 @@ import { marked } from "marked";
 import { createSignal } from "solid-js";
 import { describe, expect, it, vi } from "vitest";
 import { applyCommentBlockMetadata, ContentRenderer, stripEventHandlers } from "../../components/ui/ContentRenderer";
+import { appLogger } from "../../stores/appLogger";
 import { handleOpenUrl } from "../../utils/openUrl";
 import { stripAnsi } from "../../utils/stripAnsi";
 import { findTweakCommentBlocks, insertTweakBlockComment } from "../../utils/tweakComments";
@@ -44,6 +45,26 @@ describe("stripEventHandlers", () => {
 });
 
 describe("ContentRenderer", () => {
+	// Catches: shared copy actions duplicate on streaming updates, copy their label, or outlive their callback.
+	it.each([false, true])("keeps one live code-copy action across updates (incremental=%s)", async (incremental) => {
+		const [content, setContent] = createSignal("```sh\nprintf '%s' geometry\n```\n");
+		const [enabled, setEnabled] = createSignal(true);
+		const copy = vi.fn();
+		const { container } = render(() => (
+			<ContentRenderer content={content()} incremental={incremental} onCodeCopy={enabled() ? copy : undefined} />
+		));
+		await Promise.resolve();
+		setContent((text) => `${text}\nA later streaming paragraph.\n`);
+		await Promise.resolve();
+		const buttons = container.querySelectorAll<HTMLButtonElement>("button[data-copy-code]");
+		expect(buttons).toHaveLength(1);
+		fireEvent.click(buttons[0]);
+		expect(copy).toHaveBeenCalledExactlyOnceWith("printf '%s' geometry");
+		setEnabled(false);
+		await Promise.resolve();
+		expect(container.querySelector("button[data-copy-code]")).toBeNull();
+	});
+
 	it("annotates rendered markdown blocks with exact source ranges when comments are enabled", async () => {
 		const source = "# Heading\n\nA **formatted** [paragraph](SPEC.md).";
 		const { container } = render(() => <ContentRenderer content={source} commentableBlocks />);
@@ -211,12 +232,20 @@ describe("ContentRenderer", () => {
 	});
 
 	it("prevents a local link when no file handler is provided", () => {
-		const { container } = render(() => <ContentRenderer content="See [readme](docs/README.md) for details" />);
-		const link = container.querySelector('a[href="docs/README.md"]') as HTMLAnchorElement;
-		expect(link).not.toBeNull();
-		const event = new MouseEvent("click", { bubbles: true, cancelable: true });
-		link.dispatchEvent(event);
-		expect(event.defaultPrevented).toBe(true);
+		const debug = vi.spyOn(appLogger, "debug").mockImplementation(() => {});
+		try {
+			const { container } = render(() => <ContentRenderer content="See [readme](docs/README.md) for details" />);
+			const link = container.querySelector('a[href="docs/README.md"]') as HTMLAnchorElement;
+			expect(link).not.toBeNull();
+			const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+			link.dispatchEvent(event);
+			expect(event.defaultPrevented).toBe(true);
+			expect(debug).toHaveBeenCalledExactlyOnceWith("app", "Markdown link has no file handler", {
+				href: "docs/README.md",
+			});
+		} finally {
+			debug.mockRestore();
+		}
 	});
 
 	it.each([
@@ -239,13 +268,21 @@ describe("ContentRenderer", () => {
 		"javascript:42",
 		"data:text/plain,hi",
 	])("never lets rendered link %s navigate the webview", (href) => {
-		const onLinkClick = vi.fn();
-		const { container } = render(() => <ContentRenderer content={`[link](${href})`} onLinkClick={onLinkClick} />);
-		const link = container.querySelector("a") as HTMLAnchorElement | null;
-		if (!link) return; // DOMPurify may remove unsafe links entirely.
-		const event = new MouseEvent("click", { bubbles: true, cancelable: true });
-		link.dispatchEvent(event);
-		expect(event.defaultPrevented).toBe(true);
+		const debug = vi.spyOn(appLogger, "debug").mockImplementation(() => {});
+		try {
+			const onLinkClick = vi.fn();
+			const { container } = render(() => <ContentRenderer content={`[link](${href})`} onLinkClick={onLinkClick} />);
+			const link = container.querySelector("a") as HTMLAnchorElement | null;
+			if (!link) return; // DOMPurify may remove unsafe links entirely.
+			const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+			link.dispatchEvent(event);
+			expect(event.defaultPrevented).toBe(true);
+			if (href.startsWith("file:") || href.startsWith("javascript:") || href.startsWith("data:")) {
+				expect(debug).toHaveBeenCalledExactlyOnceWith("app", "Blocked Markdown link scheme", { href });
+			} else expect(debug).not.toHaveBeenCalled();
+		} finally {
+			debug.mockRestore();
+		}
 	});
 
 	it.each(["https://example.com", "http://example.com", "mailto:boss@example.com"])(
@@ -275,12 +312,18 @@ describe("ContentRenderer", () => {
 	);
 
 	it("blocks a numeric-suffixed URI scheme instead of treating it as a file line", () => {
-		const onLinkClick = vi.fn();
-		const { container } = render(() => <ContentRenderer content="[bad](javascript:42)" onLinkClick={onLinkClick} />);
-		const event = new MouseEvent("click", { bubbles: true, cancelable: true });
-		container.querySelector("a")!.dispatchEvent(event);
-		expect(event.defaultPrevented).toBe(true);
-		expect(onLinkClick).not.toHaveBeenCalled();
+		const debug = vi.spyOn(appLogger, "debug").mockImplementation(() => {});
+		try {
+			const onLinkClick = vi.fn();
+			const { container } = render(() => <ContentRenderer content="[bad](javascript:42)" onLinkClick={onLinkClick} />);
+			const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+			container.querySelector("a")!.dispatchEvent(event);
+			expect(event.defaultPrevented).toBe(true);
+			expect(onLinkClick).not.toHaveBeenCalled();
+			expect(debug).toHaveBeenCalledExactlyOnceWith("app", "Blocked Markdown link scheme", { href: "javascript:42" });
+		} finally {
+			debug.mockRestore();
+		}
 	});
 
 	it.each([

@@ -17,6 +17,10 @@ to use the shared named-pipe transport.
 
 Manages pseudo-terminal sessions for all terminal tabs in the application.
 
+## Final provider failures
+
+`ApiError` accumulates in `SessionState.last_error`, independent of question/awaiting state. Idle and completion output do not retract it. Both desktop and browser snapshot consumers render this value as Error. Native ego final-failure notifications are lifecycle receipts and bypass startup/resize history suppression; provider recovery snapshots remain presentation-only. See [Output parser](output-parser.md#final-failures-and-native-retries-2335-9c03) for source-backed formats and retry policy.
+
 ## Frame receipts and shared IPC delays
 
 Each session has its own frame ticker and desktop receipt gate. A closed gate
@@ -68,6 +72,12 @@ primary grid with display-only exit sequences. It marks the frame ticker dirty;
 HTTP terminal-line reads use the restored grid without a mounted desktop view.
 No recovery sequence is written to PTY stdin. A stale foreground observation,
 an unobserved startup preset, or a temporary helper does not trigger cleanup.
+
+HTTP log snapshots and log-WebSocket polls apply agent screen trimming and
+`input_line` extraction only while the shared session state has an active agent
+identity. After confirmed shell return, retained agent rows are history: they
+cannot hide newer shell output or populate the mobile composer. Both transports
+use the same screen projection; no second terminal emulator is involved.
 
 ## Session Lifecycle
 
@@ -149,7 +159,7 @@ behavior.
 | Command | Description |
 |---------|-------------|
 | `write_pty(session_id, data)` | Write data (user input) to the PTY. Raises the calling thread to `QOS_CLASS_USER_INTERACTIVE` on macOS for the duration of the write and restores the previous class on the way out, so a keystroke is not scheduled behind background work on a pool thread TUIC only borrowed. |
-| `resize_pty(session_id, rows, cols)` | Resize the PTY terminal dimensions. `async`: the reflow it triggers is proportional to scrollback and runs on the blocking pool (`resize_session_off_thread`), never on the IPC thread. The HTTP route takes the same path. |
+| `resize_pty(session_id, rows, cols)` | Resize the PTY terminal dimensions. `async`: the reflow it triggers is proportional to scrollback and runs on the blocking pool (`resize_session_off_thread`), never on the IPC thread. The HTTP route takes the same path. Several viewers share one PTY and the last resize wins. Each change is logged at debug level as `PTY resize applied` with `origin` (`ipc`, `http`, `mcp`), the previous size and `child_rows`/`child_cols` (TIOCGWINSZ on the master, the size the child reads; on Windows ConPTY it is the cached size that was just set). A same-size request logs `PTY resize no-op`. The frontend logs every request as the diagnostic entry `resize_pty request <caller> <rows>x<cols>` with the viewer and the measured box, only while `perfDebug` is on. |
 | `pause_pty(session_id)` | Pause the reader thread (stops output emission). |
 | `resume_pty(session_id)` | Resume the reader thread. |
 | `close_pty(session_id, cleanup_worktree)` | Close PTY and optionally remove worktree. |
@@ -299,10 +309,18 @@ Frame emission is decoupled from PTY reading via a per-session **frame ticker** 
 **Bounded input priority.** Desktop and HTTP/PWA input arm a 100ms window before
 writing to the PTY. Only output applied by the reader after that input can wake
 the same ticker early. A priority frame waits at least 8ms after the previous
-frame; at most two priority bypasses are allowed in any rolling 100ms, even if
-input continues. Other output retains the sustained-animation 33ms floor and
+frame; at most four priority bypasses are allowed in any rolling 100ms, even if
+input continues. If newer reader output arrives during a send, send accounting
+retains its retry on this same ticker, with the same spacing, quota and expiry.
+Other output retains the sustained-animation 33ms floor and
 the typing-under-saturation 50ms floor. The desktop receipt gate, synchronized
-output buffering, frame ordering and shared-damage repair are unchanged.
+output buffering and frame ordering remain in force. Receipts only release the
+gate; they do not mark the terminal dirty. Real damage and repair debt remain
+pending while the desktop is paused. Recovery sends one private full frame to
+desktop and publishes the matching delta only to browsers. It does not offer that delta to desktop again or recreate
+the debt. Browsers retain their ordinary delta stream. These changes
+remove idle frame feedback, not the deliberate input budget or rate floors; native
+echo measurements still exceed one frame at p95 (story 2040-16b2).
 A generic PTY stream does not identify application echo: the second credit can
 serve later output if unrelated post-input output used the first. This is not a
 guarantee that every transient glyph survives viewport scrolling or that native
@@ -508,14 +526,14 @@ struct ChangedRow {
 
 **How it works:**
 
-1. Owns the session's `TerminalGrid`, backed by Alacritty (24 rows × 220 cols default); the same grid supplies rendered frames, scrollback, copy and search
+1. Owns the session's `TerminalGrid`, backed by Alacritty (initialized at the PTY spawn rows and columns); the same grid supplies rendered frames, scrollback, copy and search
 2. On each `process()` call, compares current screen rows against previous snapshot
 3. Newly scrolled primary-history rows are extracted into the separate `LogLine` log. The extraction cursor uses the primary grid origin (`total_scrolled`), including evicted rows; bounded history length stops at 10,000 and would otherwise freeze this log while the live screen keeps changing
 4. **Separate alternate-screen contracts:** changed rows are still returned while a TUI app owns the alternate screen, so status/intent/question parsers keep working. Durable log extraction reads only primary-screen history, so fullscreen repaint noise never reaches mobile/MCP logs
 5. The grid retains 10,000 history rows per screen; the separate log is bounded by `VT_LOG_BUFFER_CAPACITY` (10,000 lines). Oldest entries are dropped when each buffer is full. The grid history cannot be reduced as an independent log scratch buffer
 6. **Monotonic cursor:** `total_lines()` returns a monotonically increasing count of all lines ever pushed (not the current buffer length). Clients use this as a stable cursor for paginated reads via `lines_since_owned(offset, limit)`. If a client's saved offset falls in the evicted range, it is clamped to `oldest_offset()`
 
-**Resize:** When the PTY is resized, `VtLogBuffer.resize()` keeps the parser in sync and clears the previous-row snapshot (avoids false scroll detection after resize). If an alternate-screen app is active, the durable-log cursor is synchronized against the inactive primary grid, not the unrelated alternate history; normal shell capture therefore resumes on the first line after exit.
+**Resize:** The first resize seeds its no-op guard from `master.get_size()`, not the grid, so a grid-only match cannot suppress a required kernel resize. When the PTY is resized, `VtLogBuffer.resize()` keeps the parser in sync and clears the previous-row snapshot (avoids false scroll detection after resize). If an alternate-screen app is active, the durable-log cursor is synchronized against the inactive primary grid, not the unrelated alternate history; normal shell capture therefore resumes on the first line after exit.
 
 Each session gets its own `VtLogBuffer` stored in `AppState.vt_log_buffers: DashMap<String, Mutex<VtLogBuffer>>`.
 
@@ -554,7 +572,7 @@ Shells that emit OSC 7 (`\x1b]7;file://hostname/path\x07`) report the current wo
 
 Additionally, `CLAUDECODE` is removed from the environment (`env_remove`) to prevent nested-session detection when TUICommander itself runs inside a Claude Code session. `NO_COLOR` is also removed from every PTY command immediately after construction because it may belong to a Codex parent that launched TUICommander, not to the independent child session. This does not force application color or override explicit command flags; a deliberate per-agent environment may restore `NO_COLOR` after sanitization.
 
-The same PTY command sanitizer removes Cargo package and executable metadata (`CARGO`, `CARGO_MANIFEST_*`, `CARGO_PKG_*`, `CARGO_BIN_NAME`, `CARGO_BIN_EXE_*`, `CARGO_CRATE_NAME`, `CARGO_PRIMARY_PACKAGE`, `CARGO_FEATURE_*`, `CARGO_CFG_*`), build paths and jobserver state (`CARGO_TARGET_DIR`, `CARGO_TARGET_TMPDIR`, `OUT_DIR`, `CARGO_MAKEFLAGS`), build settings (`CARGO_INCREMENTAL`, `CARGO_ENCODED_RUSTFLAGS`, `RUSTFLAGS`, `RUSTC`, `RUSTC_LINKER`, `RUSTC_WRAPPER`, `RUSTC_WORKSPACE_WRAPPER`, `RUSTDOC`, `HOST_CC`, `HOST_CXX`, `HOST`, `TARGET`, `PROFILE`, `NUM_JOBS`, `OPT_LEVEL`, `DEBUG`), build-script dependency metadata (`DEP_*`), and all `MBX_*` keys inherited from TUICommander's Cargo/mbx development launch. Those values describe the TUIC build, not the repository opened in the PTY. User preferences such as `CARGO_HOME` and `CARGO_TERM_COLOR` remain inherited; explicit per-agent or run-config environment values applied after sanitization can restore any removed key when requested.
+The same PTY command sanitizer removes Cargo package and executable metadata (`CARGO`, `CARGO_MANIFEST_*`, `CARGO_PKG_*`, `CARGO_BIN_NAME`, `CARGO_BIN_EXE_*`, `CARGO_CRATE_NAME`, `CARGO_PRIMARY_PACKAGE`, `CARGO_FEATURE_*`, `CARGO_CFG_*`), build paths and jobserver state (`CARGO_TARGET_DIR`, `CARGO_TARGET_TMPDIR`, `OUT_DIR`, `CARGO_MAKEFLAGS`), build settings (`CARGO_INCREMENTAL`, `CARGO_ENCODED_RUSTFLAGS`, `RUSTFLAGS`, `RUSTC`, `RUSTC_LINKER`, `RUSTC_WRAPPER`, `RUSTC_WORKSPACE_WRAPPER`, `RUSTDOC`, `HOST_CC`, `HOST_CXX`, `HOST`, `TARGET`, `PROFILE`, `NUM_JOBS`, `OPT_LEVEL`, `DEBUG`), build-script dependency metadata (`DEP_*`), and all `MBX_*` keys inherited from TUICommander's Cargo/mbx development launch. It also removes rustup proxy state (`RUSTUP_TOOLCHAIN`, `RUSTUP_TOOLCHAIN_SOURCE`, `RUST_RECURSION_COUNT`) so the next repository can select its own toolchain. Those values describe the TUIC build, not the repository opened in the PTY. User preferences such as `RUSTUP_HOME`, `CARGO_HOME`, `RUST_LOG`, `RUST_BACKTRACE`, `CARGO_TERM_COLOR`, `CARGO_TERM_PROGRESS_WHEN` and `CARGO_TERM_PROGRESS_WIDTH` remain inherited; explicit per-agent or run-config environment values applied after sanitization can restore any removed key when requested.
 
 ## Child Process Priority
 
@@ -678,6 +696,8 @@ Goose appends its reply below the submitted `> prompt`, so the reader does not a
 
 **Ego native approval lifecycle:** Each empty-title OSC 7770 awaiting marker is authoritative independently of selector repaint bookkeeping. A hard-wrapped MCP approval may not yet have a parsed title when its marker arrives. Screen-text dedup must not swallow the next marker after protocol busy clears the prior wait. The full-screen approval parser joins contiguous hard title rows before `Risk:` and publishes the native controls through the shared session-state accumulator.
 
+**Question lifetime on agent exit:** when an accepted foreground observation revokes an observed agent identity on confirmed shell return, it queues `protocol-question-cleared` through the lossless session-state reducer. This clears confident awaiting state, question text, choice controls and ranked awaiting evidence before any new shell input. The clear carries the current turn epoch so delayed exit processing cannot clear a later submitted turn. Reader admission of agent-owned Question/ChoicePrompt events holds the same session identity lock through enqueue and rejects a revoked or replaced cached identity. Thus an in-flight final repaint cannot enqueue a new wait after exit withdrawal. Unknown helpers, stale observations and startup presets do not trigger this withdrawal. `claude-await-exit-before-input-1985.tcap` covers the real question and exit with no subsequent input.
+
 **Post-exit dialog history:** full-screen Ink dialog recovery and silence-timer chat-question heuristics require an active agent identity. A shell can retain the old footer above its prompt after an agent exits; shell output must not turn those historical rows into a new confident question. `claude-question-exit-2091.tcap` and its accumulator replay cover the real question, exit and successful shell command.
 
 **OSC 777 notification classification:** OSC 777 `notify` is a desktop-notification transport, not an awaiting-state protocol. Raw-stream parsing promotes only unambiguous permission or approval wording (`needs your permission`, `approval required`) to a confident question. Claude's `is waiting for your input` body also arrives after a normal reply at the ready composer; promoting it flashed Waiting input until the silence timer retracted it. Ink pickers use their visible footer and full-screen presence recovery, including hook-instrumented sessions. A debug trace at the session-state setter records the confidence, turn epoch, hook configuration and whether a generic Claude notification reached it, without logging the question text.
@@ -770,13 +790,45 @@ Without a fresh marker the new task epoch returns to `idle`, not `completed`.
 Queued confirmation waits run per session so a silent agent does not block other sessions or ordered lifecycle notices on the global injection worker. Each idle edge with a nonempty queue can start a worker; there is no global thread cap. A blocked claim returns promptly, and an active acknowledgement wait lasts at most six seconds for Codex or Claude or one second for other agents. The HTTP queue handler runs the blocking delivery on Tokio's blocking pool. If an agent remains silent with no human input after uncertain delivery, the uncertainty flag and later queued entries remain held until activity or a human submission supplies new evidence.
 
 **Atomic MCP submission reuses the same claim:** `session action=submit` first
-requires a confirmed-idle managed agent, empty `InputLineBuffer`, no confident
+requires a confirmed-idle managed agent, an empty composer, no confident
 dialog, and an empty shared injection FIFO. It never adds itself to that FIFO.
 The claim marks the session BUSY before any bytes; one PTY writer guard then
 spans Ctrl-U, a 50 ms gap, the text in optional bracketed paste, a second
 gap (200 ms for Codex or an undetected agent type, 50 ms for known other agents), and CR, so
 neither raw input nor a peer can splice the command. A peer arriving after the
 claim queues; a peer that claims first makes submission reject.
+
+### Ego composer recovery state map
+
+| Input or event | Composer state and authority |
+| --- | --- |
+| Desktop raw input, HTTP/WebSocket/MCP input, paste and native answer keys | Input bookkeeping stamps monotonic input time and feeds `InputLineBuffer`. Unsubmitted text blocks managed input. |
+| Direct submit, queued user command, automated notice/wake and keepalive | The shared claim checks idle, foreground ownership, dialogs, uncertainty and draft state before writing. Accepted payload plus CR advances the submitted turn. |
+| Explicit draft-to-queue transfer | Requires the expected draft and input transaction; only this explicit user operation may clear that retained draft with Ctrl-U. |
+| Reader-originated child output | Only a change to the visible native composer row counts as composer paint. Status/output rows alone do not prove the draft was consumed. |
+| Cursor-only bytes, OSC title-only bytes, local cursor restoration and local screen repair | Not composer paint. They cannot authorize recovery, even after an idle clock repair. |
+| Resize, sleep/wake repair or wall-clock step | Not child paint. Resize invalidates paint evidence; repaired clocks are rejection gates only. |
+
+For ego, recovery may reset stale write-side text only after a reader-originated
+change to the current visible native composer row, ordered strictly after the
+last input in one monotonic clock domain. The native adapter must still report
+an empty Ready composer, and output must remain quiet for 1.5 seconds. The editor
+resets only if its input stamp is unchanged under its mutex; the claim rechecks
+this gate. Retained/wrapped drafts, modal controls, unknown screens and old
+empty screens fail closed. Other agents keep their tracked-editor gate.
+
+Dropping phantom tracking without Ctrl-U is not a safe substitute: the next
+payload could append to an unpainted real draft. Recovery therefore does not
+write anything without composer paint evidence. The normal managed submission
+may send its existing Ctrl-U prefix only after the shared empty-composer claim;
+recovery itself never sends Ctrl-U. In the worst case, one unpainted character
+plus any number of cursor/title updates still blocks all managed payload bytes.
+A genuine discard that produces no visible composer-row change also stays
+blocked rather than risking a real draft.
+
+Already accepted commands and wakes retry on confirmed idle, including stable
+Ready observations after the idle edge. A rejected `submit` is not queued and
+must be retried by its caller only when `retry_safe` is true.
 
 Foreground detection warns once per session when a non-shell process has no
 recognized agent type or run-config fallback. Such a session retains the safe
@@ -791,6 +843,11 @@ that acknowledgement. Movement proves the child terminal reacted, not that the
 application understood the command. A complete or uncertain write is never
 automatically retryable; only rejection/no-byte failure is.
 
+Direct submit and queued user commands can answer an idle `progress-blocked`
+conversational wait. A direct answer does not flush automated notices into that
+wait. Ranked native dialog ownership still wins over a later progress report;
+selectors, approvals and free-text modal questions remain protected.
+
 Mobile Queue supplies `expectedDraft` to validate the live InputLineBuffer before a server-side Ctrl-U and enqueue on this same FIFO. Preflight rejections leave the draft untouched. A write failure may have cleared it already; the caller reports uncertainty and does not retry automatically. Concurrent producers are not transactionally isolated.
 
 **User-composed commands share that gate:** the Compose panel's enqueue action
@@ -802,10 +859,20 @@ ahead of any accepted peer message or user command would reorder delivery. Each
 flush pops one entry and leaves the session BUSY, so the queue drains one item per
 idle window in global acceptance order. `state.queued_commands`,
 `list_queued_agent_commands`, `remove_queued_agent_command` and
-`clear_queued_agent_commands` select only user-command entries; clear retains all
-peer/orchestrator entries in their original relative order. Each user command
+`clear_queued_agent_commands` cover every parked entry, including server wakes;
+clear removes the whole pending queue. Each user command
 carries a process-unique id so the Compose panel can delete a single entry —
 a queue position would shift under the caller as the FIFO drains.
+
+A queued user command at the FIFO head can answer an idle session's
+`progress-blocked` wait. The gate reads the ranked awaiting source; native
+questions and approval dialogs still block delivery. The accumulator does not
+let a late blocked progress report replace a native dialog's awaiting source.
+Server-authored notices
+and initial prompts cannot use this exception or be overtaken. Confirmed idle,
+foreground ownership, an empty composer and certain delivery remain required.
+Successful submission emits `progress-superseded`, which retracts only a
+progress-owned wait, not a native dialog that replaced it.
 
 Queue requests may include `idempotencyKey`. A per-PTY bounded recent-key set
 reserves acceptance atomically with FIFO append, before the blocking flush. The
@@ -1152,3 +1219,20 @@ unavailable, never as proof that work stopped.
 Desktop sidebar session rows and mobile session cards mark a parentless plain shell as **Abandoned** after one idle hour and show its idle age. The five-second backend sweep requires a fresh OS process inventory: the PTY child must be an interactive shell with no child processes. An unknown inventory, script, foreground command, background child, detached TUIC job, managed identity, live child session, pending input or keep-open hold prevents closure. Unsupported or incomplete OS process observations fail closed.
 
 Settings → Agents → Idle agent hibernation (Expert Mode) includes **Close abandoned shells after (hours)** (`agents.abandoned_shell_hours`). The machine-owned value defaults to **0 (off)**; whole hours from 1 to 65535 enable closure. Idle age is measured from the most recent input, output or semantic activity, including elapsed time while the machine sleeps. Closure rechecks the process inventory and activity at the destructive boundary, and uses the normal session close/tombstone path. The sweep can lag the threshold by one five-second tick. A remote daemon applies its own setting, not the desktop host's value.
+
+### Session usage identity
+
+The mobile overflow uses `session_usage.rs`, not parsed warning percentages or
+user-configured terminal chrome. Claude reuses the live profile resolver and
+cache with primary OAuth GET only. Codex reads live process HOME/CODEX_HOME
+and profile flags, rejecting unbound configuration overrides and local-provider
+modes. Codex root profile flags precede the App Server subcommand. ego requires
+the existing exact PID/session binding, the terminal executable (or normal agent
+binary discovery), the manifest workspace and the actual store. AI Chat ACP
+executable configuration is not required. Explicit CLI store
+overrides remain unavailable rather than guessed. Its `usage --json` output is
+capped at 4 MiB and 20 seconds; normalized session snapshots are cached for
+30 seconds. Codex snapshots are cached for five minutes. Cache entries are
+bounded to 32, with per-identity single flight and two concurrent CLI reads.
+Cached fallback after a transient failure is visibly stale, limited to 30 minutes.
+Claude cache fallback retains its existing age policy and is explicitly stale.

@@ -1,7 +1,15 @@
 mod api;
 #[cfg(test)]
 mod critic_tests;
+#[cfg(test)]
+mod filter_tests;
+mod filters;
+mod list;
+#[cfg(test)]
+mod list_tests;
 mod model;
+#[cfg(test)]
+mod note_tests;
 mod sources;
 mod store;
 
@@ -27,6 +35,7 @@ mod tests {
             .expect("plan");
         store
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id.clone(),
                 title: "Wire story".into(),
                 criteria: vec!["Shown".into()],
@@ -52,7 +61,7 @@ mod tests {
     }
 
     #[test]
-    fn new_store_sets_schema_version_one() {
+    fn new_store_sets_schema_version_five() {
         let dir = tempfile::tempdir().expect("temporary config");
         let db = dir.path().join("stories.sqlite3");
 
@@ -62,7 +71,7 @@ mod tests {
         let version: i64 = connection
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .expect("read schema version");
-        assert_eq!(version, 1);
+        assert_eq!(version, 5);
     }
 
     #[test]
@@ -71,7 +80,7 @@ mod tests {
         let db = dir.path().join("stories.sqlite3");
         let connection = rusqlite::Connection::open(&db).expect("open database");
         connection
-            .pragma_update(None, "user_version", 2)
+            .pragma_update(None, "user_version", 6)
             .expect("set future schema version");
 
         let error = StoryStore::open_at(&db).expect_err("future schema is rejected");
@@ -90,9 +99,9 @@ mod tests {
                 source: "plan.md".into(),
             })
             .expect("plan");
-        // Builds before the schema was versioned wrote the same tables at user_version 0.
+        // Recreate the pre-archive plan layout, then mark it as an unversioned store.
         rusqlite::Connection::open(&db)
-            .and_then(|conn| conn.pragma_update(None, "user_version", 0))
+            .and_then(|conn| conn.execute_batch("ALTER TABLE plans DROP COLUMN revision; ALTER TABLE plans DROP COLUMN archived; PRAGMA user_version=0;"))
             .expect("mark store as version 0");
 
         let reopened = StoryStore::open_at(&db).expect("version 0 opens");
@@ -104,7 +113,7 @@ mod tests {
             .expect("open database")
             .pragma_query_value(None, "user_version", |row| row.get(0))
             .expect("read schema version");
-        assert_eq!(version, 1);
+        assert_eq!(version, 5);
     }
 
     #[test]
@@ -120,6 +129,7 @@ mod tests {
             })
             .expect("plan");
         let proposed = NewStory {
+            story_type: None,
             plan_id: plan.id.clone(),
             title: "Implement".into(),
             criteria: vec!["Focused test passes".into()],
@@ -183,6 +193,7 @@ mod tests {
             .expect("plan");
         let story = store
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id,
                 title: "Manual work".into(),
                 criteria: vec!["Verified".into()],
@@ -250,6 +261,7 @@ mod tests {
         assert_eq!(store.plan_state(&plan.id).expect("state"), PlanState::Draft);
         let story = store
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id.clone(),
                 title: "Implement core".into(),
                 criteria: vec!["Core behavior works".into()],
@@ -314,6 +326,7 @@ mod tests {
             PlanState::Draft
         );
         let make_story = |title: &str| NewStory {
+            story_type: None,
             plan_id: plan.id.clone(),
             title: title.into(),
             criteria: vec!["Done".into()],
@@ -381,6 +394,7 @@ mod tests {
             })
             .expect("plan");
         let make_story = |title: &str| NewStory {
+            story_type: None,
             plan_id: plan.id.clone(),
             title: title.into(),
             criteria: vec!["Done".into()],
@@ -500,6 +514,7 @@ mod tests {
             })
             .expect("plan");
         let make_story = |title: &str| NewStory {
+            story_type: None,
             plan_id: plan.id.clone(),
             title: title.into(),
             criteria: vec!["Done".into()],
@@ -556,6 +571,7 @@ mod tests {
             })
             .expect("plan");
         let make_story = |title: &str| NewStory {
+            story_type: None,
             plan_id: plan.id.clone(),
             title: title.into(),
             criteria: vec!["Done".into()],
@@ -613,6 +629,7 @@ mod tests {
             .expect("plan");
         let story = store
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id,
                 title: "Story".into(),
                 criteria: vec!["Done".into()],
@@ -663,6 +680,7 @@ mod tests {
             .expect("plan");
         let story = store
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id,
                 title: "Story".into(),
                 criteria: vec!["Done".into()],
@@ -729,6 +747,7 @@ mod tests {
             .unwrap();
         let story = store
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id,
                 title: "Story".into(),
                 criteria: vec!["Done".into()],
@@ -797,6 +816,7 @@ mod tests {
             .expect("plan");
         let story = store
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id,
                 title: "A".into(),
                 criteria: vec!["Done".into()],
@@ -858,6 +878,7 @@ mod tests {
             "\\\\server\\share",
         ] {
             let result = store.create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id.clone(),
                 title: "Unsafe scope".into(),
                 criteria: vec!["Done".into()],
@@ -890,6 +911,7 @@ mod tests {
             .expect("plan");
         let story = store
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id,
                 title: "Work".into(),
                 criteria: vec!["Done".into()],
@@ -966,6 +988,7 @@ mod tests {
         let create = |title: &str| {
             store
                 .create_story(NewStory {
+                    story_type: None,
                     plan_id: plan.id.clone(),
                     title: title.into(),
                     criteria: vec!["Done".into()],
@@ -1033,6 +1056,7 @@ mod tests {
             .expect("plan");
         let story = store
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id,
                 title: "Discard".into(),
                 criteria: vec!["Done".into()],
@@ -1070,6 +1094,7 @@ mod tests {
         let create = |title: &str| {
             store
                 .create_story(NewStory {
+                    story_type: None,
                     plan_id: plan.id.clone(),
                     title: title.into(),
                     criteria: vec!["Done".into()],
@@ -1139,6 +1164,7 @@ mod tests {
         let create = |title: &str| {
             store
                 .create_story(NewStory {
+                    story_type: None,
                     plan_id: plan.id.clone(),
                     title: title.into(),
                     criteria: vec!["Done".into()],
@@ -1161,7 +1187,7 @@ mod tests {
             .remove_dependency(&dependent.id, &target.id, dependent.revision, Some("agent"))
             .expect("managed removal");
         assert_eq!(released.status, StoryStatus::Ready);
-        assert!(released.dependencies.is_empty());
+        assert_eq!(released.dependencies, [] as [std::string::String; 0]);
         assert_eq!(released.revision, dependent.revision + 1);
     }
 }

@@ -3,6 +3,7 @@ import type { WorkItemPluginSetup } from "../../../plugins/workItemSetup";
 import { appLogger } from "../../../stores/appLogger";
 import { pluginStore } from "../../../stores/pluginStore";
 import { registryStore } from "../../../stores/registryStore";
+import { Button } from "../../ui/Button";
 import s from "./TasksSetup.module.css";
 
 /** Install button for one work-item plugin, fed by the plugin registry. */
@@ -30,9 +31,9 @@ export function InstallWorkItemPlugin(props: { setup: WorkItemPluginSetup; note?
 			<Show when={!props.compact && props.note}>
 				<span>{props.note}</span>
 			</Show>
-			<button type="button" disabled={!entry() || installing()} onClick={() => void install()}>
+			<Button type="button" disabled={!entry() || installing()} onClick={() => void install()}>
 				{installing() ? "Installing…" : `Install ${props.setup.name}`}
-			</button>
+			</Button>
 			<Show when={!entry() && !registryStore.state.loading}>
 				<span class={s.muted}>Not listed in the plugin registry.</span>
 			</Show>

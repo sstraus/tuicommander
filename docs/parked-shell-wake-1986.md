@@ -1,6 +1,8 @@
 # Isolated parked-shell browser check — 1986-1236
 
-Date: 2026-10-20. Source: `chore/live-1986`, runtime commit `3c2cdfd007` (empty branch-start commit on main `09b2ad81ff`). No production code changed.
+Date: 2026-10-20. Initial source: `chore/live-1986`, runtime commit `3c2cdfd007` (empty branch-start commit on main `09b2ad81ff`). No production code changed.
+
+**Current disposition:** the final native desktop run below proves raw-input wake after actual standby, with a **44 ms synthetic terminal keydown-to-canvas-echo** sample. Earlier observer blockers are retained as history and explicitly corrected below. The combined visual AC4 remains unchecked: this is not a physical keyboard/display measurement, an authenticated AI-agent exit, or Boss's phone check.
 
 ## Scope and isolation
 
@@ -109,3 +111,11 @@ Both observers deleted their owned session and ran `make agent-test-stop` in `fi
 ## Cleanup
 
 Both owned PTYs were deleted; the final session list was empty. The owned browser tab and named daemon were closed; shared Chrome was left running. Backend PID 65820 and Vite PID 65821 received SIGTERM, and the final `ps` check found neither process nor either owned shell. The temporary Vite configuration was removed. No capture corpus, dependencies, production code or application test suites changed or ran.
+
+## Retained r6 native evidence (consolidated 2026-10-24)
+
+The receipts in `reports/tuicommander/1986-native-observer/r6/` record the final visible synthetic-input sample. Attempt 1 is explicitly excluded in `attempts.json`: PlatformSSO interference was swallowed by the earlier readiness retry. Attempt 2 is the retained sample. The observer now records frontmost observations and aborts on PlatformSSO or a different agent-test instance, including during readiness and standby observation.
+
+`owned.json` identifies app PID 43600 and shell PID/PGID 44470. `native-key-latency.json` records a visible `tauri://localhost` document, an untrusted synthetic Omega keydown at performance time 90263, and canvas echo at 90307: **44 ms for this single synthetic sample**, not physical keyboard/display latency. `execution-output.json` retains `NATIVE_EXECUTED1986`. `cleanup.json` records no remaining sessions or worktree processes and a successful scoped stop request. The PNG is retained evidence, not a new visual inspection during consolidation.
+
+The earlier statements that no native echo timing was available describe r4/r5 only and are superseded by this r6 receipt. No new desktop launch or timing measurement was made during consolidation. The combined manual-restart desktop/physical-phone acceptance criterion remains open.

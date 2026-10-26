@@ -3,6 +3,7 @@
 import { render } from "solid-js/web";
 import commander from "../../../src-tauri/src/themes/commander.json";
 import paper from "../../../src-tauri/src/themes/vscode-light.json";
+import answerScope from "../../__tests__/components/fixtures/chat-answer-scope-2158.json";
 import { Transcript } from "../../components/AIChatPanel/Transcript";
 import { ComposePanel } from "../../components/ComposePanel/ComposePanel";
 import { ViewModeToggle } from "../../components/Terminal/TerminalChatView";
@@ -49,10 +50,11 @@ async function mount() {
 		{
 			id: "a",
 			kind: "agent",
-			text:
-				"💬 The answer uses the same reading layout.\n\n> A genuine quotation.\n\n- Shared user prompt tint\n- Shared folded tool activity\n\n```ts\n" +
-				codeSample +
-				"\n```",
+			text: params.has("answerScope")
+				? answerScope.text
+				: "💬 The answer uses the same reading layout.\n\n> A genuine quotation.\n\n- Shared user prompt tint\n- Shared folded tool activity\n\n```ts\n" +
+					codeSample +
+					"\n```",
 		},
 	];
 	const terminalId = terminalsStore.add({

@@ -186,7 +186,10 @@ A `progress type=blocked` report from an agent with a live PTY emits a
 confident `question` with `source: "progress-blocked"`, and the reducer records
 that source on the awaiting evidence. When the same PTY later reports `done`, or
 journals a `delegated` hand-off, `emit_progress_entry` emits
-`progress-superseded` for that PTY. The reducer clears the badge only when the
+`progress-superseded` for that PTY. A successfully submitted queued user command
+also emits this event: an idle progress wait accepts the user's queued answer,
+while native dialogs still own their controls. A late blocked report cannot
+replace existing confident native awaiting evidence. The reducer clears the badge only when the
 current awaiting evidence still has the `progress-blocked` source: a dialog, a
 choice prompt or another confident question records a different source and
 stays awaiting. A new `blocked` report replaces the question text.
@@ -241,10 +244,100 @@ anchored on the status code because the prose wraps at the terminal width and re
 rows are joined with `\n`. The friendly pattern requires a letter after the code, so
 the JSON variants above it keep priority and `API Error: 529` stays a rate limit.
 
-`error_kind: "server"` is what drives auto-retry in `Terminal.tsx` (inject `continue`,
-backoff 5s/15s/30s), gated per agent by `auto_retry_on_error` — **default `false`**.
+#### Final failures and native retries (2335-9c03)
 
-Frontend plays an error notification sound and logs via `appLogger.error()`.
+A final API failure sets `SessionState.last_error`. Desktop, browser and mobile
+clients retain the red Error indicator through idle and completion output. The
+desktop snapshot adapter maps `last_error` to `awaitingInput: "error"`; the
+question flag is a different state. Previously that adapter ignored `last_error`
+and replaced a parsed error with null on the next snapshot, so even matched
+failures became green. Plain busy repaints and submitted `continue` input do not
+clear an error. A working status row or native OSC 7770 `state=busy` clears the backend error; a subsequent
+successful idle turn therefore returns to Done.
+
+`error_kind: "server"` enables TUIC auto-retry when the agent's
+`auto_retry_on_error` setting is true (default false). Backoff is 5s, 15s and 30s,
+with at most three injected `continue` commands. The red indicator remains until
+the backend observes recovery: an idle agent after injection is still failed.
+Working rows cancel a pending injection but do not reset its attempt budget.
+Only a recovered idle turn resets that budget. Authentication failures do not
+retry. Native harness retry output is not a final failure.
+
+Native Claude transport/auth and Codex stream errors match short anchored
+failure prefixes, not the complete English sentence. Rendered physical rows are
+joined with newlines, so a narrow pane can split the remaining sentence.
+Claude's native `⏺` and `⎿` markers are accepted; Codex still requires its final
+`■` marker, and retry-exhaustion status separators accept wrapped whitespace.
+`claude-wrapped-provider-failure-2335.tcap` records a real 40-column Claude
+connection failure, including a wrap inside `Connection to the API was lost`.
+The source-backed inventory tests also exercise 36-, 40- and 128-column rows.
+The accumulator inventory test sends those formats through the real VT,
+`ChunkProcessor` and session reducer, then checks `last_error` after native
+idle. JSON matches retain the native `API Error` heading when it precedes the
+error discriminator, so a wrapped `error` key is not mistaken for a Rust raw
+string. Legacy Codex retry-exhaustion separators accept wrapped whitespace.
+Native retry and quoted-source negatives remain separate from final failures.
+
+The inventory below quotes source literals. Braced fields are formatter
+parameters, not invented captured transcripts. Pattern names refer to
+`build_api_error_patterns`, except for the raw ego OSC consumer.
+
+| Harness and outcome | Source output / boundary | TUIC detection |
+|---|---|---|
+| Claude: interrupted response | `API Error: Connection lost mid-response. The response above may be incomplete.`; `API Error: Connection lost before a response was produced. Try again.` | `claude-transport-error` |
+| Claude: stalled response | `API Error: The response stopped arriving. The response above may be incomplete.`; `API Error: The response stalled before a response was produced. Try again.` | `claude-transport-error` |
+| Claude: broken stream | `API Error: Server error mid-response. The response above may be incomplete.`; `API Error: Part of the response never arrived. The response above may be incomplete.`; `API Error: The response stream was malformed. The response above may be incomplete.`; the last two also have `and no response was produced. Try again.` variants | `claude-transport-error` |
+| Claude: timeout and connection refusal | `API Error: Request timed out` or `API Error: Request timed out. Check your internet connection and proxy settings`; `API Error: Connection dropped ({code})`; `API Error: Connection refused — a firewall or proxy may be blocking it ({code})`; `API Error: Unable to connect to API. Check your internet connection` | `claude-transport-error` |
+| Claude: 5xx after native retry | `API Error: {formatted_error}. This is a server-side issue, usually temporary — try again in a moment.{status_link}`; JSON variant contains `"type":"api_error"` | Existing `claude-server-error-friendly` for a status-prefixed formatter, or `claude-api-error` for JSON |
+| Claude: authentication refusal | `Invalid API key · Fix external API key`; `Invalid auth token · Fix external auth token`; `Authentication required · Sign in again to continue`; JSON contains `"type":"authentication_error"` | `claude-auth-friendly` / existing `claude-auth-error` |
+| Codex: final stream or timeout failure | `■ stream disconnected before completion: {cause}`; `■ request timed out` | `codex-native-transport` |
+| Codex: retry exhaustion / 5xx | `■ exceeded retry limit, last status: {status}{request_id}`; `■ unexpected status {status}: {body}` (5xx) | `codex-native-transport`; legacy `stream error: exceeded retry limit, last status: ...` remains supported |
+| Codex: auth refusal | `■ unexpected status {status}: {body}` or `■ exceeded retry limit, last status: {status}{request_id}` with 401/403 | `codex-native-auth` |
+| Codex: intermediate retry | `ErrorNotification.will_retry=true` calls `on_stream_error` and updates the status indicator; it does **not** create the `■` history cell | No new error match for the status-indicator text |
+| ego: final connection loss, timeout, 5xx or auth | OSC 777 `notify;εgo;{cause}; review the output, then send a new prompt to continue`, followed by OSC 7770 `state=idle` | `ego-provider-failure`; HTTP 401/403 causes classify as auth, others as server |
+| ego: startup auth refusal | `εgo: the provider returned HTTP {status}: {cause}` with 401/403 | `ego-startup-auth` |
+| ego: intermediate retry | OSC 7770 `ego-recovery={...}` (`waiting` / `retrying`), then `clear` | Existing provider-recovery overlay, not ApiError |
+
+**Sources:**
+
+- Installed Claude Code 2.1.308 bundled JavaScript, executable SHA-256
+  `ca923c86ac84b30574a82331a05b6e066c27477a926ceaffe46a845a33e4dd37`.
+  `Dl="API Error"` at byte 219998177; connection formatter `r_e` at 220003416;
+  auth literals at 227898061; final error branches at 227926000–227929700;
+  `responseUnfinished` / final stream error branch at 229217650–229219150.
+  These are source excerpts, not live captures. The reported connection-loss
+  example also comes verbatim from Boss's screenshot in story 2335-9c03.
+- Codex installed version 0.163.0, upstream tag
+  [rust-v0.163.0](https://github.com/openai/codex/tree/rust-v0.163.0):
+  `codex-rs/protocol/src/error.rs` (`CodexErrorDetails`,
+  `UnexpectedResponseError::fmt`, `RetryLimitReachedError::fmt`);
+  `tui/src/chatwidget/protocol.rs` (`ServerNotification::Error`, `will_retry`);
+  `tui/src/chatwidget/streaming.rs` (`on_stream_error`);
+  `tui/src/chatwidget/turn_runtime.rs` (`on_error`);
+  `tui/src/history_cell/notices.rs` (`new_error_event` creates `■ {message}`).
+  The structured error notification is more precise, but belongs to Codex's
+  app-server protocol, not TUIC's PTY transport. No ACP/app-server fallback is
+  attached to a PTY session. The native final-error glyph supplies that boundary.
+- ego HEAD `52d1746ee981cf06e3352ba84917535c01df951c`:
+  `crates/ego-cli/src/output.rs` (`ProviderTurnNotices::observe`) emits the
+  final suffix only for `TurnCompleted { ok: false, exit_reason: Provider }`.
+  `run/interactive_driver.rs` (`Announce::signal`) sends failed progress,
+  notification and idle. `crates/ego-ai/src/wire/mod.rs` formats HTTP errors;
+  the wire modules provide stream causes. The captured
+  `ego-provider-failure-2335.tcap` and its provenance file retain a real
+  loopback-induced truncated response from installed ego 0.1.4. The raw native
+  final receipt bypasses startup/resize screen-history suppression; ordinary
+  error-looking screen text still uses that suppression.
+
+Gemini's existing `API Error: got status: UNAVAILABLE` / `INTERNAL`, Copilot's
+`Failed to get copilot token` / expired-token match, and provider JSON patterns
+remain unchanged. Grok has no new harness-specific terminal error pattern in
+this change; it retains the provider-level JSON path. These existing patterns
+are not a verified inventory of every current Gemini, Grok or Copilot failure
+format. No missing format is inferred from another harness's wording. All new
+text patterns have negative tests for normal prose that quotes the same words;
+only the raw native ego notification can promote its final suffix without a
+screen-text match. Remote-tab tint does not override an awaiting Error or question dot.
 
 ### Intent
 

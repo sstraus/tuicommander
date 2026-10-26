@@ -3,6 +3,7 @@ import { useOutsideDismiss } from "../../hooks/useOutsideDismiss";
 import { statusBarTicker, URGENT_PRIORITY } from "../../stores/statusBarTicker";
 import { terminalsStore } from "../../stores/terminals";
 import { cx } from "../../utils/cx";
+import { Button } from "../ui";
 import s from "./StatusBar.module.css";
 
 /**
@@ -116,9 +117,9 @@ export const TickerArea: Component = () => {
 				<div ref={popoverRef} class={s.tickerPopover}>
 					<div class={s.tickerPopoverHeader}>
 						Active Tickers
-						<button class={s.tickerPopoverClose} onClick={() => setPopoverOpen(false)}>
+						<Button size="compact" variant="ghost" onClick={() => setPopoverOpen(false)}>
 							&times;
-						</button>
+						</Button>
 					</div>
 					<div class={s.tickerPopoverList}>
 						<For each={allMessages()} fallback={<div class={s.tickerPopoverEmpty}>No active tickers</div>}>

@@ -12,6 +12,7 @@ import {
 import { appLogger } from "../../../stores/appLogger";
 import { pluginStore } from "../../../stores/pluginStore";
 import { SettingField } from "../../SettingsPanel/fields/SettingField";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Textarea } from "../../ui/Textarea";
 import { InstallWorkItemPlugin } from "./InstallWorkItemPlugin";
@@ -97,14 +98,14 @@ function SetupForm(props: { setup: WorkItemPluginSetup }) {
 				</p>
 			</Show>
 			<div class={s.actions}>
-				<button
+				<Button
 					type="submit"
-					class={s.primary}
+					variant="primary"
 					disabled={!loaded() || saving()}
 					aria-label={`Save ${props.setup.name}`}
 				>
 					{saving() ? "Saving…" : "Save"}
-				</button>
+				</Button>
 			</div>
 		</form>
 	);

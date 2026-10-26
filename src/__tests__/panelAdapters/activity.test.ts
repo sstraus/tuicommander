@@ -27,6 +27,7 @@ function terminal(over: Partial<ActivityTerminalRow> = {}): ActivityTerminalRow 
 		lastPrompt: null,
 		activeSubTasks: 0,
 		cwd: "/repo/tuicommander",
+		project: "tuicommander",
 		lastDataAt: 1000,
 		idleSince: 900,
 		isActive: false,

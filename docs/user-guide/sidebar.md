@@ -78,7 +78,7 @@ Each branch row can show:
 | **Dirty badge** | The workspace contains staged, unstaged, or untracked changes. Hover or focus the badge for the removal-safety explanation. |
 | **Merged badge** | Branches merged into main show a "Merged" badge |
 | **Unmerged mark** | A small outlined square means the worktree has commits outside the default branch. A zero diff or dirty count does not mean those commits are merged. |
-| **Unknown badge** | TUICommander could not verify the workspace state, so removal is blocked. Hover or focus the badge for the inspection error. |
+| **Unknown badge** | TUICommander could not verify the workspace state, so removal is blocked. Hover or focus the badge for the inspection error. A missing default branch shows **No base branch**. Branch-name tooltips show each diagnostic once; main checkouts do not show removal warnings. |
 | **Question icon** | An agent in this branch's terminal is asking a question |
 | **Grey icon** | No active terminals in the repo — branch icons dim to grey |
 
@@ -202,3 +202,7 @@ Rich active/idle sections also apply independently inside each existing reposito
 Rich merged linked worktrees with no sessions and verified lifecycle facts use a one-line summary: Merged, N uncommitted, Clean up. Live, unmerged, or unknown worktrees retain full rows. Clean up enters the existing lifecycle preflight and confirmation workflow; cancellation preserves the worktree.
 
 Rich parent terminal rows show N agents in each other repository containing live children. Clicking reveals the child group, repository and workspace, then selects a child through existing terminal navigation. Session placement and same-branch nesting stay intact; closed children disappear from summaries.
+
+### Detached worktrees
+
+Detached checkouts have non-selectable rows with their directory name, short SHA and **detached**. Hover shows the full path and HEAD SHA. The repository header retains a detached count while folded. These rows do not change branch selection, terminal placement or rich-mode idle-session folding.

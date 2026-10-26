@@ -830,7 +830,7 @@ mod tests {
             result.interrupted,
             "a panicked streaming thread must not look like an ordinary stop"
         );
-        assert!(result.audio.is_empty());
+        assert_eq!(result.audio, [] as [f32; 0]);
     }
 
     #[test]

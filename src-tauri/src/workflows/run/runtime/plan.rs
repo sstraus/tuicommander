@@ -1,6 +1,6 @@
 //! Plan waves reuse graph children, native dependencies and operator Git receipts.
 use super::super::graph::{Activation, EdgeOutcome, GraphExecution};
-use super::super::store::{fingerprint, ready_to_verify, receipt_current};
+use super::super::store::{fingerprint, plan_stories, ready_to_verify, receipt_current};
 use super::*;
 use crate::stories::{StoryStatus, StoryStore};
 
@@ -16,7 +16,12 @@ pub(in crate::workflows::run) fn dispatch(
     graph: &GraphExecution,
     activation: &Activation,
 ) -> Result<Dispatch, String> {
-    let stories = StoryStore::open()?.list_stories(&run.plan_id)?;
+    let all_stories = StoryStore::open()?.list_stories(&run.plan_id)?;
+    let stories: Vec<_> = all_stories
+        .iter()
+        .filter(|story| !story.archived)
+        .cloned()
+        .collect();
     if run.planning_fingerprint.is_none() {
         store.command_expected(
             &run.id,
@@ -38,7 +43,7 @@ pub(in crate::workflows::run) fn dispatch(
     for story in candidates {
         let mut eligible = true;
         for id in &story.dependencies {
-            let dependency = stories
+            let dependency = all_stories
                 .iter()
                 .find(|s| s.id == *id)
                 .ok_or("dependency missing")?;
@@ -119,7 +124,7 @@ pub(in crate::workflows::run) fn judge(
     run: &RunSnapshot,
     graph: &GraphExecution,
 ) -> Result<Option<(EdgeOutcome, DecisionEvidence)>, String> {
-    let stories = StoryStore::open()?.list_stories(&run.plan_id)?;
+    let stories = plan_stories(run)?;
     let activation = graph.activations.last().ok_or("plan activation missing")?;
     if ready_to_verify(run, &stories).is_err() {
         return Ok(Some((
@@ -154,7 +159,9 @@ pub(in crate::workflows::run) fn judge(
             evidence(graph, activation, "Deterministic final plan checks failed"),
         )));
     }
-    if run.verification_fingerprint.as_deref() != Some(fingerprint(&stories, true)?.as_str()) {
+    if run.verification_fingerprint.as_deref()
+        != Some(fingerprint(&run.plan_id, &stories, true)?.as_str())
+    {
         return Ok(None);
     }
     Ok(Some((
@@ -173,7 +180,7 @@ pub(in crate::workflows::run) fn drive_checks(
     graph: &GraphExecution,
     activation: &Activation,
 ) -> Result<bool, String> {
-    let stories = StoryStore::open()?.list_stories(&run.plan_id)?;
+    let stories = plan_stories(run)?;
     if ready_to_verify(run, &stories).is_err() {
         return Ok(false);
     }
@@ -209,7 +216,9 @@ pub(in crate::workflows::run) fn drive_checks(
         )?;
         return Ok(true);
     }
-    if run.verification_fingerprint.as_deref() != Some(fingerprint(&stories, true)?.as_str()) {
+    if run.verification_fingerprint.as_deref()
+        != Some(fingerprint(&run.plan_id, &stories, true)?.as_str())
+    {
         store.command_expected(
             &run.id,
             &format!("daemon:plan-verified:{}", run.sequence),

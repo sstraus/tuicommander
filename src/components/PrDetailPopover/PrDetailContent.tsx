@@ -13,7 +13,9 @@ import { PR_READINESS_LABELS, PR_READINESS_SEVERITY, prReadinessOf } from "../..
 import { stripAnsi } from "../../utils/stripAnsi";
 import { relativeTime } from "../../utils/time";
 import { SeverityIcon } from "../shared/SeverityIcon";
+import { Button } from "../ui/Button";
 import { CiRing } from "../ui/CiRing";
+import { Switch } from "../ui/Switch";
 import { PrActionButtons } from "./PrActionButtons";
 import s from "./PrDetailPopover.module.css";
 
@@ -83,9 +85,8 @@ const CiAutoHealToggle: Component<{ repoPath: string; branch: string }> = (props
 
 	return (
 		<div class={s.autoHealRow} role="button" tabIndex={0} onClick={toggle} onKeyDown={onClickKeyDown(toggle)}>
-			<label class={s.autoHealToggle} onClick={(e) => e.stopPropagation()}>
-				<input type="checkbox" checked={enabled()} onChange={toggle} />
-				<span class={s.autoHealSlider} />
+			<label onClick={(e) => e.stopPropagation()}>
+				<Switch role="checkbox" checked={enabled()} onChange={toggle} />
 			</label>
 			<span class={s.autoHealLabel}>{t("prDetail.autoHeal", "Auto-heal")}</span>
 			<Show when={healing()}>
@@ -417,8 +418,7 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
 					<Show when={isConflicting() && (props.onConflictAssist || (props.onPushBranch && conflictWorktreePath()))}>
 						<div class={s.actions}>
 							<Show when={props.onConflictAssist}>
-								<button
-									class={s.viewDiffBtn}
+								<Button
 									type="button"
 									onClick={() => props.onConflictAssist?.(pr().number)}
 									title={t(
@@ -427,17 +427,16 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
 									)}
 								>
 									{t("prDetail.resolveConflicts", "Resolve conflicts")}
-								</button>
+								</Button>
 							</Show>
 							<Show when={props.onPushBranch && conflictWorktreePath()}>
-								<button
-									class={s.viewDiffBtn}
+								<Button
 									type="button"
 									onClick={handlePush}
 									title={t("prDetail.pushConflictHint", "Push the rebased/resolved branch to origin")}
 								>
 									{t("prDetail.push", "Push")}
-								</button>
+								</Button>
 							</Show>
 						</div>
 					</Show>
@@ -465,7 +464,7 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
 											<span class={s.checkName}>{check.context}</span>
 											<span class={cx(s.checkStatus, CI_CLASSES[getCiClass(check.state)])}>{check.state}</span>
 											<Show when={isCircleCiFailure(check)}>
-												<button
+												<Button
 													type="button"
 													onKeyDown={(event) => event.stopPropagation()}
 													onClick={(event) => {
@@ -474,7 +473,7 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
 													}}
 												>
 													{t("prDetail.circleCiLog", "Log")}
-												</button>
+												</Button>
 											</Show>
 											<Show when={expandedCircleCiLog() === check.html_url}>
 												<Show when={circleCiLogs()[check.html_url]?.loading}>
@@ -499,9 +498,9 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
 					<div class={s.aiReview}>
 						<div class={s.aiReviewHeader}>
 							<span class={s.aiReviewTitle}>{t("prDetail.aiReview", "AI Review")}</span>
-							<button class={s.aiReviewBtn} type="button" disabled={reviewLoading()} onClick={runAiReview}>
+							<Button type="button" disabled={reviewLoading()} onClick={runAiReview}>
 								{reviewLoading() ? t("prDetail.reviewing", "Reviewing") : t("prDetail.runReview", "Run")}
-							</button>
+							</Button>
 						</div>
 						<Show when={reviewError()}>{(err) => <div class={s.aiReviewError}>{err()}</div>}</Show>
 						<Show when={review()}>
@@ -548,14 +547,13 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
 										)}
 									</For>
 								</div>
-								<button
-									class={s.postReviewBtn}
+								<Button
 									type="button"
 									disabled={selectedFindings().length === 0 || reviewPosting()}
 									onClick={postSelectedFindings}
 								>
 									{reviewPosting() ? t("prDetail.posting", "Posting") : t("prDetail.postReview", "Post review")}
-								</button>
+								</Button>
 							</Show>
 						</Show>
 					</div>

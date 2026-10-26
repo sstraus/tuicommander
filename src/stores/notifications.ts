@@ -11,10 +11,13 @@ import { reportSettingsConflicts, settingsRefresh } from "../services/settingsRe
 import { isTauri } from "../transport";
 import { createConfigDeltaWriter } from "../utils/configDeltaWriter";
 import { appLogger } from "./appLogger";
+import { terminalsStore } from "./terminals";
 import { setToastBellMirrorResolver } from "./toasts";
 
 interface PlayOptions {
 	terminalId?: string;
+	/** MCP notice origin: apply session policy without adding a terminal OS notice. */
+	originSessionId?: string;
 	/** A repeat of an earlier notice: the OS notice also goes out in a focused window unless the user is looking at this terminal, and is off with notifications or this sound disabled. */
 	reminder?: boolean;
 }
@@ -162,9 +165,17 @@ function createNotificationsStore() {
 			saveConfig(state.config);
 		},
 
-		/** Silence (or restore) the completion chime for MCP/HTTP-created sessions.
-		 *  Not forwarded to notificationManager: this is a per-terminal policy applied
-		 *  at the completion call site, not a property of the audio playback. */
+		/** One parentage source for every session-scoped sound and native notice.
+		 * Backend events can name the tab, PTY, or stable TUIC peer identity. */
+		isSessionSilenced(id?: string): boolean {
+			if (!id || !state.config.silence_remote_completions) return false;
+			const terminal =
+				terminalsStore.get(id) ??
+				Object.values(terminalsStore.state.terminals).find((term) => term.sessionId === id || term.tuicSession === id);
+			return !!terminal?.parentSession;
+		},
+
+		/** Keep the existing persisted key and default for the expanded subagent policy. */
 		setSilenceRemoteCompletions(silence: boolean): void {
 			setState("config", "silence_remote_completions", silence);
 			saveConfig(state.config);
@@ -200,6 +211,7 @@ function createNotificationsStore() {
 					.map((l) => l.trim())
 					.join(" <- ") ?? "unknown";
 			appLogger.debug("app", `[Notification.Play] sound=${sound} focused=${document.hasFocus()} caller=${caller}`);
+			if (actions.isSessionSilenced(opts?.terminalId ?? opts?.originSessionId)) return;
 			await notificationManager.play(sound);
 			const unfocused = !document.hasFocus();
 			if (unfocused) actions.incrementBadge();
@@ -211,13 +223,14 @@ function createNotificationsStore() {
 							document.hasFocus() &&
 							terminalsStore.state.activeId === terminalId &&
 							!terminalsStore.isDetached(terminalId);
-						if (opts.reminder && isViewed()) return;
+						if (actions.isSessionSilenced(terminalId) || (opts.reminder && isViewed())) return;
 						return showNativeNotice({
 							title: OS_NOTIFICATION_TITLES[sound],
 							body: terminalsStore.get(terminalId)?.name ?? terminalId,
 							key: `${opts.reminder ? "reminder:" : ""}${sound}:${terminalId}`,
 							target: { kind: "terminal", id: terminalId },
-							...(opts.reminder ? { ignoreFocus: true, isCurrent: () => !isViewed() } : {}),
+							isCurrent: () => !actions.isSessionSilenced(terminalId) && (!opts.reminder || !isViewed()),
+							...(opts.reminder ? { ignoreFocus: true } : {}),
 						});
 					})
 					.catch((error: unknown) => appLogger.warn("app", "Could not show terminal notification", error));

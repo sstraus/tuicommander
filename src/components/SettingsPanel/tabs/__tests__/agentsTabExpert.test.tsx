@@ -137,6 +137,53 @@ describe("AgentsTab expert controls", () => {
 		uiStore.setSettingsExpertMode(false);
 	});
 
+	// Catches: duplicate-name migration losing the error cue/description or enabling Save.
+	it("links duplicate run config validation through native invalid state", async () => {
+		await setup({
+			claude: { run_configs: [{ name: "Existing", command: "claude", args: [], env: {}, is_default: true }] },
+		});
+		const view = renderExpanded("claude");
+		fireEvent.click(view.getByRole("button", { name: "Add Configuration..." }));
+		const name = view.getByRole("textbox", { name: "Configuration name" });
+		fireEvent.input(name, { target: { value: "Existing" } });
+		expect(name).toHaveAttribute("aria-invalid", "true");
+		expect(name).toHaveAccessibleDescription('Name "Existing" already exists');
+		expect(view.getByRole("button", { name: "Save" })).toBeDisabled();
+		fireEvent.input(name, { target: { value: "Unique" } });
+		expect(name).toHaveAttribute("aria-invalid", "false");
+		expect(view.getByRole("button", { name: "Save" })).not.toBeDisabled();
+	});
+
+	// Catches: shared controls dropping Enter-save/Escape-cancel or persisting a canceled draft.
+	it("preserves keyboard save and cancel for run configuration drafts", async () => {
+		await setup();
+		const view = renderExpanded("claude");
+		fireEvent.click(view.getByRole("button", { name: "Add Configuration..." }));
+		const name = view.getByRole("textbox", { name: "Configuration name" });
+		fireEvent.input(name, { target: { value: "Keyboard saved" } });
+		fireEvent.keyDown(name, { key: "Enter" });
+		await waitFor(() => expect(view.queryByRole("group", { name: "New run configuration" })).toBeNull());
+		expect(agentConfigsStore.getRunConfigs("claude").some((config) => config.name === "Keyboard saved")).toBe(true);
+		const saves = mockInvoke.mock.calls.filter(([command]) => command === "save_agents_config").length;
+		fireEvent.click(view.getByRole("button", { name: "Add Configuration..." }));
+		const canceled = view.getByRole("textbox", { name: "Configuration name" });
+		fireEvent.input(canceled, { target: { value: "Canceled draft" } });
+		fireEvent.keyDown(canceled, { key: "Escape" });
+		expect(view.queryByRole("group", { name: "New run configuration" })).toBeNull();
+		expect(mockInvoke.mock.calls.filter(([command]) => command === "save_agents_config")).toHaveLength(saves);
+		expect(agentConfigsStore.getRunConfigs("claude").some((config) => config.name === "Canceled draft")).toBe(false);
+	});
+
+	// Catches: installed-action migration losing owner state or calling install when pressed.
+	it("keeps installed MCP action pressed and routes its click to removal", async () => {
+		await setup();
+		const view = renderExpanded("claude");
+		const remove = await view.findByRole("button", { name: "Remove TUIC MCP" });
+		expect(remove).toHaveAttribute("aria-pressed", "true");
+		fireEvent.click(remove);
+		await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("remove_agent_mcp", { agentType: "claude" }));
+	});
+
 	it("labels only amp, cursor and droid as limited support", async () => {
 		await setup();
 		const { container } = render(() => <AgentsTab />);

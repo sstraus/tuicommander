@@ -19,6 +19,7 @@ import { prContextVariables } from "../../utils/promptContext";
 import { canUpdatePrBranch, prAgeMarker, prReference } from "../../utils/prRow";
 import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
+import { Button } from "../ui/Button";
 import { ChevronIcon } from "../ui/ChevronIcon";
 import { PrStateBadge } from "./PrStateBadge";
 import { canMergePr } from "./prMergeEligibility";
@@ -281,7 +282,9 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 					<span class={s.ghSectionCount}>{visiblePrs().length}</span>
 				</Show>
 				<Show when={props.dismissedCount > 0}>
-					<button
+					<Button
+						size="compact"
+						variant="ghost"
 						class={s.ghShowDismissed}
 						onClick={(e) => {
 							e.stopPropagation();
@@ -289,7 +292,7 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 						}}
 					>
 						{t("sidebar.showDismissed", "Show")} {props.dismissedCount}
-					</button>
+					</Button>
 				</Show>
 			</div>
 			<Show when={!props.collapsed}>
@@ -334,7 +337,9 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 									</div>
 									<Show when={props.expandedKey === pr.branch}>
 										<div class={s.ghItemDetail} data-compact>
-											<button
+											<Button
+												size="compact"
+												variant="ghost"
 												class={s.ghItemDismiss}
 												onClick={() => props.onDismiss(pr.number)}
 												aria-label={t("sidebar.dismissPr", "Hide this PR from view")}
@@ -343,7 +348,7 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 												data-tooltip-align="right"
 											>
 												&times;
-											</button>
+											</Button>
 											<PrDetailContent
 												repoPath={props.repoPath}
 												branch={pr.branch}
@@ -351,7 +356,9 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 												onPushBranch={props.onPushBranch}
 											>
 												<div class={s.ghItemActions}>
-													<button
+													<Button
+														size="compact"
+														variant="ghost"
 														class={s.ghActionBtn}
 														onClick={() => props.onCheckout(pr.branch)}
 														data-tooltip={t("sidebar.checkoutBranch", "Check out this branch locally")}
@@ -359,9 +366,11 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 														data-tooltip-align="right"
 													>
 														{t("sidebar.checkout", "Checkout")}
-													</button>
+													</Button>
 													<Show when={props.onCreateWorktree}>
-														<button
+														<Button
+															size="compact"
+															variant="ghost"
 															class={s.ghActionBtn}
 															onClick={() => props.onCreateWorktree?.(pr.branch)}
 															data-tooltip={t("sidebar.createWorktreeFromBranch", "Create worktree from this branch")}
@@ -369,10 +378,12 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 															data-tooltip-align="right"
 														>
 															{t("sidebar.worktree", "Worktree")}
-														</button>
+														</Button>
 													</Show>
 													<Show when={canApprovePr(pr, githubStore.state.viewerLogin)}>
-														<button
+														<Button
+															size="compact"
+															variant="primary"
 															class={cx(s.ghActionBtn, s.ghApproveBtn)}
 															onClick={() => handleApprove(pr)}
 															disabled={approvingPrs().has(pr.number)}
@@ -383,10 +394,12 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 															{approvingPrs().has(pr.number)
 																? t("sidebar.approving", "Approving...")
 																: t("sidebar.approve", "Approve")}
-														</button>
+														</Button>
 													</Show>
 													<Show when={canUpdatePrBranch(pr) && !updateRequestedFor().has(updateHoldKey(pr))}>
-														<button
+														<Button
+															size="compact"
+															variant="ghost"
 															class={s.ghActionBtn}
 															onClick={() => handleUpdateBranch(pr)}
 															disabled={busyPrs().has(pr.number)}
@@ -395,10 +408,12 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 															data-tooltip-align="right"
 														>
 															{t("sidebar.updateBranch", "Update branch")}
-														</button>
+														</Button>
 													</Show>
 													<Show when={canMergePr(pr)}>
-														<button
+														<Button
+															size="compact"
+															variant="ghost"
 															class={cx(s.ghActionBtn, s.ghMergeBtn)}
 															onClick={() => handleMerge(pr)}
 															disabled={mergingPrs().has(pr.number)}
@@ -407,9 +422,11 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 															data-tooltip-align="right"
 														>
 															{mergingPrs().has(pr.number) ? t("sidebar.merging", "Merging...") : mergeLabel(pr)}
-														</button>
+														</Button>
 													</Show>
-													<button
+													<Button
+														size="compact"
+														variant="ghost"
 														class={s.ghActionBtn}
 														onClick={() => handleViewDiff(pr)}
 														disabled={diffLoadingPr() === pr.number}
@@ -420,9 +437,11 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 														{diffLoadingPr() === pr.number
 															? t("sidebar.loadingDiff", "Loading...")
 															: t("sidebar.diff", "Diff")}
-													</button>
+													</Button>
 													<Show when={prReference(pr)}>
-														<button
+														<Button
+															size="compact"
+															variant="ghost"
 															class={s.ghActionBtn}
 															onClick={() => handleCopyReference(pr)}
 															data-tooltip={t("sidebar.copyReference", "Copy owner/repo#number")}
@@ -430,10 +449,12 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 															data-tooltip-align="right"
 														>
 															{t("sidebar.copyRef", "Copy ref")}
-														</button>
+														</Button>
 													</Show>
 													<Show when={pr.state?.toUpperCase() === "OPEN"}>
-														<button
+														<Button
+															size="compact"
+															variant="ghost"
 															class={cx(s.ghActionBtn, s.ghCloseBtn)}
 															onClick={() => handleClosePr(pr)}
 															disabled={busyPrs().has(pr.number)}
@@ -442,10 +463,12 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 															data-tooltip-align="right"
 														>
 															{t("sidebar.close", "Close")}
-														</button>
+														</Button>
 													</Show>
 													<Show when={pr.url}>
-														<button
+														<Button
+															size="compact"
+															variant="ghost"
 															class={cx(s.ghActionBtn, s.ghLinkBtn)}
 															onClick={() => handleOpenUrl(pr.url)}
 															data-tooltip={t("prDetail.openOnGithub", "Open on GitHub")}
@@ -453,7 +476,7 @@ export const PrSection: Component<PrSectionProps> = (props) => {
 															data-tooltip-align="right"
 														>
 															GitHub {"↗"}
-														</button>
+														</Button>
 													</Show>
 													<SmartButtonStrip
 														placement="pr-popover"

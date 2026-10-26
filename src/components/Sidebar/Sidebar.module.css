@@ -147,8 +147,8 @@
 
 .subagentFold {
   align-self: flex-start;
-  padding: 0;
-  border: none;
+
+
   background: none;
   font: inherit;
   color: var(--fg-muted);
@@ -221,10 +221,10 @@
   gap: 5px;
   width: calc(100% - 16px);
   margin: 0 8px 6px;
-  padding: 4px 8px;
+
   background: color-mix(in srgb, var(--accent) 18%, transparent);
-  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
-  border-radius: var(--radius-sm);
+
+
   color: var(--accent);
   font-size: var(--font-2xs);
   font-weight: 600;
@@ -243,8 +243,8 @@
 }
 
 .footer {
-  height: var(--status-height);
   min-height: var(--status-height);
+  flex-shrink: 0;
   padding: 0 6px;
   border-top: 1px solid var(--border);
   display: flex;
@@ -258,16 +258,16 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 8px;
+
   background: transparent;
-  border: none;
-  border-radius: var(--radius-md);
+
+
   color: var(--fg-secondary);
   font-size: var(--font-xs);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
   text-align: left;
-  min-width: 0;
+
 }
 
 .addRepo:hover {
@@ -287,14 +287,13 @@
 }
 
 .footerAction {
-  width: 28px;
-  height: 28px;
+
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: none;
-  border-radius: var(--radius-md);
+
+
   color: var(--fg-secondary);
   cursor: pointer;
   transition: background 0.15s, color 0.15s;
@@ -306,7 +305,6 @@
 }
 
 .empty {
-  padding: 20px 16px;
   text-align: center;
   color: var(--fg-muted);
 }
@@ -316,10 +314,9 @@
 }
 
 .empty button {
-  padding: 8px 16px;
   background: var(--accent);
-  border: none;
-  border-radius: var(--radius-sm);
+
+
   color: var(--text-on-accent);
   font-size: var(--font-sm);
   cursor: pointer;
@@ -409,14 +406,13 @@
 }
 
 .repoActionBtn {
-  width: 18px;
-  height: 18px;
+
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: none;
-  border-radius: var(--radius-md);
+
+
   color: var(--fg-secondary);
   font-size: var(--font-md);
   cursor: pointer;
@@ -583,6 +579,44 @@
   padding-top: 1px;
 }
 
+/* Detached inventory rows deliberately have no selection, branch actions or hover state. */
+.detachedWorktree {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-md);
+  color: var(--fg-secondary);
+}
+
+.detachedName {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detachedState {
+  flex-shrink: 0;
+  font-size: var(--font-xs);
+}
+
+.worktreeDiagnostic {
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: var(--font-md);
+  color: var(--warning);
+}
+
+.diagnosticGuidance {
+  margin-top: 2px;
+  font-size: var(--font-xs);
+  color: var(--fg-secondary);
+  overflow-wrap: anywhere;
+}
+
 .repoEmpty {
   padding: 8px 16px;
   font-size: var(--font-xs);
@@ -653,15 +687,14 @@
   align-items: center;
   justify-content: center;
   gap: 2px;
-  min-width: 20px;
-  height: 20px;
-  padding: 2px;
+
+
   flex-shrink: 0;
   cursor: pointer;
-  border: none;
+
   background: transparent;
   color: var(--fg-secondary);
-  border-radius: var(--radius-sm);
+
 }
 
 .branchIconChevron {
@@ -849,7 +882,7 @@
   padding: 1px 4px 2px;
 }
 
-.branchTabItem {
+button[data-control-layout="row"].branchTabItem {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1130,16 +1163,15 @@
 
 @media (hover: hover) {
   .branchItem:hover .branchActions {
-    max-width: 44px;
+    max-width: none;
     opacity: 1;
     pointer-events: auto;
   }
 
-  /* Coarse pointer (an iPad trackpad) has 36px buttons: widen the hover reveal
-     only. Idle, the actions stay collapsed and reserve no space. */
+  /* Reveal the complete shared controls without reserving space while idle. */
   @media (pointer: coarse) {
     .sidebar[data-density="rich"] .branchItem:hover .branchActions {
-      max-width: 84px;
+      max-width: none;
     }
   }
 }
@@ -1153,13 +1185,13 @@
 
 .branchMoreBtn {
   display: none;
-  width: 20px;
-  height: 20px;
+
+
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: none;
-  border-radius: var(--radius-md);
+
+
   color: var(--fg-secondary);
   font-size: var(--font-md);
   cursor: pointer;
@@ -1167,13 +1199,12 @@
 
 .branchAddBtn,
 .branchRemoveBtn {
-  width: 20px;
-  height: 20px;
+
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  border-radius: var(--radius-md);
+
+
   font-size: var(--font-md);
   font-weight: 600;
   cursor: pointer;
@@ -1183,7 +1214,7 @@
 .branchAddBtn {
   background: var(--accent);
   color: var(--text-on-accent);
-  /* Long press opens the agent list: no text selection, iOS callout or pan. */
+
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -1263,8 +1294,8 @@
 
 /* ── Git Quick Actions ── */
 .gitQuickActions {
-  height: var(--status-height);
   min-height: var(--status-height);
+  flex-shrink: 0;
   padding: 0 6px;
   border-top: 1px solid var(--border);
   display: flex;
@@ -1291,10 +1322,10 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  padding: 6px 4px;
+
   background: transparent;
-  border: none;
-  border-radius: var(--radius-md);
+
+
   color: var(--fg-secondary);
   font-size: var(--font-sm);
   cursor: pointer;
@@ -1364,14 +1395,14 @@
 .parkedPopoverName {
   flex: 1;
   background: none;
-  border: none;
+
   color: var(--fg-primary);
   font-size: var(--font-sm);
-  padding: 5px 6px;
-  border-radius: var(--radius-sm);
+
+
   cursor: pointer;
   text-align: left;
-  min-width: 0;
+
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1383,14 +1414,14 @@
 
 .parkedPopoverUnpark {
   flex-shrink: 0;
-  width: 24px;
-  height: 24px;
+
+
   display: flex;
   align-items: center;
   justify-content: center;
   background: none;
-  border: none;
-  border-radius: var(--radius-sm);
+
+
   color: var(--fg-secondary);
   cursor: pointer;
 }
@@ -1411,9 +1442,8 @@
   width: 100%;
   background: var(--error);
   color: var(--text-on-error);
-  border: none;
-  border-radius: var(--radius-md);
-  padding: 6px 8px;
+
+
   font-size: var(--font-xs);
   font-weight: 600;
   cursor: pointer;
@@ -1473,11 +1503,6 @@
     opacity: 1;
     pointer-events: auto;
   }
-
-  .sidebar[data-density="rich"] .repoActionBtn {
-    width: 20px;
-    height: 20px;
-  }
   .sidebar[data-density="rich"] .repoActions { gap: 0; }
   .sidebar[data-density="rich"] .repoActions .addBtn { margin-right: 0; }
 
@@ -1513,14 +1538,13 @@
 }
 
 .remoteOnlyClose {
-  width: 20px;
-  height: 20px;
+
   display: flex;
   align-items: center;
   justify-content: center;
   background: none;
-  border: none;
-  border-radius: var(--radius-sm);
+
+
   color: var(--fg-secondary);
   cursor: pointer;
   font-size: var(--font-md);
@@ -1592,14 +1616,14 @@
   position: absolute;
   top: 6px;
   right: 6px;
-  width: 20px;
-  height: 20px;
+
+
   display: flex;
   align-items: center;
   justify-content: center;
   background: none;
-  border: none;
-  border-radius: var(--radius-sm);
+
+
   color: var(--fg-muted);
   cursor: pointer;
   font-size: var(--font-md);
@@ -1620,10 +1644,9 @@
 
 .remoteOnlyCheckout,
 .remoteOnlyWorktree {
-  padding: 4px 12px;
   font-size: var(--font-xs);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+
+
   background: none;
   color: var(--fg-secondary);
   cursor: pointer;
@@ -1633,7 +1656,7 @@
 .remoteOnlyCheckout:hover {
   background: var(--accent);
   color: var(--text-on-accent);
-  border-color: var(--accent);
+
 }
 
 .remoteOnlyWorktree:hover {
@@ -1642,10 +1665,9 @@
 }
 
 .remoteOnlyApprove {
-  padding: 4px 12px;
   font-size: var(--font-xs);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--accent);
+
+
   background: none;
   color: var(--accent);
   cursor: pointer;
@@ -1663,10 +1685,9 @@
 }
 
 .remoteOnlyMerge {
-  padding: 4px 12px;
   font-size: var(--font-xs);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--success);
+
+
   background: none;
   color: var(--success);
   cursor: pointer;
@@ -1690,10 +1711,9 @@
 }
 
 .remoteOnlyViewDiff {
-  padding: 4px 12px;
   font-size: var(--font-xs);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+
+
   background: none;
   color: var(--fg-secondary);
   cursor: pointer;
@@ -1703,7 +1723,7 @@
 .remoteOnlyViewDiff:hover {
   background: var(--accent);
   color: var(--text-on-accent);
-  border-color: var(--accent);
+
 }
 
 .remoteOnlyViewDiffActive {
@@ -1736,7 +1756,7 @@
 .remoteOnlyShowDismissed {
   font-size: var(--font-2xs);
   background: none;
-  border: none;
+
   color: var(--accent);
   cursor: pointer;
   margin-left: auto;
@@ -1798,14 +1818,13 @@
 }
 
 .ghChangelogBtn {
-  width: 20px;
-  height: 20px;
+
   display: flex;
   align-items: center;
   justify-content: center;
   background: none;
-  border: none;
-  border-radius: var(--radius-sm);
+
+
   color: var(--fg-secondary);
   cursor: pointer;
   margin-left: auto;
@@ -1817,14 +1836,13 @@
 }
 
 .ghPanelClose {
-  width: 20px;
-  height: 20px;
+
   display: flex;
   align-items: center;
   justify-content: center;
   background: none;
-  border: none;
-  border-radius: var(--radius-sm);
+
+
   color: var(--fg-secondary);
   cursor: pointer;
   font-size: var(--font-md);
@@ -1891,7 +1909,7 @@
 .ghShowDismissed {
   font-size: var(--font-2xs);
   background: none;
-  border: none;
+
   color: var(--accent);
   cursor: pointer;
   margin-left: 4px;
@@ -1994,14 +2012,14 @@
   position: absolute;
   top: 6px;
   right: 6px;
-  width: 20px;
-  height: 20px;
+
+
   display: flex;
   align-items: center;
   justify-content: center;
   background: none;
-  border: none;
-  border-radius: var(--radius-sm);
+
+
   color: var(--fg-muted);
   cursor: pointer;
   font-size: var(--font-md);
@@ -2022,10 +2040,9 @@
 }
 
 .ghActionBtn {
-  padding: 4px 12px;
   font-size: var(--font-xs);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
+
+
   background: none;
   color: var(--fg-secondary);
   cursor: pointer;
@@ -2035,7 +2052,7 @@
 .ghActionBtn:hover {
   background: var(--accent);
   color: var(--text-on-accent);
-  border-color: var(--accent);
+
 }
 
 .ghActionBtn:disabled {
@@ -2044,7 +2061,6 @@
 }
 
 .ghApproveBtn {
-  border-color: var(--accent);
   color: var(--accent);
 }
 
@@ -2054,7 +2070,6 @@
 }
 
 .ghMergeBtn {
-  border-color: var(--success);
   color: var(--success);
 }
 
@@ -2064,7 +2079,6 @@
 }
 
 .ghLinkBtn {
-  border-color: var(--accent);
   color: var(--accent);
 }
 
@@ -2074,7 +2088,6 @@
 }
 
 .ghCloseBtn {
-  border-color: var(--error);
   color: var(--error);
 }
 
@@ -2084,7 +2097,6 @@
 }
 
 .ghReopenBtn {
-  border-color: var(--success);
   color: var(--success);
 }
 
@@ -2110,12 +2122,8 @@
 
 /* ── GitHub badge button (replaces remoteOnlyBadgeBtn) ── */
 .ghBadgeBtn {
-  min-width: calc(18px + var(--text-step, 0px));
-  height: calc(18px + var(--text-step, 0px));
-  width: auto;
-  padding: 0 3px;
-  /* Same size as the branch stats badges; the fixed 18px height and line-height 1
-     keep the larger digits from growing the badge. */
+
+
   font-size: var(--font-2xs);
   line-height: 1;
   font-weight: 700;
@@ -2123,14 +2131,13 @@
   align-items: center;
   gap: 2px;
   color: var(--accent);
-  border-radius: var(--radius-lg);
-  /* Last in .repoActions (anchored at right: 18px), so it needs its own clearance
-     from the chevron: 6px, the header's gap. */
+
+
   margin-right: 6px;
 }
 
 .ghBadgeBtn:hover {
-  /* A light tint, not a solid fill: a solid accent block outweighed the whole header. */
+
   background: color-mix(in srgb, var(--accent) 25%, transparent);
   color: var(--accent);
 }
@@ -2160,10 +2167,9 @@
 }
 
 .ghRetryBtn {
-  padding: 2px 10px;
   font-size: var(--font-2xs);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--error);
+
+
   background: none;
   color: var(--error);
   cursor: pointer;
@@ -2344,7 +2350,10 @@
 }
 .branchSwipeRow[data-touch="true"] .branchActions { display: none; }
 .branchSwipeRow > .branchItem { transition: background 0.1s, transform 0.15s ease; }
-.branchSwipeOpen > .branchItem { transform: translateX(calc(-1 * var(--swipe-width))); }
+/* Both layers contribute their natural shared-control height to the open tray. */
+.branchSwipeRow.branchSwipeOpen { display: grid; }
+.branchSwipeOpen > .branchItem { grid-area: 1 / 1; transform: translateX(calc(-1 * var(--swipe-width))); }
+.branchSwipeOpen > .branchSwipeActions { position: relative; inset: auto; grid-area: 1 / 1; justify-self: end; }
 .branchSwipeOpen > .branchItem:not(.active) { background: var(--bg-secondary); }
 .branchSwipeActions {
   display: flex;
@@ -2356,10 +2365,8 @@
 .sidebar[data-density] .branchSwipeActions > button {
   display: flex;
   flex: 1;
-  width: auto;
-  height: auto;
-  border-radius: 0;
-  min-width: 44px;
+
+
 }
 .branchSwipeActions > .branchMoreBtn {
   background: var(--bg-tertiary);
@@ -2428,11 +2435,10 @@
 }
 
 .mergedCleanup {
-	border: 0;
 	background: transparent;
 	color: var(--fg-muted);
 	font-size: var(--font-2xs);
-	padding: 2px 3px;
+
 	cursor: pointer;
 }
 
@@ -2447,8 +2453,8 @@
 	gap: 3px;
 	width: calc(100% - 24px);
 	margin-left: 24px;
-	padding: 2px 4px;
-	border: 0;
+
+
 	background: transparent;
 	color: var(--fg-muted);
 	font-size: var(--font-2xs);

@@ -1,10 +1,1 @@
-.panel button { min-height: 36px; }
 .listHeading { margin: 0 0 8px; font-size: var(--font-md); font-weight: 600; }
-@media (max-width: 600px) {
-  .panel input:not([type="checkbox"]),
-  .panel select,
-  .panel button {
-    min-height: 44px;
-    font-size: 16px;
-  }
-}

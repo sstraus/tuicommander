@@ -1,0 +1,21 @@
+import { render } from 'solid-js/web';
+import { createSignal } from 'solid-js';
+import { useSessionChatView } from '../../mobile/components/useSessionChatView';
+import { Select } from '../../components/ui';
+import '../../mobile/mobile.css';
+let chat,setAgent;
+render(() => {
+  const [agent,update]=createSignal('claude');setAgent=update;
+  chat=useSessionChatView({sessionId:()=> 'geometry',agentType:agent,sessionExists:()=>true,subscribeWake:()=>()=>{}});
+  return <section id="geometry" style="padding:16px;background:var(--bg-secondary)"><Select aria-label="Reference status"><option>Ready</option></Select><chat.Toggle/></section>;
+},document.getElementById('root'));
+const buttons=[...document.querySelectorAll('[aria-label="Terminal view"] button')];
+if(buttons.length!==2||buttons[0].getAttribute('aria-pressed')!=='true')throw new Error('Initial CLI selection changed');
+buttons[1].click();
+if(!chat.active()||buttons[1].getAttribute('aria-pressed')!=='true')throw new Error('Chat selection failed');
+buttons[0].click();
+if(chat.active()||buttons[0].getAttribute('aria-pressed')!=='true')throw new Error('CLI selection failed');
+setAgent(undefined);
+if(document.querySelector('[aria-label="Terminal view"]'))throw new Error('Unsupported agent retained toggle');
+setAgent('claude');
+window.controlGeometryReady=true;

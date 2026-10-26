@@ -21,6 +21,49 @@ impl RunStore {
             .pop())
     }
 
+    /// Reserve one run for an event, once per event key. A refusal for overlap or
+    /// capacity records nothing, so the same event is admitted by a later poll.
+    pub(in crate::automations) fn admit_event(
+        &self,
+        definition: &AutomationDefinition,
+        trigger: RunTrigger,
+        max_concurrent_runs: u32,
+        now_ms: i64,
+    ) -> Result<Option<AutomationRun>, String> {
+        self.require_owner()?;
+        definition.validate()?;
+        let key = trigger.event_key().ok_or("Not an event trigger")?;
+        if max_concurrent_runs == 0 {
+            return Err("Automation concurrency must be greater than zero".into());
+        }
+        if !definition.enabled {
+            return Ok(None);
+        }
+        let mut conn = self.connect()?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(error)?;
+        let seen: bool = tx
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM automation_event_keys WHERE automation_id=?1 AND event_key=?2)",
+                params![definition.id, key],
+                |r| r.get(0),
+            )
+            .map_err(error)?;
+        if seen || capacity_status(&tx, definition, max_concurrent_runs)? != RunStatus::Reserved {
+            return Ok(None);
+        }
+        let run = reserve_in(&tx, definition, trigger, RunStatus::Reserved, now_ms)?
+            .ok_or("Event reservation was not recorded")?;
+        tx.execute(
+            "INSERT INTO automation_event_keys(automation_id,event_key,run_id) VALUES(?1,?2,?3)",
+            params![definition.id, key, run.id],
+        )
+        .map_err(error)?;
+        tx.commit().map_err(error)?;
+        Ok(Some(run))
+    }
+
     /// Commit every decision together so an error cannot strand undispatched runs.
     pub(in crate::automations) fn admit_batch(
         &self,
@@ -80,28 +123,36 @@ fn admit_in(
     let initial_status = if missed {
         RunStatus::SkippedMissed
     } else {
-        let overlap: bool = tx.query_row(
-                &format!("SELECT EXISTS(SELECT 1 FROM automation_runs WHERE automation_id=?1 AND status IN {OPEN})"),
-                [&definition.id], |r| r.get(0),
-            ).map_err(error)?;
-        if overlap {
-            RunStatus::SkippedOverlap
-        } else {
-            let open: i64 = tx
-                .query_row(
-                    &format!("SELECT COUNT(*) FROM automation_runs WHERE status IN {OPEN}"),
-                    [],
-                    |r| r.get(0),
-                )
-                .map_err(error)?;
-            if open >= i64::from(max_concurrent_runs) {
-                RunStatus::SkippedConcurrency
-            } else {
-                RunStatus::Reserved
-            }
-        }
+        capacity_status(tx, definition, max_concurrent_runs)?
     };
     reserve_in(tx, definition, trigger, initial_status, now_ms)
+}
+
+/// Reserved unless an open run of the definition or the global capacity refuses it.
+fn capacity_status(
+    tx: &Connection,
+    definition: &AutomationDefinition,
+    max_concurrent_runs: u32,
+) -> Result<RunStatus, String> {
+    let overlap: bool = tx.query_row(
+        &format!("SELECT EXISTS(SELECT 1 FROM automation_runs WHERE automation_id=?1 AND status IN {OPEN})"),
+        [&definition.id], |r| r.get(0),
+    ).map_err(error)?;
+    if overlap {
+        return Ok(RunStatus::SkippedOverlap);
+    }
+    let open: i64 = tx
+        .query_row(
+            &format!("SELECT COUNT(*) FROM automation_runs WHERE status IN {OPEN}"),
+            [],
+            |r| r.get(0),
+        )
+        .map_err(error)?;
+    Ok(if open >= i64::from(max_concurrent_runs) {
+        RunStatus::SkippedConcurrency
+    } else {
+        RunStatus::Reserved
+    })
 }
 
 fn scheduled_cursor_in(conn: &Connection, automation_id: &str) -> Result<Option<i64>, String> {

@@ -18,6 +18,7 @@
     "https://localhost/*"
   ],
   "optional_host_permissions": [
+    "<all_urls>",
     "http://*/*",
     "https://*/*"
   ],

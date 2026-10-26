@@ -1,0 +1,13 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><title>Dictation control geometry</title></head><body><div id="root"></div><script>
+// Presentation-only replies. Never opens a microphone, audio stream or backend session.
+window.__TAURI_INTERNALS__={transformCallback:()=>0,unregisterCallback:()=>{},invoke:async command=>{
+if(command==='get_dictation_config')return {enabled:false,hotkey:'F5',language:'en',model:'small',device:null,long_press_ms:400,auto_send:false,rms_threshold:0.001,no_speech_threshold:0.6,hands_free_hold_back_ms:1500,hands_free_activation_phrase:'',hands_free_notify_model:true,hands_free_start_notice:'',hands_free_earcons:false,hands_free_listening:false,hands_free_spoken_replies:false,speech_command:[],speech_engine:'edge',speech_edge_voice:'',speech_voice:'',speech_volume_db:-18,speech_levelling:0.67};
+if(command==='check_microphone_permission')return 'not_determined';
+if(command==='get_dictation_status')return {model_status:'ready',model_name:'small',model_size_mb:0,recording:false,processing:false,audio_level:0};
+if(command==='get_speech_status')return {speaking:false};
+if(command==='get_hands_free_status')return {armed:false,phase:'stopped'};
+if(command==='get_hands_free_default_notice')return '';
+if(['get_model_info','get_speech_assets','get_edge_voices','get_speech_voices'].includes(command))return [];
+return {};
+}};
+</script><script type="module" src="./dictationGeometry.jsx"></script></body></html>

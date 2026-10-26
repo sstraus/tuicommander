@@ -77,7 +77,7 @@ function staticExpression(trimmed: string): ExtractedText | null {
 export function staticText(inner: string, allowPlain: boolean): ExtractedText | null {
 	let trimmed = inner.trim();
 	// Toggle labels put the static caption after a self-closing input.
-	if (trimmed.startsWith("<input")) {
+	if (/^<(?:input|Switch)\b/.test(trimmed)) {
 		const end = endOfOpenTag(trimmed, 0);
 		if (end >= 0 && trimmed[end - 1] === "/") {
 			const caption = trimmed.slice(end + 1).trim();

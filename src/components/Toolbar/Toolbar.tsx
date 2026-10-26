@@ -12,7 +12,6 @@ import type { PrNotification } from "../../stores/prNotifications";
 import { type PrNotificationType, prNotificationsStore } from "../../stores/prNotifications";
 import { progressStore } from "../../stores/progress";
 import { repositoriesStore } from "../../stores/repositories";
-import { storiesUi } from "../../stores/storiesUi";
 import { terminalsStore } from "../../stores/terminals";
 import { uiStore } from "../../stores/ui";
 import { updaterStore } from "../../stores/updater";
@@ -26,6 +25,8 @@ import type { SidebarDensityMode } from "../../utils/sidebarDensity";
 import { IdeLauncher } from "../IdeLauncher";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
 import { SmartPromptsDropdown } from "../SmartPromptsDropdown/SmartPromptsDropdown";
+import { Button } from "../ui";
+import { StoriesButton } from "./StoriesButton";
 import s from "./Toolbar.module.css";
 
 function relativeAge(timestamp: number): string {
@@ -349,7 +350,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 				</svg>
 				<span class={s.leftSpacer} data-tauri-drag-region />
 				<Show when={uiStore.state.sidebarVisible}>
-					<button
+					<Button
+						size="compact"
+						variant="ghost"
 						class={cx(s.filterToggle, s.densityToggle)}
 						classList={{
 							[s.filterToggleActive]: uiStore.state.sidebarDensityMode !== "auto",
@@ -373,8 +376,10 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 						<span class={s.densityLabel} data-testid="sidebar-density-label">
 							{DENSITY_LABELS[uiStore.state.sidebarDensityMode]()}
 						</span>
-					</button>
-					<button
+					</Button>
+					<Button
+						size="compact"
+						variant="ghost"
 						class={s.filterToggle}
 						classList={{ [s.filterToggleActive]: uiStore.state.repoFilterActiveOnly }}
 						onClick={() => uiStore.toggleRepoFilter()}
@@ -392,9 +397,11 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 								stroke-linejoin="round"
 							/>
 						</svg>
-					</button>
+					</Button>
 				</Show>
-				<button
+				<Button
+					size="compact"
+					variant="ghost"
 					class={s.sidebarToggle}
 					onClick={() => uiStore.toggleSidebar()}
 					title={
@@ -416,7 +423,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 							stroke-linejoin="round"
 						/>
 					</svg>
-				</button>
+				</Button>
 			</div>
 
 			<div class={s.center} data-tauri-drag-region>
@@ -430,7 +437,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 							return `${btn.go(name)} (${keyFor(btn.action)})`;
 						};
 						return (
-							<button
+							<Button
+								size="compact"
+								variant="ghost"
 								class={s.filterToggle}
 								disabled={!target()}
 								onClick={() => {
@@ -451,12 +460,14 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 										stroke-linejoin="round"
 									/>
 								</svg>
-							</button>
+							</Button>
 						);
 					}}
 				</For>
 				<Show when={activeBranchName()}>
-					<button
+					<Button
+						size="compact"
+						variant="ghost"
 						class={s.branch}
 						onClick={(e) => {
 							e.stopPropagation();
@@ -475,29 +486,19 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 						</Show>
 						<span class={s.branchName}>{activeBranchName()}</span>
 						<Show when={aheadBehind()}>{(ab) => <span class={s.aheadBehind}>{ab()}</span>}</Show>
-					</button>
+					</Button>
 				</Show>
 			</div>
 
 			<div class={s.right}>
 				<Show when={props.repoPath}>
-					<button
-						type="button"
-						class={s.bell}
-						title={t("stories.title", "Plans and Stories")}
-						aria-label={t("stories.title", "Plans and Stories")}
-						onClick={() => storiesUi.open(props.repoPath)}
-					>
-						<svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor" aria-hidden="true">
-							<path d="M2 2h9a2 2 0 0 1 2 2v10H4a2 2 0 0 1-2-2V2Zm2 2v8h7V4H4Zm1 2h5v1H5V6Zm0 3h5v1H5V9Zm8-5h1v10h-1V4Z" />
-						</svg>
-					</button>
+					<StoriesButton repoPath={props.repoPath as string} />
 				</Show>
 				{/* Notification group: smart prompts + last-item pill + bell.
 				    The pill is a preview of the bell's newest notification, so the two
 				    stay adjacent. */}
 				<div class={s.notifGroup} ref={notifRef}>
-					<SmartPromptsDropdown repoPath={props.repoPath} onOpenSettings={props.onOpenSettings} />
+					<SmartPromptsDropdown triggerSize="compact" repoPath={props.repoPath} onOpenSettings={props.onOpenSettings} />
 
 					{/* Last-item shortcut — only when there are items */}
 					<Show when={lastItem()}>
@@ -513,7 +514,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 								info: undefined,
 							}[lastItemSeverity(src())];
 							return (
-								<button
+								<Button
+									size="compact"
+									variant="ghost"
 									class={cx(s.lastItemBtn, sevClass)}
 									onClick={handleLastItemClick}
 									title={(() => {
@@ -551,13 +554,15 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 											</>
 										)}
 									</Show>
-								</button>
+								</Button>
 							);
 						}}
 					</Show>
 
 					{/* Bell — always visible */}
-					<button
+					<Button
+						size="compact"
+						variant="ghost"
 						class={s.bell}
 						onClick={() => setShowNotifPopover(!showNotifPopover())}
 						title={`${totalBadgeCount()} ${t("toolbar.notifications", "notification(s)")}`}
@@ -568,15 +573,15 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 						<Show when={totalBadgeCount() > 0}>
 							<span class={s.notifCount}>{totalBadgeCount()}</span>
 						</Show>
-					</button>
+					</Button>
 					<Show when={showNotifPopover()}>
 						<div class={s.popover}>
 							<div class={s.sectionHeader}>
 								<span class={s.sectionLabel}>PROGRESS</span>
 								<Show when={progressStore.unreadCount > 0}>
-									<button class={s.dismissAll} onClick={() => progressStore.markRead()}>
+									<Button size="compact" variant="ghost" class={s.dismissAll} onClick={() => progressStore.markRead()}>
 										{t("toolbar.markAsRead", "Mark as read")}
-									</button>
+									</Button>
 								</Show>
 							</div>
 							<div
@@ -605,9 +610,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 							<Show when={hasUpdate()}>
 								<div class={s.notifHeader}>
 									<span class={s.notifTitle}>{t("toolbar.appUpdate", "APP UPDATE")}</span>
-									<button class={s.dismissAll} onClick={() => updaterStore.dismiss()}>
+									<Button size="compact" variant="ghost" class={s.dismissAll} onClick={() => updaterStore.dismiss()}>
 										{t("toolbar.dismiss", "Dismiss")}
-									</button>
+									</Button>
 								</div>
 								<div
 									class={s.notifItem}
@@ -681,7 +686,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 												<span class={s.sectionLabel}>{section.label}</span>
 												<div class={s.sectionActions}>
 													<Show when={isExternal() && sectionPlugin()}>
-														<button
+														<Button
+															size="compact"
+															variant="ghost"
 															class={cx(s.pluginToggle, sectionPlugin()!.paused && s.pluginToggleOff)}
 															onClick={(e) => {
 																e.stopPropagation();
@@ -699,15 +706,17 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 																	<path d="M3 2h3v12H3zm7 0h3v12h-3z" />
 																</svg>
 															)}
-														</button>
+														</Button>
 													</Show>
 													<Show when={section.canDismissAll}>
-														<button
+														<Button
+															size="compact"
+															variant="ghost"
 															class={s.activityDismissAll}
 															onClick={() => activityStore.dismissSection(section.id)}
 														>
 															{t("toolbar.dismissAll", "Dismiss All")}
-														</button>
+														</Button>
 													</Show>
 												</div>
 											</div>
@@ -730,7 +739,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 															</span>
 														</div>
 														<Show when={item.dismissible}>
-															<button
+															<Button
+																size="compact"
+																variant="ghost"
 																class={s.activityItemDismiss}
 																onClick={(e) => {
 																	e.stopPropagation();
@@ -738,7 +749,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 																}}
 															>
 																&times;
-															</button>
+															</Button>
 														</Show>
 													</div>
 												)}
@@ -752,7 +763,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 							<Show when={activeNotifs().length > 0}>
 								<div class={s.notifHeader}>
 									<span class={s.notifTitle}>{t("toolbar.prUpdates", "PR UPDATES")}</span>
-									<button
+									<Button
+										size="compact"
+										variant="ghost"
 										class={s.dismissAll}
 										onClick={() => {
 											prNotificationsStore.dismissAll();
@@ -760,7 +773,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 										}}
 									>
 										{t("toolbar.dismissAll", "Dismiss All")}
-									</button>
+									</Button>
 								</div>
 								<For each={activeNotifs()}>
 									{(notif) => {
@@ -795,7 +808,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 														{notif.branch}
 													</span>
 												</div>
-												<button
+												<Button
+													size="compact"
+													variant="ghost"
 													class={s.notifClose}
 													onClick={(e) => {
 														e.stopPropagation();
@@ -803,7 +818,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 													}}
 												>
 													&times;
-												</button>
+												</Button>
 											</div>
 										);
 									}}
@@ -825,7 +840,9 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 				<Show
 					when={isTauri()}
 					fallback={
-						<button
+						<Button
+							size="compact"
+							variant="ghost"
 							type="button"
 							class={s.watcherBtn}
 							onClick={() => commandPaletteStore.toggle()}
@@ -839,7 +856,7 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 							<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
 								<path d="M15.5 14h-.79l-.28-.27a6.471 6.471 0 0 0 1.48-5.34c-.47-2.78-2.79-5-5.59-5.34a6.505 6.505 0 0 0-7.27 7.27c.34 2.8 2.56 5.12 5.34 5.59a6.471 6.471 0 0 0 5.34-1.48l.27.28v.79l4.25 4.25c.41.41 1.08.41 1.49 0 .41-.41.41-1.08 0-1.49L15.5 14zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" />
 							</svg>
-						</button>
+						</Button>
 					}
 				>
 					<IdeLauncher

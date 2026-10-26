@@ -601,7 +601,7 @@ mod tests {
         );
 
         assert!(outcome.applied);
-        assert!(outcome.rejected.is_empty());
+        assert_eq!(outcome.rejected, [] as [std::string::String; 0]);
         assert_eq!(registry.matching_ids("DONE"), vec!["c1/w1".to_string()]);
         assert_eq!(
             registry.matching_ids("model is at capacity"),
@@ -636,7 +636,10 @@ mod tests {
     fn case_sensitivity_follows_the_js_flag() {
         let mut sensitive = OutputWatcherRegistry::default();
         sensitive.sync("c1", 1, &[spec("w", "Done", "")]);
-        assert!(sensitive.matching_ids("done").is_empty());
+        assert_eq!(
+            sensitive.matching_ids("done"),
+            [] as [std::string::String; 0]
+        );
 
         let mut insensitive = OutputWatcherRegistry::default();
         insensitive.sync("c1", 1, &[spec("w", "Done", "i")]);
@@ -648,7 +651,10 @@ mod tests {
         let registry = OutputWatcherRegistry::default();
         assert!(registry.is_idle());
         assert!(!registry.needs_all_lines());
-        assert!(registry.matching_ids("anything").is_empty());
+        assert_eq!(
+            registry.matching_ids("anything"),
+            [] as [std::string::String; 0]
+        );
     }
 
     // ── ECMAScript class semantics: Rust must never match less than JS ──
@@ -660,7 +666,7 @@ mod tests {
         let mut registry = OutputWatcherRegistry::default();
         registry.sync("c1", 1, &[spec("w", r"^\D$", "")]);
         assert_eq!(registry.matching_ids("\u{661}"), vec!["c1/w".to_string()]);
-        assert!(registry.matching_ids("7").is_empty());
+        assert_eq!(registry.matching_ids("7"), [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -690,7 +696,10 @@ mod tests {
             vec!["c1/d".to_string(), "c1/mix".to_string()]
         );
         // Arabic-Indic digits are not ECMAScript `\d`.
-        assert!(registry.matching_ids("\u{661}").is_empty());
+        assert_eq!(
+            registry.matching_ids("\u{661}"),
+            [] as [std::string::String; 0]
+        );
         assert_eq!(
             registry.matching_ids("src.main_2"),
             vec!["c1/mix".to_string()]
@@ -713,7 +722,7 @@ mod tests {
         registry.sync("c1", 1, &[spec("w", r"^\W$", "i")]);
         assert_eq!(registry.matching_ids("\u{212a}"), vec!["c1/w".to_string()]);
         assert_eq!(registry.matching_ids("\u{17f}"), vec!["c1/w".to_string()]);
-        assert!(registry.matching_ids("a").is_empty());
+        assert_eq!(registry.matching_ids("a"), [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -725,7 +734,10 @@ mod tests {
             registry.matching_ids("fatal error here"),
             vec!["c1/w".to_string()]
         );
-        assert!(registry.matching_ids("errors").is_empty());
+        assert_eq!(
+            registry.matching_ids("errors"),
+            [] as [std::string::String; 0]
+        );
         // ECMAScript sees a boundary between 'f' and 'é'; a Unicode-aware `\b`
         // would not, and the line would be lost.
         let mut accented = OutputWatcherRegistry::default();
@@ -755,7 +767,10 @@ mod tests {
             registry.matching_ids("progress\nDONE"),
             vec!["c1/w".to_string()]
         );
-        assert!(registry.matching_ids("progress DONE").is_empty());
+        assert_eq!(
+            registry.matching_ids("progress DONE"),
+            [] as [std::string::String; 0]
+        );
     }
 
     /// Segment matching is only for `m`. Without it, `^` is start-of-input in
@@ -765,7 +780,10 @@ mod tests {
     fn a_pattern_without_m_is_not_matched_per_segment() {
         let mut registry = OutputWatcherRegistry::default();
         registry.sync("c1", 1, &[spec("w", "^DONE", "")]);
-        assert!(registry.matching_ids("progress\rDONE").is_empty());
+        assert_eq!(
+            registry.matching_ids("progress\rDONE"),
+            [] as [std::string::String; 0]
+        );
     }
 
     // ── per-client sets: one frontend cannot blind another ──
@@ -864,7 +882,7 @@ mod tests {
     #[test]
     fn stream_lines_holds_a_partial_line_until_the_newline_arrives() {
         let mut lines = StreamLines::new();
-        assert!(lines.push("model is at ").is_empty());
+        assert_eq!(lines.push("model is at "), [] as [std::string::String; 0]);
         assert_eq!(lines.push("capacity\n"), vec!["model is at capacity"]);
     }
 
@@ -877,7 +895,7 @@ mod tests {
     #[test]
     fn stream_lines_keeps_a_split_crlf_intact() {
         let mut lines = StreamLines::new();
-        assert!(lines.push("value\r").is_empty());
+        assert_eq!(lines.push("value\r"), [] as [std::string::String; 0]);
         assert_eq!(lines.push("\nnext"), vec!["value"]);
     }
 
@@ -918,7 +936,7 @@ mod tests {
         let mut lines = StreamLines::new();
         let chunk = "x".repeat(64 * 1024);
         for _ in 0..16 {
-            assert!(lines.push(&chunk).is_empty());
+            assert_eq!(lines.push(&chunk), [] as [std::string::String; 0]);
         }
         assert!(lines.buffer.len() <= MAX_PENDING_LINE);
 
@@ -935,10 +953,10 @@ mod tests {
     #[test]
     fn an_overflowing_line_is_dropped_rather_than_truncated() {
         let mut lines = StreamLines::new();
-        assert!(lines.push("y").is_empty());
+        assert_eq!(lines.push("y"), [] as [std::string::String; 0]);
         let chunk = "x".repeat(64 * 1024);
         for _ in 0..5 {
-            assert!(lines.push(&chunk).is_empty());
+            assert_eq!(lines.push(&chunk), [] as [std::string::String; 0]);
         }
         // The newline that ends the oversized line yields nothing, and the
         // stream resumes cleanly on the next one.
@@ -961,7 +979,7 @@ mod tests {
     #[test]
     fn flush_returns_the_unterminated_tail_at_end_of_stream() {
         let mut lines = StreamLines::new();
-        assert!(lines.push("DONE").is_empty());
+        assert_eq!(lines.push("DONE"), [] as [std::string::String; 0]);
         assert_eq!(lines.flush().as_deref(), Some("DONE"));
         // Drained: a second flush has nothing left.
         assert_eq!(lines.flush(), None);

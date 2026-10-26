@@ -1,4 +1,5 @@
 import { For, Show } from "solid-js";
+import { Button } from "../../components/ui";
 import type { ChoicePrompt } from "../useSessions";
 import styles from "./ChoicePromptOverlay.module.css";
 
@@ -18,6 +19,8 @@ export function ChoicePromptOverlay(props: ChoicePromptOverlayProps) {
 			<For each={props.prompt.options}>
 				{(option) => (
 					<button
+						type="button"
+						data-control-layout="row"
 						class={styles.item}
 						disabled={props.disabled}
 						classList={{
@@ -33,9 +36,9 @@ export function ChoicePromptOverlay(props: ChoicePromptOverlayProps) {
 				)}
 			</For>
 			<Show when={props.prompt.selection_mode === "toggle-enter"}>
-				<button class={styles.item} disabled={props.disabled} onClick={() => props.onSelect("\r")}>
+				<Button variant="ghost" class={styles.submit} disabled={props.disabled} onClick={() => props.onSelect("\r")}>
 					Submit answers
-				</button>
+				</Button>
 			</Show>
 		</div>
 	);
