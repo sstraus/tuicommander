@@ -72,7 +72,7 @@ fn unix_socket_path_check_is_exact_at_the_boundary_and_names_the_way_out() {
     // TUIC_SOCKET is read only by clients (bridge/CLI); the listener ignores it,
     // so it must never be offered as the fix for a listener that cannot bind.
     assert!(
-        !message.contains("set TUIC_SOCKET"),
+        !message.contains("TUIC_SOCKET"),
         "advises a client-only env var as the listener fix: {message}"
     );
     // The 72-byte sandbox TMPDIR holds the primary with no headroom, never

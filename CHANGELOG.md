@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-- Explain a named instance's Unix socket path that cannot fit `sun_path`: one error names the length, the 103-byte limit, the longest `TMPDIR` that would hold it and `TUIC_SOCKET`, and the doomed bind retries are skipped.
+- Explain a named instance's Unix socket path that cannot fit `sun_path`: one error names the length, the 103-byte limit, the longest `TMPDIR` that would hold it, and the doomed bind retries are skipped.
 
 ## [2.0.0-beta.3] - 2026-10-26
 
