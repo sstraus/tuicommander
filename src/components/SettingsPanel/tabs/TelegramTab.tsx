@@ -3,6 +3,7 @@ import { t } from "../../../i18n";
 import { invoke } from "../../../invoke";
 import { settingsRefresh } from "../../../services/settingsRefresh";
 import { HttpRpcError } from "../../../transport";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { SettingStatus, SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
@@ -110,7 +111,7 @@ export const TelegramTab: Component = () => {
 		clearInterval(timer);
 	});
 	return (
-		<div class={`${s.section} ${telegram.panel}`}>
+		<div class={s.section}>
 			<SettingPageHeader title="Telegram" scope="This machine" breadcrumb="Integrations / Telegram" />
 			<Show when={settings()}>
 				{(data) => (
@@ -129,14 +130,14 @@ export const TelegramTab: Component = () => {
 									: undefined
 							}
 						>
-							<button
+							<Button
 								data-non-setting="Read the Telegram owner status without changing it"
 								class={s.testBtn}
 								onClick={() => void refresh()}
 								disabled={busy()}
 							>
 								Reload status
-							</button>
+							</Button>
 						</StatusSummary>
 						<SectionCard title="Bot setup">
 							<SettingToggle
@@ -169,7 +170,7 @@ export const TelegramTab: Component = () => {
 											value={token()}
 											onInput={(e) => setToken(e.currentTarget.value)}
 										/>
-										<button
+										<Button
 											data-non-setting="Typed Telegram token, chat or expiring-pairing workflow"
 											class={s.testBtn}
 											disabled={busy() || !token()}
@@ -180,7 +181,7 @@ export const TelegramTab: Component = () => {
 											}}
 										>
 											Save and check bot
-										</button>
+										</Button>
 									</div>
 								)}
 							</SettingRow>
@@ -201,14 +202,14 @@ export const TelegramTab: Component = () => {
 										<ListRow
 											name={id}
 											actions={
-												<button
+												<Button
 													data-non-setting="Typed Telegram token, chat or expiring-pairing workflow"
 													class={s.testBtn}
 													disabled={busy()}
 													onClick={() => void change({ action: "remove_chat", chat_id: id })}
 												>
 													Remove
-												</button>
+												</Button>
 											}
 										/>
 									)}
@@ -227,14 +228,14 @@ export const TelegramTab: Component = () => {
 											value={chat()}
 											onInput={(e) => setChat(e.currentTarget.value)}
 										/>
-										<button
+										<Button
 											data-non-setting="Typed Telegram token, chat or expiring-pairing workflow"
 											class={s.testBtn}
 											disabled={busy() || !chat()}
 											onClick={() => void change({ action: "add_chat", chat_id: chat() })}
 										>
 											Add chat ID
-										</button>
+										</Button>
 									</div>
 								)}
 							</SettingRow>
@@ -252,14 +253,14 @@ export const TelegramTab: Component = () => {
 								}
 							>
 								{() => (
-									<button
+									<Button
 										data-non-setting="Typed Telegram token, chat or expiring-pairing workflow"
 										class={s.testBtn}
 										disabled={busy() || !data().enabled || !data().connected}
 										onClick={() => void change({ action: "pair" })}
 									>
 										Link chat
-									</button>
+									</Button>
 								)}
 							</SettingRow>
 						</SectionCard>

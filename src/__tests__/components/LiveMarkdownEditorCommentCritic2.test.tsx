@@ -2,16 +2,28 @@
 
 import { EditorView } from "@codemirror/view";
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { LiveMarkdownEditor } from "../../components/MarkdownTab/LiveMarkdownEditor";
+import { activityStore } from "../../stores/activityStore";
+import { appLogger } from "../../stores/appLogger";
 import { cleanupToasts } from "../helpers/toasts";
+
+vi.mock("../../invoke", () => ({ invoke: vi.fn().mockResolvedValue(undefined) }));
 
 Range.prototype.getClientRects ??= () => [] as unknown as DOMRectList;
 Range.prototype.getBoundingClientRect ??= () => new DOMRect();
 
-afterEach(() => {
+// Real toasts mirror activity; load its in-memory persistence baseline first.
+beforeAll(async () => {
+	await activityStore.hydrate();
+});
+
+afterEach(async () => {
 	cleanup();
 	cleanupToasts();
+	vi.restoreAllMocks();
+	// Drain CodeMirror's dependency-owned 10ms focus notification after cleanup.
+	await new Promise((resolve) => setTimeout(resolve, 20));
 });
 
 const PLACEHOLDER = "Comment on the selection";
@@ -131,6 +143,7 @@ describe("comment composer IME guard and draft reset (critic 1293 round 2)", () 
 
 	it("an overlapping comment keeps the composer and the draft so the text is not lost", async () => {
 		// catches: the error path runs cancelComment/clears the draft, discarding what the user typed
+		const error = vi.spyOn(appLogger, "error").mockImplementation(() => {});
 		const t = await composer();
 		const first = await t.openComposer();
 		fireEvent.input(first, { target: { value: "one" } });
@@ -143,5 +156,6 @@ describe("comment composer IME guard and draft reset (critic 1293 round 2)", () 
 		fireEvent.keyDown(second, { key: "Enter", keyCode: 13 });
 		expect(t.view().state.sliceDoc()).toBe(before);
 		expect(screen.getByPlaceholderText(PLACEHOLDER)).toHaveProperty("value", "two");
+		expect(error).toHaveBeenCalledExactlyOnceWith("app", "live addTweakComment failed", expect.any(Error));
 	});
 });

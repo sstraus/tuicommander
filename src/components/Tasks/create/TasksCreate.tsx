@@ -1,5 +1,6 @@
 import { For, Show } from "solid-js";
 import type { WorkItemFieldSchema } from "../../../types/work-items.gen";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
 import { Textarea } from "../../ui/Textarea";
@@ -101,21 +102,21 @@ export function TasksCreate(props: TasksCreateProps) {
 				{(error) => (
 					<p class={styles.error} role="alert">
 						{error()}
-						<button type="button" onClick={model.retry} disabled={busy()}>
+						<Button type="button" onClick={model.retry} disabled={busy()}>
 							Retry
-						</button>
+						</Button>
 					</p>
 				)}
 			</Show>
 			<div class={styles.actions}>
 				<Show when={props.onCancel}>
-					<button type="button" onClick={props.onCancel} disabled={model.submitting()}>
+					<Button type="button" onClick={props.onCancel} disabled={model.submitting()}>
 						Cancel
-					</button>
+					</Button>
 				</Show>
-				<button type="submit" class={styles.primary} disabled={!model.canSubmit()}>
+				<Button type="submit" variant="primary" disabled={!model.canSubmit()}>
 					{model.submitting() ? "Creating…" : "Create"}
-				</button>
+				</Button>
 			</div>
 		</form>
 	);

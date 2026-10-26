@@ -56,31 +56,6 @@
   gap: 4px;
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--fg-secondary);
-  font-size: var(--font-xs);
-  font-family: var(--font-ui);
-  padding: 2px 8px;
-  cursor: pointer;
-  transition: background 0.1s ease, color 0.1s ease;
-}
-
-.btn:hover:not(:disabled) {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.btn:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-
 .btnIcon {
   display: inline-flex;
   align-items: center;
@@ -91,11 +66,6 @@
 .btnIcon svg {
   width: 14px;
   height: 14px;
-}
-
-.btnRunning {
-  color: var(--accent);
-  border-color: var(--accent);
 }
 
 @keyframes spin {

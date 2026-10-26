@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const invokeMock = vi.fn();
 
 vi.mock("../../invoke", () => ({ invoke: invokeMock }));
+vi.mock("../../stores/notifications", () => ({ notificationsStore: { isSessionSilenced: () => false } }));
 vi.mock("../../stores/toasts", () => ({ toastsStore: { add: vi.fn() } }));
 vi.mock("../../stores/appLogger", () => ({ appLogger: { error: vi.fn() } }));
 vi.mock("../../stores/repositories", () => ({

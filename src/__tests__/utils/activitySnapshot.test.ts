@@ -121,6 +121,7 @@ describe("activitySnapshot", () => {
 				{
 					id: "omitted-session",
 					name: "Terminal 5",
+					project: null,
 					shellState: "exited",
 					awaitingInput: null,
 					sessionId: null,

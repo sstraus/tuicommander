@@ -100,11 +100,23 @@ pub(in crate::workflows::run) async fn drive_effect(
                     continue;
                 }
                 if *role == AgentRole::Implementer {
-                    store.begin_graph_story(
+                    let status = store.begin_graph_story(
                         run,
                         &graph.target_id,
                         &format!("workflow:{}", attempt.id),
                     )?;
+                    if status == crate::stories::StoryStatus::Qa {
+                        let receipt = store.command_expected(
+                            &run.id,
+                            &format!("manual-qa:{}:{}", attempt.id, run.sequence),
+                            run.sequence,
+                            RunCommand::PauseFor {
+                                cause: format!("Story {} awaits manual QA", graph.target_id),
+                            },
+                        )?;
+                        emit_run_changed(state, &run.project, &run.id, receipt.sequence);
+                        return Ok(true);
+                    }
                 }
                 let key = format!("spawn:{}", attempt.id);
                 if run.effects.iter().any(|e| e.key == key) {
@@ -112,22 +124,7 @@ pub(in crate::workflows::run) async fn drive_effect(
                         "Agent spawn intent needs reconciliation; it will not be retried".into(),
                     );
                 }
-                // Named profiles are required; do not silently choose another model.
-                let profile = match role {
-                    AgentRole::Reviewer | AgentRole::Validator => "sonnet",
-                    AgentRole::Implementer => "sol",
-                    AgentRole::Coordinator | AgentRole::Planner => "sol",
-                };
-                let settings = crate::config::load_agents_config();
-                if !settings
-                    .agents
-                    .values()
-                    .any(|s| s.run_configs.iter().any(|c| c.name == profile))
-                {
-                    return Err(format!(
-                        "workflow requires the configured '{profile}' run profile"
-                    ));
-                }
+                let profile = resolve_run_profile(&crate::config::load_agents_config(), role)?;
                 let receipt = store.command_expected(
                     &run.id,
                     &format!("spawn-intent:{}", attempt.id),
@@ -192,7 +189,7 @@ pub(in crate::workflows::run) async fn drive_effect(
                         &id,
                         &attempt_id,
                         &worktree,
-                        profile,
+                        &profile,
                         feedback,
                     )
                 })
@@ -299,6 +296,15 @@ pub(in crate::workflows::run) async fn drive_effect(
 }
 
 fn fail_effect(store: &RunStore, run_id: &str, effect_id: &str) -> Result<(), String> {
+    // The launch path may already have closed this intent; marking twice would hide the real error.
+    if store
+        .snapshot(run_id)?
+        .effects
+        .iter()
+        .any(|e| e.id == effect_id && e.state != EffectState::Intended)
+    {
+        return Ok(());
+    }
     store
         .command(
             run_id,
@@ -309,4 +315,81 @@ fn fail_effect(store: &RunStore, run_id: &str, effect_id: &str) -> Result<(), St
             },
         )
         .map(|_| ())
+}
+
+/// A run configuration named `sol` (builders) or `sonnet` (reviewers) still wins when saved;
+/// otherwise the user's default run configuration serves every role.
+pub(in crate::workflows) fn resolve_run_profile(
+    config: &crate::config::AgentsConfig,
+    role: &AgentRole,
+) -> Result<String, String> {
+    let preferred = match role {
+        AgentRole::Reviewer | AgentRole::Validator => "sonnet",
+        AgentRole::Implementer | AgentRole::Coordinator | AgentRole::Planner => "sol",
+    };
+    if let Some((_, profile)) = config.named_run_config(preferred) {
+        return Ok(profile.name.clone());
+    }
+    let saved = config.saved_run_configs();
+    let no_default = || {
+        format!(
+            "workflow has no run profile for the {role:?} role: {}",
+            if saved.is_empty() {
+                "no run configuration is saved; save one in Settings > Agents".to_owned()
+            } else {
+                "several run configurations are saved and none is the default; mark one as default in Settings > Agents".to_owned()
+            }
+        )
+    };
+    let defaults: Vec<_> = saved
+        .iter()
+        .filter(|(_, profile)| profile.is_default)
+        .collect();
+    let candidates: Vec<_> = match (defaults.as_slice(), saved.as_slice()) {
+        ([], [only]) => vec![only],
+        ([], _) => return Err(no_default()),
+        _ => defaults,
+    };
+    // A default is chosen for interactive use; a sandbox bypass must be chosen for workflows by name.
+    let (safe, bypassing): (Vec<_>, Vec<_>) =
+        candidates.into_iter().partition(|(agent, profile)| {
+            crate::agent_hook_launch::permission_bypass_flag(config, agent, &profile.args).is_none()
+        });
+    match (safe.as_slice(), bypassing.first()) {
+        ([(_, profile)], _) => Ok(profile.name.clone()),
+        ([], Some((agent, profile))) => {
+            let flag =
+                crate::agent_hook_launch::permission_bypass_flag(config, agent, &profile.args)
+                    .unwrap_or_default();
+            Err(format!(
+                "workflow will not use the default run profile '{}': it passes {flag}. Save a run profile named '{preferred}' to choose it for workflows, or use another default",
+                profile.name
+            ))
+        }
+        (several, _) => Err(format!(
+            "several agents have a default run profile ({}); save a run profile named '{preferred}' to choose one for workflows",
+            several
+                .iter()
+                .map(|(_, profile)| profile.name.as_str())
+                .collect::<Vec<_>>()
+                .join(", ")
+        )),
+    }
+}
+
+/// What stops a published workflow from reaching its Agent steps, checked before a run starts.
+pub(in crate::workflows) fn profile_problems(
+    definition: &crate::workflows::PublishedWorkflow,
+    config: &crate::config::AgentsConfig,
+) -> Vec<String> {
+    let mut problems: Vec<String> = Vec::new();
+    for node in &definition.graph.nodes {
+        if let NodeKind::Agent { role, .. } = &node.kind
+            && let Err(problem) = resolve_run_profile(config, role)
+            && !problems.contains(&problem)
+        {
+            problems.push(problem);
+        }
+    }
+    problems
 }

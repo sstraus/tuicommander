@@ -41,7 +41,7 @@ fn recorded_legacy_prompts_survive_without_origin_but_harness_echoes_do_not() {
             updates[0]["sessionUpdate"], "user_message_chunk",
             "{signature}"
         );
-        assert!(!updates[0]["content"]["text"].as_str().unwrap().is_empty());
+        assert_ne!(updates[0]["content"]["text"].as_str().unwrap(), "");
     }
     let mut checked = 0;
     for (shape, fixture) in &cases {
@@ -214,11 +214,11 @@ fn recorded_queued_prompts_share_normal_prompt_safety() {
         json!({"kind":"unknown"}),
     ] {
         row["attachment"]["origin"] = origin;
-        assert!(run(&row.to_string()).is_empty());
+        assert_eq!(run(&row.to_string()), [] as [serde_json::Value; 0]);
     }
     row["attachment"]["origin"] = json!({"kind":"human"});
     for prompt in [Value::Null, json!(42), json!("  ")] {
         row["attachment"]["prompt"] = prompt;
-        assert!(run(&row.to_string()).is_empty());
+        assert_eq!(run(&row.to_string()), [] as [serde_json::Value; 0]);
     }
 }

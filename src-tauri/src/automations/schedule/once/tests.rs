@@ -135,10 +135,16 @@ fn preview_returns_only_one_instant_and_completion_comes_from_the_scheduled_curs
     assert!(!result.completed);
     assert_eq!(result.once_local, def.once_local);
     let elapsed = preview_definition(&def, at, 20, None).unwrap();
-    assert!(elapsed.occurrences.is_empty());
+    assert_eq!(
+        elapsed.occurrences,
+        [] as [chrono::DateTime<chrono::Utc>; 0]
+    );
     assert!(!elapsed.completed);
     let consumed = preview_definition(&def, before, 20, Some(at)).unwrap();
-    assert!(consumed.occurrences.is_empty());
+    assert_eq!(
+        consumed.occurrences,
+        [] as [chrono::DateTime<chrono::Utc>; 0]
+    );
     assert!(consumed.completed);
     assert_eq!(serde_json::to_value(consumed).unwrap()["completed"], true);
     assert!(preview_definition(&def, before, 0, None).is_err());

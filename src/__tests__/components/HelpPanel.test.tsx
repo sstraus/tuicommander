@@ -67,7 +67,7 @@ describe("HelpPanel", () => {
 	it("calls onClose when close button is clicked", () => {
 		const handleClose = vi.fn();
 		const { container } = render(() => <HelpPanel visible={true} onClose={handleClose} />);
-		const closeBtn = container.querySelector(".close");
+		const closeBtn = container.querySelector('button[aria-label="Close"]');
 		expect(closeBtn).not.toBeNull();
 		fireEvent.click(closeBtn!);
 		expect(handleClose).toHaveBeenCalledOnce();
@@ -118,4 +118,19 @@ describe("HelpPanel", () => {
 		expect(container.textContent).toContain("Terminal Status Dots");
 		expect(container.textContent).toContain("PR Status Badges");
 	});
+});
+
+it("catches shared Back and Escape closing Help instead of returning from a sub-view", () => {
+	const onClose = vi.fn();
+	const view = render(() => <HelpPanel visible onClose={onClose} />);
+	fireEvent.click(view.getByRole("button", { name: "UI Legend" }));
+	fireEvent.click(view.getByRole("button", { name: "Back" }));
+	expect(view.getByRole("heading", { name: "Help", level: 2 })).toBeInTheDocument();
+	expect(onClose).not.toHaveBeenCalled();
+	fireEvent.click(view.getByRole("button", { name: "UI Legend" }));
+	fireEvent.keyDown(document, { key: "Escape" });
+	expect(view.getByRole("heading", { name: "Help", level: 2 })).toBeInTheDocument();
+	expect(onClose).not.toHaveBeenCalled();
+	fireEvent.keyDown(document, { key: "Escape" });
+	expect(onClose).toHaveBeenCalledOnce();
 });

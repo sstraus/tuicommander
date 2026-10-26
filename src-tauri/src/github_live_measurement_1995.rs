@@ -147,7 +147,7 @@ async fn observe_joined_live_github_1995() {
     );
     std::fs::create_dir_all(&evidence).unwrap();
     let token = std::env::var("GH_TOKEN").expect("process-local token required");
-    assert!(!token.is_empty());
+    assert_ne!(token, "");
     let scratch = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
     let config = scratch.path().join("config");
     std::fs::create_dir_all(&config).unwrap();

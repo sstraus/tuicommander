@@ -31,6 +31,9 @@ const SCROLL_CHUNK_SIZE = 100;
 const SCROLL_UP_THRESHOLD = 300;
 
 interface OutputViewProps {
+	sessionExists?: boolean;
+	onConnectionError?: (error: string | null) => void;
+	onRegisterRetry?: (retry: (() => void) | undefined) => void;
 	onAtBottomChange?: (atBottom: boolean) => void;
 	onRegisterScrollToBottom?: (jump: (() => void) | undefined) => void;
 	sessionId: string;
@@ -54,6 +57,34 @@ export function OutputView(props: OutputViewProps) {
 	let containerEl: HTMLDivElement | undefined;
 	let textEl: HTMLPreElement | undefined;
 	let unsubscribe: PtySubscription | null = null;
+	let streamGeneration = 0;
+	let disposed = false;
+	let retryTimer: ReturnType<typeof setTimeout> | undefined;
+	let retryDelay = 3_000;
+	let connectionGrace: ReturnType<typeof setTimeout> | undefined;
+	const connected = () => {
+		clearTimeout(connectionGrace);
+		connectionGrace = undefined;
+		props.onConnectionError?.(null);
+	};
+	const connecting = () => {
+		if (connectionGrace !== undefined) return;
+		connectionGrace = setTimeout(() => props.onConnectionError?.("Terminal stream is unavailable."), 5_000);
+	};
+	props.onRegisterRetry?.(() => void startStream());
+	const scheduleRetry = () => {
+		clearTimeout(retryTimer);
+		retryTimer = setTimeout(() => {
+			if (!disposed && props.sessionExists !== false && document.visibilityState !== "hidden") void startStream();
+		}, retryDelay);
+		retryDelay = Math.min(retryDelay * 2, 30_000);
+	};
+	createEffect(() => {
+		if (props.sessionExists === false) {
+			clearTimeout(retryTimer);
+			connected();
+		}
+	});
 	// When the user scrolls up manually, stop auto-scrolling until they
 	// return to the bottom.
 	let userScrolledUp = false;
@@ -87,8 +118,12 @@ export function OutputView(props: OutputViewProps) {
 
 	/** Fetch initial log lines + screen rows via HTTP; returns the total_lines offset for WS catch-up. */
 	async function fetchInitialOutput(): Promise<number> {
+		const controller = new AbortController();
+		const timeout = setTimeout(() => controller.abort(), 5_000);
 		try {
-			const resp = await fetch(`/sessions/${props.sessionId}/output?format=log&limit=${INITIAL_FETCH_LIMIT}`);
+			const resp = await fetch(`/sessions/${props.sessionId}/output?format=log&limit=${INITIAL_FETCH_LIMIT}`, {
+				signal: controller.signal,
+			});
 			if (!resp.ok) {
 				appLogger.warn("terminal", "fetchInitialOutput non-ok response, will rely on WS", { status: resp.status });
 				return 0;
@@ -120,6 +155,8 @@ export function OutputView(props: OutputViewProps) {
 			return total;
 		} catch (err) {
 			appLogger.warn("terminal", "fetchInitialOutput failed, will rely on WS catch-up", { error: err });
+		} finally {
+			clearTimeout(timeout);
 		}
 		return 0;
 	}
@@ -244,29 +281,55 @@ export function OutputView(props: OutputViewProps) {
 	createVisibilityGate(
 		() => {
 			unsubscribe?.pause();
+			clearTimeout(connectionGrace);
+			connectionGrace = undefined;
 			if (unsubscribe) recordMobileSocketState(props.sessionId, "paused");
 		},
 		() => {
-			if (unsubscribe) recordMobileSocketState(props.sessionId, "connecting");
-			unsubscribe?.resume();
+			if (unsubscribe) {
+				recordMobileSocketState(props.sessionId, "connecting");
+				unsubscribe.resume();
+			} else void startStream();
 		},
 	);
 
-	onMount(async () => {
+	onMount(() => {
+		// Keyboard and rotation resize the clip without delivering new PTY output.
+		// Reuse the live-output follow path so detached readers and touches stay put.
+		const resizeObserver = new ResizeObserver(() => scrollToBottom());
+		if (containerEl) resizeObserver.observe(containerEl);
+		onCleanup(() => resizeObserver.disconnect());
 		containerEl?.addEventListener("scroll", handleScroll, { passive: true });
 		containerEl?.addEventListener("touchstart", handleTouchStart, { passive: true });
 		containerEl?.addEventListener("touchend", handleTouchEnd, { passive: true });
 		containerEl?.addEventListener("touchcancel", handleTouchEnd, { passive: true });
-		const offset = await fetchInitialOutput();
+		void startStream();
+	});
 
+	async function startStream() {
+		clearTimeout(retryTimer);
+		const generation = ++streamGeneration;
+		unsubscribe?.();
+		unsubscribe = null;
+		setSubscribeError(null);
+		connecting();
+		const offset = await fetchInitialOutput();
+		if (disposed || generation !== streamGeneration) return;
 		try {
 			recordMobileSocketState(props.sessionId, "connecting");
-			unsubscribe =
+			const subscription =
 				(await subscribePty(
 					props.sessionId,
 					() => {}, // unused — onLogLines handles log delivery
 					() => {
 						recordMobileSocketState(props.sessionId, "closed");
+						// Transport retry exhaustion also reports exit. The session poll,
+						// not a failed socket, decides whether the terminal still exists.
+						if (props.sessionExists === false) connected();
+						else {
+							connecting();
+							scheduleRetry();
+						}
 						setLogLines((prev) => [...prev, { spans: [{ text: "--- session exited ---" }] }]);
 						reconcileScreenRows([]);
 					},
@@ -289,10 +352,23 @@ export function OutputView(props: OutputViewProps) {
 						},
 						onStateChange: props.onStateChange,
 						onInputLine: props.onInputLine,
-						onReconnecting: () => recordMobileSocketState(props.sessionId, "reconnecting"),
-						onReconnected: () => recordMobileSocketState(props.sessionId, "open"),
+						onReconnecting: () => {
+							connecting();
+							recordMobileSocketState(props.sessionId, "reconnecting");
+						},
+						onReconnected: () => {
+							connected();
+							recordMobileSocketState(props.sessionId, "open");
+						},
 					},
 				)) ?? null;
+			if (disposed || generation !== streamGeneration) {
+				subscription?.();
+				return;
+			}
+			unsubscribe = subscription;
+			retryDelay = 3_000;
+			connected();
 			// The subscription is installed after an awaited fetch. A page hidden
 			// during that window produced no visibilitychange to catch, so without
 			// this the stream would run until the next one — which for a tab
@@ -302,14 +378,29 @@ export function OutputView(props: OutputViewProps) {
 				recordMobileSocketState(props.sessionId, "paused");
 			} else recordMobileSocketState(props.sessionId, "open");
 		} catch (err) {
+			if (disposed || generation !== streamGeneration) return;
+			if (props.sessionExists === false) {
+				connected();
+				return;
+			}
 			recordMobileSocketState(props.sessionId, "failed");
 			const msg = err instanceof Error ? err.message : String(err);
 			appLogger.error("terminal", "Failed to subscribe to PTY output", { error: msg });
 			setSubscribeError(msg);
+			clearTimeout(connectionGrace);
+			props.onConnectionError?.("Terminal stream is unavailable.");
+			scheduleRetry();
 		}
-	});
+	}
 
 	onCleanup(() => {
+		disposed = true;
+		streamGeneration++;
+		clearTimeout(retryTimer);
+		clearTimeout(connectionGrace);
+		connectionGrace = undefined;
+		props.onConnectionError?.(null);
+		props.onRegisterRetry?.(undefined);
 		unsubscribe?.();
 		if (unsubscribe) recordMobileSocketState(props.sessionId, "closed");
 		containerEl?.removeEventListener("scroll", handleScroll);
@@ -427,13 +518,20 @@ export function OutputView(props: OutputViewProps) {
 							{label}
 						</a>
 					) : (
-						<button
-							type="button"
+						<span
+							role="button"
+							tabIndex={0}
 							class={styles.fileLink}
 							onClick={() => props.onOpenFileLink?.(link.candidate!, link.line)}
+							onKeyDown={(event) => {
+								if (event.key === "Enter" || event.key === " ") {
+									event.preventDefault();
+									event.currentTarget.click();
+								}
+							}}
 						>
 							{label}
-						</button>
+						</span>
 					),
 				);
 				offset = to;

@@ -15,7 +15,12 @@ function truncate(text: string, max: number): string {
 function BannerItem(props: { session: SessionInfo; onNavigate: (sessionId: string) => void }) {
 	const repo = () => props.session.cwd?.split("/").filter(Boolean).pop() ?? "Unknown repository";
 	return (
-		<button class={styles.banner} onClick={() => props.onNavigate(props.session.session_id)}>
+		<button
+			type="button"
+			data-control-layout="row"
+			class={styles.banner}
+			onClick={() => props.onNavigate(props.session.session_id)}
+		>
 			<span class={styles.agent}>{props.session.display_name || props.session.state?.agent_type || "Terminal"}</span>
 			<span class={styles.repo}>{repo()}</span>
 			<span class={styles.question}>{truncate(props.session.state?.question_text ?? "Awaiting input", 80)}</span>

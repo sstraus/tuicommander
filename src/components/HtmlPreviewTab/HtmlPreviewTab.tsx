@@ -17,6 +17,7 @@ import { browserLocalImageUrl, rewriteLocalImages } from "../../utils/repoImageU
 import { buildSearchPattern, type SearchOptions } from "../shared/DomSearchEngine";
 import e from "../shared/editor-header.module.css";
 import { createSearchVisibility, SearchBar } from "../shared/SearchBar";
+import { Button } from "../ui/Button";
 import s from "./HtmlPreviewTab.module.css";
 
 export interface HtmlPreviewTabProps {
@@ -260,16 +261,16 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 				<span class={e.filename} title={displayPath()}>
 					{props.tab.fileName}
 				</span>
-				<button class={e.btn} onClick={handleEdit} title="Edit source">
+				<Button class={e.btn} onClick={handleEdit} title="Edit source">
 					<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 						<path d="M11.13 1.47a1.5 1.5 0 0 1 2.12 0l1.28 1.28a1.5 1.5 0 0 1 0 2.12L5.9 13.5a1 1 0 0 1-.5.27l-3.5.87a.5.5 0 0 1-.6-.6l.87-3.5a1 1 0 0 1 .27-.5L11.13 1.47ZM12.2 2.53l-8.46 8.47-.58 2.34 2.34-.58 8.47-8.46-1.77-1.77Z" />
 					</svg>
-				</button>
-				<button class={e.btn} onClick={handleOpenExternal} title="Open externally">
+				</Button>
+				<Button class={e.btn} onClick={handleOpenExternal} title="Open externally">
 					<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 						<path d="M9 2h5v5l-2-2-3 3-2-2 3-3zm-3 7l-3 3 2 2H0V9l2 2 3-3z" />
 					</svg>
-				</button>
+				</Button>
 			</div>
 			<Show when={kind() === "html"}>
 				<SearchBar

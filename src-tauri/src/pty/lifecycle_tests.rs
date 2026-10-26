@@ -1669,6 +1669,9 @@ fn pty_spawn_env_child_checks_inherited_build_context() {
             "CARGO_PKG_NAME",
             "OUT_DIR",
             "RUSTDOC",
+            "RUSTUP_TOOLCHAIN",
+            "RUSTUP_TOOLCHAIN_SOURCE",
+            "RUST_RECURSION_COUNT",
             "CARGO_INCREMENTAL",
             "RUSTC_WRAPPER",
             "RUSTC_WORKSPACE_WRAPPER",
@@ -1699,6 +1702,17 @@ fn pty_spawn_env_child_checks_inherited_build_context() {
         ] {
             assert_eq!(cmd.get_env(key), None, "{key} leaked into a PTY");
         }
+        for (key, value) in [
+            ("RUSTUP_HOME", "/user/rustup"),
+            ("RUST_LOG", "warn"),
+            ("RUST_BACKTRACE", "1"),
+        ] {
+            assert_eq!(
+                cmd.get_env(key),
+                Some(std::ffi::OsStr::new(value)),
+                "{key} user preference was removed"
+            );
+        }
         assert_eq!(
             cmd.get_env("CARGO_HOME"),
             Some(std::ffi::OsStr::new("/user/cargo"))
@@ -1713,6 +1727,12 @@ fn pty_spawn_env_child_checks_inherited_build_context() {
         );
     }
     agent.env("CARGO_TARGET_DIR", "/intentional-agent-target");
+    // Catches: sanitization overriding an explicit run-config toolchain.
+    agent.env("RUSTUP_TOOLCHAIN", "nightly");
+    assert_eq!(
+        agent.get_env("RUSTUP_TOOLCHAIN"),
+        Some(std::ffi::OsStr::new("nightly"))
+    );
     agent.env("CARGO_INCREMENTAL", "1");
     agent.env("RUSTC_WRAPPER", "/intentional-agent-wrapper");
     agent.env("MBX_SOCKET", "/intentional-agent-mbx.sock");
@@ -2278,7 +2298,7 @@ async fn a_resize_reflows_off_the_calling_thread() {
     let caller = std::thread::current().id();
     // The session has no PTY, so this ends in "Session not found" — after the
     // grid reflow, which is precisely the work that must not run here.
-    let _ = resize_session_off_thread(&state, sid.to_string(), 40, 120).await;
+    let _ = resize_session_off_thread(&state, sid.to_string(), 40, 120, "test").await;
 
     assert!(resize_thread(sid).is_some(), "the reflow never ran at all");
     assert_ne!(
@@ -2293,8 +2313,8 @@ fn resize_rejects_zero_dims() {
     let state = crate::state::tests_support::make_test_app_state();
     // rows==0 / cols==0 are rejected before any lock, grid, or PTY work — the
     // (0,0) pair is reserved as the "never applied" sentinel inside the lock.
-    assert!(resize_session_core(&state, "s", 0, 80).is_err());
-    assert!(resize_session_core(&state, "s", 24, 0).is_err());
+    assert!(resize_session_core(&state, "s", 0, 80, "test").is_err());
+    assert!(resize_session_core(&state, "s", 24, 0, "test").is_err());
     // A rejected resize must not even create a resize_locks entry.
     assert!(!state.session_maps.resize_locks.contains_key("s"));
 }
@@ -2310,23 +2330,17 @@ fn resize_noop_guard_returns_none_on_matching_dims() {
     // Same dims → no-op returning None WITHOUT touching the (absent) session.
     // Without the guard this would fall through to sessions.get and fail with
     // "Session not found", so Ok(None) proves the guard short-circuited first.
-    assert_eq!(resize_session_core(&state, "s", 24, 80), Ok(None));
+    assert_eq!(resize_session_core(&state, "s", 24, 80, "test"), Ok(None));
 }
 
+/// Catches treating a matching grid as proof of a successful resize with no PTY.
 #[test]
-fn resize_seeds_applied_from_grid_and_noops_at_startup_dims() {
+fn resize_matching_grid_without_pty_reports_missing_session() {
     let state = crate::state::tests_support::make_test_app_state();
-    // Grid exists at the startup dims but resize_locks is empty → the lock
-    // opens at the (0,0) never-applied sentinel.
     seed_vt_grid(&state, "s", 24, 80);
-    // A first resize matching only the startup dims must seed *applied from
-    // the live grid and then no-op — no gratuitous SIGWINCH, no session touch.
-    assert_eq!(resize_session_core(&state, "s", 24, 80), Ok(None));
-    // The seed must have populated resize_locks with the live grid dims.
     assert_eq!(
-        *state.session_maps.resize_locks.get("s").unwrap().lock(),
-        (24, 80),
-        "first resize must seed the last-applied dims from the live grid"
+        resize_session_core(&state, "s", 24, 80, "test"),
+        Err("Session not found: s".to_string())
     );
 }
 
@@ -2369,6 +2383,72 @@ fn spawn_real_pty_session(state: &crate::state::AppState, sid: &str, rows: u16, 
     seed_vt_grid(state, sid, rows, cols);
 }
 
+/// Catches a grid-seeded no-op that leaves the child's kernel winsize unchanged.
+#[cfg(unix)]
+#[test]
+fn resize_first_request_matching_legacy_grid_reaches_child() {
+    let state = crate::state::tests_support::make_test_app_state();
+    let scratch = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let observed = scratch.path().join("child-winsize");
+    let gate = scratch.path().join("resize-gate");
+    let gate_cstr = std::ffi::CString::new(gate.as_os_str().as_encoded_bytes()).unwrap();
+    // SAFETY: the C string is valid and the FIFO is private to this test.
+    assert_eq!(unsafe { libc::mkfifo(gate_cstr.as_ptr(), 0o600) }, 0);
+    let pair = native_pty_system()
+        .openpty(PtySize {
+            rows: 40,
+            cols: 100,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .unwrap();
+    let mut cmd = CommandBuilder::new("/bin/sh");
+    // The child queries its own controlling terminal only after the resize.
+    cmd.args([
+        "-c",
+        "read answer < \"$2\"; stty size > \"$1\"",
+        "winsize-probe",
+    ]);
+    cmd.arg(&observed);
+    cmd.arg(&gate);
+    let child = pair.slave.spawn_command(cmd).unwrap();
+    let writer = pair.master.take_writer().unwrap();
+    let sid = "resize-first-legacy-grid";
+    state.session_maps.sessions.insert(
+        sid.to_string(),
+        Mutex::new(PtySession {
+            launch_receipt: None,
+            writer: Arc::new(Mutex::new(writer)),
+            master: pair.master,
+            _child: child,
+            paused: Arc::new(AtomicBool::new(false)),
+            worktree: None,
+            initial_cwd: None,
+            cwd: None,
+            display_name: None,
+            display_name_is_custom: false,
+            display_name_from_spawn: false,
+            is_remote: false,
+            shell: "/bin/sh".to_string(),
+        }),
+    );
+    seed_vt_grid(&state, sid, 24, 220);
+
+    let result = resize_session_core(&state, sid, 24, 220, "test");
+    let entry = state.session_maps.sessions.get(sid).unwrap();
+    let mut session = entry.lock();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&gate)
+        .unwrap()
+        .write_all(b"probe\n")
+        .unwrap();
+    assert!(session._child.wait().unwrap().success());
+    assert!(result.is_ok(), "resize failed: {result:?}");
+    let size = std::fs::read_to_string(&observed).unwrap();
+    assert_eq!(size.split_whitespace().collect::<Vec<_>>(), ["24", "220"]);
+}
+
 /// CONC-B invariant: two concurrent resizes with different dims must leave the
 /// grid AND the PTY at the same dimensions — both equal to whichever call
 /// acquired the per-session lock last — never a grid/PTY mismatch. Stress the
@@ -2389,12 +2469,12 @@ fn concurrent_differing_resizes_leave_grid_and_pty_consistent() {
         let (s1, b1) = (Arc::clone(&state), Arc::clone(&barrier));
         let t1 = std::thread::spawn(move || {
             b1.wait();
-            let _ = resize_session_core(&s1, sid, A.0, A.1);
+            let _ = resize_session_core(&s1, sid, A.0, A.1, "test");
         });
         let (s2, b2) = (Arc::clone(&state), Arc::clone(&barrier));
         let t2 = std::thread::spawn(move || {
             b2.wait();
-            let _ = resize_session_core(&s2, sid, B.0, B.1);
+            let _ = resize_session_core(&s2, sid, B.0, B.1, "test");
         });
         t1.join().unwrap();
         t2.join().unwrap();
@@ -3561,6 +3641,127 @@ fn standby_observer_disconnect_retains_timeout_grace() {
                 .unwrap()
         );
         assert_eq!(standby_session(&fixture.state, "standby-job"), Ok(false));
+    }
+}
+
+/// Catches: updating only the grid, losing SIGWINCH, or retaining the spawn width.
+/// The foreground child calls TIOCGWINSZ after SIGWINCH, not a parent-side size read.
+#[cfg(unix)]
+#[tokio::test]
+async fn production_spawn_resize_reaches_child_winsize() {
+    use std::time::{Duration, Instant};
+
+    struct SessionCleanup(Arc<AppState>, String);
+    impl Drop for SessionCleanup {
+        fn drop(&mut self) {
+            close_pty_core(&self.0, &self.1, false);
+        }
+    }
+
+    fn await_size(paths: &[std::path::PathBuf], expected: &str, budget: Duration) {
+        let deadline = Instant::now() + budget;
+        loop {
+            let observed: Vec<_> = paths
+                .iter()
+                .map(|path| std::fs::read_to_string(path).unwrap_or_default())
+                .collect();
+            if observed
+                .iter()
+                .any(|value| value.split_whitespace().collect::<Vec<_>>().join(" ") == expected)
+            {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "child winsize at {}: expected {expected}, observed {observed:?}",
+                paths
+                    .iter()
+                    .map(|path| path.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    }
+
+    // Separate startup allowance from the post-readiness signal-delivery bound.
+    const STARTUP: Duration = Duration::from_secs(60);
+    const SIGNAL: Duration = Duration::from_secs(10);
+    // The probe must itself own the foreground: a shell trap can miss WINCH
+    // while an interactive shell has handed the foreground to a subprocess.
+    let script = r#"import os, signal
+from pathlib import Path
+
+def sample(path):
+    size = os.get_terminal_size(0)
+    Path(path).write_text(f"{size.lines} {size.columns}")
+
+signal.signal(signal.SIGWINCH, lambda *_: sample("winch"))
+sample("initial")
+while True:
+    signal.pause()
+"#;
+    let shell_command = format!(
+        "exec /usr/bin/python3 -u -c '{}'",
+        script.replace('\'', "'\\''")
+    );
+    for (direct, early_resize) in [(true, false), (false, false), (true, true), (false, true)] {
+        let dir = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sid = if direct {
+            crate::mcp_http::session::spawn_pty_command(
+                state.clone(),
+                std::path::Path::new("/usr/bin/python3"),
+                dir.path(),
+                &["-u".into(), "-c".into(), script.into()],
+            )
+        } else {
+            crate::mcp_http::session::spawn_pty_session(
+                state.clone(),
+                "/bin/sh".into(),
+                Some(dir.path().to_string_lossy().into_owned()),
+                24,
+                80,
+                None,
+                crate::mcp_http::session::RequestedIdentity {
+                    startup_command: Some(shell_command.clone()),
+                    ..Default::default()
+                },
+            )
+        }
+        .expect("production PTY spawn must succeed");
+        let _cleanup = SessionCleanup(state.clone(), sid.clone());
+        if early_resize {
+            // Apply the pane size before waiting for the child to install its trap.
+            resize_session_core(&state, &sid, 40, 200, "width-diagnostic").unwrap();
+        }
+        await_size(
+            &[dir.path().join("initial"), dir.path().join("winch")],
+            if early_resize { "40 200" } else { "24 80" },
+            STARTUP,
+        );
+
+        for (rows, cols, expected) in [(40, 200, "40 200"), (24, 60, "24 60"), (40, 200, "40 200")]
+            .into_iter()
+            .skip(usize::from(early_resize))
+        {
+            let signal_file = dir.path().join("winch");
+            if signal_file.exists() {
+                std::fs::remove_file(&signal_file).unwrap();
+            }
+            resize_session_core(&state, &sid, rows, cols, "width-diagnostic").unwrap_or_else(
+                |error| {
+                    panic!("direct={direct}, early={early_resize}, target={rows}x{cols}: {error}")
+                },
+            );
+            await_size(&[signal_file], expected, SIGNAL);
+            let vt = state.grid.vt_log_buffers.get(&sid).unwrap();
+            let vt = vt.lock();
+            assert_eq!(
+                (vt.grid_screen_lines(), vt.grid_columns()),
+                (rows as usize, cols as usize)
+            );
+        }
     }
 }
 

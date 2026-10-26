@@ -1,20 +1,18 @@
 .designer { display: flex; flex-direction: column; min-height: 0; flex: 1; color: var(--fg-primary); background: var(--bg-secondary); }
-.header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
+.header {
+  composes: toolbar from "../ui/FormControls.module.css"; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--border); }
 .header h3 { margin: 2px 0 0; font-size: var(--font-lg); }
 .eyebrow, .canvasTitle small, .muted { color: var(--fg-muted); font-size: var(--font-xs); }
 .eyebrow { text-transform: uppercase; letter-spacing: .05em; }
 .actions { display: flex; gap: 6px; flex-wrap: wrap; }
-.actions button, .palette button, .inspector button { border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-tertiary); color: var(--fg-primary); padding: 5px 9px; font: var(--font-xs) var(--font-ui); cursor: pointer; }
-.actions button:hover, .palette button:hover, .inspector button:hover { background: var(--bg-highlight); }
-.actions button:disabled, .inspector button:disabled { opacity: .5; cursor: default; }
 .body { display: grid; grid-template-columns: minmax(170px, 21%) minmax(0, 1fr) minmax(190px, 23%); min-height: 0; flex: 1; }
 .sidebar, .canvas, .inspector { min-width: 0; overflow: auto; }
 .sidebar { border-right: 1px solid var(--border); padding: 12px; }
 .inspector { border-left: 1px solid var(--border); padding: 12px; }
 .sidebar h4, .inspector h4 { margin: 0 0 10px; color: var(--fg-muted); font-size: var(--font-xs); text-transform: uppercase; letter-spacing: .05em; }
 .sidebar h4:not(:first-child) { margin-top: 24px; }
-.draft { display: flex; flex-direction: column; gap: 3px; width: 100%; border: 1px solid transparent; border-radius: var(--radius-sm); padding: 8px; background: transparent; color: var(--fg-primary); text-align: left; cursor: pointer; }
-.draft[aria-current="true"] { background: var(--bg-highlight); border-color: var(--accent); }
+button.draft[data-control-layout="row"] { display: flex; flex-direction: column; gap: 3px; width: 100%; border: 1px solid transparent; border-radius: var(--radius-sm); padding: 8px; background: transparent; color: var(--fg-primary); text-align: left; cursor: pointer; }
+button.draft[data-control-layout="row"][aria-current="true"] { background: var(--bg-highlight); border-color: var(--accent); }
 .draft small { color: var(--fg-muted); font-size: var(--font-xs); }
 .palette { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .palette button { text-align: left; }
@@ -22,7 +20,7 @@
 .canvasTitle { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; color: var(--fg-secondary); font-size: var(--font-sm); }
 .graph { display: flex; gap: 24px; align-items: flex-start; min-width: min-content; margin-top: 40px; padding-bottom: 20px; }
 .nodeColumn { width: 132px; flex: 0 0 132px; }
-.node { display: flex; flex-direction: column; gap: 10px; width: 100%; min-height: 82px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius-md); background: var(--bg-secondary); color: var(--fg-primary); padding: 10px; text-align: left; cursor: pointer; }
+button.node[data-control-layout="card"] { display: flex; flex-direction: column; gap: 10px; width: 100%; min-height: 82px; border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--radius-md); background: var(--bg-secondary); color: var(--fg-primary); padding: 10px; text-align: left; cursor: pointer; }
 .node[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 2px; }
 .node strong { font: 600 var(--font-sm) var(--font-mono); overflow-wrap: anywhere; }
 .nodeType { color: var(--fg-muted); font-size: var(--font-xs); text-transform: capitalize; }
@@ -31,7 +29,6 @@
 .inspector label { display: flex; flex-direction: column; gap: 5px; margin: 14px 0; color: var(--fg-secondary); font-size: var(--font-xs); }
 .inspector select, .inspector textarea, .inspector input { width: 100%; }
 .inspector button { display: block; margin-top: 9px; width: 100%; }
-.inspector .remove { color: var(--error); }
 .error, .notice { margin: 0; padding: 8px 18px; border-bottom: 1px solid var(--border); font-size: var(--font-sm); }
 .error { color: var(--error); }.notice { color: var(--success); }
 .designer button:focus-visible, .designer select:focus-visible, .designer textarea:focus-visible, .designer input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

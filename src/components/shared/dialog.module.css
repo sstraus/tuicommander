@@ -22,6 +22,7 @@
 }
 
 .popover {
+  composes: form from "../ui/FormControls.module.css";
   /* Fixed 320px on any desktop viewport. The clamp only bites on a phone, which
      these dialogs now reach: McpConfirmHost renders one in the mobile shell, and
      at 320px CSS px the old fixed width sat edge-to-edge with no margin. */
@@ -34,6 +35,7 @@
 }
 
 .header {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
@@ -80,27 +82,6 @@
   overflow-y: auto;
 }
 
-.body input:not([type="checkbox"]):not([type="radio"]):not([data-form-control]) {
-  width: 100%;
-  padding: 8px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-primary);
-  font-size: var(--font-base);
-  font-family: var(--font-mono);
-}
-
-.body input:not([type="checkbox"]):not([type="radio"]):not([data-form-control]):focus {
-  outline: none;
-  border-color: var(--accent);
-}
-
-.body input:not([type="checkbox"]):not([type="radio"]):not([data-form-control]):disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .error {
   margin: 8px 0 0;
   font-size: var(--font-md);
@@ -115,39 +96,6 @@
   border-top: 1px solid var(--border);
 }
 
-.actions button {
-  flex: 1;
-  padding: 8px 16px;
-  border: none;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-md);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.actions button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.cancelBtn {
-  background: var(--bg-highlight);
-  color: var(--fg-secondary);
-}
-
-.cancelBtn:hover:not(:disabled) {
-  background: var(--border);
-  color: var(--fg-primary);
-}
-
-.primaryBtn {
-  background: var(--accent);
-  color: var(--text-on-accent);
-}
-
-.primaryBtn:hover:not(:disabled) {
-  background: var(--accent-hover);
-}
+.actions button { flex: 1; }
 
 .body input[data-form-control] { width: 100%; }

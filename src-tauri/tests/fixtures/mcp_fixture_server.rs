@@ -65,6 +65,36 @@ fn main() {
                 }));
             }
 
+            ("delayed-tool-call", "initialize") => {
+                reply(&id, initialize_result("2025-11-25", json!({"tools": {}})));
+            }
+            ("delayed-tool-call", "tools/list") => {
+                reply(&id, json!({"tools": [tool("echo", "Delayed echo")]}));
+            }
+            ("delayed-tool-call", "tools/call") => {
+                let args = &request["params"]["arguments"];
+                std::thread::sleep(std::time::Duration::from_millis(
+                    args["delay_ms"].as_u64().unwrap(),
+                ));
+                reply(&id, echoed(args["message"].as_str().unwrap()));
+            }
+            ("delayed-tool-call", _) => {}
+
+            // A real crash/recovery probe. Each process reports its own pid.
+            ("crash-on-call", "initialize") => {
+                reply(&id, initialize_result("2025-11-25", json!({"tools": {}})));
+            }
+            ("crash-on-call", "tools/list") => {
+                reply(&id, json!({"tools": [tool("probe", "Process identity")]}));
+            }
+            ("crash-on-call", "tools/call") => {
+                if request["params"]["arguments"]["crash"] == true {
+                    std::process::exit(0);
+                }
+                reply(&id, echoed(&std::process::id().to_string()));
+            }
+            ("crash-on-call", _) => {}
+
             // ---------------------------------------------------------------
             ("protocol-offer-probe", "initialize") => {
                 if line.contains("\"protocolVersion\":\"2025-11-25\"") {

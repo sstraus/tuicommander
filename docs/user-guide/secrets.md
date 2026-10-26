@@ -22,9 +22,19 @@ TUICommander tool results and its entry UI; it is not an OS sandbox against an
 agent running as the same user, or protection against arbitrary transformations
 or exfiltration by the approved executable.
 
-Values exist only in backend memory. Removal and normal application exit
-zeroize them. Restart clears values and templates; `run` reports `missing`.
+Values exist only in backend memory, shared by name across all callers of that
+backend process. They are not scoped to an MCP connection or a TUIC session.
+A bridge reconnect or a new MCP session does not clear them. A request that uses
+an existing name replaces that value for all callers; a declined request does not.
+Removal and normal application exit zeroize values. Restart clears values and
+templates; `run` reports `missing` when a requested name has no stored value.
 There is no Keychain entry or configuration file for this feature.
+
+`secret action=remove names=["GITHUB_TOKEN"]` returns the requested names and
+`status: "removed"` when deletion completes. Removal is idempotent: the same
+result is returned when a name was already absent. It does not report prior
+presence. Earlier builds returned `status: "missing"` after successful removal;
+that meant the names were absent **after** deletion, not that storage had failed.
 
 ## Run and consent
 

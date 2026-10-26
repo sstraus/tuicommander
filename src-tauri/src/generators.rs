@@ -254,7 +254,7 @@ mod tests {
     #[test]
     fn cuid2_non_empty() {
         let r = genv(GeneratorRequest::Cuid2);
-        assert!(!r.value.is_empty());
+        assert_ne!(r.value, "");
     }
 
     // Catches changing the public 24-character, lowercase base36 ID format.
@@ -292,7 +292,7 @@ mod tests {
     fn totp_secret_is_valid_base32() {
         let r = genv(GeneratorRequest::TotpSecret);
         // RFC 4648 base32: A-Z + 2-7, no padding
-        assert!(!r.value.is_empty());
+        assert_ne!(r.value, "");
         assert!(r.value.chars().all(|c| matches!(c, 'A'..='Z' | '2'..='7')));
     }
 

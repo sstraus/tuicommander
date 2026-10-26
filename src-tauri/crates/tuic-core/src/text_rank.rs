@@ -46,13 +46,13 @@ mod tests {
     #[test]
     fn empty_query_returns_nothing() {
         let lines = vec!["hello world", "foo bar"];
-        assert!(rank_lines("", &lines).is_empty());
-        assert!(rank_lines("   ", &lines).is_empty());
+        assert_eq!(rank_lines("", &lines), [] as [(usize, f32); 0]);
+        assert_eq!(rank_lines("   ", &lines), [] as [(usize, f32); 0]);
     }
 
     #[test]
     fn empty_corpus_returns_nothing() {
-        assert!(rank_lines("query", &[]).is_empty());
+        assert_eq!(rank_lines("query", &[]), [] as [(usize, f32); 0]);
     }
 
     #[test]
@@ -63,7 +63,7 @@ mod tests {
             "nothing relevant here",
         ];
         let ranked = rank_lines("fox", &lines);
-        assert!(!ranked.is_empty());
+        assert_ne!(ranked, [] as [(usize, f32); 0]);
         // Line 1 mentions "fox" three times → should beat line 0 which has it once.
         assert_eq!(
             ranked[0].0, 1,

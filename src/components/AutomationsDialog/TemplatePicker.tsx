@@ -1,6 +1,7 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { t } from "../../i18n";
 import type { AutomationsStore } from "../../stores/automations";
+import { Button } from "../ui/Button";
 import { Select } from "../ui/Select";
 import s from "./AutomationsDialog.module.css";
 import type { AutomationTemplate } from "./contract";
@@ -40,9 +41,9 @@ export function TemplatePicker(props: { store: AutomationsStore }) {
 				<p role="alert" class={s.error}>
 					{error()}
 				</p>
-				<button type="button" onClick={() => void load()}>
+				<Button type="button" onClick={() => void load()}>
 					{t("automations.refresh", "Refresh")}
-				</button>
+				</Button>
 			</Show>
 			<label>
 				{t("automations.template", "Template")}
@@ -62,13 +63,13 @@ export function TemplatePicker(props: { store: AutomationsStore }) {
 			<p role="alert" class={s.reserved}>
 				{missing()}
 			</p>
-			<button
+			<Button
 				type="button"
 				disabled={!selected() || !!missing()}
 				onClick={() => void props.store.applyTemplate(selected())}
 			>
 				{t("automations.applyTemplate", "Apply template")}
-			</button>
+			</Button>
 		</fieldset>
 	);
 }

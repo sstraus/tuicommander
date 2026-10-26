@@ -1,4 +1,5 @@
 import { createEffect, createSignal, Show } from "solid-js";
+import { Button, Textarea } from "../../components/ui";
 import { ContentRenderer } from "../../components/ui/ContentRenderer";
 import { generateTweakCommentId, type TweakComment } from "../../utils/tweakComments";
 import styles from "./ReviewableMarkdown.module.css";
@@ -148,29 +149,28 @@ export function ReviewableMarkdown(props: ReviewableMarkdownProps) {
 							<Show
 								when={composing()}
 								fallback={
-									<button type="button" class={styles.button} onClick={() => setComposing(true)}>
+									<Button type="button" class={styles.button} onClick={() => setComposing(true)}>
 										Comment
-									</button>
+									</Button>
 								}
 							>
-								<textarea
-									class={styles.input}
+								<Textarea
 									aria-label="Comment text"
 									value={draft()}
 									onInput={(event) => setDraft(event.currentTarget.value)}
 								/>
 								<div class={styles.actions}>
-									<button type="button" class={styles.button} onClick={discardDraft}>
+									<Button type="button" class={styles.button} onClick={discardDraft}>
 										Cancel
-									</button>
-									<button
+									</Button>
+									<Button
 										type="button"
 										class={styles.button}
 										disabled={saving() || !draft().trim()}
 										onClick={() => void saveComment()}
 									>
 										Save comment
-									</button>
+									</Button>
 								</div>
 							</Show>
 						</Show>

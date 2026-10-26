@@ -11,6 +11,9 @@ export interface DirEntry {
 	git_status: string;
 	/** Whether the file is listed in .gitignore */
 	is_ignored: boolean;
+	/** Link text and target metadata; absent for ordinary directory entries. */
+	symlink_target?: string;
+	symlink_target_kind?: "directory" | "file" | "unavailable";
 }
 
 /** A single content match from full-text search */

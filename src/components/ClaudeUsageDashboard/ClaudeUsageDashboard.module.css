@@ -10,6 +10,7 @@
 }
 
 .header {
+ composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -324,20 +325,7 @@
   gap: 8px;
 }
 
-.retryButton {
-  padding: 3px 10px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-secondary);
-  font-size: var(--font-xs);
-  cursor: pointer;
-}
 
-.retryButton:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
 
 /* ---------- Plan strip ---------- */
 .planStrip {

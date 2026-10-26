@@ -125,7 +125,10 @@ async fn a_new_session_attaches_the_durable_id_the_agent_returned() {
     assert_eq!(attachment.state, AcpAttachmentState::Idle);
     assert_eq!(attachment.cwd, root);
     assert!(attachment.active_turn.is_none());
-    assert!(attachment.pending_permission_ids.is_empty());
+    assert_eq!(
+        attachment.pending_permission_ids,
+        [] as [tuicommander_lib::acp::AcpHostRequestId; 0]
+    );
 
     // The attachment is connection state, so the connection snapshot carries it.
     let snapshot = fixture.manager.snapshot(connection.connection_id).unwrap();

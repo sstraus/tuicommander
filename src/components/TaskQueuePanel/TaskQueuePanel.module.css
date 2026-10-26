@@ -14,6 +14,7 @@
 }
 
 .header {
+ composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -36,13 +37,8 @@
 }
 
 .clearBtn {
-  padding: 4px 10px;
   background: var(--bg-highlight);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
   color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  cursor: pointer;
   transition: background 0.15s, color 0.15s;
 }
 
@@ -52,17 +48,8 @@
 }
 
 .closeBtn {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: transparent;
-  border: none;
   color: var(--fg-secondary);
-  font-size: var(--font-2xl);
-  cursor: pointer;
-  border-radius: var(--radius-md);
   transition: background 0.15s, color 0.15s;
 }
 
@@ -214,17 +201,8 @@
 }
 
 .itemCancel {
-  width: 20px;
-  height: 20px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   background: transparent;
-  border: none;
   color: var(--fg-secondary);
-  font-size: var(--font-md);
-  cursor: pointer;
-  border-radius: var(--radius-md);
   transition: background 0.15s, color 0.15s;
 }
 

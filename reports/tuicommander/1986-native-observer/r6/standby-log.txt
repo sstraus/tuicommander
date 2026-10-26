@@ -1,0 +1,2 @@
+[2m2026-10-20T11:42:47.962611Z[0m [32m INFO[0m [2mtuicommander_lib::pty::lifecycle[0m[2m:[0m Session entered standby (SIGSTOP) [3msession_id[0m[2m=[0m"5e4b4238-2062-45c7-905a-42c1fbe17d98" [3mpgid[0m[2m=[0m44470
+[2m2026-10-20T11:42:48.572654Z[0m [32m INFO[0m [2mtuicommander_lib::pty::lifecycle[0m[2m:[0m Session woken from standby (SIGCONT) [3msession_id[0m[2m=[0m"5e4b4238-2062-45c7-905a-42c1fbe17d98" [3mpgid[0m[2m=[0m44470

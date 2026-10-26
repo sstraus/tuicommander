@@ -5,7 +5,8 @@
 .identity, .toolbar, .statusRow, .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .identity { color: var(--fg-secondary); }
 .key { color: var(--accent-hover); font-family: var(--font-mono); font-weight: 600; }
-.toolbar { margin-top: 12px; }
+.toolbar {
+ composes: toolbar from "../../ui/FormControls.module.css"; margin-top: 12px; }
 .actions { margin-top: 12px; }
 .metadata { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; color: var(--fg-secondary); }
 .label { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px 8px; font-size: var(--font-sm, 12px); }
@@ -22,11 +23,7 @@
 .field > button { align-self: flex-end; }
 .fieldLabel { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; }
 .fieldLabel > span:first-child { color: var(--fg-secondary); font-size: var(--font-sm, 12px); }
-.detail [data-form-control] { width: 100%; }
-.detail select[multiple] { min-height: 96px; }
-.detail button { min-height: 36px; padding: 8px 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); background: var(--bg-tertiary); color: var(--fg-primary); font: inherit; cursor: pointer; }
-.detail button:hover:enabled { background: var(--bg-highlight); color: var(--fg-primary); }
-.detail button:disabled { opacity: 0.5; cursor: not-allowed; }
+.detail :is(input, select, textarea)[data-form-control] { width: 100%; }
 .detail :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .comment { margin-bottom: 16px; padding: 12px; border: 1px solid var(--border); border-radius: var(--radius-lg); overflow-wrap: anywhere; }
 .commentHeader { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
@@ -36,12 +33,11 @@
 .thread > header { color: var(--fg-secondary); margin-bottom: 8px; overflow-wrap: anywhere; }
 .composer { display: flex; flex-direction: column; align-items: stretch; gap: 8px; margin-top: 16px; }
 .composer label { display: flex; flex-direction: column; gap: 8px; }
-.composer button { align-self: flex-end; background: var(--accent); color: var(--text-on-accent); }
+.composer button { align-self: flex-end; }
 .error { color: var(--error); padding: 12px 16px; margin: 0; border-top: 1px solid var(--border); overflow-wrap: anywhere; }
 .error button { margin-left: 8px; }
 @container (max-width: 600px) {
 	.header, .content { padding: 12px; }
-	.detail button { min-height: 44px; }
 	.statusRow { align-items: flex-start; }
 }
 .fieldGroup { margin-bottom: 24px; }

@@ -2,6 +2,8 @@ import { type Component, createSignal, For, Show } from "solid-js";
 import type { ChatOpenRequest } from "../../services/acpClient";
 import { registerModal } from "../../stores/modalStack";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import type { AcpChat } from "./useAcpChat";
 
 export const NewConversationDialog: Component<{ chat: AcpChat; onClose: () => void }> = (props) => {
@@ -30,7 +32,7 @@ export const NewConversationDialog: Component<{ chat: AcpChat; onClose: () => vo
 						{(field) => (
 							<label>
 								{field.label}
-								<input
+								<Input
 									aria-label={field.label}
 									placeholder="Use default"
 									disabled={opening()}
@@ -54,12 +56,12 @@ export const NewConversationDialog: Component<{ chat: AcpChat; onClose: () => vo
 					</Show>
 				</div>
 				<div class={d.actions}>
-					<button type="button" class={d.cancelBtn} disabled={opening()} onClick={props.onClose}>
+					<Button type="button" disabled={opening()} onClick={props.onClose}>
 						Cancel
-					</button>
-					<button
+					</Button>
+					<Button
 						type="button"
-						class={d.primaryBtn}
+						variant="primary"
 						disabled={opening()}
 						onClick={async () => {
 							setOpening(true);
@@ -72,7 +74,7 @@ export const NewConversationDialog: Component<{ chat: AcpChat; onClose: () => vo
 						}}
 					>
 						Create
-					</button>
+					</Button>
 				</div>
 			</div>
 		</div>

@@ -138,6 +138,10 @@ pub(crate) struct RemoteConnectionStatus {
     pub(crate) retry_after_secs: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) step: Option<String>,
+    /// Why a relay connection is down: `relay_unreachable`, `daemon_offline`,
+    /// `pairing_rejected` or `link_lost`. Only present beside `error`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) relay_failure: Option<&'static str>,
 }
 
 /// Live state for one connection. Never serialized as-is: `snapshot` builds the
@@ -157,6 +161,10 @@ struct Entry {
     error: Option<String>,
     retry_after_secs: Option<u64>,
     tunnel_id: Option<String>,
+    /// The relay attachment of a relay connection; dropping it closes the
+    /// loopback port and ends the tunnel.
+    relay: Option<crate::relay_tunnel::desktop::RelaySession>,
+    relay_failure: Option<&'static str>,
     /// The task that owns this connection's whole lifecycle: bring it up, keep
     /// it up, retry while it is down. Its presence IS the desired state — there
     /// is deliberately no second `wanted_up` flag to fall out of sync with it,
@@ -203,6 +211,9 @@ impl Entry {
                 .then_some(self.retry_after_secs)
                 .flatten(),
             step,
+            relay_failure: matches!(status, RemoteStatus::Error | RemoteStatus::Unauthenticated)
+                .then_some(self.relay_failure)
+                .flatten(),
         }
     }
 }
@@ -242,6 +253,9 @@ pub(crate) struct RemoteRuntime {
     /// the pool away each time, so every 5s heartbeat paid a fresh TCP and TLS
     /// handshake against a daemon it had just talked to.
     client: reqwest::Client,
+    /// Who this process is on the wire; a daemon answering with it is ourselves.
+    /// A field rather than a call so a test can run the daemon in-process.
+    identity: String,
 }
 
 impl Default for RemoteRuntime {
@@ -257,11 +271,17 @@ impl Default for RemoteRuntime {
             client: reqwest::Client::builder().build().expect(
                 "the default HTTP client must build — Client::new panics on the same failure",
             ),
+            identity: crate::app_instance::instance_identity().to_owned(),
         }
     }
 }
 
 impl RemoteRuntime {
+    #[cfg(test)]
+    pub(crate) fn set_identity_for_test(&mut self, identity: &str) {
+        self.identity = identity.to_owned();
+    }
+
     /// The shared HTTP client. Cloning is an `Arc` bump, not a new pool.
     pub(crate) fn http_client(&self) -> reqwest::Client {
         self.client.clone()
@@ -664,13 +684,30 @@ const REJECTED_CREDENTIALS: &str =
 /// when there is nothing left to drop, so a connection that errors on every
 /// probe announces the closure once rather than every five seconds.
 fn set_error(state: &Arc<AppState>, id: &str, status: RemoteStatus, error: String) {
+    record_error(state, id, status, error, None);
+    crate::remote_mirror::drop_connection(state, id);
+}
+
+/// The state change of [`set_error`], without retiring the rows, so a caller
+/// that must hold the lifecycle lock across it can drop them after. `relay_failure`
+/// is the typed reason of a relay connection; `None` leaves the stored one alone,
+/// so the probe that notices a dead link a few seconds later does not erase it.
+fn record_error(
+    state: &Arc<AppState>,
+    id: &str,
+    status: RemoteStatus,
+    error: String,
+    relay_failure: Option<&'static str>,
+) {
     tracing::warn!(source = "remote", connection = id, %error, "Remote connection failed");
     update(state, id, |e| {
         e.status = Some(status);
         e.token = None;
         e.error = Some(error);
+        if relay_failure.is_some() {
+            e.relay_failure = relay_failure;
+        }
     });
-    crate::remote_mirror::drop_connection(state, id);
 }
 
 // ---------------------------------------------------------------------------
@@ -690,7 +727,7 @@ pub(crate) struct Health {
 }
 
 /// Inspect the complete cause chain without exposing URLs or credentials.
-fn request_failure_kinds(error: &reqwest::Error) -> (bool, bool, bool) {
+fn request_failure_kinds(error: &(dyn std::error::Error + 'static)) -> (bool, bool, bool) {
     use std::error::Error;
     {
         let mut cause: Option<&(dyn Error + 'static)> = Some(error);
@@ -734,12 +771,20 @@ fn request_failure_kinds(error: &reqwest::Error) -> (bool, bool, bool) {
 
 /// reqwest's outer message hides the resolver, TCP and TLS cause.
 async fn request_error(error: reqwest::Error, base_url: &str) -> String {
+    request_error_message(&error, error.is_timeout(), base_url)
+}
+
+fn request_error_message(
+    error: &(dyn std::error::Error + 'static),
+    is_timeout: bool,
+    base_url: &str,
+) -> String {
     let host = reqwest::Url::parse(base_url)
         .ok()
         .and_then(|url| url.host_str().map(str::to_owned))
         .unwrap_or_else(|| "remote host".into());
-    let (dns, refused, tls) = request_failure_kinds(&error);
-    let message = if error.is_timeout() {
+    let (dns, refused, tls) = request_failure_kinds(error);
+    let message = if is_timeout {
         format!("Connection to {host} timed out")
     } else if dns {
         let advice = if !host.contains('.') && host.parse::<std::net::IpAddr>().is_err() {
@@ -953,6 +998,8 @@ pub(crate) fn load_connection(state: &Arc<AppState>, id: &str) -> Result<RemoteC
 struct ConnectFailure {
     status: RemoteStatus,
     message: String,
+    /// The typed reason of a relay connection.
+    relay_failure: Option<&'static str>,
 }
 
 impl ConnectFailure {
@@ -961,6 +1008,7 @@ impl ConnectFailure {
         Self {
             status: RemoteStatus::Error,
             message,
+            relay_failure: None,
         }
     }
 
@@ -969,7 +1017,21 @@ impl ConnectFailure {
         Self {
             status: RemoteStatus::Unauthenticated,
             message,
+            relay_failure: None,
         }
+    }
+
+    /// A relay attachment that did not come up. A pairing the daemon refused is
+    /// a credential problem and waits for a person; the rest may recover.
+    fn relay(failure: crate::relay_tunnel::desktop::RelayFailure) -> Self {
+        use crate::relay_tunnel::desktop::RelayFailure;
+        let message = failure.to_string();
+        let mut out = match failure {
+            RelayFailure::PairingRejected => Self::unauthenticated(message),
+            _ => Self::error(message),
+        };
+        out.relay_failure = Some(failure.code());
+        out
     }
 }
 
@@ -1087,7 +1149,14 @@ async fn attempt(
             // no `Drop`, so its supervisor and its ssh child outlived every
             // trace of the connection.
             stop_tunnel(state, id);
-            set_error(state, id, failure.status, failure.message.clone());
+            record_error(
+                state,
+                id,
+                failure.status,
+                failure.message.clone(),
+                failure.relay_failure,
+            );
+            crate::remote_mirror::drop_connection(state, id);
             Err(failure.message)
         }
     }
@@ -1136,6 +1205,7 @@ fn claim_and_supervise(
         } else {
             entry.status = Some(RemoteStatus::Connecting);
             entry.error = None;
+            entry.relay_failure = None;
             entry.retry_after_secs = None;
             Some(entry.snapshot(id))
         }
@@ -1156,9 +1226,15 @@ async fn handshake(
 ) -> Result<Option<String>, ConnectFailure> {
     let client = state.remote.http_client();
 
-    let mut base_url = resolve_base_url(state, connection)
-        .await
-        .map_err(ConnectFailure::error)?;
+    let (mut base_url, relay_token) = if matches!(connection.transport, RemoteTransport::Relay) {
+        let (base_url, token) = attach_relay(state, id, connection).await?;
+        (base_url, Some(token))
+    } else {
+        let base_url = resolve_base_url(state, connection)
+            .await
+            .map_err(ConnectFailure::error)?;
+        (base_url, None)
+    };
     update(state, id, |e| e.base_url = Some(base_url.clone()));
 
     let first_health = if connection.deploy == DeployMode::Installed {
@@ -1216,7 +1292,7 @@ async fn handshake(
     // emit repeat it — the origin marker stops the second hop, but nothing
     // downstream can make sense of a machine mirroring itself. Refuse it where
     // the user can still read why.
-    if health.instance_id.as_deref() == Some(crate::app_instance::instance_identity()) {
+    if health.instance_id.as_deref() == Some(state.remote.identity.as_str()) {
         return Err(ConnectFailure::error(format!(
             "{base_url} is this very TUICommander instance — a machine cannot mirror itself. \
              Point this connection at another machine's daemon."
@@ -1228,9 +1304,14 @@ async fn handshake(
         e.out_of_date = health.build.is_none().then_some(true);
     });
 
-    let mut token = authenticate(connection, &base_url)
-        .await
-        .map_err(ConnectFailure::unauthenticated)?;
+    // The daemon handed its token over inside the encrypted channel, so there is
+    // no password to trade for one.
+    let mut token = match relay_token {
+        Some(token) => Some(token),
+        None => authenticate(connection, &base_url)
+            .await
+            .map_err(ConnectFailure::unauthenticated)?,
+    };
 
     let mut probe = probe_authenticated(&client, &base_url, token.as_deref()).await;
     if probe == Probe::Rejected && connection.deploy == DeployMode::OnConnect && !deployed {
@@ -1334,11 +1415,13 @@ async fn wait_until_listening(
 /// the manager to stop a tunnel that a later attempt has since re-used the slot
 /// for.
 fn stop_tunnel(state: &Arc<AppState>, id: &str) {
-    let tunnel_id = state
+    let (tunnel_id, relay) = state
         .remote
         .entries
         .get_mut(id)
-        .and_then(|mut e| e.tunnel_id.take());
+        .map(|mut e| (e.tunnel_id.take(), e.relay.take()))
+        .unwrap_or_default();
+    drop(relay);
     if let Some(tunnel_id) = tunnel_id {
         state.tunnel_manager.stop_if_running(&tunnel_id);
     }
@@ -1357,6 +1440,8 @@ async fn resolve_base_url(
 ) -> Result<String, String> {
     match &connection.transport {
         RemoteTransport::Direct { url } => Ok(url.trim_end_matches('/').to_string()),
+        // `handshake` attaches a relay itself: it needs the daemon token too.
+        RemoteTransport::Relay => Err("a relay connection attaches through attach_relay".into()),
         RemoteTransport::Ssh {
             remote_daemon_port, ..
         } => {
@@ -1384,6 +1469,80 @@ async fn resolve_base_url(
             Ok(format!("http://127.0.0.1:{local_port}"))
         }
     }
+}
+
+/// Attach to the daemon through the relay. Returns the loopback base URL and the
+/// daemon token the channel delivered.
+///
+/// The session lives in the entry; replacing it ends the previous attachment, and
+/// nothing the old one had in flight is replayed on the new one.
+///
+/// DEFERRED (2026-10-22) — a daemon serving TLS cannot be reached: the tunnel
+/// speaks plain HTTP to the daemon's loopback listener. Daemon TLS is manual/off
+/// by default; revisit when a TLS-only daemon needs a relay.
+async fn attach_relay(
+    state: &Arc<AppState>,
+    id: &str,
+    connection: &RemoteConnection,
+) -> Result<(String, String), ConnectFailure> {
+    let bundle = crate::remote_connection::relay_bundle(&connection.id)
+        .map_err(ConnectFailure::error)?
+        .ok_or_else(|| {
+            ConnectFailure::unauthenticated(
+                "No relay pairing is stored for this connection — import the pairing bundle again."
+                    .to_string(),
+            )
+        })?;
+    let session = crate::relay_tunnel::desktop::RelaySession::start(&bundle)
+        .await
+        .map_err(ConnectFailure::relay)?;
+    let base_url = session.base_url();
+    let token = session.daemon_token().to_owned();
+    let lost = session.lost();
+    update(state, id, |e| e.relay = Some(session));
+    watch_relay(state, id, base_url.clone(), lost);
+    Ok((base_url, token))
+}
+
+/// Report a dead link the moment it ends instead of at the next probe.
+///
+/// Only the attachment that was current when the watch began may report: a
+/// retired generation or a newer attachment (a different loopback port) makes
+/// the end of this one old news.
+fn watch_relay(
+    state: &Arc<AppState>,
+    id: &str,
+    base_url: String,
+    lost: impl std::future::Future<Output = crate::relay_tunnel::desktop::RelayFailure> + Send + 'static,
+) {
+    let state = Arc::clone(state);
+    let id = id.to_string();
+    let generation = state.remote.generation(&id);
+    tokio::spawn(async move {
+        let failure = lost.await;
+        let current = {
+            let _lifecycle = state.remote.lifecycle();
+            let current = state.remote.generation(&id) == generation
+                && state
+                    .remote
+                    .entries
+                    .get(&id)
+                    .is_some_and(|e| e.base_url.as_deref() == Some(base_url.as_str()));
+            if current {
+                record_error(
+                    &state,
+                    &id,
+                    RemoteStatus::Error,
+                    failure.to_string(),
+                    Some(failure.code()),
+                );
+            }
+            current
+        };
+        if current {
+            crate::remote_mirror::drop_connection(&state, &id);
+        }
+    });
 }
 
 pub(crate) fn ssh_profile(
@@ -1909,6 +2068,9 @@ pub async fn remote_connection_statuses(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
+mod relay_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use axum::http::StatusCode;
@@ -1956,7 +2118,10 @@ mod tests {
         assert!(active);
         teardown(&state, "fixture");
         assert!(claim_and_supervise(&state, "fixture", generation).is_none());
-        assert!(state.remote.snapshot().is_empty());
+        assert_eq!(
+            state.remote.snapshot(),
+            [] as [crate::remote_runtime::RemoteConnectionStatus; 0]
+        );
     }
 
     // Catches: a chunk boundary inside the daemon's "Untrusted Host" response
@@ -2023,7 +2188,10 @@ mod tests {
         let runtime = RemoteRuntime::default();
         assert_eq!(runtime.status_of("nope"), RemoteStatus::Disconnected);
         assert!(runtime.base_url("nope").is_none());
-        assert!(runtime.snapshot().is_empty());
+        assert_eq!(
+            runtime.snapshot(),
+            [] as [crate::remote_runtime::RemoteConnectionStatus; 0]
+        );
     }
 
     #[test]
@@ -2856,7 +3024,10 @@ mod tests {
 
         state.remote.entries.remove("machine");
         record_updated_build(&state, "machine", build);
-        assert!(state.remote.snapshot().is_empty());
+        assert_eq!(
+            state.remote.snapshot(),
+            [] as [crate::remote_runtime::RemoteConnectionStatus; 0]
+        );
     }
 
     #[test]
@@ -2892,6 +3063,7 @@ mod tests {
             error: None,
             retry_after_secs: None,
             step: Some("asset".into()),
+            relay_failure: None,
         });
 
         assert_eq!(payload["status"], "deploying");
@@ -3030,7 +3202,7 @@ mod tests {
 
     // Catches: DNS fallback loops or retries dotted names and TCP failures.
     #[tokio::test]
-    async fn direct_recovery_excludes_fqdns_and_refusals_and_bounds_missing_peers() {
+    async fn direct_recovery_excludes_fqdns_and_resets_and_bounds_missing_peers() {
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
         let error = read_direct_health_with_lookup(
             &client,
@@ -3043,9 +3215,8 @@ mod tests {
             error.contains("Cannot resolve no-such-host.invalid"),
             "{error}"
         );
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let address = listener.local_addr().unwrap();
-        drop(listener);
+        let socket = crate::test_support::resetting_tcp_peer();
+        let address = socket.local_addr().unwrap();
         let client = reqwest::Client::builder()
             .no_proxy()
             .resolve("short-peer", address)
@@ -3054,11 +3225,11 @@ mod tests {
         let error = read_direct_health_with_lookup(
             &client,
             &format!("http://short-peer:{}", address.port()),
-            |_| async { panic!("refused connection must not trigger Tailscale lookup") },
+            |_| async { panic!("reset connection must not trigger Tailscale lookup") },
         )
         .await
         .unwrap_err();
-        assert!(error.contains("Connection refused"), "{error}");
+        assert!(error.contains("Cannot connect to short-peer"), "{error}");
         let error = read_direct_health_with_lookup(
             &test_client(),
             "http://unknown-short-peer:9877",
@@ -3085,12 +3256,20 @@ mod tests {
 
     #[tokio::test]
     async fn health_connection_refused_names_the_host_and_cause() {
-        // Catches: reqwest's top-level "error sending request" hiding TCP refusal.
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
-        let base = format!("http://{}", listener.local_addr().unwrap());
-        drop(listener);
-        let error = read_health(&test_client(), &base).await.unwrap_err();
-        assert!(error.contains("Connection refused by 127.0.0.1"), "{error}");
+        // Catches: nested I/O payloads hiding the refusal cause from the message.
+        // This checks classification/formatting, NOT whether an OS port refuses.
+        // reqwest errors have no public constructor; live reset probes below
+        // cover its transport wrapper, while this uses real nested I/O errors.
+        let refusal = std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "http://username:SECRET@127.0.0.1/health?token=SECRET",
+        );
+        let outer = std::io::Error::other(std::io::Error::other(refusal));
+        let error = request_error_message(&outer, false, "http://127.0.0.1:9877");
+        assert_eq!(
+            error,
+            "Unreachable: Connection refused by 127.0.0.1 — check the daemon and port"
+        );
     }
 
     #[tokio::test]
@@ -3263,16 +3442,18 @@ mod tests {
 
     // Catches: reqwest query-token URLs leaking into logs, UI errors, and SSE status pushes.
     #[tokio::test]
-    async fn closed_port_probe_redacts_token_before_logs_and_status_publication() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        let base = format!("http://{}", listener.local_addr().expect("address"));
-        drop(listener);
+    async fn dead_peer_probe_redacts_token_before_logs_and_status_publication() {
+        let socket = crate::test_support::resetting_tcp_peer();
+        let base = format!("http://{}", socket.local_addr().expect("address"));
         let secret = "PAIRING_SECRET_1457";
         let Probe::Failed(error) = probe_authenticated(&test_client(), &base, Some(secret)).await
         else {
-            panic!("closed port must fail");
+            panic!("resetting peer must fail");
         };
-        assert!(error.contains("Unreachable"), "{error}");
+        assert_eq!(
+            error,
+            "Unreachable: Cannot connect to 127.0.0.1 — check the address and network"
+        );
         assert!(!error.contains(secret), "credential in error: {error}");
         let state = Arc::new(crate::state::tests_support::make_test_app_state());
         let mut bus = state.event_bus.subscribe();
@@ -3585,7 +3766,10 @@ mod tests {
         // no task, no socket, no timer — and this is the regression that says
         // so, because "it is lazy" is invisible in a profile until it is not.
         let state = test_state();
-        assert!(state.remote.snapshot().is_empty());
+        assert_eq!(
+            state.remote.snapshot(),
+            [] as [crate::remote_runtime::RemoteConnectionStatus; 0]
+        );
         assert!(state.remote.base_url("anything").is_none());
         assert!(state.remote.token("anything").is_none());
         assert_eq!(
@@ -4376,7 +4560,7 @@ mod tests {
 
         // Dedup is on the client view: 12 identical pushes a minute would be
         // the whole cost of the poll.
-        assert!(drain_statuses(&mut events).is_empty());
+        assert_eq!(drain_statuses(&mut events), [] as [std::string::String; 0]);
     }
 
     #[tokio::test]
@@ -4420,6 +4604,7 @@ mod tests {
                 error: None,
                 retry_after_secs: None,
                 step: None,
+                relay_failure: None,
             });
             assert_eq!(payload["id"], "abc");
             assert!(payload.get("status").is_some());

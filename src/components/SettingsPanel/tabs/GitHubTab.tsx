@@ -1,4 +1,5 @@
 import { type Component, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import oauthScopes from "../../../data/github-oauth-scopes.txt?raw";
 import { t } from "../../../i18n";
 import { settingsRefresh } from "../../../services/settingsRefresh";
 import { appLogger } from "../../../stores/appLogger";
@@ -16,9 +17,9 @@ import { settingsStore } from "../../../stores/settings";
 import { rpc } from "../../../transport";
 import type { IssueFilterMode } from "../../../types";
 import type { AccountSecretFormStatus, AccountSecretRequest } from "../../../types/accounts";
-import { cx } from "../../../utils";
 import { writeClipboard } from "../../../utils/clipboard";
 import { handleOpenUrl } from "../../../utils/openUrl";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
 import { Textarea } from "../../ui/Textarea";
@@ -52,10 +53,29 @@ interface AuthStatus {
 	error?: string | null;
 }
 
+interface RepoAccessErrorGroup {
+	account_id: string;
+	host: string;
+	owner: string;
+	repos: {
+		repo: string;
+		reason: "not_found" | "forbidden" | "unknown";
+		message: string;
+	}[];
+	oauth_app_url: string | null;
+}
+
+const ACCESS_REASONS = {
+	not_found: "Not found or not visible to this token",
+	forbidden: "Access forbidden",
+	unknown: "Access reason unknown",
+};
+
 interface GitHubDiagnostics {
 	circuit_breaker_open: boolean;
 	circuit_breaker_status: string;
 	repos_not_found: string[];
+	repo_access_errors?: RepoAccessErrorGroup[];
 	repos_monitored: number;
 }
 
@@ -109,6 +129,20 @@ export const GitHubTab: Component = () => {
 	const [copied, setCopied] = createSignal(false);
 	const [avatarBroken, setAvatarBroken] = createSignal(false);
 	const [diagnostics, setDiagnostics] = createSignal<GitHubDiagnostics | null>(null);
+	// compute_diagnostics reports a cooled-down NOT_FOUND repo in both lists; the access error already names it.
+	const unexplainedNotFound = () => {
+		const d = diagnostics();
+		const explained = new Set(
+			(d?.repo_access_errors ?? []).flatMap((group) =>
+				group.repos.flatMap((repo) => {
+					const key = `${group.owner}/${repo.repo}`;
+					// Non-ambient (GHE/named) accounts key their cooldown as `<account_id>:owner/repo`.
+					return [key, `${group.account_id}:${key}`];
+				}),
+			),
+		);
+		return (d?.repos_not_found ?? []).filter((key) => !explained.has(key));
+	};
 	// DEFERRED (2026-10-17) — CircleCI settings catalogue owner is tracked in 1991-bd88.
 	const [circleCiStatus, setCircleCiStatus] = createSignal<CircleCiTokenStatus | null>(null);
 	const [circleCiToken, setCircleCiToken] = createSignal("");
@@ -325,9 +359,9 @@ export const GitHubTab: Component = () => {
 		}
 	}
 
-	async function fetchDiagnostics() {
+	async function fetchDiagnostics(refresh = false) {
 		try {
-			const diag = await rpc<GitHubDiagnostics>("github_diagnostics");
+			const diag = await rpc<GitHubDiagnostics>("github_diagnostics", { refresh });
 			setDiagnostics(diag);
 		} catch (e) {
 			appLogger.warn("github", "Failed to fetch diagnostics", e);
@@ -490,32 +524,27 @@ export const GitHubTab: Component = () => {
 						</div>
 						<div class={g.userCode}>{deviceCode()!.user_code}</div>
 						<div class={g.actions} style="justify-content: center">
-							<button
-								data-non-setting="Copy the device-login code without changing authentication"
-								class={cx(g.btn)}
-								onClick={copyCode}
-							>
+							<Button data-non-setting="Copy the device-login code without changing authentication" onClick={copyCode}>
 								{copied() ? "Copied!" : "Copy code"}
-							</button>
-							<button
+							</Button>
+							<Button
 								data-non-setting="Open the provider verification page"
-								class={cx(g.btn)}
 								onClick={() => handleOpenUrl(deviceCode()!.verification_uri)}
 							>
 								Open GitHub
-							</button>
+							</Button>
 						</div>
 						<div class={g.codeHint}>
 							Waiting for authorization<span class={g.pollingDots}>...</span>
 						</div>
 						<div class={g.actions} style="justify-content: center; margin-top: 12px">
-							<button
+							<Button
 								data-non-setting="Typed GitHub authentication or account lifecycle workflow; not an independently editable field"
-								class={cx(g.btn, g.btnDanger)}
+								variant="danger"
 								onClick={cancelPolling}
 							>
 								Cancel
-							</button>
+							</Button>
 						</div>
 					</div>
 				</Show>
@@ -556,36 +585,35 @@ export const GitHubTab: Component = () => {
 					{/* Only show logout for OAuth tokens — env tokens are managed externally */}
 					<Show when={authStatus()?.source === "oauth"}>
 						<div class={g.actions}>
-							<button
+							<Button
 								data-non-setting="Typed GitHub authentication or account lifecycle workflow; not an independently editable field"
-								class={cx(g.btn, g.btnDanger)}
+								variant="danger"
 								onClick={logout}
 								disabled={loading()}
 							>
 								{loading() ? "Logging out..." : "Logout"}
-							</button>
+							</Button>
 						</div>
 					</Show>
 
 					<Show when={authStatus()?.source === "env"}>
 						<div class={s.hint}>Token provided via environment variable (GH_TOKEN or GITHUB_TOKEN).</div>
 						<div class={g.actions}>
-							<button
+							<Button
 								data-non-setting="Typed GitHub authentication or account lifecycle workflow; not an independently editable field"
-								class={cx(g.btn)}
 								onClick={() => startLogin()}
 								disabled={loading()}
 							>
 								{loading() ? "Starting..." : "Switch to OAuth"}
-							</button>
-							<button
+							</Button>
+							<Button
 								data-non-setting="Typed GitHub authentication or account lifecycle workflow; not an independently editable field"
-								class={cx(g.btn, g.btnDanger)}
+								variant="danger"
 								onClick={disconnect}
 								disabled={loading()}
 							>
 								Disconnect
-							</button>
+							</Button>
 						</div>
 					</Show>
 				</Show>
@@ -605,40 +633,74 @@ export const GitHubTab: Component = () => {
 							</div>
 						</Show>
 
-						{/* Repos not found */}
-						<Show when={(diagnostics()?.repos_not_found?.length ?? 0) > 0}>
-							<div class={g.diagWarning}>
-								<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0">
-									<path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z" />
-								</svg>
-								<div>
-									<div>Cannot access {diagnostics()?.repos_not_found?.length} repo(s) with this token:</div>
-									<ul class={g.diagRepoList}>
-										<For each={diagnostics()?.repos_not_found}>{(repo) => <li>{repo}</li>}</For>
-									</ul>
-									<div class={g.diagHint}>
-										The token may lack organization access or SSO authorization for these repos.
+						<For each={diagnostics()?.repo_access_errors}>
+							{(group) => (
+								<div class={g.diagWarning}>
+									<div>
+										<strong>{group.owner}</strong>
+										<div class={g.diagHint}>
+											{group.host} — {group.account_id}
+										</div>
+										<ul class={g.diagRepoList}>
+											<For each={group.repos}>
+												{(repo) => (
+													<li>
+														<strong>{repo.repo}</strong>: {ACCESS_REASONS[repo.reason]}
+														<div class={g.diagHint}>{repo.message}</div>
+													</li>
+												)}
+											</For>
+										</ul>
+										<Show when={group.oauth_app_url}>
+											{(url) => (
+												<Button
+													data-non-setting="Open the authorized OAuth app page"
+													onClick={() => handleOpenUrl(url())}
+												>
+													Grant or request organization access
+												</Button>
+											)}
+										</Show>
+										<div class={g.diagHint}>
+											Access denials are retried on the next monitoring poll. Refresh status also clears the 24-hour
+											NOT_FOUND retry delay for all accounts.
+										</div>
 									</div>
+								</div>
+							)}
+						</For>
+						<Button
+							data-non-setting="Refresh GitHub access diagnostics without changing authentication"
+							onClick={() => fetchDiagnostics(true)}
+						>
+							Refresh status
+						</Button>
+
+						{/* Not-found repos in cooldown carry no access error (compute_diagnostics skips them) */}
+						<Show when={unexplainedNotFound().length > 0}>
+							<div class={g.diagWarning}>
+								<div>
+									<strong>Cannot access {unexplainedNotFound().length} repo(s) with this token</strong>
+									<ul class={g.diagRepoList}>
+										<For each={unexplainedNotFound()}>{(repo) => <li>{repo}</li>}</For>
+									</ul>
 								</div>
 							</div>
 						</Show>
 
-						{/* All good */}
-						<Show when={!diagnostics()?.circuit_breaker_open && diagnostics()?.repos_not_found?.length === 0}>
+						{/* Summary — always rendered so Status is never empty */}
+						<Show
+							when={(diagnostics()?.repos_monitored ?? 0) > 0}
+							fallback={<div class={g.diagHint}>No repositories are monitored yet</div>}
+						>
 							<div class={g.diagOk}>
 								<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0">
 									<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
 								</svg>
-								<span>PR monitoring active — {diagnostics()?.repos_monitored} repo(s) tracked</span>
-							</div>
-						</Show>
-
-						<Show when={(diagnostics()?.repos_monitored ?? 0) > 0 && (diagnostics()?.repos_not_found?.length ?? 0) > 0}>
-							<div class={g.diagOk}>
-								<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="flex-shrink: 0">
-									<path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
-								</svg>
-								<span>{diagnostics()?.repos_monitored} repo(s) tracked successfully</span>
+								<span>
+									{diagnostics()?.circuit_breaker_open ? "" : "PR monitoring active — "}
+									{diagnostics()?.repos_monitored} repo(s) tracked
+								</span>
 							</div>
 						</Show>
 					</div>
@@ -658,17 +720,17 @@ export const GitHubTab: Component = () => {
 							and organization repositories.
 						</div>
 						<div class={g.actions} style="justify-content: center">
-							<button
+							<Button
 								data-non-setting="Typed GitHub authentication or account lifecycle workflow; not an independently editable field"
-								class={cx(g.btn, g.btnPrimary)}
+								variant="primary"
 								onClick={() => startLogin()}
 								disabled={loading()}
 							>
 								{loading() ? "Starting..." : "Login with GitHub"}
-							</button>
+							</Button>
 						</div>
 						<div class={g.scopeList} style="margin-top: 16px">
-							Requested permissions: <strong>repo</strong>
+							Requested permissions: <strong>{oauthScopes.trim()}</strong>
 						</div>
 					</div>
 				</Show>
@@ -1006,13 +1068,9 @@ export const GitHubTab: Component = () => {
 						// account exists or a repo needs one, and it stays visible then.
 						<ExpertSetting configKey="github_accounts.accounts" value={accounts()}>
 							<div class={g.actions} style={{ "margin-top": "16px" }}>
-								<button
-									data-non-setting="Open the account-creation editor"
-									class={cx(g.btn)}
-									onClick={() => setShowAddPanel(true)}
-								>
+								<Button data-non-setting="Open the account-creation editor" onClick={() => setShowAddPanel(true)}>
 									Add another GitHub account
-								</button>
+								</Button>
 							</div>
 						</ExpertSetting>
 					}
@@ -1037,13 +1095,13 @@ export const GitHubTab: Component = () => {
 										</div>
 									</div>
 									<div class={g.actions}>
-										<button
+										<Button
 											data-non-setting="Typed GitHub authentication or account lifecycle workflow; not an independently editable field"
-											class={cx(g.btn, g.btnDanger)}
+											variant="danger"
 											onClick={() => removeAccount(acc.id)}
 										>
 											Remove
-										</button>
+										</Button>
 									</div>
 								</div>
 							)}
@@ -1056,14 +1114,14 @@ export const GitHubTab: Component = () => {
 						<div class={s.group}>
 							<label>Add another github.com account</label>
 							<div class={g.actions}>
-								<button
+								<Button
 									data-non-setting="Typed GitHub authentication or account lifecycle workflow; not an independently editable field"
-									class={cx(g.btn, g.btnPrimary)}
+									variant="primary"
 									onClick={() => startLogin(true)}
 									disabled={loading()}
 								>
 									{loading() ? "Starting..." : "Add github.com account"}
-								</button>
+								</Button>
 							</div>
 						</div>
 
@@ -1081,14 +1139,14 @@ export const GitHubTab: Component = () => {
 								onInput={(e) => setNewHost(e.currentTarget.value)}
 							/>
 							<div class={g.actions}>
-								<button
+								<Button
 									data-non-setting="Typed GitHub authentication or account lifecycle workflow; not an independently editable field"
-									class={cx(g.btn, g.btnPrimary)}
+									variant="primary"
 									onClick={addAccount}
 									disabled={addingAccount()}
 								>
 									{addingAccount() ? "Validating..." : "Add account"}
-								</button>
+								</Button>
 							</div>
 						</div>
 					</SectionCard>
@@ -1109,22 +1167,20 @@ export const GitHubTab: Component = () => {
 						onInput={(e) => setCircleCiToken(e.currentTarget.value)}
 					/>
 					<div class={g.actions}>
-						<button
+						<Button
 							data-setting-id="circleci.token"
-							class={g.btn}
 							data-ready={circleCiToken().trim() ? "true" : undefined}
 							onClick={saveCircleCiToken}
 						>
 							{t("github.circleCiSave", "Save token")}
-						</button>
-						<button
+						</Button>
+						<Button
 							data-setting-id="circleci.token"
-							class={g.btn}
 							onClick={removeCircleCiToken}
 							disabled={!circleCiStatus()?.configured}
 						>
 							{t("github.circleCiRemove", "Remove token")}
-						</button>
+						</Button>
 					</div>
 					<Show when={circleCiError()}>{(message) => <div class={g.error}>{message()}</div>}</Show>
 					<div class={g.tokenSource}>
@@ -1181,18 +1237,17 @@ export const GitHubTab: Component = () => {
 											</div>
 											<div class={g.actions}>
 												<Show when={res().status === "bound"}>
-													<button
+													<Button
 														data-non-setting="Typed registered-repository account-binding workflow"
-														class={cx(g.btn)}
 														onClick={() => unbindRepo(repo.path)}
 													>
 														Unbind
-													</button>
+													</Button>
 												</Show>
 												<Show when={res().status === "needs-bind"}>
-													<button
+													<Button
 														data-non-setting="Typed registered-repository account-binding workflow"
-														class={cx(g.btn, g.btnPrimary)}
+														variant="primary"
 														onClick={() => {
 															const remote = chosenRemote()[repo.path] ?? res().candidates?.[0]?.remote_name ?? "";
 															const cand = res().candidates?.find((c) => c.remote_name === remote);
@@ -1200,7 +1255,7 @@ export const GitHubTab: Component = () => {
 														}}
 													>
 														Bind
-													</button>
+													</Button>
 												</Show>
 											</div>
 										</div>

@@ -5168,3 +5168,262 @@ async fn action_validation_description_only_updates_without_pty_input() {
         assert!(bytes.lock().unwrap().is_empty());
     }
 }
+
+/// Catches: a parked server wake is absent from the MCP inventory, leaving an
+/// idle-looking recipient with no visible explanation for a blocked queue.
+#[cfg(unix)]
+#[test]
+fn session_list_reports_queued_wake_and_composer_blocker() {
+    let state = test_state();
+    let sid = "listed-queued-wake";
+    let bytes = install_atomic_submit_test_session(&state, sid);
+    crate::mcp_http::session::apply_input_bookkeeping(&state, sid, "real draft");
+    state
+        .pending_injections
+        .entry(sid.into())
+        .or_default()
+        .push_back(crate::state::PendingInjection::notice(
+            "BG DONE exit=0 log=listed-test",
+        ));
+    let result = handle_session(
+        &state,
+        &serde_json::json!({"action": "list", "session_id": sid}),
+        None,
+    );
+    let row = result
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["session_id"] == sid)
+        .unwrap();
+    assert_eq!(row["queued_commands"], 1);
+    assert_eq!(row["queue_blocker"], "partial_composer");
+    assert!(bytes.lock().unwrap().is_empty());
+}
+
+/// Catches: a conversational progress report owns no modal controls but blocks
+/// direct submit forever, even at the confirmed-idle ego composer.
+#[cfg(unix)]
+#[tokio::test]
+async fn ego_plain_question_submit_is_not_a_modal_approval() {
+    let state = test_state();
+    let sid = "ego-plain-question";
+    let bytes = install_atomic_submit_test_session(&state, sid);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("ego".into());
+    crate::state::tests_support::apply_replay_event(
+        &state,
+        &crate::state::AppEvent::PtyParsed {
+            session_id: sid.into(),
+            parsed: serde_json::json!({"type": "question", "confident": true,
+            "source": "progress-blocked", "prompt_text": "What did the configuration show?"})
+            .into(),
+        },
+    );
+    state
+        .pending_injections
+        .entry(sid.into())
+        .or_default()
+        .push_back(crate::state::PendingInjection::notice("automated mail"));
+    let result = handle_session_submit(
+        &state,
+        &serde_json::json!({"session_id": sid, "input": "The paths are missing."}),
+        false,
+    )
+    .await;
+    assert_eq!(
+        result["submitted"], true,
+        "plain question must accept an answer: {result}"
+    );
+    assert_eq!(
+        bytes.lock().unwrap().as_slice(),
+        b"\x15The paths are missing.\r"
+    );
+    assert_eq!(
+        crate::pty::queued_command_count(&state, sid),
+        1,
+        "the answer must not type the parked automated notice"
+    );
+}
+
+/// Catches: conversational-wait support bypasses a native approval, selector,
+/// or free-text modal; the receipt must identify the controls that still own stdin.
+#[cfg(unix)]
+#[tokio::test]
+async fn ego_native_modals_keep_submit_rejection_and_prompt_kind() {
+    for (fixture, kind) in [
+        ("ego-single-120-1973.tcap", "choice"),
+        ("ego-wrapped-approval-2102.tcap", "approval"),
+        ("ego-free_text-120-1973.tcap", "free_text"),
+    ] {
+        let state = test_state();
+        let sid = "ego-native-submit-guard";
+        let bytes = install_atomic_submit_test_session(&state, sid);
+        state
+            .session_maps
+            .session_states
+            .get_mut(sid)
+            .unwrap()
+            .agent_type = Some("ego".into());
+        let capture = crate::pty_capture::decode_capture(
+            &std::fs::read(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("src/fixtures/agent_prompts")
+                    .join(fixture),
+            )
+            .unwrap(),
+        )
+        .unwrap();
+        let (rows, cols) = capture.geometry.unwrap();
+        let mut vt = crate::state::VtLogBuffer::new(rows, cols, 2000);
+        let mut output = Vec::new();
+        let mut found = false;
+        for record in capture.records {
+            if record.direction != crate::pty_capture::CaptureDirection::Output {
+                continue;
+            }
+            output.extend_from_slice(&record.data);
+            vt.process(&record.data);
+            let screen = vt.screen_rows();
+            let native_awaiting = output
+                .windows(b"7770;state=awaiting".len())
+                .any(|part| part == b"7770;state=awaiting");
+            let parsed = crate::output_parser::parse_ego_question(&screen)
+                .or_else(|| crate::output_parser::parse_ego_approval(&screen))
+                .or_else(|| {
+                    (kind == "free_text" && native_awaiting)
+                        .then(|| crate::output_parser::parse_ego_free_text_question(&screen))
+                        .flatten()
+                });
+            let Some(parsed) = parsed else {
+                continue;
+            };
+            crate::state::tests_support::apply_replay_event(
+                &state,
+                &crate::state::AppEvent::PtyParsed {
+                    session_id: sid.into(),
+                    parsed: serde_json::to_value(parsed).unwrap().into(),
+                },
+            );
+            let response = handle_session_submit(
+                &state,
+                &serde_json::json!({"session_id": sid, "input": "must not answer"}),
+                false,
+            )
+            .await;
+            assert_eq!(
+                response["reason"], "awaiting_input",
+                "{fixture}: {response}"
+            );
+            assert_eq!(response["prompt_kind"], kind, "{fixture}: {response}");
+            assert!(bytes.lock().unwrap().is_empty(), "{fixture}");
+            found = true;
+            break;
+        }
+        assert!(found, "capture must expose its actual modal: {fixture}");
+    }
+}
+
+/// Catches: a non-modal question bypasses the busy guard, or ordinary heuristic
+/// prose is newly rejected while allowing progress reports.
+#[cfg(unix)]
+#[tokio::test]
+async fn ego_conversational_submit_still_requires_idle() {
+    for (confident, source, busy) in [
+        (true, "progress-blocked", true),
+        (false, "question-heuristic", false),
+    ] {
+        let state = test_state();
+        let sid = "ego-question-idle-boundary";
+        let bytes = install_atomic_submit_test_session(&state, sid);
+        state
+            .session_maps
+            .session_states
+            .get_mut(sid)
+            .unwrap()
+            .agent_type = Some("ego".into());
+        crate::state::tests_support::apply_replay_event(
+            &state,
+            &crate::state::AppEvent::PtyParsed {
+                session_id: sid.into(),
+                parsed: serde_json::json!({"type": "question", "confident": confident,
+                "source": source, "prompt_text": "What did the configuration show?"})
+                .into(),
+            },
+        );
+        if busy {
+            state
+                .session_maps
+                .shell_states
+                .get(sid)
+                .unwrap()
+                .store(crate::pty::SHELL_BUSY, std::sync::atomic::Ordering::Release);
+        }
+        let response = handle_session_submit(
+            &state,
+            &serde_json::json!({"session_id": sid, "input": "answer", "timeout_ms": 250}),
+            false,
+        )
+        .await;
+        if busy {
+            assert_eq!(response["reason"], "agent_not_ready", "{response}");
+            assert!(bytes.lock().unwrap().is_empty());
+        } else {
+            assert_eq!(response["submitted"], true, "{response}");
+            assert_eq!(bytes.lock().unwrap().as_slice(), b"\x15answer\r");
+        }
+    }
+}
+
+/// Catches: queue inventory diagnoses a parked automated wake using the direct
+/// human-command permission, hiding the progress wait that actually blocks it.
+#[cfg(unix)]
+#[test]
+fn session_list_reports_progress_wait_blocking_automated_wake() {
+    let state = test_state();
+    let sid = "listed-progress-wake";
+    let bytes = install_atomic_submit_test_session(&state, sid);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("ego".into());
+    crate::state::tests_support::apply_replay_event(
+        &state,
+        &crate::state::AppEvent::PtyParsed {
+            session_id: sid.into(),
+            parsed: serde_json::json!({"type": "question", "confident": true,
+            "source": "progress-blocked", "prompt_text": "Which configuration should I use?"})
+            .into(),
+        },
+    );
+    state
+        .pending_injections
+        .entry(sid.into())
+        .or_default()
+        .push_back(crate::state::PendingInjection::notice(
+            "BG DONE exit=0 log=progress-test",
+        ));
+    let result = handle_session(
+        &state,
+        &serde_json::json!({"action": "list", "session_id": sid}),
+        None,
+    );
+    let row = result
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["session_id"] == sid)
+        .unwrap();
+    assert_eq!(row["queued_commands"], 1);
+    assert_eq!(
+        row["queue_blocker"], "awaiting_input",
+        "an automated wake cannot answer the conversational wait: {row}"
+    );
+    assert!(bytes.lock().unwrap().is_empty());
+}

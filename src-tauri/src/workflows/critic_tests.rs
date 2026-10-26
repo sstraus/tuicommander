@@ -132,6 +132,28 @@ fn migrated_seed_can_be_edited_and_republished_as_revision_three() {
 }
 
 #[test]
+fn a_draft_reports_the_draft_revision_it_last_published() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = open(&dir);
+    let (story, _plan) = legacy(&store, "/project");
+    // catches: the designer cannot tell an unchanged draft from an edited one, so Publish
+    // stays enabled and the click fails with "already been published".
+    assert_eq!(story.last_published_draft_revision, story.draft_revision);
+    let mut checks = story.required_checks.clone();
+    checks.push(check("unit"));
+    let edited = store
+        .update_checks(&story.id, story.draft_revision, checks)
+        .unwrap();
+    assert_ne!(edited.last_published_draft_revision, edited.draft_revision);
+    store.publish(&story.id, edited.draft_revision).unwrap();
+    let published = store.get_draft(&story.id).unwrap();
+    assert_eq!(
+        published.last_published_draft_revision,
+        published.draft_revision
+    );
+}
+
+#[test]
 fn concurrent_loads_migrate_exactly_once() {
     let dir = tempfile::tempdir().unwrap();
     let store = open(&dir);

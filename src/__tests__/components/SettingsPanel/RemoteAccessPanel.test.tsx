@@ -121,6 +121,49 @@ describe("RemoteAccessPanel", () => {
 		},
 	);
 
+	it("does not advertise HTTPS after certificate provisioning failed", async () => {
+		const base = vi.mocked(rpc).getMockImplementation()!;
+		vi.mocked(rpc).mockImplementation(async (command, args) => {
+			if (command === "get_tailscale_status") {
+				// CertDomains remained available during the recorded bundle EPERM failure.
+				return { state: "Running", fqdn: "dgqt92cjfp.tail911da.ts.net", https_enabled: true };
+			}
+			const result = await base(command, args);
+			if (command === "get_mcp_status") return { ...(result as object), tls_active: false };
+			return result;
+		});
+		const view = render(() => <RemoteAccessPanel />);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(view.queryByText(/^HTTPS active/)).toBeNull();
+		expect(view.getByText("Running (HTTPS unavailable)")).toBeDefined();
+		view.unmount();
+	});
+
+	it("tracks listener readiness and shutdown through the existing status poll", async () => {
+		const base = vi.mocked(rpc).getMockImplementation()!;
+		let tlsActive = true;
+		vi.mocked(rpc).mockImplementation(async (command, args) => {
+			if (command === "get_tailscale_status") {
+				return { state: "Running", fqdn: "dgqt92cjfp.tail911da.ts.net", https_enabled: true };
+			}
+			const result = await base(command, args);
+			if (command === "get_mcp_status") return { ...(result as object), tls_active: tlsActive };
+			return result;
+		});
+		const view = render(() => <RemoteAccessPanel />);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(view.getByText("HTTPS active (dgqt92cjfp.tail911da.ts.net)")).toBeDefined();
+		// Catches a retained capability snapshot keeping HTTPS active after shutdown.
+		tlsActive = false;
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(view.queryByText(/^HTTPS active/)).toBeNull();
+		expect(view.getByText("Running (HTTPS unavailable)")).toBeDefined();
+		tlsActive = true;
+		await vi.advanceTimersByTimeAsync(3000);
+		expect(view.getByText("HTTPS active (dgqt92cjfp.tail911da.ts.net)")).toBeDefined();
+		view.unmount();
+	});
+
 	it("shows the remote-access content it owns", async () => {
 		const view = render(() => <RemoteAccessPanel />);
 		await vi.advanceTimersByTimeAsync(0);

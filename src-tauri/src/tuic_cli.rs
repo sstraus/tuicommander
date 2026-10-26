@@ -298,11 +298,27 @@ fn check_version_match(installed_path: &str) -> bool {
     }
 }
 
-/// True when we can overwrite the installed binary without elevation. Opening it
-/// for write (without truncating) is a faithful proxy for whether the startup
-/// auto-update's `fs::copy` will succeed — a root-owned file returns false here.
+/// Atomic updates stage a sibling and replace the directory entry, so probe the
+/// directory, not the executable. On macOS even a write-open without any writes
+/// can invalidate the signed executable's cached signature (#2129-1dfd).
 fn install_path_writable(path: &str) -> bool {
-    std::fs::OpenOptions::new().write(true).open(path).is_ok()
+    let path = std::path::Path::new(path);
+    #[cfg(windows)]
+    if path
+        .metadata()
+        .is_ok_and(|metadata| metadata.permissions().readonly())
+    {
+        // Windows refuses replacement of a read-only destination.
+        return false;
+    }
+    let parent = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .unwrap_or_else(|| std::path::Path::new("."));
+    tempfile::Builder::new()
+        .prefix(".tuic-update-probe-")
+        .tempfile_in(parent)
+        .is_ok()
 }
 
 pub(crate) fn copy_with_elevation(src: &str, dst: &str) -> Result<(), String> {
@@ -428,6 +444,52 @@ mod tests {
         std::fs::write(&installed, b"daily-cli").unwrap();
         std::fs::write(&sidecar, b"agent-test-cli").unwrap();
         crate::agent_test::with_test_profile(dir.path(), || test(&installed, &sidecar));
+    }
+
+    // Catches: checking the old executable's write bit reports that atomic
+    // replacement needs elevation even when its directory permits replacement.
+    #[cfg(unix)]
+    #[test]
+    fn cli_update_probe_uses_install_directory_not_executable_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let installed = dir.path().join("tuic");
+        std::fs::write(&installed, b"old-cli").unwrap();
+        std::fs::set_permissions(&installed, std::fs::Permissions::from_mode(0o555)).unwrap();
+
+        assert!(
+            install_path_writable(installed.to_str().unwrap()),
+            "atomic replacement needs a writable directory, not a writable executable"
+        );
+        assert_eq!(std::fs::read(&installed).unwrap(), b"old-cli");
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            1,
+            "probe must clean up"
+        );
+    }
+
+    // Catches: the probe answers true unconditionally (or from the executable's
+    // own mode), so a read-only install directory is reported as auto-updatable.
+    #[cfg(unix)]
+    #[test]
+    fn cli_update_probe_rejects_read_only_install_directory() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let installed = dir.path().join("tuic");
+        std::fs::write(&installed, b"old-cli").unwrap();
+        std::fs::set_permissions(&installed, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o555)).unwrap();
+        let root = std::fs::File::create(dir.path().join("root-check")).is_ok();
+        let writable = install_path_writable(installed.to_str().unwrap());
+        std::fs::set_permissions(dir.path(), std::fs::Permissions::from_mode(0o755)).unwrap();
+        if root {
+            return; // permission bits do not bind root
+        }
+        assert!(
+            !writable,
+            "a read-only directory cannot take an atomic replacement"
+        );
     }
 
     #[test]

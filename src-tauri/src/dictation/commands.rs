@@ -982,6 +982,11 @@ fn open_speaker_for(
     conversation_generation: u64,
 ) -> Result<speaker::Armed, String> {
     let (engine, voice) = build_voice(config, &dictation.speech, language)?;
+    let engine = Arc::new(LoggedSpeech {
+        inner: engine,
+        engine: speech_service(config),
+        language: language.to_string(),
+    });
     let engine = guard_replies(config, dictation, engine, conversation_generation);
     let device = open_reply_output(dictation, owner)?;
     // Wrapped so the canceller learns what is being played. Without this the
@@ -1004,6 +1009,30 @@ fn open_speaker_for(
         voice,
         language: language.to_string(),
     })
+}
+
+/// Log actual synthesis starts, not queue construction or inferred playback.
+/// Reply text and external command arguments are deliberately not retained.
+struct LoggedSpeech {
+    inner: Arc<dyn speech::Speech>,
+    engine: &'static str,
+    language: String,
+}
+
+impl speech::Speech for LoggedSpeech {
+    fn synthesize(
+        &self,
+        text: &str,
+        voice: &str,
+        cancel: &speech::SpeechCancel,
+    ) -> Result<speech::SpeechAudio, speech::SpeechError> {
+        tracing::info!(source = "dictation", engine = self.engine, voice,
+            language = %self.language, "Speech synthesis start");
+        let result = self.inner.synthesize(text, voice, cancel);
+        tracing::info!(source = "dictation", engine = self.engine, voice,
+            language = %self.language, succeeded = result.is_ok(), "Speech synthesis complete");
+        result
+    }
 }
 
 fn guard_replies(
@@ -1679,6 +1708,9 @@ fn play_preview(
 /// Shared by push-to-talk and hands-free: one spelling of the TCC dance, so the
 /// two modes cannot disagree about what "denied" means.
 fn ensure_microphone_access() -> Result<(), String> {
+    if crate::agent_test::active() {
+        return Err("Microphone capture is disabled in agent-test".into());
+    }
     match permission::check() {
         permission::MicPermission::Denied => Err("microphone_denied".to_string()),
         permission::MicPermission::Restricted => Err("microphone_restricted".to_string()),
@@ -2562,7 +2594,10 @@ pub(crate) fn arm_hands_free_with(
     owner: &str,
     open_endpoint: &OpenVoiceEndpoint<'_>,
 ) -> Result<HandsFreeStatus, String> {
-    dictation.ensure_owner()?;
+    // Agent-test may own a replies-only conversation, never global input.
+    if !crate::agent_test::active() {
+        dictation.ensure_owner()?;
+    }
     check_binding_field(session_id, "Session id")?;
     check_binding_field(owner, "Audio owner")?;
     let settings = get_dictation_config();
@@ -2938,7 +2973,12 @@ pub fn get_hands_free_default_notice() -> String {
 
 #[tauri::command]
 pub fn get_dictation_config() -> DictationConfig {
-    with_resolved_engine(read_dictation_config())
+    let mut config = with_resolved_engine(read_dictation_config());
+    // Runtime policy wins over saved settings and every config transport.
+    if crate::agent_test::active() {
+        config.hands_free_listening = false;
+    }
+    config
 }
 
 fn read_dictation_config() -> DictationConfig {
@@ -2997,16 +3037,23 @@ pub(crate) fn save_dictation_config(
     // now, but the endpoint swap needs the runtime to be restarted around it,
     // which is a change to `arm_hands_free_with` rather than to this function.
     // Until then the mode keeps capturing from the device it armed with.
+    if crate::agent_test::active() {
+        config.hands_free_listening = false;
+    }
     let previous = get_dictation_config();
     config.recovered_from_corruption = false;
     let file = crate::config::ConfigFile::<DictationConfig>::new(DICTATION_CONFIG_FILE);
-    if base.recovered_from_corruption {
-        // A concurrent writer may already have repaired the file. Recheck
-        // under the file lock before deciding whether to repair or merge.
-        file.save_delta_recovering(&base, &config)?;
-    } else {
-        file.save_delta_strict(&base, &config)?;
-    }
+    // Normalize the locked disk value, not the caller's baseline: the baseline
+    // already exposes a resolved engine, while old files store an empty one.
+    // Otherwise an unchanged Edge choice vanishes from the delta and an
+    // inactive command/voice silently selects a different engine on next read.
+    file.save_delta_normalized(&base, &config, base.recovered_from_corruption, |latest| {
+        let mut latest = with_resolved_engine(latest);
+        if crate::agent_test::active() {
+            latest.hands_free_listening = false;
+        }
+        latest
+    })?;
     let config = get_dictation_config();
     // A voice belongs to a language and to an engine: see `refresh_voice_runtime`.
     let voice_changed = previous.language != config.language
@@ -3122,7 +3169,7 @@ mod tests {
             transcribe::VoiceGates::default(),
         )
         .unwrap();
-        assert!(result.text.is_empty());
+        assert_eq!(result.text, "");
         assert_eq!(
             result.skip_reason.as_deref(),
             Some("no sustained speech (need 200ms of active audio)")
@@ -3174,7 +3221,7 @@ mod tests {
         };
         let result =
             transcribe_final_ptt_audio(&PhraseTranscriber, &audio, Some("en"), gates).unwrap();
-        assert!(result.text.is_empty());
+        assert_eq!(result.text, "");
         assert_eq!(
             result.skip_reason.as_deref(),
             Some("no sustained speech (need 200ms of active audio)")
@@ -3194,7 +3241,7 @@ mod tests {
             transcribe::VoiceGates::default(),
         )
         .unwrap();
-        assert!(result.text.is_empty());
+        assert_eq!(result.text, "");
         assert_eq!(
             result.skip_reason.as_deref(),
             Some("no sustained speech (need 200ms of active audio)")
@@ -3670,7 +3717,7 @@ mod tests {
         let link = dictation.browser_endpoints.connect("browser-9");
         let mut endpoint = open_muted_endpoint(&dictation, "browser-9").expect("endpoint");
         assert!(endpoint.connected());
-        assert!(endpoint.drain().unwrap().is_empty());
+        assert_eq!(endpoint.drain().unwrap(), [] as [f32; 0]);
         drop(link);
     }
 
@@ -5258,10 +5305,9 @@ mod tests {
     #[test]
     fn get_speech_voices_offers_nothing_until_the_language_is_downloaded() {
         let (_root, _guard) = speech_root();
-        assert!(
-            get_speech_voices("it".into())
-                .expect("Italian ships")
-                .is_empty()
+        assert_eq!(
+            get_speech_voices("it".into()).expect("Italian ships"),
+            [] as [tuic_dictation::speech::library::VoiceChoice; 0]
         );
     }
 
@@ -6358,6 +6404,79 @@ mod tests {
         )
         .unwrap();
         assert_eq!(get_dictation_config().speech_engine, "edge");
+    }
+
+    #[test]
+    fn saving_an_italian_edge_reply_never_selects_a_stale_system_command_1996() {
+        // Bug caught: a resolved Edge baseline is diffed against an unset disk
+        // engine; saving an inactive command silently selects macOS say instead.
+        let (_dir, _guard) = speech_root();
+        let base = get_dictation_config();
+        assert_eq!(base.speech_engine, "edge");
+        let mut desired = base.clone();
+        desired.language = "it".into();
+        desired.speech_edge_voice = "it-IT-ElsaNeural".into();
+        desired.speech_command = vec!["say".into(), "-o".into(), "{out}".into(), "{text}".into()];
+        save_dictation_config(base, desired, None).unwrap();
+        let stored = get_dictation_config();
+        assert_eq!(
+            stored.speech_engine, "edge",
+            "an inactive system command must not replace Edge"
+        );
+        let dictation = DictationState::new();
+        let language = speech_language(&stored, &dictation).unwrap();
+        let (_, voice) = build_voice(&stored, &dictation.speech, &language).unwrap();
+        assert_eq!(language, "it");
+        assert_eq!(voice, "it-IT-ElsaNeural");
+    }
+
+    #[test]
+    fn saving_a_stale_voice_form_preserves_a_concurrent_engine_selection_1996() {
+        // Bug caught: pinning the form's resolved engine overwrites another
+        // client's explicit engine choice instead of normalizing the locked file.
+        let (dir, _guard) = speech_root();
+        let base = get_dictation_config();
+        std::fs::write(
+            dir.path().join(DICTATION_CONFIG_FILE),
+            r#"{"speech_engine":"pocket","language":"it"}"#,
+        )
+        .unwrap();
+        let mut desired = base.clone();
+        desired.speech_edge_voice = "it-IT-ElsaNeural".into();
+        save_dictation_config(base, desired, None).unwrap();
+        let stored = get_dictation_config();
+        assert_eq!(stored.speech_engine, "pocket");
+        assert_eq!(stored.language, "it");
+        assert_eq!(stored.speech_edge_voice, "it-IT-ElsaNeural");
+    }
+
+    #[test]
+    fn agent_test_saved_listening_cannot_open_or_request_a_microphone_1996() {
+        // Bug caught: compiling speech output makes saved listening=true
+        // sufficient to enter capture or request microphone permission.
+        let (dir, _guard) = speech_root();
+        crate::agent_test::with_test_profile(dir.path(), || {
+            let config_dir = crate::config::config_dir();
+            std::fs::create_dir_all(&config_dir).unwrap();
+            std::fs::write(
+                config_dir.join(DICTATION_CONFIG_FILE),
+                r#"{"hands_free_listening":true,"hands_free_spoken_replies":true}"#,
+            )
+            .unwrap();
+            let dictation = DictationState::new();
+            dictation.claim_ownership(&config_dir);
+            assert!(!dictation.is_owner());
+            assert!(dictation.ensure_owner().is_err());
+            assert!(!get_dictation_config().hands_free_listening);
+            assert_eq!(
+                ensure_microphone_access().unwrap_err(),
+                "Microphone capture is disabled in agent-test"
+            );
+            let mut endpoint = open_endpoint(&dictation, DESKTOP_OWNER).unwrap();
+            assert_eq!(endpoint.drain().unwrap(), [] as [f32; 0]);
+            assert!(dictation.hands_free_audio.lock().is_none());
+            assert!(dictation.transcriber_arc.lock().is_none());
+        });
     }
 
     #[test]

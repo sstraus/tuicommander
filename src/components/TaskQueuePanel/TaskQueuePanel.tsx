@@ -5,6 +5,7 @@ import { type TaskData, type TaskStatus, tasksStore } from "../../stores/tasks";
 import { cx } from "../../utils";
 import { onClickKeyDown } from "../../utils/a11y";
 import { formatDuration } from "../../utils/time";
+import { Button } from "../ui/Button";
 import s from "./TaskQueuePanel.module.css";
 
 export interface TaskQueuePanelProps {
@@ -69,16 +70,16 @@ export const TaskQueuePanel: Component<TaskQueuePanelProps> = (props) => {
 				<div class={s.header}>
 					<h3>{t("taskQueue.title", "Task Queue")}</h3>
 					<div class={s.actions}>
-						<button
+						<Button
 							class={s.clearBtn}
 							onClick={() => tasksStore.clearCompleted()}
 							title={t("taskQueue.clearCompleted", "Clear completed")}
 						>
 							{t("taskQueue.clear", "Clear")}
-						</button>
-						<button class={s.closeBtn} onClick={props.onClose}>
+						</Button>
+						<Button variant="ghost" aria-label="Close" class={s.closeBtn} onClick={props.onClose}>
 							&times;
-						</button>
+						</Button>
 					</div>
 				</div>
 
@@ -197,7 +198,8 @@ const TaskItem: Component<TaskItemProps> = (props) => {
 					<span class={s.itemDrag}>⋮⋮</span>
 				</Show>
 				<Show when={props.onCancel && (props.task.status === "pending" || props.task.status === "running")}>
-					<button
+					<Button
+						variant="ghost"
 						class={s.itemCancel}
 						onClick={(e) => {
 							e.stopPropagation();
@@ -206,7 +208,7 @@ const TaskItem: Component<TaskItemProps> = (props) => {
 						title={t("taskQueue.cancelTask", "Cancel task")}
 					>
 						✕
-					</button>
+					</Button>
 				</Show>
 			</div>
 		</div>

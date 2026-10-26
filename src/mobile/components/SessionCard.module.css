@@ -15,7 +15,7 @@
   font-size: inherit;
 }
 
-.cardMain {
+button[data-control-layout="row"].cardMain {
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -79,6 +79,7 @@
 }
 
 .project {
+  color: var(--fg-primary);
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -170,20 +171,8 @@
 }
 
 .killBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: none;
   color: var(--fg-muted);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  padding: 0;
-  /* 44px touch target with a 28px layout footprint: it reaches into the card padding
-     below and right, never left over the open-session button. */
+  /* Shared44px touch target retains a28px footprint without reaching left. */
   margin: -8px -16px -8px 0;
 }
 

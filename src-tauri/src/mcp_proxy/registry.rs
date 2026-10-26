@@ -16,8 +16,7 @@
 //! # Circuit breaker (per upstream)
 //!
 //! - 3 consecutive failures → circuit opens (backoff starts at 1s, capped at 60s)
-//! - After max 10 retries in Failed state, the entry is marked `Failed` permanently
-//!   until the user re-enables/re-connects it.
+//! - Exhausted retries mark the entry `Failed` with a 10-minute recovery backoff.
 //! - Background task runs `health_check` every 60s on every Ready upstream.
 
 use crate::mcp_proxy::http_client::{HttpMcpClient, UpstreamError, UpstreamToolDef};
@@ -54,6 +53,22 @@ const HEALTH_CHECK_INTERVAL: Duration = Duration::from_secs(60);
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
+
+/// Dispatch failures retain whether a tool could have started; prose is not an effect contract.
+#[derive(Debug)]
+pub(crate) struct ProxyCallError {
+    pub(crate) message: String,
+    pub(crate) effect: &'static str,
+}
+
+impl From<String> for ProxyCallError {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            effect: "not_started",
+        }
+    }
+}
 
 /// Lifecycle status of a single upstream connection.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -522,6 +537,7 @@ impl UpstreamRegistry {
     ) -> Result<Value, String> {
         self.proxy_tool_call_for_repo(prefixed_name, args, None)
             .await
+            .map_err(|error| error.message)
     }
 
     /// Like [`proxy_tool_call`] but optionally restricted to a per-repo
@@ -532,16 +548,16 @@ impl UpstreamRegistry {
         prefixed_name: &str,
         args: Value,
         allowed_upstreams: Option<&[String]>,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, ProxyCallError> {
         let (upstream_name, tool_name) = split_prefixed_name(prefixed_name)?;
 
         // Per-repo upstream allowlist: reject calls to upstreams not enabled for this project
         if let Some(allowed) = allowed_upstreams
             && !allowed.iter().any(|a| a == upstream_name)
         {
-            return Err(format!(
-                "Upstream '{upstream_name}' is not enabled for this project"
-            ));
+            return Err(
+                format!("Upstream '{upstream_name}' is not enabled for this project").into(),
+            );
         }
 
         let entry = self
@@ -558,21 +574,23 @@ impl UpstreamRegistry {
         if !apply_filter(tool_name, &entry.config) {
             return Err(format!(
                 "Tool '{tool_name}' on upstream '{upstream_name}' is blocked by its allow/deny filter"
-            ));
+            ).into());
         }
 
         // Block calls while backoff is active, upstream permanently failed, or authenticating
         if entry.cb.is_open() {
             return Err(format!(
                 "Circuit open for upstream '{upstream_name}' (backoff active, will retry)"
-            ));
+            )
+            .into());
         }
         {
             let status = entry.status.read().clone();
             if status == UpstreamStatus::Failed {
                 return Err(format!(
                     "Upstream '{upstream_name}' has failed — restart the server or reconnect"
-                ));
+                )
+                .into());
             }
             if matches!(
                 status,
@@ -580,7 +598,7 @@ impl UpstreamRegistry {
             ) {
                 return Err(format!(
                     "{{\"code\":-32001,\"message\":\"Upstream '{upstream_name}' is awaiting OAuth authentication\"}}"
-                ));
+                ).into());
             }
         }
 
@@ -610,9 +628,12 @@ impl UpstreamRegistry {
                 // auto-open a browser (RFC 8252 §8.11, guards against a compromised
                 // upstream steering the user to an attacker-controlled AS).
                 self.mark_needs_auth(&entry, upstream_name);
-                Err(format!(
-                    "{{\"code\":-32001,\"message\":\"Upstream '{upstream_name}' is awaiting OAuth authentication\"}}"
-                ))
+                Err(ProxyCallError {
+                    message: format!(
+                        "{{\"code\":-32001,\"message\":\"Upstream '{upstream_name}' is awaiting OAuth authentication\"}}"
+                    ),
+                    effect: "unknown",
+                })
             }
             Err(e) => {
                 entry.metrics.error_count.fetch_add(1, Ordering::Relaxed);
@@ -627,7 +648,10 @@ impl UpstreamRegistry {
                         self.emit_status_change(upstream_name, "circuit_open");
                     }
                 }
-                Err(e.to_string())
+                Err(ProxyCallError {
+                    message: e.to_string(),
+                    effect: "unknown",
+                })
             }
         }
     }
@@ -1305,6 +1329,7 @@ async fn run_health_checks(registry: &UpstreamRegistry) {
                     *entry.tools.write() = tools;
 
                     entry.cb.record_success();
+                    *entry.last_error.write() = None;
                     if needs_recovery {
                         *entry.status.write() = UpstreamStatus::Ready;
                         tracing::info!(source = "mcp_registry", %name, "Recovered (Ready) with {new_count} tools");
@@ -1537,7 +1562,7 @@ mod tests {
     #[test]
     fn aggregated_tools_empty_when_no_upstreams() {
         let registry = UpstreamRegistry::new();
-        assert!(registry.aggregated_tools().is_empty());
+        assert_eq!(registry.aggregated_tools(), [] as [serde_json::Value; 0]);
     }
 
     #[test]
@@ -1594,7 +1619,7 @@ mod tests {
         *entry.status.write() = UpstreamStatus::CircuitOpen;
         registry.entries.insert(name, entry);
 
-        assert!(registry.aggregated_tools().is_empty());
+        assert_eq!(registry.aggregated_tools(), [] as [serde_json::Value; 0]);
     }
 
     #[test]
@@ -1889,6 +1914,87 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn registry_respawns_an_exited_stdio_upstream() {
+        // Catches health checks treating a dead child as a failing endpoint forever.
+        let mut fixture = std::env::current_exe().unwrap();
+        fixture.pop();
+        if fixture.file_name().is_some_and(|name| name == "deps") {
+            fixture.pop();
+        }
+        fixture.push(format!(
+            "tuic-mcp-fixture-server{}",
+            std::env::consts::EXE_SUFFIX
+        ));
+        assert!(
+            fixture.is_file(),
+            "fixture server must be built by nextest setup"
+        );
+        let mut config = http_server_config("respawn", "");
+        config.transport = UpstreamTransport::Stdio {
+            command: fixture.to_string_lossy().into_owned(),
+            args: vec!["crash-on-call".into()],
+            env: Default::default(),
+            cwd: None,
+        };
+        let registry = UpstreamRegistry::new();
+        let (tx, mut rx) = tokio::sync::broadcast::channel(16);
+        registry.set_mcp_tools_tx(tx);
+        registry.connect_upstream(config, None).await.unwrap();
+        tokio::time::timeout(Duration::from_secs(60), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let before = registry
+            .proxy_tool_call("respawn__probe", serde_json::json!({}))
+            .await
+            .unwrap();
+        let crash = registry
+            .proxy_tool_call("respawn__probe", serde_json::json!({"crash": true}))
+            .await;
+        assert!(crash.unwrap_err().contains("closed stdout"));
+        for _ in 0..2 {
+            assert!(
+                registry
+                    .proxy_tool_call("respawn__probe", serde_json::json!({}))
+                    .await
+                    .is_err()
+            );
+        }
+        tokio::time::timeout(Duration::from_secs(60), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            registry.status_snapshot()["upstreams"][0]["status"],
+            "circuit_open"
+        );
+        // The production health interval is 60s; respect the real 5s spawn limiter
+        // without changing its state or manufacturing a dead client.
+        tokio::time::sleep(Duration::from_secs(5)).await;
+        run_health_checks(&registry).await;
+        tokio::time::timeout(Duration::from_secs(60), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            registry.status_snapshot()["upstreams"][0]["status"],
+            "ready",
+            "health tick must respawn the exited child without manual reconnect"
+        );
+        assert!(registry.status_snapshot()["upstreams"][0]["last_error"].is_null());
+        let after = registry
+            .proxy_tool_call("respawn__probe", serde_json::json!({}))
+            .await
+            .unwrap();
+        assert_ne!(
+            before["content"][0]["text"], after["content"][0]["text"],
+            "the response must come from a fresh process"
+        );
+        assert_eq!(registry.aggregated_tools().len(), 1);
+        registry.disconnect_upstream("respawn").unwrap();
+    }
+
+    #[tokio::test]
     async fn health_check_failure_records_last_error() {
         // Regression: the Err arm of the health check must bind the error, log it,
         // and write entry.last_error so the failure reason surfaces in the status
@@ -1962,7 +2068,7 @@ mod tests {
         *entry.status.write() = UpstreamStatus::Authenticating;
         registry.entries.insert(name, entry);
 
-        assert!(registry.aggregated_tools().is_empty());
+        assert_eq!(registry.aggregated_tools(), [] as [serde_json::Value; 0]);
     }
 
     #[tokio::test]
@@ -1985,7 +2091,7 @@ mod tests {
         );
         assert!(
             err.contains("OAuth authentication"),
-            "expected auth message, got: {err}"
+            "expected auth message, got: {err:?}"
         );
     }
 
@@ -2083,7 +2189,7 @@ mod tests {
         );
         assert!(
             err.contains("OAuth authentication"),
-            "expected auth message, got: {err}"
+            "expected auth message, got: {err:?}"
         );
     }
 
@@ -2208,7 +2314,7 @@ mod tests {
 
         let allowed: Vec<String> = vec![];
         let tools = registry.aggregated_tools_for_repo(Some(&allowed));
-        assert!(tools.is_empty());
+        assert_eq!(tools, [] as [serde_json::Value; 0]);
     }
 
     #[tokio::test]
@@ -2226,9 +2332,10 @@ mod tests {
             )
             .await
             .expect_err("should reject upstream not in allowlist");
+        assert_eq!(err.effect, "not_started");
         assert!(
-            err.contains("not enabled"),
-            "expected 'not enabled' message, got: {err}"
+            err.message.contains("not enabled"),
+            "expected 'not enabled' message, got: {err:?}"
         );
     }
 
@@ -2245,7 +2352,11 @@ mod tests {
             .await;
         // Either Ok (unlikely without real server) or Err that's NOT about filtering
         if let Err(e) = result {
-            assert!(!e.contains("not enabled"), "should not be filtered: {e}");
+            assert_eq!(e.effect, "unknown");
+            assert!(
+                !e.message.contains("not enabled"),
+                "should not be filtered: {e:?}"
+            );
         }
     }
 }

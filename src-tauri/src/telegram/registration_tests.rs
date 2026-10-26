@@ -109,10 +109,10 @@ async fn second_register_replaces_first_and_notifies_it_once() {
     assert_eq!(server.requests().len(), 1);
 }
 
-// Catches: unregistered outbound actions succeed, unregister is a no-op, or a
+// Catches: unregistered request actions succeed, unregister is a no-op, or a
 // daemon restart reloads the registration from config.
 #[tokio::test]
-async fn unregistered_caller_cannot_send_and_restart_has_no_registration() {
+async fn unregistered_caller_cannot_answer_requests_and_restart_has_no_registration() {
     let (_dir, paths) = setup();
     let server = FakeServer::start(vec![]).await;
     let mut runtime = outbound_tests::runtime(paths.clone(), server.address).await;
@@ -121,10 +121,6 @@ async fn unregistered_caller_cannot_send_and_restart_has_no_registration() {
         .await
         .unwrap();
     for input in [
-        Input::Send {
-            text: "hello".into(),
-            buttons: vec![],
-        },
         Input::Begin {
             request_id: "r".into(),
         },
@@ -153,7 +149,10 @@ async fn unregistered_caller_cannot_send_and_restart_has_no_registration() {
     )
     .unwrap();
     assert!(fresh.registered_peer().is_none());
-    assert!(server.requests().is_empty());
+    assert_eq!(
+        server.requests(),
+        [] as [(std::string::String, serde_json::Value); 0]
+    );
 }
 
 // Catches: a registered agent retains phone authority after its MCP transport

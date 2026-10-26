@@ -332,8 +332,8 @@ mod tests {
     fn pkce_generates_s256() {
         let pair = TokenManager::generate_pkce();
         assert_eq!(pair.method, "S256");
-        assert!(!pair.challenge.is_empty());
-        assert!(!pair.verifier.is_empty());
+        assert_ne!(pair.challenge, "");
+        assert_ne!(pair.verifier, "");
         // Challenge and verifier must differ
         assert_ne!(pair.challenge, pair.verifier);
     }

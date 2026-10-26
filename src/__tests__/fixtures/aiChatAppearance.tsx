@@ -87,6 +87,7 @@ setTimeout(() => {
 			},
 			quoteBorder: getComputedStyle(quote).borderLeftWidth,
 			terminalBorder: getComputedStyle(card).borderLeftWidth,
+			terminalAnswerBorder: getComputedStyle(card.querySelector("[data-tuic-answer]")!).borderLeftWidth,
 			busy: controls(),
 			idle: {},
 		};

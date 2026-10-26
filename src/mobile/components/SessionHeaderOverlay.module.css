@@ -25,10 +25,6 @@
 }
 
 .close {
-  width: 44px;
-  height: 44px;
-  border: 0;
-  background: transparent;
   color: var(--fg-primary);
   font-size: 24px;
 }

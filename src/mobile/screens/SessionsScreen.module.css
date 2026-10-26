@@ -1,7 +1,7 @@
 .list {
   height: 100%;
   overflow-y: auto;
-  padding-bottom: calc(64px + 12px + 52px + 12px);
+  padding-bottom: calc(64px + 12px + 44px + 12px);
   -webkit-overflow-scrolling: touch;
 }
 
@@ -47,69 +47,18 @@
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 }
 
-.sortOption {
-  min-height: 44px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--fg-secondary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
+.sortOption { text-align: left; }
 
 .sortOptionActive {
   color: var(--accent);
   font-weight: 600;
 }
 
-.searchToggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.searchToggle:active,
-.sortOption:active {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.searchToggle:focus-visible,
-.sortOption:focus-visible,
-.searchField input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 .searchField {
   padding: 0 16px 12px;
 }
 
-.searchField input {
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-  font: inherit;
-  font-size: 16px;
-}
-
-.searchField input::placeholder {
-  color: var(--fg-muted);
-}
+.searchField input { width: 100%; }
 
 .noMatch {
   display: flex;
@@ -231,24 +180,7 @@
   position: fixed;
   bottom: calc(64px + 12px);
   right: 16px;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  border: none;
-  background: var(--accent);
-  color: var(--text-on-accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  -webkit-tap-highlight-color: transparent;
   z-index: 10;
-}
-
-.fab:active {
-  opacity: 0.8;
-  transform: scale(0.95);
 }
 
 @media (prefers-reduced-motion: reduce) {

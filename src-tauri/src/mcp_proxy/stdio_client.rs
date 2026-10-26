@@ -279,7 +279,7 @@ pub(crate) struct StdioConfig {
     pub(crate) args: Vec<String>,
     pub(crate) env: std::collections::HashMap<String, String>,
     pub(crate) cwd: Option<String>,
-    /// How long to wait for one response line before declaring the upstream mute.
+    /// Deadline for one complete request exchange (write plus response).
     pub(crate) timeout: Duration,
 }
 
@@ -564,10 +564,9 @@ impl StdioMcpClient {
     /// Check if alive and refresh the tool list. Used for health checks.
     pub(crate) fn health_check(&mut self) -> Result<Vec<UpstreamToolDef>, String> {
         if !self.is_alive() {
-            return Err(format!(
-                "Upstream '{}' process is not running",
-                self.config.name
-            ));
+            // Health probes are the recovery path, not only a liveness report.
+            // Keep respawns under the same mutex and rate limit as initial setup.
+            return self.spawn_and_initialize();
         }
         let tools_resp = self.rpc("tools/list", serde_json::json!({}))?;
         let tools_arr = tools_resp["result"]["tools"]
@@ -699,9 +698,8 @@ impl StdioMcpClient {
     /// Write a JSON value as a newline-delimited line to stdin, waiting until
     /// `deadline` for the child to take it.
     ///
-    /// On timeout the client is torn down, for the same reason `read_line` does
-    /// it and for one more: killing the child is what unblocks the writer thread
-    /// still parked on the pipe.
+    /// A write timeout tears the client down: the frame may be partial, and
+    /// killing the child unblocks the writer thread still parked on the pipe.
     fn write_line(&mut self, value: &Value, deadline: Instant) -> Result<(), String> {
         let tx = self
             .stdin_tx
@@ -743,9 +741,10 @@ impl StdioMcpClient {
     /// Read a newline-delimited JSON response from stdout, waiting until
     /// `deadline` for it.
     ///
-    /// On timeout the client is torn down. That is not tidiness: the request we
-    /// gave up on may still be answered later, and leaving the pipe in place
-    /// would hand that stale reply to the next call as if it were its own.
+    /// A reply timeout ends this request, not the process: a healthy tool may
+    /// still be working. `rpc` matches monotonically increasing request ids, so
+    /// a late reply is discarded rather than returned as the next call's result.
+    /// This does not cancel or retry the action; its external outcome is unknown.
     fn read_line(&mut self, deadline: Instant) -> Result<Value, String> {
         let rx = self
             .stdout_rx
@@ -767,7 +766,6 @@ impl StdioMcpClient {
                     dropped,
                     "{message}"
                 );
-                self.shutdown_internal();
                 return Err(message);
             }
             Err(ReadEnd::Closed) => {
@@ -1077,9 +1075,41 @@ mod tests {
             "expected a timeout error, got: {err}"
         );
         assert!(
-            !still_alive,
-            "a timed-out client must be torn down so the next call cannot read a stale reply"
+            still_alive,
+            "a fully written request timing out must not kill the upstream"
         );
+    }
+
+    #[test]
+    fn a_late_reply_does_not_kill_the_child_or_answer_the_next_call() {
+        // Catches reply-timeout teardown and returning an abandoned call's result.
+        let mut client = StdioMcpClient::new(make_config_for_scenario("delayed-tool-call"));
+        client.spawn_and_initialize().expect("handshake");
+        client.config.timeout = Duration::from_millis(100);
+        let result = client.call_tool(
+            "echo",
+            serde_json::json!({
+                "delay_ms": 500, "message": "late first reply"
+            }),
+        );
+        assert!(result.unwrap_err().contains("timed out"));
+        assert!(
+            client.is_alive(),
+            "reply timeout must preserve a healthy child"
+        );
+        client.config.timeout = Duration::from_secs(30);
+        let result = client
+            .call_tool(
+                "echo",
+                serde_json::json!({
+                    "delay_ms": 0, "message": "second reply"
+                }),
+            )
+            .unwrap();
+        assert_eq!(result["content"][0]["text"], "second reply");
+        let tools = client.health_check().expect("same child remains usable");
+        assert_eq!(tools[0].original_name, "echo");
+        client.shutdown();
     }
 
     /// The reply may sit behind any amount of server chatter. Bounding that by

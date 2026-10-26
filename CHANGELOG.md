@@ -8,6 +8,170 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - A ghost terminal tab (its terminal entry is gone) no longer keeps a split pane open: the pane collapses when the terminal is removed, and closing a sibling tab ignores ghost terminal, diff, Markdown and editor tabs when deciding whether a pane is empty. A pane whose only tab is a ghost diff, Markdown or editor tab is still not swept until another tab in it closes. Reset Panel Sizes now also rebuilds the active Global Workspace layout (keeping the focused terminal), and switching workspace scope reconciles the active terminal without stealing selection from a docked non-terminal tab.
 
+## [2.0.0-beta.3] - 2026-10-26
+
+- Serve shared GitHub poller controls and repository status, PR and issue reads from headless `tuic-remote`, with the existing transport authentication (#2345-49f0).
+
+- Warn in development when Cargo dep-info inputs or a rebuilt executable outdate the running Rust backend; keep unrelated frontend-only landings quiet (#2332-3eef).
+- Keep final agent API failures red through idle and failed auto-retry; detect wrapped Claude connection loss/auth/JSON errors, Codex native and legacy final errors, and ego provider-failure receipts (#2335-9c03).
+
+- Remove inherited rustup proxy state from new terminals so repository toolchain pins apply; preserve explicit run-config toolchain overrides (#2318-4b44).
+- Extend the existing orchestration silence control to all sounds and OS notifications from agent-spawned sessions, while preserving Activity, bell entries and urgent user cards (#2341-be90).
+- Keep the GitHub monitored-repository count independent of expiring query results, and prevent queued or late poll requests from restoring retired monitoring entries (#2336-da0a).
+
+- Isolate repository-local settings read failures so healthy repositories refresh and unavailable repositories retain their last successful values (#2336-da0a).
+
+- Default Markdown reviews to the agent that opened the document on desktop and mobile, while preserving an explicit review-agent choice (#2329-dc53).
+
+- Keep Markdown list comment actions outside the full list so nested bullets, numbers and task checkboxes stay unobstructed (#2330-6ef8).
+- Align Workflow Designer actions and draggable palette controls with shared desktop and touch geometry; preserve draft rows and graph cards (#2259-9345).
+- Keep SSH discovery Probe actions separated with shared settings row spacing, and hide remote update actions when the current build clears the out-of-date warning (#2337-6a62).
+
+### Fixed
+
+- Restore SQLite Viewer database loading and save feedback, and Wiz Kanban toast feedback, through the documented plugin host-message envelope (#2340-ede3).
+- Preserve the resolved speech engine when saving voice settings, so an inactive external command cannot silently replace the Italian Edge voice.
+- Resolve worktree removal through the same fresh inventory as the sidebar, including symbolic branch names; deleting an alias keeps its target branch (#2334-ca53).
+- Return `removed` after idempotent secret removal instead of the ambiguous `missing`; document backend-wide names and reconnect lifetime (#1520-46b1).
+
+- Bind session Chat text to the terminal zoom level, including active and all-terminal zoom shortcuts (#2322-c113).
+
+- Restore toolbar density in panel headers, view toggles and filters while keeping Settings forms at 36px and mobile targets at 44px (#2316-2f6b).
+
+- Accept direct replies to idle conversational progress waits while preserving native modal guards and reporting their prompt kind (#2314-cf94).
+
+- Recover queued ego wakes after a fresh empty composer supersedes stale tracked input; report parked entries and their blocker in session inventory (#2313-dd6d).
+
+- Align shortcut Rebind and global-hotkey Clear actions with shared desktop and touch targets.
+
+- Use shared control geometry for Telegram settings without panel-level sizing overrides.
+
+- Align Smart Prompt editor actions with shared control targets while preserving variable list rows.
+
+- Align repository export and consolidation controls with shared desktop and touch targets.
+
+- Align plugin settings actions and documentation icons with shared control targets.
+
+- Add shared icon-only button targets with optional circular presentation.
+
+- Align GitHub settings actions with shared desktop and touch button geometry.
+
+- Align agent settings and launch-editor controls with shared desktop/touch geometry and native validation states.
+
+- Share native invalid-field borders and installed/removal toggle states across UI controls.
+
+- Add a shared compact auto-grow textarea with bounded growth and native scrolling.
+
+- Add shared connected button groups for split actions with one divider.
+
+- Add shared square-edged stretch button geometry for container-height edge actions.
+
+- Align Settings actions, including Remote Access Recheck, presentation action slots and account/list field actions, with shared 36px desktop and 44px touch controls; keep navigation and search results as layout rows.
+
+- Share preset and clear color-swatch targets through the UI design system, with native button selection and 44px touch targets.
+
+### Added
+
+- Promote Settings switches, range sliders and custom colour inputs into shared UI primitives with consistent row-height and touch targets (#2302-35d9).
+
+- Add a shared Button primitive with standard action variants, compact sizing and touch targets aligned with form controls (#2296-2bf2).
+### Added
+
+- Add, list and update Ideas through the planner API, CLI and workflow MCP tool, with source tracking and race-safe panel synchronization (#2295-abd3).
+
+### Fixed
+
+- Pass canonical Windows worktree destinations to Git without the verbatim prefix, and remove expired attachment grants from resumed agent commands across configuration-path aliases (#2310-6e76).
+
+- Read Android shared files from the active service worker cache so they reach the mobile chat draft after a cache version update (#2304-48f8).
+
+- Show the cached mobile connection-test landing when the server is unreachable, even with a cached app shell; show an actionable in-app outage state and recover automatically after a resumed or stalled connection (#2294-078f).
+- Require every `+term` in MCP tool search to match the tool name before limiting results; keep exact `select:<name>` queries free of ranked fallback (#2300-6355).
+- Delete file-browser symbolic links without following their targets, including unavailable links, and show deletion errors (#2301-e76f).
+
+- GitHub Settings now shows every requested OAuth scope from the same value used by login (#2293-8674).
+- Align the Stories List/Kanban switch with the shared select height on desktop and touch layouts; guard feature CSS against new control-size overrides (#2182-ef2c).
+
+- Identify Activity Dashboard sessions by repository name and linked-worktree branch, including detached dashboards; keep folder names for sessions outside repositories (#2180-5105).
+- Replace the mobile Sessions Active total with Working, Idle and Awaiting counts that share each row badge state, including the Working hold across poll updates. Agents running sub-tasks count as Working. Finished sessions are not counted (#2181-c98f).
+
+- Keep mobile CLI output at the bottom when the keyboard or viewport resizes, without moving a reader who scrolled up (#2179-e598).
+
+- Deliver queued user commands when an idle agent is waiting on a blocked progress report, without bypassing native questions or permission dialogs (#2177-053d).
+
+## [2.0.0-beta.2] - 2026-10-24
+
+- Show append-only notes and workflow receipt references in native story detail, with an add field, retained drafts on failure, and an explicit refresh for agent-added notes (#2172-6dee).
+- Show native story origin, plan step, revision, claiming session and transition history in story details; allow plan-step origins during creation (#2173-84e0).
+
+- Add append-only native story notes with backend actor/time/revision provenance and validated workflow receipt references through the shared story service (#2172-6dee).
+- Add a Plans-column editor with Save/Cancel and retained drafts on conflicts, backed by atomic revision-checked native plan title/source updates through the shared MCP, HTTP, IPC, and CLI service; include corrected metadata in workflow planning and verification subjects, and refuse source replacement while a plan coordinator is active (#2170-d828).
+
+- Add server-side native story state/priority/type filters and optional bounded keyset pages without changing legacy full-list reads or workflow dispatch order (#2174-6b3f).
+- Show native ego selector controls on mobile when a question arrives or a waiting session opens. Reopen the question after a `selection_required` reply refusal without losing or sending the draft (#2176-03d3).
+
+- Filter native stories by open/closed status and optional type, including untyped records, and switch between list and a native Kanban view; retain these controls across detach and reattach (#2167-eedb).
+
+- Plans and Stories now keeps a stable dialog size and supports the shared detach and bring-back window controls (#2166-11aa).
+- Add one atomic, revision-checked `update_story` action for native story metadata, optional problem/risk, ordered criteria and dependencies; preserve checks only for unchanged requirements and refuse active ownership (#2169-bf61). StoriesDialog now exposes the amendment as one Edit form with Save/Cancel and revision-conflict handling; QA remains non-editable. Criteria use separate ordered entries so multiline requirement text is preserved during edits.
+
+- Report HTTPS active only while the TLS listener is running, and read Tailscale certificates from stdout to avoid macOS app sandbox write failures (#2165-b4de).
+- Native stories enter QA when only manual criteria remain. MCP, CLI, project summaries and run incidents distinguish human checks from development work; revision checks and existing story documents are retained (#2168-7fbc).
+
+- Use the non-overlay iOS status bar for newly installed mobile PWAs. An iPhone simulator check confirms this removes the 62pt bottom band without changing the CLI composer's 4px padding or keyboard viewport sizing. Existing Home Screen installs need removal and reinstallation to load the status-bar setting (#2116-0213).
+- Preserve duplicate-branch checkouts as read-only diagnostics, show missing registrations with repair guidance, propagate discovery errors without caching empty results, and retain bisect/relative-gitdir rebase identity (#2157-eb64). Missing detached registrations also stay out of automatic orphan cleanup, including Ask countdowns; explicit removal remains available.
+
+- Terminal Chat now limits its green answer bar to the CLI answer region instead of the whole assistant message on desktop and mobile (#2158-4b3d).
+
+- Identify symbolic links and their target kind/path in Files; explain outside-repository link refusals without adding read access (#2155-5da6).
+
+- Show session-bound account quota or ego session tokens and cost in the mobile session menu, with explicit loading, unavailable and stale states. Remote sessions use their owning daemon; Claude refreshes never trigger inference (#2150-4e0c).
+- Show sidebar status diagnostics once and omit removal warnings for main checkouts (#2152-765e).
+
+- Retain the existing bounded ticker retry when newer reader output arrives during a frame send; input credits, spacing, rate floors and receipt gates are unchanged (#2040-16b2).
+
+- Stop desktop receipt and recovery feedback from generating frames after terminal output goes quiet. Keep paused damage and bounded bulk-output pacing; native echo still exceeds one frame in measured p95 samples (#2040-16b2).
+- Delete Worktree on a clean, integrated checkout now says what happens: the confirm dialog is titled "Archive workspace?" with an Archive button, states that the branch is kept, and the status line reports "Archived … branch was kept". The backend behaviour (recycle into `__archived/`) is unchanged (#2139-3f05).
+- View the MCP call audit in Settings > MCP > Call audit. One setting, `mcp_call_audit_enabled`, gates both recording and the view: off by default in release builds, on in debug builds. While off, nothing is recorded and `GET /mcp/audit` reports `enabled:false` (#2136-dc79).
+- Clear NOT_FOUND retry delays for all GitHub accounts when Refresh status is selected, without changing read-only diagnostics (#2133-9213).
+- Preserve GitHub repository access errors by owner and distinguish confirmed NOT_FOUND from retriable access denials, with an OAuth recovery action even for NOT_FOUND groups (#2127-97f5).
+- Let any live MCP-bound agent send Telegram notifications without taking inbound ownership. Non-owner messages carry a server-derived sender name, are limited to one send per 30 seconds, and route Telegram Replies to the unique live sender; buttons remain owner-only (#2119-d5de).
+- Keep remote Design Mode error reads behind explicit host consent and avoid claiming eval consent when Chrome does not add it (#1724-fe7e).
+- Add the optional Design Mode **Let agents capture any site** grant. Without it, screenshots retain temporary browser-action access and explain how to enable capture; capture consent does not enable agent eval (#1724-fe7e).
+- Initialize every terminal grid at its PTY spawn size and seed the first resize no-op guard from the kernel PTY size, not the grid (#2130-2ca2).
+
+### Fixed
+- Show post-agent shell output in mobile CLI and log snapshots instead of trimming at retained agent chrome; stop restoring the old agent selection as input (#2178-24da).
+- Run the macOS Tailscale app fallback in explicit CLI mode for status, certificate requests and peer lookup, without changing standalone CLI environments (#2164-4935).
+- Publish each terminal Chat snapshot once instead of rendering every partial history during replay, reducing first-open and CLI-to-Chat latency without truncating the desktop or mobile transcript (#2163-a1db).
+- Automatically respawn dead stdio MCP upstreams during health recovery; preserve healthy processes after reply timeouts and discard late replies by request id (#2162-bf4a).
+- Restore empty or older pane layouts safely during settings refresh, and publish restored tree, groups and focus together (#2161-dc0d).
+- Show detached checkouts as informational sidebar rows without inventing branch workspaces; retain the main checkout for linked-input discovery, preserve newline paths, and exclude only the configured TUIC archive pool (#2156-2723).
+- Keep temporary detached worktrees out of orphan prompts and removal, including stale requests and missing scratch checkouts (#2160-4dcb).
+- Keep intermediate Chat prose readable in dark and light themes on desktop and mobile, and retain the list marker gutter inside green answer bars (#2159-857f).
+- Withdraw confident agent questions when foreground detection confirms return to the shell, without waiting for another input (#1985-45bd).
+- Preserve root profile argument order for Codex usage reads and use the terminal ego executable without requiring AI Chat configuration (#2150-4e0c).
+- Show the selected project once in the mobile Progress header; keep the project selector, a subtitle when no selector is available, and the desktop subtitle (#2151-62ef).
+- Open mobile and desktop Progress lists with at most 100 entries; load older cursor pages on demand and discard stale page responses after filter changes (#2151-62ef).
+- Keep long mobile CLI file links inline with surrounding text and its hanging indent instead of centering wrapped paths (#2011-86b5).
+- Read nullable macOS WebView URLs without Wry unwraps in document recovery and detached-panel snapshots; a missing URL no longer reaches that panic path (#2120-9f3f).
+- Stop opening the installed CLI for writing during status checks; probe its install directory instead to avoid macOS signature invalidation without changed binary bytes (#2129-1dfd).
+- Offer Add Agent on non-git shell-folder rows using the folder as the working directory, without Git branch or worktree actions (#2125-13fe).
+
+- Clamp context menus using their unscaled layout size, constrain narrow-window menus, and hide branch workflow actions on non-git shell rows (#2124-1866).
+
+- Hide agent-mail wake notices in terminal Chat while keeping interruption notices and real user messages unchanged (#2123-8f17).
+
+- **BREAKING:** remove MCP migration hints for `agent detect/stats/metrics` (use `GET /agents`, `/stats`, `/metrics`), `session process_stats` (use `GET /process/stats`), and `repo prs/issues/close_issue/reopen_issue/ci_logs` (use `GET /repo/prs`, `GET /repo/issues`, `POST /repo/issues/close`, `POST /repo/issues/reopen`, `GET /repo/ci-failure-logs`). These actions now use ordinary unsupported-input errors; no compatibility alias or replacement hint remains (#2115-1333).
+- Stop a remote's `HEAD` symref (e.g. `refs/remotes/origin/HEAD`) leaking into branch lists as a phantom branch named after the remote, and classify `is_remote` from the full refname so remotes not named `origin` and local branches such as `origin/foo` or `feature/HEAD` are reported correctly (branch switcher, Git Panel Branches tab, base-ref picker, graph decorations).
+- Stop falling back to a predictable `/tmp/.mdkb/daemon-hook.sock` when the home directory is unknown: the mdkb client now treats that as "no daemon" instead of connecting to a socket any local user could plant.
+- `make build` / `make build-dmg` no longer fail locally with a missing-private-key error: updater artifact signing (`createUpdaterArtifacts`) is skipped when `TAURI_SIGNING_PRIVATE_KEY` is unset; CI/release builds that set the key are unchanged.
+- Fix plugin updates failing with "Failed to backup data/" on Linux: the `data/` backup now lives inside the plugins directory (same filesystem) instead of the OS temp dir, is restored if the install fails part-way, and URL installs download into a private auto-removed temp file instead of a predictable path in shared `/tmp`.
+- Cancel the Markdown tab's pending focus animation frame on re-activation and unmount, so repeated activations no longer queue several frames and a late frame cannot focus a detached wrapper.
+- Read the rich sidebar's subagent flow at once, and refresh a repo's git state at once, when the system clock was set back, instead of waiting out the skew (a skew past 2^31-1 ms made the sidebar flow re-arm a 1 ms timer in a busy loop).
+- Keep the File Browser and Git Panel available while a per-repo auto-consolidated worktree workspace is active; only the manual cross-repo global workspace suppresses them.
+- Quantize the mouse wheel forwarded to mouse-reporting apps (Claude Code, vim, lazygit, htop) to one SGR notch per line height, capped at 3 per event, with `deltaMode` line/page normalization, so a macOS momentum flick no longer sends hundreds of notches; Shift+wheel (reported on `deltaX` by macOS) now reaches TUIC scrollback. Cap scrollback gesture acceleration at 2x and restart it on direction reversal. SGR mouse reports (`ESC [ < ... M`) no longer leak into the reconstructed input line used for busy detection and prompt capture.
+
 ## [2.0.0-beta.1] - 2026-10-22
 
 - Keep the terminal mobile composer's bottom safe-area inset inside its painted surface, above the Home Indicator; the separately reported iPhone shell-height band still needs device evidence (#2116-0213).
@@ -1315,7 +1479,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Mobile session and feed repair** — Connected remote sessions open live output and close through their owning machine. Mobile Progress discovers projects with journal entries, and Activity loads saved events when opened.
 
 - **Progress toast dismissal** — Tapping a toast closes it without switching repositories or terminals. The dedicated **Go to repo** button still navigates to the reporting workspace.
-- **BREAKING: smaller native MCP tools** — `agent register/list_peers` now takes `path` instead of `project`; `repo worktree_lifecycle/worktree_remove` now takes `branch` instead of `workspace_id`. Removed `agent detect/stats/metrics`, `session process_stats`, and `repo prs/issues/close_issue/reopen_issue/ci_logs` in favor of their single-call HTTP routes. Each removed action returns an error naming its replacement. This saves tool tokens by keeping one name per concept and removing duplicate actions from schemas and output choices. The `worktree_create` response still carries `workspace_id` alongside `branch` for HTTP parity. `tuic agent list-peers --path` and `tuic repo worktree-remove <path> <branch>` use the new names.
+- **BREAKING: smaller native MCP tools** — `agent register/list_peers` now takes `path` instead of `project`; `repo worktree_lifecycle/worktree_remove` now takes `branch` instead of `workspace_id`. Removed `agent detect/stats/metrics`, `session process_stats`, and `repo prs/issues/close_issue/reopen_issue/ci_logs` in favor of their single-call HTTP routes. Migration hints for these removed actions were later removed in #2115-1333; clients must use the HTTP routes directly. This saves tool tokens by keeping one name per concept and removing duplicate actions from schemas and output choices. The `worktree_create` response still carries `workspace_id` alongside `branch` for HTTP parity. `tuic agent list-peers --path` and `tuic repo worktree-remove <path> <branch>` use the new names.
 
 - **Remote repository terminals and browsing** — New remote terminals attach to their owning machine's stream and show launch failures in the pane or stream failures in a persistent toast. Remote PTY creation rejects a missing working directory instead of registering an empty terminal. The remote folder picker starts at the host's reported home directory and shows readable permission errors while keeping path entry available.
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Real macOS plist discovery; fake the network and extraction process boundaries.
+# Real plist discovery; fake the network and extraction process boundaries.
 set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 mkdir -p "$root/.tmp/tuic-tests"
@@ -9,6 +9,24 @@ mkdir -p "$work/bin"
 export INSTALL_TEST_WORK="$work" INSTALL_TEST_ROOT="$root"
 export TUICOMMANDER_HOME="$work/Applications"
 export PATH="$work/bin:$PATH"
+installer="$root/website/public/install.sh"
+# Ubuntu runs the Darwin installer cases too, but has no Apple PlistBuddy.
+# Adapt only that process boundary in a disposable copy; still parse the real
+# installed plist, and keep using Apple's binary when it is available.
+if [[ ! -x /usr/libexec/PlistBuddy ]]; then
+  cat > "$work/bin/PlistBuddy" <<'MOCK'
+#!/usr/bin/env python3
+import plistlib
+import sys
+
+if sys.argv[1:3] != ['-c', 'Print :CFBundleVersion'] or len(sys.argv) != 4:
+    raise SystemExit('unexpected PlistBuddy invocation')
+with open(sys.argv[3], 'rb') as source:
+    print(plistlib.load(source)['CFBundleVersion'])
+MOCK
+  sed "s|/usr/libexec/PlistBuddy|$work/bin/PlistBuddy|g" "$installer" > "$work/install.sh"
+  installer="$work/install.sh"
+fi
 cat > "$work/bin/uname" <<'MOCK'
 #!/bin/sh
 printf 'Darwin\n'
@@ -41,7 +59,7 @@ PY
 run() {
   : > "$work/requests"
   local rc=0
-  sh "$root/website/public/install.sh" "$@" > "$work/output" 2>&1 || rc=$?
+  sh "$installer" "$@" > "$work/output" 2>&1 || rc=$?
   if [[ $rc != 0 ]]; then cat "$work/output" >&2; echo "installer exited $rc" >&2; return "$rc"; fi
 }
 # Catches: an installed beta aborts during nightly detection or downloads stable.

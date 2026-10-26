@@ -104,7 +104,7 @@ fn claude_unknown_row_type_is_counted_not_fatal() {
         "rows after the unknown one still parse"
     );
     let mut adapter = ClaudeAdapter::default();
-    assert!(adapter.absorb("{not json").is_empty());
+    assert_eq!(adapter.absorb("{not json"), [] as [serde_json::Value; 0]);
     assert_eq!(adapter.stats.malformed_rows, 1);
 }
 
@@ -125,7 +125,7 @@ fn claude_human_prompt_row_becomes_user_entry() {
 fn claude_string_user_row_without_human_origin_is_not_a_prompt() {
     let line = r#"{"type":"user","uuid":"x","message":{"role":"user","content":"<command-name>/clear</command-name>"}}"#;
     let (updates, _) = run(line);
-    assert!(updates.is_empty());
+    assert_eq!(updates, [] as [serde_json::Value; 0]);
 }
 
 /// A result whose call opened before the attach window would render as an
@@ -134,7 +134,7 @@ fn claude_string_user_row_without_human_origin_is_not_a_prompt() {
 fn claude_result_for_a_call_outside_the_window_is_dropped() {
     let line = r#"{"type":"user","uuid":"x","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_old","content":"PLACEHOLDER"}]}}"#;
     let (updates, _) = run(line);
-    assert!(updates.is_empty());
+    assert_eq!(updates, [] as [serde_json::Value; 0]);
 }
 
 /// A prompt with a pasted image is an ARRAY of blocks. Only tool results were
@@ -152,7 +152,7 @@ fn claude_prompt_with_an_image_is_not_dropped_from_the_chat() {
 fn claude_array_row_without_human_origin_is_not_a_prompt() {
     let line = r#"{"type":"user","uuid":"u1","message":{"role":"user","content":[{"type":"text","text":"<system-reminder>x</system-reminder>"}]}}"#;
     let (updates, _) = run(line);
-    assert!(updates.is_empty());
+    assert_eq!(updates, [] as [serde_json::Value; 0]);
 }
 
 #[test]

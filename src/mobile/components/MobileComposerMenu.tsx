@@ -1,4 +1,5 @@
 import { createEffect, createSignal, onCleanup, Show } from "solid-js";
+import { Button } from "../../components/ui";
 import s from "./MobileComposerMenu.module.css";
 
 /** Both mobile composers share pickers, action order, touch targets and dismissal. */
@@ -76,7 +77,9 @@ export function MobileComposerMenu(props: {
 					onChange={pick}
 				/>
 			</Show>
-			<button
+			<Button
+				shape="icon"
+				variant="ghost"
 				ref={trigger}
 				type="button"
 				class={s.trigger}
@@ -89,63 +92,73 @@ export function MobileComposerMenu(props: {
 				<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
 					<path d="M11 4h2v7h7v2h-7v7h-2v-7H4v-2h7z" />
 				</svg>
-			</button>
+			</Button>
 			<Show when={open()}>
 				<div class={s.menu} role="menu" aria-label="Composer actions">
 					<Show when={!props.queueOnly}>
 						<Show when={props.onAttach}>
-							<button
+							<Button
+								variant="ghost"
 								type="button"
+								class={s.action}
 								role="menuitem"
 								disabled={props.disabled || props.uploading}
 								onClick={() => select(() => fileInput?.click())}
 							>
 								Attach file
-							</button>
-							<button
+							</Button>
+							<Button
+								variant="ghost"
 								type="button"
+								class={s.action}
 								role="menuitem"
 								disabled={props.disabled || props.uploading}
 								onClick={() => select(() => cameraInput?.click())}
 							>
 								Take photo
-							</button>
+							</Button>
 						</Show>
 						<Show when={props.onPark}>
-							<button
+							<Button
+								variant="ghost"
 								type="button"
+								class={s.action}
 								role="menuitem"
 								disabled={props.disabled || props.uploading || props.parkDisabled}
 								onClick={() => select(props.onPark)}
 							>
 								{props.parkLabel ?? "Park draft"}
-							</button>
+							</Button>
 						</Show>
 					</Show>
 					<Show when={props.onQueue}>
-						<button
+						<Button
+							variant="ghost"
 							type="button"
+							class={s.action}
 							role="menuitem"
 							disabled={props.disabled || props.uploading || props.queueDisabled}
 							onClick={() => select(props.onQueue)}
 						>
 							Queue
-						</button>
+						</Button>
 					</Show>
 					<Show when={!props.queueOnly && props.onStop}>
-						<button type="button" role="menuitem" onClick={() => select(props.onStop)}>
+						<Button variant="ghost" type="button" class={s.action} role="menuitem" onClick={() => select(props.onStop)}>
 							Stop
-						</button>
+						</Button>
 					</Show>
 					<Show when={!props.queueOnly && props.onCommands}>
-						<button
+						<Button
+							variant="ghost"
 							type="button"
+							class={s.action}
 							role="menuitem"
 							disabled={props.disabled || props.uploading}
 							onClick={() => select(props.onCommands)}
 						>
 							Commands (/)
-						</button>
+						</Button>
 					</Show>
 				</div>
 			</Show>

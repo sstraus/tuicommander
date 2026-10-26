@@ -7,6 +7,71 @@ import { CommentOverlay } from "../../components/MarkdownTab/CommentOverlay";
 afterEach(() => cleanup());
 
 describe("CommentOverlay block gutter", () => {
+	// Catches: an item-relative action covering markers/checkboxes as list indentation changes.
+	it("keeps the list hover action outside the outer list at every nesting depth", () => {
+		const host = document.createElement("div");
+		const content = document.createElement("div");
+		host.append(content);
+		document.body.append(host);
+		const rect = (left: number, top: number) =>
+			({
+				left,
+				right: 600,
+				top,
+				bottom: top + 20,
+				width: 600 - left,
+				height: 20,
+				x: left,
+				y: top,
+				toJSON() {},
+			}) as DOMRect;
+		const list = document.createElement("ol");
+		list.getBoundingClientRect = () => rect(100, 20);
+		content.append(list);
+		const items: HTMLElement[] = [];
+		let parent: HTMLElement = list;
+		for (let depth = 0; depth < 3; depth++) {
+			const item = document.createElement("li");
+			item.dataset.commentSourceStart = String(depth * 10);
+			item.dataset.commentSourceEnd = String(depth * 10 + 8);
+			item.textContent = "Task";
+			item.getBoundingClientRect = () => rect(140 + depth * 40, 20 + depth * 30);
+			parent.append(item);
+			items.push(item);
+			parent = document.createElement("ul");
+			item.append(parent);
+		}
+		render(() => <CommentOverlay contentRef={content} onSave={vi.fn()} onDelete={vi.fn()} />);
+		for (const item of items) {
+			const box = item.getBoundingClientRect();
+			fireEvent.mouseMove(host, { clientX: box.left - 20, clientY: box.top + 5 });
+			const button = document.body.querySelector<HTMLButtonElement>('[aria-label="Comment on this block"]')!;
+			expect.soft(parseFloat(button.style.left)).toBeLessThan(100);
+			expect.soft(button.style.transform).toBe("translateX(-100%)");
+			// Moving from the item to the shared gutter must not dismiss the action.
+			fireEvent.mouseMove(host, { clientX: 98, clientY: box.top + 5 });
+			expect(document.body.querySelector('[aria-label="Comment on this block"]')).not.toBeNull();
+		}
+	});
+
+	// Catches: a list-only placement fix also moving paragraph/heading actions.
+	it.each(["p", "h2"])("retains the current %s hover action position", (tag) => {
+		const host = document.createElement("div");
+		const content = document.createElement("div");
+		const block = document.createElement(tag);
+		block.dataset.commentSourceStart = "0";
+		block.dataset.commentSourceEnd = "5";
+		block.getBoundingClientRect = () => ({ left: 100, right: 500, top: 20, bottom: 50 }) as DOMRect;
+		content.append(block);
+		host.append(content);
+		document.body.append(host);
+		render(() => <CommentOverlay contentRef={content} onSave={vi.fn()} onDelete={vi.fn()} />);
+		fireEvent.mouseMove(host, { clientX: 80, clientY: 25 });
+		const button = document.body.querySelector<HTMLButtonElement>('[aria-label="Comment on this block"]')!;
+		expect(button.style.left).toBe("70px");
+		expect(button.style.top).toBe("22px");
+	});
+
 	// Catches: a parent's saved comment swallowing clicks on an independently commentable child.
 	it("does not open a parent item comment when its nested item is clicked", () => {
 		const content = document.createElement("div");
@@ -204,5 +269,61 @@ describe("CommentOverlay block gutter", () => {
 			expect.objectContaining({ comment: "Clarify this block", highlighted: "Rendered **formatted** paragraph." }),
 			{ start: 18, end: 61 },
 		);
+	});
+});
+
+describe("CommentOverlay edit actions", () => {
+	function mountComment() {
+		const content = document.createElement("div");
+		const highlight = document.createElement("span");
+		highlight.className = "tweak-highlight";
+		highlight.textContent = "Selected text";
+		highlight.dataset.tweakId = "c_edit";
+		highlight.dataset.tweakComment = "Original note";
+		highlight.dataset.tweakAt = "2026-09-27T12:00:00.000Z";
+		content.append(highlight);
+		document.body.append(content);
+		const onSave = vi.fn().mockResolvedValue(false);
+		const onDelete = vi.fn().mockResolvedValue(false);
+		render(() => <CommentOverlay contentRef={content} onSave={onSave} onDelete={onDelete} />);
+		window.getSelection()!.removeAllRanges();
+		fireEvent.click(highlight);
+		const textarea = document.body.querySelector("textarea")!;
+		const button = (name: string) =>
+			Array.from(document.body.querySelectorAll("button")).find((el) => el.textContent === name)!;
+		return { textarea, button, onSave, onDelete };
+	}
+
+	// Catches: a primitive replacement dropping disabled forwarding or the textarea input handler.
+	it("disables blank save and restores it when the draft changes", () => {
+		const { textarea, button, onSave } = mountComment();
+		fireEvent.input(textarea, { target: { value: "   " } });
+		expect(button("Save").disabled).toBe(true);
+		button("Save").click();
+		expect(onSave).not.toHaveBeenCalled();
+		fireEvent.input(textarea, { target: { value: "Clarify" } });
+		expect(button("Save").disabled).toBe(false);
+		fireEvent.click(button("Cancel"));
+		expect(document.body.querySelector("textarea")).toBeNull();
+		expect(onSave).not.toHaveBeenCalled();
+	});
+
+	// Catches: shared controls swallowing bubbled shortcuts or closing rejected saves/deletes.
+	it("keeps a rejected edit/delete open and preserves keyboard save and Escape", async () => {
+		const { textarea, button, onSave, onDelete } = mountComment();
+		fireEvent.input(textarea, { target: { value: "Clarify" } });
+		fireEvent.keyDown(textarea, { key: "Enter", ctrlKey: true });
+		await Promise.resolve();
+		expect(onSave).toHaveBeenCalledWith(
+			{ id: "c_edit", highlighted: "Selected text", comment: "Clarify", createdAt: "2026-09-27T12:00:00.000Z" },
+			0,
+		);
+		expect(document.body.querySelector("textarea")).toBe(textarea);
+		fireEvent.click(button("Delete"));
+		await Promise.resolve();
+		expect(onDelete).toHaveBeenCalledWith("c_edit");
+		expect(document.body.querySelector("textarea")).toBe(textarea);
+		fireEvent.keyDown(textarea, { key: "Escape" });
+		expect(document.body.querySelector("textarea")).toBeNull();
 	});
 });

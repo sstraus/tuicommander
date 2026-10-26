@@ -17,6 +17,7 @@ import { ColorSwatchPicker } from "../../shared/ColorSwatchPicker";
 import { DEFAULT_COLOR_PRESETS } from "../../shared/colorPresets";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
+import { Switch } from "../../ui/Switch";
 import { ContextualHelp } from "../ContextualHelp";
 import s from "../Settings.module.css";
 import { SectionCard, SettingPageHeader, SettingRow } from "../SettingsPrimitives";
@@ -231,13 +232,12 @@ export const RepoWorktreeTab: Component<RepoTabProps> = (props) => {
 				<div class={r.switchGroup}>
 					<SettingRow label="Show all worktrees of this repo in one consolidated screen">
 						{(id, descriptionId) => (
-							<input
+							<Switch
 								data-setting-id="repositories.repos.{key}.auto_consolidate_worktrees"
 								id={id}
 								aria-describedby={descriptionId()}
 								class={r.rowSwitch}
 								role="switch"
-								type="checkbox"
 								checked={props.settings.autoConsolidateWorktrees}
 								onChange={(e) => props.onUpdate("autoConsolidateWorktrees", e.currentTarget.checked)}
 							/>

@@ -254,12 +254,12 @@ async fn automation_contract_regression_missing_actual_profile_refuses_type_defa
     }
     assert_eq!(reply["field"], "run_config", "{reply}");
     assert_eq!(reply["code"], "caller_profile_unresolved", "{reply}");
-    assert!(
+    assert_eq!(
         crate::automations::definitions::DefinitionStore::new()
             .load()
             .unwrap()
-            .definitions
-            .is_empty()
+            .definitions,
+        [] as [crate::automations::model::AutomationDefinition; 0]
     );
 }
 

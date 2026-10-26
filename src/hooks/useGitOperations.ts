@@ -306,8 +306,11 @@ export function useGitOperations(deps: GitOperationsDeps) {
 		setRemovingBranches,
 	});
 
-	const handleOpenRenameBranchDialog = (repoPath: string, branchName: string) => {
+	/** Opens the rename dialog; false when the branch is protected (main). The one guard for every entry point. */
+	const handleOpenRenameBranchDialog = (repoPath: string, branchName: string): boolean => {
+		if (repositoriesStore.get(repoPath)?.workspaces[branchName]?.isMain) return false;
 		setBranchToRename({ repoPath, branchName });
+		return true;
 	};
 
 	const handleOpenCreateBranchDialog = (repoPath: string, startPoint?: string | null) => {
@@ -344,6 +347,7 @@ export function useGitOperations(deps: GitOperationsDeps) {
 		}
 
 		repositoriesStore.renameBranch(branch.repoPath, oldName, newName);
+		repoSettingsStore.moveLabel(branch.repoPath, oldName, newName);
 
 		deps.setStatusInfo(`Renamed branch ${oldName} to ${newName}`);
 	};

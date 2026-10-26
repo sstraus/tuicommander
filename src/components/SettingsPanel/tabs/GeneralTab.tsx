@@ -14,6 +14,7 @@ import { IDE_NAMES, settingsStore } from "../../../stores/settings";
 import { updaterStore } from "../../../stores/updater";
 import { isTauri } from "../../../transport";
 import { openDialog } from "../../../utils/nativeDialog";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Textarea } from "../../ui/Textarea";
 import { ExpertSetting } from "../ExpertSetting";
@@ -165,7 +166,7 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 				label="Update status"
 				source="Application updates"
 				actions={
-					<button
+					<Button
 						data-non-setting="Explicit update discovery; does not change update preferences"
 						class={s.testBtn}
 						onClick={() => {
@@ -176,7 +177,7 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 						{updaterStore.state.checking
 							? t("general.btn.checking", "Checking...")
 							: t("general.btn.checkNow", "Check Now")}
-					</button>
+					</Button>
 				}
 				details={
 					<>
@@ -238,7 +239,7 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 							{() => (
 								<div>
 									<Show when={!cliStatus()?.installed || !cliStatus()?.version_match}>
-										<button
+										<Button
 											data-non-setting="Install, update or remove an optional CLI binary; not a stored setting"
 											class={s.testBtn}
 											onClick={handleInstallCli}
@@ -249,16 +250,16 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 												: cliStatus()?.installed
 													? t("general.btn.updateCli", "Update")
 													: t("general.btn.installCli", "Install TUIC CLI")}
-										</button>
+										</Button>
 									</Show>
 									<Show when={cliStatus()?.installed}>
-										<button
+										<Button
 											data-non-setting="Install, update or remove an optional CLI binary; not a stored setting"
 											class={s.testBtn}
 											onClick={handleUninstallCli}
 										>
 											{t("general.btn.uninstallCli", "Uninstall")}
-										</button>
+										</Button>
 									</Show>
 								</div>
 							)}
@@ -282,7 +283,7 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 								<Show
 									when={mdkbStatus()?.available}
 									fallback={
-										<button
+										<Button
 											data-non-setting="Install, update or remove an optional CLI binary; not a stored setting"
 											class={s.testBtn}
 											onClick={handleInstallMdkb}
@@ -291,16 +292,16 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 											{mdkbInstalling()
 												? t("general.btn.installing", "Installing...")
 												: t("general.btn.installMdkb", "Install MDKB")}
-										</button>
+										</Button>
 									}
 								>
-									<button
+									<Button
 										data-non-setting="Install, update or remove an optional CLI binary; not a stored setting"
 										class={s.testBtn}
 										onClick={handleUninstallMdkb}
 									>
 										{t("general.btn.uninstallMdkb", "Uninstall")}
-									</button>
+									</Button>
 								</Show>
 							)}
 						</SettingRow>
@@ -321,13 +322,13 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 									hint={launchers().length ? `${launchers().length} custom launchers` : "No custom launchers"}
 								>
 									{() => (
-										<button
+										<Button
 											data-non-setting="Create or remove a stable custom-launcher record through its owner"
 											class={s.testBtn}
 											onClick={addLauncher}
 										>
 											{t("general.btn.addLauncher", "Add launcher")}
-										</button>
+										</Button>
 									)}
 								</SettingRow>
 								<For each={launchers()}>
@@ -357,13 +358,13 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 													onInput={(e) => updateLauncher(launcher.id, { name: e.currentTarget.value })}
 													style={{ flex: "1" }}
 												/>
-												<button
+												<Button
 													data-non-setting="Create or remove a stable custom-launcher record through its owner"
 													class={s.testBtn}
 													onClick={() => removeLauncher(launcher.id)}
 												>
 													{t("general.btn.remove", "Remove")}
-												</button>
+												</Button>
 											</div>
 											<Input
 												data-setting-id="app.custom_launchers.{id}.executable"
@@ -397,13 +398,13 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 					title="AI chat defaults"
 					description="Models, permissions and workspace access for new conversations."
 				>
-					<button
+					<Button
 						data-non-setting="Navigate to AI Chat settings without changing configuration"
 						class={s.testBtn}
 						onClick={() => props.onOpenAiChat?.()}
 					>
 						Open AI Chat settings
-					</button>
+					</Button>
 				</SectionCard>
 			</Show>
 			<SectionCard title={t("general.heading.general", "General")}>
@@ -676,17 +677,17 @@ export const GeneralTab: Component<{ onOpenAiChat?: () => void }> = (props) => {
 					>
 						{() => (
 							<div>
-								<button data-setting-id="app.ego_executable" class={s.testBtn} onClick={handleSelectEgo}>
+								<Button data-setting-id="app.ego_executable" class={s.testBtn} onClick={handleSelectEgo}>
 									{t("general.btn.selectEgo", "Select…")}
-								</button>
+								</Button>
 								<Show when={settingsStore.isAcpConfigured()}>
-									<button
+									<Button
 										data-setting-id="app.ego_executable"
 										class={s.testBtn}
 										onClick={() => settingsStore.setEgoExecutable("")}
 									>
 										{t("general.btn.clearEgo", "Clear")}
-									</button>
+									</Button>
 								</Show>
 							</div>
 						)}

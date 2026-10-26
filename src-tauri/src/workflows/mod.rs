@@ -143,14 +143,20 @@ mod tests {
             .find(|draft| draft.kind == WorkflowKind::Story)
             .expect("story template");
         // catches: seeds inserted with an empty policy, so every seeded run integrates unchecked.
-        assert!(!story.required_checks.is_empty());
+        assert_ne!(
+            story.required_checks,
+            [] as [crate::workflows::store::CheckDefinition; 0]
+        );
         let published = store.get_published(&story.id, 1).expect("published");
         assert_eq!(published.required_checks, story.required_checks);
         let plan = templates
             .iter()
             .find(|draft| draft.kind == WorkflowKind::Plan)
             .expect("plan template");
-        assert!(!plan.required_checks.is_empty());
+        assert_ne!(
+            plan.required_checks,
+            [] as [crate::workflows::store::CheckDefinition; 0]
+        );
     }
 
     #[test]
@@ -321,7 +327,10 @@ mod tests {
         let changed = store
             .update_checks(&draft.id, edited.draft_revision, vec![])
             .expect("edit again");
-        assert!(changed.required_checks.is_empty());
+        assert_eq!(
+            changed.required_checks,
+            [] as [crate::workflows::store::CheckDefinition; 0]
+        );
         assert_eq!(
             store
                 .get_published(&draft.id, 1)
@@ -347,7 +356,10 @@ mod tests {
         let (story, plan) = seeds(&store);
         // catches: seeded projects keep an empty-check story rev 1 and every integration fails.
         assert_eq!(story.latest_published_revision, 2);
-        assert!(!story.required_checks.is_empty());
+        assert_ne!(
+            story.required_checks,
+            [] as [crate::workflows::store::CheckDefinition; 0]
+        );
         assert_eq!(
             store
                 .get_published(&story.id, 2)
@@ -355,12 +367,12 @@ mod tests {
                 .required_checks,
             story.required_checks
         );
-        assert!(
+        assert_eq!(
             store
                 .get_published(&story.id, 1)
                 .expect("rev 1")
-                .required_checks
-                .is_empty()
+                .required_checks,
+            [] as [crate::workflows::store::CheckDefinition; 0]
         );
         // the plan must dispatch the migrated revision or new runs still pin rev 1.
         assert_eq!(plan.latest_published_revision, 2);
@@ -411,7 +423,10 @@ mod tests {
         // catches: the migration overwriting a user-edited definition.
         assert_eq!(after, edited);
         assert_eq!(plan.latest_published_revision, 1);
-        assert!(after.required_checks.is_empty());
+        assert_eq!(
+            after.required_checks,
+            [] as [crate::workflows::store::CheckDefinition; 0]
+        );
     }
 
     #[test]

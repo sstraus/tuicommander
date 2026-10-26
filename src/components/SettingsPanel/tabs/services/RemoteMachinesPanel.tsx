@@ -12,11 +12,15 @@ import {
 	type SshAgentInfo,
 	type SshHostStatus,
 } from "../../../../stores/remoteConnections";
+import { Button } from "../../../ui/Button";
 import { Input } from "../../../ui/Input";
 import { Select } from "../../../ui/Select";
+import { Switch } from "../../../ui/Switch";
+import { Textarea } from "../../../ui/Textarea";
 import { ContextualHelp } from "../../ContextualHelp";
 import s from "../../Settings.module.css";
 import { SectionCard, SettingRow } from "../../SettingsPrimitives";
+import layout from "../../SettingsPrimitives.module.css";
 
 // ---------------------------------------------------------------------------
 // Remote Machines panel
@@ -64,6 +68,7 @@ export function transportSummary(transport: RemoteTransport): string {
 	if (transport.type === "Ssh") {
 		return `${transport.ssh_user}@${transport.ssh_host}:${transport.ssh_port}`;
 	}
+	if (transport.type === "Relay") return "via relay";
 	return transport.url;
 }
 
@@ -71,13 +76,14 @@ export function transportSummary(transport: RemoteTransport): string {
 export function emptyRemoteForm() {
 	return {
 		name: "",
-		transportType: "Ssh" as "Ssh" | "Direct",
+		transportType: "Ssh" as "Ssh" | "Direct" | "Relay",
 		sshHost: "",
 		sshPort: 22,
 		sshUser: "",
 		identityFile: "",
 		remoteDaemonPort: 9876,
 		directUrl: "",
+		relayBundle: "",
 		authUsername: "",
 		authPassword: "",
 		deploy: "never" as DeployMode,
@@ -155,6 +161,10 @@ export const RemoteMachinesPanel: Component = () => {
 			setError("URL is required");
 			return;
 		}
+		if (f.transportType === "Relay" && !f.relayBundle.trim()) {
+			setError("Pairing bundle is required");
+			return;
+		}
 
 		const transport: RemoteTransport =
 			f.transportType === "Ssh"
@@ -166,13 +176,15 @@ export const RemoteMachinesPanel: Component = () => {
 						identity_file: f.identityFile.trim() || null,
 						remote_daemon_port: f.remoteDaemonPort,
 					}
-				: { type: "Direct", url: f.directUrl.trim() };
+				: f.transportType === "Relay"
+					? { type: "Relay" }
+					: { type: "Direct", url: f.directUrl.trim() };
 
 		const conn: RemoteConnection = {
 			id: crypto.randomUUID(),
 			name,
 			transport,
-			auth_username: f.authUsername.trim(),
+			auth_username: f.transportType === "Relay" ? "relay" : f.authUsername.trim(),
 			enabled: true,
 			auto_update: f.autoUpdate,
 			deploy: f.transportType === "Ssh" ? f.deploy : "never",
@@ -186,6 +198,7 @@ export const RemoteMachinesPanel: Component = () => {
 			// After the connection exists: the vault key is its id, so a password
 			// stored first would belong to an id nothing would ever look up again.
 			if (f.authPassword) await remoteConnectionsStore.setPassword(conn.id, f.authPassword);
+			if (f.transportType === "Relay") await remoteConnectionsStore.setRelayPairing(conn.id, f.relayBundle.trim());
 			setForm(emptyRemoteForm());
 			setShowAdd(false);
 		} catch (e) {
@@ -209,6 +222,7 @@ export const RemoteMachinesPanel: Component = () => {
 			identityFile: conn.transport.type === "Ssh" ? (conn.transport.identity_file ?? "") : "",
 			remoteDaemonPort: conn.transport.type === "Ssh" ? conn.transport.remote_daemon_port : 9876,
 			directUrl: conn.transport.type === "Direct" ? conn.transport.url : "",
+			relayBundle: "",
 			authUsername: conn.auth_username,
 			authPassword: "",
 			deploy: conn.deploy,
@@ -229,13 +243,15 @@ export const RemoteMachinesPanel: Component = () => {
 						identity_file: f.identityFile.trim() || null,
 						remote_daemon_port: f.remoteDaemonPort,
 					}
-				: { type: "Direct", url: f.directUrl.trim() };
+				: f.transportType === "Relay"
+					? { type: "Relay" }
+					: { type: "Direct", url: f.directUrl.trim() };
 
 		const updated: RemoteConnection = {
 			...connState.connection,
 			name: f.name.trim(),
 			transport,
-			auth_username: f.authUsername.trim(),
+			auth_username: f.transportType === "Relay" ? "relay" : f.authUsername.trim(),
 			deploy: f.transportType === "Ssh" ? f.deploy : "never",
 			survive_secs: Math.max(60, Math.round(f.surviveMinutes * 60)),
 			auto_update: f.autoUpdate,
@@ -251,6 +267,9 @@ export const RemoteMachinesPanel: Component = () => {
 			await remoteConnectionsStore.addConnection(updated);
 			// Blank means "keep what is in the vault" — the field can never show it.
 			if (f.authPassword) await remoteConnectionsStore.setPassword(updated.id, f.authPassword);
+			if (f.transportType === "Relay" && f.relayBundle.trim()) {
+				await remoteConnectionsStore.setRelayPairing(updated.id, f.relayBundle.trim());
+			}
 			setEditingId(null);
 		} catch (e) {
 			setError(String(e));
@@ -385,11 +404,18 @@ export const RemoteMachinesPanel: Component = () => {
 								class={s.input}
 								value={props.formData.transportType}
 								onChange={(e) =>
-									props.setFormData((f) => ({ ...f, transportType: e.currentTarget.value as "Ssh" | "Direct" }))
+									props.setFormData((f) => ({
+										...f,
+										transportType: e.currentTarget.value as "Ssh" | "Direct" | "Relay",
+									}))
 								}
 							>
 								<For
-									each={settingOptions("connections.connections.{id}.transport.type", { Ssh: "SSH", Direct: "Direct" })}
+									each={settingOptions("connections.connections.{id}.transport.type", {
+										Ssh: "SSH",
+										Direct: "Direct",
+										Relay: "Relay",
+									})}
 								>
 									{(option) => <option value={option.value}>{option.label}</option>}
 								</For>
@@ -417,7 +443,7 @@ export const RemoteMachinesPanel: Component = () => {
 								{(host) => <option value={host.host} label={`${host.host} — ${host.auth.replaceAll("_", " ")}`} />}
 							</For>
 						</datalist>
-						<button
+						<Button
 							data-non-setting="Explicit SSH discovery or authentication probe; not configuration persistence"
 							class={s.textBtn}
 							style={{ "margin-top": "12px", "margin-bottom": "12px" }}
@@ -429,7 +455,7 @@ export const RemoteMachinesPanel: Component = () => {
 								<path d="M7.5 1a6.5 6.5 0 1 0 4.05 11.58l2.44 2.43 1.02-1.02-2.43-2.44A6.5 6.5 0 0 0 7.5 1m0 1.5a5 5 0 1 1 0 10 5 5 0 0 1 0-10" />
 							</svg>
 							{props.probingHosts ? " Probing..." : " Probe SSH hosts"}
-						</button>
+						</Button>
 
 						<SettingRow label="Port">
 							{(id, descriptionId) => (
@@ -515,103 +541,128 @@ export const RemoteMachinesPanel: Component = () => {
 							)}
 						</SettingRow>
 					</Show>
-				</SectionCard>
-				<SectionCard title="Deployment and lifetime" help={<ContextualHelp label="Deployment and lifetime" />}>
-					<Show when={props.formData.transportType === "Ssh"}>
-						<SettingRow label="Deployment">
+					<Show when={props.formData.transportType === "Relay"}>
+						<SettingRow label="Pairing bundle">
 							{(id, descriptionId) => (
-								<>
-									<Select
-										data-setting-id="connections.connections.{id}.deploy"
-										class={s.input}
-										id={id}
-										aria-describedby={descriptionId()}
-										value={props.formData.deploy}
-										onChange={(e) => props.setFormData((f) => ({ ...f, deploy: e.currentTarget.value as DeployMode }))}
-									>
-										<For
-											each={settingOptions("connections.connections.{id}.deploy", {
-												never: "Never deploy",
-												on_connect: "Deploy on connect",
-												installed: "Installed service",
-											})}
-										>
-											{(option) => <option value={option.value}>{option.label}</option>}
-										</For>
-									</Select>
-								</>
+								<Textarea
+									data-non-setting="Transient pairing-bundle import draft; Save sends it to the credential vault, not connection configuration"
+									id={id}
+									aria-describedby={descriptionId()}
+									class={s.input}
+									rows={3}
+									autocomplete="off"
+									spellcheck={false}
+									placeholder="Paste the bundle printed by tuic-remote --relay-pair (stored in the OS vault; leave blank to keep the stored one)"
+									value={props.formData.relayBundle}
+									onInput={(e) => props.setFormData((f) => ({ ...f, relayBundle: e.currentTarget.value }))}
+								/>
 							)}
 						</SettingRow>
-						<SettingRow label="Keep ephemeral daemon alive (minutes)">
-							{(id, descriptionId) => (
-								<>
-									<Input
-										data-setting-id="connections.connections.{id}.survive_secs"
-										type="number"
-										class={s.input}
-										min={1}
-										id={id}
-										aria-describedby={descriptionId()}
-										value={props.formData.surviveMinutes}
-										onInput={(e) =>
-											props.setFormData((f) => ({
-												...f,
-												surviveMinutes: Math.max(1, parseInt(e.currentTarget.value, 10) || 1),
-											}))
-										}
-									/>
-								</>
-							)}
-						</SettingRow>
+						<p class={s.hint} style={{ margin: 0 }}>
+							Run <code>tuic-remote --relay-pair wss://your-relay --relay-register</code> on the remote machine, paste
+							its output here, and delete any file you saved it to. The bundle holds a secret the relay never sees.
+						</p>
 					</Show>
-					<SettingRow label="Auto-update remote daemons">
-						{(id, descriptionId) => (
-							<input
-								data-setting-id="connections.connections.{id}.auto_update"
-								id={id}
-								aria-describedby={descriptionId()}
-								class={s.rowSwitch}
-								type="checkbox"
-								checked={props.formData.autoUpdate}
-								onChange={(e) => props.setFormData((f) => ({ ...f, autoUpdate: e.currentTarget.checked }))}
-							/>
-						)}
-					</SettingRow>
-					<SettingRow label="Auth username">
-						{(id, descriptionId) => (
-							<Input
-								data-setting-id="connections.connections.{id}.auth_username"
-								id={id}
-								aria-describedby={descriptionId()}
-								type="text"
-								class={s.input}
-								placeholder="Auth username (for TUIC API authentication)"
-								value={props.formData.authUsername}
-								onInput={(e) => props.setFormData((f) => ({ ...f, authUsername: e.currentTarget.value }))}
-							/>
-						)}
-					</SettingRow>
-					<SettingRow label="Auth password">
-						{(id, descriptionId) => (
-							<Input
-								data-setting-id="connections.{id}.credential"
-								id={id}
-								aria-describedby={descriptionId()}
-								type="password"
-								class={s.input}
-								autocomplete="off"
-								placeholder={props.passwordStored ? "Password (stored — leave blank to keep it)" : "Auth password"}
-								value={props.formData.authPassword}
-								onInput={(e) => props.setFormData((f) => ({ ...f, authPassword: e.currentTarget.value }))}
-							/>
-						)}
-					</SettingRow>
-					<p class={s.hint} style={{ margin: 0 }}>
-						The password is kept in the OS credential vault, never in connections.json. It is traded for the daemon's
-						session token on every connect — <code>tuic-remote</code> authenticates every request, so a connection
-						without one reaches only <code>/health</code>.
-					</p>
 				</SectionCard>
+				<Show when={props.formData.transportType !== "Relay"}>
+					<SectionCard title="Deployment and lifetime" help={<ContextualHelp label="Deployment and lifetime" />}>
+						<Show when={props.formData.transportType === "Ssh"}>
+							<SettingRow label="Deployment">
+								{(id, descriptionId) => (
+									<>
+										<Select
+											data-setting-id="connections.connections.{id}.deploy"
+											class={s.input}
+											id={id}
+											aria-describedby={descriptionId()}
+											value={props.formData.deploy}
+											onChange={(e) =>
+												props.setFormData((f) => ({ ...f, deploy: e.currentTarget.value as DeployMode }))
+											}
+										>
+											<For
+												each={settingOptions("connections.connections.{id}.deploy", {
+													never: "Never deploy",
+													on_connect: "Deploy on connect",
+													installed: "Installed service",
+												})}
+											>
+												{(option) => <option value={option.value}>{option.label}</option>}
+											</For>
+										</Select>
+									</>
+								)}
+							</SettingRow>
+							<SettingRow label="Keep ephemeral daemon alive (minutes)">
+								{(id, descriptionId) => (
+									<>
+										<Input
+											data-setting-id="connections.connections.{id}.survive_secs"
+											type="number"
+											class={s.input}
+											min={1}
+											id={id}
+											aria-describedby={descriptionId()}
+											value={props.formData.surviveMinutes}
+											onInput={(e) =>
+												props.setFormData((f) => ({
+													...f,
+													surviveMinutes: Math.max(1, parseInt(e.currentTarget.value, 10) || 1),
+												}))
+											}
+										/>
+									</>
+								)}
+							</SettingRow>
+						</Show>
+						<SettingRow label="Auto-update remote daemons">
+							{(id, descriptionId) => (
+								<Switch
+									role="checkbox"
+									data-setting-id="connections.connections.{id}.auto_update"
+									id={id}
+									aria-describedby={descriptionId()}
+									checked={props.formData.autoUpdate}
+									onChange={(e) => props.setFormData((f) => ({ ...f, autoUpdate: e.currentTarget.checked }))}
+								/>
+							)}
+						</SettingRow>
+						<SettingRow label="Auth username">
+							{(id, descriptionId) => (
+								<Input
+									data-setting-id="connections.connections.{id}.auth_username"
+									id={id}
+									aria-describedby={descriptionId()}
+									type="text"
+									class={s.input}
+									placeholder="Auth username (for TUIC API authentication)"
+									value={props.formData.authUsername}
+									onInput={(e) => props.setFormData((f) => ({ ...f, authUsername: e.currentTarget.value }))}
+								/>
+							)}
+						</SettingRow>
+						<SettingRow label="Auth password">
+							{(id, descriptionId) => (
+								<Input
+									data-setting-id="connections.{id}.credential"
+									id={id}
+									aria-describedby={descriptionId()}
+									type="password"
+									class={s.input}
+									autocomplete="off"
+									placeholder={props.passwordStored ? "Password (stored — leave blank to keep it)" : "Auth password"}
+									value={props.formData.authPassword}
+									onInput={(e) => props.setFormData((f) => ({ ...f, authPassword: e.currentTarget.value }))}
+								/>
+							)}
+						</SettingRow>
+						<p class={s.hint} style={{ margin: 0 }}>
+							The password is kept in the OS credential vault, never in connections.json. It is traded for the daemon's
+							session token on every connect — <code>tuic-remote</code> authenticates every request, so a connection
+							without one reaches only <code>/health</code>.
+						</p>
+					</SectionCard>
+				</Show>
 			</>
 		);
 	}
@@ -620,7 +671,7 @@ export const RemoteMachinesPanel: Component = () => {
 		<div>
 			<div class={s.group}>
 				<div style={{ display: "flex", "align-items": "center", gap: "8px", "justify-content": "flex-end" }}>
-					<button
+					<Button
 						data-non-setting="Open, prefill, cancel or close the connection editor"
 						class={s.copyBtn}
 						onClick={() => {
@@ -631,7 +682,7 @@ export const RemoteMachinesPanel: Component = () => {
 						style={{ "font-size": "18px", "line-height": 1 }}
 					>
 						{showAdd() ? "−" : "+"}
-					</button>
+					</Button>
 				</div>
 			</div>
 
@@ -656,7 +707,7 @@ export const RemoteMachinesPanel: Component = () => {
 					<span style={{ "font-weight": 500, "font-size": "13px" }}>
 						Discovered SSH hosts ({discovered().hosts.length})
 					</span>
-					<button
+					<Button
 						data-non-setting="Explicit SSH discovery or authentication probe; not configuration persistence"
 						class={s.textBtn}
 						type="button"
@@ -664,7 +715,7 @@ export const RemoteMachinesPanel: Component = () => {
 						disabled={probingHosts()}
 					>
 						{probingHosts() ? "Probing..." : "Probe config hosts"}
-					</button>
+					</Button>
 				</div>
 				<Show when={discovered().hashed_count > 0}>
 					<p class={s.hint} style={{ margin: "4px 0 0" }}>
@@ -676,8 +727,8 @@ export const RemoteMachinesPanel: Component = () => {
 						{(host) => {
 							const auth = () => discoveredHostAuth(host, sshHosts());
 							return (
-								<div style={{ display: "flex", gap: "4px", "align-items": "center" }}>
-									<button
+								<div class={layout.listRow}>
+									<Button
 										data-non-setting="Open, prefill, cancel or close the connection editor"
 										type="button"
 										class={s.textBtn}
@@ -697,8 +748,8 @@ export const RemoteMachinesPanel: Component = () => {
 										<span style={{ "font-size": "11px", color: "var(--text-dimmed)" }}>
 											{auth() ? auth()?.replaceAll("_", " ") : host.source === "config" ? "ssh config" : "known_hosts"}
 										</span>
-									</button>
-									<button
+									</Button>
+									<Button
 										data-non-setting="Explicit SSH discovery or authentication probe; not configuration persistence"
 										type="button"
 										class={s.textBtn}
@@ -706,7 +757,7 @@ export const RemoteMachinesPanel: Component = () => {
 										onClick={() => probeOneHost(host)}
 									>
 										Probe
-									</button>
+									</Button>
 								</div>
 							);
 						}}
@@ -730,15 +781,15 @@ export const RemoteMachinesPanel: Component = () => {
 							onProbeHosts={probeHosts}
 						/>
 						<div style={{ display: "flex", gap: "8px", "justify-content": "flex-end" }}>
-							<button
+							<Button
 								data-non-setting="Create, update or remove a stable connection through the existing owner"
 								class={s.textBtn}
 								onClick={addConnection}
 								disabled={saving()}
 							>
 								{saving() ? "Saving..." : "Save"}
-							</button>
-							<button
+							</Button>
+							<Button
 								data-non-setting="Open, prefill, cancel or close the connection editor"
 								class={s.textBtn}
 								onClick={() => {
@@ -748,7 +799,7 @@ export const RemoteMachinesPanel: Component = () => {
 								}}
 							>
 								Cancel
-							</button>
+							</Button>
 						</div>
 						<Show when={error()}>
 							<p class={s.hint} style={{ color: "var(--error, #e06c75)" }}>
@@ -803,7 +854,7 @@ export const RemoteMachinesPanel: Component = () => {
 												color: conn().transport.type === "Ssh" ? "var(--activity)" : "var(--success)",
 											}}
 										>
-											{conn().transport.type === "Ssh" ? "SSH" : "DIRECT"}
+											{conn().transport.type === "Ssh" ? "SSH" : conn().transport.type === "Relay" ? "RELAY" : "DIRECT"}
 										</span>
 										<Show when={connState.status !== "disconnected"}>
 											<span style={{ "font-size": "11px", color: remoteStatusColor(connState.status) }}>
@@ -844,14 +895,14 @@ export const RemoteMachinesPanel: Component = () => {
 									>
 										<div class={s.hint}>
 											Connected through {connState.baseUrl}
-											<button
+											<Button
 												data-non-setting="Create, update or remove a stable connection through the existing owner"
 												class={s.textBtn}
 												disabled={saving()}
 												onClick={() => saveResolvedAddress(connState)}
 											>
 												Save resolved address
-											</button>
+											</Button>
 										</div>
 									</Show>
 									<Show
@@ -883,17 +934,17 @@ export const RemoteMachinesPanel: Component = () => {
 									</Show>
 								</div>
 								{/* Connect / Disconnect */}
-								<Show when={connState.status === "connected"}>
-									<button
+								<Show when={connState.status === "connected" && connState.outOfDate}>
+									<Button
 										data-non-setting="Remote daemon service installation/update workflow"
 										class={s.textBtn}
 										disabled={serviceBusyId() === conn().id || connState.updateInProgress}
 										onClick={() => updateRemote(connState)}
 									>
 										{serviceBusyId() === conn().id ? "Updating..." : "Update & restart remote"}
-									</button>
+									</Button>
 								</Show>
-								<button
+								<Button
 									data-non-setting="Connect or disconnect the current runtime without changing its configuration"
 									class={s.textBtn}
 									onClick={() => {
@@ -907,9 +958,9 @@ export const RemoteMachinesPanel: Component = () => {
 									}}
 								>
 									{connState.status === "disconnected" || connState.status === "error" ? "Connect" : "Disconnect"}
-								</button>
+								</Button>
 								<Show when={conn().transport.type === "Ssh"}>
-									<button
+									<Button
 										data-non-setting="Remote daemon service installation/update workflow"
 										class={s.textBtn}
 										disabled={serviceBusyId() === conn().id}
@@ -924,10 +975,10 @@ export const RemoteMachinesPanel: Component = () => {
 											: conn().deploy === "installed"
 												? " Uninstall"
 												: " Install"}
-									</button>
+									</Button>
 								</Show>
 								{/* Edit */}
-								<button
+								<Button
 									data-non-setting="Open, prefill, cancel or close the connection editor"
 									class={s.copyBtn}
 									style={{ "flex-shrink": 0 }}
@@ -937,9 +988,9 @@ export const RemoteMachinesPanel: Component = () => {
 									<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
 										<path d="M12.146.146a.5.5 0 0 1 .708 0l3 3a.5.5 0 0 1 0 .708l-10 10a.5.5 0 0 1-.168.11l-5 2a.5.5 0 0 1-.65-.65l2-5a.5.5 0 0 1 .11-.168zM11.207 2.5 13.5 4.793 14.793 3.5 12.5 1.207zm1.586 3L10.5 3.207 4 9.707V10h.5a.5.5 0 0 1 .5.5v.5h.5a.5.5 0 0 1 .5.5v.5h.293z" />
 									</svg>
-								</button>
+								</Button>
 								{/* Delete */}
-								<button
+								<Button
 									data-non-setting="Create, update or remove a stable connection through the existing owner"
 									class={s.copyBtn}
 									title="Remove"
@@ -950,7 +1001,7 @@ export const RemoteMachinesPanel: Component = () => {
 										<path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z" />
 										<path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z" />
 									</svg>
-								</button>
+								</Button>
 							</div>
 							{/* Edit inline panel */}
 							<Show when={isEditing()}>
@@ -973,15 +1024,15 @@ export const RemoteMachinesPanel: Component = () => {
 											onProbeHosts={probeHosts}
 										/>
 										<div style={{ display: "flex", gap: "8px", "justify-content": "flex-end" }}>
-											<button
+											<Button
 												data-non-setting="Create, update or remove a stable connection through the existing owner"
 												class={s.textBtn}
 												onClick={() => saveEdit(connState)}
 												disabled={saving()}
 											>
 												{saving() ? "Saving..." : "Save"}
-											</button>
-											<button
+											</Button>
+											<Button
 												data-non-setting="Open, prefill, cancel or close the connection editor"
 												class={s.textBtn}
 												onClick={() => {
@@ -990,7 +1041,7 @@ export const RemoteMachinesPanel: Component = () => {
 												}}
 											>
 												Cancel
-											</button>
+											</Button>
 										</div>
 										<Show when={error()}>
 											<p class={s.hint} style={{ color: "var(--error, #e06c75)", margin: "4px 0 0" }}>

@@ -383,10 +383,9 @@ mod tests {
     // model looked and found nothing worth proposing.
     #[test]
     fn an_empty_proposal_list_is_not_an_error() {
-        assert!(
-            parse_improvement_output(r#"{"proposals":[]}"#)
-                .unwrap()
-                .is_empty()
+        assert_eq!(
+            parse_improvement_output(r#"{"proposals":[]}"#).unwrap(),
+            [] as [crate::improvement_scan::ImprovementProposal; 0]
         );
     }
 

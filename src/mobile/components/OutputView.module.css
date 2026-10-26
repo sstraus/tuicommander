@@ -73,10 +73,7 @@
 }
 
 .fileLink {
-  border: 0;
-  padding: 0;
-  background: transparent;
-  font: inherit;
+  /* Inline spans wrap with the line's text and hanging indent, unlike buttons. */
   cursor: pointer;
 }
 

@@ -10,6 +10,7 @@ const { mockInvoke, mockRpc, mockEmitTo } = vi.hoisted(() => ({
 }));
 
 let fileContent = "";
+let cleanupInfo: ReturnType<typeof vi.spyOn>;
 
 vi.mock("../../invoke", () => ({ invoke: mockInvoke }));
 vi.mock("@tauri-apps/api/event", () => ({
@@ -26,6 +27,7 @@ vi.mock("../../transport", async (importOriginal) => ({
 import { MarkdownTab } from "../../components/MarkdownTab/MarkdownTab";
 import { renderPanelMode } from "../../panelRouter";
 import { markdownProviderRegistry } from "../../plugins/markdownProviderRegistry";
+import { appLogger } from "../../stores/appLogger";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { type FileTab, mdTabsStore } from "../../stores/mdTabs";
 import { repositoriesStore } from "../../stores/repositories";
@@ -36,6 +38,7 @@ import { CONVENTION_HEADER, parseTweakComments } from "../../utils/tweakComments
 
 describe("MarkdownTab agent review actions", () => {
 	beforeEach(() => {
+		cleanupInfo = vi.spyOn(appLogger, "info").mockImplementation(() => {});
 		setToastBellMirrorResolver(() => false);
 		mockInvoke.mockReset();
 		mockRpc.mockReset();
@@ -57,8 +60,12 @@ describe("MarkdownTab agent review actions", () => {
 		window.history.replaceState({}, "", "/");
 		setToastBellMirrorResolver(() => true);
 		cleanup();
-		vi.restoreAllMocks();
+		for (const [source, message] of cleanupInfo.mock.calls) {
+			expect(source).toBe("terminal");
+			expect(message).toMatch(/^TermStore\.remove\(term-\d+\)$/);
+		}
 		for (const id of terminalsStore.getIds()) terminalsStore.remove(id);
+		vi.restoreAllMocks();
 		for (const toast of [...toastsStore.toasts]) toastsStore.remove(toast.id);
 		mdTabsStore.clearAll();
 	});
@@ -163,6 +170,40 @@ describe("MarkdownTab agent review actions", () => {
 		terminalsStore.update(id, { agentType: "claude", repoPath });
 		return id;
 	}
+
+	// Catches: the first candidate receives a review instead of the MCP tab opener.
+	it("preselects the MCP opener rather than the first review candidate and preserves a user choice", async () => {
+		addAgent("First", "pty-a", "/repo");
+		const opener = addAgent("Opener", "pty-b", "/repo");
+		terminalsStore.update(opener, { tuicSession: "tuic-b" });
+		const id = mdTabsStore.addMcpFile("review-b", "/repo", "review.md", false, false, "tuic-b");
+		render(() => <MarkdownTab tab={mdTabsStore.get(id) as FileTab} />);
+		const select = await screen.findByRole("combobox", { name: "Review agent" });
+		expect(select).toHaveValue("pty-b");
+		fireEvent.change(select, { target: { value: "pty-a" } });
+		terminalsStore.update(opener, { name: "Renamed opener" });
+		expect(select).toHaveValue("pty-a");
+		fireEvent.click(screen.getByRole("button", { name: "Send changes to agent" }));
+		await waitFor(() =>
+			expect(mockRpc).toHaveBeenCalledWith("enqueue_agent_command", expect.objectContaining({ sessionId: "pty-a" })),
+		);
+	});
+
+	// Catches: an automatic fallback is treated as a user choice before session inventory arrives.
+	it("adopts a late opener but falls back when the opener is not an eligible repository agent", async () => {
+		addAgent("Fallback", "pty-a", "/repo");
+		const id = mdTabsStore.addMcpFile("review-b", "/repo", "review.md", false, false, "tuic-b");
+		render(() => <MarkdownTab tab={mdTabsStore.get(id) as FileTab} />);
+		const select = await screen.findByRole("combobox", { name: "Review agent" });
+		expect(select).toHaveValue("pty-a");
+		const opener = addAgent("Opener", "pty-b", "/other");
+		terminalsStore.update(opener, { tuicSession: "tuic-b" });
+		expect(select).toHaveValue("pty-a");
+		terminalsStore.update(opener, { repoPath: "/repo" });
+		expect(select).toHaveValue("pty-b");
+		terminalsStore.update(opener, { agentType: null });
+		expect(select).toHaveValue("pty-a");
+	});
 
 	it("queues the marked-up file for the selected agent in the same repository", async () => {
 		const addToast = vi.spyOn(toastsStore, "add").mockReturnValue(1);
@@ -271,6 +312,7 @@ describe("MarkdownTab agent review actions", () => {
 
 	// Catches: a rejected enqueue consumes pending changes and hides retry controls.
 	it("MarkdownTab failed send keeps controls", async () => {
+		const expectedError = vi.spyOn(appLogger, "error").mockImplementation(() => {});
 		mockRpc.mockRejectedValueOnce(new Error("Agent unavailable"));
 		const addToast = vi.spyOn(toastsStore, "add").mockReturnValue(1);
 		addAgent("Reviewer", "session-one", "/repo");
@@ -280,6 +322,10 @@ describe("MarkdownTab agent review actions", () => {
 		await waitFor(() => expect(addToast).toHaveBeenCalledWith("Couldn't send changes", "Agent unavailable", "error"));
 		expect(screen.getByRole("button", { name: "Send changes to agent" }).hasAttribute("disabled")).toBe(false);
 		expect(screen.getByRole("combobox", { name: "Review agent" })).not.toBeNull();
+		expect(expectedError).toHaveBeenCalledExactlyOnceWith(
+			"network",
+			"Failed to queue Markdown review: Agent unavailable",
+		);
 	});
 
 	it("marks Send ready only while it can send", async () => {
@@ -386,6 +432,7 @@ describe("MarkdownTab agent review actions", () => {
 	});
 
 	it("shows a failed external comment save and retains its draft for retry", async () => {
+		const expectedError = vi.spyOn(appLogger, "error").mockImplementation(() => {});
 		fileContent = "# Heading\n\nOriginal paragraph.\n";
 		const path = "/Users/stefano.straus/Gits/.tmp/boss/open-questions.md";
 		let writeAttempts = 0;
@@ -412,6 +459,7 @@ describe("MarkdownTab agent review actions", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Save" }));
 		await waitFor(() => expect(writeAttempts).toBe(2));
 		await waitFor(() => expect(screen.queryByRole("textbox")).toBeNull());
+		expect(expectedError).toHaveBeenCalledExactlyOnceWith("app", "writeTweakedSource: write failed", expect.any(Error));
 	});
 
 	// Catches: saving at the whole-list offset or under a neighboring task.
@@ -523,6 +571,7 @@ describe("MarkdownTab agent review actions", () => {
 	// opened. If the file changes while the user types, saving at those offsets
 	// would write the marker into unrelated text.
 	it("refuses to save a block comment when the file changed after the popover opened", async () => {
+		const expectedError = vi.spyOn(appLogger, "error").mockImplementation(() => {});
 		const addToast = vi.spyOn(toastsStore, "add").mockReturnValue(1);
 		fileContent = "# Heading\n\nOriginal paragraph.\n";
 		await startBlockComment("stale.md");
@@ -537,6 +586,10 @@ describe("MarkdownTab agent review actions", () => {
 			expect(addToast).toHaveBeenCalledWith("Couldn't add comment", expect.stringContaining("changed"), "error"),
 		);
 		expect(mockInvoke).not.toHaveBeenCalledWith("write_file", expect.anything());
+		expect(expectedError).toHaveBeenCalledExactlyOnceWith(
+			"app",
+			"handleTweakBlockSave failed: insertTweakBlockComment: source range no longer matches the rendered block",
+		);
 	});
 
 	it("hides the agent review controls when the file has no tweak comments", async () => {
@@ -626,6 +679,7 @@ describe("MarkdownTab agent review actions", () => {
 	});
 
 	it("reveals a directory and toasts for a missing file", async () => {
+		const expectedDebug = vi.spyOn(appLogger, "debug").mockImplementation(() => {});
 		fileContent = "[folder](./subdir/) [missing](./gone.rs)";
 		mockInvoke.mockImplementation((command: string, args: { href?: string }) =>
 			Promise.resolve(
@@ -659,6 +713,7 @@ describe("MarkdownTab agent review actions", () => {
 		expect(toast).toHaveBeenCalledWith("File not found", "File not found: ./gone.rs", "error");
 		// The File Browser visibility change persists UI prefs after a 500ms debounce.
 		await new Promise((resolve) => setTimeout(resolve, 550));
+		expect(expectedDebug).toHaveBeenCalledExactlyOnceWith("store", "Failed to save UI prefs", expect.any(Error));
 	});
 
 	it("opens a relative .md link in the markdown viewer when the backend sends anchor:null,line:null", async () => {

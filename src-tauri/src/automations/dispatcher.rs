@@ -89,6 +89,21 @@ impl<E: DispatchEffects> Dispatcher<E> {
         scheduler::tick(&self.runs, &self.definitions.load()?, now)
     }
 
+    /// Admit eligible labelled issues from the poller's latest snapshot. Safe to
+    /// repeat: the run store admits each issue and label once.
+    pub fn admit_events(
+        &self,
+        issues: &[tuic_git::github::GitHubIssue],
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> Result<Vec<AutomationRun>, String> {
+        super::event_intake::admit_issues(
+            &self.runs,
+            &self.definitions.load()?,
+            issues,
+            now.timestamp_millis(),
+        )
+    }
+
     pub async fn dispatch(&self, id: &str) -> Result<(), String> {
         let Some(run) = self.runs.claim_dispatch(id, now_ms())? else {
             return Ok(());
@@ -137,11 +152,15 @@ impl<E: DispatchEffects> Dispatcher<E> {
         .await;
         let proceed = outcome.proceeds();
         let (prompt, context) = if proceed {
-            inject_context(
+            let (prompt, context) = inject_context(
                 &outcome,
                 run.definition.precheck.as_ref(),
                 &run.definition.prompt,
-            )
+            );
+            match super::event_intake::event_context(&run.trigger) {
+                Some(event) => (format!("{prompt}\n\n{event}"), context),
+                None => (prompt, context),
+            }
         } else {
             (String::new(), Default::default())
         };

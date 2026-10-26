@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
 // @ts-expect-error plain MV3 module
 import { browserCommand } from "../../../browser-extension/design-mode/browserCommands.js";
@@ -36,6 +37,9 @@ describe("native browser command boundary", () => {
 			"eval_not_granted",
 		);
 		expect(chrome.scripting.executeScript).not.toHaveBeenCalled();
+		await expect(
+			browserCommand({ action: "eval", args: { script: "2+2" } }, browser(["<all_urls>"]), 7),
+		).rejects.toThrow("eval_not_granted");
 		const granted = browser(["http://*/*", "https://*/*"]);
 		expect(await browserCommand({ action: "eval", args: { script: "2+2" } }, granted, 7)).toEqual({ value: 4 });
 		expect(granted.scripting.executeScript).toHaveBeenCalledWith(
@@ -57,5 +61,27 @@ describe("native browser command boundary", () => {
 		});
 		expect(errors).toHaveBeenCalledWith(7);
 		await expect(browserCommand({ action: "reload" }, browser(), undefined)).rejects.toThrow("no_reviewed_tab");
+	});
+	it("does not report an empty error list for a remote page that only has the capture grant", async () => {
+		// Catches: <all_urls> capture consent passing the host gate for `errors`, while remote error injection
+		// is never registered for it, so the agent reads "no errors" from a page nothing observed.
+		const chrome = browser(["<all_urls>"]);
+		chrome.tabs.get.mockResolvedValue({ id: 7, active: true, windowId: 2, url: "https://example.com/" });
+		const errors = vi.fn(async () => []);
+		await expect(browserCommand({ action: "errors" }, chrome, 7, errors)).rejects.toThrow("host_denied");
+		expect(errors).not.toHaveBeenCalled();
+		chrome.permissions.getAll.mockResolvedValue({ origins: ["*://example.com/*"] });
+		await expect(browserCommand({ action: "errors" }, chrome, 7, errors)).resolves.toEqual({ errors: [] });
+	});
+	it("translates recorded Chrome capture denial into actionable option guidance", async () => {
+		// Catches: raw Chrome permission denial escaping without a typed recovery.
+		const recorded = JSON.parse(readFileSync("scripts/fixtures/design-mode-chrome149-capture-denial.json", "utf8"));
+		const chrome = browser();
+		chrome.tabs.captureVisibleTab.mockRejectedValue(new Error(JSON.parse(recorded.result.content[0].text).error));
+		await expect(browserCommand({ action: "screenshot" }, chrome, 7)).rejects.toThrow(
+			/^capture_permission_required:.*Let agents capture any site/,
+		);
+		chrome.tabs.captureVisibleTab.mockRejectedValue(new Error("capture backend failed"));
+		await expect(browserCommand({ action: "screenshot" }, chrome, 7)).rejects.toThrow("capture backend failed");
 	});
 });

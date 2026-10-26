@@ -1,0 +1,32 @@
+{
+  "card": {
+    "color": "rgb(212, 212, 212)",
+    "background": "rgb(38, 38, 38)",
+    "fontSize": "16px",
+    "fontWeight": "400"
+  },
+  "name": {
+    "color": "rgb(212, 212, 212)",
+    "background": "rgba(0, 0, 0, 0)",
+    "fontSize": "14px",
+    "fontWeight": "600"
+  },
+  "project": {
+    "color": "rgb(115, 115, 115)",
+    "background": "rgba(0, 0, 0, 0)",
+    "fontSize": "12px",
+    "fontWeight": "400"
+  },
+  "subRow": {
+    "color": "rgb(115, 115, 115)",
+    "background": "rgba(0, 0, 0, 0)",
+    "fontSize": "13px",
+    "fontWeight": "400"
+  },
+  "time": {
+    "color": "rgb(115, 115, 115)",
+    "background": "rgba(0, 0, 0, 0)",
+    "fontSize": "11px",
+    "fontWeight": "400"
+  }
+}

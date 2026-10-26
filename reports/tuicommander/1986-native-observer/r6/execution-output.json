@@ -1,0 +1,5 @@
+{
+  "data": "\r\nThe default interactive shell is now zsh.\r\nTo update your account to use zsh, please run `chsh -s /bin/zsh`.\r\nFor more details, please visit https://support.apple.com/kb/HT208050.\r\n\u001b[?1034hDGQT92CJFP:~ stefano.straus$ source \" \r$TUIC_SHELL_INTEGRATION\"; /bin/sh -c  \r'printf \"CHILD_%s\\n\" EXITED1986'\r\nCHILD_EXITED1986\r\n\u001b]133;A\u0007DGQT92CJFP:~ stefano.straus$ \u03a9\b\u001b[Kprintf \" \rNATIVE_%s\\n\" EXECUTED1986\r\n\u001b]133;C\u0007NATIVE_EXECUTED1986\r\n\u001b]133;D;0\u0007\u001b]133;A\u0007DGQT92CJFP:~ stefano.straus$ ",
+  "data_length": 477,
+  "total_written": 477
+}

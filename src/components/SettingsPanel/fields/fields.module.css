@@ -4,20 +4,9 @@
 .row .cell { margin-bottom: 0; }
 .choices .choice { display: flex; align-items: center; gap: 8px; margin: 0; }
 .choice input { accent-color: var(--accent); }
-.button {
-  min-height: var(--control-height, 36px); padding: 6px 12px; width: fit-content;
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--bg-tertiary); color: var(--fg-primary); cursor: pointer;
-}
-.button:hover { background: var(--bg-highlight); }
-.button:disabled { opacity: 0.5; cursor: not-allowed; }
-.button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.button { width: fit-content; }
 .status { font-size: var(--font-md); color: var(--fg-secondary); }
 .status[data-tone="info"] { color: var(--accent); }
 .status[data-tone="success"] { color: var(--success); }
 .status[data-tone="warning"] { color: var(--warning); }
 .status[data-tone="danger"] { color: var(--error); }
-@media (max-width: 600px) {
-  .button { min-height: 44px; }
-
-}

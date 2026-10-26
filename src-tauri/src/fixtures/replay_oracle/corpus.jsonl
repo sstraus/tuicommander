@@ -3,6 +3,7 @@
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-2.1.294-remote-startup-idle-20261013.tcap","events":13}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-askuser-esc-20260929.tcap","events":203}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-askuser-multi-question-20261012.tcap","events":205}
+{"fixture":"src-tauri/src/fixtures/agent_prompts/claude-await-exit-before-input-1985.tcap","events":404}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-imperative-title-2074.tcap","events":201}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-mobile-consecutive-tools-2109.tcap","events":433}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-mobile-permission-1987.tcap","events":72}
@@ -17,6 +18,7 @@
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-suggest-consumed-2029.tcap","events":168}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-suggest-stop-hooks-2029.tcap","events":91}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-suggest-two-turns-2029.tcap","events":158}
+{"fixture":"src-tauri/src/fixtures/agent_prompts/claude-wrapped-provider-failure-2335.tcap","events":23}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-wrapped-suggest-question-synthetic.tcap","events":4}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/codex-0.154-background-terminal-false-ready.tcap","events":2024}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/codex-0.154-mid-turn-false-ready.tcap","events":1005}
@@ -52,6 +54,10 @@
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-multiple-120-1973.tcap","events":28}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-multiple-44-1973.tcap","events":32}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-native-questions-2028.tcap","events":443}
+{"fixture":"src-tauri/src/fixtures/agent_prompts/ego-provider-failed-idle-2317.tcap","events":62}
+{"fixture":"src-tauri/src/fixtures/agent_prompts/ego-provider-failure-2335.tcap","events":19}
+{"fixture":"src-tauri/src/fixtures/agent_prompts/ego-provider-failure-approval-2317.tcap","events":26}
+{"fixture":"src-tauri/src/fixtures/agent_prompts/ego-provider-recovered-2335.tcap","events":45}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-provider-recovery-1902.tcap","events":34}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-selector-retirement-2028.tcap","events":35}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-single-120-1973.tcap","events":28}

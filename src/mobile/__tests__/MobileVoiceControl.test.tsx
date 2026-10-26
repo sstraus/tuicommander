@@ -18,7 +18,7 @@ const { rpc, toastAdd, voice } = vi.hoisted(() => {
 
 vi.mock("../../stores/appLogger", async (importOriginal) => {
 	const original = await importOriginal<typeof import("../../stores/appLogger")>();
-	return { ...original, appLogger: { ...original.appLogger, warn: vi.fn() } };
+	return { ...original, appLogger: { ...original.appLogger, warn: vi.fn(), info: vi.fn(), debug: vi.fn() } };
 });
 
 vi.mock("../../transport", async (importOriginal) => ({
@@ -141,7 +141,7 @@ it("keeps Spoken replies out of the session screen when voice is available", asy
 	// catches: the redundant Spoken replies row returning beneath the session header.
 	mount();
 	await screen.findByRole("button", { name: "Start voice call" });
-	expect(screen.queryByRole("checkbox", { name: "Spoken replies" })).toBeNull();
+	expect(screen.queryByRole("switch", { name: "Spoken replies" })).toBeNull();
 	expect(screen.queryByText("Spoken replies")).toBeNull();
 });
 

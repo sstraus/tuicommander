@@ -2,6 +2,8 @@ import { type Component, createEffect, createSignal, onCleanup, Show } from "sol
 import { registerModal } from "../../stores/modalStack";
 import { validateBranchName } from "../RenameBranchDialog/RenameBranchDialog";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 
 export interface CreateBranchDialogProps {
 	visible: boolean;
@@ -74,7 +76,7 @@ export const CreateBranchDialog: Component<CreateBranchDialogProps> = (props) =>
 						<h4>Create Branch</h4>
 					</div>
 					<div class={d.body}>
-						<input
+						<Input
 							ref={inputRef}
 							type="text"
 							value={name()}
@@ -109,12 +111,17 @@ export const CreateBranchDialog: Component<CreateBranchDialogProps> = (props) =>
 						{error() && <p class={d.error}>{error()}</p>}
 					</div>
 					<div class={d.actions}>
-						<button class={d.cancelBtn} onClick={props.onClose} disabled={isCreating()}>
+						<Button class={d.cancelBtn} onClick={props.onClose} disabled={isCreating()}>
 							Cancel
-						</button>
-						<button class={d.primaryBtn} onClick={handleCreate} disabled={isCreating() || !name().trim()}>
+						</Button>
+						<Button
+							variant="primary"
+							class={d.primaryBtn}
+							onClick={handleCreate}
+							disabled={isCreating() || !name().trim()}
+						>
 							{isCreating() ? "Creating…" : "Create"}
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>

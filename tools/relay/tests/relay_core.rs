@@ -527,3 +527,142 @@ async fn expired_peer_cannot_access_recreated_room(token: &str) {
         })
     );
 }
+
+type TestWs =
+    tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
+
+/// Catches a silent `try_send` drop: a tunnel rides this room, so a peer that
+/// stops reading must end the room, never receive a stream with a hole in it.
+#[tokio::test]
+async fn slow_peer_overflow_closes_the_room_instead_of_dropping_frames() {
+    let mut state = AppState::new();
+    Arc::get_mut(&mut state).unwrap().timing.peer_send_timeout = Duration::from_millis(300);
+    let addr = start_relay_with_state(state).await;
+    let mut sender = connect_ws(addr, "overflow").await;
+    let _ = read_text(&mut sender).await;
+    let mut slow = connect_ws(addr, "overflow").await;
+    let _ = read_text(&mut slow).await;
+    let _ = read_text(&mut sender).await;
+
+    // The slow peer reads nothing while the sender fills every buffer on the
+    // path: its TCP window, the relay's write loop and the 32-slot channel.
+    let sender_task = tokio::spawn(async move {
+        for i in 0u32..1500 {
+            let mut payload = vec![0u8; 64 * 1024];
+            payload[..4].copy_from_slice(&i.to_be_bytes());
+            if sender.send(Message::Binary(payload.into())).await.is_err() {
+                return;
+            }
+        }
+        // Still connected after 1500 frames: keep probing for the close.
+        tokio::time::sleep(Duration::from_secs(2)).await;
+    });
+    tokio::time::sleep(Duration::from_secs(3)).await;
+
+    let mut next = 0u32;
+    let ended = tokio::time::timeout(Duration::from_secs(20), async {
+        loop {
+            match slow.next().await {
+                Some(Ok(Message::Binary(b))) => {
+                    let seq = u32::from_be_bytes(b[..4].try_into().unwrap());
+                    assert_eq!(seq, next, "a frame was dropped before the room closed");
+                    next += 1;
+                }
+                Some(Ok(_)) => continue,
+                _ => return,
+            }
+        }
+    })
+    .await;
+    assert!(ended.is_ok(), "the room stayed open after an overflow");
+    assert!(next < 1500, "no overflow happened, the test proves nothing");
+    let _ = sender_task.await;
+}
+
+/// Catches an unbounded WS message: one frame must not be able to allocate
+/// more than the tunnel record limit allows.
+#[tokio::test]
+async fn oversized_message_ends_the_connection_and_is_not_forwarded() {
+    let addr = start_relay().await;
+    let mut a = connect_ws(addr, "oversize").await;
+    let _ = read_text(&mut a).await;
+    let mut b: TestWs = connect_ws(addr, "oversize").await;
+    let _ = read_text(&mut b).await;
+    let _ = read_text(&mut a).await;
+
+    let _ = a
+        .send(Message::Binary(vec![7u8; 2 * 1024 * 1024].into()))
+        .await;
+    let outcome = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match b.next().await {
+                Some(Ok(Message::Binary(_))) => return "forwarded",
+                Some(Ok(Message::Text(t))) if t.contains("disconnected") => return "closed",
+                Some(Ok(_)) => continue,
+                _ => return "closed",
+            }
+        }
+    })
+    .await;
+    assert_eq!(outcome, Ok("closed"));
+}
+
+/// Catches a burst closing the room: a peer that is only briefly slow must
+/// receive every frame in order, because the relay waits before it gives up.
+#[tokio::test]
+async fn brief_stall_of_a_peer_delays_frames_but_loses_none() {
+    let addr = start_relay().await;
+    let mut sender = connect_ws(addr, "burst").await;
+    let _ = read_text(&mut sender).await;
+    let mut slow = connect_ws(addr, "burst").await;
+    let _ = read_text(&mut slow).await;
+    let _ = read_text(&mut sender).await;
+
+    // 100 frames overrun the 32-slot channel while the reader sleeps 1 s.
+    let sender_task = tokio::spawn(async move {
+        for i in 0u32..100 {
+            let mut payload = vec![0u8; 64 * 1024];
+            payload[..4].copy_from_slice(&i.to_be_bytes());
+            sender.send(Message::Binary(payload.into())).await.unwrap();
+        }
+        sender
+    });
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    for i in 0u32..100 {
+        let b = read_binary(&mut slow).await;
+        assert_eq!(u32::from_be_bytes(b[..4].try_into().unwrap()), i);
+    }
+    let _ = sender_task.await;
+}
+
+/// Catches a dead TCP peer pinning a room: a peer that answers nothing is
+/// reaped and the remaining peer is told.
+#[tokio::test]
+async fn silent_peer_is_reaped_and_the_other_peer_is_told() {
+    let mut state = AppState::new();
+    {
+        let timing = &mut Arc::get_mut(&mut state).unwrap().timing;
+        timing.ping_interval = Duration::from_millis(100);
+        timing.dead_after = Duration::from_millis(500);
+    }
+    let addr = start_relay_with_state(state).await;
+    let mut live = connect_ws(addr, "dead").await;
+    let _ = read_text(&mut live).await;
+    // Never polled again: tungstenite answers pings only while it is read.
+    let mut silent = connect_ws(addr, "dead").await;
+    let _ = read_text(&mut silent).await;
+    let _ = read_text(&mut live).await;
+
+    let told = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let Some(Ok(Message::Text(t))) = live.next().await {
+                if t.contains("disconnected") {
+                    return;
+                }
+            }
+        }
+    })
+    .await;
+    assert!(told.is_ok(), "a silent peer was never reaped");
+    drop(silent);
+}

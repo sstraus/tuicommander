@@ -74,25 +74,9 @@ mod tests {
 
     #[tokio::test]
     async fn check_local_port_returns_ok_for_free_port() {
-        // The port is only free until the OS hands it to somebody else, and the
-        // rest of the suite is opening ephemeral sockets in parallel. One
-        // collision proves nothing, so retry on fresh ports: a false failure
-        // would need every attempt to be taken in the same instant.
-        const ATTEMPTS: usize = 5;
-        for attempt in 1..=ATTEMPTS {
-            let addr: SocketAddr = ([127, 0, 0, 1], 0).into();
-            let listener = TcpListener::bind(addr).await.unwrap();
-            let port = listener.local_addr().unwrap().port();
-            drop(listener);
-
-            match check_local_port(port).await {
-                Ok(()) => return,
-                Err(error) => assert!(
-                    attempt < ATTEMPTS,
-                    "a freed port never checked out free in {ATTEMPTS} attempts: {error}"
-                ),
-            }
-        }
+        // Catches: an available bind being reported as occupied. Let the OS
+        // choose the free port inside the check, rather than release one first.
+        assert_eq!(check_local_port(0).await, Ok(()));
     }
 
     #[tokio::test]

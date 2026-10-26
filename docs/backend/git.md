@@ -12,11 +12,20 @@ The `tuic-git` crate owns Git subprocesses, reads, branch operations, worktree o
 
 Workflow launch uses `validate_branch_worktree_path`: the canonical path must identify a registered isolated branch checkout outside the archive pool, with no Git operation in progress. Detached-orphan removal uses the separate `validate_worktree_path` guard, which continues to refuse attached branch checkouts. Launch authorization never grants removal permission (#1883-eba0).
 
+Orphan scans and orphan removal share the temporary-path policy in
+`tuic_core::temp_paths`. OS/environment temp roots, `~/Gits/.tmp` and Unix
+`/tmp`, `/private/tmp`, `/var/folders`, `/private/var/folders` are excluded
+before per-checkout assessment. Component matching checks registered and resolved
+paths, including existing ancestors of missing checkouts. The path validator and
+low-level orphan remover recheck the exclusion, so stale or confirmed requests
+cannot remove temporary detached checkouts. Detached sidebar inventory is
+independent: it can display these checkouts without authorizing cleanup.
+
 Worktree removal verifies checkout and submodule safety before asking Git to unregister it. Git can return `Directory not empty` after removing the registration and some files. In that state, the removal call finishes deleting the known checkout directory and only then compares and deletes the branch ref. A failed cleanup reports the remaining path; an unregistered directory without TUIC ownership evidence is never recursively deleted.
 
 Git **writes** are performed by shelling out to the `git` CLI via the unified `git_cli` module. Git **reads** go through the reversible `GitReads` port (see below), which serves some ops from in-process gix and the rest from the same CLI. The `git_cli::git_cmd(path)` builder provides consistent error handling, binary resolution, and credential prompt suppression across all callsites.
 
-Windows checkout comparisons use `tuic-core::path_spelling::portable_spelling`: native and verbatim paths match Git's forward-slash paths. Unix backslashes remain literal filename bytes. Git subprocesses enable `core.longpaths` on Windows, including deep submodule preservation refs. Worktree scripts use the same enriched PATH as Git subprocesses; the Windows search includes the standard Git installation and its `.exe` filename. Hook PATH entries use native Windows separators, put the resolved Git directory first, and remove case-insensitive duplicates. The hook keeps whole directories in precedence order up to cmd.exe's 8191 UTF-16-unit environment-value limit; later directories beyond that limit are omitted.
+Windows checkout comparisons use `tuic-core::path_spelling::portable_spelling`: native and verbatim paths match Git's forward-slash paths. Unix backslashes remain literal filename bytes. Worktree creation passes its destination to Git in this same portable spelling, including the retry for an existing branch; filesystem state retains native paths. Git subprocesses enable `core.longpaths` on Windows, including deep submodule preservation refs. Worktree scripts use the same enriched PATH as Git subprocesses; the Windows search includes the standard Git installation and its `.exe` filename. Hook PATH entries use native Windows separators, put the resolved Git directory first, and remove case-insensitive duplicates. The hook keeps whole directories in precedence order up to cmd.exe's 8191 UTF-16-unit environment-value limit; later directories beyond that limit are omitted.
 
 ## Async Execution & Caching
 
@@ -31,6 +40,8 @@ The `repo_watcher` (FSEvents on macOS, inotify on Linux) monitors the working tr
 PR proof is reapplied on each repository stats refresh and is not stored in the ref-keyed local integration cache, so an upstream lookup can recover without local refs moving.
 
 A sidebar refresh uses `monitoring_ref_keys` to share one ref snapshot. The cold read enumerates refs once; later reads retain ref targets and reflog hashes. A complete main-checkout watcher forwards changed paths to this snapshot, so a branch-only event refreshes that ref and its own reflog without probing sibling signatures. Watch startup uses signature validation until a delivered event confirms the stream is live. Watch errors, incomplete watches and standalone callers use mtime/size signatures; changed loose refs are resolved individually, while a changed packed-ref file rebuilds the shared targets. Unchanged HEAD/config and reflog contents are not reopened. Directory-level events conservatively validate signatures. A sibling branch tip is not part of another branch's key. All remote refs remain dependencies because any remote may prove containment. Repository handles come from the shared gix handle cache. This does not cache dirty-state scans or the worktree inventory across refreshes. The existing per-repository coordinator keeps one active refresh and one pending trailing request; Git events use the existing 500 ms debounce. A pending shared-ref/configuration or linked-HEAD change bypasses the base-checkout fingerprint, which cannot observe a sibling commit. Other no-op Git events retain the fingerprint guard.
+
+Workspace id lookup for lifecycle inspection and removal uses the same fresh `GitReads.worktree_inventory` as sidebar discovery, not a second porcelain-derived identity map. This preserves literal symbolic branch names from checkout HEAD. Removal can also resolve missing registrations and pooled checkouts. Branch compare-and-delete does not dereference symbolic refs, so removing an alias never deletes its target.
 
 Worktree inventory reuses its root repository handle and reads each checkout’s admin HEAD directly. It does not open a full repository for the main checkout or each linked checkout. Detached rebase checkouts still recover their branch from Git’s operation files; missing and archived checkouts remain excluded.
 
@@ -269,7 +280,9 @@ local `main`, then local `master`, then `origin/HEAD` (local branch when present
 otherwise the remote-tracking ref), then the main checkout's attached HEAD branch. A linked
 checkout never supplies the fallback HEAD. If none resolves to a commit,
 lifecycle inspection blocks removal with an actionable reason; the sidebar
-shows **No base branch**, with the full reason in its tooltip.
+shows **No base branch**, with the full reason in its tooltip. Each branch-name
+tooltip includes the status diagnostic once. Main checkouts do not show removal
+warnings, because the sidebar cannot remove them.
 
 The checked-out main worktree branch is another integration target: if it
 contains the candidate tip, removal records `integration_ancestry` even when
@@ -548,3 +561,15 @@ worktree.
 Explicit worktree removal uses the same current-cwd terminal cleanup as removal
 events and refresh. Sidebar membership does not authorize closing a PTY. Tabs
 outside the removed checkout are rehomed after successful removal.
+
+### Checkout discovery inventory
+
+CLI and Gix return branch-addressed `worktree_paths` plus a separate `detached_worktrees` list. Detached records contain the path, full HEAD SHA, seven-character `short_head`, directory name and `state: "detached"`. They do not create workspace IDs. The root adapter supplies the effective configured worktree base’s `__archived` pool; an unrelated directory with that name does not hide a checkout. Gix resolves the common Git directory before finding the main checkout. CLI discovery reads NUL-delimited `git worktree list --porcelain -z`, so newline paths remain intact.
+
+### Worktree discovery diagnostics
+
+The additive inventory also returns `worktree_diagnostics` records with `path`, nullable `branch`, `state` (`missing` or `duplicate_branch`), and `guidance`. Missing or broken checkouts never enter the selectable map. Discovery does not prune registrations. A forced duplicate branch keeps one deterministic primary checkout (lexicographically smallest path); additional paths become read-only diagnostics. Legacy lifecycle resolution uses the same primary ordering so an action does not target a different duplicate. Workspace IDs do not change.
+
+Synchronous and asynchronous inventory cache loaders retain only successful reads. MCP repository listings report `worktree_error` on discovery failure; ACP workspace snapshots report `worktreeError`. Bisect recovers `BISECT_START` only when it resolves to an existing local branch. Rebase recovery uses the shared Git directory resolver, including relative gitdir paths and the main checkout.
+
+Unavailable detached registrations are excluded from automatic orphan cleanup in both Ask and On modes, including the Ask countdown. They remain repair diagnostics until restored or explicitly removed. Safe-only removal rechecks availability, so a directory moved after assessment cannot be pruned automatically. Explicit user-confirmed removal remains available.

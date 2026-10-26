@@ -1274,7 +1274,7 @@ mod tests {
         );
         std::thread::sleep(SETTLE);
         assert_eq!(started.load(Ordering::SeqCst), 0, "nothing was rendered");
-        assert!(output.played().is_empty());
+        assert_eq!(output.played(), [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -1354,7 +1354,7 @@ mod tests {
         eventually("the engine to notice the cancellation", || {
             cancelled.load(Ordering::SeqCst) == 1
         });
-        assert!(output.played().is_empty());
+        assert_eq!(output.played(), [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -1469,7 +1469,7 @@ mod tests {
         });
         let reported = speaker.status().last_error.unwrap();
         assert!(reported.contains("italian/bundle.json"), "{reported}");
-        assert!(output.played().is_empty());
+        assert_eq!(output.played(), [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -1509,7 +1509,7 @@ mod tests {
             output.stops() >= 1,
             "the device was silenced on the way out"
         );
-        assert!(output.played().is_empty());
+        assert_eq!(output.played(), [] as [std::string::String; 0]);
     }
 
     #[test]
@@ -1673,7 +1673,7 @@ mod tests {
             unreachable!("just asserted")
         };
         assert!(reason.contains("not downloaded"), "{reason}");
-        assert!(output.played().is_empty());
+        assert_eq!(output.played(), [] as [std::string::String; 0]);
     }
 
     #[test]

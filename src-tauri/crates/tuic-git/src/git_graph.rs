@@ -420,12 +420,12 @@ mod tests {
         assert_eq!(commits[0].refs, vec!["HEAD -> main", "origin/main"]);
 
         assert_eq!(commits[1].hash, "aaa111");
-        assert!(commits[1].parents.is_empty());
+        assert_eq!(commits[1].parents, [] as [std::string::String; 0]);
         assert_eq!(commits[1].refs, vec!["tag: v1.0"]);
 
         assert_eq!(commits[2].hash, "bbb222");
         assert_eq!(commits[2].parents, vec!["ccc333"]);
-        assert!(commits[2].refs.is_empty());
+        assert_eq!(commits[2].refs, [] as [std::string::String; 0]);
     }
 
     #[test]

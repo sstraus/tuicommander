@@ -24,12 +24,14 @@ fn leaf(kind: &str, id: &str) -> Result<String, String> {
 
 fn checked_directory(path: &Path, create: bool) -> Result<(), String> {
     if create && !path.exists() {
-        let mut builder = std::fs::DirBuilder::new();
+        let builder = std::fs::DirBuilder::new();
         #[cfg(unix)]
-        {
+        let builder = {
             use std::os::unix::fs::DirBuilderExt;
+            let mut builder = builder;
             builder.mode(0o700);
-        }
+            builder
+        };
         match builder.create(path) {
             Ok(()) => {}
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}

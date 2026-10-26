@@ -905,6 +905,12 @@ fn pty_spawn_env_does_not_inherit_tuic_build_context() {
         .env("CARGO_PKG_NAME", "tuicommander")
         .env("OUT_DIR", "/tuic-dev-build-target/debug/build/out")
         .env("RUSTDOC", "/tuic-dev-rustdoc")
+        .env("RUSTUP_TOOLCHAIN", "stable-aarch64-apple-darwin")
+        .env("RUSTUP_TOOLCHAIN_SOURCE", "default")
+        .env("RUST_RECURSION_COUNT", "1")
+        .env("RUSTUP_HOME", "/user/rustup")
+        .env("RUST_LOG", "warn")
+        .env("RUST_BACKTRACE", "1")
         .env("CARGO_INCREMENTAL", "0")
         .env("RUSTC_WRAPPER", "/tuic-dev-mbx-shim")
         .env("RUSTC_WORKSPACE_WRAPPER", "/tuic-dev-workspace-shim")
@@ -1811,5 +1817,244 @@ fn newer_shell_observation_does_not_cancel_pending_exit_screen_recovery() {
     assert!(
         lines.contains("primary shell") && !lines.contains("Exited agent"),
         "newer shell sample cancelled exit recovery; terminal still shows: {lines:?}"
+    );
+}
+
+/// Catches: a discarded busy-turn edit remains authoritative after ego repaints
+/// its empty composer, starving an already parked background wake.
+#[cfg(unix)]
+#[test]
+fn ego_empty_composer_releases_phantom_draft_and_queued_wake() {
+    let state = Arc::new(crate::state::tests_support::make_test_app_state());
+    let sid = "ego-phantom-composer";
+    agent_session(&state, sid, SHELL_BUSY);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("ego".into());
+    let bytes = insert_recording_session(&state, sid);
+    crate::mcp_http::session::apply_input_bookkeeping(&state, sid, "discarded busy edit");
+    enqueue_user_command(&state, sid, "BG DONE exit=0 log=phantom-test", None).unwrap();
+    assert!(bytes.lock().unwrap().is_empty());
+    let capture =
+        crate::pty_capture::decode_capture(&agent_prompt_fixture("ego-composer-1957.tcap"))
+            .unwrap();
+    let (rows, cols) = capture.geometry.unwrap();
+    let mut vt = VtLogBuffer::new(rows, cols, 2000);
+    for record in capture.records {
+        if record.direction == crate::pty_capture::CaptureDirection::Output {
+            vt.process(&record.data);
+        }
+    }
+    assert_eq!(
+        detect_agent_screen_activity(Some("ego"), &vt.screen_rows()),
+        AgentScreenActivity::Ready
+    );
+    state.grid.vt_log_buffers.insert(sid.into(), Mutex::new(vt));
+    // Input precedes the recorded empty repaint; age the observation rather
+    // than making setup depend on how quickly the host schedules this test.
+    state
+        .session_maps
+        .last_input_ms
+        .get(sid)
+        .unwrap()
+        .store(now_epoch_ms() - 4000, Ordering::Release);
+    let silence = state.session_maps.silence_states.get(sid).unwrap().clone();
+    {
+        let mut sl = silence.lock();
+        sl.last_chunk_at = std::time::Instant::now() - std::time::Duration::from_secs(2);
+        sl.confirm_idle();
+    }
+    state
+        .session_maps
+        .shell_states
+        .get(sid)
+        .unwrap()
+        .store(SHELL_IDLE, Ordering::Release);
+    assert!(
+        !has_partial_user_input(&state, sid),
+        "native empty repaint must supersede discarded write-side text"
+    );
+    flush_pending_injections_blocking(&state, sid);
+    let written = String::from_utf8(bytes.lock().unwrap().clone()).unwrap();
+    assert_eq!(
+        written.matches("BG DONE exit=0 log=phantom-test").count(),
+        1
+    );
+    assert!(written.ends_with('\r'));
+    assert_eq!(queued_command_count(&state, sid), 0);
+}
+
+/// Catches: trusting an empty screen from before a fresh edit, clearing a
+/// retained native draft, or failing open when no native composer is visible.
+#[cfg(unix)]
+#[test]
+fn ego_composer_keeps_retained_drafts_and_unpainted_edits_protected() {
+    for scenario in ["retained", "unpainted", "unknown"] {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let sid = "ego-protected-composer";
+        agent_session(&state, sid, SHELL_IDLE);
+        state
+            .session_maps
+            .session_states
+            .get_mut(sid)
+            .unwrap()
+            .agent_type = Some("ego".into());
+        let bytes = insert_recording_session(&state, sid);
+        crate::mcp_http::session::apply_input_bookkeeping(&state, sid, "captured draft");
+        let capture =
+            crate::pty_capture::decode_capture(&agent_prompt_fixture("ego-composer-1957.tcap"))
+                .unwrap();
+        let (rows, cols) = capture.geometry.unwrap();
+        let mut vt = VtLogBuffer::new(rows, cols, 2000);
+        if scenario != "unknown" {
+            for record in capture.records {
+                if record.direction == crate::pty_capture::CaptureDirection::Input
+                    && record.data == b"\r"
+                    && scenario == "retained"
+                {
+                    break;
+                }
+                if record.direction == crate::pty_capture::CaptureDirection::Output {
+                    vt.process(&record.data);
+                }
+            }
+        }
+        state.grid.vt_log_buffers.insert(sid.into(), Mutex::new(vt));
+        state.session_maps.last_input_ms.get(sid).unwrap().store(
+            now_epoch_ms() - if scenario == "unpainted" { 1000 } else { 4000 },
+            Ordering::Release,
+        );
+        state
+            .session_maps
+            .silence_states
+            .get(sid)
+            .unwrap()
+            .lock()
+            .last_chunk_at = std::time::Instant::now() - std::time::Duration::from_secs(2);
+        assert!(
+            matches!(
+                write_agent_submission_to_pty(&state, sid, "must not overwrite"),
+                AgentSubmissionWrite::Rejected {
+                    reason: "partial_composer",
+                    ..
+                }
+            ),
+            "{scenario}"
+        );
+        assert!(bytes.lock().unwrap().is_empty(), "{scenario}");
+    }
+}
+
+/// Catches: sleep/wake timestamp repair masquerades as post-input output and
+/// authorizes Ctrl-U over a real draft whose echo has not reached the reader.
+#[cfg(unix)]
+#[test]
+fn ego_sleep_clock_reset_is_not_a_composer_repaint() {
+    assert_nonpaint_preserves_ego_draft(b"", false);
+}
+
+/// Catches: the silence timer's synthetic cursor restore erases an unpainted draft.
+#[cfg(unix)]
+#[test]
+fn ego_timer_cursor_restore_is_not_a_composer_repaint() {
+    assert_nonpaint_preserves_ego_draft(b"\x1b[?25h", true);
+}
+
+/// Catches: cursor-only child output erases an unpainted draft.
+#[cfg(unix)]
+#[test]
+fn ego_child_cursor_only_is_not_a_composer_repaint() {
+    assert_nonpaint_preserves_ego_draft(b"\x1b[1;1H", false);
+}
+
+/// Catches: OSC title-only child output erases an unpainted draft.
+#[cfg(unix)]
+#[test]
+fn ego_child_title_only_is_not_a_composer_repaint() {
+    assert_nonpaint_preserves_ego_draft(b"\x1b]0;updated title\x07", false);
+}
+
+/// Catches: an unrelated visible output row authorizes draft destruction.
+#[cfg(unix)]
+#[test]
+fn ego_child_other_row_is_not_a_composer_repaint() {
+    assert_nonpaint_preserves_ego_draft(b"\x1b[1;1Hupdated output", false);
+}
+
+#[cfg(unix)]
+fn assert_nonpaint_preserves_ego_draft(output: &[u8], local: bool) {
+    let state = Arc::new(crate::state::tests_support::make_test_app_state());
+    let sid = "ego-sleep-real-draft";
+    agent_session(&state, sid, SHELL_IDLE);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("ego".into());
+    let bytes = insert_recording_session(&state, sid);
+    let capture =
+        crate::pty_capture::decode_capture(&agent_prompt_fixture("ego-composer-1957.tcap"))
+            .unwrap();
+    let (rows, cols) = capture.geometry.unwrap();
+    let mut vt = VtLogBuffer::new(rows, cols, 2000);
+    for record in capture.records {
+        if record.direction == crate::pty_capture::CaptureDirection::Output {
+            vt.process(&record.data);
+        }
+    }
+    state.grid.vt_log_buffers.insert(sid.into(), Mutex::new(vt));
+    // The Ready screen precedes this real input; any later bytes must prove paint.
+    crate::mcp_http::session::apply_input_bookkeeping(&state, sid, "keep my real draft");
+    state
+        .session_maps
+        .last_input_ms
+        .get(sid)
+        .unwrap()
+        .store(now_epoch_ms() - 4000, Ordering::Release);
+    {
+        let silence = state.session_maps.silence_states.get(sid).unwrap();
+        let mut silence = silence.lock();
+        silence.confirm_idle();
+        // spawn_silence_timer resets both clocks on wake without a PTY read.
+        // Model the first settled check two seconds after that repair.
+        let repaired = std::time::Instant::now() - std::time::Duration::from_secs(2);
+        silence.last_output_at = repaired;
+        silence.last_chunk_at = repaired;
+    }
+    // Use the same origin boundary as the timer and the child reader.
+    {
+        let vt = state.grid.vt_log_buffers.get(sid).unwrap();
+        let mut vt = vt.lock();
+        if local {
+            vt.process_local(output);
+        } else {
+            vt.process(output);
+        }
+    }
+    let result = write_agent_submission_to_pty(&state, sid, "must not replace draft");
+    assert!(
+        matches!(
+            result,
+            AgentSubmissionWrite::Rejected {
+                reason: "partial_composer",
+                ..
+            }
+        ),
+        "non-composer updates cannot authorize replacement: {result:?}"
+    );
+    assert!(bytes.lock().unwrap().is_empty());
+    assert_eq!(
+        state
+            .session_maps
+            .input_buffers
+            .get(sid)
+            .unwrap()
+            .lock()
+            .content(),
+        "keep my real draft"
     );
 }

@@ -55,6 +55,7 @@ fn tab(id: &str, repo: &str, file: &str, root: Option<&str>) -> DesktopMarkdownT
         repo_path: repo.into(),
         file_path: file.into(),
         fs_root: root.map(str::to_owned),
+        opener_tuic_session: None,
     }
 }
 
@@ -170,9 +171,20 @@ fn desktop_open_and_close_publish_invalidation_and_replace_the_snapshot() {
         events.try_recv().unwrap(),
         AppEvent::OpenMarkdownTabsChanged
     ));
-    assert!(
-        select_tabs(&state.open_markdown_tabs.read(), "/repo", &config())
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        select_tabs(&state.open_markdown_tabs.read(), "/repo", &config()).unwrap(),
+        [] as [crate::open_markdown_tabs::OpenMarkdownTab; 0]
+    );
+}
+
+// Catches: the mobile menu loses the document opener and targets the session browsing the menu.
+#[test]
+fn mobile_menu_retains_the_desktop_document_opener() {
+    let mut document = tab("review", "/repo", "review.md", None);
+    document.opener_tuic_session = Some("tuic-b".into());
+    let tabs = select_tabs(&[document], "/repo", &config()).unwrap();
+    assert_eq!(
+        serde_json::to_value(&tabs).unwrap()[0]["opener_tuic_session"],
+        "tuic-b"
     );
 }

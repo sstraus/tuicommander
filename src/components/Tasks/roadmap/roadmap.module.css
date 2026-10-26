@@ -1,9 +1,7 @@
 .roadmap { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; color: var(--fg-primary); background: var(--bg-primary); font: var(--font-md) var(--font-ui); }
-.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
-.roadmap button { min-height: 36px; border: 1px solid var(--border); border-radius: var(--radius-md); padding: 0 12px; background: var(--bg-tertiary); color: var(--fg-primary); font: inherit; cursor: pointer; }
-.roadmap button:hover { background: var(--bg-highlight); }
+.toolbar {
+  composes: toolbar from "../../ui/FormControls.module.css"; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
 .roadmap :focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
-.roadmap button:disabled { opacity: 0.5; cursor: not-allowed; }
 .toolbar label, .navigation { display: flex; align-items: center; gap: 8px; }
 .navigation { flex: 1; }
 .navigation h2 { font-size: var(--font-lg); font-weight: 600; margin: 0; text-align: center; }
@@ -21,7 +19,7 @@
 .ticks > span { flex: 1; min-width: 0; border-left: 1px solid var(--border); padding-top: 12px; text-align: center; white-space: nowrap; box-sizing: border-box; }
 .canvas { position: relative; }
 .row { position: absolute; left: 0; width: 100%; }
-.roadmap .task { display: flex; width: 100%; height: 100%; padding: 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; text-align: left; background: transparent; }
+button[data-control-layout="row"].task { min-height: 36px; color: var(--fg-primary); font: inherit; cursor: pointer; display: flex; width: 100%; height: 100%; padding: 0; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; text-align: left; background: transparent; }
 .identity { position: sticky; left: 0; z-index: 1; flex: 0 0 var(--label-width); min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 4px; padding: 8px 12px; box-sizing: border-box; background: var(--bg-primary); border-right: 1px solid var(--border); }
 .task:hover .identity { background: var(--bg-highlight); }
 .title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -41,7 +39,6 @@
 	.toolbar { padding: 8px; }
 	.navigation { flex-basis: 100%; }
 	.navigation h2 { flex: 1; font-size: var(--font-md); }
-	.roadmap button { min-height: 44px; }
 
 	.content { flex-direction: column; }
 	.dated { min-height: 140px; }

@@ -10,24 +10,9 @@
   flex-shrink: 0;
 }
 
-.more {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: none;
-  color: var(--fg-primary);
-  cursor: pointer;
-}
-
-.more:active,
-.menuItem:active {
-  background: var(--bg-highlight);
-}
-
 .menu {
+  display: flex;
+  flex-direction: column;
   position: absolute;
   top: calc(100% - 4px);
   right: 12px;
@@ -40,17 +25,7 @@
   box-shadow: var(--shadow-popup);
 }
 
-.menuItem {
-  width: 100%;
-  min-height: 44px;
-  padding: 0 12px;
-  border: 0;
-  background: none;
-  color: var(--fg-primary);
-  text-align: left;
-  font: inherit;
-  cursor: pointer;
-}
+.menuItem { justify-content: flex-start; }
 
 .titleGroup {
   flex: 1;

@@ -630,7 +630,10 @@ mod tests {
         );
 
         assert!(endpoint.connected());
-        assert!(endpoint.drain().expect("no capture failure").is_empty());
+        assert_eq!(
+            endpoint.drain().expect("no capture failure"),
+            [] as [f32; 0]
+        );
 
         endpoints.disconnect("browser-a", &link);
         assert!(!endpoint.connected());

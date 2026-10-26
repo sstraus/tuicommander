@@ -45,7 +45,7 @@ fn view_log_behind_the_ring_returns_snapshot_not_silent_gap() {
     assert_eq!(updates.len(), 2, "only what the client has not seen");
     let (reset, updates) = log.since(Some(log.epoch), log.next_seq);
     assert!(!reset);
-    assert!(updates.is_empty());
+    assert_eq!(updates, [] as [serde_json::Value; 0]);
 }
 
 #[test]

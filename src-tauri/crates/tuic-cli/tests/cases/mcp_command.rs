@@ -410,7 +410,7 @@ fn mcp_reports_is_error_on_stderr_with_failure_exit() {
         true,
     );
     assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
     assert!(String::from_utf8_lossy(&output.stderr).contains("Recipient not found"));
 }
 
@@ -424,7 +424,7 @@ fn mcp_reports_payload_error_on_stderr_with_failure_exit() {
         false,
     );
     assert_eq!(output.status.code(), Some(1));
-    assert!(output.stdout.is_empty());
+    assert_eq!(output.stdout, [] as [u8; 0]);
     assert!(String::from_utf8_lossy(&output.stderr).contains("Recipient not found"));
 }
 
@@ -546,7 +546,7 @@ fn mcp_rejects_bad_input_before_connecting() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert!(output.stdout.is_empty());
+        assert_eq!(output.stdout, [] as [u8; 0]);
         assert!(!String::from_utf8_lossy(&output.stderr).contains("Cannot connect"));
     }
 }
@@ -585,13 +585,13 @@ fn automations_command_preserves_shared_action_values_and_errors() {
                 String::from_utf8_lossy(&output.stderr),
                 format!("tuic: {}\n", value["error"].as_str().unwrap())
             );
-            assert!(output.stdout.is_empty());
+            assert_eq!(output.stdout, [] as [u8; 0]);
         } else {
             assert_eq!(
                 String::from_utf8_lossy(&output.stdout),
                 format!("{reply}\n")
             );
-            assert!(output.stderr.is_empty());
+            assert_eq!(output.stderr, [] as [u8; 0]);
         }
     }
     let (output, requests) = run_with_stub(

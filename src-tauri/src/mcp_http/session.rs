@@ -20,6 +20,13 @@ use uuid::Uuid;
 use super::types::*;
 use super::ws_compression::{DEFLATE_SUBPROTOCOL, WsCompression, WsFrameSender};
 
+pub(super) async fn get_session_usage(
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+) -> Response {
+    Json(crate::session_usage::get_session_usage_impl(&state, &id).await).into_response()
+}
+
 pub(super) async fn get_prompt_receipt(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -516,8 +523,14 @@ pub(super) async fn resize_session(
     }
     // Shared core: grid-before-SIGWINCH ordering + same-dims no-op (056-7545),
     // on the blocking pool — a whole-ring rewrap must not sit on a tokio worker.
-    match crate::pty::resize_session_off_thread(&state, session_id.clone(), body.rows, body.cols)
-        .await
+    match crate::pty::resize_session_off_thread(
+        &state,
+        session_id.clone(),
+        body.rows,
+        body.cols,
+        "http",
+    )
+    .await
     {
         Ok(Some(frame)) => {
             crate::pty::send_grid_frame(&state, &session_id, frame);
@@ -590,6 +603,11 @@ pub(super) async fn get_output(
 
     // format=log: return VT100-extracted clean log lines (best for mobile/REST consumers)
     if format == "log" {
+        // Snapshot identity before taking the grid lock, as in the log stream.
+        // Retained agent rows are history after confirmed shell return.
+        let agent_active = state
+            .session_state_with_shell(&session_id)
+            .is_some_and(|session| session.agent_type.is_some());
         let vt_log = match state.grid.vt_log_buffers.get(&session_id) {
             Some(b) => b,
             None => return session_not_found(),
@@ -607,11 +625,9 @@ pub(super) async fn get_output(
         // so a client subtracting the length would land inside the window it already
         // holds and replay those lines when scrolling up.
         let window_start = offset.max(buf.oldest_offset()).min(total);
-        let trim = screen_chrome_cutoff(&buf);
-        // Get styled screen rows, trimmed to same cutoff
-        let styled = buf.screen_log_lines();
-        let screen: Vec<_> = styled.into_iter().take(trim.cutoff).collect();
-        let input_line = buf.prompt_input_text();
+        let projected = poll_screen(&buf, 0, agent_active);
+        let screen = projected.screen.unwrap_or_default();
+        let input_line = projected.input_line;
         let mut resp = serde_json::json!({
             "lines": lines,
             "total_lines": total,
@@ -1898,7 +1914,17 @@ async fn handle_ws_log_session(
                 let (lines, new_offset, polled) = {
                     let buf = vt_log.lock();
                     let (l, o) = buf.lines_since_owned(offset, usize::MAX);
-                    (l, o, poll_screen(&buf, prev_screen_hash))
+                    (
+                        l,
+                        o,
+                        poll_screen(
+                            &buf,
+                            prev_screen_hash,
+                            prev_state
+                                .as_ref()
+                                .is_some_and(|session| session.agent_type.is_some()),
+                        ),
+                    )
                 }; // lock released
                 let input_line = polled.input_line;
                 let screen_lines = polled.screen;
@@ -2248,11 +2274,18 @@ struct ScreenPoll {
 ///
 /// The styled build stays inside the caller's lock because it reads the grid;
 /// what changed is how often it runs, not where.
-fn poll_screen(buf: &crate::state::VtLogBuffer, prev_hash: u64) -> ScreenPoll {
+fn poll_screen(buf: &crate::state::VtLogBuffer, prev_hash: u64, agent_active: bool) -> ScreenPoll {
     use std::hash::{Hash, Hasher};
 
-    let trim = screen_chrome_cutoff(buf);
-    let input_line = buf.prompt_input_text();
+    // Only a live agent owns composer chrome. After identity release, a
+    // retained prompt/selection cannot truncate later shell output or become
+    // the mobile input line. REST and WS share this projection.
+    let cutoff = if agent_active {
+        screen_chrome_cutoff(buf).cutoff
+    } else {
+        buf.grid_screen_lines()
+    };
+    let input_line = agent_active.then(|| buf.prompt_input_text()).flatten();
 
     let owned;
     let rows: &[String] = match buf.screen_rows_ref() {
@@ -2262,7 +2295,7 @@ fn poll_screen(buf: &crate::state::VtLogBuffer, prev_hash: u64) -> ScreenPoll {
             &owned
         }
     };
-    let visible = &rows[..trim.cutoff.min(rows.len())];
+    let visible = &rows[..cutoff.min(rows.len())];
 
     let mut hasher = std::collections::hash_map::DefaultHasher::new();
     for row in visible {
@@ -2279,11 +2312,7 @@ fn poll_screen(buf: &crate::state::VtLogBuffer, prev_hash: u64) -> ScreenPoll {
         };
     }
 
-    let styled: Vec<_> = buf
-        .screen_log_lines()
-        .into_iter()
-        .take(trim.cutoff)
-        .collect();
+    let styled: Vec<_> = buf.screen_log_lines().into_iter().take(cutoff).collect();
     // screen_log_lines drops trailing blank rows, so a screen of nothing but
     // blanks styles to nothing. The old path sent no frame for it either.
     let screen = if styled.is_empty() {
@@ -2880,15 +2909,15 @@ mod tests {
             .into_response();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(*bytes.lock().unwrap(), b"next task\x15");
-        assert!(
+        assert_eq!(
             state
                 .session_maps
                 .input_buffers
                 .get(sid)
                 .unwrap()
                 .lock()
-                .content()
-                .is_empty()
+                .content(),
+            ""
         );
         assert_eq!(
             crate::pty::list_queued_commands(&state, sid)[0].text,
@@ -3990,7 +4019,7 @@ mod tests {
                 continue;
             };
             let visible = &rows[..trim_screen_chrome(&rows).cutoff];
-            let streamed = poll_screen(&grid, 0).screen.expect("log-WS screen");
+            let streamed = poll_screen(&grid, 0, true).screen.expect("log-WS screen");
             for expected in expected {
                 assert!(
                     visible.iter().any(|row| row.contains(expected)),
@@ -4041,7 +4070,7 @@ mod tests {
             }
             observed = true;
             let visible = &rows[..trim_screen_chrome(&rows).cutoff];
-            let streamed = poll_screen(&grid, 0).screen.expect("log-WS screen");
+            let streamed = poll_screen(&grid, 0, true).screen.expect("log-WS screen");
             for text in expected {
                 assert!(
                     visible.iter().any(|row| row.contains(text)),
@@ -4109,6 +4138,94 @@ mod tests {
         );
     }
 
+    // Catches: retained agent chrome hides shell output and revives the old input
+    // after a handled exit or SIGTERM, even though the canonical grid advanced.
+    #[tokio::test]
+    async fn captured_agent_exit_log_projection_keeps_shell_output() {
+        let mut failures = Vec::new();
+        for (mode, bytes, marker) in [
+            (
+                "normal",
+                include_bytes!("../fixtures/agent_prompts/claude-exit-normal-2178.raw").as_slice(),
+                "SHELL_NORMAL_2178",
+            ),
+            (
+                "sigterm",
+                include_bytes!("../fixtures/agent_prompts/claude-exit-sigterm-2178.raw").as_slice(),
+                "SHELL_SIGTERM_2178",
+            ),
+        ] {
+            let state = super::super::tests::test_state();
+            // Recorded PTY geometry; the captured /sessions snapshot has no agent
+            // identity after shell return. Do not infer identity from old rows.
+            let mut buf = VtLogBuffer::new(41, 128, 10_000);
+            buf.process(bytes);
+            assert!(
+                buf.grid_get_lines(0, buf.grid_total_lines())
+                    .join("\n")
+                    .contains(marker),
+                "{mode}: fixture must contain executed shell output"
+            );
+            state
+                .grid
+                .vt_log_buffers
+                .insert(mode.into(), parking_lot::Mutex::new(buf));
+            let response = get_output(
+                State(state),
+                Path(mode.into()),
+                Query(serde_json::from_value(serde_json::json!({"format":"log"})).unwrap()),
+            )
+            .await
+            .into_response();
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            let text = ["lines", "screen"]
+                .into_iter()
+                .flat_map(|key| json[key].as_array().unwrap())
+                .flat_map(|row| row["spans"].as_array().unwrap())
+                .map(|span| span["text"].as_str().unwrap())
+                .collect::<String>();
+            if !text.contains(marker)
+                || !text.contains("shell2178$")
+                || json.get("input_line").is_some()
+            {
+                failures.push(format!(
+                    "{mode}: output={}, prompt={}, stale_input={:?}",
+                    text.contains(marker),
+                    text.contains("shell2178$"),
+                    json.get("input_line")
+                ));
+            }
+        }
+        assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    // Catches: the log WS keeps its old trim/hash after identity release when
+    // no further PTY bytes arrive to repaint the retained agent prompt.
+    #[test]
+    fn screen_poll_releases_retained_chrome_when_agent_identity_is_gone() {
+        let mut buf = VtLogBuffer::new(41, 128, 10_000);
+        buf.process(include_bytes!(
+            "../fixtures/agent_prompts/claude-exit-sigterm-2178.raw"
+        ));
+        let before = poll_screen(&buf, 0, true);
+        assert_eq!(before.input_line.as_deref(), Some("✔ Dark mode"));
+        let after = poll_screen(&buf, before.hash, false);
+        let text = after
+            .screen
+            .expect("identity release must publish the untrimmed screen")
+            .iter()
+            .map(|line| line.text())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("SHELL_SIGTERM_2178"));
+        assert!(text.contains("shell2178$"));
+        assert!(after.input_line.is_none());
+        assert!(poll_screen(&buf, after.hash, false).screen.is_none());
+    }
+
     // --- Log-WS screen polling (604-cb45 F14) ---
     //
     // The poll runs 5x/s per connected log client. Building the styled screen
@@ -4125,14 +4242,14 @@ mod tests {
     fn screen_poll_materializes_only_on_a_change() {
         let buf = vt_log_with("hello world\r\n");
 
-        let first = poll_screen(&buf, 0);
+        let first = poll_screen(&buf, 0, true);
         assert!(
             first.screen.is_some(),
             "the first poll has nothing to compare against"
         );
 
         // Same buffer, same hash: nothing to send, so nothing to build.
-        let second = poll_screen(&buf, first.hash);
+        let second = poll_screen(&buf, first.hash, true);
         assert!(
             second.screen.is_none(),
             "an unchanged screen must not be materialized"
@@ -4146,10 +4263,10 @@ mod tests {
     #[test]
     fn screen_poll_reports_a_change_after_new_output() {
         let mut buf = vt_log_with("first\r\n");
-        let first = poll_screen(&buf, 0);
+        let first = poll_screen(&buf, 0, true);
 
         buf.process(b"second\r\n");
-        let second = poll_screen(&buf, first.hash);
+        let second = poll_screen(&buf, first.hash, true);
 
         assert!(second.screen.is_some(), "new output must reach the client");
         assert_ne!(second.hash, first.hash);
@@ -4159,7 +4276,7 @@ mod tests {
     fn screen_poll_returns_the_same_rows_the_old_path_built() {
         let buf = vt_log_with("alpha\r\nbeta\r\n");
 
-        let polled = poll_screen(&buf, 0)
+        let polled = poll_screen(&buf, 0, true)
             .screen
             .expect("a fresh screen is a change");
         let expected: Vec<_> = buf
@@ -4189,7 +4306,7 @@ mod tests {
         // because the styled screen came back empty after trailing-blank
         // trimming, and the cheap hash must not start sending one.
         let buf = vt_log_with("");
-        assert!(poll_screen(&buf, 0).screen.is_none());
+        assert!(poll_screen(&buf, 0, true).screen.is_none());
     }
 
     // --- WebSocket catch-up/subscribe race ---
@@ -4417,7 +4534,7 @@ mod tests {
 
         let frame = full_frame_for_single_client(&state, "shared-damage")
             .expect("a dirty session must produce a frame");
-        assert!(!frame.is_empty());
+        assert_ne!(frame, [] as [u8; 0]);
 
         assert!(
             !ticker_frame(&state, "shared-damage").is_empty(),
@@ -5001,7 +5118,7 @@ mod tests {
             148,
             "registration must preserve the requested width"
         );
-        crate::pty::resize_session_off_thread(&state, session_id.clone(), 24, 148)
+        crate::pty::resize_session_off_thread(&state, session_id.clone(), 24, 148, "test")
             .await
             .expect("same-size resize");
         assert_eq!(
