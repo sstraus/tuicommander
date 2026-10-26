@@ -4,6 +4,7 @@ import { t } from "../../i18n";
 import { registerModal } from "../../stores/modalStack";
 import { validateBranchName } from "../RenameBranchDialog/RenameBranchDialog";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import s from "./CreateWorktreeDialog.module.css";
 
@@ -79,12 +80,12 @@ const BaseRefDropdown: Component<{
 		<div class={s.baseRefRow}>
 			<label>{t("createWorktree.startFrom", "Start from")}</label>
 			<div class={s.dropdownWrapper}>
-				<button ref={triggerRef} type="button" class={s.dropdownTrigger} onClick={() => setOpen(!open())}>
+				<Button ref={triggerRef} type="button" class={s.dropdownTrigger} onClick={() => setOpen(!open())}>
 					<span class={s.dropdownValue}>{props.value}</span>
 					<svg class={s.dropdownChevron} width="10" height="10" viewBox="0 0 16 16" fill="currentColor">
 						<path d="M4 6l4 4 4-4" />
 					</svg>
-				</button>
+				</Button>
 				<Show when={open()}>
 					<div ref={listRef} class={s.dropdownList}>
 						<Show when={localRefs().length > 0}>
@@ -240,7 +241,9 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
 								placeholder={t("createWorktree.comboPlaceholder", "Type branch name or select existing...")}
 							/>
 							<Show when={props.onGenerateName}>
-								<button
+								<Button
+									shape="icon"
+									aria-label={t("createWorktree.generateName", "Generate random name")}
 									class={s.generateBtn}
 									onClick={handleGenerateName}
 									title={t("createWorktree.generateName", "Generate random name")}
@@ -249,7 +252,7 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
 									<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 										<path d="M13 3.5a.5.5 0 0 1 .5.5v1a.5.5 0 0 1-.5.5h-1a.5.5 0 0 1 0-1h.2A4.5 4.5 0 0 0 8 2.05a4.5 4.5 0 0 0-4.5 4.5.5.5 0 0 1-1 0A5.5 5.5 0 0 1 8 1.05a5.5 5.5 0 0 1 5.5 3.37V4a.5.5 0 0 1 .5-.5zM3 12.5a.5.5 0 0 1-.5-.5v-1a.5.5 0 0 1 .5-.5h1a.5.5 0 0 1 0 1h-.2A4.5 4.5 0 0 0 8 13.95a4.5 4.5 0 0 0 4.5-4.5.5.5 0 0 1 1 0A5.5 5.5 0 0 1 8 14.95a5.5 5.5 0 0 1-5.5-3.37V12a.5.5 0 0 1-.5.5z" />
 									</svg>
-								</button>
+								</Button>
 							</Show>
 						</div>
 
@@ -290,13 +293,11 @@ export const CreateWorktreeDialog: Component<CreateWorktreeDialogProps> = (props
 
 						{error() && <p class={d.error}>{error()}</p>}
 					</div>
-					<div class={d.actions}>
-						<button class={d.cancelBtn} onClick={props.onClose}>
-							{t("createWorktree.cancel", "Cancel")}
-						</button>
-						<button class={d.primaryBtn} onClick={handleCreate} disabled={!trimmedName() || isCreating()}>
+					<div class={s.actions}>
+						<Button onClick={props.onClose}>{t("createWorktree.cancel", "Cancel")}</Button>
+						<Button variant="primary" onClick={handleCreate} disabled={!trimmedName() || isCreating()}>
 							{isCreating() ? t("createWorktree.creating", "Creating...") : t("createWorktree.create", "Create")}
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>

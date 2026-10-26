@@ -5,6 +5,7 @@ import { editorTabsStore } from "../../stores/editorTabs";
 import { cx } from "../../utils";
 import { openFileAction } from "../../utils/filePreview";
 import p from "../shared/panel.module.css";
+import { Button } from "../ui/Button";
 import s from "./OutlinePanel.module.css";
 
 export interface OutlineSymbol {
@@ -91,9 +92,9 @@ export const OutlinePanel: Component<OutlinePanelProps> = (props) => {
 					</Show>
 				</div>
 				<div class={p.headerRight}>
-					<button class={p.close} onClick={props.onClose} title="Close">
+					<Button variant="ghost" class={p.close} onClick={props.onClose} title="Close">
 						×
-					</button>
+					</Button>
 				</div>
 			</div>
 			<Show when={!symbols.loading} fallback={<div class={s.empty}>Loading symbols...</div>}>

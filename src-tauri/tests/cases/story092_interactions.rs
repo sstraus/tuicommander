@@ -141,14 +141,17 @@ async fn a_permission_is_seated_answered_and_the_answer_reaches_the_agent() {
 
     // A settled seat is gone from both places that listed it.
     let snapshot = fixture.manager.snapshot(connection.connection_id).unwrap();
-    assert!(snapshot.attachments[0].pending_permission_ids.is_empty());
-    assert!(
+    assert_eq!(
+        snapshot.attachments[0].pending_permission_ids,
+        [] as [tuicommander_lib::acp::AcpHostRequestId; 0]
+    );
+    assert_eq!(
         fixture
             .manager
             .pending_interactions(connection.connection_id)
             .await
-            .expect("pending interactions")
-            .is_empty()
+            .expect("pending interactions"),
+        [] as [tuicommander_lib::acp::AcpPendingInteraction; 0]
     );
 
     fixture
@@ -390,16 +393,19 @@ async fn an_elicitation_in_an_unadvertised_mode_is_declined_rather_than_seated()
     assert!(matches!(settled, v1::ElicitationAction::Cancel));
 
     // Nothing was seated, so no person is being asked and no attachment lists it.
-    assert!(
+    assert_eq!(
         fixture
             .manager
             .pending_interactions(connection.connection_id)
             .await
-            .expect("pending interactions")
-            .is_empty()
+            .expect("pending interactions"),
+        [] as [tuicommander_lib::acp::AcpPendingInteraction; 0]
     );
     let snapshot = fixture.manager.snapshot(connection.connection_id).unwrap();
-    assert!(snapshot.attachments[0].pending_elicitation_ids.is_empty());
+    assert_eq!(
+        snapshot.attachments[0].pending_elicitation_ids,
+        [] as [tuicommander_lib::acp::AcpHostRequestId; 0]
+    );
 
     fixture
         .manager
@@ -590,8 +596,14 @@ async fn cancelling_a_turn_settles_every_question_it_was_waiting_on() {
     );
 
     let snapshot = fixture.manager.snapshot(connection.connection_id).unwrap();
-    assert!(snapshot.attachments[0].pending_permission_ids.is_empty());
-    assert!(snapshot.attachments[0].pending_elicitation_ids.is_empty());
+    assert_eq!(
+        snapshot.attachments[0].pending_permission_ids,
+        [] as [tuicommander_lib::acp::AcpHostRequestId; 0]
+    );
+    assert_eq!(
+        snapshot.attachments[0].pending_elicitation_ids,
+        [] as [tuicommander_lib::acp::AcpHostRequestId; 0]
+    );
 
     fixture
         .manager
@@ -648,17 +660,23 @@ async fn a_question_with_no_seat_is_declined_rather_than_held() {
     );
 
     // Nothing was ever seated, so nothing is waiting on a person.
-    assert!(
+    assert_eq!(
         fixture
             .manager
             .pending_interactions(connection.connection_id)
             .await
-            .expect("pending interactions")
-            .is_empty()
+            .expect("pending interactions"),
+        [] as [tuicommander_lib::acp::AcpPendingInteraction; 0]
     );
     let snapshot = fixture.manager.snapshot(connection.connection_id).unwrap();
-    assert!(snapshot.attachments[0].pending_permission_ids.is_empty());
-    assert!(snapshot.attachments[0].pending_elicitation_ids.is_empty());
+    assert_eq!(
+        snapshot.attachments[0].pending_permission_ids,
+        [] as [tuicommander_lib::acp::AcpHostRequestId; 0]
+    );
+    assert_eq!(
+        snapshot.attachments[0].pending_elicitation_ids,
+        [] as [tuicommander_lib::acp::AcpHostRequestId; 0]
+    );
 
     fixture
         .manager

@@ -511,7 +511,7 @@ mod tests {
         let cfg = tempfile::TempDir::new().unwrap();
         let _guard = crate::config::set_config_dir_override(cfg.path().to_path_buf());
 
-        assert!(registered_repo_roots().is_empty());
+        assert_eq!(registered_repo_roots(), [] as [std::string::String; 0]);
     }
 
     #[test]

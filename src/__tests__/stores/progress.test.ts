@@ -11,7 +11,10 @@ vi.mock("@tauri-apps/plugin-notification", () => ({
 }));
 
 vi.mock("../../invoke", () => ({ invoke: invokeMock }));
-vi.mock("../../stores/toasts", () => ({ toastsStore: { add: toastAdd } }));
+vi.mock("../../stores/toasts", () => ({
+	toastsStore: { add: toastAdd },
+	setToastBellMirrorResolver: vi.fn(),
+}));
 vi.mock("../../stores/appLogger", () => ({ appLogger: { error: vi.fn() } }));
 vi.mock("../../stores/repositories", () => ({
 	repositoriesStore: {
@@ -23,6 +26,7 @@ vi.mock("../../stores/repositories", () => ({
 vi.mock("../../stores/terminals", () => ({
 	terminalsStore: {
 		state: { activeId: "tab-a", terminals: { "tab-a": { sessionId: "pty-a", repoPath: "/repo", name: "Agent A" } } },
+		get: () => undefined,
 	},
 }));
 
@@ -55,7 +59,7 @@ describe("progressStore", () => {
 		nativeSend.mockReset();
 	});
 
-	it("shows the complete journal when the backend returns multiple pages", async () => {
+	it("reads older journal pages only on demand", async () => {
 		invokeMock
 			.mockResolvedValueOnce({ ...list([entry(3, 300), entry(2, 200)]), ptyIds: ["pty-a"], total: 3, nextCursor: 2 })
 			.mockResolvedValueOnce({ ...list([entry(1, 100)]), ptyIds: ["pty-a"], total: 3, nextCursor: null });
@@ -63,11 +67,119 @@ describe("progressStore", () => {
 		const store = createProgressStore();
 		store.open("/repo", null);
 		await vi.waitFor(() => expect(store.state.projects["/repo"]?.loading).toBe(false));
+		expect(store.state.projects["/repo"].entries.map((item) => item.id)).toEqual([3, 2]);
+		expect(invokeMock).toHaveBeenCalledTimes(1);
+		await store.loadOlder();
 		expect(store.state.projects["/repo"].entries.map((item) => item.id)).toEqual([3, 2, 1]);
 		expect(invokeMock).toHaveBeenCalledWith("progress_list", {
 			project: "/repo",
 			input: { blockedOnly: false, limit: 100, cursor: 2 },
 		});
+	});
+
+	// Catches: a deletion finishing in A advancing the epoch and stranding B's pending page.
+	it("applies the selected project page after a previous project deletion completes", async () => {
+		invokeMock.mockResolvedValue({ ...list([entry(1, 100)]), nextCursor: null });
+		const { createProgressStore } = await import("../../stores/progress");
+		const store = createProgressStore();
+		store.open("/repo", null);
+		await vi.waitFor(() => expect(store.state.projects["/repo"]?.loading).toBe(false));
+		let finishDelete!: (value: unknown) => void;
+		let finishPage!: (value: unknown) => void;
+		invokeMock.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishDelete = resolve;
+				}),
+		);
+		const deletion = store.deleteEntries("/repo", [1]);
+		invokeMock.mockImplementationOnce(
+			() =>
+				new Promise((resolve) => {
+					finishPage = resolve;
+				}),
+		);
+		store.open("/other", null);
+		finishDelete({ deleted: 1 });
+		expect(await deletion).toBe(true);
+		finishPage({ ...list([{ ...entry(2, 200), project: "/other" }]), project: "/other", nextCursor: null });
+		await vi.waitFor(() => expect(store.state.projects["/other"].loading).toBe(false));
+		expect(store.requestedProject()).toBe("/other");
+		expect(store.state.projects["/other"].entries.map((item) => item.id)).toEqual([2]);
+	});
+
+	// Catches: a pending older page leaking into a changed filter or a reopened scope.
+	it.each(["blocked", "pty", "project", "reopen"])(
+		"discards an older page after a %s selection reset",
+		async (change) => {
+			invokeMock.mockResolvedValue({ ...list([entry(3, 300)]), nextCursor: 3 });
+			const { createProgressStore } = await import("../../stores/progress");
+			const store = createProgressStore();
+			store.open("/repo", null);
+			await vi.waitFor(() => expect(store.state.projects["/repo"]?.loading).toBe(false));
+			let finish!: (value: unknown) => void;
+			invokeMock.mockImplementationOnce(
+				() =>
+					new Promise((resolve) => {
+						finish = resolve;
+					}),
+			);
+			const older = store.loadOlder();
+			invokeMock.mockResolvedValue({ ...list([entry(9, 900)]), nextCursor: null });
+			if (change === "blocked") store.setBlockedOnly(true);
+			if (change === "pty") store.selectPty("pty-b");
+			if (change === "project") {
+				store.open("/other", null);
+				store.open("/repo", null);
+			}
+			if (change === "reopen") store.open("/repo", null);
+			await vi.waitFor(() => expect(store.state.projects["/repo"].entries.map((item) => item.id)).toEqual([9]));
+			finish({ ...list([entry(2, 200)]), nextCursor: null });
+			await older;
+			expect(store.state.projects["/repo"].entries.map((item) => item.id)).toEqual([9]);
+		},
+	);
+
+	// Catches: a failed filter reset retaining the old filter's cursor and skipping its newest page.
+	it("does not load an old cursor when the new filter's first page failed", async () => {
+		invokeMock.mockResolvedValue({ ...list([entry(3, 300)]), nextCursor: 3 });
+		const { createProgressStore } = await import("../../stores/progress");
+		const store = createProgressStore();
+		store.open("/repo", null);
+		await vi.waitFor(() => expect(store.state.projects["/repo"]?.loading).toBe(false));
+		invokeMock.mockRejectedValueOnce(new Error("Offline"));
+		store.setBlockedOnly(true);
+		await vi.waitFor(() => expect(store.state.projects["/repo"].error).toBe("Offline"));
+		expect(store.state.projects["/repo"].nextCursor).toBeNull();
+		expect(store.state.projects["/repo"].entries).toEqual([]);
+		const calls = invokeMock.mock.calls.length;
+		await store.loadOlder();
+		expect(invokeMock).toHaveBeenCalledTimes(calls);
+	});
+
+	// Catches: failed older reads consuming the cursor or erasing already rendered entries.
+	it("retries the same filtered cursor after an older-page failure", async () => {
+		invokeMock.mockResolvedValue({ ...list([entry(3, 300, "blocked")]), nextCursor: 3 });
+		const { createProgressStore } = await import("../../stores/progress");
+		const store = createProgressStore();
+		store.open("/repo", "pty-b");
+		store.setBlockedOnly(true);
+		await vi.waitFor(() => expect(store.state.projects["/repo"]?.loading).toBe(false));
+		invokeMock.mockRejectedValueOnce(new Error("Offline"));
+		await store.loadOlder();
+		expect(store.state.projects["/repo"].entries.map((item) => item.id)).toEqual([3]);
+		expect(store.state.projects["/repo"].error).toBe("Offline");
+		invokeMock.mockResolvedValue({ ...list([entry(2, 200, "blocked")]), nextCursor: null });
+		await store.loadOlder();
+		expect(invokeMock).toHaveBeenLastCalledWith("progress_list", {
+			project: "/repo",
+			input: { blockedOnly: true, ptyId: "pty-b", limit: 100, cursor: 3 },
+		});
+		expect(store.state.projects["/repo"].entries.map((item) => item.id)).toEqual([3, 2]);
+		expect(store.state.projects["/repo"].error).toBeNull();
+		const calls = invokeMock.mock.calls.length;
+		await store.loadOlder();
+		expect(invokeMock).toHaveBeenCalledTimes(calls);
 	});
 
 	it("opens the active PTY and can switch to another PTY in the same repository", async () => {

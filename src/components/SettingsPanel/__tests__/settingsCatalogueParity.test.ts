@@ -40,6 +40,14 @@ describe("settings catalogue/control identity boundary", () => {
 		).toEqual([]);
 	});
 
+	// Catches: migrating a native action to shared Button/ColorSwatch silently removes it from the identity audit.
+	it.each(["Button", "ColorSwatch", "Slider", "ColorInput"])("audits shared %s identities", (tag) => {
+		const result = extractSettingControls("fixture.tsx", `<${tag} data-setting-id="app.theme" /><${tag} />`);
+		expect(result.map((control) => control.tag)).toEqual([tag, tag]);
+		expect(result[0].settingId).toBe("app.theme");
+		expect(missingControlIdentities(result)).toEqual([result[1]]);
+	});
+
 	// Catches: any computed expression being accepted as a catalogue identity.
 	it("rejects_unresolved_dynamic_control_ids", () => {
 		const result = extractSettingControls(
@@ -119,4 +127,15 @@ describe("settings catalogue/control identity boundary", () => {
 		);
 		expect(missingCatalogueControls(["app.shell", "app.theme"], result, { "app.theme": "" })).toEqual(["app.theme"]);
 	});
+});
+
+// Catches: shared switches disappearing from the identity audit, or Solid control flow creating false inputs.
+it("resolves shared Switch imports without confusing Solid Switch control flow", () => {
+	const source = `import { Switch } from 'solid-js';
+ import { Switch as Toggle } from '../../ui/Switch';
+ const Page = () => <Switch><Toggle data-setting-id="app.osc52_clipboard" /><Toggle /></Switch>;`;
+	const result = extractSettingControls("fixture.tsx", source);
+	expect(result.map((control) => control.tag)).toEqual(["Toggle", "Toggle"]);
+	expect(missingControlIdentities(result)).toHaveLength(1);
+	expect(result[0].settingId).toBe("app.osc52_clipboard");
 });

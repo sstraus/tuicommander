@@ -64,13 +64,9 @@ fn multi_value_field_edits_update_header_and_filter_by_stable_ids() {
             }),
         )
         .unwrap();
-    assert!(
-        provider
-            .detail(&reference("1"))
-            .unwrap()
-            .item
-            .labels
-            .is_empty()
+    assert_eq!(
+        provider.detail(&reference("1")).unwrap().item.labels,
+        [] as [crate::work_items::model::WorkItemOption; 0]
     );
 }
 

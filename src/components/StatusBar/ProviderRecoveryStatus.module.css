@@ -11,19 +11,3 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-
-.retry {
-  flex-shrink: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  padding: 2px 6px;
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-  font: inherit;
-  cursor: pointer;
-}
-
-.retry:disabled {
-  opacity: 0.5;
-  cursor: default;
-}

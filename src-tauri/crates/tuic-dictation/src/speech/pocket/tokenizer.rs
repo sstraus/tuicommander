@@ -412,7 +412,10 @@ mod tests {
 
     #[test]
     fn merging_nothing_produces_no_chunks() {
-        assert!(merge_segments(Vec::new(), 50).is_empty());
+        assert_eq!(
+            merge_segments(Vec::new(), 50),
+            [] as [std::string::String; 0]
+        );
     }
 
     /// Parity against the reference implementation.

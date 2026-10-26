@@ -133,11 +133,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--radius-sm, 4px);
   background: transparent;
   color: var(--fg-secondary);
   cursor: pointer;
@@ -153,10 +148,3 @@
   opacity: 0.6;
 }
 
-/* Touch: 44px is the smallest target a thumb hits reliably. */
-@media (pointer: coarse) {
-  .control {
-    width: 44px;
-    height: 44px;
-  }
-}

@@ -1,4 +1,4 @@
-use super::PlanSource;
+use super::{PLAN_DOCUMENT_NOT_FOUND, PlanSource};
 use std::path::{Path, PathBuf};
 
 const PLAN_DIRS: [&str; 2] = ["plans", ".claude/plans"];
@@ -38,8 +38,13 @@ pub(super) fn title_for_source(project: &Path, source: &str) -> Result<String, S
     } else {
         project.join(path)
     };
-    let document = std::fs::read_to_string(&path)
-        .map_err(|error| format!("read plan document {}: {error}", path.display()))?;
+    let document = std::fs::read_to_string(&path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::NotFound {
+            format!("{PLAN_DOCUMENT_NOT_FOUND}{}", path.display())
+        } else {
+            format!("read plan document {}: {error}", path.display())
+        }
+    })?;
     title_from_document(&document).ok_or_else(|| {
         format!(
             "plan document has no front-matter title or heading: {}",

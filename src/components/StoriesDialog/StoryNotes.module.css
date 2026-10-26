@@ -1,0 +1,16 @@
+.notes { min-width: 0; }
+.header {
+ composes: toolbar from "../ui/FormControls.module.css"; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.header h4 { margin-bottom: 0; }
+.notes .list { list-style: none; margin: 12px 0; padding: 0; }
+.note { padding: 10px 0; border-bottom: 1px solid var(--border); }
+.metadata { display: flex; flex-wrap: wrap; gap: 4px 12px; color: var(--fg-muted); font: var(--font-xs) var(--font-ui); overflow-wrap: anywhere; }
+.text { margin: 8px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--font-sm); }
+.notes .receipts { margin-top: 8px; padding-left: 16px; color: var(--fg-muted); font: var(--font-xs) var(--font-mono); overflow-wrap: anywhere; }
+.form { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+.form label { display: flex; flex-direction: column; gap: 6px; color: var(--fg-secondary); font-size: var(--font-sm); }
+.form textarea { width: 100%; }
+.muted { margin: 8px 0; color: var(--fg-muted); font-size: var(--font-xs); }
+.form .muted { margin: 0; }
+.error { margin: 8px 0; color: var(--error); font-size: var(--font-sm); overflow-wrap: anywhere; }
+.form button { align-self: flex-start; }

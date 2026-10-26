@@ -1,6 +1,7 @@
 import { type Component, createEffect, For, onCleanup, Show } from "solid-js";
 import { registerModal } from "../../stores/modalStack";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
 
 export interface Contribution {
 	text: string;
@@ -115,9 +116,9 @@ export const WhatsNewDialog: Component<WhatsNewDialogProps> = (props) => {
 						</a>
 					</div>
 					<div class={d.actions}>
-						<button class={d.primaryBtn} onClick={props.onClose} style={{ flex: "1" }}>
+						<Button variant="primary" class={d.primaryBtn} onClick={props.onClose} style={{ flex: "1" }}>
 							Got it
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>

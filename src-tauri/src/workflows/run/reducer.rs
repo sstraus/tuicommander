@@ -343,6 +343,10 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
             snapshot.verification_fingerprint = Some(fingerprint.clone())
         }
         RunEventKind::Paused => snapshot.status = RunStatus::Paused,
+        RunEventKind::PausedFor { cause } => {
+            snapshot.status = RunStatus::Paused;
+            snapshot.pause_cause = Some(cause.clone());
+        }
         RunEventKind::DeadlineExpired { deadline_ms } => {
             if snapshot.status != RunStatus::Running
                 || (*deadline_ms != super::runtime::deadline_ms(&snapshot)
@@ -389,6 +393,9 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
             snapshot.status = RunStatus::Cancelled;
         }
         RunEventKind::Completed => snapshot.status = RunStatus::Completed,
+    }
+    if snapshot.status != RunStatus::Paused {
+        snapshot.pause_cause = None;
     }
     if previous_status != RunStatus::Paused && snapshot.status == RunStatus::Paused {
         snapshot.paused_since_ms = Some(event.at_ms);

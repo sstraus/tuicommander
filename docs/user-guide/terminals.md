@@ -23,10 +23,12 @@ when you scroll, select, copy or search. Search matches the exact characters
 printed by the program: precomposed and decomposed spellings are not automatically
 normalized into each other.
 
-In the mobile session output, a small upward drag stops auto-follow. New output does not scroll the view until you return to the bottom.
+In the mobile session output, a small upward drag stops auto-follow. New output does not scroll the view until you return to the bottom. While following, opening the keyboard or resizing the viewport keeps the newest output visible. A reader who has scrolled up keeps their position through a viewport resize.
 
 When the viewed agent exits, the mobile session returns to the shell: question
-controls close, Chat returns to CLI, and the composer sends shell input. Fresh
+controls close, Chat returns to CLI, and the composer sends shell input. The CLI
+view shows new shell output even when the terminal retains the old agent screen;
+the old agent input is not restored into the composer. Fresh
 session polling also clears stale agent controls if the output socket pauses or
 reconnects. If the PTY ends, **Session ended** offers **Back** to the session list.
 
@@ -43,6 +45,11 @@ output keeps its horizontal scrolling layout.
 - **`+` button** on tab bar — New terminal tab
 
 New terminals inherit the working directory from the active branch's worktree path.
+
+Desktop frame receipts do not generate more terminal output. After a missed
+frame, desktop receives one full frame and connected browsers retain their delta stream. Output
+batching remains bounded. Input-related output that arrives during a frame send
+keeps its bounded retry; this does not guarantee echo within one display frame.
 
 ### CWD Tracking (OSC 7)
 
@@ -72,7 +79,7 @@ A terminal that runs Claude Code, Grok, Codex or ego shows a **CLI | Chat** swit
 
 For ego, configure an absolute **ego executable** in Settings that supports local transcript v1, including `--after`. This is the executable Chat uses, even if your shell launches a newer ego from another path. A failed export reports the configured path and exit status; check that Settings points to the transcript-capable binary. TUICommander binds the foreground ego process to the session whose lease names that PID, then reads `ego export SESSION --format transcript --after SEQ` from the same `EGO_HOME`. It does not select the newest session in the folder or read ego's private event files. The existing Chat ticker follows committed entries; message previews are omitted and completed answers appear once. Tool starts and results share a card. Goal continuations and compaction checkpoints appear as system notices, not user prompts. A new session binding resets the conversation rather than joining unrelated histories. Missing binding, unsupported export versions and unreadable sessions return to CLI with a reason. ego Chat is available immediately after a page reload, including while a native question or permission prompt is pending. It does not wait for the frontend to rediscover a session ID. The backend still checks the live process and lease before reading. ego Chat is also available on mobile through the same transcript lifecycle and existing event stream.
 
-Notice cards preserve line breaks between their heading and body. Harness inbox and interruption notices appear as compact chips; inbox wakes show **Message from an agent**, with the original notice in the tooltip. Images without retained image data appear as attachment chips. Consecutive thinking blocks share one disclosure. Answer blocks in the same turn share one rule-only card, limited to about 96 characters wide; **Copy** in its top-right corner appears on hover or keyboard focus and copies the whole answer. Intermediate status text remains separate. Tool calls keep their single collapsed activity row; Claude Bash uses the agent-written description when available, while other tools and agents retain the backend title. Pasted CLI calls followed by a terminal output marker appear in a monospace block showing two lines; **+ N lines** expands the rest. Ordinary multiline prose stays as prose. Historical tool rows show status without a duration. Turn timestamps do not reach the frontend, so time separators are omitted. The Compose handle is available in CLI view.
+Notice cards preserve line breaks between their heading and body. Harness inbox wakes are hidden in terminal Chat. Interruption notices remain compact chips. Images without retained image data appear as attachment chips. Consecutive thinking blocks share one disclosure. Answer blocks in the same turn share one reading card, limited to about 96 characters wide. Only the answer blocks selected by the CLI boundary rule have a green bar; unmarked prose after a blank row and later status text remain outside it on desktop and mobile. **Copy** in its top-right corner appears on hover or keyboard focus and copies the whole answer. Intermediate status prose remains separate and uses the normal readable text colour. Answer lists retain their list indent so their markers stay to the right of the green bar. Tool calls keep their single collapsed activity row; Claude Bash uses the agent-written description when available, while other tools and agents retain the backend title. Pasted CLI calls followed by a terminal output marker appear in a monospace block showing two lines; **+ N lines** expands the rest. Ordinary multiline prose stays as prose. Historical tool rows show status without a duration. Turn timestamps do not reach the frontend, so time separators are omitted. The Compose handle is available in CLI view.
 
 In Chat, Compose stays docked and open after sending or queueing, clears the submitted text, and keeps focus for the next message. It cannot be closed or unpinned while Chat is active. **Esc** returns to CLI for terminal interaction; the Compose shortcut focuses the Chat input. Switching back to CLI restores that tab's previous Compose open and pin state. Unsent drafts survive switching in either direction, including text entered while a send or queue is still pending.
 
@@ -82,7 +89,7 @@ Local agents started through `tuic agent spawn` or HTTP remain eligible for Chat
 
 **Chat** is disabled, with the reason as its tooltip, when the terminal has no agent, the agent has no supported transcript adapter, or a required frontend binding is missing. Claude and ego check their transcript binding in the backend when Chat opens, so a missing saved session ID does not disable their switch. If the agent exits or the binding is lost while Chat is open, the terminal returns to CLI with a one-line notice.
 
-Chat follows new transcript entries while the agent writes. When you scroll up and more content arrives, **New text below** appears above Compose. Select it to return to the bottom and resume following. Reaching the bottom by hand also clears it. Search jumps show no indicator until later content arrives. Turn the indicator off in **Settings → Appearance → Chat**; this preference is saved on the current client. A replaced transcript resets the displayed conversation, including when the replacement keeps the same file name and size.
+Chat applies each transcript snapshot as one update on desktop and mobile. Opening Chat or switching back from CLI keeps the full history without rendering each partial replay. Chat follows new transcript entries while the agent writes. When you scroll up and more content arrives, **New text below** appears above Compose. Select it to return to the bottom and resume following. Reaching the bottom by hand also clears it. Search jumps show no indicator until later content arrives. Turn the indicator off in **Settings → Appearance → Chat**; this preference is saved on the current client. A replaced transcript resets the displayed conversation, including when the replacement keeps the same file name and size.
 
 Older recorded prompts with a prompt ID also appear when Claude did not record a human-origin field. Command echoes, tool results and sidechain conversations stay out of user bubbles. Image and PDF tool outputs show `[image]` and `[document]` markers; a model fallback shows a **Model changed** card.
 
@@ -126,6 +133,8 @@ Drag tabs to reorder them. Visual drop indicators show where the tab will land.
 | Question icon | Agent is asking a question |
 | Progress bar | Operation in progress (OSC 9;4) |
 | Amber gradient | Session created via HTTP/MCP (remote session) |
+
+Final API failures keep the red Error dot even when the agent prints a completion summary or returns to idle. Optional auto-retry sends up to three `continue` commands (after 5, 15 and 30 seconds); an idle agent that does not resume stays red. Native provider retry countdowns do not count as final failures. Actual resumed work clears the error, and the next successful idle turn returns to Done.
 
 Sidebar branch icons also show purple when they contain unseen terminals.
 The mobile session list and session header use the same status colors: blue for
@@ -205,7 +214,7 @@ Per-terminal font size control:
 | Zoom out | `Cmd+-` | -2px font size |
 | Reset | `Cmd+0` | Back to default size |
 
-Range: 8px to 32px. Each terminal has its own zoom level. The current zoom is shown in the status bar.
+Range: 8px to 32px. Each terminal has its own zoom level, shared by its CLI and Chat views. Zoom shortcuts work in either view; the all-terminals variants update both views too. The current zoom is shown in the status bar.
 
 ## Split Panes
 
@@ -365,6 +374,9 @@ The Compose panel can leave work for an agent without steering its current turn:
   already idle; otherwise it waits for the next idle window.
 - Queued user commands and peer messages share one FIFO and are delivered one
   item per idle window in acceptance order.
+- If an idle agent reports blocked progress, your queued command answers that
+  wait. Native questions and permission dialogs still require an explicit answer
+  before queued work can be delivered.
 - The `N queued` badge counts only Compose commands. Clicking it discards those
   commands but never clears peer or orchestrator messages waiting in the same
   delivery queue.

@@ -49,6 +49,8 @@ describe("ServicesTab remote machine presentation", () => {
 			// Blank on a new machine and blank again on every edit: the vault never
 			// hands the password back, so the field can only ever mean "set this".
 			authPassword: "",
+			// Same rule as the password: the pairing bundle is write-only.
+			relayBundle: "",
 			deploy: "never",
 			surviveMinutes: 30,
 			autoUpdate: false,

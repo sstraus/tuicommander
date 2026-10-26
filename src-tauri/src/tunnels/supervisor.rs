@@ -757,12 +757,17 @@ mod tests {
 
     #[tokio::test]
     async fn local_forward_stays_starting_until_its_port_accepts_connections() {
-        let first = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let second = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        // This test needs sockets that can transition to listening, not an
+        // immediate refusal: a bound-only socket may time out on macOS.
+        let reserve = || {
+            let socket = tokio::net::TcpSocket::new_v4().unwrap();
+            socket.bind(([127, 0, 0, 1], 0).into()).unwrap();
+            socket
+        };
+        let first = reserve();
+        let second = reserve();
         let port = first.local_addr().unwrap().port();
         let second_port = second.local_addr().unwrap().port();
-        drop(first);
-        drop(second);
         let mut profile = test_profile();
         profile.forwards.push(ForwardSpec::Local {
             bind_port: port,
@@ -790,18 +795,35 @@ mod tests {
             &format!("{} -n 3601 127.0.0.1 >nul", system32_exe("ping.exe")),
         );
         let (cb, _) = status_collector();
-        let mut sup = TunnelSupervisor::start_with_binary(profile, script, cb).await;
+        // Exercise the real supervision loop after bind preflight. Keeping the
+        // sockets reserved makes that earlier availability check inapplicable,
+        // but prevents another test from satisfying our readiness probes.
+        let status = Arc::new(Mutex::new(TunnelStatus::Starting));
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let task = tokio::spawn(supervision_loop(
+            profile.clone(),
+            script.clone(),
+            status.clone(),
+            shutdown_rx,
+            cb,
+        ));
+        let mut sup = TunnelSupervisor {
+            profile,
+            status,
+            shutdown_tx: Some(shutdown_tx),
+            ssh_binary: script,
+        };
 
         tokio::time::sleep(Duration::from_millis(1500)).await;
         assert_eq!(sup.status(), TunnelStatus::Starting);
 
         let addr: SocketAddr = ([127, 0, 0, 1], port).into();
-        let listener = TcpListener::bind(addr).await.unwrap();
+        let listener = first.listen(128).unwrap();
         tokio::time::sleep(Duration::from_millis(500)).await;
         assert_eq!(sup.status(), TunnelStatus::Starting);
 
         let second_addr: SocketAddr = ([127, 0, 0, 1], second_port).into();
-        let second_listener = TcpListener::bind(second_addr).await.unwrap();
+        let second_listener = second.listen(128).unwrap();
         let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
         while sup.status() == TunnelStatus::Starting && tokio::time::Instant::now() < deadline {
             tokio::time::sleep(Duration::from_millis(50)).await;
@@ -816,6 +838,7 @@ mod tests {
             wait_for_stopped(&sup).await,
             TunnelStatus::Stopped { .. }
         ));
+        task.await.unwrap();
         #[cfg(unix)]
         assert_fake_ssh_stopped(pids);
         drop(listener);

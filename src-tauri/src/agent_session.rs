@@ -222,15 +222,24 @@ fn compose_launch_command(
 }
 
 fn is_tuic_attachment_grant(directory: &str) -> bool {
-    let path = std::path::Path::new(directory);
-    path.parent().is_some_and(|parent| {
-        parent
-            == std::fs::canonicalize(crate::config::config_dir())
-                .unwrap_or_else(|_| crate::config::config_dir())
-                .join("attachments")
-    }) && path
-        .file_name()
-        .is_some_and(|name| name.to_string_lossy().starts_with("pty-"))
+    let path = Path::new(directory);
+    let Some(parent) = path
+        .parent()
+        .filter(|parent| parent.file_name().is_some_and(|name| name == "attachments"))
+    else {
+        return false;
+    };
+    // The session directory (and even attachments/) may already be gone. Resolve
+    // the existing config root on both sides, not the expired child itself.
+    let Some(root) = parent.parent() else {
+        return false;
+    };
+    let config = crate::config::config_dir();
+    std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf())
+        == std::fs::canonicalize(&config).unwrap_or(config)
+        && path
+            .file_name()
+            .is_some_and(|name| name.to_string_lossy().starts_with("pty-"))
 }
 
 /// First line of the brief Start Work passes as a launch argument (`SEED_BRIEF_OPEN`
@@ -663,6 +672,10 @@ fn read_codex_rollout_cwd(path: &Path) -> Option<PathBuf> {
 static CODEX_ROLLOUT_STATS: std::sync::LazyLock<dashmap::DashMap<PathBuf, usize>> =
     std::sync::LazyLock::new(dashmap::DashMap::new);
 
+#[cfg(test)]
+static CODEX_SCAN_DIAGNOSTICS: std::sync::LazyLock<dashmap::DashMap<PathBuf, Vec<String>>> =
+    std::sync::LazyLock::new(dashmap::DashMap::new);
+
 fn codex_rollout_metadata(path: &Path) -> std::io::Result<std::fs::Metadata> {
     #[cfg(test)]
     {
@@ -681,6 +694,8 @@ static CODEX_INDEXES: std::sync::LazyLock<moka::sync::Cache<PathBuf, std::sync::
 struct CodexUpdates {
     paths: std::collections::HashSet<PathBuf>,
     rescan: bool,
+    #[cfg(test)]
+    diagnostics: Vec<String>,
 }
 
 struct CodexCandidate {
@@ -714,6 +729,10 @@ impl CodexIndex {
                 return;
             }
             let mut updates = pending.lock().unwrap_or_else(|e| e.into_inner());
+            #[cfg(test)]
+            if updates.diagnostics.len() < 128 {
+                updates.diagnostics.push(format!("event={event:?}"));
+            }
             match event {
                 Ok(event) if !event.need_rescan() => {
                     for path in event.paths {
@@ -732,7 +751,14 @@ impl CodexIndex {
             watcher.watch(root, notify::RecursiveMode::NonRecursive)?;
             Ok(watcher)
         })
-        .map_err(|error| tracing::warn!(%error, "Codex discovery watcher unavailable; using fresh scans"))
+        .map_err(|error| {
+            #[cfg(test)]
+            CODEX_SCAN_DIAGNOSTICS
+                .entry(root.to_path_buf())
+                .or_default()
+                .push(format!("watcher setup failed: {error}"));
+            tracing::warn!(%error, "Codex discovery watcher unavailable; using fresh scans")
+        })
         .ok();
         Self {
             watcher: std::sync::Mutex::new(watcher),
@@ -743,6 +769,12 @@ impl CodexIndex {
 
     fn candidates(&self, root: &Path, now: SystemTime, cwd: &Path) -> Vec<(SystemTime, String)> {
         let mut state = self.state.lock().unwrap_or_else(|e| e.into_inner());
+        #[cfg(test)]
+        let stats_before: HashMap<_, _> = CODEX_ROLLOUT_STATS
+            .iter()
+            .filter(|entry| entry.key().starts_with(root))
+            .map(|entry| (entry.key().clone(), *entry.value()))
+            .collect();
         // Drain before reading: events arriving during the refresh remain queued
         // for the next lookup rather than being erased by this snapshot.
         let updates = std::mem::take(&mut *self.updates.lock().unwrap_or_else(|e| e.into_inner()));
@@ -789,6 +821,11 @@ impl CodexIndex {
                         .try_for_each(|day| active.watch(day, notify::RecursiveMode::Recursive))
                 });
             if let Err(error) = armed {
+                #[cfg(test)]
+                CODEX_SCAN_DIAGNOSTICS
+                    .entry(root.to_path_buf())
+                    .or_default()
+                    .push(format!("date watch failed: {error}"));
                 tracing::warn!(%error, "Codex discovery date watch failed; using fresh scans");
                 *watcher = None;
             }
@@ -799,6 +836,11 @@ impl CodexIndex {
                 .and_then(extract_codex_uuid)
                 .is_none()
         });
+        #[cfg(test)]
+        CODEX_SCAN_DIAGNOSTICS.entry(root.to_path_buf()).or_default().push(format!(
+            "root={root:?}; initialized={}; watcher_available={}; rescan={}; days_changed={}; directory_changed={directory_changed}; pending_paths={:?}; events={:?}",
+            state.initialized, watcher.is_some(), updates.rescan, state.days != days, updates.paths, updates.diagnostics
+        ));
         if !state.initialized
             || watcher.is_none()
             || updates.rescan
@@ -818,6 +860,22 @@ impl CodexIndex {
                 }
             }
         }
+        #[cfg(test)]
+        CODEX_SCAN_DIAGNOSTICS
+            .entry(root.to_path_buf())
+            .or_default()
+            .push(format!(
+                "metadata reads this refresh={:?}",
+                CODEX_ROLLOUT_STATS
+                    .iter()
+                    .filter(|entry| entry.key().starts_with(root))
+                    .filter_map(|entry| {
+                        let delta =
+                            *entry.value() - stats_before.get(entry.key()).copied().unwrap_or(0);
+                        (delta > 0).then(|| (entry.key().clone(), delta))
+                    })
+                    .collect::<Vec<_>>()
+            ));
         state.files.retain(|_, candidate| {
             now.duration_since(candidate.modified).unwrap_or_default() <= SESSION_MAX_AGE
         });
@@ -2643,6 +2701,7 @@ mod tests {
     // Catches re-statting every historical rollout on each idle/busy discovery.
     #[test]
     fn codex_warm_discovery_does_not_restat_historical_rollouts() {
+        // DEFERRED (2026-10-25) — Windows CI restats 130 rollouts; record watcher availability/events before attributing the two rescans or weakening the zero-stat contract.
         let root = TempDir::new().unwrap();
         let sessions = root.path().join("sessions");
         let day = codex_recent_day_dirs_for_test(&sessions);
@@ -2676,7 +2735,15 @@ mod tests {
         assert_eq!(
             count() - before,
             0,
-            "unchanged discovery must not stat rollouts again"
+            "unchanged discovery must not stat rollouts again; scans={:?}; metadata counts by path={:?}",
+            CODEX_SCAN_DIAGNOSTICS
+                .get(&sessions)
+                .map(|entry| entry.value().clone()),
+            CODEX_ROLLOUT_STATS
+                .iter()
+                .filter(|entry| entry.key().starts_with(root.path()))
+                .map(|entry| (entry.key().clone(), *entry.value()))
+                .collect::<Vec<_>>()
         );
     }
 
@@ -3205,7 +3272,13 @@ mod tests {
             &argv(&["claude", "--", "fix this"]),
             HashMap::new(),
         );
-        assert_eq!(cmd.as_deref(), Some("claude -- 'fix this'"));
+        assert_eq!(
+            cmd,
+            Some(format!(
+                "claude -- {}",
+                crate::prompt::shell_quote("fix this")
+            ))
+        );
     }
 
     #[test]
@@ -3288,6 +3361,27 @@ mod attachment_resume_tests {
             "--read-only-dir=/tuic/attachments/pty-old".into(),
         ];
         assert!(super::compose_launch_command("ego", &argv, Default::default()).is_none());
+    }
+
+    // Catches: canonicalizing only the configured root retains an expired grant via its alias.
+    #[cfg(unix)]
+    #[test]
+    fn attachment_resume_drops_expired_grants_through_config_alias() {
+        let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let actual = root.path().join("actual");
+        std::fs::create_dir_all(actual.join("attachments")).unwrap();
+        let alias = root.path().join("alias");
+        std::os::unix::fs::symlink(&actual, &alias).unwrap();
+        let _guard = crate::config::set_config_dir_override(alias.clone());
+        let argv = vec![
+            "claude".into(),
+            format!("--add-dir={}", alias.join("attachments/pty-old").display()),
+            "--add-dir=/user/docs".into(),
+        ];
+        assert_eq!(
+            super::compose_launch_command("claude", &argv, Default::default()).unwrap(),
+            "claude --add-dir=/user/docs"
+        );
     }
 
     // Catches: resume reuses a removed TUIC directory or discards a user's directory grant.

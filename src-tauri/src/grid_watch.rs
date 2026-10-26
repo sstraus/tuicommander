@@ -49,7 +49,7 @@ mod tests {
 
         release_grid_frame(&tx);
 
-        assert!(tx.borrow().frame.is_empty());
+        assert_eq!(tx.borrow().frame, [] as [u8; 0]);
         assert_eq!(tx.borrow().seq, seq_before);
     }
 

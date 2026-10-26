@@ -1,4 +1,5 @@
 import { createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { Button } from "../../components/ui";
 import { appLogger } from "../../stores/appLogger";
 import type { ProgressEntry, ProgressList } from "../../stores/progress";
 import { rpc } from "../../transport";
@@ -97,9 +98,15 @@ export function SessionHeaderOverlay(props: SessionHeaderOverlayProps) {
 			<section class={styles.sheet} role="dialog" aria-label={title()}>
 				<header class={styles.header}>
 					<strong>{title()}</strong>
-					<button type="button" class={styles.close} aria-label="Close session details" onClick={close}>
+					<Button
+						variant="ghost"
+						geometry="stretch"
+						class={styles.close}
+						aria-label="Close session details"
+						onClick={close}
+					>
 						×
-					</button>
+					</Button>
 				</header>
 				<Show when={props.mode === "details" || props.mode === "tasks"}>
 					<Show when={props.state?.agent_intent}>

@@ -7,6 +7,7 @@ import checker from "vite-plugin-checker";
 import { visualizer } from "rollup-plugin-visualizer";
 import purgecss from "vite-plugin-purgecss";
 import { Features } from "lightningcss";
+import { backendBuildIdentity } from "./scripts/backend-build-identity.mjs";
 
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
@@ -44,6 +45,19 @@ const devServerIdentity = (): Plugin => ({
   name: "tuic-dev-identity",
   apply: "serve",
   configureServer(server: ViteDevServer) {
+    server.middlewares.use("/__tuic_backend_identity", (req, res) => {
+      try {
+        const query = new URL(req.url ?? "/", "http://localhost").searchParams.get("backend");
+        const identity = backendBuildIdentity(server.config.root, query ? JSON.parse(query) : undefined);
+        res.setHeader("content-type", "application/json");
+        res.setHeader("cache-control", "no-store");
+        res.end(JSON.stringify(identity));
+      } catch (error) {
+        server.config.logger.error(`Backend identity failed: ${error}`);
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ status: "unavailable", key: "unavailable" }));
+      }
+    });
     server.middlewares.use("/__tuic_dev_root", (_req, res) => {
       res.setHeader("content-type", "text/plain");
       res.end(server.config.root);

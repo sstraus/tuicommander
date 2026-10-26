@@ -2,6 +2,8 @@ import { type Component, createEffect, createSignal, onCleanup, Show } from "sol
 import { t } from "../../i18n";
 import { registerModal } from "../../stores/modalStack";
 import d from "../shared/dialog.module.css";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 
 export interface RenameBranchDialogProps {
 	visible: boolean;
@@ -137,7 +139,7 @@ export const RenameBranchDialog: Component<RenameBranchDialogProps> = (props) =>
 						<h4>{t("renameBranch.title", "Rename Branch")}</h4>
 					</div>
 					<div class={d.body}>
-						<input
+						<Input
 							ref={inputRef}
 							type="text"
 							value={newName()}
@@ -148,12 +150,17 @@ export const RenameBranchDialog: Component<RenameBranchDialogProps> = (props) =>
 						{error() && <p class={d.error}>{error()}</p>}
 					</div>
 					<div class={d.actions}>
-						<button class={d.cancelBtn} onClick={props.onClose} disabled={isRenaming()}>
+						<Button class={d.cancelBtn} onClick={props.onClose} disabled={isRenaming()}>
 							{t("renameBranch.cancel", "Cancel")}
-						</button>
-						<button class={d.primaryBtn} onClick={handleRename} disabled={isRenaming() || !newName().trim()}>
+						</Button>
+						<Button
+							variant="primary"
+							class={d.primaryBtn}
+							onClick={handleRename}
+							disabled={isRenaming() || !newName().trim()}
+						>
 							{isRenaming() ? t("renameBranch.renaming", "Renaming...") : t("renameBranch.rename", "Rename")}
-						</button>
+						</Button>
 					</div>
 				</div>
 			</div>

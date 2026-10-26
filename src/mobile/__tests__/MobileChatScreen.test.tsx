@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { runInNewContext } from "node:vm";
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -232,27 +234,73 @@ describe("mobile ego chat", () => {
 		);
 	});
 
-	it("recovers an Android share into the chat draft and removes its cached copy", async () => {
-		history.replaceState(null, "", "/mobile?shared=shared-1");
-		const remove = vi.fn(async () => true);
-		vi.stubGlobal("caches", {
-			open: async () => ({
-				match: async () =>
-					new Response("report", { headers: { "x-file-name": "report.pdf", "content-type": "application/pdf" } }),
-				delete: remove,
-			}),
+	// Catches: a shell cache version bump leaves the mobile reader on an empty old cache.
+	it("round-trips the service worker share target into the mobile draft despite cache version changes", async () => {
+		const current = chat();
+		createAcpChat.mockReturnValue(current);
+		const stores = new Map<string, Map<string, Response>>();
+		const caches = {
+			open: async (name: string) => {
+				if (!stores.has(name)) stores.set(name, new Map());
+				const entries = stores.get(name)!;
+				return {
+					put: async (key: string, response: Response) => {
+						entries.set(key, response);
+					},
+					match: async (key: string) => entries.get(key)?.clone(),
+					delete: async (key: string) => entries.delete(key),
+				};
+			},
+		};
+		vi.stubGlobal("caches", caches);
+		const handlers = new Map<string, (event: unknown) => void>();
+		runInNewContext(readFileSync("public/sw.js", "utf8"), {
+			self: { addEventListener: (type: string, handler: (event: unknown) => void) => handlers.set(type, handler) },
+			caches,
+			Request,
+			Response,
+			URL,
+			crypto: { randomUUID: () => "shared-1" },
 		});
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(
-				async () =>
-					new Response(JSON.stringify({ path: "/repo/.tuic/attachments/2-report.pdf", size: 6 }), { status: 200 }),
-			),
-		);
+		let response: Promise<Response> | undefined;
+		handlers.get("fetch")!({
+			request: {
+				url: "https://tuic.example/mobile/share",
+				method: "POST",
+				formData: async () =>
+					new Map([["attachment", new File(["report"], "report.pdf", { type: "application/pdf" })]]),
+			},
+			respondWith: (result: Promise<Response>) => {
+				response = result;
+			},
+		});
+		const redirect = await response!;
+		expect(redirect.status).toBe(303);
+		history.replaceState(null, "", `${redirect.headers.get("location")}&session=current`);
+		const upload = vi.fn(async (_input: unknown, options?: RequestInit) => {
+			const file = options?.body as File;
+			expect(file.name).toBe("report.pdf");
+			expect(file.type).toBe("application/pdf");
+			return new Response(JSON.stringify({ path: "/repo/.tuic/attachments/2-report.pdf", size: 6 }), { status: 200 });
+		});
+		vi.stubGlobal("fetch", upload);
 		render(() => <MobileChatScreen />);
 		await waitFor(() => expect(screen.getByText("report.pdf")).toBeTruthy());
-		expect(remove).toHaveBeenCalledWith("/_shared/shared-1");
-		expect(location.search).toBe("");
+		expect(upload).toHaveBeenCalledOnce();
+		expect(current.send).not.toHaveBeenCalled();
+		expect([...stores.values()].some((entries) => entries.has("/_shared/shared-1"))).toBe(false);
+		expect(location.search).toBe("?session=current");
+	});
+
+	// Catches: a consumed or expired share silently disappears instead of explaining the missing file.
+	it("shows an unavailable message for a missing shared file without consuming the URL", async () => {
+		history.replaceState(null, "", "/mobile?shared=missing-1");
+		const remove = vi.fn();
+		vi.stubGlobal("caches", { open: async () => ({ match: async () => undefined, delete: remove }) });
+		render(() => <MobileChatScreen />);
+		await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Shared file is no longer available."));
+		expect(remove).not.toHaveBeenCalled();
+		expect(location.search).toBe("?shared=missing-1");
 	});
 
 	it("sends one answer when the permission button is tapped twice", async () => {

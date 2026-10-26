@@ -1,5 +1,6 @@
 import { For } from "solid-js";
 import { t } from "../../i18n";
+import { Button } from "../ui/Button";
 import s from "./AutomationsDialog.module.css";
 
 export function DialogTabs(props: { selected: string; onSelect: (tab: string) => void }) {
@@ -25,17 +26,18 @@ export function DialogTabs(props: { selected: string; onSelect: (tab: string) =>
 		<div class={s.tabs} role="tablist" aria-label={t("automations.title", "Automations")} onKeyDown={keydown}>
 			<For each={ids}>
 				{(id) => (
-					<button
+					<Button
 						type="button"
 						role="tab"
 						id={`automations-tab-${id}`}
 						aria-controls={`automations-panel-${id}`}
 						aria-selected={props.selected === id}
+						aria-pressed={props.selected === id}
 						tabIndex={props.selected === id ? 0 : -1}
 						onClick={() => props.onSelect(id)}
 					>
 						{id === "definitions" ? t("automations.list", "Automation definitions") : t("automations.runs", "Runs")}
-					</button>
+					</Button>
 				)}
 			</For>
 		</div>

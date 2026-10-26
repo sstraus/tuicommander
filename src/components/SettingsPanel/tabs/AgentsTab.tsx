@@ -55,8 +55,10 @@ import {
 	splitRawArgs,
 } from "../../../utils/runConfigArgs";
 import { AgentIcon } from "../../ui/AgentIcon";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { Select } from "../../ui/Select";
+import { Switch } from "../../ui/Switch";
 import { ContextualHelp } from "../ContextualHelp";
 import { ExpertSetting } from "../ExpertSetting";
 import { MachineSelector } from "../MachineSelector";
@@ -125,6 +127,7 @@ const EnvVarRow: Component<{
 	key: string;
 	value: string;
 	duplicate?: boolean;
+	errorId: string;
 	onChange: (key: string, value: string) => void;
 	onRemove: () => void;
 }> = (props) => (
@@ -132,7 +135,8 @@ const EnvVarRow: Component<{
 		<Input
 			data-non-setting="Environment variable record key, paired with the catalogue value control"
 			class={`${a.formInput} ${a.mono} ${a.envVarKey}`}
-			classList={{ [a.inputError]: !!props.duplicate }}
+			aria-invalid={!!props.duplicate}
+			aria-describedby={props.duplicate ? props.errorId : undefined}
 			aria-label="KEY"
 			placeholder="KEY"
 			value={props.key}
@@ -147,14 +151,14 @@ const EnvVarRow: Component<{
 			value={props.value}
 			onInput={(e) => props.onChange(props.key, e.currentTarget.value)}
 		/>
-		<button
+		<Button
 			data-non-setting="Add or remove a draft environment row; the editor Save commits it"
-			class={`${a.smallBtn} ${a.danger}`}
+			variant="danger"
 			onClick={props.onRemove}
 			title="Remove"
 		>
 			×
-		</button>
+		</Button>
 	</div>
 );
 
@@ -189,7 +193,8 @@ const RunArgsFields: Component<{
 					data-setting-id="agents.agents.{key}.run_configs.{name}.args"
 					id={argsId}
 					class={`${a.formInput} ${a.mono}`}
-					classList={{ [a.inputError]: hasBlockingConflict(props.conflicts) }}
+					aria-invalid={hasBlockingConflict(props.conflicts)}
+					aria-describedby={props.conflicts.length ? `${argsId}-errors` : undefined}
 					aria-label="Raw arguments (advanced)"
 					placeholder="Raw arguments (advanced, space-separated)"
 					value={props.value}
@@ -197,15 +202,20 @@ const RunArgsFields: Component<{
 					onKeyDown={props.onKeyDown}
 				/>
 			</div>
-			<For each={props.conflicts}>
-				{(c) => (
-					<div
-						classList={{ [a.validationError]: c.kind === "duplicate", [a.validationWarning]: c.kind === "overridden" }}
-					>
-						{c.message}
-					</div>
-				)}
-			</For>
+			<div id={`${argsId}-errors`}>
+				<For each={props.conflicts}>
+					{(c) => (
+						<div
+							classList={{
+								[a.validationError]: c.kind === "duplicate",
+								[a.validationWarning]: c.kind === "overridden",
+							}}
+						>
+							{c.message}
+						</div>
+					)}
+				</For>
+			</div>
 		</>
 	);
 };
@@ -271,7 +281,8 @@ const AddConfigForm: Component<{
 				<Input
 					data-setting-id="agents.agents.{key}.run_configs.{name}.name"
 					class={a.formInput}
-					classList={{ [a.inputError]: isDuplicate() }}
+					aria-invalid={isDuplicate()}
+					aria-describedby={isDuplicate() ? `new-${editorId}-name-error` : undefined}
 					aria-label="Configuration name"
 					id={`new-${editorId}-name`}
 					placeholder="Configuration name"
@@ -284,7 +295,9 @@ const AddConfigForm: Component<{
 				/>
 			</div>
 			<Show when={isDuplicate()}>
-				<div class={a.validationError}>Name "{name().trim()}" already exists</div>
+				<div id={`new-${editorId}-name-error`} class={a.validationError}>
+					Name "{name().trim()}" already exists
+				</div>
 			</Show>
 			<div class={a.formRow}>
 				<label class={a.editorFieldLabel} for={`new-${editorId}-command`}>
@@ -328,20 +341,20 @@ const AddConfigForm: Component<{
 			<div class={a.envVarsSection}>
 				<div class={a.envVarsHeader}>
 					<span class={a.envVarsLabel}>Environment Variables</span>
-					<button
+					<Button
 						data-non-setting="Add or remove a draft environment row; the editor Save commits it"
-						class={a.smallBtn}
 						onClick={addEnvVar}
 						type="button"
 					>
 						+ Add
-					</button>
+					</Button>
 				</div>
 				<Show when={envVars().length > 0}>
 					<div class={a.envVarsList}>
 						<For each={envVars()}>
 							{(v, i) => (
 								<EnvVarRow
+									errorId={`new-${editorId}-env-error`}
 									key={v.key}
 									value={v.value}
 									duplicate={duplicateEnvKeysSet().has(v.key.trim())}
@@ -353,27 +366,24 @@ const AddConfigForm: Component<{
 					</div>
 				</Show>
 				<Show when={duplicateEnvKeys().length > 0}>
-					<div class={a.validationError}>Duplicate env keys: {duplicateEnvKeys().join(", ")}</div>
+					<div id={`new-${editorId}-env-error`} class={a.validationError}>
+						Duplicate env keys: {duplicateEnvKeys().join(", ")}
+					</div>
 				</Show>
 			</div>
 			<div class={a.formRow}>
-				<button
+				<Button
 					data-non-setting="Commit the existing run-configuration editor draft through its owner"
-					class={a.smallBtn}
 					onClick={handleSave}
 					disabled={
 						isDuplicate() || !name().trim() || duplicateEnvKeys().length > 0 || hasBlockingConflict(argConflicts())
 					}
 				>
 					Save
-				</button>
-				<button
-					data-non-setting="Open, close or cancel the run-configuration editor"
-					class={a.smallBtn}
-					onClick={props.onClose}
-				>
+				</Button>
+				<Button data-non-setting="Open, close or cancel the run-configuration editor" onClick={props.onClose}>
 					Cancel
-				</button>
+				</Button>
 			</div>
 		</div>
 	);
@@ -514,49 +524,47 @@ const RunConfigRow: Component<{
 					<span class={a.defaultBadge}>Default</span>
 				</Show>
 				<div class={a.configActions}>
-					<button
+					<Button
 						data-non-setting="Open, close or cancel the run-configuration editor"
-						class={a.smallBtn}
 						onClick={startEnvEdit}
 						title="Edit environment variables"
 					>
 						Env
-					</button>
+					</Button>
 					<Show when={!props.config.is_default}>
-						<button
+						<Button
 							data-setting-id="agents.agents.{key}.run_configs.{name}.is_default"
-							class={a.smallBtn}
 							onClick={() => configStore.setDefaultConfig(props.agentType, props.index)}
 							title="Set as default"
 						>
 							Set Default
-						</button>
+						</Button>
 					</Show>
 					<div class={a.menuWrap} ref={menuRef}>
-						<button
+						<Button
 							data-non-setting="Open, close or cancel the run-configuration editor"
-							class={a.smallBtn}
 							onClick={() => setMenuOpen(!menuOpen())}
 							title="More actions"
 						>
 							···
-						</button>
+						</Button>
 						<Show when={menuOpen()}>
 							<div class={a.menuDropdown}>
-								<button
+								<Button
 									data-non-setting="Open, close or cancel the run-configuration editor"
 									class={a.menuItem}
 									onClick={startConfigEdit}
 								>
 									Edit
-								</button>
-								<button
+								</Button>
+								<Button
 									data-non-setting="Remove the stable run-configuration record through its owner"
-									class={`${a.menuItem} ${a.danger}`}
+									class={a.menuItem}
+									variant="danger"
 									onClick={handleDelete}
 								>
 									Delete
-								</button>
+								</Button>
 							</div>
 						</Show>
 					</div>
@@ -574,7 +582,8 @@ const RunConfigRow: Component<{
 						<Input
 							data-setting-id="agents.agents.{key}.run_configs.{name}.name"
 							class={a.formInput}
-							classList={{ [a.inputError]: isDuplicateName() }}
+							aria-invalid={isDuplicateName()}
+							aria-describedby={isDuplicateName() ? `edit-${editorId}-name-error` : undefined}
 							aria-label="Configuration name"
 							id={`edit-${editorId}-name`}
 							placeholder="Configuration name"
@@ -587,7 +596,9 @@ const RunConfigRow: Component<{
 						/>
 					</div>
 					<Show when={isDuplicateName()}>
-						<div class={a.validationError}>Name "{editName().trim()}" already exists</div>
+						<div id={`edit-${editorId}-name-error`} class={a.validationError}>
+							Name "{editName().trim()}" already exists
+						</div>
 					</Show>
 					<div class={a.formRow}>
 						<label class={a.editorFieldLabel} for={`edit-${editorId}-command`}>
@@ -628,21 +639,19 @@ const RunConfigRow: Component<{
 						/>
 					</div>
 					<div class={a.formRow}>
-						<button
+						<Button
 							data-non-setting="Commit the existing run-configuration editor draft through its owner"
-							class={a.smallBtn}
 							onClick={saveConfig}
 							disabled={isDuplicateName() || !editName().trim() || hasBlockingConflict(editConflicts())}
 						>
 							Save
-						</button>
-						<button
+						</Button>
+						<Button
 							data-non-setting="Open, close or cancel the run-configuration editor"
-							class={a.smallBtn}
 							onClick={() => setEditingConfig(false)}
 						>
 							Cancel
-						</button>
+						</Button>
 					</div>
 				</div>
 			</Show>
@@ -650,19 +659,19 @@ const RunConfigRow: Component<{
 				<div class={a.envEditPanel}>
 					<div class={a.envVarsHeader}>
 						<span class={a.envVarsLabel}>Environment Variables</span>
-						<button
+						<Button
 							data-non-setting="Add or remove a draft environment row; the editor Save commits it"
-							class={a.smallBtn}
 							onClick={addEnvVar}
 							type="button"
 						>
 							+ Add
-						</button>
+						</Button>
 					</div>
 					<div class={a.envVarsList}>
 						<For each={envVars()}>
 							{(v, i) => (
 								<EnvVarRow
+									errorId={`edit-${editorId}-env-error`}
 									key={v.key}
 									value={v.value}
 									duplicate={duplicateEnvKeysSet().has(v.key.trim())}
@@ -673,24 +682,24 @@ const RunConfigRow: Component<{
 						</For>
 					</div>
 					<Show when={duplicateEnvKeys().length > 0}>
-						<div class={a.validationError}>Duplicate env keys: {duplicateEnvKeys().join(", ")}</div>
+						<div id={`edit-${editorId}-env-error`} class={a.validationError}>
+							Duplicate env keys: {duplicateEnvKeys().join(", ")}
+						</div>
 					</Show>
 					<div class={a.formRow}>
-						<button
+						<Button
 							data-non-setting="Commit the existing run-configuration editor draft through its owner"
-							class={a.smallBtn}
 							onClick={saveEnv}
 							disabled={duplicateEnvKeys().length > 0}
 						>
 							Save
-						</button>
-						<button
+						</Button>
+						<Button
 							data-non-setting="Open, close or cancel the run-configuration editor"
-							class={a.smallBtn}
 							onClick={() => setEditingEnv(false)}
 						>
 							Cancel
-						</button>
+						</Button>
 					</div>
 				</div>
 			</Show>
@@ -767,9 +776,9 @@ const EnvFlagsSection: Component<{ agentType: AgentType }> = (props) => {
 											{(flag) => (
 												<div class={a.envFlagRow}>
 													<Show when={flag.type === "boolean" || flag.type === "boolean_inverted"}>
-														<input
+														<Switch
+															role="checkbox"
 															data-setting-id="agents.agents.{key}.env_flags.{key}"
-															type="checkbox"
 															class={a.envFlagToggle}
 															checked={isFlagEnabled(flag.key)}
 															onChange={() => handleBoolToggle(flag)}
@@ -848,9 +857,9 @@ const ClaudeUsageToggle: Component = () => {
 			<div class={a.expandedLabel}>Features</div>
 			<div class={a.actionsRow}>
 				<label class={a.toggleRow}>
-					<input
+					<Switch
+						role="checkbox"
 						data-setting-id="app.disabled_plugin_ids"
-						type="checkbox"
 						checked={enabled()}
 						onChange={handleToggle}
 					/>
@@ -1090,13 +1099,11 @@ const AgentRow: Component<{
 					{/* Enable/Disable toggle */}
 					<SettingRow label="Enabled">
 						{(id, descriptionId) => (
-							<input
+							<Switch
 								data-setting-id="app.disabled_agents"
 								id={id}
 								aria-describedby={descriptionId()}
-								type="checkbox"
 								role="switch"
-								class={a.rowSwitch}
 								checked={isEnabled()}
 								onChange={() => settingsStore.toggleAgent(props.agentType)}
 							/>
@@ -1113,13 +1120,11 @@ const AgentRow: Component<{
 							hint="Inject &quot;continue&quot; on 5xx errors with backoff (5s, 15s, 30s)"
 						>
 							{(id, descriptionId) => (
-								<input
+								<Switch
 									data-setting-id="agents.agents.{key}.auto_retry_on_error"
 									id={id}
 									aria-describedby={descriptionId()}
-									type="checkbox"
 									role="switch"
-									class={a.rowSwitch}
 									checked={configStore.isAutoRetryEnabled(props.agentType)}
 									onChange={() =>
 										configStore.setAutoRetry(props.agentType, !configStore.isAutoRetryEnabled(props.agentType))
@@ -1138,13 +1143,11 @@ const AgentRow: Component<{
 							hint="Use native terminal scrollback when this agent supports it. Applies to new launches."
 						>
 							{(id, descriptionId) => (
-								<input
+								<Switch
 									data-setting-id="agents.agents.{key}.prevent_alt_screen"
 									id={id}
 									aria-describedby={descriptionId()}
-									type="checkbox"
 									role="switch"
-									class={a.rowSwitch}
 									checked={configStore.getPreventAltScreen(props.agentType)}
 									onChange={() =>
 										configStore.setPreventAltScreen(props.agentType, !configStore.getPreventAltScreen(props.agentType))
@@ -1164,13 +1167,11 @@ const AgentRow: Component<{
 								hint="Start agents in a new folder without stopping at their workspace trust question. Applies only to agent-to-agent spawns."
 							>
 								{(id, descriptionId) => (
-									<input
+									<Switch
 										data-setting-id="agents.agents.{key}.skip_trust_dialog"
 										id={id}
 										aria-describedby={descriptionId()}
-										type="checkbox"
 										role="switch"
-										class={a.rowSwitch}
 										checked={configStore.getSkipTrustDialog(props.agentType)}
 										onChange={() =>
 											configStore.setSkipTrustDialog(props.agentType, !configStore.getSkipTrustDialog(props.agentType))
@@ -1191,13 +1192,11 @@ const AgentRow: Component<{
 								hint="Adds process-scoped status integration only to agents launched inside TUIC. Applies on next launch."
 							>
 								{(id, descriptionId) => (
-									<input
+									<Switch
 										data-setting-id="agents.agents.{key}.native_status_signals"
 										id={id}
 										aria-describedby={descriptionId()}
-										type="checkbox"
 										role="switch"
-										class={a.rowSwitch}
 										checked={configStore.getNativeStatusSignals(props.agentType)}
 										disabled={hookLoading()}
 										onChange={handleNativeStatusToggle}
@@ -1215,9 +1214,9 @@ const AgentRow: Component<{
 						>
 							<div class={a.expandedSection}>
 								<label class={a.toggleRow} onClick={(e) => e.stopPropagation()}>
-									<input
+									<Switch
+										role="checkbox"
 										data-setting-id="agents.agents.{key}.hook_instrumentation"
-										type="checkbox"
 										checked={configStore.getHookInstrumentation(props.agentType) ?? false}
 										disabled={hookLoading()}
 										onChange={handleHookToggle}
@@ -1245,9 +1244,9 @@ const AgentRow: Component<{
 						>
 							<div class={a.expandedSection}>
 								<label class={a.toggleRow} onClick={(e) => e.stopPropagation()}>
-									<input
+									<Switch
+										role="checkbox"
 										data-setting-id="agents.agents.{key}.intent_tab_title"
-										type="checkbox"
 										checked={configStore.getIntentTabTitle(props.agentType) ?? true}
 										onChange={(e) => configStore.setIntentTabTitle(props.agentType, e.currentTarget.checked)}
 									/>
@@ -1267,9 +1266,9 @@ const AgentRow: Component<{
 						>
 							<div class={a.expandedSection}>
 								<label class={a.toggleRow} onClick={(e) => e.stopPropagation()}>
-									<input
+									<Switch
+										role="checkbox"
 										data-setting-id="agents.agents.{key}.progress_tracking"
-										type="checkbox"
 										disabled={!settingsStore.state.progressTracking}
 										checked={
 											settingsStore.state.progressTracking && (configStore.getProgressTracking(props.agentType) ?? true)
@@ -1292,9 +1291,9 @@ const AgentRow: Component<{
 						>
 							<div class={a.expandedSection}>
 								<label class={a.toggleRow} onClick={(e) => e.stopPropagation()}>
-									<input
+									<Switch
+										role="checkbox"
 										data-setting-id="agents.agents.{key}.suggest_followups"
-										type="checkbox"
 										checked={configStore.getSuggestFollowups(props.agentType) ?? settingsStore.state.suggestFollowups}
 										onChange={(e) => configStore.setSuggestFollowups(props.agentType, e.currentTarget.checked)}
 									/>
@@ -1365,14 +1364,13 @@ const AgentRow: Component<{
 						<Show
 							when={addingConfig()}
 							fallback={
-								<button
+								<Button
 									data-non-setting="Open, close or cancel the run-configuration editor"
-									class={a.smallBtn}
 									style={{ "margin-top": "8px" }}
 									onClick={() => setAddingConfig(true)}
 								>
 									Add Configuration...
-								</button>
+								</Button>
 							}
 						>
 							<AddConfigForm agentType={props.agentType} onClose={() => setAddingConfig(false)} />
@@ -1385,24 +1383,20 @@ const AgentRow: Component<{
 						<div class={a.actionsRow}>
 							{/* Opens the file in this app's editor, so it can only be a local path. */}
 							<Show when={!machine()}>
-								<button
-									data-non-setting="Open the agent-owned configuration editor"
-									class={a.actionBtn}
-									onClick={handleEditConfig}
-								>
+								<Button data-non-setting="Open the agent-owned configuration editor" onClick={handleEditConfig}>
 									Edit Agent Config
-								</button>
+								</Button>
 							</Show>
 							<Show when={mcpEditable()}>
-								<button
+								<Button
 									data-non-setting="Explicit external-agent MCP installation workflow; not TUIC configuration"
-									class={a.actionBtn}
-									classList={{ [a.installed]: mcpStatus()?.installed }}
+									variant="removalToggle"
+									aria-pressed={!!mcpStatus()?.installed}
 									onClick={handleMcpToggle}
 									disabled={mcpLoading()}
 								>
 									{mcpLoading() ? "..." : mcpStatus()?.installed ? "Remove TUIC MCP" : "Install TUIC MCP"}
-								</button>
+								</Button>
 								<Show when={mcpStatus()}>
 									<span class={a.mcpStatus}>
 										<span
@@ -1488,14 +1482,13 @@ const McpIntegrationsSection: Component = () => {
 					uninstalling TUICommander, or each client will report a missing MCP server.
 				</p>
 				<div class={a.actionsRow}>
-					<button
+					<Button
 						data-non-setting="Explicit external-agent MCP installation workflow; not TUIC configuration"
-						class={a.actionBtn}
 						onClick={handleRemoveAll}
 						disabled={busy()}
 					>
 						{busy() ? "Removing..." : "Remove all MCP integrations"}
-					</button>
+					</Button>
 				</div>
 				<Show when={error()}>
 					<p class={a.remoteError}>{error()}</p>

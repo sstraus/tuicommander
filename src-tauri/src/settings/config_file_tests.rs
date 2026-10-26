@@ -33,8 +33,8 @@ fn normalized_noop_preserves_file_bytes_and_clears_effects() {
         .unwrap();
     assert_eq!(std::fs::read_to_string(path).unwrap(), original);
     assert!(!reply.persisted);
-    assert!(reply.changed_ids.is_empty());
-    assert!(reply.effects.is_empty());
-    assert!(reply.restart.is_empty());
+    assert_eq!(reply.changed_ids, [] as [std::string::String; 0]);
+    assert_eq!(reply.effects, [] as [std::string::String; 0]);
+    assert_eq!(reply.restart, [] as [std::string::String; 0]);
     assert_ne!(reply.revision, "stale");
 }

@@ -23,6 +23,7 @@
 }
 
 .tabs {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   gap: 0;
   overflow-x: auto;
@@ -41,29 +42,6 @@
 
 .tabs::-webkit-scrollbar {
   display: none;
-}
-
-.tab {
-  background: none;
-  border: none;
-  border-bottom: 2px solid transparent;
-  color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  font-family: var(--font-ui);
-  /* Tighter horizontal padding so all four labels fit before scrolling kicks in. */
-  padding: 6px 8px;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: color 0.1s ease, border-color 0.15s ease;
-}
-
-.tab:hover {
-  color: var(--fg-primary);
-}
-
-.tabActive {
-  color: var(--fg-primary);
-  border-bottom-color: var(--accent);
 }
 
 /* Tab content area — fills remaining space above sub-panels */

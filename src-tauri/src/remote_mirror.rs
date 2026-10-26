@@ -1518,16 +1518,15 @@ mod tests {
 
     // Catches: reqwest URL credentials reaching mirror errors from seed or SSE requests.
     #[tokio::test]
-    async fn closed_port_mirror_errors_never_contain_query_credentials() {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        let base = format!("http://{}", listener.local_addr().expect("address"));
-        drop(listener);
+    async fn dead_peer_mirror_errors_never_contain_query_credentials() {
+        let socket = crate::test_support::resetting_tcp_peer();
+        let base = format!("http://{}", socket.local_addr().expect("address"));
         let client = reqwest::Client::new();
         let state = Arc::new(make_test_app_state());
         let secret = "MIRROR_SECRET_1457";
         let seed_error = seed(&client, &base, Some(secret))
             .await
-            .expect_err("seed closed port");
+            .expect_err("seed resetting peer");
         let stream_error = consume_stream(
             &state,
             &client,
@@ -1537,7 +1536,7 @@ mod tests {
             STREAM_IDLE_TIMEOUT,
         )
         .await
-        .expect_err("stream closed port");
+        .expect_err("stream resetting peer");
         for error in [seed_error, stream_error] {
             assert!(
                 !error.contains(secret),

@@ -103,7 +103,7 @@ pub(super) async fn rename_branch_http(Json(body): Json<RenameBranchRequest>) ->
     let old_name = body.old_name;
     let new_name = body.new_name;
     match tokio::task::spawn_blocking(move || {
-        crate::git::rename_branch_impl(&path, &old_name, &new_name)
+        crate::git::rename_branch_with_label(&path, &old_name, &new_name)
     })
     .await
     {

@@ -52,6 +52,24 @@ a real selected call reaches the restarted server with a client UUID. No ego
 change or new ego story is required by this observation. No parent intent is
 invented, and optional OTel export remains parked.
 
+## Isolated-capture preflight (2026-10-22)
+
+The proposed `make agent-test AGENT_TEST_INSTANCE=agent-test-2010
+AGENT_TEST_PORT=19887` capture cannot supply the rendering-success case.
+`src-tauri/src/agent_test.rs::enable` rejects builds with the `dictation`
+feature. Without that feature,
+`src-tauri/src/mcp_http/mcp_transport_ancillary.rs::handle_voice` selects the
+no-audio implementation: an unbound caller is refused, and a bound caller
+receives `available=false`. Neither path creates a speech utterance or reports
+`rendering`. Changing client permission mode cannot change this build boundary.
+
+The launcher dry run confirmed that dictation/microphone are disabled. No
+native build, desktop launch, or new client capture was started after this
+prerequisite failed. The existing JSON remains unchanged; this preflight is
+source evidence, not a new runtime fixture. Completing the capture needs an
+approved isolated audio-capable setup. Do not remove the agent-test safety
+check or use the daily instance to manufacture the missing outcome.
+
 A full recording still needs a real client permission-denial event and a real
 rendering response from an owner-armed hands-free conversation. This peer runs
 in yolo mode and has no permission-denial event to record. Do not replace that

@@ -1588,7 +1588,10 @@ mod tests {
         // The whole authority of this mode. A turn with nobody at the keyboard
         // cannot be given the server that drives terminals and repositories,
         // whatever the caller asked for.
-        assert!(unattended.mcp_servers.is_empty());
+        assert_eq!(
+            unattended.mcp_servers,
+            [] as [agent_client_protocol::schema::v1::McpServer; 0]
+        );
         // And nothing else moves: the directories are what the prompt runs on.
         assert_eq!(unattended.cwd, PathBuf::from("/repo"));
         assert_eq!(

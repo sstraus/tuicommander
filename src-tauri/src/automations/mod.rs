@@ -32,3 +32,6 @@ pub(crate) mod notifications;
 pub(crate) mod worktrees;
 
 pub(crate) mod create;
+
+pub(crate) mod event_intake;
+pub(crate) mod publish;

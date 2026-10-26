@@ -5,6 +5,8 @@ import { normalizeCombo } from "../../keybindingDefaults";
 import type { SettingId } from "../../services/settingsCatalogue";
 import { keybindingsStore } from "../../stores/keybindings";
 import { isTauri } from "../../transport";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
 import s from "./KeyComboCapture.module.css";
 
 /** Bare modifier keys — ignored when pressed alone */
@@ -127,17 +129,17 @@ export const KeyComboCapture: Component<KeyComboCaptureProps> = (props) => {
 			<Show
 				when={capturing()}
 				fallback={
-					<button
+					<Button
 						data-setting-id={props.settingId}
 						class={s.display}
 						onClick={startCapture}
 						title="Click to change shortcut"
 					>
 						{displayLabel()}
-					</button>
+					</Button>
 				}
 			>
-				<input
+				<Input
 					data-setting-id={props.settingId}
 					class={s.input}
 					placeholder={props.placeholder ?? "Press a key combination..."}

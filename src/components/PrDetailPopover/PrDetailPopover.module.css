@@ -45,6 +45,7 @@
 }
 
 .header {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 8px;
@@ -251,22 +252,6 @@
   text-decoration: underline;
 }
 
-.close {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: var(--font-xl);
-  cursor: pointer;
-  padding: 2px 6px;
-  border-radius: var(--radius-md);
-  flex-shrink: 0;
-}
-
-.close:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
 .meta {
   display: flex;
   align-items: center;
@@ -396,6 +381,7 @@
 }
 
 .aiReviewHeader {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -406,30 +392,6 @@
   font-size: var(--font-sm);
   font-weight: 700;
   color: var(--fg-primary);
-}
-
-.aiReviewBtn,
-.postReviewBtn {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  color: var(--fg-secondary);
-  font-size: var(--font-xs);
-  font-weight: 600;
-  padding: 4px 8px;
-  cursor: pointer;
-}
-
-.aiReviewBtn:hover,
-.postReviewBtn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.aiReviewBtn:disabled,
-.postReviewBtn:disabled {
-  opacity: 0.55;
-  cursor: default;
 }
 
 .aiReviewError {
@@ -512,57 +474,13 @@
   overflow-wrap: anywhere;
 }
 
-/* Footer action buttons — aligned to the GitHub PR panel's `.ghActionBtn` language:
- * compact, transparent background, natural width, wrap, accent border-glow on hover. */
+/* Footer action layout; shared Button owns control presentation. */
 .actions {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
   padding: 8px 12px;
   border-top: 1px solid var(--border);
-}
-
-.viewDiffBtn {
-  padding: 4px 12px;
-  font-size: var(--font-xs);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: none;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
-}
-
-.viewDiffBtn:hover {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border-color: var(--accent);
-}
-
-.viewDiffBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.mergeBtn {
-  padding: 4px 12px;
-  font-size: var(--font-xs);
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--success);
-  background: none;
-  color: var(--success);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
-}
-
-.mergeBtn:hover {
-  background: var(--success);
-  color: var(--text-on-success);
-}
-
-.mergeBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .errorMsg {
@@ -585,56 +503,6 @@
 
 .autoHealRow:hover {
   background: var(--bg-highlight);
-}
-
-.autoHealToggle {
-  position: relative;
-  display: inline-block;
-  width: 30px;
-  height: 16px;
-  min-height: 16px;
-  max-height: 16px;
-  flex-shrink: 0;
-}
-
-.autoHealToggle input {
-  opacity: 0;
-  width: 0;
-  height: 0;
-  position: absolute;
-}
-
-.autoHealSlider {
-  position: absolute;
-  inset: 0;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 9999px;
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
-}
-
-.autoHealSlider::after {
-  content: "";
-  display: block;
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 10px;
-  height: 10px;
-  background: var(--fg-muted);
-  border-radius: 9999px;
-  transition: transform 0.2s, background 0.2s;
-}
-
-.autoHealToggle input:checked + .autoHealSlider {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.autoHealToggle input:checked + .autoHealSlider::after {
-  transform: translateX(14px);
-  background: white;
 }
 
 .autoHealLabel {
@@ -707,13 +575,9 @@
 
 .requestForm textarea {
   width: 100%;
-  min-height: 64px;
-  box-sizing: border-box;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-  font: inherit;
-  font-size: var(--font-xs);
-  padding: 6px;
+}
+
+.close,
+.mergeBtn {
+  flex-shrink: 0;
 }

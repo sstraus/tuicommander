@@ -27,6 +27,16 @@ describe("MCP Markdown tabs across document reload", () => {
 		});
 	});
 
+	// Catches: reload keeps the document but silently resets its review target to the first candidate.
+	it("retains the MCP opener identity across a document reload", async () => {
+		const old = await freshStore();
+		old.restoreAfterReload();
+		old.addMcpFile("review", "/repo", "review.md", false, false, "tuic-b");
+		const reloaded = await freshStore();
+		reloaded.restoreAfterReload();
+		expect(reloaded.getActive()).toMatchObject({ mcpUiId: "review", openerTuicSession: "tuic-b" });
+	});
+
 	// Catches: mutation snapshots save opens but resurrect a tab closed before native recovery.
 	it("keeps a closed MCP document absent after a reload without beforeunload", async () => {
 		const old = await freshStore();

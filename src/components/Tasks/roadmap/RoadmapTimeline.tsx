@@ -58,6 +58,7 @@ export function RoadmapTimeline(props: {
 											style={{ top: `${virtualRow.start}px`, height: `${virtualRow.size}px` }}
 										>
 											<button
+												data-control-layout="row"
 												class={s.task}
 												type="button"
 												onClick={() => props.onOpen(current().item.reference)}

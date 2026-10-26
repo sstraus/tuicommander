@@ -358,3 +358,10 @@ The async `suspended_session_action` command and its HTTP route both call `suspe
 transaction and agent command writer in `spawn_blocking`, not on the main thread.
 
 `save_frame_workload` is async. Recording validation, filesystem writes, sync and rotation run inside `spawn_blocking`, never on the desktop IPC thread. HTTP uses the same function and writer admission bound.
+
+### Session usage
+
+`get_session_usage` is async. Profile resolution, exact ego binding and the
+normalized snapshot are shared with `GET /sessions/{id}/usage`. Provider/CLI
+I/O is bounded and never runs through a synchronous Tauri command on the
+macOS main thread.

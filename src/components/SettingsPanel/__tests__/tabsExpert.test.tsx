@@ -162,7 +162,7 @@ const CASES: Case[] = [
 
 /** Basic controls on the same pages: visible in basic mode at their default. */
 const BASIC_AT_DEFAULT: { page: string; tab: Component; label: string }[] = [
-	{ page: "Notifications", tab: NotificationsTab, label: "Silence completions from MCP sessions" },
+	{ page: "Notifications", tab: NotificationsTab, label: "Silence subagent sounds and notifications" },
 	{ page: "Notifications", tab: NotificationsTab, label: "Keep toasts in the bell" },
 	{ page: "Appearance", tab: AppearanceTab, label: "Split Tab Mode" },
 	{ page: "Appearance", tab: AppearanceTab, label: "Tab Ordering" },

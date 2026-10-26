@@ -144,6 +144,10 @@ pub(crate) async fn perform_update_and_restart(
         return Err("Selected remote binary changed while preparing transfer".to_string());
     }
     match &connection.transport {
+        // The restart that finishes an update severs the tunnel it travelled on.
+        RemoteTransport::Relay => {
+            return Err("A relay connection cannot update the remote daemon".to_string());
+        }
         RemoteTransport::Direct { .. } => {
             let file = tokio::fs::File::open(&asset.binary.path)
                 .await

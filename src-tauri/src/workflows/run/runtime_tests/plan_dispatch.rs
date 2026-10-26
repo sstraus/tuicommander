@@ -231,6 +231,7 @@ fn resolve_plan_reaches_verified_fixed_point_after_explicit_dependency_integrati
     let coordinator = current_attempt(&store, &run.id, &plan_id);
     bind(&store, &run.id, &coordinator, "coordinator");
     let proposal = NewStory {
+        story_type: None,
         plan_id: plan_id.clone(),
         title: "Dependent".into(),
         criteria: vec!["Delivered".into()],
@@ -366,6 +367,7 @@ fn two_plan_roots_share_dispatch_reservations_and_wontfix_never_releases_depende
         .unwrap();
     let second_story = stories
         .create_story(NewStory {
+            story_type: None,
             plan_id: second_plan.id.clone(),
             title: "Second story".into(),
             criteria: vec!["Delivered".into()],
@@ -427,6 +429,7 @@ fn two_plan_roots_share_dispatch_reservations_and_wontfix_never_releases_depende
         .unwrap();
     let dependent = stories
         .create_story(NewStory {
+            story_type: None,
             plan_id: first_plan.clone(),
             title: "Blocked dependent".into(),
             criteria: vec!["Delivered".into()],
@@ -527,6 +530,7 @@ fn failed_final_plan_gate_replans_through_a_fresh_bound_coordinator() {
             "new-coordinator",
             "repair",
             NewStory {
+                story_type: None,
                 plan_id: empty_plan.id.clone(),
                 title: "Repair final check".into(),
                 criteria: vec!["Fixed".into()],
@@ -570,6 +574,7 @@ fn disjoint_story_children_share_one_bounded_dispatch_wave() {
         ids.push(
             stories
                 .create_story(NewStory {
+                    story_type: None,
                     plan_id: plan.id.clone(),
                     title: path.into(),
                     criteria: vec!["Delivered".into()],

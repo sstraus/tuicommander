@@ -536,11 +536,11 @@ mod tests {
             .unwrap_err(),
             TRACKING_DISABLED
         );
-        assert!(
+        assert_eq!(
             progress_list(&hint, ProgressListInput::default())
                 .unwrap()
-                .entries
-                .is_empty()
+                .entries,
+            [] as [crate::progress::model::ProgressEntry; 0]
         );
     }
 

@@ -5,6 +5,7 @@
 
 /* TabBar wrapper — flex row with scroll region + new-tab button */
 .tabBarWrapper {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   flex: 1;
   align-items: stretch;
@@ -49,16 +50,13 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 24px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--bg-secondary);
-  border: none;
   color: var(--fg-secondary);
   cursor: pointer;
   z-index: 5;
-  padding: 0;
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s;
@@ -76,12 +74,10 @@
 
 .scrollArrowLeft {
   left: 0;
-  border-right: 1px solid var(--border);
 }
 
 .scrollArrowRight {
   right: 0;
-  border-left: 1px solid var(--border);
 }
 
 /* Fade gradients to indicate more tabs */
@@ -188,30 +184,22 @@
 
 .tabNameInput {
   background: var(--bg-secondary);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-xs);
   color: var(--fg-primary);
   font-size: var(--font-md);
   font-family: inherit;
-  padding: 0 4px;
-  min-width: 40px;
   max-width: 200px;
   outline: none;
 }
 
 .tabClose {
   background: none;
-  border: none;
   color: var(--fg-secondary);
   font-size: var(--font-lg);
   line-height: 1;
   cursor: pointer;
-  width: 16px;
-  height: 16px;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: var(--radius-md);
   transition: background 0.1s, color 0.1s;
   opacity: 0;
   margin-left: auto;
@@ -237,14 +225,11 @@
 }
 
 .newBtn {
-  width: 28px;
-  min-width: 28px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: none;
   color: var(--fg-secondary);
   font-size: var(--font-xl);
   cursor: pointer;
@@ -265,12 +250,10 @@
 /* Globe icon for promoted terminal tabs */
 .globeIcon {
   background: none;
-  border: none;
   color: var(--accent);
   display: inline-flex;
   align-items: center;
   cursor: pointer;
-  padding: 0 2px;
   flex-shrink: 0;
   opacity: 0.8;
   transition: opacity 0.1s;
@@ -507,7 +490,7 @@
   display: none;
 }
 
-.tab.remoteTab:not(.shellBusy):not(.shellIdle):not(.shellUnseen):not(.shellExited) .tabIcon {
+.tab.remoteTab:not(.awaitingInput):not(.shellBusy):not(.shellIdle):not(.shellUnseen):not(.shellExited) .tabIcon {
   color: rgb(var(--tab-remote-rgb));
   opacity: 0.8;
 }

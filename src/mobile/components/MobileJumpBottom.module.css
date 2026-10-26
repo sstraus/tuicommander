@@ -2,19 +2,7 @@
   position: absolute;
   right: 12px;
   bottom: 8px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 44px;
-  height: 44px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
   color: var(--accent);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
 }
 
 .jumpBottom:active {

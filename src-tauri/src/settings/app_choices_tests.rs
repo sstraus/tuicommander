@@ -159,10 +159,9 @@ async fn app_describe_never_launches_choice_probes_preserves_other_owner_state()
 #[test]
 fn app_theme_choices_distinguish_empty_from_unavailable() {
     let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-    assert!(
-        super::app_choices::theme_choices(dir.path())
-            .unwrap()
-            .is_empty()
+    assert_eq!(
+        super::app_choices::theme_choices(dir.path()).unwrap(),
+        [] as [serde_json::Value; 0]
     );
     assert!(super::app_choices::theme_choices(&dir.path().join("missing")).is_err());
 }

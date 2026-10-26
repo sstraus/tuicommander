@@ -177,7 +177,10 @@ fn candidate_order_collapses_identical_across_all_sources() {
 #[test]
 fn candidate_order_empty_when_no_sources() {
     let got = github_auth::order_token_candidates(None, None, None);
-    assert!(got.is_empty());
+    assert_eq!(
+        got,
+        [] as [(std::string::String, tuic_git::github_auth::TokenSource); 0]
+    );
 }
 
 #[test]
@@ -197,7 +200,7 @@ fn diagnostics_fresh_state_reports_healthy_empty() {
     let diag = github_auth::compute_diagnostics(&state);
     assert!(!diag.circuit_breaker_open);
     assert_eq!(diag.circuit_breaker_status, "OK");
-    assert!(diag.repos_not_found.is_empty());
+    assert_eq!(diag.repos_not_found, [] as [std::string::String; 0]);
     assert_eq!(diag.repos_monitored, 0);
 }
 
@@ -213,18 +216,18 @@ fn diagnostics_reports_cooldown_and_monitored_repos() {
         "octocat/expired".to_string(),
         std::time::Instant::now() - std::time::Duration::from_secs(1),
     );
-    // A cached status counts as a monitored repo.
+    // Cached query payloads alone do not register a running monitor.
     state
         .git_cache
         .github_status
         .insert("/path/zero".to_string(), std::sync::Arc::new(vec![]));
-    // moka's entry_count() is eventually consistent; flush pending tasks so the
-    // insert is counted before compute_diagnostics reads it.
+    // Flush cache maintenance so this also checks that a populated cache is not
+    // mistaken for a running poller.
     state.git_cache.github_status.run_pending_tasks();
 
     let diag = github_auth::compute_diagnostics(&state);
     assert_eq!(diag.repos_not_found, vec!["octocat/hello".to_string()]);
-    assert_eq!(diag.repos_monitored, 1);
+    assert_eq!(diag.repos_monitored, 0);
 }
 
 // ---------------------------------------------------------------------------

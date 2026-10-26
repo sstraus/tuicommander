@@ -845,7 +845,7 @@ mod tests {
             let audio = engine
                 .synthesize(SENTENCE, &voice, &SpeechCancel::new())
                 .expect("recorded response decodes without another engine");
-            assert!(!audio.samples.is_empty());
+            assert_ne!(audio.samples, [] as [f32; 0]);
             let sent = sent.lock().unwrap();
             assert_eq!(sent.len(), 2, "one config and one SSML request: {sent:?}");
             assert_eq!(message_path(&sent[0]), Some("speech.config"));
@@ -1008,7 +1008,7 @@ mod tests {
             rejoined.split_whitespace().count(),
             text.split_whitespace().count()
         );
-        assert!(split_text("   ").is_empty());
+        assert_eq!(split_text("   "), [] as [&str; 0]);
     }
 
     #[test]
@@ -1141,9 +1141,9 @@ mod tests {
                 "it-IT-IsabellaNeural"
             ]
         );
-        assert!(voices_for_language(&voices, "i").is_empty());
-        assert!(voices_for_language(&voices, "").is_empty());
-        assert!(voices_for_language(&voices, "auto").is_empty());
+        assert_eq!(voices_for_language(&voices, "i"), [] as [EdgeVoice; 0]);
+        assert_eq!(voices_for_language(&voices, ""), [] as [EdgeVoice; 0]);
+        assert_eq!(voices_for_language(&voices, "auto"), [] as [EdgeVoice; 0]);
         assert!(
             voices_for_language(&voices, "en")
                 .iter()
@@ -1681,7 +1681,7 @@ mod critic_round2 {
         assert!(matches!(first, Err(SpeechError::Cancelled)), "{first:?}");
 
         let second = synth(&speech, "nuovo testo").expect("the second reply is served");
-        assert!(!second.samples.is_empty());
+        assert_ne!(second.samples, [] as [f32; 0]);
         std::thread::sleep(Duration::from_millis(500)); // the abandoned dial finishes
         let sent = sent.lock().unwrap();
         assert_eq!(dials.load(Ordering::SeqCst), 2);
@@ -1760,7 +1760,7 @@ mod critic_round2 {
         let pieces = split_text(&text);
         assert!(pieces.len() > 3);
         for piece in &pieces {
-            assert!(!piece.is_empty());
+            assert_ne!(*piece, "");
             assert!(
                 escape_xml(piece).len() <= MAX_TEXT_BYTES,
                 "{}",

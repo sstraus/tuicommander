@@ -125,6 +125,7 @@
 
 ## Audits & Plans
 
+- [Relay Remote Daemon Design (Proposal)](./design/2085-relay-remote-daemon.md)
 - [CanvasTerminal Feature Audit](./frontend/canvas-terminal-audit.md)
 - [Font Size Audit](./frontend/font-size-audit.md)
 - [Solid Refactoring Plan](./frontend/solid-refactoring-plan.md)

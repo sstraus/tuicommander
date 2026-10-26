@@ -1,5 +1,6 @@
 import { globalWorkspaceStore } from "../stores/globalWorkspace";
 import { rateLimitStore } from "../stores/ratelimit";
+import { repositoriesStore } from "../stores/repositories";
 import { terminalsStore } from "../stores/terminals";
 import { displayTask } from "./displayTask";
 
@@ -53,6 +54,15 @@ export function projectName(cwd: string | null): string | null {
 	return segments.at(-1)! || null;
 }
 
+/** Use the same repository display name as tabs and the owning workspace's branch. */
+export function terminalProjectName(id: string, cwd: string | null): string | null {
+	const repoName = repositoriesStore.getRepoForTerminal(id);
+	if (!repoName) return projectName(cwd);
+	const owner = repositoriesStore.findOwnerForTerminal(id);
+	const workspace = owner ? repositoriesStore.get(owner.repoPath)?.workspaces[owner.workspaceId] : undefined;
+	return workspace?.kind === "worktree" ? `${repoName} · ${workspace.branchName}` : repoName;
+}
+
 /** Derive display status from terminal state fields.
  *  `classNames` maps status keys to CSS module class names.
  *  `awaitingInput` is "question" | "error" | null — an API error must NOT be
@@ -96,6 +106,7 @@ export function reconcileActivityOrder(spine: string[], ids: string[], isWorking
 }
 
 export interface ActivityTerminalRow {
+	project: string | null;
 	id: string;
 	name: string;
 	shellState: string | null;
@@ -136,6 +147,7 @@ export function buildActivitySnapshot(): ActivitySnapshot {
 		rowById.set(id, {
 			id,
 			name: t?.name ?? "",
+			project: terminalProjectName(id, t?.cwd ?? null),
 			shellState: t?.shellState ?? null,
 			awaitingInput: t?.awaitingInput ?? null,
 			sessionId: t?.sessionId ?? null,

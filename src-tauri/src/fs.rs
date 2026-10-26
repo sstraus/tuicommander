@@ -93,6 +93,12 @@ pub struct DirEntry {
     pub git_status: String,
     /// Whether the file is listed in .gitignore.
     pub is_ignored: bool,
+    /// Link text from read_link; absent for ordinary entries.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symlink_target: Option<String>,
+    /// Target metadata only: directory, file, or unavailable (dangling/inaccessible).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symlink_target_kind: Option<&'static str>,
 }
 
 /// A single line match returned by `search_content`.
@@ -500,7 +506,26 @@ pub(crate) fn list_directory_impl(
             .map_err(|e| format!("Failed to read metadata for {name}: {e}"))?;
 
         let is_dir = metadata.is_dir();
-        let size = if is_dir { 0 } else { metadata.len() };
+        let is_symlink = metadata.file_type().is_symlink();
+        let symlink_target = if is_symlink {
+            std::fs::read_link(entry.path())
+                .ok()
+                .map(|p| p.to_string_lossy().into_owned())
+        } else {
+            None
+        };
+        let symlink_target_kind = is_symlink.then(|| match std::fs::metadata(entry.path()) {
+            Ok(target) if target.is_dir() => "directory",
+            Ok(target) if target.is_file() => "file",
+            _ => "unavailable",
+        });
+        // A link's lstat length counts its target spelling, not file content.
+        // Keep is_dir/navigation unchanged; target kind is display metadata only.
+        let size = if is_dir || is_symlink {
+            0
+        } else {
+            metadata.len()
+        };
         let modified_at = metadata
             .modified()
             .ok()
@@ -558,6 +583,8 @@ pub(crate) fn list_directory_impl(
             modified_at,
             git_status,
             is_ignored,
+            symlink_target,
+            symlink_target_kind,
         });
     }
 
@@ -1270,6 +1297,8 @@ pub(crate) fn search_files_impl(
             modified_at,
             git_status: String::new(), // populated below
             is_ignored: false,         // walker already filtered gitignored entries
+            symlink_target: None,
+            symlink_target_kind: None,
         });
     }
 
@@ -1643,13 +1672,25 @@ pub async fn delete_path(repo_path: String, path: String) -> Result<(), String> 
 }
 
 fn delete_path_impl(repo_path: String, path: String) -> Result<(), String> {
-    let (_canonical_repo, canonical_target) = validate_path(&repo_path, &path)?;
+    // Resolve the parent, not the selected entry: canonicalizing the final link
+    // rejects dangling links and turns deletion into deletion of their targets.
+    let (_canonical_repo, target) = validate_path_for_creation(&repo_path, &path)?;
+    let metadata =
+        std::fs::symlink_metadata(&target).map_err(|e| format!("Failed to inspect path: {e}"))?;
 
-    if canonical_target.is_dir() {
-        std::fs::remove_dir_all(&canonical_target)
-            .map_err(|e| format!("Failed to delete directory: {e}"))
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::FileTypeExt;
+        if metadata.file_type().is_symlink_dir() {
+            return std::fs::remove_dir(&target)
+                .map_err(|e| format!("Failed to delete directory link: {e}"));
+        }
+    }
+
+    if metadata.is_dir() {
+        std::fs::remove_dir_all(&target).map_err(|e| format!("Failed to delete directory: {e}"))
     } else {
-        std::fs::remove_file(&canonical_target).map_err(|e| format!("Failed to delete file: {e}"))
+        std::fs::remove_file(&target).map_err(|e| format!("Failed to delete file: {e}"))
     }
 }
 
@@ -2580,6 +2621,86 @@ mod tests {
             .unwrap();
 
         dir
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_listing_does_not_disguise_external_directory_as_file_bytes() {
+        let dir = setup_test_repo();
+        let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("linked-dir")).unwrap();
+        let entries = list_directory_impl(dir.path().to_string_lossy().into(), ".".into()).unwrap();
+        let link = entries.iter().find(|e| e.name == "linked-dir").unwrap();
+        let wire = serde_json::to_value(link).unwrap();
+        assert_eq!(
+            wire["symlink_target"],
+            outside.path().to_string_lossy().as_ref()
+        );
+        assert_eq!(wire["symlink_target_kind"], "directory");
+        assert_eq!(link.size, 0, "link text length is not file content size");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_open_names_external_target_instead_of_generic_access_denied() {
+        let dir = setup_test_repo();
+        let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("linked-dir")).unwrap();
+        let error = crate::read_file_impl(dir.path().to_string_lossy().into(), "linked-dir".into())
+            .unwrap_err();
+        assert_eq!(
+            error,
+            format!(
+                "Cannot open symbolic link \"linked-dir\": target \"{}\" is outside the repository.",
+                outside.path().canonicalize().unwrap().display()
+            )
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_metadata_preserves_internal_reads_and_dangling_entries() {
+        // Catches following links for lstat size, dropping broken links, or denying internal reads.
+        let dir = setup_test_repo();
+        let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        std::fs::write(outside.path().join("private.txt"), "outside content").unwrap();
+        for (name, target) in [
+            ("internal", PathBuf::from("README.md")),
+            ("external", outside.path().join("private.txt")),
+            ("dangling", PathBuf::from("missing")),
+        ] {
+            std::os::unix::fs::symlink(target, dir.path().join(name)).unwrap();
+        }
+        let repo = dir.path().to_string_lossy().into_owned();
+        let entries = list_directory_impl(repo.clone(), ".".into()).unwrap();
+        for (name, kind) in [
+            ("internal", "file"),
+            ("external", "file"),
+            ("dangling", "unavailable"),
+        ] {
+            let link = entries.iter().find(|e| e.name == name).unwrap();
+            let wire = serde_json::to_value(link).unwrap();
+            assert_eq!(wire["symlink_target_kind"], kind, "{name}");
+            assert_eq!(link.size, 0, "{name}");
+        }
+        assert_eq!(
+            crate::read_file_impl(repo.clone(), "internal".into()).unwrap(),
+            "# Test"
+        );
+        assert!(
+            crate::read_file_impl(repo.clone(), "external".into())
+                .unwrap_err()
+                .contains("is outside the repository")
+        );
+        assert!(crate::read_file_impl(repo, "dangling".into()).is_err());
+        let ordinary = entries.iter().find(|e| e.name == "README.md").unwrap();
+        assert!(
+            serde_json::to_value(ordinary)
+                .unwrap()
+                .get("symlink_target")
+                .is_none()
+        );
+        assert_eq!(ordinary.size, 6);
     }
 
     #[test]
@@ -4749,7 +4870,7 @@ mod tests {
 
         assert_eq!(res.moved, 1);
         assert_eq!(res.skipped, 1);
-        assert!(res.errors.is_empty());
+        assert_eq!(res.errors, [] as [std::string::String; 0]);
     }
 
     // --- Cross-repo content search (search_content_all_impl) ---
@@ -5148,6 +5269,84 @@ mod tests {
             .unwrap();
 
         assert!(dir.path().join("a/b/c").is_dir());
+    }
+
+    // Catches final-component canonicalization rejecting a dangling link.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn delete_path_dangling_symlink_removes_link_not_missing_target() {
+        let dir = setup_test_repo();
+        let target = dir.path().join("missing-target");
+        let link = dir.path().join("dangling-link");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+
+        delete_path(
+            dir.path().to_string_lossy().into_owned(),
+            "dangling-link".into(),
+        )
+        .await
+        .unwrap();
+
+        assert!(
+            std::fs::symlink_metadata(&link).is_err(),
+            "link must be removed"
+        );
+        assert!(
+            std::fs::symlink_metadata(&target).is_err(),
+            "target must stay absent"
+        );
+    }
+
+    // Catches deleting the resolved file/directory instead of the selected link.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn delete_path_existing_symlinks_preserve_targets_and_contents() {
+        let dir = setup_test_repo();
+        let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        for root in [dir.path(), outside.path()] {
+            let file = root.join("kept-file");
+            let folder = root.join("kept-dir");
+            std::fs::write(&file, "keep file bytes").unwrap();
+            std::fs::create_dir(&folder).unwrap();
+            std::fs::write(folder.join("child"), "keep child bytes").unwrap();
+            for (name, target) in [("file-link", &file), ("dir-link", &folder)] {
+                let link = dir.path().join(name);
+                std::os::unix::fs::symlink(target, &link).unwrap();
+                delete_path(dir.path().to_string_lossy().into_owned(), name.into())
+                    .await
+                    .unwrap();
+                assert!(
+                    std::fs::symlink_metadata(&link).is_err(),
+                    "{name} must be removed"
+                );
+                assert_eq!(std::fs::read_to_string(&file).unwrap(), "keep file bytes");
+                assert_eq!(
+                    std::fs::read_to_string(folder.join("child")).unwrap(),
+                    "keep child bytes"
+                );
+            }
+        }
+    }
+
+    // Catches parent-only validation accidentally allowing a symlinked parent escape.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn delete_path_rejects_external_parent_and_missing_entry() {
+        let dir = setup_test_repo();
+        let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        std::fs::write(outside.path().join("kept"), "keep bytes").unwrap();
+        std::os::unix::fs::symlink(outside.path(), dir.path().join("outside")).unwrap();
+        let repo = dir.path().to_string_lossy().into_owned();
+        assert!(
+            delete_path(repo.clone(), "outside/kept".into())
+                .await
+                .is_err()
+        );
+        assert_eq!(
+            std::fs::read_to_string(outside.path().join("kept")).unwrap(),
+            "keep bytes"
+        );
+        assert!(delete_path(repo, "missing".into()).await.is_err());
     }
 
     #[tokio::test]

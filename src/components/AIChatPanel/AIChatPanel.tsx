@@ -9,6 +9,7 @@ import { isTauri } from "../../transport";
 import { cx } from "../../utils";
 import { openFileLinkHere, resolveFileLink } from "../../utils/openFileLink";
 import { SETTINGS_SECTION_EGO } from "../SettingsPanel/sections";
+import { Button } from "../ui/Button";
 import { PanelResizeHandle } from "../ui/PanelResizeHandle";
 import { PanelWindowControls } from "../ui/PanelWindowControls";
 import s from "./AIChatPanel.module.css";
@@ -165,8 +166,9 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 									void chat.closeTab(session);
 								}}
 							>
-								<button
+								<Button
 									type="button"
+									variant="ghost"
 									role="tab"
 									data-chat-session={session}
 									title={session}
@@ -176,17 +178,19 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 									{conversationLabel(
 										chat.sessions().find((item) => item.sessionId === session) ?? { sessionId: session },
 									)}
-								</button>
+								</Button>
 								<Show when={chat.tabs().length > 1}>
-									<button
+									<Button
 										type="button"
+										variant="ghost"
+										shape="icon"
 										aria-label={`Close chat tab ${session}`}
 										onClick={() => void chat.closeTab(session)}
 									>
 										<svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor" aria-hidden="true">
 											<path d="M2.8 2l3.2 3.2L9.2 2l.8.8L6.8 6l3.2 3.2-.8.8L6 6.8 2.8 10l-.8-.8L5.2 6 2 2.8z" />
 										</svg>
-									</button>
+									</Button>
 								</Show>
 							</div>
 						)}
@@ -206,9 +210,9 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 				{(gap) => (
 					<div class={s.errorBanner}>
 						<span class={s.errorText}>Missed part of this conversation: {gap().message}</span>
-						<button type="button" class={s.retryBtn} onClick={() => void chat.recover()}>
+						<Button type="button" variant="danger" class={s.retryBtn} onClick={() => void chat.recover()}>
 							Recover
-						</button>
+						</Button>
 					</div>
 				)}
 			</Show>
@@ -217,9 +221,9 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 				{(message) => (
 					<div class={s.errorBanner}>
 						<span class={s.errorText}>{message()}</span>
-						<button type="button" class={s.retryBtn} onClick={() => void chat.recover()}>
+						<Button type="button" variant="danger" class={s.retryBtn} onClick={() => void chat.recover()}>
 							Retry
-						</button>
+						</Button>
 					</div>
 				)}
 			</Show>
@@ -281,14 +285,15 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 
 			<Show when={chat.phase() === "unconfigured"}>
 				<div class={s.setupActions}>
-					<button
+					<Button
 						type="button"
+						variant="primary"
 						onClick={() =>
 							void configureEgo().catch((error) => appLogger.error("ai-chat", "Failed to open ego settings", error))
 						}
 					>
 						Configure ego
-					</button>
+					</Button>
 				</div>
 			</Show>
 

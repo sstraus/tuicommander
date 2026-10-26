@@ -624,7 +624,10 @@ fn legacy_run_replays_and_cancels_without_guessed_graph_state() {
     let upgraded = RunStore::open_at(&db).unwrap();
     let legacy = upgraded.replay(&run.id).unwrap();
     assert_eq!(legacy.event_contract_version, 0);
-    assert!(legacy.graph_executions.is_empty());
+    assert_eq!(
+        legacy.graph_executions,
+        [] as [crate::workflows::run::graph::GraphExecution; 0]
+    );
     assert_eq!(legacy, upgraded.snapshot(&run.id).unwrap());
     for (key, command) in [
         ("legacy-resume", RunCommand::Resume),
@@ -641,7 +644,10 @@ fn legacy_run_replays_and_cancels_without_guessed_graph_state() {
         .command(&run.id, "legacy-cancel", RunCommand::Cancel)
         .unwrap();
     assert_eq!(cancelled.snapshot.status, RunStatus::Cancelled);
-    assert!(cancelled.snapshot.graph_executions.is_empty());
+    assert_eq!(
+        cancelled.snapshot.graph_executions,
+        [] as [crate::workflows::run::graph::GraphExecution; 0]
+    );
     assert_eq!(upgraded.replay(&run.id).unwrap(), cancelled.snapshot);
 }
 

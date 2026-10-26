@@ -82,7 +82,20 @@ pub async fn request_jsonl(
     response_ids: &[u64],
     timeout: Duration,
 ) -> Result<HashMap<u64, Value>, String> {
+    request_jsonl_with_env(program, args, messages, response_ids, timeout, &[]).await
+}
+
+/// Same protocol, bound to a live session's home/profile rather than this host's defaults.
+pub(crate) async fn request_jsonl_with_env(
+    program: &Path,
+    args: &[&str],
+    messages: &[Value],
+    response_ids: &[u64],
+    timeout: Duration,
+    environment: &[(String, String)],
+) -> Result<HashMap<u64, Value>, String> {
     let mut command = std::process::Command::new(program);
+    command.envs(environment.iter().cloned());
     command
         .args(args)
         .stdin(Stdio::piped())

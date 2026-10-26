@@ -333,6 +333,7 @@ end
 ///
 /// It reads the instruction file at exec time, so a Settings edit applies to the
 /// next launch without reopening the shell. An empty or missing file means off.
+#[cfg(unix)]
 const AGENT_SHIM: &str = r#"#!/bin/sh
 # TUIC agent shim: add TUIC's launch instructions, then exec the real agent.
 name=${0##*/}
@@ -429,9 +430,11 @@ exec "$real" "$@"
 
 /// Agents the shim serves. OpenCode is absent: TUIC shells export its native
 /// `OPENCODE_CONFIG_CONTENT`, which reaches absolute-path launches too.
+#[cfg(unix)]
 const SHIM_AGENTS: [&str; 7] = ["claude", "codex", "grok", "goose", "pi", "ego", "gemini"];
 
 /// The marker file the shim looks for to skip a TUIC shim dir on `PATH`.
+#[cfg(unix)]
 const SHIM_FILE: &str = "tuic-agent-shim";
 
 /// Template for the ZDOTDIR `.zshenv` wrapper.  At runtime `{script}` is
@@ -536,6 +539,7 @@ fn inject_launch_instructions(
 }
 
 /// The shim with the recorded Claude help and ego verbs filled in.
+#[cfg(unix)]
 fn render_shim() -> String {
     render_integration(AGENT_SHIM).replace(
         "__TUIC_EGO_NON_RUN_COMMANDS__",

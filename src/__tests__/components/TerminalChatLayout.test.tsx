@@ -89,13 +89,22 @@ it("keeps the collapsed tool row while using Claude Bash descriptions and non-Cl
 	expect(grok.container.querySelector("summary")?.textContent).not.toContain("Inspect result");
 });
 
-// Catches: harness notices consuming a human bubble or exposing the raw inbox command as the chip label.
-it("presents the exact inbox wake as a compact notice and leaves quoted text alone", () => {
-	const { getByRole, container } = chat([
-		{ id: "n", kind: "user", text: "[TUIC] message available — read it with: agent action=inbox" },
+// Catches: mail wakes leaving visible chat rows, or hiding interruptions and real user text with them.
+it("hides the exact inbox wake and leaves other notices and quoted text alone", () => {
+	const notice = chat([{ id: "n", kind: "user", text: "[TUIC] message available — read it with: agent action=inbox" }]);
+	expect(notice.container.querySelector('[aria-label="Chat transcript"]')?.textContent).toBe("");
+	expect(notice.container.querySelector('[aria-label="Chat transcript"]')?.children).toHaveLength(0);
+	cleanup();
+	const { getAllByRole, container } = chat([
+		{ id: "i1", kind: "user", text: "[Request interrupted by user for tool use]" },
+		{ id: "i2", kind: "user", text: "[Request interrupted by user]" },
 		{ id: "u", kind: "user", text: "Explain [TUIC] message available" },
 	]);
-	expect(getByRole("note").textContent).toBe("Message from an agent");
+	expect(getAllByRole("note").map((note) => note.textContent)).toEqual([
+		"[Request interrupted by user for tool use]",
+		"[Request interrupted by user]",
+	]);
+	expect(container.textContent).toContain("Explain [TUIC] message available");
 	expect(container.querySelectorAll('button[aria-label="Copy user message"]')).toHaveLength(1);
 });
 

@@ -1,3 +1,4 @@
+import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke, listen } from "../invoke";
 import type { AcpSessionUpdate } from "../types/acp";
@@ -111,20 +112,24 @@ async function readOnce(sessionId: string): Promise<void> {
 	}
 	// A reply that arrives after the view was closed must not resurrect state.
 	if (!state.cursors[sessionId] || watchOwners.get(sessionId) !== owner) return;
-	if (snapshot.reset) acpTranscript.clear(key);
-	for (const update of snapshot.updates) {
-		acpTranscript.applyFrame({
-			kind: "event",
-			connectionId: "pty",
-			generation: 0,
-			sequence: 0,
-			sessionId: key,
-			turnId: null,
-			event: { kind: "sessionUpdate", update },
-		});
-	}
-	setState("cursors", sessionId, { epoch: snapshot.epoch, nextSeq: snapshot.nextSeq });
-	chatViewStore.clearUnavailable(sessionId);
+	// A snapshot is one publication, not a stream of partial histories. Without
+	// this boundary, every replayed entry reprojects and renders the growing list.
+	batch(() => {
+		if (snapshot.reset) acpTranscript.clear(key);
+		for (const update of snapshot.updates) {
+			acpTranscript.applyFrame({
+				kind: "event",
+				connectionId: "pty",
+				generation: 0,
+				sequence: 0,
+				sessionId: key,
+				turnId: null,
+				event: { kind: "sessionUpdate", update },
+			});
+		}
+		setState("cursors", sessionId, { epoch: snapshot.epoch, nextSeq: snapshot.nextSeq });
+		chatViewStore.clearUnavailable(sessionId);
+	});
 }
 
 export const chatViewStore = {

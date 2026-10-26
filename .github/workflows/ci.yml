@@ -24,7 +24,7 @@ concurrency:
 # See docs/guides/ci.md.
 env:
   SCCACHE_IDLE_TIMEOUT: "0"
-  RUST_VERSION: "1.98.0"
+  RUST_VERSION: "1.99.1"
 
 jobs:
   socket:
@@ -78,9 +78,9 @@ jobs:
       - run: scripts/check-gitlink-reachable.sh
       - run: TMPDIR="$RUNNER_TEMP" scripts/test-check-gitlink-reachable.sh
 
-  frontend:
+  frontend-checks:
     timeout-minutes: 20
-    name: Frontend (typecheck + tests)
+    name: Frontend checks
     runs-on: ubuntu-22.04
     steps:
       # The plugins submodule carries the built-in plugin sources that
@@ -107,6 +107,9 @@ jobs:
       - name: Remote daemon release workflow contracts
         run: python3 .github/workflows/tests/test-remote-daemon-release.py
 
+      - name: Frontend shard workflow contracts
+        run: python3 .github/workflows/tests/test-frontend-shards.py
+
       - name: Shell tests
         run: make test-shell
 
@@ -122,8 +125,56 @@ jobs:
           node scripts/third-party-notices.mjs --self-test
           node scripts/third-party-notices.mjs --check --only js
 
+  # The isolated suite took 1134-1141s on hosted Linux, versus 327s locally,
+  # and later exceeded 20 minutes while still progressing. Partition the full
+  # suite across runners, not extra workers competing on the same four vCPUs.
+  frontend-tests:
+    timeout-minutes: 20
+    name: Frontend tests (${{ matrix.shard }}/4)
+    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Runner resources
+        run: |
+          node -e 'const os = require("node:os"); console.log({node: process.version, cpus: os.cpus().length, parallelism: os.availableParallelism(), memoryGiB: os.totalmem() / 2 ** 30})'
+
+      # File-level timings stay visible without a line per passing test.
+      # Keep isolation, async-leak detection and the config's four-worker cap.
       - name: Tests
-        run: bash scripts/with-test-tmp.sh pnpm exec vitest run --reporter=verbose
+        run: bash scripts/with-test-tmp.sh pnpm exec vitest run --reporter=default --shard=${{ matrix.shard }}/4
+
+  # Preserve the existing required check name. A failed/cancelled/skipped shard
+  # must fail this gate, not cause it to be skipped and accepted as successful.
+  frontend:
+    timeout-minutes: 5
+    name: Frontend (typecheck + tests)
+    runs-on: ubuntu-22.04
+    needs: [frontend-checks, frontend-tests]
+    if: always()
+    steps:
+      - name: Require checks and every test shard
+        env:
+          CHECKS_RESULT: ${{ needs.frontend-checks.result }}
+          TESTS_RESULT: ${{ needs.frontend-tests.result }}
+        run: test "$CHECKS_RESULT" = success && test "$TESTS_RESULT" = success
 
   # Always runs: clippy + tests on Linux (fastest, catches most issues)
   rust:
@@ -225,13 +276,17 @@ jobs:
           CMAKE_C_FLAGS: '-fPIC'
           CMAKE_CXX_FLAGS: '-fPIC'
           RUSTFLAGS: '-C link-arg=-fuse-ld=mold'
+          TUIC_FIXTURE_FEATURES: dictation
         run: bash ../scripts/with-test-tmp.sh cargo nextest run --workspace --features dictation --profile ci
 
 
       # This check invokes nextest and compiled Rust tests. Keep it out of the
       # frontend shell-test discovery, whose job installs neither prerequisite.
       - name: Nextest fixture setup scope
-        run: bash scripts/with-test-tmp.sh bash scripts/check-nextest-fixture-scope.sh
+        run: |
+          bash scripts/with-test-tmp.sh bash scripts/check-fixture-build-profile.sh
+          bash scripts/with-test-tmp.sh python3 scripts/check-fixture-build-graph.py
+          bash scripts/with-test-tmp.sh bash scripts/check-nextest-fixture-scope.sh
 
       # nextest does not run doctests — run them separately so doc examples stay
       # covered. Linux-only: doctests are platform-independent logic.
@@ -403,6 +458,9 @@ jobs:
           # rust-cache's `workspaces` input joins target with root, so it can't point at
           # an absolute path — use `cache-directories` instead.
           cache-directories: ${{ matrix.platform == 'windows-latest' && 'C:/t' || '' }}
+          # A failed/cancelled test run must not discard an hour of compilation.
+          # sccache cannot cache linked test/binary targets; retain C:/t too.
+          cache-on-failure: ${{ matrix.platform == 'windows-latest' }}
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
@@ -469,10 +527,12 @@ jobs:
           SCCACHE_GHA_ENABLED: "true"
           RUSTC_WRAPPER: "sccache"
           CARGO_INCREMENTAL: "0"
-          # The macOS 9a49ff1cb run spent 67m17s compiling tests before its
-          # 90-minute cancellation. Test inherits dev's opt-level 1; keep
-          # dependencies at that level, but skip optimizing workspace harnesses.
-          CARGO_PROFILE_TEST_OPT_LEVEL: ${{ matrix.label == 'macOS-ARM' && '0' || '1' }}
+          # Windows d27aa1739 spent 45m36s compiling tests before the fixture
+          # setup rebuilt dev for 18m15s. As on macOS, skip optimizing workspace
+          # harnesses; Cargo.toml keeps dependencies and tuic-terminal at O1.
+          CARGO_PROFILE_TEST_OPT_LEVEL: "0"
+          # The setup build must share nextest's profile and feature graph.
+          TUIC_FIXTURE_FEATURES: dictation
           CMAKE_C_COMPILER_LAUNCHER: "sccache"
           CMAKE_CXX_COMPILER_LAUNCHER: "sccache"
           # Use -Z7: Git Bash converts /Z7 into a Windows path before native Cargo.

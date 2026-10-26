@@ -1,5 +1,7 @@
 import { type Component, createSignal } from "solid-js";
 import { t } from "../../i18n";
+import { Button } from "../ui/Button";
+import { Textarea } from "../ui/Textarea";
 import s from "./ReviewThreads.module.css";
 import type { DraftComment } from "./reviewThreads";
 
@@ -11,9 +13,9 @@ export const DraftCommentView: Component<{ draft: DraftComment; onRemove: () => 
 				{props.draft.path}:{props.draft.line}
 			</span>
 			<span class={s.badge}>{t("prDiff.pending", "Pending comment")}</span>
-			<button type="button" class={s.action} onClick={props.onRemove}>
+			<Button type="button" onClick={props.onRemove}>
 				{t("prDiff.discard", "Discard")}
-			</button>
+			</Button>
 		</header>
 		<p class={s.draftBody}>{props.draft.body}</p>
 	</section>
@@ -26,19 +28,19 @@ export const NewDraftForm: Component<{ disabled: boolean; onAdd: (body: string) 
 	const [body, setBody] = createSignal("");
 	return (
 		<div class={s.composer}>
-			<textarea
+			<Textarea
 				aria-label={t("prDiff.commentLabel", "Line comment")}
 				placeholder={t("prDiff.commentPlaceholder", "Comment on this line…")}
 				value={body()}
 				onInput={(e) => setBody(e.currentTarget.value)}
 			/>
 			<div class={s.row}>
-				<button type="button" class={s.action} onClick={props.onClose}>
+				<Button type="button" onClick={props.onClose}>
 					{t("prDiff.cancel", "Cancel")}
-				</button>
-				<button
+				</Button>
+				<Button
 					type="button"
-					class={s.primary}
+					variant="primary"
 					disabled={props.disabled || !body().trim()}
 					onClick={() => {
 						props.onAdd(body().trim());
@@ -46,7 +48,7 @@ export const NewDraftForm: Component<{ disabled: boolean; onAdd: (body: string) 
 					}}
 				>
 					{t("prDiff.addToReview", "Add to review")}
-				</button>
+				</Button>
 			</div>
 		</div>
 	);

@@ -9,6 +9,61 @@ pub struct AutomationsConfig {
     pub version: u32,
     pub max_concurrent_runs: u32,
     pub definitions: Vec<AutomationDefinition>,
+    /// GitHub issue intake; an empty repository allowlist disables it and publishing.
+    pub event_intake: EventIntake,
+}
+
+/// Which labelled issues start which definition, and the only repositories
+/// intake or draft-PR publishing may ever touch.
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[serde(default, deny_unknown_fields)]
+pub struct EventIntake {
+    /// `owner/name` entries; the default empty list disables intake and publishing.
+    pub repositories: Vec<String>,
+    pub label: String,
+    /// Id of the enabled definition an eligible issue starts.
+    pub definition_id: String,
+}
+
+impl EventIntake {
+    pub fn enabled(&self) -> bool {
+        !self.repositories.is_empty()
+    }
+
+    /// GitHub names compare case-insensitively.
+    pub fn allows(&self, repository: &str) -> bool {
+        self.repositories
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(repository))
+    }
+
+    fn validate(&self) -> Result<(), String> {
+        if !self.enabled() {
+            return Ok(());
+        }
+        for repository in &self.repositories {
+            let valid = repository.split_once('/').is_some_and(|(owner, name)| {
+                [owner, name].iter().all(|part| {
+                    !part.is_empty()
+                        && part
+                            .chars()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+                })
+            });
+            if !valid {
+                return Err(format!(
+                    "Event intake repository must be owner/name: {repository}"
+                ));
+            }
+        }
+        if self.label.trim().is_empty() {
+            return Err("Event intake label must not be blank".into());
+        }
+        if self.definition_id.trim().is_empty() {
+            return Err("Event intake definition id must not be blank".into());
+        }
+        Ok(())
+    }
 }
 
 impl Default for AutomationsConfig {
@@ -17,6 +72,7 @@ impl Default for AutomationsConfig {
             version: 1,
             max_concurrent_runs: 2,
             definitions: Vec::new(),
+            event_intake: EventIntake::default(),
         }
     }
 }
@@ -91,7 +147,7 @@ impl AutomationsConfig {
                 return Err("Duplicate automation id in definitions".into());
             }
         }
-        Ok(())
+        self.event_intake.validate()
     }
 }
 

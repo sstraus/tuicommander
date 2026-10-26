@@ -1,0 +1,25 @@
+{
+  "title": "Per il rilevamento harness sullo stesso file eseguito da utenti diversi, quale identità scegli? Stato: le altre quattro correzioni sono verificate da test mirati, ma la PR resta sospesa finché questo caso non è risolto. Raccomando A: l'osservazione riguarda il file, non l'utente, e l'acquisizione non usa l'UID. Separatamente, il token GitHub richiede lo scope `project` per completare i metadati obbligatori della PR.",
+  "options": [
+    {
+      "key": "1",
+      "label": "Un job e uno scope per percorso (raccomandato) Normalizza l'UID solo nel job harness; mantiene l'identità pubblica per file.",
+      "highlighted": true,
+      "destructive": false
+    },
+    {
+      "key": "2",
+      "label": "Identità pubblica distinta per utente Produce più candidati per lo stesso file e cambia la semantica pubblica.",
+      "highlighted": false,
+      "destructive": false
+    },
+    {
+      "key": "3",
+      "label": "Consolida solo la pubblicazione Mantiene job per utente ma richiede una riconciliazione più ampia.",
+      "highlighted": false,
+      "destructive": false
+    }
+  ],
+  "selection_mode": "navigate-enter",
+  "dismiss_key": "cancel"
+}

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const invokeMock = vi.fn();
 
@@ -8,6 +8,7 @@ vi.mock("@tauri-apps/plugin-notification", () => ({
 	sendNotification: vi.fn(),
 }));
 vi.mock("../../invoke", () => ({ invoke: invokeMock }));
+vi.mock("../../stores/notifications", () => ({ notificationsStore: { isSessionSilenced: () => false } }));
 vi.mock("../../stores/toasts", () => ({ toastsStore: { add: vi.fn() } }));
 vi.mock("../../stores/appLogger", () => ({ appLogger: { error: vi.fn() } }));
 vi.mock("../../stores/repositories", () => ({
@@ -30,6 +31,8 @@ describe("sidebar flow lifecycle (critic r7)", () => {
 		vi.useFakeTimers();
 	});
 
+	afterEach(() => vi.useRealTimers());
+
 	it("a release function called twice does not cancel the trailing read of the other mounted row", async () => {
 		// catches: release that decrements on every call, so a double release steals another row's hold
 		invokeMock.mockResolvedValue(flow("x"));
@@ -42,7 +45,6 @@ describe("sidebar flow lifecycle (critic r7)", () => {
 		releaseA();
 		await vi.advanceTimersByTimeAsync(6000);
 		expect(flowCalls()).toBe(2);
-		vi.useRealTimers();
 	});
 
 	it("remounting a row after the last release schedules and runs a fresh trailing read", async () => {
@@ -57,6 +59,60 @@ describe("sidebar flow lifecycle (critic r7)", () => {
 		await store.refreshSidebarFlow("/repo"); // still inside the gap
 		await vi.advanceTimersByTimeAsync(6000);
 		expect(flowCalls()).toBe(2);
+	});
+
+	it("a clock that went back reads at once instead of spinning a trailing timer", async () => {
+		// catches: waiting out the skew, whose >2^31-1 ms delay fires after 1 ms and re-arms forever
+		invokeMock.mockResolvedValue(flow("x"));
+		const store = await makeStore();
+		vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
+		await store.refreshSidebarFlow("/repo");
+		vi.setSystemTime(new Date("2026-09-19T12:00:00Z"));
+		await store.refreshSidebarFlow("/repo");
+		expect(flowCalls()).toBe(2);
+		expect(vi.getTimerCount()).toBe(0);
+		vi.useRealTimers();
+	});
+
+	it("a skew beyond setTimeout's 2^31-1 ms limit reads at once and arms no timer", async () => {
+		// catches: a >2^31 ms wait that fires after 1 ms and re-arms forever
+		invokeMock.mockResolvedValue(flow("x"));
+		const store = await makeStore();
+		vi.setSystemTime(new Date("2030-01-01T00:00:00Z"));
+		await store.refreshSidebarFlow("/repo");
+		vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+		await store.refreshSidebarFlow("/repo");
+		expect(flowCalls()).toBe(2);
+		expect(vi.getTimerCount()).toBe(0);
+		await vi.advanceTimersByTimeAsync(60_000);
+		expect(flowCalls()).toBe(2);
+		vi.useRealTimers();
+	});
+
+	it("an ask exactly one gap after the last read reads at once; one ms earlier waits", async () => {
+		// catches: an off-by-one at the gap boundary (wait > 0 vs >= 0)
+		invokeMock.mockResolvedValue(flow("x"));
+		const store = await makeStore();
+		vi.setSystemTime(new Date("2026-10-19T12:00:00Z"));
+		await store.refreshSidebarFlow("/repo");
+		vi.setSystemTime(new Date("2026-10-19T12:00:04.999Z"));
+		await store.refreshSidebarFlow("/repo");
+		expect(flowCalls()).toBe(1);
+		expect(vi.getTimerCount()).toBe(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(flowCalls()).toBe(2);
+		vi.useRealTimers();
+	});
+
+	it("an ask at the same instant as the last read collapses into one trailing read", async () => {
+		// catches: elapsed 0 being mistaken for a skewed clock and read immediately
+		invokeMock.mockResolvedValue(flow("x"));
+		const store = await makeStore();
+		await store.refreshSidebarFlow("/repo");
+		await store.refreshSidebarFlow("/repo");
+		await store.refreshSidebarFlow("/repo");
+		expect(flowCalls()).toBe(1);
+		expect(vi.getTimerCount()).toBe(1);
 		vi.useRealTimers();
 	});
 
@@ -72,7 +128,6 @@ describe("sidebar flow lifecycle (critic r7)", () => {
 		resolveOld(flow("old"));
 		await old;
 		expect((store.sidebarFlow("/repo") as unknown as { tag: string }).tag).toBe("new");
-		vi.useRealTimers();
 	});
 
 	it("an older response is applied when the newer read failed", async () => {
@@ -87,7 +142,6 @@ describe("sidebar flow lifecycle (critic r7)", () => {
 		resolveOld(flow("old"));
 		await old;
 		expect((store.sidebarFlow("/repo") as unknown as { tag: string }).tag).toBe("old");
-		vi.useRealTimers();
 	});
 
 	it("a response in flight across resetForTests is dropped", async () => {
@@ -100,6 +154,5 @@ describe("sidebar flow lifecycle (critic r7)", () => {
 		resolveOld(flow("old"));
 		await pending;
 		expect(store.sidebarFlow("/repo")).toBeUndefined();
-		vi.useRealTimers();
 	});
 });

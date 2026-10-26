@@ -89,3 +89,13 @@ it("does not overwrite the main desktop snapshot from a secondary window", async
 	await vi.advanceTimersByTimeAsync(50);
 	expect(rpc).not.toHaveBeenCalled();
 });
+
+// Catches: native tab state has an opener but publication strips it before the phone can read it.
+it("publishes the MCP document opener in the mobile metadata snapshot", async () => {
+	mount();
+	const id = mdTabsStore.addMcpFile("review", "/repo", "review.md", false, true, "tuic-b");
+	await vi.advanceTimersByTimeAsync(50);
+	expect(rpc).toHaveBeenCalledWith("sync_open_markdown_tabs", {
+		tabs: [{ id, repoPath: "/repo", filePath: "review.md", fsRoot: "/repo", openerTuicSession: "tuic-b" }],
+	});
+});

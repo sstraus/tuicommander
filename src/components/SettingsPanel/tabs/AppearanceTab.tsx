@@ -8,6 +8,7 @@ import { uiStore } from "../../../stores/ui";
 import { UiLegend } from "../../HelpPanel/UiLegend";
 import { ColorSwatchPicker } from "../../shared/ColorSwatchPicker";
 import { DEFAULT_COLOR_PRESETS } from "../../shared/colorPresets";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import { SettingSelect, SettingSlider, SettingToggle } from "../SettingFields";
 import s from "../Settings.module.css";
@@ -73,7 +74,8 @@ const GroupSettingsItem: Component<{
 						autofocus
 					/>
 				</Show>
-				<button
+				<Button
+					variant="ghost"
 					data-non-setting="Create or remove a stable repository group through its owner"
 					class={s.groupDeleteBtn}
 					onClick={() => repositoriesStore.deleteGroup(props.group.id)}
@@ -81,7 +83,7 @@ const GroupSettingsItem: Component<{
 					aria-label={`${t("groups.btn.deleteGroup", "Delete group")}: ${props.group.name}`}
 				>
 					×
-				</button>
+				</Button>
 			</div>
 			<Show when={nameError()}>
 				<div class={s.groupNameError}>{nameError()}</div>
@@ -209,23 +211,23 @@ export const AppearanceTab: Component = () => {
 
 				<For each={groups()}>{(group) => <GroupSettingsItem group={group} />}</For>
 
-				<button
+				<Button
 					data-non-setting="Create or remove a stable repository group through its owner"
 					class={s.groupsAddBtn}
 					onClick={() => repositoriesStore.createGroup(t("groups.defaultGroupName", "New Group"))}
 				>
 					{t("groups.btn.addGroup", "Add Group")}
-				</button>
+				</Button>
 			</SectionCard>
 			<SectionCard title={t("appearance.heading.layout", "Layout")}>
 				<div class={s.group}>
-					<button
+					<Button
 						data-non-setting="Reset panel geometry through the existing UI layout owner"
 						class={s.testBtn}
 						onClick={() => uiStore.resetLayout()}
 					>
 						{t("appearance.btn.resetLayout", "Reset Panel Sizes")}
-					</button>
+					</Button>
 					<p class={s.hint}>{t("appearance.hint.resetLayout", "Reset sidebar and panel widths to default values")}</p>
 				</div>
 			</SectionCard>

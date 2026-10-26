@@ -457,6 +457,7 @@ pub(super) async fn get_notes() -> impl IntoResponse {
 }
 
 pub(super) async fn put_notes(
+    State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     auth: Option<Extension<Authenticated>>,
     Json(request): Json<crate::config::ConfigSaveRequest<serde_json::Value>>,
@@ -465,7 +466,10 @@ pub(super) async fn put_notes(
         return resp;
     }
     match crate::config::save_notes(request.base, request.config) {
-        Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
+        Ok(()) => {
+            state.notify_ideas_changed();
+            (StatusCode::OK, Json(serde_json::json!({"ok": true})))
+        }
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             Json(serde_json::json!({"error": e})),
@@ -624,12 +628,13 @@ pub(super) async fn get_mcp_status_http(State(state): State<Arc<AppState>>) -> i
     let running = false;
     Json(serde_json::json!({
         "native_tools": super::mcp_transport::native_tool_catalog(),
-        "native_capabilities": crate::mcp_capabilities::catalog(),
+        "native_capabilities": super::mcp_transport::native_capability_catalog(&state),
         "enabled": true,
         "running": running,
         "active_sessions": state.session_maps.sessions.len(),
         "mcp_clients": state.mcp.sessions.len(),
         "max_sessions": MAX_CONCURRENT_SESSIONS,
+        "tls_active": state.tls_listener.read().strong_count() > 0,
     }))
 }
 
@@ -741,6 +746,25 @@ pub(super) async fn put_remote_connection_password(
     super::json_result(
         crate::remote_connection::set_connection_password_with_refresh(&state, &id, &body.password),
     )
+}
+
+/// Import the relay pairing bundle printed by `tuic-remote --relay-pair`, or
+/// forget the pairing when the body carries an empty string.
+pub(super) async fn put_remote_connection_relay_pairing(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    auth: Option<Extension<Authenticated>>,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(body): Json<super::types::RemoteConnectionRelayPairingRequest>,
+) -> impl IntoResponse {
+    if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
+        return resp.into_response();
+    }
+    super::json_result(crate::remote_connection::set_relay_pairing_with_refresh(
+        &state,
+        &id,
+        &body.bundle,
+    ))
 }
 
 pub(super) async fn get_remote_connection_password_exists(

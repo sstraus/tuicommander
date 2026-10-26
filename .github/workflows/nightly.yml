@@ -21,7 +21,7 @@ concurrency:
 # ci.yml and docs/guides/ci.md.
 env:
   SCCACHE_IDLE_TIMEOUT: "0"
-  RUST_VERSION: "1.98.0"
+  RUST_VERSION: "1.99.1"
 
 jobs:
   cleanup:

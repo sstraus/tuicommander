@@ -1,4 +1,4 @@
-import { fireEvent, render } from "@solidjs/testing-library";
+import { fireEvent, render, within } from "@solidjs/testing-library";
 import { describe, expect, it, vi } from "vitest";
 import { CreateWorktreeDialog } from "../../components/CreateWorktreeDialog/CreateWorktreeDialog";
 
@@ -128,7 +128,7 @@ describe("CreateWorktreeDialog", () => {
 
 		fireEvent.input(input, { target: { value: "develop" } });
 
-		const createBtn = container.querySelector(".primaryBtn")!;
+		const createBtn = within(container).getByRole("button", { name: "Create" });
 		fireEvent.click(createBtn);
 
 		expect(handleCreate).toHaveBeenCalledWith({
@@ -145,7 +145,7 @@ describe("CreateWorktreeDialog", () => {
 
 		fireEvent.input(input, { target: { value: "feature/new-thing" } });
 
-		const createBtn = container.querySelector(".primaryBtn")!;
+		const createBtn = within(container).getByRole("button", { name: "Create" });
 		fireEvent.click(createBtn);
 
 		expect(handleCreate).toHaveBeenCalledWith({
@@ -157,7 +157,7 @@ describe("CreateWorktreeDialog", () => {
 
 	it("disables Create button when input is empty", () => {
 		const { container } = render(() => <CreateWorktreeDialog {...defaultProps} />);
-		const createBtn = container.querySelector(".primaryBtn") as HTMLButtonElement;
+		const createBtn = within(container).getByRole("button", { name: "Create" }) as HTMLButtonElement;
 		expect(createBtn.disabled).toBe(true);
 	});
 
@@ -168,7 +168,7 @@ describe("CreateWorktreeDialog", () => {
 
 		fireEvent.input(input, { target: { value: "bad name" } });
 
-		const createBtn = container.querySelector(".primaryBtn")!;
+		const createBtn = within(container).getByRole("button", { name: "Create" });
 		fireEvent.click(createBtn);
 
 		// Should show error, not call onCreate
@@ -185,7 +185,7 @@ describe("CreateWorktreeDialog", () => {
 		// "main" already has a worktree
 		fireEvent.input(input, { target: { value: "main" } });
 
-		const createBtn = container.querySelector(".primaryBtn")!;
+		const createBtn = within(container).getByRole("button", { name: "Create" });
 		fireEvent.click(createBtn);
 
 		const error = container.querySelector(".error");
@@ -197,7 +197,7 @@ describe("CreateWorktreeDialog", () => {
 	it("calls onClose when cancel button is clicked", () => {
 		const handleClose = vi.fn();
 		const { container } = render(() => <CreateWorktreeDialog {...defaultProps} onClose={handleClose} />);
-		const cancelBtn = container.querySelector(".cancelBtn")!;
+		const cancelBtn = within(container).getByRole("button", { name: "Cancel" });
 		fireEvent.click(cancelBtn);
 		expect(handleClose).toHaveBeenCalledOnce();
 	});
@@ -238,7 +238,7 @@ describe("CreateWorktreeDialog", () => {
 			// Trigger an error first
 			const input = container.querySelector("input[type='text']") as HTMLInputElement;
 			fireEvent.input(input, { target: { value: "bad name" } });
-			const createBtn = container.querySelector(".primaryBtn")!;
+			const createBtn = within(container).getByRole("button", { name: "Create" });
 			fireEvent.click(createBtn);
 			expect(container.querySelector(".error")).not.toBeNull();
 

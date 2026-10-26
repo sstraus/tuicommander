@@ -22,32 +22,6 @@
   gap: 4px;
 }
 
-.headerBtn {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  padding: 2px 4px;
-  border-radius: var(--radius-md);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.headerBtn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
-.headerBtn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.headerBtn:disabled:hover {
-  background: none;
-  color: var(--fg-secondary);
-}
 
 .headerBtnActive {
   color: var(--accent);
@@ -109,6 +83,7 @@
 }
 
 .chatTabs {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   gap: 2px;
   overflow-x: auto;
@@ -129,16 +104,6 @@
   box-shadow: inset 0 -2px var(--accent);
 }
 
-.chatTab button, .newChatTab {
-  border: 0;
-  background: transparent;
-  color: var(--fg-primary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-sm);
-  padding: 4px 7px;
-  white-space: nowrap;
-}
 
 .chatTab button:first-child {
   overflow: hidden;
@@ -172,22 +137,8 @@
   position: absolute;
   right: 12px;
   bottom: 8px;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-md);
-  background: var(--bg-secondary);
-  color: var(--fg-primary);
-  font: inherit;
-  font-size: var(--font-xs);
-  white-space: nowrap;
-  cursor: pointer;
 }
 
-.newTextBadge:hover { background: var(--bg-highlight); }
-.newTextBadge:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* ── Messages ───────────────────────────────────────────── */
 .messageList {
@@ -212,6 +163,8 @@
 }
 
 .findBar {
+  composes: toolbar from "../ui/FormControls.module.css";
+  flex-wrap: wrap;
   position: sticky;
   top: 0;
   z-index: 1;
@@ -226,32 +179,13 @@
 
 .findBar input {
   min-width: 0;
-  flex: 1;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  color: var(--fg-primary);
+  flex: 1 1 100px;
 }
 
-.findBar button {
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-xs);
-}
 
 .copyAction {
-  display: block;
   opacity: 0;
   margin-left: auto;
-  border: 0;
-  background: transparent;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-xs);
 }
 
 /* The bubble is only as tall as its text. Copy sits in the gutter to its left
@@ -280,11 +214,6 @@
 .messageList :global(pre[data-raw-code] button[data-copy-code]) {
   align-self: flex-end;
   order: -1;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-  cursor: pointer;
 }
 
 .messageList > * {
@@ -328,11 +257,11 @@
 }
 
 .assistantMsg.intermediateMsg {
-  color: var(--fg-muted);
+  color: var(--fg-primary);
   font-size: var(--font-sm, 0.875em);
 }
 
-/* #markdown-content sets its own color and size; inherit so the muted style reaches the prose. */
+/* Keep the intermediate size preference without reducing prose contrast. */
 .assistantMsg.intermediateMsg :global(#markdown-content) {
   color: inherit;
   font-size: inherit;
@@ -373,20 +302,6 @@
   margin-top: 8px;
 }
 
-.suggestedReplies button {
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--fg-primary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-xs);
-  padding: 2px 6px;
-}
-
-.suggestedReplies button:hover {
-  background: var(--bg-highlight);
-}
 
 .assistantMsg :global(#markdown-content) {
   padding: 0;
@@ -400,7 +315,7 @@
   padding: 8px 10px;
   margin-bottom: 8px;
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: var(--font-md);
 }
 
 .assistantMsg :global(#markdown-content code) {
@@ -495,21 +410,6 @@
   white-space: nowrap;
 }
 
-.retryBtn {
-  background: none;
-  border: 1px solid var(--error);
-  border-radius: var(--radius-md);
-  color: var(--error);
-  font-size: var(--font-sm);
-  padding: 2px 8px;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background 0.15s ease;
-}
-
-.retryBtn:hover {
-  background: color-mix(in srgb, var(--error) 20%, transparent);
-}
 
 /* ── Input area ─────────────────────────────────────────── */
 .inputArea {
@@ -547,10 +447,6 @@
 
 .filePreview button {
   margin-left: 6px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
 }
 
 .imagePreviews {
@@ -578,11 +474,6 @@
   position: absolute;
   top: 2px;
   right: 2px;
-  border: 0;
-  border-radius: var(--radius-sm);
-  background: var(--bg-secondary);
-  color: var(--fg-primary);
-  cursor: pointer;
 }
 
 .pasteError {
@@ -590,61 +481,25 @@
   font-size: var(--font-xs);
 }
 
-.textarea {
+.inputArea:not(.mobileComposer) .textarea {
   flex: 0 0 auto;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-primary);
-  font-size: var(--font-base);
-  font-family: var(--font-ui);
-  padding: 8px 12px;
   resize: none;
-  min-height: 36px;
-  line-height: 1.4;
-  box-sizing: border-box;
   overflow-y: hidden;
   transition: height 0.12s ease;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .textarea {
+  .inputArea:not(.mobileComposer) .textarea {
     transition: none;
   }
 }
 
-.textarea:focus {
-  outline: none;
-  border-color: var(--accent);
-}
 
 .textarea::placeholder {
   color: var(--fg-muted);
   opacity: 0.5;
 }
 
-
-
-
-.stopBtn {
-  min-width: 44px;
-  padding: 0 8px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--error);
-  color: var(--text-on-error);
-  border: none;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: opacity 0.15s ease;
-}
-
-.stopBtn:hover {
-  opacity: 0.85;
-}
 
 /* ── Agent mode ────────────────────────────────────────── */
 .agentBanner {
@@ -914,18 +769,6 @@
   gap: 8px;
 }
 
-.approvalBtn {
-  border: none;
-  border-radius: var(--radius-md);
-  font-size: var(--font-sm);
-  padding: 3px 12px;
-  cursor: pointer;
-  transition: opacity 0.15s ease;
-}
-
-.approvalBtn:hover {
-  opacity: 0.85;
-}
 
 .approveBtn {
   background: var(--success);
@@ -996,6 +839,7 @@
 }
 
 .queueHeader {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1020,18 +864,6 @@
   font-size: var(--font-sm);
 }
 
-.queueCancel {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 4px;
-  color: var(--fg-secondary);
-  background: none;
-  border: 0;
-  cursor: pointer;
-}
-
-.queueCancel:hover { color: var(--error); }
 
 /* ── History panel ──────────────────────────────────── */
 .historyPanel {
@@ -1169,6 +1001,7 @@
    the agent's plan, an elicitation form, and the row of session controls. */
 
 .controlBar {
+  composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   gap: 6px;
@@ -1269,19 +1102,8 @@
 
 .noticeAction {
   margin-top: 8px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--fg-primary);
-  cursor: pointer;
-  font: inherit;
-  font-size: var(--font-sm);
-  padding: 4px 8px;
 }
 
-.noticeAction:hover {
-  background: var(--bg-highlight);
-}
 
 .settledNote {
   align-self: center;
@@ -1311,15 +1133,6 @@
   justify-content: center;
 }
 
-.setupActions button {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border: none;
-  border-radius: var(--radius-lg);
-  padding: 8px 16px;
-  font-size: var(--font-md);
-  cursor: pointer;
-}
 
 /* ── Provider retry status ─────────────────────────────── */
 .providerRetry {
@@ -1361,12 +1174,7 @@
 .mobileComposer textarea { min-width: 0; }
 .composerActions { display: contents; }
 
-/* Match all desktop actions to the bottom 36px textarea line. */
-.inputArea:not(.mobileComposer) > button,
-.inputArea:not(.mobileComposer) > .composerActions > button {
-  height: 36px;
-  margin-bottom: 0;
-}
+
 /* Keep Park and Stop beside the input instead of reserving another row. */
 .mobileComposerActions { display: contents; }
 .mobileComposer .filePreview { max-width: 100%; overflow-wrap: anywhere; }
@@ -1395,8 +1203,6 @@
 
 .messageList[data-terminal-chat] [data-answer-card] {
   padding: 12px 16px;
-  border-left: 3px solid var(--success);
-  border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
 }
 
 .messageList[data-terminal-chat] [data-answer-card] .replyActions {
@@ -1414,11 +1220,22 @@
   color: var(--fg-secondary);
 }
 
+/* Scope the rule to the CLI planner's answer blocks, never the whole message. */
+.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content [data-tuic-answer]) {
+  border-left: 3px solid var(--answer-rule);
+  margin-left: -16px;
+}
+
 /* Fenced code keeps its own inset, including room for the Copy control. */
 .messageList[data-terminal-chat] .assistantMsg :global(#markdown-content [data-tuic-answer]:not(pre)) {
-  padding: 0;
+  padding: 0 0 0 13px;
   margin-top: 0;
   margin-bottom: 8px;
+}
+
+/* Outside list markers need Markdown's normal gutter in addition to the answer inset. */
+.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content :is(ul, ol)[data-tuic-answer]) {
+  padding-left: calc(13px + 2em);
 }
 
 /* Only the last block of the last segment ends the card; every earlier segment's last block keeps its gap. */
@@ -1442,19 +1259,13 @@
 }
 .conversationRow { display: flex; align-items: center; gap: 4px; }
 .conversationName {
-	flex: 1;
-	min-width: 0;
-	text-align: left;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-	background: transparent;
-	border: none;
-	color: var(--fg-primary);
-	padding: 6px;
-	cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.conversationName:hover { background: var(--bg-highlight); }
+
 
 .repoContext {
   display: flex;
@@ -1465,24 +1276,33 @@
   font-size: var(--font-xs);
 }
 .repoContext span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.repoContext button { margin-left: auto; color: var(--fg-secondary); background: transparent; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 2px 6px; white-space: nowrap; cursor: pointer; }
-.repoContext button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+.repoContext button {
+  margin-left: auto;
+}
 
-/* Approved Tidy frame: a single 34px row, plus its bottom border. */
-.tidyHeader { display: flex; align-items: center; gap: 4px; height: 35px; min-height: 35px; box-sizing: border-box; padding: 0 8px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
+
+/* The header contains shared desktop/touch targets without clipping. */
+.tidyHeader {
+  composes: toolbar from "../ui/FormControls.module.css"; display: flex; align-items: center; gap: 4px; flex-shrink: 0; box-sizing: border-box; padding: 4px 8px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
 .sessionHeader { display: flex; align-items: center; gap: 4px; min-width: 0; flex: 1; }
 .conversationSwitcher { position: relative; flex: 1; min-width: 0; }
-.conversationLabel { display: flex; align-items: center; gap: 5px; font-weight: 600; font-size: 12px; min-width: 0; }
+.conversationLabel { box-sizing: border-box; height: var(--control-height, 36px); padding: 0 var(--control-padding-x, 8px); display: flex; align-items: center; gap: 5px; font-weight: 600; font-size: 12px; min-width: 0; }
 .conversationLabel span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .conversationLabel svg { flex-shrink: 0; }
-.conversationSwitcher > select { position: absolute; inset: 0; width: 100%; max-width: none; height: 100%; opacity: 0; cursor: pointer; }
+
 .conversationSwitcher:focus-within { outline: 1px solid var(--accent); border-radius: var(--radius-sm); }
 .sessionHeader > .headerBtn { flex-shrink: 0; gap: 4px; font-size: 12px; }
 .actionsMenu { position: relative; flex-shrink: 0; }
 .actionsMenu > summary { list-style: none; font-size: 18px; }
 .actionsMenu > summary::-webkit-details-marker { display: none; }
-.actionsMenuItems { position: absolute; top: 100%; right: 0; z-index: 20; min-width: 230px; max-height: 65vh; overflow-y: auto; padding: 4px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-dropdown); }
-.actionsMenuItems > .headerBtn, .actionsMenuItems > .conversationList > summary { justify-content: flex-start; gap: 8px; width: 100%; box-sizing: border-box; padding: 6px 8px; font-size: var(--font-sm); list-style: none; text-align: left; }
+.actionsMenuItems {
+  composes: form from "../ui/FormControls.module.css"; position: absolute; top: 100%; right: 0; z-index: 20; min-width: 230px; max-height: 65vh; overflow-y: auto; padding: 4px; background: var(--bg-secondary); border: 1px solid var(--border); border-radius: var(--radius-md); box-shadow: var(--shadow-dropdown); }
+.actionsMenuItems > .headerBtn, .actionsMenuItems > .conversationList > summary {
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+}
 .actionsMenuItems > .conversationList > summary::-webkit-details-marker { display: none; }
 .menuSeparator { border: 0; border-top: 1px solid var(--border); margin: 4px 0; }
 .menuHint { margin-left: auto; font-size: 10px; color: var(--fg-muted); white-space: nowrap; }
@@ -1490,7 +1310,11 @@
 .composerMeta { display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; padding: 0 12px 4px; font-size: 11px; color: var(--fg-secondary); min-width: 0; }
 .composerMeta .sessionSettingsSummary { font-size: 11px; flex-shrink: 0; margin-left: auto; }
 .composerMeta .repoContext { display: flex; align-items: center; overflow: hidden; gap: 4px; min-width: 0; border: none; padding: 0; font-size: 11px; }
-.composerMeta .repoContext button { font-size: 11px; border: none; padding: 0; margin-left: 0; overflow: hidden; text-overflow: ellipsis; }
+.composerMeta .repoContext button {
+  margin-left: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .stepTitle { color: var(--accent); font-weight: 600; white-space: nowrap; max-width: 35%; overflow: hidden; text-overflow: ellipsis; }
 .stepDescription { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-secondary); }
 .toolActivitySummary { white-space: nowrap; }
@@ -1517,3 +1341,43 @@
 .editDiffNew { background: color-mix(in srgb, var(--success) 12%, var(--bg-primary)); }
 .editDiffOld > span, .editDiffNew > span { display: block; padding: 4px 8px 0; font-size: var(--font-xs); font-weight: 600; }
 .editDiff pre { margin: 0; padding: 4px 8px 8px; white-space: pre; tab-size: 4; font: var(--font-sm)/1.5 var(--font-mono); color: var(--fg-primary); }
+
+/* Native pickers keep platform activation over the shared-height visible frame. */
+.conversationSwitcher > select[data-control-layout="overlay-picker"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  opacity: 0;
+  cursor: pointer;
+}
+
+/* Preserve native details activation and Escape focus return, not a custom menu. */
+summary.headerBtn[data-control-layout="disclosure"] {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  height: var(--control-height, 36px);
+  padding: 0 var(--control-padding-x, 8px);
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  color: var(--fg-secondary);
+  cursor: pointer;
+}
+.actionsMenu > summary.headerBtn[data-control-layout="disclosure"] {
+  width: var(--control-height, 36px);
+  justify-content: center;
+  padding: 0;
+}
+summary.headerBtn[data-control-layout="disclosure"]:hover { background: var(--bg-highlight); }
+summary.headerBtn[data-control-layout="disclosure"]:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Preserve the tested panel-relative editor cap and one-line reset on shared Textarea. */
+.textarea[data-control-layout="composer-editor"] { min-height: var(--control-height, 36px); }
+@media (max-width: 600px) {
+  .conversationLabel { height: max(44px, var(--control-height, 36px)); }
+  summary.headerBtn[data-control-layout="disclosure"] { height: max(44px, var(--control-height, 36px)); }
+  .actionsMenu > summary.headerBtn[data-control-layout="disclosure"] { width: max(44px, var(--control-height, 36px)); }
+  .textarea[data-control-layout="composer-editor"] { min-height: max(44px, var(--control-height, 36px)); }
+}

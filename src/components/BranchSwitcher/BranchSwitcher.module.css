@@ -16,20 +16,7 @@
   border-bottom: 1px solid var(--border);
 }
 
-.search input {
-  width: 100%;
-  padding: 8px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-primary);
-  font-size: var(--font-base);
-  outline: none;
-}
-
-.search input:focus {
-  border-color: var(--accent);
-}
+.search input { width: 100%; }
 
 .list {
   flex: 1;

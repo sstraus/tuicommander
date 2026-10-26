@@ -1,6 +1,7 @@
 import { type Component, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { appLogger } from "../../stores/appLogger";
 import { repositoriesStore } from "../../stores/repositories";
+import { Button } from "../ui/Button";
 import s from "./Sidebar.module.css";
 
 export interface StaleTempRepairPopoverProps {
@@ -78,7 +79,9 @@ export const StaleTempRepairPopover: Component<StaleTempRepairPopoverProps> = (p
 			</For>
 			<Show when={candidates().length > 0}>
 				<div class={s.staleTempActions}>
-					<button
+					<Button
+						size="compact"
+						variant="danger"
 						type="button"
 						class={s.staleTempRepairButton}
 						disabled={status() === "repairing"}
@@ -87,7 +90,7 @@ export const StaleTempRepairPopover: Component<StaleTempRepairPopoverProps> = (p
 						{status() === "repairing"
 							? "Repairing…"
 							: `Repair ${candidates().length} stale ${candidates().length === 1 ? "repository" : "repositories"}`}
-					</button>
+					</Button>
 					<Show when={status() === "error"}>
 						<div class={s.staleTempError}>Repair failed: {errorMessage()}</div>
 					</Show>

@@ -29,6 +29,7 @@ import {
 } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
 import { canMergePr, effectiveMergeMethod } from "../Sidebar/RepoSection";
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
+import { Button } from "../ui/Button";
 import { PrDetailContent } from "./PrDetailContent";
 import s from "./PrDetailPopover.module.css";
 
@@ -392,20 +393,19 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 									>
 										#{pr().number}
 									</span>
-									<button class={s.close} onClick={props.onClose}>
+									<Button variant="ghost" class={s.close} onClick={props.onClose}>
 										&times;
-									</button>
+									</Button>
 								</div>
 
 								{/* Shared body content: status pills, labels, meta, CI, checks, open link */}
 								<PrDetailContent repoPath={props.repoPath} branch={props.branch}>
 									<div class={s.actions}>
-										<button class={s.viewDiffBtn} onClick={handleViewDiff} disabled={diffLoading()}>
+										<Button onClick={handleViewDiff} disabled={diffLoading()}>
 											{diffLoading() ? t("prDetail.loadingDiff", "Loading...") : t("prDetail.viewDiff", "View Diff")}
-										</button>
+										</Button>
 										<Show when={reviewCommand()}>
-											<button
-												class={s.viewDiffBtn}
+											<Button
 												onClick={async () => {
 													const launch = reviewCommand();
 													if (launch && props.onReview) {
@@ -421,21 +421,20 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 												}}
 											>
 												{t("prDetail.review", "Review")}
-											</button>
+											</Button>
 										</Show>
 										<Show when={canMergePr(pr())}>
-											<button class={s.mergeBtn} onClick={() => handleMerge()} disabled={merging()}>
+											<Button variant="primary" class={s.mergeBtn} onClick={() => handleMerge()} disabled={merging()}>
 												{merging() ? t("prDetail.merging", "Merging...") : mergeLabel()}
-											</button>
+											</Button>
 										</Show>
 										<Show when={pr().url}>
-											<button
-												class={s.viewDiffBtn}
+											<Button
 												onClick={() => handleOpenUrl(pr().url)}
 												title={t("prDetail.openOnGithub", "Open on GitHub")}
 											>
 												GitHub {"\u2197"}
-											</button>
+											</Button>
 										</Show>
 										<SmartButtonStrip
 											placement="pr-popover"

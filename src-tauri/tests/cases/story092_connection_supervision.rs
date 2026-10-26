@@ -56,7 +56,10 @@ async fn a_malformed_peer_identity_cannot_launch_or_drop_a_live_acp_connection()
         .await
         .unwrap_err();
     assert_eq!(failed.code, AcpClientErrorCode::InvalidInput);
-    assert!(fixture.manager.connection_ids().is_empty());
+    assert_eq!(
+        fixture.manager.connection_ids(),
+        [] as [tuicommander_lib::acp::AcpConnectionId; 0]
+    );
 
     let live = fixture.connect().await;
     let failed = fixture
@@ -196,7 +199,10 @@ async fn reconnect_settles_old_connection_and_starts_a_new_generation() {
         .unwrap();
     assert_ne!(fresh.connection_id, old.connection_id);
     assert!(fresh.generation > old.generation);
-    assert!(fresh.attachments.is_empty());
+    assert_eq!(
+        fresh.attachments,
+        [] as [tuicommander_lib::acp::AcpAttachmentSnapshot; 0]
+    );
     let old_settled = fixture.manager.snapshot(old.connection_id).unwrap();
     assert_eq!(old_settled.state, AcpConnectionState::Closed);
     assert_eq!(
@@ -225,7 +231,10 @@ async fn kill_settles_and_retains_a_killed_snapshot_without_session_operations()
         killed.settlement.unwrap().reason,
         AcpConnectionSettlementReason::Killed
     );
-    assert!(killed.attachments.is_empty());
+    assert_eq!(
+        killed.attachments,
+        [] as [tuicommander_lib::acp::AcpAttachmentSnapshot; 0]
+    );
 }
 
 /// Bytes that are not a frame, once the connection is up and staying up.

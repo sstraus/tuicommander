@@ -457,22 +457,32 @@ mod tests {
 
     #[test]
     fn recorded_merge_releases_dependents_and_ref_movement_invalidates_receipts() {
-        assert_recorded_merge_receipts(true, false);
+        assert_recorded_merge_receipts(true, false, false);
     }
 
     #[test]
     fn workflow_plan_done_requires_receipts_and_reopens_until_recertified() {
         // catches: approved stories make a workflow plan Done before integration,
         // or Done survives canonical ref movement which invalidates run completion.
-        assert_recorded_merge_receipts(false, false);
+        assert_recorded_merge_receipts(false, false, false);
     }
 
     #[test]
     fn preflight_git_does_not_hold_writers_and_post_probe_ref_movement_is_rejected_on_read() {
-        assert_recorded_merge_receipts(false, true);
+        assert_recorded_merge_receipts(false, true, false);
     }
 
-    fn assert_recorded_merge_receipts(with_dependent: bool, preflight_races: bool) {
+    /// Catches: archive metadata invalidating accepted work and reopening a completed plan.
+    #[test]
+    fn archive_round_trip_preserves_workflow_integration_evidence() {
+        assert_recorded_merge_receipts(false, false, true);
+    }
+
+    fn assert_recorded_merge_receipts(
+        with_dependent: bool,
+        preflight_races: bool,
+        archive_round_trip: bool,
+    ) {
         let (config, project, plan_id, story_id, definition_id, _guard) = fixture();
         let definitions = WorkflowStore::open().unwrap();
         let plan_draft = definitions.get_draft(&definition_id).unwrap();
@@ -565,6 +575,7 @@ mod tests {
         let dependent = if with_dependent {
             let dependent = stories
                 .create_story(NewStory {
+                    story_type: None,
                     plan_id: plan_id.clone(),
                     title: "Dependent".into(),
                     criteria: vec!["Done".into()],
@@ -806,6 +817,44 @@ mod tests {
         );
         assert!(story_integrated_at_revision(&story_id, story.revision).unwrap());
         assert_plan_state(crate::stories::PlanState::Done);
+        if archive_round_trip {
+            store
+                .command(&run.id, "release-archive-owner", RunCommand::Cancel)
+                .unwrap();
+            let actor = crate::stories::StoryTransitionActor::Human;
+            let mut current = stories.get_story(&story_id).unwrap();
+            for _ in 0..2 {
+                let before = current.revision;
+                current = stories
+                    .set_story_archived(&story_id, before, true, actor.clone())
+                    .unwrap();
+                current = stories
+                    .set_story_archived(&story_id, current.revision, false, actor.clone())
+                    .unwrap();
+                assert_eq!(current.revision, before + 2);
+                assert!(
+                    story_integrated_at_revision(&story_id, current.revision).unwrap(),
+                    "archive metadata must preserve integration evidence"
+                );
+                assert_plan_state(crate::stories::PlanState::Done);
+            }
+            let dependent = stories
+                .create_story(NewStory {
+                    story_type: None,
+                    plan_id: plan_id.clone(),
+                    title: "After restore".into(),
+                    criteria: vec!["Done".into()],
+                    priority: 2,
+                    origin: StoryOrigin::Native,
+                    file_scope: vec![],
+                })
+                .unwrap();
+            let dependent = stories
+                .add_dependency(&dependent.id, &story_id, dependent.revision)
+                .unwrap();
+            assert_eq!(dependent.status, crate::stories::StoryStatus::Ready);
+            return;
+        }
         // catches: a receipt with an empty post_checks list passing `all()` vacuously and releasing dependents.
         let mut vacuous = integrated.snapshot.clone();
         vacuous
@@ -1077,6 +1126,7 @@ mod tests {
             .expect("plan");
         let story = stories
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan.id.clone(),
                 title: "Work".into(),
                 criteria: vec!["Done".into()],
@@ -1204,11 +1254,9 @@ mod tests {
                 .sequence,
             accepted.sequence
         );
-        assert!(
-            store
-                .interrupt_agent_session("managed-session")
-                .unwrap()
-                .is_empty()
+        assert_eq!(
+            store.interrupt_agent_session("managed-session").unwrap(),
+            [] as [crate::workflows::run::model::RunSnapshot; 0]
         );
 
         let next = store
@@ -1256,11 +1304,9 @@ mod tests {
             AttemptState::Interrupted
         );
         assert!(interrupted[0].attempts.last().unwrap().report.is_none());
-        assert!(
-            store
-                .interrupt_agent_session("managed-exit")
-                .unwrap()
-                .is_empty()
+        assert_eq!(
+            store.interrupt_agent_session("managed-exit").unwrap(),
+            [] as [crate::workflows::run::model::RunSnapshot; 0]
         );
         assert_eq!(
             store.replay(&run.id).unwrap(),
@@ -1405,6 +1451,7 @@ mod tests {
         let make_story = |title: &str, scope: &str| {
             stories
                 .create_story(NewStory {
+                    story_type: None,
                     plan_id: plan_id.clone(),
                     title: title.into(),
                     criteria: vec!["Done".into()],
@@ -1715,6 +1762,7 @@ mod tests {
         let make = |title: &str, scope: Vec<&str>| {
             stories
                 .create_story(NewStory {
+                    story_type: None,
                     plan_id: plan_id.clone(),
                     title: title.into(),
                     criteria: vec!["Done".into()],
@@ -1770,6 +1818,7 @@ mod tests {
         let stories = StoryStore::open().unwrap();
         let dependent = stories
             .create_story(NewStory {
+                story_type: None,
                 plan_id: plan_id.clone(),
                 title: "Dependent".into(),
                 criteria: vec!["Done".into()],
@@ -1829,6 +1878,60 @@ mod tests {
         assert!(error.contains("integration receipt"), "{error}");
     }
 
+    /// Catches: archiving a run-owned story or its parent plan while dispatch can still use it.
+    #[test]
+    fn archive_refuses_active_run_ownership_and_allows_after_cancel() {
+        let (_config, project, plan_id, story_id, definition_id, _guard) = fixture();
+        let runs = RunStore::open().unwrap();
+        let run = runs
+            .start_plan(
+                project.path().to_str().unwrap(),
+                &plan_id,
+                &definition_id,
+                1,
+                RunLimits::default(),
+            )
+            .unwrap();
+        let stories = StoryStore::open().unwrap();
+        let story = stories.get_story(&story_id).unwrap();
+        let plan = stories.get_plan(&plan_id).unwrap();
+        let actor = crate::stories::StoryTransitionActor::Human;
+        for archived in [true, false] {
+            assert!(
+                stories
+                    .set_story_archived(&story_id, story.revision, archived, actor.clone())
+                    .unwrap_err()
+                    .contains("active workflow")
+            );
+            assert!(
+                stories
+                    .set_plan_archived(&plan_id, plan.revision, archived, actor.clone())
+                    .unwrap_err()
+                    .contains("active workflow")
+            );
+        }
+        runs.command(&run.id, "cancel-for-archive", RunCommand::Cancel)
+            .unwrap();
+        stories
+            .set_story_archived(&story_id, story.revision, true, actor.clone())
+            .unwrap();
+        stories
+            .set_plan_archived(&plan_id, plan.revision, true, actor)
+            .unwrap();
+        assert!(
+            runs.start_plan(
+                project.path().to_str().unwrap(),
+                &plan_id,
+                &definition_id,
+                1,
+                RunLimits::default()
+            )
+            .unwrap_err()
+            .to_string()
+            .contains("archived")
+        );
+    }
+
     #[test]
     fn another_plans_workflow_run_does_not_hold_manual_dependents() {
         let (_config, project, plan_id, _story_id, definition_id, _guard) = fixture();
@@ -1857,6 +1960,7 @@ mod tests {
             })
             .unwrap();
         let make_story = |title: &str| NewStory {
+            story_type: None,
             plan_id: manual_plan.id.clone(),
             title: title.into(),
             criteria: vec!["Done".into()],
@@ -1899,7 +2003,8 @@ mod tests {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
-        assert_eq!(stored_schema_version(&db), 3, "fresh store records version");
+        // 4: paused_for events; the previous build (3) must refuse the store, not fail to replay it.
+        assert_eq!(stored_schema_version(&db), 4, "fresh store records version");
         let run = store
             .start_plan(
                 project.path().to_str().unwrap(),
@@ -1915,7 +2020,7 @@ mod tests {
             .pragma_update(None, "user_version", 0)
             .unwrap();
         let upgraded = RunStore::open_at(&db).unwrap();
-        assert_eq!(stored_schema_version(&db), 3);
+        assert_eq!(stored_schema_version(&db), 4);
         assert_eq!(
             upgraded.snapshot(&run.id).unwrap().sequence,
             run.sequence,
@@ -2107,6 +2212,7 @@ mod tests {
         let create = |title: &str, scope: &str| {
             stories
                 .create_story(NewStory {
+                    story_type: None,
                     plan_id: plan_id.clone(),
                     title: title.into(),
                     criteria: vec!["Done".into()],
@@ -2284,7 +2390,10 @@ mod tests {
             )
             .expect("plan coordinator");
         assert_eq!(started.snapshot.attempts[0].story_id, plan_id);
-        assert!(started.snapshot.stories.is_empty());
+        assert_eq!(
+            started.snapshot.stories,
+            [] as [crate::workflows::run::model::StoryExecution; 0]
+        );
         assert_eq!(
             store.replay(&run.id).unwrap(),
             store.snapshot(&run.id).unwrap()
@@ -2345,6 +2454,7 @@ mod tests {
             )
             .unwrap();
         let proposed = NewStory {
+            story_type: None,
             plan_id: plan_id.clone(),
             title: "Follow up".into(),
             criteria: vec!["Covered".into()],
@@ -2451,6 +2561,7 @@ mod tests {
                 title: "New evidence".into(),
                 criteria: vec!["Reviewed".into()],
                 priority: 2,
+                story_type: None,
                 origin: StoryOrigin::Native,
                 file_scope: vec![],
             })
@@ -2496,6 +2607,253 @@ mod tests {
         assert_eq!(
             store.replay(&run.id).unwrap(),
             store.snapshot(&run.id).unwrap()
+        );
+    }
+
+    /// Catches: a bound coordinator continuing to propose work from a replaced source document.
+    #[test]
+    fn update_plan_source_refuses_an_active_bound_coordinator() {
+        let (_config, project, plan_id, _story_id, definition_id, _guard) = fixture();
+        let store = RunStore::open().unwrap();
+        let project_path = project
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let run = store
+            .start_plan(
+                &project_path,
+                &plan_id,
+                &definition_id,
+                1,
+                RunLimits::default(),
+            )
+            .unwrap();
+        let started = store
+            .command(
+                &run.id,
+                "coordinate",
+                RunCommand::StartPlanAgent {
+                    node_id: "coordinate".into(),
+                },
+            )
+            .unwrap();
+        let attempt_id = started.snapshot.attempts[0].id.clone();
+        let reserved = store
+            .command(
+                &run.id,
+                "spawn",
+                RunCommand::ReserveEffect {
+                    key: format!("spawn:{attempt_id}"),
+                    kind: EffectKind::SpawnAgent,
+                },
+            )
+            .unwrap();
+        store
+            .bind_agent(
+                &run.id,
+                &attempt_id,
+                AgentBinding {
+                    session_id: "coordinator".into(),
+                    task_id: None,
+                    effect_id: reserved.snapshot.effects[0].id.clone(),
+                    prompt_contract_version: 1,
+                    prompt_sha256: "a".repeat(64),
+                    audit_preview: "redacted".into(),
+                },
+            )
+            .unwrap();
+        let stories = StoryStore::open().unwrap();
+        let before = stories.get_plan(&plan_id).unwrap();
+        let error = stories
+            .update_plan(
+                &plan_id,
+                before.revision,
+                crate::stories::PlanPatch {
+                    title: Some("Must not partially apply".into()),
+                    source: Some("moved.md".into()),
+                },
+            )
+            .expect_err("source correction must not leave an old-source coordinator active");
+        assert!(error.contains("active plan coordinator"), "{error}");
+        assert_eq!(stories.get_plan(&plan_id).unwrap(), before);
+        assert!(crate::stories::is_user_error(&error));
+        // Title-only and unchanged-source patches do not replace the coordinator's document.
+        let renamed = stories
+            .update_plan(
+                &plan_id,
+                before.revision,
+                crate::stories::PlanPatch {
+                    title: Some("Corrected title".into()),
+                    source: None,
+                },
+            )
+            .unwrap();
+        assert_eq!(renamed.source, before.source);
+        let unchanged = stories
+            .update_plan(
+                &plan_id,
+                renamed.revision,
+                crate::stories::PlanPatch {
+                    title: None,
+                    source: Some(format!(" {} ", before.source)),
+                },
+            )
+            .unwrap();
+        assert_eq!(unchanged.source, before.source);
+        let other = stories
+            .create_plan(NewPlan {
+                project: project_path,
+                title: "Other plan".into(),
+                source: "other.md".into(),
+            })
+            .unwrap();
+        assert_eq!(
+            stories
+                .update_plan(
+                    &other.id,
+                    other.revision,
+                    crate::stories::PlanPatch {
+                        title: None,
+                        source: Some("unrelated.md".into()),
+                    }
+                )
+                .unwrap()
+                .source,
+            "unrelated.md"
+        );
+        store
+            .command(&run.id, "cancel", RunCommand::Cancel)
+            .unwrap();
+        assert_eq!(
+            stories
+                .update_plan(
+                    &plan_id,
+                    unchanged.revision,
+                    crate::stories::PlanPatch {
+                        title: None,
+                        source: Some("moved.md".into()),
+                    }
+                )
+                .unwrap()
+                .source,
+            "moved.md"
+        );
+    }
+
+    /// Catches: a not-yet-bound or paused coordinator being missed by a session-only guard.
+    #[test]
+    fn update_plan_source_refuses_unbound_and_paused_coordinators() {
+        let (_config, project, plan_id, _story_id, definition_id, _guard) = fixture();
+        let store = RunStore::open().unwrap();
+        let project_path = project
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let run = store
+            .start_plan(
+                &project_path,
+                &plan_id,
+                &definition_id,
+                1,
+                RunLimits::default(),
+            )
+            .unwrap();
+        store
+            .command(
+                &run.id,
+                "coordinate",
+                RunCommand::StartPlanAgent {
+                    node_id: "coordinate".into(),
+                },
+            )
+            .unwrap();
+        let stories = StoryStore::open().unwrap();
+        let before = stories.get_plan(&plan_id).unwrap();
+        for paused in [false, true] {
+            if paused {
+                store.command(&run.id, "pause", RunCommand::Pause).unwrap();
+            }
+            let error = stories
+                .update_plan(
+                    &plan_id,
+                    before.revision,
+                    crate::stories::PlanPatch {
+                        title: None,
+                        source: Some("moved.md".into()),
+                    },
+                )
+                .unwrap_err();
+            assert!(error.contains("active plan coordinator"), "{error}");
+            assert_eq!(stories.get_plan(&plan_id).unwrap(), before);
+        }
+    }
+
+    /// Catches: a corrected plan source retaining closed planning and verified subjects.
+    #[test]
+    fn update_plan_source_reopens_planning_and_changes_verification_subject() {
+        let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
+        let store = RunStore::open_at(&config.path().join("runs.sqlite3")).unwrap();
+        let project_path = project
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+        let run = store
+            .start_plan(
+                &project_path,
+                &plan_id,
+                &definition_id,
+                1,
+                RunLimits::default(),
+            )
+            .unwrap();
+        let closed = store
+            .command(&run.id, "close", RunCommand::ClosePlanning)
+            .unwrap();
+        assert!(closed.snapshot.planning_fingerprint.is_some());
+        let stories = StoryStore::open().unwrap();
+        let original = stories.get_plan(&plan_id).unwrap();
+        let before =
+            store::fingerprint(&plan_id, &stories.list_stories(&plan_id).unwrap(), true).unwrap();
+        let empty_before = store::fingerprint(&plan_id, &[], false).unwrap();
+        stories
+            .update_plan(
+                &plan_id,
+                original.revision,
+                crate::stories::PlanPatch {
+                    title: None,
+                    source: Some("moved.md".into()),
+                },
+            )
+            .unwrap();
+        assert_ne!(
+            before,
+            store::fingerprint(&plan_id, &stories.list_stories(&plan_id).unwrap(), true).unwrap()
+        );
+        assert_ne!(
+            empty_before,
+            store::fingerprint(&plan_id, &[], false).unwrap()
+        );
+        let reopened = store
+            .command(&run.id, "after-source-edit", RunCommand::ClosePlanning)
+            .unwrap();
+        assert!(matches!(
+            reopened.event.kind,
+            RunEventKind::PlanningReopened
+        ));
+        assert!(reopened.snapshot.planning_fingerprint.is_none());
+        assert!(reopened.snapshot.verification_fingerprint.is_none());
+        let reclosed = store
+            .command(&run.id, "reclose", RunCommand::ClosePlanning)
+            .unwrap();
+        assert_ne!(
+            closed.snapshot.planning_fingerprint,
+            reclosed.snapshot.planning_fingerprint
         );
     }
 
@@ -2723,6 +3081,104 @@ mod tests {
         );
     }
 
+    /// Catches: legacy dispatched executions being editable because they lack a graph reservation.
+    #[test]
+    fn update_story_refuses_legacy_run_owned_stories() {
+        let (_config, project, plan_id, story_id, definition_id, _guard) = fixture();
+        let runs = RunStore::open().unwrap();
+        let run = runs
+            .start_plan(
+                project.path().to_str().unwrap(),
+                &plan_id,
+                &definition_id,
+                1,
+                RunLimits::default(),
+            )
+            .unwrap();
+        runs.command(
+            &run.id,
+            "attempt",
+            RunCommand::StartAttempt {
+                story_id: story_id.clone(),
+                node_id: "implement".into(),
+            },
+        )
+        .unwrap();
+        let stories = StoryStore::open().unwrap();
+        let current = stories.get_story(&story_id).unwrap();
+        let error = stories
+            .update_story(
+                &story_id,
+                current.revision,
+                crate::stories::StoryPatch {
+                    priority: Some(3),
+                    ..Default::default()
+                },
+            )
+            .unwrap_err();
+        assert!(error.contains("owned by an active workflow"), "{error}");
+        assert_eq!(stories.get_story(&story_id).unwrap(), current);
+    }
+
+    /// Catches: amended requirements/metadata reusing planning or final verification evidence.
+    #[test]
+    fn update_story_reopens_planning_through_existing_fingerprints() {
+        let (_config, project, plan_id, story_id, definition_id, _guard) = fixture();
+        let store = RunStore::open().unwrap();
+        let stories = StoryStore::open().unwrap();
+        let run = store
+            .start_plan(
+                project.path().to_str().unwrap(),
+                &plan_id,
+                &definition_id,
+                1,
+                RunLimits::default(),
+            )
+            .unwrap();
+        for (index, patch) in [
+            serde_json::json!({"criteria": ["Revised acceptance"]}),
+            serde_json::json!({"problem": "New requirement context"}),
+            serde_json::json!({"risk": "high"}),
+            serde_json::json!({"storyType": "fix"}),
+            serde_json::json!({"priority": 3}),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            store
+                .command(
+                    &run.id,
+                    &format!("close-{index}"),
+                    RunCommand::ClosePlanning,
+                )
+                .unwrap();
+            let current = stories.get_story(&story_id).unwrap();
+            let before =
+                super::store::fingerprint(&plan_id, std::slice::from_ref(&current), true).unwrap();
+            let updated = stories
+                .update_story(
+                    &story_id,
+                    current.revision,
+                    serde_json::from_value(patch).unwrap(),
+                )
+                .unwrap();
+            assert_ne!(
+                before,
+                super::store::fingerprint(&plan_id, &[updated], true).unwrap()
+            );
+            let receipt = store
+                .command(
+                    &run.id,
+                    &format!("verify-{index}"),
+                    RunCommand::FinalVerificationPassed,
+                )
+                .unwrap();
+            assert!(matches!(receipt.event.kind, RunEventKind::PlanningReopened));
+            assert!(receipt.snapshot.planning_fingerprint.is_none());
+            assert!(receipt.snapshot.verification_fingerprint.is_none());
+        }
+    }
+
     #[test]
     fn adding_a_story_reopens_planning_before_the_next_command() {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
@@ -2752,6 +3208,7 @@ mod tests {
                 title: "New work".into(),
                 criteria: vec!["New criterion".into()],
                 priority: 1,
+                story_type: None,
                 origin: StoryOrigin::Native,
                 file_scope: vec![],
             })
@@ -2914,7 +3371,10 @@ mod tests {
         .expect("incidents") else {
             panic!("incident reply")
         };
-        assert!(incidents.is_empty());
+        assert_eq!(
+            incidents,
+            [] as [crate::workflows::run::incidents::RunIncident; 0]
+        );
         assert_eq!(
             RunStore::open()
                 .unwrap()

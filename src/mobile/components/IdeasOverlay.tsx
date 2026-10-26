@@ -1,4 +1,5 @@
 import { createSignal, For, Show } from "solid-js";
+import { Button, Textarea } from "../../components/ui";
 import { appLogger } from "../../stores/appLogger";
 import { ideasStore } from "../../stores/ideas";
 import { rpc } from "../../transport";
@@ -80,12 +81,12 @@ export function IdeasOverlay(props: IdeasOverlayProps) {
 							<span class={styles.badge}>{notes().length}</span>
 						</Show>
 					</span>
-					<button class={styles.closeBtn} onClick={props.onDismiss}>
+					<Button shape="icon" aria-label="Close ideas" variant="ghost" onClick={props.onDismiss}>
 						<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 							<line x1="18" y1="6" x2="6" y2="18" />
 							<line x1="6" y1="6" x2="18" y2="18" />
 						</svg>
-					</button>
+					</Button>
 				</div>
 
 				<div class={styles.list}>
@@ -110,26 +111,32 @@ export function IdeasOverlay(props: IdeasOverlayProps) {
 									</div>
 								</div>
 								<div class={styles.itemActions}>
-									<button
-										class={`${styles.actionBtn} ${styles.sendBtn}`}
+									<Button
+										variant="ghost"
+										class={styles.sendBtn}
 										onClick={() => handleSend(note)}
+										shape="icon"
+										aria-label="Send to terminal"
 										title="Send to terminal"
 									>
 										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 											<line x1="22" y1="2" x2="11" y2="13" />
 											<polygon points="22 2 15 22 11 13 2 9 22 2" />
 										</svg>
-									</button>
-									<button
-										class={`${styles.actionBtn} ${styles.deleteBtn}`}
+									</Button>
+									<Button
+										variant="ghost"
+										class={styles.deleteBtn}
 										onClick={() => ideasStore.removeIdea(note.id)}
+										shape="icon"
+										aria-label="Delete"
 										title="Delete"
 									>
 										<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
 											<line x1="18" y1="6" x2="6" y2="18" />
 											<line x1="6" y1="6" x2="18" y2="18" />
 										</svg>
-									</button>
+									</Button>
 								</div>
 							</div>
 						)}
@@ -137,7 +144,8 @@ export function IdeasOverlay(props: IdeasOverlayProps) {
 				</div>
 
 				<div class={styles.inputArea}>
-					<textarea
+					<Textarea
+						autoGrow
 						ref={inputEl}
 						class={styles.input}
 						rows={1}
@@ -150,9 +158,15 @@ export function IdeasOverlay(props: IdeasOverlayProps) {
 						onKeyDown={handleKeyDown}
 					/>
 					<MobileDictationButton dictation={browserDictation} disabled={props.microphoneBlocked} />
-					<button class={styles.submitBtn} onClick={handleSubmit} disabled={!inputText().trim()}>
+					<Button
+						shape="icon"
+						aria-label="Add idea"
+						variant="primary"
+						onClick={handleSubmit}
+						disabled={!inputText().trim()}
+					>
 						+
-					</button>
+					</Button>
 				</div>
 			</div>
 		</div>

@@ -151,7 +151,10 @@ async fn bindings_save_failure_keeps_account_retriable() {
         .await
         .unwrap();
     assert!(GitHubAccountRegistry::load().get(&account.id).is_none());
-    assert!(RepoBindingStore::load().entries().is_empty());
+    assert_eq!(
+        RepoBindingStore::load().entries(),
+        [] as [crate::github_account::RepoBindingEntry; 0]
+    );
 }
 
 // Catches: credential actions missing despite account metadata coverage.

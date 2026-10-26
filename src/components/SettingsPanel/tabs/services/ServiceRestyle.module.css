@@ -11,3 +11,6 @@
 
 .nativeToolGroup { border-top: 1px solid var(--border); padding-top: 12px; }
 .nativeToolGroup h4 { margin: 0; color: var(--settings-foreground); font-size: var(--font-md); font-weight: 600; }
+
+.nativeToolChildren { padding-left: 20px; border-left: 1px solid var(--border); }
+.nativeToolChildren:empty { display: none; }

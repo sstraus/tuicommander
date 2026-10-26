@@ -34,7 +34,7 @@ describe("ColorSwatchPicker", () => {
 		const { container } = render(() => (
 			<ColorSwatchPicker color="" presets={DEFAULT_COLOR_PRESETS} onChange={onChange} />
 		));
-		const swatches = container.querySelectorAll(".colorSwatch");
+		const swatches = container.querySelectorAll('[data-form-control="swatch"], [data-form-control="color"]');
 		// 8 presets + 1 custom (label) + 1 clear
 		expect(swatches.length).toBe(10);
 	});
@@ -43,7 +43,7 @@ describe("ColorSwatchPicker", () => {
 		const { container } = render(() => (
 			<ColorSwatchPicker color="" presets={DEFAULT_COLOR_PRESETS} onChange={onChange} />
 		));
-		const firstSwatch = container.querySelector(".colorSwatch")!;
+		const firstSwatch = container.querySelector('[data-form-control="swatch"]')!;
 		fireEvent.click(firstSwatch);
 		expect(onChange).toHaveBeenCalledWith(PRESET_COLORS[0].hex);
 	});
@@ -52,7 +52,7 @@ describe("ColorSwatchPicker", () => {
 		const { container } = render(() => (
 			<ColorSwatchPicker color="#4A9EFF" presets={DEFAULT_COLOR_PRESETS} onChange={onChange} />
 		));
-		const clearBtn = container.querySelector(".colorSwatchClear")!;
+		const clearBtn = container.querySelector('[data-form-control="swatch"][data-clear]')!;
 		fireEvent.click(clearBtn);
 		expect(onChange).toHaveBeenCalledWith("");
 	});
@@ -61,24 +61,24 @@ describe("ColorSwatchPicker", () => {
 		const { container } = render(() => (
 			<ColorSwatchPicker color="#4A9EFF" presets={DEFAULT_COLOR_PRESETS} onChange={onChange} />
 		));
-		const firstSwatch = container.querySelector(".colorSwatch")!;
-		expect(firstSwatch.classList.contains("active")).toBe(true);
+		const firstSwatch = container.querySelector('[data-form-control="swatch"]')!;
+		expect(firstSwatch).toHaveAttribute("aria-pressed", "true");
 	});
 
 	it("marks clear as active when no color set", () => {
 		const { container } = render(() => (
 			<ColorSwatchPicker color="" presets={DEFAULT_COLOR_PRESETS} onChange={onChange} />
 		));
-		const clearBtn = container.querySelector(".colorSwatchClear")!;
-		expect(clearBtn.classList.contains("active")).toBe(true);
+		const clearBtn = container.querySelector('[data-form-control="swatch"][data-clear]')!;
+		expect(clearBtn).toHaveAttribute("aria-pressed", "true");
 	});
 
 	it("marks custom swatch as active for non-preset color", () => {
 		const { container } = render(() => (
 			<ColorSwatchPicker color="#123456" presets={DEFAULT_COLOR_PRESETS} onChange={onChange} />
 		));
-		const customSwatch = container.querySelector(".colorSwatchCustom")!;
-		expect(customSwatch.classList.contains("active")).toBe(true);
+		const customSwatch = container.querySelector('[data-form-control="color"]')!;
+		expect(customSwatch).toHaveAttribute("data-selected");
 	});
 
 	it("custom color input fires onChange with picked value", () => {

@@ -18,16 +18,14 @@
   border-bottom: 1px solid var(--border);
 }
 
-.controls select { --control-height: 44px; max-width: 60vw; }
+.controls select { max-width: 60vw; }
 
 .controls label { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.controls button, .banner button { padding: 6px 8px; color: var(--accent); background: transparent; border: 1px solid var(--border); border-radius: var(--radius-md); }
 .controls button { margin-left: auto; }
 .banner { padding: 8px 12px; color: var(--warning); background: var(--bg-tertiary); }
 
 .tableDocument { position: fixed; inset: 0; z-index: 30; background: var(--bg-primary); overflow: auto; padding: 12px; }
 .tableDocument > .header { position: sticky; top: 0; z-index: 2; }
-.tableDocument button { min-height: 44px; }
 
 .reading {
   display: flex;

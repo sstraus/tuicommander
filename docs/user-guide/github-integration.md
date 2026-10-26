@@ -17,7 +17,7 @@ TUICommander needs a GitHub token to access PRs and CI status. You have two opti
 5. Paste the code and authorize
 6. Done — the token is stored securely in your OS keyring
 
-This method automatically requests the correct scopes (`repo` and `read:project`) and works with private repositories and organization repos.
+Settings shows the requested scopes before login, using the same scope list as the login request. This method automatically requests the correct scopes (`repo` and `read:project`) and works with private repositories and organization repos.
 
 ### Option 2: Environment variable
 
@@ -341,3 +341,16 @@ nullable overrides in `repo-settings.json`: null inherits the current global
 value, true hides the matching PRs, and false explicitly shows them. Settings
 owner transactions preserve unrelated fields, and settings refresh adopts owner
 readback without saving it again. The Rust settings catalogue describes both scopes.
+
+### Troubleshoot repository access
+
+Settings > Git & GitHub shows repository access failures by owner and account,
+with GitHub's exact message. Reasons distinguish NOT_FOUND, FORBIDDEN and unknown
+responses without inferring organization policy from message wording.
+
+For any github.com OAuth failure, select **Grant or request organization access**
+to open the authorized TUICommander OAuth app page. This action is also available
+for NOT_FOUND because pending organization approval can hide private repositories. After granting access, select **Refresh status** to clear NOT_FOUND retry
+delays for all accounts, then wait for the next monitoring poll. Access denials do not require a new
+login or a 24-hour wait. Only explicit `NOT_FOUND` responses keep the 24-hour retry
+interval. GitHub can use this response for an inaccessible private repository too.

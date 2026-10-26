@@ -30,6 +30,7 @@ import { StatusBar } from "../components/StatusBar/StatusBar";
 import dialog from "../components/shared/dialog.module.css";
 import { TabBar } from "../components/TabBar/TabBar";
 import { Toolbar } from "../components/Toolbar/Toolbar";
+import { Button } from "../components/ui/Button";
 import { applyPlatformClass } from "../platform";
 import { diffTabsStore } from "../stores/diffTabs";
 import { editorTabsStore } from "../stores/editorTabs";
@@ -382,12 +383,10 @@ const Card = (p: { theme: ThemeJson; label: string; note?: string }) => (
 								has uncommitted changes.
 							</div>
 							<div class={dialog.actions}>
-								<button type="button" class={dialog.cancelBtn}>
-									Cancel
-								</button>
-								<button type="button" class={dialog.primaryBtn}>
+								<Button type="button">Cancel</Button>
+								<Button type="button" variant="primary">
 									Remove
-								</button>
+								</Button>
 							</div>
 						</div>
 					</div>

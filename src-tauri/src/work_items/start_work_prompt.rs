@@ -138,13 +138,19 @@ mod tests {
         let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let file = outside.path().join("brief.md");
-        std::fs::write(&file, "secret").unwrap();
-        std::os::unix::fs::symlink(file, dir.path().join(TEMPLATE_FILE)).unwrap();
+        let outside_content = "OUTSIDE_TEMPLATE_CONTENT_MUST_NOT_BE_RETURNED";
+        std::fs::write(&file, outside_content).unwrap();
+        std::os::unix::fs::symlink(&file, dir.path().join(TEMPLATE_FILE)).unwrap();
+        let error = build_start_work_prompt(dir.path().to_string_lossy().into_owned(), input())
+            .await
+            .unwrap_err();
         assert_eq!(
-            build_start_work_prompt(dir.path().to_string_lossy().into_owned(), input())
-                .await
-                .unwrap_err(),
-            "Access denied: file is outside repository"
+            error,
+            format!(
+                "Cannot open symbolic link \"{TEMPLATE_FILE}\": target \"{}\" is outside the repository.",
+                file.canonicalize().unwrap().display()
+            )
         );
+        assert!(!error.contains(outside_content));
     }
 }

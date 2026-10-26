@@ -1916,3 +1916,9 @@ transaction result. Durable writes publish value-free `corrections` generations;
 open Voice pages reload the saved map without replacing the new-entry draft.
 Builds without dictation describe this family as unavailable. No microphone or
 speech service is needed for correction configuration.
+
+### Isolated speech diagnostics
+
+An authorized `make agent-test AGENT_TEST_INSTANCE=agent-test-<name> AGENT_TEST_SPEECH_OUTPUT=1` can exercise spoken replies without microphone input. The runtime forces hands-free listening off and refuses microphone permission/capture. It does not claim global input ownership. Each actual reply synthesis logs its engine, resolved voice, language and completion, but not reply text or external command arguments. The default agent-test build still excludes dictation.
+
+Voice saves normalize the latest locked engine selection before applying the caller’s field delta. An unchanged resolved Edge choice must not remain unset on disk and later migrate to an inactive external command or Pocket voice. A concurrent explicit engine choice is retained unless this caller changed that field.

@@ -28,7 +28,7 @@ pub(crate) fn delete_remote_contained_branch(
     git_cmd(repo)
         .args(["update-ref", "--stdin"])
         .run_with_input(&format!(
-            "start\nverify {proof_ref} {proof_oid}\ndelete refs/heads/{branch} {tip}\ncommit\n"
+            "start\nverify {proof_ref} {proof_oid}\noption no-deref\ndelete refs/heads/{branch} {tip}\ncommit\n"
         ))
         .map_err(|error| error.to_string())?;
     Ok(proof_ref.to_string())

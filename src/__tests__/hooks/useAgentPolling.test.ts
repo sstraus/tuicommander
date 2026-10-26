@@ -24,6 +24,34 @@ describe("useAgentPolling", () => {
 		vi.useRealTimers();
 	});
 
+	// Catches: the authoritative idle snapshot erases a final API error's red dot.
+	it.each(["claude", "codex", "ego"])("retains %s final failure until the backend observes recovery", async (agent) => {
+		const id = store.add(makeTerminal({ sessionId: "failed-2335" }));
+		const { applySessionStateEvent } = await import("../../hooks/useAgentPolling");
+		const snapshot = (shell: string, error?: string) =>
+			applySessionStateEvent({
+				session_id: "failed-2335",
+				state: {
+					agent_type: agent,
+					shell_state: shell,
+					agent_state: shell === "busy" ? "working" : "completed",
+					last_error: error,
+				},
+			});
+		snapshot("busy");
+		snapshot("idle", "provider response failed");
+		expect(store.get(id)?.awaitingInput).toBe("error");
+		// A repaint or an injected continue is not proof of successful recovery.
+		snapshot("busy", "provider response failed");
+		expect(store.get(id)?.awaitingInput).toBe("error");
+		snapshot("idle", "provider response failed");
+		expect(store.get(id)?.awaitingInput).toBe("error");
+		snapshot("busy");
+		snapshot("idle");
+		expect(store.get(id)?.awaitingInput).toBeNull();
+		store.remove(id);
+	});
+
 	// Catches: remote agent_type is dropped until the 30s process-discovery poll.
 	it("applies backend identity immediately and retires it when the shell returns", async () => {
 		const id = store.add(makeTerminal({ name: "shell 1", sessionId: "remote-1" }));

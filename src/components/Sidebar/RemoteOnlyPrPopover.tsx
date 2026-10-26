@@ -21,6 +21,7 @@ import {
 	type StepStatus,
 } from "../PostMergeCleanupDialog/PostMergeCleanupDialog";
 import { PrDetailContent } from "../PrDetailPopover/PrDetailContent";
+import { Button } from "../ui/Button";
 import { PrStateBadge } from "./PrStateBadge";
 import { canMergePr } from "./prMergeEligibility";
 import s from "./Sidebar.module.css";
@@ -270,13 +271,13 @@ export const RemoteOnlyPrPopover: Component<{
 					<div class={s.remoteOnlyHeader}>
 						<span>{t("sidebar.remoteOnlyPrs", "Remote-only PRs")}</span>
 						<Show when={dismissedCount() > 0}>
-							<button class={s.remoteOnlyShowDismissed} onClick={handleShowDismissed}>
+							<Button size="compact" variant="ghost" class={s.remoteOnlyShowDismissed} onClick={handleShowDismissed}>
 								{t("sidebar.showDismissed", "Show")} {dismissedCount()} {t("sidebar.dismissed", "dismissed")}
-							</button>
+							</Button>
 						</Show>
-						<button class={s.remoteOnlyClose} onClick={props.onClose}>
+						<Button size="compact" variant="ghost" class={s.remoteOnlyClose} onClick={props.onClose}>
 							&times;
-						</button>
+						</Button>
 					</div>
 					<div class={s.remoteOnlyList}>
 						<For each={visiblePrs()}>
@@ -306,7 +307,9 @@ export const RemoteOnlyPrPopover: Component<{
 									</div>
 									<Show when={expandedBranch() === pr.branch}>
 										<div class={s.remoteOnlyDetail}>
-											<button
+											<Button
+												size="compact"
+												variant="ghost"
 												class={s.remoteOnlyDetailDismiss}
 												onClick={() => handleDismiss(pr.number)}
 												aria-label={t("sidebar.dismissPr", "Hide this PR from view")}
@@ -315,10 +318,12 @@ export const RemoteOnlyPrPopover: Component<{
 												data-tooltip-align="right"
 											>
 												&times;
-											</button>
+											</Button>
 											<PrDetailContent repoPath={props.repoPath} branch={pr.branch}>
 												<div class={s.remoteOnlyDetailActions}>
-													<button
+													<Button
+														size="compact"
+														variant="ghost"
 														class={s.remoteOnlyCheckout}
 														onClick={() => props.onCheckout(pr.branch)}
 														data-tooltip={t("sidebar.checkoutBranch", "Check out this branch locally")}
@@ -326,9 +331,11 @@ export const RemoteOnlyPrPopover: Component<{
 														data-tooltip-align="right"
 													>
 														{t("sidebar.checkout", "Checkout")}
-													</button>
+													</Button>
 													<Show when={props.onCreateWorktree}>
-														<button
+														<Button
+															size="compact"
+															variant="ghost"
 															class={s.remoteOnlyWorktree}
 															onClick={() => props.onCreateWorktree?.(pr.branch)}
 															data-tooltip={t("sidebar.createWorktreeFromBranch", "Create worktree from this branch")}
@@ -336,10 +343,12 @@ export const RemoteOnlyPrPopover: Component<{
 															data-tooltip-align="right"
 														>
 															{t("sidebar.worktree", "Worktree")}
-														</button>
+														</Button>
 													</Show>
 													<Show when={canApprovePr(pr, githubStore.state.viewerLogin)}>
-														<button
+														<Button
+															size="compact"
+															variant="primary"
 															class={s.remoteOnlyApprove}
 															onClick={() => handleApprove(pr)}
 															disabled={approvingPr() === pr.number}
@@ -350,10 +359,12 @@ export const RemoteOnlyPrPopover: Component<{
 															{approvingPr() === pr.number
 																? t("sidebar.approving", "Approving...")
 																: t("sidebar.approve", "Approve")}
-														</button>
+														</Button>
 													</Show>
 													<Show when={canMergePr(pr)}>
-														<button
+														<Button
+															size="compact"
+															variant="ghost"
 															class={s.remoteOnlyMerge}
 															onClick={() => handleMerge(pr)}
 															disabled={mergingPr() === pr.number}
@@ -362,9 +373,11 @@ export const RemoteOnlyPrPopover: Component<{
 															data-tooltip-align="right"
 														>
 															{mergingPr() === pr.number ? t("sidebar.merging", "Merging...") : mergeLabel(pr)}
-														</button>
+														</Button>
 													</Show>
-													<button
+													<Button
+														size="compact"
+														variant="ghost"
 														class={s.remoteOnlyViewDiff}
 														onClick={() => handleViewDiff(pr)}
 														disabled={diffLoadingPr() === pr.number}
@@ -375,7 +388,7 @@ export const RemoteOnlyPrPopover: Component<{
 														{diffLoadingPr() === pr.number
 															? t("sidebar.loadingDiff", "Loading...")
 															: t("sidebar.diff", "Diff")}
-													</button>
+													</Button>
 												</div>
 												<Show when={approveError()}>
 													<div class={s.remoteOnlyMergeError}>{approveError()}</div>

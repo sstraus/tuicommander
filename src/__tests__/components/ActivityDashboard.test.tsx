@@ -54,6 +54,7 @@ describe("Activity Dashboard subagent marker", () => {
 					lastPrompt: null,
 					activeSubTasks: 0,
 					cwd: "/repo",
+					project: "repo",
 					lastDataAt: null,
 					idleSince: null,
 					isActive: false,

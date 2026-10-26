@@ -49,3 +49,16 @@ describe("GitPanel visible-gating perf guard", () => {
 		expect(h.changes[0].storeRepoPath).toBe("/repo"); // storeRepoPath stays the canonical repo
 	});
 });
+
+it("catches shared Git view tabs losing keyboard selection and changes remount", async () => {
+	const { fireEvent, screen } = await import("@solidjs/testing-library");
+	render(() => <GitPanel visible={true} repoPath="/repo" onClose={vi.fn()} />);
+	const changes = screen.getByRole("tab", { name: "Changes" });
+	expect(changes).toHaveAttribute("aria-selected", "true");
+	fireEvent.keyDown(changes, { key: "ArrowRight" });
+	expect(screen.getByRole("tab", { name: "Log" })).toHaveAttribute("aria-selected", "true");
+	expect(screen.getByRole("tab", { name: "Log" })).toHaveFocus();
+	fireEvent.keyDown(screen.getByRole("tab", { name: "Log" }), { key: "Home" });
+	expect(changes).toHaveAttribute("aria-selected", "true");
+	expect(h.changes.at(-1)?.repoPath).toBe("/repo");
+});

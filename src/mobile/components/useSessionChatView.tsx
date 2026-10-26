@@ -1,6 +1,8 @@
 import { createEffect, createSignal, Show } from "solid-js";
 import type { AgentType } from "../../agents";
 import { TerminalChatTranscript } from "../../components/Terminal/TerminalChatTranscript";
+import { Button } from "../../components/ui";
+import { ButtonGroup } from "../../components/ui/ButtonGroup";
 import { type ChatViewWake, chatViewStore, supportsTerminalChatView } from "../../stores/chatView";
 import { mobileChatReadingStyle } from "../mobileFontSize";
 import styles from "./SessionChatView.module.css";
@@ -36,14 +38,14 @@ export function useSessionChatView(props: {
 	};
 	const Toggle = () => (
 		<Show when={available()}>
-			<div class={styles.toggle} role="group" aria-label="Terminal view">
-				<button type="button" aria-pressed={!active()} onClick={() => select("cli")}>
+			<ButtonGroup class={styles.toggle} aria-label="Terminal view">
+				<Button type="button" aria-pressed={!active()} onClick={() => select("cli")}>
 					CLI
-				</button>
-				<button type="button" aria-pressed={active()} onClick={openChat}>
+				</Button>
+				<Button type="button" aria-pressed={active()} onClick={openChat}>
 					Chat
-				</button>
-			</div>
+				</Button>
+			</ButtonGroup>
 		</Show>
 	);
 	const View = () => (

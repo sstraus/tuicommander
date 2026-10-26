@@ -5,15 +5,11 @@
 /* The Flow view is a row of columns, not a column of prose. */
 .wide { width: min(1120px, calc(100vw - 48px)); }
 
-.viewToggle { display: flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
-.viewToggle button { border: 0; background: var(--bg-secondary); color: var(--fg-secondary); font: inherit; font-size: var(--font-xs); padding: 4px 10px; cursor: pointer; }
-.viewToggle button + button { border-left: 1px solid var(--border); }
-.viewToggle button[aria-pressed="true"] { background: var(--bg-highlight); color: var(--fg-primary); }
-.viewToggle button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 .embedded { width: 100%; max-width: none; max-height: none; height: 100%; border: 0; border-radius: 0; box-shadow: none; }
 
-.header { display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border); }
+.header {
+  composes: toolbar from "../ui/FormControls.module.css"; display: flex; align-items: center; gap: 8px; padding: 12px 16px; background: var(--bg-tertiary); border-bottom: 1px solid var(--border); }
 .title { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
 .title h4 { margin: 0; font-size: var(--font-lg); font-weight: 600; color: var(--fg-primary); }
 .project { font-size: 11px; color: var(--fg-muted); font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -27,8 +23,6 @@
   .embedded .viewToggle, .embedded .filter { flex: 0 0 auto; }
 }
 
-.iconButton { display: flex; align-items: center; border: 0; background: transparent; color: var(--fg-secondary); cursor: pointer; padding: 4px; border-radius: var(--radius-sm); }
-.iconButton:hover { background: var(--bg-highlight); color: var(--fg-primary); }
 
 .list { flex: 1; overflow-y: auto; padding: 4px 0; }
 .list[hidden] { display: none; }
@@ -44,8 +38,7 @@
 .body { flex: 1; min-width: 0; }
 .text { margin: 0; color: var(--fg-primary); line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
 .textCollapsed { display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
-.more { margin-top: 4px; padding: 4px 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: var(--font-xs); cursor: pointer; }
-.more:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.more { margin-top: 4px; }
 .meta { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; color: var(--fg-muted); font-size: var(--font-xs); }
 /* Only an intent carries a word: it is the one line that says what the agent
    started, not what it finished, and muted italics alone do not say that. */
@@ -60,8 +53,7 @@
 .entry[data-kind="blocked"] .icon { color: var(--error); }
 .entry[data-kind="done"] .icon { color: var(--success); }
 
-.delete { flex: 0 0 auto; opacity: 0; border: 0; background: transparent; color: var(--fg-muted); cursor: pointer; padding: 2px 4px; border-radius: var(--radius-sm); }
-.delete:hover { color: var(--error); background: var(--bg-highlight); }
+.delete { flex: 0 0 auto; opacity: 0; }
 .delete:focus-visible { opacity: 1; }
 
 /* The last-visit divider. Frozen while the dialog is open, so it never slides
@@ -71,3 +63,5 @@
 
 .error { margin: 0; padding: 10px 16px; color: var(--error); font-size: var(--font-xs); border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .empty { padding: 36px 16px; color: var(--fg-muted); text-align: center; }
+
+.loadOlder { display: block; margin: 8px auto; }

@@ -28,11 +28,17 @@ fn validate(instance: &str, port: &str) -> Result<u16, String> {
 
 #[cfg(feature = "desktop")]
 pub(crate) fn enable() -> Result<(), String> {
-    if !cfg!(target_os = "macos") || !cfg!(debug_assertions) || cfg!(feature = "dictation") {
-        return Err("agent-test requires a macOS debug build without the dictation feature".into());
+    if !cfg!(target_os = "macos") || !cfg!(debug_assertions) {
+        return Err("agent-test requires a macOS debug build".into());
     }
     let instance = std::env::var("TUIC_APP_INSTANCE").unwrap_or_default();
     let port = std::env::var("TUIC_PORT").unwrap_or_default();
+    if cfg!(feature = "dictation")
+        && (std::env::var("TUIC_AGENT_TEST_SPEECH_OUTPUT").as_deref() != Ok("1")
+            || !instance.starts_with("agent-test-"))
+    {
+        return Err("dictation-enabled agent-test requires explicit speech-output opt-in and an agent-test-<name> instance; microphone stays disabled".into());
+    }
     PORT.set(validate(&instance, &port)?)
         .map_err(|_| "agent-test policy already selected".into())
 }

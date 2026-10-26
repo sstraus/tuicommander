@@ -12,9 +12,23 @@ vi.mock("../../stores/appLogger", () => ({ appLogger: { warn: vi.fn(), error: vi
 
 let frames: FrameRequestCallback[];
 let stream: SubscribePtyOptions;
+let resizeCallbacks: Map<Element, ResizeObserverCallback>;
 
 beforeEach(() => {
 	frames = [];
+	resizeCallbacks = new Map();
+	vi.stubGlobal(
+		"ResizeObserver",
+		class {
+			constructor(private callback: ResizeObserverCallback) {}
+			observe(target: Element) {
+				resizeCallbacks.set(target, this.callback);
+			}
+			disconnect() {
+				resizeCallbacks.clear();
+			}
+		},
+	);
 	subscribePty.mockClear();
 	vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
 		frames.push(callback);
@@ -47,14 +61,15 @@ async function mountOutput() {
 	const view = render(() => <OutputView sessionId="scroll-session" />);
 	const viewport = view.container.firstElementChild as HTMLDivElement;
 	let height = 2000;
+	let clientHeight = 400;
 	let top = 0;
 	Object.defineProperties(viewport, {
-		clientHeight: { get: () => 400 },
+		clientHeight: { get: () => clientHeight },
 		scrollHeight: { get: () => height },
 		scrollTop: {
 			get: () => top,
 			set: (value: number) => {
-				top = Math.max(0, Math.min(value, height - 400));
+				top = Math.max(0, Math.min(value, height - clientHeight));
 			},
 		},
 	});
@@ -63,6 +78,12 @@ async function mountOutput() {
 	fireEvent.scroll(viewport);
 	return {
 		viewport,
+		resize(nextHeight: number, contentHeight = height) {
+			clientHeight = nextHeight;
+			height = contentHeight;
+			viewport.scrollTop = Math.min(top, height - clientHeight); // browser clamps on expansion
+			resizeCallbacks.get(viewport)?.([], {} as ResizeObserver);
+		},
 		chunk() {
 			height += 20;
 			stream.onLogLines?.([{ spans: [{ text: "next line" }] }]);
@@ -79,7 +100,80 @@ function dragUp(viewport: HTMLDivElement, pixels: number) {
 	fireEvent.touchEnd(viewport, { touches: [] });
 }
 
+describe("mobile output file links", () => {
+	const path = "stories/archive/2011-86b5-complete-P2-mobile-cli-file-links-wrap-centered-with-surrounding-text.md";
+
+	it("keeps wrapped file links in inline text instead of native centered atomic buttons", async () => {
+		vi.mocked(fetch).mockResolvedValue({
+			ok: true,
+			json: async () => ({ lines: [`  Read ${path} next`], total_lines: 1, offset: 0 }),
+		} as Response);
+		const view = render(() => <OutputView sessionId="links" onOpenFileLink={vi.fn()} />);
+		const link = await view.findByRole("button", { name: path });
+		// Native buttons remain atomic inline-blocks even with display:inline in Chrome.
+		expect(link.tagName).not.toBe("BUTTON");
+		expect(link.tabIndex).toBe(0);
+		expect(link.parentElement?.style.getPropertyValue("--wrap-indent")).toBe("2ch");
+		expect(link.parentElement?.textContent).toBe(`  Read ${path} next`);
+	});
+
+	it("keeps inline file actions tappable and keyboard accessible without scrolling on Space", async () => {
+		vi.mocked(fetch).mockResolvedValue({
+			ok: true,
+			json: async () => ({ lines: [path], total_lines: 1, offset: 0 }),
+		} as Response);
+		const open = vi.fn();
+		const view = render(() => <OutputView sessionId="links" onOpenFileLink={open} />);
+		const link = await view.findByRole("button", { name: path });
+		fireEvent.click(link);
+		fireEvent.keyDown(link, { key: "Enter" });
+		expect(fireEvent.keyDown(link, { key: " " })).toBe(false);
+		fireEvent.keyDown(link, { key: "Escape" });
+		expect(open.mock.calls).toEqual([
+			[path, undefined],
+			[path, undefined],
+			[path, undefined],
+		]);
+	});
+});
+
 describe("mobile output follow", () => {
+	it("keeps newest output visible after viewport resize while following", async () => {
+		const { viewport, resize } = await mountOutput();
+		paint(); // Drain the initial font-effect frame before testing resize alone.
+		// Catches: keyboard shrink leaves the newest 200px below the clip.
+		resize(200);
+		paint();
+		expect(viewport.scrollTop).toBe(1800);
+		resize(400);
+		fireEvent.scroll(viewport);
+		paint();
+		expect(viewport.scrollTop).toBe(1600);
+		// Catches: rotation rewrap grows content without a new output frame.
+		resize(400, 2400);
+		paint();
+		expect(viewport.scrollTop).toBe(2000);
+	});
+
+	it("does not pull a detached reader to bottom on viewport resize", async () => {
+		const { viewport, resize } = await mountOutput();
+		dragUp(viewport, 240);
+		resize(200);
+		paint();
+		expect(viewport.scrollTop).toBe(1360);
+		resize(400);
+		paint();
+		expect(viewport.scrollTop).toBe(1360);
+	});
+
+	it("does not let queued resize follow overwrite a later upward gesture", async () => {
+		const { viewport, resize } = await mountOutput();
+		resize(200);
+		dragUp(viewport, 240);
+		paint();
+		expect(viewport.scrollTop).toBe(1360);
+	});
+
 	it("keeps the line being read when streaming crosses the tail cap instead of evicting detached content", async () => {
 		const { viewport, append, visibleLine } = await mountCappedOutput();
 		dragUp(viewport, 240);

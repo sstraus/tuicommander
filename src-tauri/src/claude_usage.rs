@@ -233,12 +233,16 @@ pub(crate) struct UsageScan {
     seen: HashSet<PathBuf>,
     pending: HashSet<PathBuf>,
     reconciled_at: Option<Instant>,
+    #[cfg(test)]
+    diagnostics: Vec<String>,
 }
 
 #[derive(Default)]
 struct UsageChanges {
     paths: HashSet<PathBuf>,
     rescan: bool,
+    #[cfg(test)]
+    diagnostics: Vec<String>,
 }
 
 impl UsageScan {
@@ -254,6 +258,10 @@ impl UsageScan {
             self.watcher =
                 notify::recommended_watcher(move |event: notify::Result<notify::Event>| {
                     let mut changes = events.lock();
+                    #[cfg(test)]
+                    if changes.diagnostics.len() < 128 {
+                        changes.diagnostics.push(format!("event={event:?}"));
+                    }
                     let Ok(event) = event else {
                         changes.rescan = true;
                         return;
@@ -280,13 +288,36 @@ impl UsageScan {
                         changes.rescan = true;
                     }
                 })
+                .map_err(|error| {
+                    #[cfg(test)]
+                    self.diagnostics
+                        .push(format!("watcher creation failed: {error}"));
+                    let _ = error;
+                })
                 .ok()
                 .and_then(|mut watcher| {
-                    watcher.watch(root, notify::RecursiveMode::Recursive).ok()?;
+                    watcher
+                        .watch(root, notify::RecursiveMode::Recursive)
+                        .map_err(|error| {
+                            #[cfg(test)]
+                            self.diagnostics
+                                .push(format!("watcher watch failed: {error}"));
+                            let _ = error;
+                        })
+                        .ok()?;
                     Some(watcher)
                 });
         }
         let mut changes = self.events.lock();
+        #[cfg(test)]
+        {
+            self.diagnostics.append(&mut changes.diagnostics);
+            self.diagnostics.push(format!(
+                "root={root:?}; watcher_available={}; rescan={}; pending_before={:?}; event_paths={:?}; reconciliation_due={}",
+                self.watcher.is_some(), changes.rescan, self.pending, changes.paths,
+                self.reconciled_at.is_none_or(|at| at.elapsed() >= Duration::from_secs(30 * 60))
+            ));
+        }
         self.pending.extend(changes.paths.drain());
         if self.pending.len() > 16_384
             || std::mem::take(&mut changes.rescan)
@@ -893,7 +924,7 @@ async fn fetch_usage_from_api(token: &str) -> Result<UsageApiResponse, FetchErro
         retry_after_secs: None,
     })?;
 
-    serde_json::from_str(&body).map_err(|e| {
+    parse_primary_usage(&body).map_err(|e| {
         tracing::error!(source = "claude_usage", "Parse error: {e}\nBody: {body}");
         FetchError {
             status: 0,
@@ -901,6 +932,28 @@ async fn fetch_usage_from_api(token: &str) -> Result<UsageApiResponse, FetchErro
             retry_after_secs: None,
         }
     })
+}
+
+fn parse_primary_usage(body: &str) -> Result<UsageApiResponse, serde_json::Error> {
+    let mut value: serde_json::Value = serde_json::from_str(body)?;
+    for key in [
+        "five_hour",
+        "seven_day",
+        "seven_day_oauth_apps",
+        "seven_day_opus",
+        "seven_day_sonnet",
+        "seven_day_cowork",
+    ] {
+        if value.get(key).is_some_and(|bucket| !bucket.is_null())
+            && !value[key]["utilization"]
+                .as_f64()
+                .is_some_and(|percent| percent.is_finite() && (0.0..=100.0).contains(&percent))
+            && let Some(object) = value.as_object_mut()
+        {
+            object.remove(key);
+        }
+    }
+    serde_json::from_value(value)
 }
 
 // ---------------------------------------------------------------------------
@@ -1191,6 +1244,35 @@ pub(crate) async fn get_claude_usage_api_impl(
     Err(last_err_msg)
 }
 
+/// Non-generating mobile read: cache or primary OAuth GET, never the messages fallback.
+/// Cache age is measured here; clients must not label an old fallback as fresh.
+pub(crate) async fn session_quota(
+    state: &crate::AppState,
+    session_id: &str,
+) -> Result<(UsageApiResponse, bool), String> {
+    let profile = profile_for_session(state, Some(session_id))?;
+    if let Some(data) = try_get_fresh_cache(&profile) {
+        return Ok((data, false));
+    }
+    let backing_off = RATE_LIMITED_UNTIL
+        .lock()
+        .get(&profile)
+        .is_some_and(|until| Instant::now() < *until);
+    if !backing_off {
+        let (token, _) = read_claude_credentials(profile.config_dir())?;
+        let token = token.ok_or("Claude account unavailable")?;
+        if let Ok(Ok(data)) =
+            tokio::time::timeout(Duration::from_secs(15), fetch_usage_from_api(&token)).await
+        {
+            cache_response(&profile, &data);
+            return Ok((data, false));
+        }
+    }
+    get_stale_cache(&profile)
+        .map(|data| (data, true))
+        .ok_or_else(|| "Claude quota unavailable".into())
+}
+
 /// Get token usage timeline reconstructed from session transcripts.
 ///
 /// Returns hourly token usage points aggregated from the session stats cache.
@@ -1413,7 +1495,16 @@ async fn get_claude_session_stats_from_dir(
                 continue;
             }
             #[cfg(test)]
-            SESSION_FILE_STATS.with(|stats| stats.set(stats.get() + 1));
+            {
+                SESSION_FILE_STATS.with(|stats| stats.set(stats.get() + 1));
+                let diagnostic = format!(
+                    "stat path={path:?}; seen={}; pending={}; symlink_project={}",
+                    scan.seen.contains(path),
+                    scan.pending.contains(path),
+                    symlink_projects.contains(slug)
+                );
+                scan.diagnostics.push(diagnostic);
+            }
             let current_size = match std::fs::metadata(path) {
                 Ok(m) => m.len(),
                 Err(_) => continue,
@@ -1630,6 +1721,15 @@ pub async fn get_claude_project_list() -> Result<Vec<ProjectEntry>, String> {
 
 #[cfg(test)]
 mod tests {
+    /// Catches: serde's bucket defaults turning missing provider utilization into 0%.
+    #[test]
+    fn primary_usage_missing_utilization_is_unknown_not_zero() {
+        let usage = super::parse_primary_usage(r#"{"five_hour":{},"seven_day":{"utilization":0}}"#)
+            .unwrap();
+        assert!(usage.five_hour.is_none());
+        assert_eq!(usage.seven_day.unwrap().utilization, 0.0);
+    }
+
     use super::*;
 
     #[test]
@@ -1915,6 +2015,8 @@ mod tests {
     }
 
     async fn wait_for_usage_event(state: &crate::AppState, path: &Path) {
+        // Production watches the canonical projects root, so event paths use it too.
+        let path = path.canonicalize().unwrap();
         // Setup only: the next assertion is about incremental parsing, not the
         // operating system's watcher delivery latency under machine load.
         tokio::time::timeout(Duration::from_secs(60), async {
@@ -1922,7 +2024,7 @@ mod tests {
                 let ready = {
                     let scan = state.claude_usage_scan.lock();
                     let changes = scan.events.lock();
-                    changes.rescan || changes.paths.contains(path)
+                    changes.rescan || changes.paths.contains(&path)
                 };
                 if ready {
                     break;
@@ -1992,6 +2094,7 @@ mod tests {
     /// before its already-populated parse cache can reject unchanged files.
     #[tokio::test]
     async fn session_stats_warm_refresh_does_not_stat_unchanged_history() {
+        // DEFERRED (2026-10-25) — Windows CI observes a second metadata read; capture watcher availability/events before changing invalidation or this exact counter.
         let dir = tempfile::tempdir().unwrap();
         let _guard = crate::config::set_config_dir_override(dir.path().join("config"));
         let projects = dir.path().join("projects");
@@ -2017,7 +2120,8 @@ mod tests {
             assert_eq!(
                 stats.get(),
                 1,
-                "warm refresh must not stat unchanged history"
+                "warm refresh must not stat unchanged history; diagnostics={:#?}",
+                state.claude_usage_scan.lock().diagnostics
             )
         });
     }
@@ -2026,6 +2130,7 @@ mod tests {
     /// or a missed watcher event never being repaired by reconciliation.
     #[tokio::test]
     async fn session_stats_only_stats_the_changed_transcript_then_reconciles() {
+        // DEFERRED (2026-10-25) — Windows CI restats both transcripts; watcher rescan versus pending-path cause needs native event evidence.
         let dir = tempfile::tempdir().unwrap();
         let _guard = crate::config::set_config_dir_override(dir.path().join("config"));
         let projects = dir.path().join("projects");
@@ -2052,16 +2157,28 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(updated.total_input_tokens, 27);
-        SESSION_FILE_STATS
-            .with(|stats| assert_eq!(stats.get(), 1, "only the changed transcript needs metadata"));
+        SESSION_FILE_STATS.with(|stats| {
+            assert_eq!(
+                stats.get(),
+                1,
+                "only the changed transcript needs metadata; diagnostics={:#?}",
+                state.claude_usage_scan.lock().diagnostics
+            )
+        });
         state.claude_usage_scan.lock().reconciled_at =
             Some(Instant::now() - Duration::from_secs(30 * 60));
         SESSION_FILE_STATS.with(|stats| stats.set(0));
         get_claude_session_stats_from_dir(&state, "all".into(), &projects)
             .await
             .unwrap();
-        SESSION_FILE_STATS
-            .with(|stats| assert_eq!(stats.get(), 2, "reconciliation validates all history"));
+        SESSION_FILE_STATS.with(|stats| {
+            assert_eq!(
+                stats.get(),
+                2,
+                "reconciliation validates all history; diagnostics={:#?}",
+                state.claude_usage_scan.lock().diagnostics
+            )
+        });
     }
 
     #[tokio::test]

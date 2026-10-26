@@ -1,16 +1,19 @@
 import { Show } from "solid-js";
 import { AGENT_DISPLAY, type AgentType } from "../../agents";
 import { AgentIcon } from "../../components/ui/AgentIcon";
+import { Button } from "../../components/ui/Button";
 import { SubAgentIcon } from "../../components/ui/SubAgentIcon";
 import { displayTask } from "../../utils/displayTask";
 import type { SessionInfo } from "../useSessions";
 import { isKnownAgentType } from "../utils/sessionKind";
 import { useDebouncedStatus } from "../utils/useDebouncedStatus";
 import styles from "./SessionCard.module.css";
-import { StatusBadge } from "./StatusBadge";
+import { type SessionStatus, StatusBadge } from "./StatusBadge";
 
 interface SessionCardProps {
 	session: SessionInfo;
+	/** Shared with the list header so its counts include the same busy hold. */
+	status?: () => SessionStatus;
 	/** Nesting level under the spawning agent; 0 or absent for a top-level row. */
 	depth?: number;
 	/** Last row of its sibling group: the left guide line ends here. */
@@ -58,7 +61,7 @@ function TerminalIcon() {
 }
 
 export function SessionCard(props: SessionCardProps) {
-	const status = useDebouncedStatus(() => props.session);
+	const status = props.status ?? useDebouncedStatus(() => props.session);
 	const agentType = () => props.session.state?.agent_type;
 	const task = () => displayTask(props.session.state?.current_task, agentType());
 	const agentColor = () => {
@@ -79,6 +82,7 @@ export function SessionCard(props: SessionCardProps) {
 			data-testid={(props.depth ?? 0) > 0 ? "subagent-row" : undefined}
 		>
 			<button
+				data-control-layout="row"
 				class={styles.cardMain}
 				aria-label={`Open session ${props.session.display_name || agentType() || "Terminal"}`}
 				onClick={() => props.onSelect(props.session.session_id)}
@@ -180,7 +184,9 @@ export function SessionCard(props: SessionCardProps) {
 					{props.session.state?.last_activity_ms ? formatTime(props.session.state.last_activity_ms) : ""}
 				</span>
 				<Show when={props.onKill}>
-					<button
+					<Button
+						variant="ghost"
+						geometry="stretch"
 						class={styles.killBtn}
 						aria-label={`Kill session ${props.session.display_name || agentType() || "Terminal"}`}
 						data-testid="kill-btn"
@@ -190,7 +196,7 @@ export function SessionCard(props: SessionCardProps) {
 							<line x1="18" y1="6" x2="6" y2="18" />
 							<line x1="6" y1="6" x2="18" y2="18" />
 						</svg>
-					</button>
+					</Button>
 				</Show>
 			</div>
 		</div>

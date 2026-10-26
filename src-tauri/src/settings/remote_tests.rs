@@ -647,6 +647,52 @@ async fn connection_credential_partial_readback_reports_committed_phase() {
     );
 }
 
+/// Catches: a relay pairing bundle accepted without parsing, stored for a missing
+/// connection, left behind after clear, or echoed back in an error.
+#[tokio::test]
+async fn relay_pairing_action_validates_stores_and_clears() {
+    use super::remote::{ConnectionCredentialAction, ConnectionCredentialSettings};
+    let f = fixture();
+    let a = ssh("relay pairing");
+    seed_connections(&f, std::slice::from_ref(&a));
+    let settings = ConnectionCredentialSettings::new(f.dir.path().to_path_buf(), Arc::new(|_| {}));
+    let error = settings
+        .perform(ConnectionCredentialAction::SetRelayPairing {
+            id: a.id.clone(),
+            bundle: CANARY.into(),
+        })
+        .unwrap_err();
+    assert_eq!(error.code, "out_of_range");
+    assert!(!serde_json::to_string(&error).unwrap().contains(CANARY));
+    assert_eq!(
+        settings.read(&a.id).unwrap()["relayPairing"]["status"],
+        "unset"
+    );
+
+    let bearer = crate::relay_tunnel::bundle::RelayBearer::new("R".into()).unwrap();
+    let bundle =
+        crate::relay_tunnel::bundle::PairingBundle::generate("ws://127.0.0.1:1", bearer).unwrap();
+    let read = settings
+        .perform(ConnectionCredentialAction::SetRelayPairing {
+            id: a.id.clone(),
+            bundle: bundle.to_text().to_string(),
+        })
+        .unwrap();
+    assert_eq!(read["relayPairing"]["status"], "set");
+    assert!(!read.to_string().contains(&bundle.room));
+    let read = settings
+        .perform(ConnectionCredentialAction::ClearRelayPairing { id: a.id.clone() })
+        .unwrap();
+    assert_eq!(read["relayPairing"]["status"], "unset");
+    let error = settings
+        .perform(ConnectionCredentialAction::SetRelayPairing {
+            id: "missing".into(),
+            bundle: bundle.to_text().to_string(),
+        })
+        .unwrap_err();
+    assert_eq!(error.code, "not_found");
+}
+
 // Catches: atomic forward-list edits appending/merging records or losing sibling profile fields.
 #[tokio::test]
 async fn tunnel_forwards_patch_replaces_atomic_list_and_reads_back() {

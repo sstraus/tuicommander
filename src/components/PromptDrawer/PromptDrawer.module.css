@@ -23,6 +23,7 @@
 }
 
 .header {
+ composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -36,21 +37,6 @@
   font-weight: 600;
 }
 
-.close {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: var(--font-2xl);
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: var(--radius-md);
-}
-
-.close:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
-
 .search {
   padding: 12px 16px;
   border-bottom: 1px solid var(--border);
@@ -61,23 +47,9 @@
 .categories {
   display: flex;
   gap: 4px;
+  flex-wrap: wrap;
   padding: 8px 16px;
   border-bottom: 1px solid var(--border);
-}
-
-.categoryBtn {
-  padding: 3px 10px;
-  background: var(--bg-tertiary);
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  cursor: pointer;
-}
-
-.categoryBtn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
 }
 
 .categoryBtnActive {
@@ -99,12 +71,6 @@
 
 .empty button {
   margin-top: 12px;
-  padding: 8px 16px;
-  background: var(--accent);
-  border: none;
-  border-radius: var(--radius-md);
-  color: var(--text-on-accent);
-  cursor: pointer;
 }
 
 .promptItem {
@@ -168,21 +134,6 @@
   opacity: 1;
 }
 
-.itemActions button {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  padding: 3px 5px;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-sm);
-}
-
-.itemActions button:hover {
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-}
-
 .footer {
   display: flex;
   flex-wrap: wrap;
@@ -196,13 +147,6 @@
 .footer button {
   flex-shrink: 0;
   white-space: nowrap;
-  padding: 4px 10px;
-  background: var(--accent);
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-on-accent);
-  font-size: var(--font-sm);
-  cursor: pointer;
 }
 
 .hint {
@@ -257,26 +201,11 @@
 
 .variableActions button {
   flex: 1;
-  padding: 6px 12px;
-  border: none;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: var(--font-sm);
-}
-
-.variableActions button:first-child {
-  background: var(--accent);
-  color: var(--text-on-accent);
 }
 
 .variableActions button:nth-child(2) {
   background: var(--success);
   color: var(--text-on-success);
-}
-
-.variableActions button:last-child {
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
 }
 
 /* Prompt Editor */
@@ -332,24 +261,6 @@
   justify-content: flex-end;
 }
 
-.editorActions button {
-  padding: 6px 14px;
-  border: none;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  font-size: var(--font-sm);
-}
-
-.editorActions button:first-child {
-  background: var(--accent);
-  color: var(--text-on-accent);
-}
-
-.editorActions button:last-child {
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-}
-
 .validationError {
   margin: 0 0 8px;
   padding: 6px 10px;
@@ -397,7 +308,6 @@
 .resetBtn {
   background: transparent !important;
   color: var(--warning) !important;
-  border: 1px solid var(--warning) !important;
 }
 
 /* Badge */
@@ -457,11 +367,6 @@
   opacity: 0.45;
 }
 
-/* Enable/disable toggle button */
-.toggleBtn {
-  font-size: 10px !important;
-}
-
 .toggleOff {
   opacity: 0.4;
 }
@@ -480,25 +385,6 @@
 .varDropdownWrap {
   position: relative;
   margin-top: 4px;
-}
-
-.varDropdownBtn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-
-.varDropdownBtn:hover {
-  border-color: var(--accent);
-  color: var(--fg-primary);
 }
 
 .varChevron {
@@ -537,7 +423,7 @@
   top: 0;
 }
 
-.varItem {
+button[data-control-layout="row"].varItem {
   display: flex;
   align-items: baseline;
   gap: 10px;
