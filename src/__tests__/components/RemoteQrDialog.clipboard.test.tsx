@@ -38,14 +38,14 @@ describe("RemoteQrDialog copy URL clipboard handling", () => {
 		vi.useRealTimers();
 	});
 
-	it("shows 'Copied to clipboard' after a successful write", async () => {
+	it("shows 'Copied' after a successful write", async () => {
 		vi.useFakeTimers();
-		const { getByTitle, getByText } = render(() => <RemoteQrDialog onClose={vi.fn()} />);
-		await vi.waitFor(() => expect(getByTitle("Copy connection URL")).toBeTruthy());
+		const { getByLabelText, getByText } = render(() => <RemoteQrDialog onClose={vi.fn()} />);
+		await vi.waitFor(() => expect(getByLabelText("Copy connection URL")).toBeTruthy());
 
-		fireEvent.click(getByTitle("Copy connection URL"));
+		fireEvent.click(getByLabelText("Copy connection URL"));
 
-		await vi.waitFor(() => expect(getByText("Copied to clipboard")).toBeTruthy());
+		await vi.waitFor(() => expect(getByText("Copied")).toBeTruthy());
 		await vi.advanceTimersByTimeAsync(1500);
 		expect(h.writeClipboard).toHaveBeenCalledWith("https://example.test/connect?ip=192.168.1.10");
 	});
@@ -56,14 +56,14 @@ describe("RemoteQrDialog copy URL clipboard handling", () => {
 		try {
 			const err = new DOMException("Write permission denied.", "NotAllowedError");
 			h.writeClipboard.mockRejectedValue(err);
-			const { findByAltText, getByTitle, queryByText } = render(() => <RemoteQrDialog onClose={vi.fn()} />);
+			const { findByAltText, getByLabelText, queryByText } = render(() => <RemoteQrDialog onClose={vi.fn()} />);
 			await findByAltText("QR code for remote mobile connection");
 
-			fireEvent.click(getByTitle("Copy connection URL"));
+			fireEvent.click(getByLabelText("Copy connection URL"));
 
 			await waitFor(() => expect(appLogger.warn).toHaveBeenCalledWith("network", "Remote QR copy URL failed", err));
 			await new Promise((r) => setTimeout(r, 20));
-			expect(queryByText("Copied to clipboard")).toBeNull();
+			expect(queryByText("Copied")).toBeNull();
 			expect(unhandled).not.toHaveBeenCalled();
 		} finally {
 			process.off("unhandledRejection", unhandled);
