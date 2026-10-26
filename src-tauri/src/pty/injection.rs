@@ -370,7 +370,7 @@ pub(crate) fn blocked_on_confident_question(state: &AppState, session_id: &str) 
 }
 
 pub(crate) fn should_inject_now(state: &AppState, session_id: &str) -> bool {
-    submission_ready(state, session_id, false)
+    submission_ready(state, session_id, false, false)
 }
 
 fn human_reply_waiting(state: &AppState, session_id: &str) -> bool {
@@ -381,7 +381,54 @@ fn human_reply_waiting(state: &AppState, session_id: &str) -> bool {
         .is_some_and(|session| session.awaiting_input)
 }
 
-fn submission_ready(state: &AppState, session_id: &str, human_reply: bool) -> bool {
+/// A progress report asks for another conversational turn, not native keys.
+/// The accumulator preserves native dialog ownership against later reports.
+fn waiting_on_progress_report(state: &AppState, session_id: &str) -> bool {
+    state
+        .session_maps
+        .silence_states
+        .get(session_id)
+        .is_some_and(|silence| silence.lock().awaiting_source() == Some("progress-blocked"))
+}
+
+/// Native controls which make an automated submit unsafe. A prose question or
+/// a progress-tool wait owns no modal controls; confirmed idle still gates it.
+pub(crate) fn agent_submission_prompt_kind(
+    state: &AppState,
+    session_id: &str,
+) -> Option<&'static str> {
+    let (confident, choice_kind, ego) =
+        state
+            .session_maps
+            .session_states
+            .get(session_id)
+            .map(|session| {
+                let ego = session.agent_type.as_deref() == Some("ego");
+                let kind = session.choice_prompt.as_ref().map(|choice| {
+                    if ego && choice.selection_mode.is_none() {
+                        "approval"
+                    } else {
+                        "choice"
+                    }
+                });
+                (session.question_confident, kind, ego)
+            })?;
+    if choice_kind.is_some() {
+        return choice_kind;
+    }
+    (confident && !waiting_on_progress_report(state, session_id)).then_some(if ego {
+        "free_text"
+    } else {
+        "question"
+    })
+}
+
+fn submission_ready(
+    state: &AppState,
+    session_id: &str,
+    human_reply: bool,
+    user_command: bool,
+) -> bool {
     if !session_is_agent(state, session_id) {
         return false;
     }
@@ -402,12 +449,16 @@ fn submission_ready(state: &AppState, session_id: &str, human_reply: bool) -> bo
         .get(session_id)
         .map(|a| a.load(std::sync::atomic::Ordering::Relaxed) == SHELL_IDLE)
         .unwrap_or(false);
+    // A direct or queued user command answers a progress-tool wait, not a native dialog.
+    // Read the source from ranked evidence, never infer ownership from a screen.
+    let progress_reply = user_command && waiting_on_progress_report(state, session_id);
     let blocked_on_question = state
         .session_maps
         .session_states
         .get(session_id)
-        .map(|s| s.question_confident)
-        .unwrap_or(false);
+        .is_some_and(|session| {
+            session.choice_prompt.is_some() || (session.question_confident && !progress_reply)
+        });
     // A native question may keep its shell BUSY. Human answers are not idle
     // work: the awaiting flag itself grants this one explicit input path.
     let answering_question = human_reply && human_reply_waiting(state, session_id);
@@ -424,11 +475,96 @@ fn submission_ready(state: &AppState, session_id: &str, human_reply: bool) -> bo
 /// True while the user has characters sitting in the composer. Injecting then
 /// would splice our text into what they are typing.
 pub(super) fn has_partial_user_input(state: &AppState, session_id: &str) -> bool {
-    state
+    let tracked_draft = state
         .session_maps
         .input_buffers
         .get(session_id)
-        .is_some_and(|buffer| !buffer.lock().content().is_empty())
+        .is_some_and(|buffer| !buffer.lock().is_empty());
+    if !tracked_draft {
+        return false;
+    }
+    let observed_input = state
+        .session_maps
+        .silence_states
+        .get(session_id)
+        .and_then(|silence| silence.lock().last_input_at);
+    if ego_has_fresh_empty_composer(state, session_id)
+        && let Some(buffer) = state.session_maps.input_buffers.get(session_id)
+    {
+        let mut buffer = buffer.lock();
+        // Raw writers stamp before feeding this editor. If one started since
+        // the screen check, retain its edit; if it starts after this check, its
+        // feed follows this reset under the same editor mutex.
+        let current_input = state
+            .session_maps
+            .silence_states
+            .get(session_id)
+            .and_then(|silence| silence.lock().last_input_at);
+        if current_input == observed_input {
+            *buffer = InputLineBuffer::new();
+        }
+        return !buffer.is_empty();
+    }
+    true
+}
+
+/// The write-side editor cannot observe text discarded by an agent. Only ego's
+/// native adapter proves an empty composer (including wrapped-draft rejection).
+/// Reconcile the tracked editor only while its input stamp is unchanged, so
+/// bookkeeping for the next accepted command cannot inherit discarded text.
+/// Re-derive the answer at the post-CAS claim check as well.
+fn ego_has_fresh_empty_composer(state: &AppState, session_id: &str) -> bool {
+    if !state
+        .session_maps
+        .session_states
+        .get(session_id)
+        .is_some_and(|session| {
+            session.agent_type.as_deref() == Some("ego") && session.choice_prompt.is_none()
+        })
+    {
+        return false;
+    }
+    let Some(input_age_ms) = state
+        .session_maps
+        .last_input_ms
+        .get(session_id)
+        .map(|last| now_epoch_ms().saturating_sub(last.load(Ordering::Acquire)))
+    else {
+        return false;
+    };
+    let Some(output_age) = state
+        .session_maps
+        .silence_states
+        .get(session_id)
+        .map(|silence| silence.lock().last_chunk_at.elapsed())
+    else {
+        return false;
+    };
+    // Strict ordering fails closed for same-millisecond writes/repaints. Require
+    // the repaint itself to settle, not merely silence over a pre-input screen.
+    if output_age < AGENT_READY_CONFIRM || input_age_ms <= output_age.as_millis() as u64 {
+        return false;
+    }
+    let Some(input_at) = state
+        .session_maps
+        .silence_states
+        .get(session_id)
+        .and_then(|silence| silence.lock().last_input_at)
+    else {
+        return false;
+    };
+    state.grid.vt_log_buffers.get(session_id).is_some_and(|vt| {
+        let vt = vt.lock();
+        // Epoch ages and repaired idle clocks can only delay recovery. Only
+        // a child-painted composer row after input authorizes it.
+        vt.last_composer_paint_at()
+            .is_some_and(|output_at| output_at > input_at)
+            && detect_agent_screen_activity_at(
+                Some("ego"),
+                &vt.screen_rows(),
+                Some(vt.grid_columns()),
+            ) == AgentScreenActivity::Ready
+    })
 }
 
 /// Reserve an idle agent composer for one injected command.
@@ -450,15 +586,16 @@ pub(super) fn claim_idle_for_injection(
     state: &AppState,
     session_id: &str,
 ) -> Option<InjectionClaim> {
-    claim_idle_for_submission(state, session_id, false)
+    claim_idle_for_submission(state, session_id, false, false)
 }
 
 fn claim_idle_for_submission(
     state: &AppState,
     session_id: &str,
     human_reply: bool,
+    user_command: bool,
 ) -> Option<InjectionClaim> {
-    if !submission_ready(state, session_id, human_reply) {
+    if !submission_ready(state, session_id, human_reply, user_command) {
         return None;
     }
     if human_reply && human_reply_waiting(state, session_id) {
@@ -626,6 +763,19 @@ pub(crate) struct PendingInjectionSummary {
     pub preview: String,
 }
 
+/// Read-only queue diagnosis for session inventory, including server wake entries.
+pub(crate) fn queued_submission_blocker(
+    state: &AppState,
+    session_id: &str,
+) -> Option<&'static str> {
+    let user_command = state.pending_injections.get(session_id).and_then(|queue| {
+        queue
+            .front()
+            .map(|head| matches!(head, crate::state::PendingInjection::UserCommand { .. }))
+    })?;
+    agent_composer_rejection(state, session_id, false, user_command).map(|(reason, _)| reason)
+}
+
 const PENDING_PREVIEW_MAX_CHARS: usize = 80;
 
 fn summarize_pending_injections(
@@ -662,6 +812,7 @@ fn agent_composer_rejection(
     state: &AppState,
     session_id: &str,
     human_reply: bool,
+    user_command: bool,
 ) -> Option<(&'static str, &'static str)> {
     if !state.session_maps.sessions.contains_key(session_id) {
         return Some(("session_not_found", "unknown"));
@@ -682,15 +833,12 @@ fn agent_composer_rejection(
         return Some(("selection_required", "empty"));
     }
     if !human_reply
-        && state
-            .session_maps
-            .session_states
-            .get(session_id)
-            .is_some_and(|session| session.question_confident)
+        && (agent_submission_prompt_kind(state, session_id).is_some()
+            || (!user_command && waiting_on_progress_report(state, session_id)))
     {
         return Some(("awaiting_input", "empty"));
     }
-    if !submission_ready(state, session_id, human_reply) {
+    if !submission_ready(state, session_id, human_reply, user_command) {
         return Some(("agent_not_ready", "empty"));
     }
     None
@@ -743,7 +891,7 @@ pub(crate) fn agent_submission_rejection_detail(
 
 /// Describe why a terminal could not receive an inbox wake; never drains a queue.
 pub(crate) fn agent_mail_wake_detail(state: &AppState, session_id: &str) -> String {
-    let reason = agent_composer_rejection(state, session_id, false)
+    let reason = agent_composer_rejection(state, session_id, false, false)
         .map(|(reason, _)| agent_submission_rejection_detail(state, session_id, reason))
         .unwrap_or_else(|| "The terminal wake path is unavailable. Inspect the recipient's lifecycle before retrying.".into());
     format!(
@@ -756,7 +904,7 @@ pub(super) fn agent_submission_rejection(
     session_id: &str,
     human_reply: bool,
 ) -> Option<(&'static str, &'static str)> {
-    if let Some(rejection) = agent_composer_rejection(state, session_id, human_reply) {
+    if let Some(rejection) = agent_composer_rejection(state, session_id, human_reply, true) {
         return Some(rejection);
     }
     // Readiness is checked BEFORE the queue, and the order is the fix. An agent
@@ -767,10 +915,12 @@ pub(super) fn agent_submission_rejection(
     // `agent_not_ready` is the truth, and it is the state that actually changes.
     // A confident question belongs to the human. Its parked automated entries
     // cannot drain until the answer clears the question, and must not prevent
-    // that answer from reaching the composer.
-    if !(human_reply
-        && (human_reply_waiting(state, session_id)
-            || blocked_on_confident_question(state, session_id)))
+    // that answer from reaching the composer. A direct answer to a progress-tool
+    // wait has the same priority over parked automated entries.
+    if !(waiting_on_progress_report(state, session_id)
+        || (human_reply
+            && (human_reply_waiting(state, session_id)
+                || blocked_on_confident_question(state, session_id))))
     {
         // The agent IS ready, so anything still parked can be typed right now.
         // Level-triggered: the BUSY→IDLE edge that normally drains this queue may
@@ -793,7 +943,7 @@ pub(super) fn agent_submission_rejection(
     }
     // Re-read: a flush that emptied the queue typed one entry and left the
     // session BUSY, so the caller is now waiting on that turn, not on a queue.
-    if !submission_ready(state, session_id, human_reply) {
+    if !submission_ready(state, session_id, human_reply, true) {
         return Some(("agent_not_ready", "empty"));
     }
     None
@@ -874,7 +1024,7 @@ fn write_submission_to_pty(
             pending: summarize_pending_injections(state, session_id),
         };
     }
-    let Some(claim) = claim_idle_for_submission(state, session_id, human_reply) else {
+    let Some(claim) = claim_idle_for_submission(state, session_id, human_reply, true) else {
         let (reason, composer_state) = agent_submission_rejection(state, session_id, human_reply)
             .unwrap_or(("claim_lost", "unknown"));
         return AgentSubmissionWrite::Rejected {
@@ -1360,6 +1510,37 @@ fn run_claimed_injection(
 pub(crate) const PEER_MAIL_WAKE: &str =
     "[TUIC] message available — read it with: agent action=inbox";
 
+pub(super) const URGENT_NOTICE_NAME_MAX_CHARS: usize = 40;
+
+/// Label a sender in the urgent notice. Display names are peer-controlled
+/// prompt text, so the name (then the TUIC-generated terminal alias) is shown
+/// only when it is one token of `[A-Za-z0-9._-]` and at most
+/// `URGENT_NOTICE_NAME_MAX_CHARS` long. `@` is excluded: it opens the file
+/// picker in Claude and Codex composers. Anything else falls back to the
+/// validated UUID, or `unknown-peer` when that is not a UUID either.
+pub(super) fn urgent_notice_sender_label(
+    sender_identity: &str,
+    sender_name: &str,
+    sender_alias: Option<&str>,
+) -> String {
+    let single_token = |text: &str| {
+        !text.is_empty()
+            && text.chars().count() <= URGENT_NOTICE_NAME_MAX_CHARS
+            && text
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+    };
+    if single_token(sender_name) {
+        return sender_name.to_string();
+    }
+    if let Some(alias) = sender_alias.filter(|alias| single_token(alias)) {
+        return alias.to_string();
+    }
+    uuid::Uuid::parse_str(sender_identity)
+        .map(|id| id.to_string())
+        .unwrap_or_else(|_| "unknown-peer".to_string())
+}
+
 /// Submit an inbox pointer into a busy Claude Code, Codex, or ego composer.
 /// Claude/Codex live probes (2026-09-27) show that Enter queues the line for the
 /// next tool boundary. ego's busy admission durably queues plain Enter and
@@ -1370,6 +1551,7 @@ pub(crate) fn deliver_urgent_mail_notice(
     state: &AppState,
     session_id: &str,
     sender_identity: &str,
+    sender_name: &str,
 ) -> Result<(), &'static str> {
     if !state.session_maps.sessions.contains_key(session_id) {
         return Err("recipient_exited");
@@ -1403,13 +1585,17 @@ pub(crate) fn deliver_urgent_mail_notice(
     } else if !should_inject_now(state, session_id) {
         return Err("recipient_not_ready");
     }
-    // Display names are peer-controlled prompt text. Use only a validated
-    // identity in the notice; the inbox keeps the human-facing sender name.
-    let sender_id = uuid::Uuid::parse_str(sender_identity)
-        .map(|id| id.to_string())
-        .unwrap_or_else(|_| "unknown-peer".to_string());
+    let sender_alias = state.live_pty_for_peer(sender_identity).and_then(|pty| {
+        state
+            .session_maps
+            .term_aliases
+            .get(&pty)
+            .map(|alias| alias.value().clone())
+    });
+    let sender_label =
+        urgent_notice_sender_label(sender_identity, sender_name, sender_alias.as_deref());
     let notice = format!(
-        "URGENT mail from {sender_id}: read agent inbox before your next step (agent action=inbox)"
+        "URGENT mail from {sender_label}: read agent inbox before your next step (agent action=inbox)"
     );
     let Some(claim) = claim_composer_for_human_input(state, session_id) else {
         return Err(if has_partial_user_input(state, session_id) {
@@ -2216,7 +2402,21 @@ pub(crate) fn flush_pending_injections_blocking(state: &AppState, session_id: &s
         .as_ref()
         .and_then(|session| session.shell_state.as_deref())
         .unwrap_or("unknown");
-    let claim = match claim_idle_for_injection(state, session_id) {
+    // Bind the permission to this exact FIFO head. A concurrent removal must
+    // not transfer a user reply's permission to a server-authored notice.
+    let Some((head_id, queued_user_command)) =
+        state.pending_injections.get(session_id).and_then(|queue| {
+            queue.front().map(|head| {
+                (
+                    head.id(),
+                    matches!(head, crate::state::PendingInjection::UserCommand { .. }),
+                )
+            })
+        })
+    else {
+        return;
+    };
+    let claim = match claim_idle_for_submission(state, session_id, false, queued_user_command) {
         Some(claim) => claim,
         None => {
             let defer_reason = if !session_is_agent(state, session_id) {
@@ -2250,8 +2450,13 @@ pub(crate) fn flush_pending_injections_blocking(state: &AppState, session_id: &s
     let pending = state
         .pending_injections
         .get_mut(session_id)
-        .and_then(|mut queue| queue.pop_front());
+        .and_then(|mut queue| {
+            (queue.front().is_some_and(|head| head.id() == head_id))
+                .then(|| queue.pop_front())
+                .flatten()
+        });
     let Some(injection) = pending else {
+        rollback_injection_claim(state, session_id, claim);
         tracing::info!(
             session_id,
             agent_state,
@@ -2274,6 +2479,14 @@ pub(crate) fn flush_pending_injections_blocking(state: &AppState, session_id: &s
         outcome,
         ClaimedInjectionKind::Message,
     );
+    if queued_user_command && matches!(outcome, InjectionOutcome::Submitted) {
+        // Retract only the progress-owned wait. If a native dialog replaced it
+        // during delivery, the accumulator preserves that dialog's evidence.
+        state.emit_pty_event(crate::state::AppEvent::PtyParsed {
+            session_id: session_id.to_string(),
+            parsed: serde_json::json!({"type": "progress-superseded"}).into(),
+        });
+    }
     let (typed, submitted, enter_separate) = match outcome {
         InjectionOutcome::Submitted => ("yes", true, "sent"),
         InjectionOutcome::NotStarted(_) => ("no", false, "not_sent"),
@@ -2653,7 +2866,7 @@ fn write_pty_parts_blocking(
         && let Some(mut vt) = vt.try_lock()
         && !vt.is_cursor_visible()
     {
-        vt.process(b"\x1b[?25h");
+        vt.process_local(b"\x1b[?25h");
     }
 
     let data_len: usize = parts.iter().map(String::len).sum();

@@ -6,6 +6,7 @@ import { isDiffStatus } from "../../stores/diffTabs";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
 import { fullTimestamp, relativeTimeWithClock } from "../../utils/time";
+import { Button } from "../ui/Button";
 import type { GraphNode } from "./CommitGraph";
 import { CommitGraph, laneWidthsByRow } from "./CommitGraph";
 import type { OpenDiffFn } from "./GitPanel";
@@ -415,8 +416,7 @@ export const LogTab: Component<LogTabProps> = (props) => {
 					{/* Load more button */}
 					<Show when={hasMore()}>
 						<div class={s.loadMore}>
-							<button
-								class={s.loadMoreBtn}
+							<Button
 								onClick={(e) => {
 									e.stopPropagation();
 									loadMore();
@@ -424,7 +424,7 @@ export const LogTab: Component<LogTabProps> = (props) => {
 								disabled={loadingMore()}
 							>
 								{loadingMore() ? "Loading..." : "Load more"}
-							</button>
+							</Button>
 						</div>
 					</Show>
 				</Show>

@@ -109,6 +109,14 @@ describe("repository refresh interval (#1491)", () => {
 		expect(structure).toHaveBeenCalledTimes(2);
 	});
 
+	it("refreshes at once when the clock went back instead of waiting out the skew", async () => {
+		// catches: remaining = 5s - (negative elapsed), stalling the repo for the whole skew
+		await refresh("/repo");
+		vi.setSystemTime(new Date("2026-10-06T12:00:00Z"));
+		await refresh("/repo");
+		expect(structure).toHaveBeenCalledTimes(2);
+	});
+
 	it("skips a repo parked during the wait instead of waking a dormant repo", async () => {
 		await refresh("/repo");
 		const pending = refresh("/repo");

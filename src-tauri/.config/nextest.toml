@@ -10,9 +10,9 @@ command = "sh scripts/nextest-test-tmp.sh"
 [scripts.setup.repo-test-temp-windows]
 command = "powershell -NoProfile -File scripts/nextest-test-tmp.ps1"
 
-# The bin fixtures are consumed by three groups of lib unit tests (they
-# derive the path from current_exe): mcp_proxy::stdio_client::tests and the ACP
-# push test in state.rs, plus acp_chat::tests::custom_chat_*. Integration tests reach the same bins through
+# The bin fixtures are consumed by lib unit tests that derive their path from
+# current_exe: mcp_proxy::stdio_client::tests, the registry respawn test, the ACP
+# push test in state.rs, and acp_chat::tests::custom_chat_*. Integration tests reach the same bins through
 # CARGO_BIN_EXE_*, which cargo itself builds. Every setup entry below is
 # filtered to those consumers, so a run that selects none of them skips the
 # ~5 min build (#1308-50c9). A new lib unit test that spawns a fixture bin must
@@ -22,6 +22,14 @@ command = "sh scripts/build-fixture-bins.sh"
 
 [scripts.setup.fixture-bins-windows]
 command = "powershell -NoProfile -File scripts/build-fixture-bins.ps1"
+
+# These integration tests spawn the separately packaged real relay. Download
+# and compile it once in setup, never twice inside their 120s behavior budget.
+[scripts.setup.relay-bin-unix]
+command = "python3 scripts/build-relay-test.py"
+
+[scripts.setup.relay-bin-windows]
+command = "python scripts/build-relay-test.py"
 
 [profile.default]
 # Surface long-running tests (warn at 30s, 60s, 90s) and hard-kill true hangs
@@ -39,12 +47,12 @@ setup = "repo-test-temp-windows"
 
 [[profile.default.scripts]]
 platform = { host = "cfg(unix)" }
-filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/))'
+filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/))'
 setup = "fixture-bins-unix"
 
 [[profile.default.scripts]]
 platform = { host = "cfg(windows)" }
-filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/))'
+filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/))'
 setup = "fixture-bins-windows"
 
 # The git_reads parity/shootout tests each spawn several `git` subprocesses in
@@ -84,13 +92,34 @@ setup = "repo-test-temp-windows"
 
 [[profile.ci.scripts]]
 platform = { host = "cfg(unix)" }
-filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/))'
+filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/))'
 setup = "fixture-bins-unix"
 
 [[profile.ci.scripts]]
 platform = { host = "cfg(windows)" }
-filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/))'
+filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/))'
 setup = "fixture-bins-windows"
 
 [profile.ci.junit]
 path = "junit.xml"
+
+[[profile.default.scripts]]
+platform = { host = "cfg(unix)" }
+filter = 'binary_id(=tuicommander) & (test(=remote_runtime::relay_tests::desktop_attaches_through_the_relay_and_runs_a_command) | test(=remote_runtime::relay_tests::relay_loss_and_daemon_restart_recover_without_duplicate_sessions))'
+setup = "relay-bin-unix"
+
+[[profile.default.scripts]]
+platform = { host = "cfg(windows)" }
+filter = 'binary_id(=tuicommander) & (test(=remote_runtime::relay_tests::desktop_attaches_through_the_relay_and_runs_a_command) | test(=remote_runtime::relay_tests::relay_loss_and_daemon_restart_recover_without_duplicate_sessions))'
+setup = "relay-bin-windows"
+
+
+[[profile.ci.scripts]]
+platform = { host = "cfg(unix)" }
+filter = 'binary_id(=tuicommander) & (test(=remote_runtime::relay_tests::desktop_attaches_through_the_relay_and_runs_a_command) | test(=remote_runtime::relay_tests::relay_loss_and_daemon_restart_recover_without_duplicate_sessions))'
+setup = "relay-bin-unix"
+
+[[profile.ci.scripts]]
+platform = { host = "cfg(windows)" }
+filter = 'binary_id(=tuicommander) & (test(=remote_runtime::relay_tests::desktop_attaches_through_the_relay_and_runs_a_command) | test(=remote_runtime::relay_tests::relay_loss_and_daemon_restart_recover_without_duplicate_sessions))'
+setup = "relay-bin-windows"

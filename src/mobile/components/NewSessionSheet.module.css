@@ -33,16 +33,6 @@
   color: var(--fg-primary);
 }
 
-.close {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 0;
-  background: none;
-  color: var(--fg-primary);
-}
-
 .fieldLabel {
   display: block;
   padding: 8px 16px 4px;
@@ -50,7 +40,7 @@
   font-size: 12px;
 }
 
-.field { --control-height: 44px; display: block; width: calc(100% - 32px); margin: 0 16px; }
+.field { display: block; width: calc(100% - 32px); margin: 0 16px; }
 
 .empty {
   padding: 24px 16px;
@@ -59,7 +49,7 @@
   font-size: 14px;
 }
 
-.repoItem {
+button[data-control-layout="row"].repoItem {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -74,7 +64,7 @@
   -webkit-tap-highlight-color: transparent;
 }
 
-.repoItem:active {
+button[data-control-layout="row"].repoItem:active {
   background: rgba(255, 255, 255, 0.08);
 }
 

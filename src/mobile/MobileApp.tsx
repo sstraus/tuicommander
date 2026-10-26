@@ -91,6 +91,8 @@ export default function MobileApp() {
 		});
 	});
 
+	const [streamError, setStreamError] = createSignal<string | null>(null);
+	let retryOutput: (() => void) | undefined;
 	const [activeTab, setActiveTab] = createSignal<TabId>("sessions");
 	const [chatFileLink, setChatFileLink] = createSignal<{ candidate: string; cwd: string } | null>(null);
 	const [recoveryRevision, setRecoveryRevision] = createSignal(0);
@@ -121,6 +123,7 @@ export default function MobileApp() {
 		candidate: string;
 		line?: number;
 		root?: string;
+		openerTuicSession?: string;
 	} | null>(null);
 	const { aiChatAvailable, sessions, loading, refreshing, error, authError, refresh, markSeen, subscribeChatWake } =
 		useSessions(() => setRecoveryRevision((revision) => revision + 1));
@@ -184,7 +187,16 @@ export default function MobileApp() {
 
 	return (
 		<div class={styles.shell} data-mobile-shell>
-			<ConnectionBanner offline={error() !== null} authError={authError()} onRetry={refresh} />
+			<ConnectionBanner
+				offline={error() !== null || streamError() !== null}
+				authError={authError()}
+				onRetry={() => {
+					refresh();
+					retryOutput?.();
+				}}
+				error={error() ?? streamError()}
+				testing={refreshing()}
+			/>
 			<Show
 				when={showDetail()}
 				fallback={
@@ -262,6 +274,10 @@ export default function MobileApp() {
 			>
 				<div class={styles.sessionPane} classList={{ [styles.sessionPaneHidden]: sessionFilesOpen() }}>
 					<SessionDetailScreen
+						onConnectionError={setStreamError}
+						onRegisterRetry={(retry) => {
+							retryOutput = retry;
+						}}
 						subscribeChatWake={subscribeChatWake}
 						session={lastKnownSession()!}
 						sessionExists={sessionExists()}
@@ -270,8 +286,8 @@ export default function MobileApp() {
 							setSessionFileLink(null);
 							setSessionFilesOpen(true);
 						}}
-						onOpenFileLink={(candidate, line, root) => {
-							setSessionFileLink({ candidate, line, root });
+						onOpenFileLink={(candidate, line, root, openerTuicSession) => {
+							setSessionFileLink({ candidate, line, root, openerTuicSession });
 							setSessionFilesOpen(true);
 						}}
 					/>
@@ -282,6 +298,7 @@ export default function MobileApp() {
 							sessions={sessions()}
 							recoveryRevision={recoveryRevision()}
 							initialSessionId={lastKnownSession()!.session_id}
+							openerTuicSession={sessionFileLink()?.openerTuicSession}
 							initialLink={sessionFileLink() ?? undefined}
 							initialRepo={{
 								worktreePath: sessionFileLink()?.root ?? lastKnownSession()!.worktree_path,

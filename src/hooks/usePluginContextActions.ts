@@ -1,12 +1,13 @@
 import { createEffect, onCleanup } from "solid-js";
 import { registerAiChatContextActions } from "../components/AIChatPanel/contextMenuActions";
-import { appLogger } from "../stores/appLogger";
 import { contextMenuActionsStore } from "../stores/contextMenuActionsStore";
 import { promptLibraryStore, type SavedPrompt } from "../stores/promptLibrary";
 import { settingsStore } from "../stores/settings";
+import { runWithFeedback } from "../utils/promptContext";
+import type { SmartPromptResult } from "./useSmartPrompts";
 
 interface PluginContextActionOptions {
-	executeSmartPrompt: (prompt: SavedPrompt, manualVariables?: Record<string, string>) => Promise<unknown>;
+	executeSmartPrompt: (prompt: SavedPrompt, manualVariables?: Record<string, string>) => Promise<SmartPromptResult>;
 	canExecute: (prompt: SavedPrompt) => { ok: boolean };
 }
 
@@ -29,9 +30,9 @@ export function usePluginContextActions(options: PluginContextActionOptions): vo
 					label: prompt.name,
 					target: "branch",
 					action: (context) => {
-						options
-							.executeSmartPrompt(prompt, context.branchName ? { branch_name: context.branchName } : undefined)
-							.catch((error) => appLogger.error("prompts", "Smart prompt execution failed", error));
+						void runWithFeedback(prompt, () =>
+							options.executeSmartPrompt(prompt, context.branchName ? { branch_name: context.branchName } : undefined),
+						);
 					},
 				}),
 			);
@@ -48,9 +49,7 @@ export function usePluginContextActions(options: PluginContextActionOptions): vo
 					label: prompt.name,
 					target: "terminal",
 					action: () => {
-						options
-							.executeSmartPrompt(prompt)
-							.catch((error) => appLogger.error("prompts", "Smart prompt execution failed", error));
+						void runWithFeedback(prompt, () => options.executeSmartPrompt(prompt));
 					},
 					disabled: () => !options.canExecute(prompt).ok,
 				}),

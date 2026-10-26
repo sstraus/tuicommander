@@ -1,0 +1,62 @@
+{
+  "unit": "milliseconds",
+  "percentileMethod": "nearest rank; n=5 so p95 is the maximum, not a stable tail estimate",
+  "endpoint": "Second requestAnimationFrame after last-entry visible geometry (or Chat removal for CLI); frame opportunity, not compositor or physical display proof",
+  "samples": {
+    "firstOpen": {
+      "values": [
+        13131,
+        13351,
+        14257,
+        13371,
+        13095
+      ],
+      "p50": 13351,
+      "p95": 14257
+    },
+    "foregroundResume": {
+      "values": [
+        58,
+        19,
+        55,
+        59,
+        57
+      ],
+      "p50": 57,
+      "p95": 59
+    },
+    "cliToChat": {
+      "values": [
+        13514,
+        21848,
+        16468,
+        12991,
+        13146
+      ],
+      "p50": 13514,
+      "p95": 21848
+    },
+    "chatToCli": {
+      "values": [
+        41,
+        126,
+        163,
+        42,
+        42
+      ],
+      "p50": 42,
+      "p95": 163
+    },
+    "cliChatCliRenderSum": {
+      "values": [
+        13555,
+        21974,
+        16631,
+        13033,
+        13188
+      ],
+      "p50": 13555,
+      "p95": 21974
+    }
+  }
+}

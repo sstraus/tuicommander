@@ -1,6 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import type { WorkItemProvider } from "../../plugins/workItemProvider";
 import type { WorkItem, WorkItemDetail } from "../../types/work-items.gen";
+import { Button } from "../ui/Button";
 import s from "./StartWorkMenu.module.css";
 import { START_WORK_NEEDS_REPO, useStartWork } from "./startWork";
 
@@ -33,16 +34,15 @@ export function StartWorkMenu(props: { provider: WorkItemProvider; item: WorkIte
 				if (event.key === "Escape") setOpen(false);
 			}}
 		>
-			<button
+			<Button
 				type="button"
-				class={s.trigger}
 				aria-label={`Card actions ${props.item.key}`}
 				aria-haspopup="menu"
 				aria-expanded={open()}
 				onClick={() => void toggle()}
 			>
 				⋯
-			</button>
+			</Button>
 			<Show when={open()}>
 				<div class={s.popup} role="menu" aria-label={`Actions for ${props.item.key}`}>
 					<Show when={!detail() && !loadError()}>
@@ -58,7 +58,7 @@ export function StartWorkMenu(props: { provider: WorkItemProvider; item: WorkIte
 					</Show>
 					<For each={actions()}>
 						{(action) => (
-							<button
+							<Button
 								type="button"
 								role="menuitem"
 								disabled={start.pending() || !action.enabled || !props.repoPath}
@@ -69,7 +69,7 @@ export function StartWorkMenu(props: { provider: WorkItemProvider; item: WorkIte
 								}}
 							>
 								{action.name}
-							</button>
+							</Button>
 						)}
 					</For>
 				</div>
@@ -88,9 +88,9 @@ export function StartWorkMenu(props: { provider: WorkItemProvider; item: WorkIte
 				{(message) => (
 					<span class={s.error} role="alert">
 						{message()}
-						<button type="button" onClick={run}>
+						<Button type="button" onClick={run}>
 							Retry start work
-						</button>
+						</Button>
 					</span>
 				)}
 			</Show>

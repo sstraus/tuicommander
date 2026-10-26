@@ -62,52 +62,6 @@
   margin-left: auto;
 }
 
-/* The height of the settings select and inputs (Settings.module.css), so a
-   button beside a select lines up with it. */
-.modelSelect,
-.modelDownload {
-  height: var(--control-height, 36px);
-  box-sizing: border-box;
-  padding: 0 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
-  color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  cursor: pointer;
-  transition: border-color 0.15s, color 0.15s;
-}
-
-.modelSelect:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-}
-
-.modelDownload {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--text-on-accent);
-}
-
-.modelDownload:hover {
-  opacity: 0.85;
-}
-
-.modelDelete {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  font-size: var(--font-xl);
-  padding: 0 2px;
-  line-height: 1;
-  transition: color 0.15s;
-}
-
-.modelDelete:hover {
-  color: var(--error);
-}
-
 .modelActiveLabel {
   font-size: var(--font-sm);
   color: var(--accent);
@@ -467,22 +421,6 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--fg-muted);
-}
-
-button.startConversation {
-  background: var(--accent);
-  color: var(--text-on-accent);
-  border-color: var(--accent);
-}
-
-button.startConversation:hover:not(:disabled) {
-  background: var(--accent-hover);
-  color: var(--text-on-accent);
-}
-
-button.stopConversation {
-  color: var(--error);
-  border-color: var(--error);
 }
 
 .conversationState .phase {

@@ -358,7 +358,7 @@ fn generated_modules_append_both_user_layers_and_obey_off() {
     assert!(text.contains("## Process safety"));
     assert!(text.contains("except through `make agent-test`, which isolates port, config folder, binary name, shortcuts and microphone."));
     agents.launch_instructions_disabled = true;
-    assert!(effective_text_for(&app, &agents, "ego", true).is_empty());
+    assert_eq!(effective_text_for(&app, &agents, "ego", true), "");
 }
 
 /// Catches: saved default copies appended twice, custom additions lost, or migration rerun on new empty additions.
@@ -431,4 +431,44 @@ fn user_module_respects_progress_flags_without_losing_other_guidance() {
     assert!(disabled.contains("ui action=tab"));
     app.progress_tracking = false;
     assert!(!effective_text(&app, &agents, "claude").contains("progress type=done"));
+}
+
+/// Catches: agents launched without the MDKB search rule while mdkb is installed.
+#[test]
+fn mdkb_rule_is_in_every_agent_text_when_installed() {
+    let (app, agents) = (AppConfig::default(), AgentsConfig::default());
+    for agent in AGENTS {
+        for child in [false, true] {
+            let text = effective_text_with(&app, &agents, agent, child, true);
+            assert!(text.contains(MDKB_RULE), "{agent} child={child}");
+        }
+    }
+    let text = effective_text_with(&app, &agents, "claude", false, true);
+    assert!(text.contains("Use MDKB for all code searches, including exact strings, symbols, and surrounding context. Prefer targeted retrieval over reading entire files. Grep, rg, and Bash-based searches are fallback tools only when MDKB cannot cover the target. Do not attempt alternative search commands when a search is blocked."));
+}
+
+/// Catches: the rule promising a tool that is not installed, or surviving a disabled launch prompt.
+#[test]
+fn mdkb_rule_is_absent_when_not_installed_or_launch_text_is_disabled() {
+    let (app, mut agents) = (AppConfig::default(), AgentsConfig::default());
+    assert!(!effective_text_with(&app, &agents, "claude", false, false).contains("MDKB"));
+    agents.launch_instructions_disabled = true;
+    assert_eq!(
+        effective_text_with(&app, &agents, "claude", false, true),
+        ""
+    );
+}
+
+/// Catches: detection that misses an mdkb executable in a PATH directory, or accepts a directory named mdkb.
+#[test]
+fn mdkb_detection_finds_a_file_not_a_directory() {
+    let dir = tempfile::TempDir::new().unwrap();
+    let name = if cfg!(windows) { "mdkb.exe" } else { "mdkb" };
+    let dirs = [dir.path().to_path_buf()];
+    assert!(!mdkb_in(&dirs));
+    std::fs::create_dir(dir.path().join(name)).unwrap();
+    assert!(!mdkb_in(&dirs));
+    std::fs::remove_dir(dir.path().join(name)).unwrap();
+    std::fs::write(dir.path().join(name), b"").unwrap();
+    assert!(mdkb_in(&dirs));
 }

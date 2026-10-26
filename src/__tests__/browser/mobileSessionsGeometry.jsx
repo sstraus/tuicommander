@@ -1,0 +1,28 @@
+import { render } from 'solid-js/web';
+import { SessionsScreen } from '../../mobile/screens/SessionsScreen';
+import '../../mobile/mobile.css';
+window.fetch=async(input)=>{
+ const url=typeof input==='string'?input:input.url;
+ if(url.includes('/config/repositories'))return Response.json({repos:{}});
+ if(url.includes('/agents/detect-all'))return Response.json({});
+ throw new Error(`Unexpected fixture RPC ${url}`);
+};
+render(() => <section id="geometry" style="height:900px;background:var(--bg-secondary)"><SessionsScreen sessions={[]} loading={false} refreshing={false} error={null} onRefresh={()=>{}} onSelectSession={()=>{}} /></section>,document.getElementById('root'));
+const named=name=>document.querySelector(`[aria-label="${name}"]`);
+named('Search sessions').click();
+const input=named('Filter sessions');input.value='needle';input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+if(named('Filter sessions'))throw new Error('Escape did not close search');
+named('Search sessions').click();if(named('Filter sessions').value!=='')throw new Error('Search did not clear');
+named('Sort sessions').click();
+[...document.querySelectorAll('[role="menuitemradio"]')].find(button=>button.textContent==='Recent').click();
+if(localStorage.getItem('tuic-mobile-session-sort')!=='recent')throw new Error('Sort persistence changed');
+named('New session').click();
+for(let i=0;i<60&&!named('Close new session');i++)await new Promise(resolve=>requestAnimationFrame(resolve));
+if(!named('Close new session'))throw new Error('FAB did not open sheet');named('Close new session').click();
+named('Sort sessions').click();
+const fab=named('New session'),r=fab.getBoundingClientRect();
+if(Math.abs(innerWidth-r.right-16)>1||Math.abs(innerHeight-r.bottom-76)>1)throw new Error('FAB placement changed');
+if(r.width!==(innerWidth<=600?44:36)||r.height!==r.width)throw new Error('FAB target is not shared square');
+if(getComputedStyle(fab.firstElementChild).borderRadius!=='50%')throw new Error('FAB circle visual lost');
+if([...document.querySelectorAll('[role="menuitemradio"]')].find(button=>button.textContent==='Recent').getAttribute('aria-checked')!=='true')throw new Error('Selected sort role changed');
+window.controlGeometryReady=true;

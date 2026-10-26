@@ -23,7 +23,7 @@ function readableSubtitle(subtitle: string): string {
 
 export function ActivityItem(props: ActivityItemProps) {
 	return (
-		<button class={styles.item} onClick={() => props.onTap(props.item)}>
+		<button type="button" data-control-layout="row" class={styles.item} onClick={() => props.onTap(props.item)}>
 			<div
 				class={styles.icon}
 				style={{ color: props.item.iconColor ?? "var(--fg-muted)" }}

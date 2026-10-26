@@ -15,6 +15,7 @@ export function AutomationCard(props: {
 	const definition = () => props.item.definition;
 	return (
 		<button
+			data-control-layout="card"
 			type="button"
 			disabled={props.disabled}
 			class={s.item}

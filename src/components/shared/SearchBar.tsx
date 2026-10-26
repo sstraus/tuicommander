@@ -1,6 +1,8 @@
 import { type Component, createEffect, createSignal, For, type JSX, Show } from "solid-js";
 import { cx } from "../../utils";
+import { Button } from "../ui/Button";
 import { ChevronIcon } from "../ui/ChevronIcon";
+import { Input } from "../ui/Input";
 import type { SearchOptions } from "./DomSearchEngine";
 import s from "./SearchBar.module.css";
 
@@ -218,19 +220,22 @@ export const SearchBar: Component<SearchBarProps> = (props) => {
 		<Show when={props.visible}>
 			<div class={s.overlay}>
 				<Show when={hasReplace()}>
-					<button
+					<Button
+						variant="ghost"
+						geometry="stretch"
 						class={cx(s.expandBtn, expanded() && s.expandBtnOpen)}
+						aria-expanded={expanded()}
 						onClick={() => setExpanded((v) => !v)}
 						title="Toggle Replace"
 					>
 						<ChevronIcon />
-					</button>
+					</Button>
 				</Show>
 
 				<div class={s.rows}>
 					<div class={s.row}>
 						<div class={s.inputWrap}>
-							<input
+							<Input
 								ref={inputRef}
 								class={s.input}
 								type="text"
@@ -249,62 +254,70 @@ export const SearchBar: Component<SearchBarProps> = (props) => {
 
 						<div class={s.separator} />
 
-						<button
+						<Button
+							variant="ghost"
 							class={cx(s.toggleBtn, caseSensitive() && s.toggleActive)}
+							aria-pressed={caseSensitive()}
 							onClick={toggleCaseSensitive}
 							title="Match Case"
 						>
 							<CaseSensitiveIcon />
-						</button>
+						</Button>
 
-						<button
+						<Button
+							variant="ghost"
 							class={cx(s.toggleBtn, wholeWord() && s.toggleActive)}
+							aria-pressed={wholeWord()}
 							onClick={toggleWholeWord}
 							title="Match Whole Word"
 						>
 							<WholeWordIcon />
-						</button>
+						</Button>
 
-						<button
+						<Button
+							variant="ghost"
 							class={cx(s.toggleBtn, useRegex() && s.toggleActive)}
+							aria-pressed={useRegex()}
 							onClick={toggleRegex}
 							title="Use Regular Expression"
 						>
 							<RegexIcon />
-						</button>
+						</Button>
 
 						<For each={props.extraToggles}>
 							{(toggle) => (
-								<button
+								<Button
+									variant="ghost"
 									class={cx(s.toggleBtn, toggle.active && s.toggleActive)}
+									aria-pressed={toggle.active}
 									onClick={toggle.onToggle}
 									title={toggle.title}
 								>
 									{toggle.icon()}
-								</button>
+								</Button>
 							)}
 						</For>
 
 						<div class={s.separator} />
 
-						<button class={s.btn} onClick={() => props.onPrev()} title="Previous Match (Shift+Enter)">
+						<Button variant="ghost" class={s.btn} onClick={() => props.onPrev()} title="Previous Match (Shift+Enter)">
 							<PrevIcon />
-						</button>
+						</Button>
 
-						<button class={s.btn} onClick={() => props.onNext()} title="Next Match (Enter)">
+						<Button variant="ghost" class={s.btn} onClick={() => props.onNext()} title="Next Match (Enter)">
 							<NextIcon />
-						</button>
+						</Button>
 
 						<div class={s.separator} />
 
-						<button class={s.btn} onClick={() => props.onClose()} title="Close (Escape)">
+						<Button variant="ghost" class={s.btn} onClick={() => props.onClose()} title="Close (Escape)">
 							<CloseIcon />
-						</button>
+						</Button>
 					</div>
 
 					<Show when={hasReplace() && expanded()}>
 						<div class={s.row}>
-							<input
+							<Input
 								class={s.input}
 								type="text"
 								placeholder="Replace…"
@@ -316,17 +329,23 @@ export const SearchBar: Component<SearchBarProps> = (props) => {
 								spellcheck={false}
 							/>
 
-							<button class={s.btn} onClick={() => props.onReplace?.(replaceTerm())} title="Replace (Enter)">
+							<Button
+								variant="ghost"
+								class={s.btn}
+								onClick={() => props.onReplace?.(replaceTerm())}
+								title="Replace (Enter)"
+							>
 								<ReplaceIcon />
-							</button>
+							</Button>
 
-							<button
+							<Button
+								variant="ghost"
 								class={s.btn}
 								onClick={() => props.onReplaceAll?.(replaceTerm())}
 								title="Replace All (Cmd/Ctrl+Enter)"
 							>
 								<ReplaceAllIcon />
-							</button>
+							</Button>
 						</div>
 					</Show>
 				</div>

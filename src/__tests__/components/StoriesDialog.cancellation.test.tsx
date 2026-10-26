@@ -13,6 +13,8 @@ beforeEach(() => {
 	vi.mocked(invoke).mockImplementation(async (command, args) => {
 		if (command === "story_capabilities") return true;
 		const action = (args as { action: { action: string } }).action;
+		if (action.action === "transition_history") return { type: "transitions", value: [] };
+		if (action.action === "list_notes") return { type: "notes", value: [] };
 		if (action.action === "list_plans") return { type: "plans", value: [recorded.plan.value] };
 		if (action.action === "plan_view") return recorded.after_cancel;
 		throw new Error(`unexpected action ${action.action}`);

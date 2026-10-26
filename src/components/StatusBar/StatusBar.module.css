@@ -240,20 +240,7 @@
   background: var(--bg-tertiary);
 }
 
-.tickerPopoverClose {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: var(--font-lg);
-  cursor: pointer;
-  padding: 0 4px;
-  border-radius: var(--radius-sm);
-}
 
-.tickerPopoverClose:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-}
 
 .tickerPopoverList {
   overflow-y: auto;
@@ -353,40 +340,14 @@
   animation: pulse-opacity 2s ease-in-out infinite;
 }
 
-.toggleBtn {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  color: var(--fg-secondary);
-  padding: 2px 8px;
-  border-radius: var(--radius-md);
-  font-size: var(--font-xs);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-  overflow: visible;
-}
 
-.toggleBtn:focus-visible {
-  outline: none;
-}
 
-.toggleBtn:hover {
-  background: var(--bg-highlight);
-  border-color: var(--accent);
-  color: var(--fg-primary);
-}
 
 .micIcon {
   vertical-align: middle;
 }
 
 .micRecording {
-  background: var(--accent) !important;
-  border-color: var(--accent) !important;
-  color: var(--text-on-accent) !important;
   animation: mic-pulse 1s ease-in-out infinite;
 }
 
@@ -431,3 +392,6 @@
   white-space: nowrap;
   cursor: default;
 }
+
+.toggleBtn { position: relative; overflow: visible; }
+@media (max-width: 600px) { .bar { height: auto; min-height: 44px; } }

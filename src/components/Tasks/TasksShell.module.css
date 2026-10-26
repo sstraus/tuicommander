@@ -1,16 +1,13 @@
 .shell { container-type: inline-size; display: flex; flex-direction: column; height: 100%; min-height: 0; overflow: hidden; color: var(--fg-primary); background: var(--bg-primary); font-family: var(--font-ui); font-size: var(--font-md); }
-.header { display: flex; align-items: end; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
+.header {
+  composes: toolbar from "../ui/FormControls.module.css"; display: flex; align-items: end; flex-wrap: wrap; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-secondary); }
 .header label { display: flex; flex-direction: column; gap: 4px; color: var(--fg-secondary); font-size: var(--font-sm); }
-.header > button { min-height: 36px; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0 12px; background: var(--bg-tertiary); color: var(--fg-primary); font: inherit; cursor: pointer; }
-.header > button:hover { background: var(--bg-highlight); }
 .header :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .create { margin-left: auto; }
 .body { flex: 1; min-height: 0; display: flex; }
 .main { flex: 1; min-width: 0; min-height: 0; }
 .side { flex: 0 0 min(480px, 45%); min-width: 0; overflow: auto; border-left: 1px solid var(--border); }
-.side > .back { display: none; margin: 8px 12px 0; min-height: 36px; border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 0 12px; background: var(--bg-tertiary); color: var(--fg-primary); font: inherit; cursor: pointer; }
-.side > .back:hover { background: var(--bg-highlight); }
-.side > .back:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.side > .back { display: none; margin: 8px 12px 0; }
 /* Below 700 px of shell width the list and the detail take turns; the shell is the container, not the viewport. */
 @container (max-width: 699px) {
 	.body[data-detail="open"] .main { display: none; }
@@ -18,7 +15,8 @@
 	.side > .back { display: block; }
 }
 .view { display: flex; flex-direction: column; height: 100%; min-height: 0; }
-.boardPicker { display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: var(--fg-secondary); font-size: var(--font-sm); }
+.boardPicker {
+  composes: toolbar from "../ui/FormControls.module.css"; display: flex; align-items: center; gap: 8px; padding: 8px 12px; color: var(--fg-secondary); font-size: var(--font-sm); }
 .error { color: var(--error); padding: 8px 12px; overflow-wrap: anywhere; }
 .empty { padding: 16px; color: var(--fg-secondary); }
 .fallback { flex: 1; min-height: 0; overflow: auto; }

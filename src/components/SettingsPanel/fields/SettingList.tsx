@@ -1,4 +1,5 @@
 import { type Component, For, Show } from "solid-js";
+import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
 import s from "./fields.module.css";
 import { SettingField, type SettingFieldProps } from "./SettingField";
@@ -56,7 +57,7 @@ export const SettingList: Component<SettingListProps> = (props) => (
 									</label>
 								)}
 							</For>
-							<button
+							<Button
 								data-setting-id={props.settingId ?? props["data-setting-id"]}
 								type="button"
 								class={s.button}
@@ -65,13 +66,13 @@ export const SettingList: Component<SettingListProps> = (props) => (
 								onClick={() => props.onChange(props.rows.filter((current) => current.id !== rowId))}
 							>
 								Remove
-							</button>
+							</Button>
 						</div>
 					)}
 				</For>
 				<Show when={props.onAdd}>
 					{(add) => (
-						<button
+						<Button
 							data-setting-id={props.settingId ?? props["data-setting-id"]}
 							type="button"
 							class={s.button}
@@ -79,7 +80,7 @@ export const SettingList: Component<SettingListProps> = (props) => (
 							onClick={() => props.onChange([...props.rows, add()()])}
 						>
 							Add row
-						</button>
+						</Button>
 					)}
 				</Show>
 			</div>

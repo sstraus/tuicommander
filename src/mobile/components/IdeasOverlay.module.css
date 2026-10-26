@@ -38,20 +38,6 @@
   margin-left: 6px;
 }
 
-.closeBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  background: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  padding: 0;
-}
-
 .list {
   flex: 1;
   min-height: 0;
@@ -119,26 +105,6 @@
   flex-shrink: 0;
 }
 
-.actionBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
-  border: none;
-  background: none;
-  color: var(--fg-muted);
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  padding: 0;
-  border-radius: var(--radius-sm);
-  font-size: 14px;
-}
-
-.actionBtn:active {
-  background: rgba(255, 255, 255, 0.06);
-}
-
 .sendBtn {
   color: var(--accent);
 }
@@ -159,45 +125,5 @@
 .input {
   flex: 1;
   min-width: 0;
-  min-height: 36px;
-  max-height: 80px;
-  padding: 8px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  background: var(--bg-tertiary);
-  color: var(--fg-primary);
-  font-size: 13px;
   font-family: var(--font-mono);
-  resize: none;
-  outline: none;
-}
-
-.input:focus {
-  border-color: var(--accent);
-}
-
-.submitBtn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border: none;
-  border-radius: var(--radius-md);
-  background: var(--accent);
-  color: var(--bg-primary);
-  font-size: 18px;
-  font-weight: 600;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-  flex-shrink: 0;
-  align-self: flex-end;
-}
-
-.submitBtn:disabled {
-  opacity: 0.4;
-}
-
-.submitBtn:active:not(:disabled) {
-  opacity: 0.8;
 }

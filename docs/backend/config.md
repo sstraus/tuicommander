@@ -335,7 +335,7 @@ needs an app restart is what that costs.
 | `attachment_retention_days` | `u32` | `7` | Obsolete for uploads: attachment lifetime is now the session. This stored value has no effect on attachment cleanup. |
 | `mcp_server_enabled` | `bool` | `true` | Enable MCP HTTP server |
 | `mcp_port` | `u16` | `9876` | Fixed port for MCP server (0 = OS-assigned) |
-| `mcp_capabilities` | `object` | `{denied:["settings","diagnostics"],migration_unknown_tools:[]}` | Native capability denials. Old `disabled_native_tools` migrates once; unknown names remain visible. Parent denials cover grouped actions; member denials remain scoped. See MCP capability cutover documentation. |
+| `mcp_capabilities` | `object` | `{denied:["settings","diagnostics"],migration_unknown_tools:[]}` | Native capability denials. Old `disabled_native_tools` migrates once; unknown names remain visible. Parent denials cover grouped actions; member denials remain scoped. Settings groups these keys by backend-owned domain, section and parent metadata; conditional availability is independent of denials. See MCP capability cutover documentation. |
 | `collapse_tools` | `bool` | `false` | Replace the full MCP tool list with 3 lazy-discovery meta-tools (`search_tools`, `get_tool_schema`, `call_tool`). Discovered native schemas are unchanged: managed commands still use one `call_tool` invocation of `session action=submit` and receive the bounded receipt in that response. Grok sessions use this surface automatically without changing the stored value — see [`mcp-http.md`](mcp-http.md#lazy-tool-discovery-collapse_tools). Size figures for both surfaces, and how to reproduce them, are in [Measuring the surfaces](mcp-http.md#measuring-the-surfaces) — the reduction is measured, never estimated |
 | `services` | `ServicesConfig` | `{}` | Nested remote-access config: `server`, `auth`, `tls`, `relay`, `push` (replaces the former flat `remote_access_*`/`push_enabled`/`relay_enabled` fields) |
 
@@ -466,6 +466,14 @@ Each target uses the format its tool reads:
 | goose | `~/.config/goose/config.yaml` | YAML `extensions` (`ExtensionEntry`) |
 | pi | `~/.pi/agent/mcp.json` | JSON `mcpServers` (pi-mcp-adapter extension) |
 
+Codex filters the environment of its stdio MCP servers. Its TUIC entry forwards
+`TUIC_SESSION`, `TUIC_SOCKET`, `TUIC_APP_INSTANCE` and `TUIC_CONFIG_DIR` from the
+local process environment. Identity alone is not sufficient: without the endpoint
+selectors, an agent launched by a named instance can connect its bridge to the
+default instance. Installation repairs incomplete allowlists even when the bridge
+command already matches. Existing variables and local-source object entries are
+preserved; Grok does not receive the Codex-only allowlist.
+
 
 **A target is written only when it is installed.** The writer creates every
 missing parent directory, so an unconditional pass used to create `~/.cursor/`,
@@ -590,7 +598,7 @@ Add-time secrets travel in an optional write-only `credentials` array on the sav
 | `sounds.error` | `bool` | `true` | Play on error |
 | `sounds.completion` | `bool` | `true` | Play on completion |
 | `sounds.warning` | `bool` | `true` | Play on warning |
-| `silence_remote_completions` | `bool` | `true` | Suppress the completion chime for HTTP/MCP-created sessions |
+| `silence_remote_completions` | `bool` | `true` | Mute sounds and OS notices for parented sessions; retain the completion-chime mute for unparented HTTP/MCP sessions |
 | `toasts_in_bell` | `bool` | `true` | Mirror every toast into the toolbar bell, under a MESSAGES section |
 | `pr_native_notifications` | `bool` | `true` | OS notification for PR ready / CI failed / changes requested / merged transitions |
 
@@ -908,9 +916,9 @@ struct PromptEntry {
 
 ### Notes (`notes.json`)
 
-**Type:** `serde_json::Value` (flexible JSON, shape defined by frontend)
+**Type:** `serde_json::Value` with backend-owned keyed mutations. The legacy `notes` array and extra document fields remain compatible.
 
-**Commands:** `load_notes()`, `save_notes(base, config)`
+**Commands:** `load_notes()`, `save_notes(base, config)`. Planner `add_idea`, `list_ideas`, and `update_idea` use the same `ConfigFile` strict locked writer. UI saves remove only ids present in their baseline and merge only changed fields of existing records; concurrent additions survive and deleted records are not resurrected. Other top-level fields retain merge-patch semantics. Invalid JSON fails rather than becoming an empty snapshot. Planner additions retain a `source` string and the envelope project's `repoPath`. Successful mutation routes dual-emit `ideas-changed`; frontend reloads wait for queued local writes and never save a reload.
 
 ### Keybindings (`keybindings.json`)
 
@@ -930,7 +938,7 @@ The settings owner exposes `/root` as a structured bounded geometry value. Group
 
 The `ego` entry supports optional `ego_mode` (`plan|default|edits|auto|yolo`) and `ego_sandbox` (`ro|workspace`). Missing values add no flags. The shared Rust launch translator injects `--mode` and `--sandbox` for terminal and MCP launches (including `run` and `resume`), replacing corresponding raw overrides before `--`. Administrative subcommands (including `mcp-server`) and ACP are excluded. The prompt separator `--` and its full suffix stay unchanged, even after a raw option without a value. An invalid saved ego choice is ignored for that field only; the valid sibling choice and other agents' settings remain intact. These choices apply only to new launches and do not rewrite ego configuration.
 
-`agents.json` stores `launch_instructions: string` as user additions at global and agent level. The composer emits enabled modules, global additions, then agent additions. Empty additions add nothing. `launch_modules` maps stable module IDs (`markers`, `working_with_user`, `waiting`, `git_worktree`, `process_safety`, `children`) to booleans; missing means enabled. Effective flags are global AND per-agent. `launch_instructions_disabled` suppresses modules and additions at either scope. `launch_additions_migrated` records the one-time conversion of legacy replacements: exact marker-default copies are removed, real custom text is retained, and empty replacements become explicit off. Migration runs inside the existing agents-file update lock. Root and child launch files are separate; only child files contain Children. See the user guide, "Launch Instructions".
+`agents.json` stores `launch_instructions: string` as user additions at global and agent level. The composer emits enabled modules, global additions, then agent additions. Empty additions add nothing. `launch_modules` maps stable module IDs (`markers`, `working_with_user`, `waiting`, `git_worktree`, `process_safety`, `children`) to booleans; missing means enabled. Effective flags are global AND per-agent. `launch_instructions_disabled` suppresses modules and additions at either scope. `launch_additions_migrated` records the one-time conversion of legacy replacements: exact marker-default copies are removed, real custom text is retained, and empty replacements become explicit off. Migration runs inside the existing agents-file update lock. Root and child launch files are separate; only child files contain Children. See the user guide, "Launch Instructions". When mdkb is on PATH or in a known install directory (stat-only check, cached per process, reset by `write_files` and by `install_mdkb`/`uninstall_mdkb`), `launch_instructions::MDKB_RULE` is emitted after the modules and before additions.
 
 Each agent entry may contain `native_status_signals: boolean`. For Claude and Codex, an absent value means `true`; `false` disables launch argument injection. `hook_instrumentation` controls only explicit global installation and remains off when absent.
 
@@ -1030,6 +1038,8 @@ Defined in the root `src-tauri/src/config.rs` and re-exported by the dictation c
 | `auto_send` | `bool` | `true` | Auto-submit after transcription |
 
 **Commands:** `get_dictation_config()`, `set_dictation_config(base, config)`
+
+Voice saves resolve legacy engine defaults on the latest locked document before applying the caller’s delta. This preserves an unchanged engine choice without clobbering another client’s explicit choice. Isolated speech-output agent-test instances force effective hands-free listening off even if the saved file enables it.
 
 ### Config Defaults (read-only, no file)
 
@@ -1643,6 +1653,8 @@ visible; it does not resume every inactive tab.
 ### MCP work-item writes
 
 `mcp_work_item_writes` in `config.json` defaults to `false`, including when the field is absent in an older file. It permits only the `repo work_item_act` comment and transition operations. Reads need no opt-in. Use the existing configuration save surface to apply it live, or edit the file with the app stopped and restart. Supplying a flag in a work-item request cannot enable writes.
+
+`mcp_call_audit_enabled` in `config.json` gates recording and display of the MCP call audit. Default `true` when built with debug assertions, `false` otherwise, including when the field is absent from an older file. Live: no restart.
 
 ### Background tray and menu-bar icon
 

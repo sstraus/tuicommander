@@ -19,6 +19,10 @@ const controls = new Set([
 	"select",
 	"textarea",
 	"Input",
+	"Button",
+	"ColorSwatch",
+	"Slider",
+	"ColorInput",
 	"Select",
 	"Textarea",
 	"SettingInput",
@@ -36,11 +40,23 @@ const controls = new Set([
 
 export function extractSettingControls(file: string, source: string): SettingControl[] {
 	const tree = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+	// Solid's Switch is control flow, not a Settings input. Resolve the UI binding, including aliases.
+	const switchBindings = new Set<string>();
+	for (const statement of tree.statements) {
+		if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) continue;
+		if (!/\/ui(?:\/Switch)?$/.test(statement.moduleSpecifier.text)) continue;
+		const bindings = statement.importClause?.namedBindings;
+		if (bindings && ts.isNamedImports(bindings)) {
+			for (const binding of bindings.elements)
+				if ((binding.propertyName ?? binding.name).text === "Switch") switchBindings.add(binding.name.text);
+		}
+	}
+
 	const found: SettingControl[] = [];
 	function visit(node: ts.Node): void {
 		if (
 			(ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) &&
-			controls.has(node.tagName.getText(tree))
+			(controls.has(node.tagName.getText(tree)) || switchBindings.has(node.tagName.getText(tree)))
 		) {
 			const attributes = node.attributes.properties;
 			function attribute(name: string): string | undefined {

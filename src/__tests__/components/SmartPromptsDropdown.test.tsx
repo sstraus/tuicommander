@@ -128,3 +128,22 @@ describe("SmartPromptsDropdown — outside dismissal", () => {
 		expect(smartPromptsDropdownStore.state.isOpen).toBe(true);
 	});
 });
+
+// Catches: replacing the search or Manage controls drops their owner callbacks.
+it("keeps filtering and Manage dismissal connected through shared controls", async () => {
+	smartPromptsDropdownStore.open();
+	mockCanExecute.mockReturnValue({ ok: true });
+	const onOpenSettings = vi.fn();
+	const { getByPlaceholderText, getByText, queryByText } = render(() => (
+		<SmartPromptsDropdown onOpenSettings={onOpenSettings} />
+	));
+	await new Promise((r) => setImmediate(r));
+	fireEvent.input(getByPlaceholderText("Search prompts..."), { target: { value: "no match" } });
+	expect(queryByText("Ask the LLM")).toBeNull();
+	fireEvent.input(getByPlaceholderText("Search prompts..."), { target: { value: "Ask" } });
+	expect(getByText("Ask the LLM")).toBeTruthy();
+	fireEvent.click(getByText("Manage Smart Prompts..."));
+	expect(onOpenSettings).toHaveBeenCalledOnce();
+	expect(smartPromptsDropdownStore.state.isOpen).toBe(false);
+	cleanup();
+});

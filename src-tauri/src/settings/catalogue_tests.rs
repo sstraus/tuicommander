@@ -161,10 +161,32 @@ fn opaque_or_unkeyed_records_are_rejected() {
     );
 }
 
+// The checked-in descriptors are shared by stable, beta and nightly builds.
+// Pin only the exported channel defaults; live descriptors retain the build default.
+fn generated_typescript(mut catalogue: Catalogue) -> String {
+    let channel = catalogue.fields.get_mut("app.update_channel").unwrap();
+    channel.default = Some(json!("stable"));
+    channel.schema["default"] = json!("stable");
+    catalogue.typescript().unwrap()
+}
+
+// Catches: either copy of the build-dependent channel default leaking into the export.
+#[test]
+fn generated_typescript_is_independent_of_build_channel() {
+    let expected = generated_typescript(native_catalogue_for(true).unwrap());
+    for channel in ["stable", "beta", "nightly"] {
+        let mut catalogue = native_catalogue_for(true).unwrap();
+        let field = catalogue.fields.get_mut("app.update_channel").unwrap();
+        field.default = Some(json!(channel));
+        field.schema["default"] = json!(channel);
+        assert_eq!(generated_typescript(catalogue), expected, "{channel}");
+    }
+}
+
 // Catches: checked-in UI descriptors diverging from the Rust schema used by consumers.
 #[test]
 fn generated_typescript_matches_native_catalogue() {
-    let expected = native_catalogue_for(true).unwrap().typescript().unwrap();
+    let expected = generated_typescript(native_catalogue_for(true).unwrap());
     let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../src/generated/settingsCatalogue.ts");
     if std::env::var_os("TUIC_UPDATE_SETTINGS_CATALOGUE").is_some() {
@@ -174,7 +196,8 @@ fn generated_typescript_matches_native_catalogue() {
     assert_eq!(
         std::fs::read_to_string(path).unwrap(),
         expected,
-        "Regenerate with TUIC_UPDATE_SETTINGS_CATALOGUE=1 and this test filter"
+        "Regenerate with TUIC_UPDATE_SETTINGS_CATALOGUE=1 and this test filter; package version: {}",
+        env!("CARGO_PKG_VERSION")
     );
 }
 

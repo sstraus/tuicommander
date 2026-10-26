@@ -1,0 +1,10 @@
+import { render } from 'solid-js/web';
+import { TasksShell } from '../../components/Tasks/TasksShell';
+import { workItemProviderRegistry } from '../../plugins/workItemProviderRegistry';
+import { provider } from '../../components/Tasks/detail/__tests__/detailFixture';
+import '../../global.css';
+workItemProviderRegistry.register(provider());
+workItemProviderRegistry.register(provider({accountId:'second'}));
+render(() => <div style="height:400px"><TasksShell/></div>, document.getElementById('root'));
+document.querySelector('header').id = 'geometry';
+window.controlGeometryReady = true;

@@ -7,6 +7,7 @@ import { type ShellState, terminalsStore } from "../../stores/terminals";
 import type { BranchPrStatus, ImprovementFocus, ImprovementProposal } from "../../types";
 import { pathBasename } from "../../utils/pathUtils";
 import { PR_READINESS_LABELS, PR_READINESS_SEVERITY, prReadinessOf } from "../../utils/prReadiness";
+import { Button } from "../ui/Button";
 import s from "./GithubOpsDashboard.module.css";
 
 /** Live auto-fix session derived from the terminals store. */
@@ -241,9 +242,9 @@ export const GithubOpsDashboard: Component<{ repoPath: string }> = (props) => {
 					<div class={s.scanButtons}>
 						<For each={IMPROVEMENT_FOCUSES}>
 							{(focus) => (
-								<button class={s.scanButton} disabled={scanRunning()} onClick={() => runScan(focus)}>
+								<Button class={s.scanButton} disabled={scanRunning()} onClick={() => runScan(focus)}>
 									{focus}
-								</button>
+								</Button>
 							)}
 						</For>
 					</div>
@@ -278,7 +279,7 @@ export const GithubOpsDashboard: Component<{ repoPath: string }> = (props) => {
 												<span>{p.labels.slice(0, 2).join(", ")}</span>
 											</Show>
 										</div>
-										<button
+										<Button
 											class={s.issueButton}
 											disabled={creatingIssueFor() === i()}
 											onClick={() => void createProposalIssue(p, i())}
@@ -289,7 +290,7 @@ export const GithubOpsDashboard: Component<{ repoPath: string }> = (props) => {
 											{creatingIssueFor() === i()
 												? t("github.ops.creatingIssue", "Creating")
 												: t("github.ops.createIssue", "Create issue")}
-										</button>
+										</Button>
 									</div>
 								)}
 							</For>

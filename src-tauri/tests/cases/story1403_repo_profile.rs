@@ -67,7 +67,7 @@ async fn absent_repo_profile_preserves_session_new_without_metadata() {
         .new_session_for_repo(connection.connection_id, authority(fixture.root()), "")
         .await
         .unwrap();
-    assert!(attached.profile_warnings.is_empty());
+    assert_eq!(attached.profile_warnings, [] as [std::string::String; 0]);
     fixture
         .manager
         .disconnect(connection.connection_id)
@@ -91,13 +91,13 @@ async fn repo_profile_without_explicit_machine_selection_refuses_before_creation
         .await
         .unwrap_err();
     assert!(error.message.contains("explicit machine ego profile"));
-    assert!(
+    assert_eq!(
         fixture
             .manager
             .snapshot(connection.connection_id)
             .unwrap()
-            .attachments
-            .is_empty()
+            .attachments,
+        [] as [tuicommander_lib::acp::AcpAttachmentSnapshot; 0]
     );
     fixture
         .manager
@@ -126,13 +126,13 @@ async fn ignored_repo_profile_ceiling_is_not_exposed_as_an_attached_session() {
         .await
         .unwrap_err();
     assert!(error.message.contains("did not acknowledge"));
-    assert!(
+    assert_eq!(
         fixture
             .manager
             .snapshot(connection.connection_id)
             .unwrap()
-            .attachments
-            .is_empty()
+            .attachments,
+        [] as [tuicommander_lib::acp::AcpAttachmentSnapshot; 0]
     );
     fixture
         .manager

@@ -16,7 +16,9 @@ import type { SearchOptions } from "../shared/DomSearchEngine";
 import { DomSearchEngine } from "../shared/DomSearchEngine";
 import { DomSearchOverview } from "../shared/DomSearchOverview";
 import { createSearchVisibility, SearchBar } from "../shared/SearchBar";
+import { Button } from "../ui/Button";
 import { DiffViewer } from "../ui/DiffViewer";
+import { Textarea } from "../ui/Textarea";
 import { BranchDiffScrollView } from "./BranchDiffScrollView";
 import s from "./DiffTab.module.css";
 import { buildPartialPatch, extractHunks, extractSelectedLines } from "./diffPatch";
@@ -107,6 +109,8 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 		if (!contentRef) return null;
 		const rows = Array.from(contentRef.querySelectorAll("tr")) as HTMLTableRowElement[];
 		const info = new Map<HTMLTableRowElement, RowInfo>();
+		// DEFERRED (2026-10-25) — the renderer can omit the first hunk header at line 1;
+		// selection then has no hunk index. This predates the control geometry migration.
 		let hunkIdx = -1;
 		let lineCount = 0;
 		for (const r of rows) {
@@ -502,8 +506,11 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 		<div class={s.content}>
 			{/* Toolbar with view mode toggle */}
 			<div class={s.toolbar}>
-				<button
-					class={cx(s.modeBtn, mode() === "split" && s.modeBtnActive)}
+				<Button
+					shape="icon"
+					aria-label="Side-by-side"
+					aria-pressed={mode() === "split"}
+					variant={mode() === "split" ? "primary" : "ghost"}
 					onClick={() => uiStore.setDiffViewMode("split")}
 					title={t("diffTab.splitView", "Side-by-side")}
 					disabled={isOneSided()}
@@ -511,18 +518,24 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 					<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 						<path d="M1 2h6v12H1V2zm8 0h6v12H9V2zM2 3v10h4V3H2zm8 0v10h4V3h-4z" />
 					</svg>
-				</button>
-				<button
-					class={cx(s.modeBtn, mode() === "unified" && s.modeBtnActive)}
+				</Button>
+				<Button
+					shape="icon"
+					aria-label="Inline"
+					aria-pressed={mode() === "unified"}
+					variant={mode() === "unified" ? "primary" : "ghost"}
 					onClick={() => uiStore.setDiffViewMode("unified")}
 					title={t("diffTab.unifiedView", "Inline")}
 				>
 					<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 						<path d="M1 2h14v12H1V2zm1 1v10h12V3H2z" />
 					</svg>
-				</button>
-				<button
-					class={cx(s.modeBtn, mode() === "scroll" && s.modeBtnActive)}
+				</Button>
+				<Button
+					shape="icon"
+					aria-label="All files"
+					aria-pressed={mode() === "scroll"}
+					variant={mode() === "scroll" ? "primary" : "ghost"}
 					onClick={() => uiStore.setDiffViewMode("scroll")}
 					title={t("diffScroll.scrollView", "All files")}
 					disabled={isOneSided()}
@@ -530,17 +543,19 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 					<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 						<path d="M2 2h12v1H2zm0 3h12v1H2zm0 3h10v1H2zm0 3h8v1H2z" />
 					</svg>
-				</button>
+				</Button>
 				<div style={{ "margin-left": "auto" }}>
-					<button
-						class={s.modeBtn}
+					<Button
+						shape="icon"
+						aria-label="Edit file"
+						variant="ghost"
 						onClick={() => editorTabsStore.add(props.repoPath, props.filePath)}
 						title={t("diffTab.editFile", "Edit file")}
 					>
 						<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 							<path d="M12.1 1.3a1.5 1.5 0 0 1 2.1 0l.5.5a1.5 1.5 0 0 1 0 2.1L5.8 12.8l-3.5.9.9-3.5L12.1 1.3zM11 3.4 4.1 10.3l-.5 1.9 1.9-.5L12.4 4.8 11 3.4z" />
 						</svg>
-					</button>
+					</Button>
 				</div>
 			</div>
 			<SearchBar
@@ -591,9 +606,9 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 									{t("diffTab.largeDiffTitle", "This diff is large")} ({diffLines().toLocaleString()}{" "}
 									{t("diffTab.lines", "lines")})
 								</div>
-								<button class={s.largeDiffBtn} onClick={() => setForceRenderLarge(true)}>
+								<Button variant="primary" onClick={() => setForceRenderLarge(true)}>
 									{t("diffTab.renderAnyway", "Render anyway")}
-								</button>
+								</Button>
 							</div>
 						}
 					>
@@ -625,7 +640,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 						<div class={s.selectionFloater}>
 							<Show when={commentVisible()}>
 								<div class={s.commentBox}>
-									<textarea
+									<Textarea
 										ref={(el) => {
 											commentTextareaRef = el;
 										}}
@@ -641,29 +656,31 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 									</Show>
 									<div class={s.commentActions}>
 										<span class={s.commentHint}>{getModifierSymbol()}+Enter to send</span>
-										<button class={s.commentCancelBtn} onClick={() => setCommentVisible(false)}>
+										<Button variant="ghost" onClick={() => setCommentVisible(false)}>
 											Cancel
-										</button>
-										<button class={s.commentSendBtn} disabled={!commentText().trim()} onClick={handleCommentSend}>
+										</Button>
+										<Button variant="primary" disabled={!commentText().trim()} onClick={handleCommentSend}>
 											Send
-										</button>
+										</Button>
 									</div>
 								</div>
 							</Show>
 							<div class={s.selectionBar}>
 								<Show when={canRestore(props.scope, props.untracked)}>
-									<button class={s.restoreSelectedBtn} onClick={handleRestoreSelected}>
+									<Button variant="primary" onClick={handleRestoreSelected}>
 										{isStaged() ? "Unstage" : "Discard"} {selectedCount()} line{selectedCount() > 1 ? "s" : ""}
-									</button>
+									</Button>
 								</Show>
-								<button class={s.commentBtn} onClick={handleCommentOpen} title="Comment on selected lines">
+								<Button variant="secondary" onClick={handleCommentOpen} title="Comment on selected lines">
 									<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
 										<path d="M1 3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H5.236L2.22 14.54A.5.5 0 0 1 1 14.14V3zm2-1a1 1 0 0 0-1 1v9.86l2.236-1.86A.5.5 0 0 1 4.56 11H13a1 1 0 0 0 1-1V3a1 1 0 0 0-1-1H3z" />
 									</svg>
 									Comment
-								</button>
-								<button
-									class={s.clearSelectionBtn}
+								</Button>
+								<Button
+									shape="icon"
+									aria-label="Clear selection"
+									variant="ghost"
 									onClick={() => {
 										clearSelection();
 										setCommentVisible(false);
@@ -671,7 +688,7 @@ export const DiffTab: Component<DiffTabProps> = (props) => {
 									title="Clear selection"
 								>
 									&times;
-								</button>
+								</Button>
 							</div>
 						</div>
 					</Show>
@@ -731,7 +748,9 @@ const HunkRevertOverlay: Component<{
 	return (
 		<For each={buttons()}>
 			{(b) => (
-				<button
+				<Button
+					shape="icon"
+					variant="ghost"
 					class={cx(s.revertBtn, props.hoverIdx === b.idx && s.revertBtnVisible)}
 					style={{ top: `${b.top}px` }}
 					data-hunk-idx={b.idx}
@@ -745,7 +764,7 @@ const HunkRevertOverlay: Component<{
 					<svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
 						<path d="M2 8a6 6 0 1 1 12 0A6 6 0 0 1 2 8zm6-4a4 4 0 1 0 0 8 4 4 0 0 0 0-8zM6.5 7.5l3-2v4l-3-2z" />
 					</svg>
-				</button>
+				</Button>
 			)}
 		</For>
 	);

@@ -1561,7 +1561,11 @@ pub(crate) async fn spawn_agent(
     );
     state.grid.vt_log_buffers.insert(
         session_id.clone(),
-        Mutex::new(state.new_vt_log_buffer(24, 220, VT_LOG_BUFFER_CAPACITY)),
+        Mutex::new(state.new_vt_log_buffer(
+            pty_config.rows,
+            pty_config.cols,
+            VT_LOG_BUFFER_CAPACITY,
+        )),
     );
     state
         .session_maps
@@ -1993,7 +1997,7 @@ mod tests {
         // We just verify it doesn't panic and returns a proper Result
         match result {
             Ok(path) => {
-                assert!(!path.is_empty());
+                assert_ne!(path, "");
                 assert!(std::path::Path::new(&path).exists());
             }
             Err(msg) => {
@@ -2080,7 +2084,7 @@ mod tests {
         let out = expand_placeholders(&args, &ctx(None, "/proj", None, None, None));
         // Home resolves to a real path on the dev/CI machine — never left literal.
         assert_ne!(out[0], "{home}");
-        assert!(!out[0].is_empty());
+        assert_ne!(out[0], "");
     }
 
     #[test]

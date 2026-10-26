@@ -62,7 +62,7 @@ impl super::super::hidden::Windows for DesktopWindows<'_> {
         if label != "main" {
             let scale = window.scale_factor().map_err(|e| e.to_string())?;
             let saved = PanelRestore {
-                url: window.url().map_err(|e| e.to_string())?,
+                url: crate::webview_url::read(&window)?.ok_or("WebView has no committed URL")?,
                 title: window.title().map_err(|e| e.to_string())?,
                 position: window
                     .outer_position()

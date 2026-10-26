@@ -88,12 +88,12 @@ class DevExecutableTests(unittest.TestCase):
             recorded = self.record_shell(shell)
             shutil.copy(recorded, self.target / NAMES[0])
             result = subprocess.run(
-                self.command('printf "%s\\n%s\\n%s\\n" "$1" "$2" "$COPY_PROBE"; exit 7',
+                self.command('printf "%s\\n%s\\n%s\\n%s\\n" "$1" "$2" "$COPY_PROBE" "$TUIC_DEV_BUILD_EXE"; exit 7',
                              "argument with spaces", "--flag"),
                 env=self.env, capture_output=True, text=True,
             )
             self.assertEqual(result.returncode, 7, result.stderr)
-            self.assertEqual(result.stdout, "argument with spaces\n--flag\nkept\n")
+            self.assertEqual(result.stdout, f"argument with spaces\n--flag\nkept\n{self.target / NAMES[0]}\n")
             self.assertIn(str(self.installed / NAMES[0]), result.stderr)
             self.assertEqual((self.installed / NAMES[0]).read_bytes(), recorded.read_bytes())
             self.assertEqual(set(path.name for path in self.installed.iterdir()), {*NAMES, ".lock"})

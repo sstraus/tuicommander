@@ -86,6 +86,9 @@ impl WorkflowClosure {
     }
 }
 
+/// A draft with no edit since its last publication cannot be published again.
+pub const PUBLISH_UNCHANGED_ERROR: &str = "draft revision has already been published";
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkflowDraft {
@@ -99,6 +102,7 @@ pub struct WorkflowDraft {
     pub graph: WorkflowGraph,
     pub draft_revision: i64,
     pub latest_published_revision: i64,
+    pub last_published_draft_revision: i64,
     pub builtin_key: Option<String>,
 }
 
@@ -228,6 +232,7 @@ impl WorkflowStore {
             graph,
             draft_revision: 1,
             latest_published_revision: 0,
+            last_published_draft_revision: 0,
             builtin_key: None,
         };
         self.connect()?.execute(
@@ -345,7 +350,7 @@ impl WorkflowStore {
             )
             .map_err(|e| format!("read workflow publication state: {e}"))?;
         if last == draft.draft_revision {
-            return Err("draft revision has already been published".into());
+            return Err(PUBLISH_UNCHANGED_ERROR.into());
         }
         validate_graph(&draft.graph, draft.kind)?;
         validate_checks(&draft.required_checks)?;
@@ -564,9 +569,9 @@ fn decode_graph(raw: String) -> Result<WorkflowGraph, String> {
 
 fn read_draft(conn: &Connection, id: &str) -> Result<WorkflowDraft, String> {
     let row = conn.query_row(
-        "SELECT id,project,name,kind,graph_json,draft_revision,latest_published_revision,builtin_key,closure,checks_json FROM workflow_definitions WHERE id=?1",
+        "SELECT id,project,name,kind,graph_json,draft_revision,latest_published_revision,builtin_key,closure,checks_json,last_published_draft_revision FROM workflow_definitions WHERE id=?1",
         [id], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?, row.get::<_, String>(3)?,
-            row.get::<_, String>(4)?, row.get::<_, i64>(5)?, row.get::<_, i64>(6)?, row.get::<_, Option<String>>(7)?, row.get::<_, String>(8)?, row.get::<_, String>(9)?))
+            row.get::<_, String>(4)?, row.get::<_, i64>(5)?, row.get::<_, i64>(6)?, row.get::<_, Option<String>>(7)?, row.get::<_, String>(8)?, row.get::<_, String>(9)?, row.get::<_, i64>(10)?))
     ).optional().map_err(|e| format!("read workflow draft: {e}"))?.ok_or("workflow draft not found")?;
     Ok(WorkflowDraft {
         id: row.0,
@@ -579,6 +584,7 @@ fn read_draft(conn: &Connection, id: &str) -> Result<WorkflowDraft, String> {
         graph: decode_graph(row.4)?,
         draft_revision: row.5,
         latest_published_revision: row.6,
+        last_published_draft_revision: row.10,
         builtin_key: row.7,
     })
 }

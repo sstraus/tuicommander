@@ -141,7 +141,7 @@ Runs a one-shot subprocess without using the terminal. Useful for quick operatio
 - Claude: `claude -p "{prompt}"`
 - Gemini: `gemini -p "{prompt}"`
 
-Without a template, headless prompts automatically fall back to inject mode.
+Without a template, headless prompts automatically fall back to inject mode. A prompt run from a branch menu, terminal menu or the command palette that cannot start (for example, no headless agent configured) shows a warning toast naming the reason.
 
 **Note:** Headless mode is not available in the Mobile Companion (PWA) — prompts fall back to inject mode automatically.
 

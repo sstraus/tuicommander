@@ -9,6 +9,7 @@ use crate::workflows::{
 use std::sync::Arc;
 
 mod critic_c;
+mod default_install;
 mod parity;
 
 fn fixture() -> (
@@ -181,6 +182,123 @@ fn runtime_definition_uses_the_api_canonical_owner() {
         .unwrap();
     assert_eq!(run.project, plan.project);
     assert_eq!(run.status, RunStatus::Running);
+}
+
+/// Catches: all-manual Ready work entering QA but still reserving an implementer spawn.
+#[tokio::test]
+async fn manual_only_workflow_pauses_before_implementer_spawn() {
+    let (config, project, _plan, story_id, _template, _guard) = fixture();
+    let stories = StoryStore::open().unwrap();
+    let story = stories.get_story(&story_id).unwrap();
+    stories
+        .transition(
+            &story.id,
+            story.revision,
+            crate::stories::StoryCommand::SetCriterionManual {
+                index: 0,
+                manual: true,
+            },
+        )
+        .unwrap();
+    // Remove the default-install migration's profile in this isolated config so
+    // even the pre-fix regression cannot launch an external agent.
+    let base = crate::config::load_agents_config();
+    let mut agents = base.clone();
+    for settings in agents.agents.values_mut() {
+        settings.run_configs.clear();
+    }
+    crate::config::save_agents_config(base, agents).unwrap();
+    assert_eq!(
+        crate::config::load_agents_config()
+            .saved_run_configs()
+            .len(),
+        0
+    );
+    let published = definition(project.path().to_str().unwrap(), false, true);
+    let store = RunStore::open_at(&config.path().join("workflow_runs.sqlite3")).unwrap();
+    let run = store
+        .start_graph_run(&request(
+            project.path().to_str().unwrap(),
+            &story_id,
+            &published,
+            "manual-only",
+        ))
+        .unwrap();
+    let current = drive_turn(&store, &run.id).unwrap();
+    assert_eq!(current.attempts.len(), 1);
+    let result = runtime::effects::drive_effect(&state(config.path()), &store, &current).await;
+    assert_eq!(
+        stories.get_story(&story_id).unwrap().status,
+        crate::stories::StoryStatus::Qa
+    );
+    let paused = store.snapshot(&run.id).unwrap();
+    assert_eq!(paused.status, RunStatus::Paused);
+    assert_eq!(paused.effects.len(), 0);
+    assert_eq!(paused.attempts[0].agent, None);
+    assert_eq!(paused.stories[0].worktree_path, None);
+    assert_eq!(store.replay(&run.id).unwrap(), paused);
+    assert!(result.unwrap());
+}
+
+/// Catches: a story-root run fencing unrelated siblings as if it owned the whole plan.
+#[test]
+fn archive_story_root_protects_target_but_allows_unrelated_sibling() {
+    let (config, project, plan, story, _template, _guard) = fixture();
+    let owner = RuntimeOwner::acquire(&config.path().join("workflow_runs.sqlite3")).unwrap();
+    let published = definition(project.path().to_str().unwrap(), false, true);
+    let run = owner
+        .store
+        .start_graph_run(&request(
+            project.path().to_str().unwrap(),
+            &story,
+            &published,
+            "archive-root",
+        ))
+        .unwrap();
+    let stories = StoryStore::open().unwrap();
+    let sibling = stories
+        .create_story(crate::stories::NewStory {
+            plan_id: plan.clone(),
+            title: "Unrelated duplicate".into(),
+            criteria: vec!["Unused".into()],
+            priority: 2,
+            story_type: None,
+            origin: crate::stories::StoryOrigin::Native,
+            file_scope: vec![],
+        })
+        .unwrap();
+    let actor = crate::stories::StoryTransitionActor::Human;
+    let archived = stories
+        .set_story_archived(&sibling.id, sibling.revision, true, actor.clone())
+        .expect("unrelated sibling is not owned by story root");
+    stories
+        .set_story_archived(&sibling.id, archived.revision, false, actor.clone())
+        .unwrap();
+    let target = stories.get_story(&story).unwrap();
+    assert!(
+        stories
+            .set_story_archived(&story, target.revision, true, actor.clone())
+            .is_err()
+    );
+    let plan_record = stories.get_plan(&plan).unwrap();
+    assert!(
+        stories
+            .set_plan_archived(&plan, plan_record.revision, true, actor.clone())
+            .is_err()
+    );
+    owner
+        .store
+        .command(&run.id, "pause-archive-root", RunCommand::Pause)
+        .unwrap();
+    let sibling = stories.get_story(&sibling.id).unwrap();
+    stories
+        .set_story_archived(&sibling.id, sibling.revision, true, actor.clone())
+        .unwrap();
+    assert!(
+        stories
+            .set_story_archived(&story, target.revision, true, actor)
+            .is_err()
+    );
 }
 
 #[test]

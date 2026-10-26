@@ -28,6 +28,8 @@ removing, archiving, or recycling that checkout. Cleanup names the suspended tab
 and refuses even a forced removal; recycling skips it. A removed checkout also
 loses its old Worktrees bell offer, so that offer cannot open the obsolete path.
 
+Worktree removal uses the same checkout identity as the sidebar. A symbolic branch name remains addressable even when Git reports its target branch. Deleting that alias after removal preserves the target branch. If a branch was renamed externally, refresh the repository before removal; the directory name does not define its identity.
+
 ## Worktree Storage Strategies
 
 Configure where worktrees are stored (Settings → Git & GitHub → Worktree Defaults → Storage):
@@ -121,7 +123,14 @@ Global defaults apply to all repos. Per-repo overrides take precedence when set.
 | **After merge** | Archive / Delete / Ask | Archive |
 
 A detached HEAD does not mean that a branch was deleted. Cleanup excludes a
-checkout when a non-default local branch still points at its HEAD. A missing
+checkout when a non-default local branch still points at its HEAD. Cleanup also
+ignores checkouts under temporary roots: the OS temporary directory, `TMPDIR`,
+`TMP`, `TEMP`, `~/Gits/.tmp`, and (on Unix) `/tmp`, `/private/tmp`,
+`/var/folders` and `/private/var/folders`. Both registered and resolved paths are
+checked, including missing paths below symlinked directories. These checkouts
+are never offered for orphan removal or removed by orphan cleanup, even after
+a previous review. They remain visible as read-only detached rows in the sidebar;
+visibility does not grant cleanup permission. Outside temporary roots, a missing
 checkout directory remains eligible for registration cleanup. Detached checkouts
 without that branch protection retain the dirty-file, operation and live-session
 checks. Clean, reachable checkouts without live sessions are removed silently;
@@ -129,6 +138,13 @@ other candidates require review in Ask mode. Choosing **Keep** holds until the
 checkout fingerprint changes. An agent can answer an open review through MCP
 `repo action=orphan_cleanup_answer path=<repo> decision=remove|keep`; the backend
 checks removal again. Failed removals remain available for a later attempt.
+
+The scan runs during repository refresh, not on a dedicated orphan timer. It
+runs at startup and after repository operations or `repo-changed` events. Event
+refreshes are debounced for 500 ms (1000 ms if already refreshing), with automatic
+starts at least five seconds apart per repository; explicit UI operations can
+refresh sooner. Opening Worktree Manager also scans the displayed repositories
+and rescans when their revision changes.
 
 ### Per-Repository Overrides (Settings → Repository → Worktree)
 
@@ -245,7 +261,7 @@ Each worktree row displays:
 - **Last commit timestamp** — relative time since last activity
 - **Main badge** — marks the main branch (actions disabled)
 
-Orphan worktrees (detached HEAD or deleted branch) appear at the bottom with a warning badge and a **Prune** button. Prune refuses a Git operation in progress and keeps detached commits that have no durable branch, tag, or other ref. Create a ref for that commit before retrying if you want to keep the commit and remove the checkout.
+Eligible orphan worktrees outside temporary roots (detached HEAD or deleted branch) appear at the bottom with a warning badge and a **Prune** button. Prune refuses a Git operation in progress and keeps detached commits that have no durable branch, tag, or other ref. Create a ref for that commit before retrying if you want to keep the commit and remove the checkout.
 
 ### Filtering
 
@@ -322,3 +338,19 @@ A safe removal keeps a clean, integrated checkout in the archive area for reuse.
 A later worktree creation can reuse it under the new branch name without copying
 ignored build artifacts. Freshly created worktrees stay reserved even before a session
 starts. Dirty, unmerged, locked, and live worktrees are not reused.
+
+The remove confirmation says so: for such a checkout it reads "Archive workspace?"
+with an Archive button and states that the local branch is kept. The archived
+checkout still holds the branch.
+
+### Detached checkouts
+
+A checkout without a branch remains visible in the sidebar. Its row shows the directory name, short commit SHA and **detached**. The row is informational: it cannot select a branch or run branch actions. A repository header shows the detached count even when its rows are folded. Checkouts in TUIC’s configured recycling pool stay out of the active inventory; an unrelated folder named `__archived` does not hide worktrees.
+
+### Worktree discovery diagnostics
+
+Missing or moved registrations appear as read-only diagnostic rows with their recorded path and repair guidance. Restore the checkout, or run `git worktree repair` from its new location. Review `git worktree list --porcelain` before manually pruning a registration for a deleted checkout. Discovery never prunes it automatically.
+
+If `git worktree add --force` puts a branch in several checkouts, the lexicographically smallest path keeps the existing branch workspace. Other checkouts appear as read-only diagnostics. Use a distinct branch when you need an independent selectable workspace. Bisect and rebase keep the original branch identity when Git records it.
+
+Unavailable detached registrations are excluded from automatic orphan cleanup in both Ask and On modes, including the Ask countdown. They remain repair diagnostics until restored or explicitly removed. Safe-only removal rechecks availability, so a directory moved after assessment cannot be pruned automatically. Explicit user-confirmed removal remains available.

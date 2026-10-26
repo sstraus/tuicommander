@@ -214,7 +214,10 @@ fn compound_add_rolls_back_partial_vault_writes_and_can_retry() {
     )
     .unwrap_err();
     assert!(error.contains("Invalid custom header value"), "{error}");
-    assert!(load_mcp_upstreams().servers.is_empty());
+    assert_eq!(
+        load_mcp_upstreams().servers,
+        [] as [crate::mcp_upstream_config::UpstreamMcpServer; 0]
+    );
     assert_eq!(
         read_credential_for_url(&header.credential_key("compound-add-lifecycle"), url).unwrap(),
         None

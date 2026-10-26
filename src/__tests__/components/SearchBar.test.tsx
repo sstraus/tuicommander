@@ -1,6 +1,6 @@
-import { cleanup, render, waitFor } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { createRoot, createSignal } from "solid-js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createSearchVisibility, SearchBar } from "../../components/shared/SearchBar";
 
 afterEach(cleanup);
@@ -81,4 +81,46 @@ describe("SearchBar auto-focus", () => {
 
 		outside.remove();
 	});
+});
+
+// Catches: primitive migration loses search options, navigation or replacement handlers.
+it("preserves search, option, navigation and replace actions through shared controls", async () => {
+	const onSearch = vi.fn(),
+		onNext = vi.fn(),
+		onPrev = vi.fn(),
+		onClose = vi.fn();
+	const onReplace = vi.fn(),
+		onReplaceAll = vi.fn();
+	const view = render(() => (
+		<SearchBar
+			visible
+			{...baseProps}
+			onSearch={onSearch}
+			onNext={onNext}
+			onPrev={onPrev}
+			onClose={onClose}
+			onReplace={onReplace}
+			onReplaceAll={onReplaceAll}
+		/>
+	));
+	const find = view.getByPlaceholderText("Find…");
+	fireEvent.input(find, { target: { value: "needle" } });
+	expect(onSearch).toHaveBeenLastCalledWith("needle", { caseSensitive: false, regex: false, wholeWord: false });
+	fireEvent.click(view.getByTitle("Match Case"));
+	await waitFor(() =>
+		expect(onSearch).toHaveBeenLastCalledWith("needle", { caseSensitive: true, regex: false, wholeWord: false }),
+	);
+	fireEvent.keyDown(find, { key: "Enter" });
+	fireEvent.keyDown(find, { key: "Enter", shiftKey: true });
+	expect(onNext).toHaveBeenCalledTimes(1);
+	expect(onPrev).toHaveBeenCalledTimes(1);
+	fireEvent.click(view.getByTitle("Toggle Replace"));
+	const replace = view.getByPlaceholderText("Replace…");
+	fireEvent.input(replace, { target: { value: "new" } });
+	fireEvent.keyDown(replace, { key: "Enter" });
+	fireEvent.keyDown(replace, { key: "Enter", ctrlKey: true });
+	expect(onReplace).toHaveBeenCalledWith("new");
+	expect(onReplaceAll).toHaveBeenCalledWith("new");
+	fireEvent.keyDown(replace, { key: "Escape" });
+	expect(onClose).toHaveBeenCalledTimes(1);
 });

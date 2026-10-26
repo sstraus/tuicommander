@@ -1,6 +1,7 @@
 import { createSignal, For, Show } from "solid-js";
 import { t } from "../../i18n";
 import type { AutomationsStore } from "../../stores/automations";
+import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import s from "./AutomationsDialog.module.css";
@@ -94,9 +95,9 @@ export function ScheduleFields(props: { store: AutomationsStore }) {
 							/>
 						</label>
 					</Show>
-					<button type="button" onClick={apply}>
+					<Button type="button" onClick={apply}>
 						{t("automations.applyCadence", "Apply cadence")}
-					</button>
+					</Button>
 				</Show>
 			</div>
 			<div class={s.row}>
@@ -135,9 +136,9 @@ export function ScheduleFields(props: { store: AutomationsStore }) {
 						onInput={(event) => props.store.edit({ timezone: event.currentTarget.value })}
 					/>
 				</label>
-				<button type="button" disabled={props.store.previewLoading()} onClick={() => void props.store.preview()}>
+				<Button type="button" disabled={props.store.previewLoading()} onClick={() => void props.store.preview()}>
 					{t("automations.preview", "Preview schedule")}
-				</button>
+				</Button>
 			</div>
 			<Show when={props.store.previewError()}>
 				<p role="alert" class={s.error}>

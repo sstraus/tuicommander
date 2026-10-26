@@ -1,0 +1,125 @@
+[
+  {
+    "probe": "default-statusbar-original-app",
+    "reason": "settled",
+    "time": 1792754954585,
+    "url": "http://127.0.0.1:19882/mobile",
+    "standalone": true,
+    "displayStandalone": true,
+    "innerHeight": 812,
+    "innerWidth": 402,
+    "screenHeight": 874,
+    "scrollY": 0,
+    "vv": {
+      "height": 812,
+      "offsetTop": 0,
+      "width": 402,
+      "scale": 1
+    },
+    "safe": {
+      "top": "0px",
+      "bottom": "34px"
+    },
+    "dvh": "812px",
+    "shell": {
+      "top": 0,
+      "bottom": 812,
+      "height": 812,
+      "class": "tDrR3W_shell",
+      "paddingTop": "0px",
+      "paddingBottom": "0px"
+    },
+    "composers": [
+      {
+        "top": 768,
+        "bottom": 808,
+        "height": 40,
+        "class": "kYbS8W_composer",
+        "paddingTop": "0px",
+        "paddingBottom": "0px"
+      }
+    ]
+  },
+  {
+    "probe": "default-statusbar-original-app",
+    "reason": "resize",
+    "time": 1792754955274,
+    "url": "http://127.0.0.1:19882/mobile",
+    "standalone": true,
+    "displayStandalone": true,
+    "innerHeight": 812,
+    "innerWidth": 402,
+    "screenHeight": 874,
+    "scrollY": 0,
+    "vv": {
+      "height": 409,
+      "offsetTop": 0,
+      "width": 402,
+      "scale": 1
+    },
+    "safe": {
+      "top": "0px",
+      "bottom": "34px"
+    },
+    "dvh": "812px",
+    "shell": {
+      "top": 0,
+      "bottom": 409,
+      "height": 409,
+      "class": "tDrR3W_shell",
+      "paddingTop": "0px",
+      "paddingBottom": "0px"
+    },
+    "composers": [
+      {
+        "top": 365,
+        "bottom": 405,
+        "height": 40,
+        "class": "kYbS8W_composer",
+        "paddingTop": "0px",
+        "paddingBottom": "0px"
+      }
+    ]
+  },
+  {
+    "probe": "default-statusbar-original-app",
+    "reason": "tick",
+    "time": 1792755257811,
+    "url": "http://127.0.0.1:19882/mobile",
+    "standalone": true,
+    "displayStandalone": true,
+    "innerHeight": 812,
+    "innerWidth": 402,
+    "screenHeight": 874,
+    "scrollY": 0,
+    "vv": {
+      "height": 812,
+      "offsetTop": 0,
+      "width": 402,
+      "scale": 1
+    },
+    "safe": {
+      "top": "0px",
+      "bottom": "34px"
+    },
+    "dvh": "812px",
+    "shell": {
+      "top": 0,
+      "bottom": 812,
+      "height": 812,
+      "class": "tDrR3W_shell",
+      "paddingTop": "0px",
+      "paddingBottom": "0px"
+    },
+    "composers": [
+      {
+        "top": 768,
+        "bottom": 808,
+        "height": 40,
+        "class": "kYbS8W_composer",
+        "paddingTop": "0px",
+        "paddingBottom": "0px"
+      }
+    ]
+  }
+]

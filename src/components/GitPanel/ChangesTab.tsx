@@ -13,6 +13,9 @@ import { fileContextSmartMenuItem } from "../../utils/promptContext";
 import { ConfirmDialog } from "../ConfirmDialog";
 import { ContextMenu, type ContextMenuItem, createContextMenu } from "../ContextMenu";
 import { SmartButtonStrip } from "../SmartButtonStrip/SmartButtonStrip";
+import { Button } from "../ui/Button";
+import { Input } from "../ui/Input";
+import { Textarea } from "../ui/Textarea";
 import s from "./ChangesTab.module.css";
 import type { OpenDiffFn } from "./GitPanel";
 import type { CommitLogEntry, WorkingTreeStatus } from "./types";
@@ -149,7 +152,6 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 	// Stores the user-typed message when switching to amend mode
 	let savedDraftMsg = "";
 	let successTimeout: ReturnType<typeof setTimeout> | undefined;
-	let commitTextareaRef: HTMLTextAreaElement | undefined;
 
 	const smartPrompts = useSmartPrompts();
 	const { canExecute: canExecPrompt, executeSmartPrompt } = smartPrompts;
@@ -161,9 +163,6 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 		const detail = (e as CustomEvent<string>).detail;
 		if (detail) {
 			setCommitMsg(detail.trim());
-			requestAnimationFrame(() => {
-				if (commitTextareaRef) autoResize(commitTextareaRef);
-			});
 		}
 	};
 	window.addEventListener("smart-prompt:commit-message", handleCommitMsg);
@@ -594,16 +593,6 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 		}
 	}
 
-	/** Auto-resize textarea to fit content, scroll when exceeding max */
-	function autoResize(el: HTMLTextAreaElement) {
-		el.style.height = "auto";
-		const minH = 38;
-		const maxH = 200;
-		const natural = el.scrollHeight;
-		el.style.height = `${Math.max(minH, Math.min(natural, maxH))}px`;
-		el.style.overflowY = natural > maxH ? "auto" : "hidden";
-	}
-
 	function handleConfirmDiscard() {
 		const file = confirmDiscard();
 		if (file) {
@@ -714,8 +703,9 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 				</Show>
 				<span class={s.actions}>
 					<Show when={section === "staged"}>
-						<button
-							class={s.actionBtn}
+						<Button
+							size="compact"
+							variant="ghost"
 							title="Unstage"
 							onClick={(e) => {
 								e.stopPropagation();
@@ -723,9 +713,10 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 							}}
 						>
 							<UnstageIcon />
-						</button>
-						<button
-							class={s.actionBtn}
+						</Button>
+						<Button
+							size="compact"
+							variant="ghost"
 							title="Diff"
 							onClick={(e) => {
 								e.stopPropagation();
@@ -733,11 +724,12 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 							}}
 						>
 							<DiffIcon />
-						</button>
+						</Button>
 					</Show>
 					<Show when={section === "unstaged"}>
-						<button
-							class={cx(s.actionBtn, s.actionBtnStage)}
+						<Button
+							size="compact"
+							variant="ghost"
 							title="Stage"
 							onClick={(e) => {
 								e.stopPropagation();
@@ -745,10 +737,11 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 							}}
 						>
 							<StageIcon />
-						</button>
+						</Button>
 						<Show when={file.status !== "?"}>
-							<button
-								class={s.actionBtn}
+							<Button
+								size="compact"
+								variant="ghost"
 								title="Diff"
 								onClick={(e) => {
 									e.stopPropagation();
@@ -756,10 +749,11 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 								}}
 							>
 								<DiffIcon />
-							</button>
+							</Button>
 						</Show>
-						<button
-							class={cx(s.actionBtn, s.actionBtnDanger)}
+						<Button
+							size="compact"
+							variant="danger"
 							title="Discard changes"
 							onClick={(e) => {
 								e.stopPropagation();
@@ -767,7 +761,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 							}}
 						>
 							<DiscardIcon />
-						</button>
+						</Button>
 					</Show>
 				</span>
 			</div>
@@ -780,24 +774,18 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 			<Show when={props.repoPath}>
 				<div class={s.commitSection} onKeyDown={handleCommitKeyDown}>
 					<div class={s.textareaRow}>
-						<textarea
+						<Textarea
+							autoGrow
 							class={s.commitTextarea}
 							data-focus-target="git-commit"
 							data-repo-path={props.repoPath ?? ""}
 							placeholder="Commit message..."
 							value={commitMsg()}
-							onInput={(e) => {
-								setCommitMsg(e.currentTarget.value);
-								autoResize(e.currentTarget);
-							}}
-							ref={(el) => {
-								commitTextareaRef = el;
-								requestAnimationFrame(() => autoResize(el));
-							}}
+							onInput={(e) => setCommitMsg(e.currentTarget.value)}
 							disabled={committing()}
 						/>
-						<button
-							class={cx(s.generateBtn, generating() && s.generateBtnBusy)}
+						<Button
+							aria-busy={generating()}
 							onClick={generating() ? cancelGenerate : generateCommitMsg}
 							disabled={!generating() && staged().length === 0 && unstaged().length === 0}
 							title={generating() ? "Cancel generation" : "Generate commit message"}
@@ -805,11 +793,11 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 							<Show when={generating()} fallback={<SparkleIcon />}>
 								<span class={s.spinner} />
 							</Show>
-						</button>
+						</Button>
 					</div>
 					<div class={s.commitRow}>
-						<button
-							class={cx(s.commitBtn, committing() && s.commitBtnDisabled)}
+						<Button
+							variant="primary"
 							disabled={committing() || (!commitMsg().trim() && !isAmend()) || (staged().length === 0 && !isAmend())}
 							onClick={doCommit}
 							title="Commit staged changes"
@@ -818,7 +806,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 								<span class={s.spinner} />
 								Committing...
 							</Show>
-						</button>
+						</Button>
 						<label class={s.amendLabel}>
 							<input
 								type="checkbox"
@@ -859,7 +847,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 			{/* Filter input */}
 			<Show when={staged().length > 0 || unstaged().length > 0}>
 				<div class={s.filterRow}>
-					<input
+					<Input
 						type="text"
 						class={s.filterInput}
 						placeholder="Filter... (*, ** wildcards)"
@@ -870,9 +858,9 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 						spellcheck={false}
 					/>
 					<Show when={filterQuery()}>
-						<button class={s.filterClear} onClick={() => setFilterQuery("")}>
+						<Button variant="ghost" aria-label="Clear file filter" onClick={() => setFilterQuery("")}>
 							&times;
-						</button>
+						</Button>
 					</Show>
 				</div>
 			</Show>
@@ -891,7 +879,9 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 					<span class={s.sectionCount}>
 						{filterQuery() ? `${filteredStaged().length}/${staged().length}` : staged().length}
 					</span>
-					<button
+					<Button
+						size="compact"
+						variant="ghost"
 						class={s.sectionAction}
 						title="Unstage all"
 						onClick={(e) => {
@@ -900,7 +890,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 						}}
 					>
 						Unstage all
-					</button>
+					</Button>
 				</div>
 				<Show when={stagedExpanded()}>
 					<For each={filteredStaged()}>{(file, i) => renderFileEntry(file, "staged", i())}</For>
@@ -921,7 +911,9 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 					<span class={s.sectionCount}>
 						{filterQuery() ? `${filteredUnstaged().length}/${unstaged().length}` : unstaged().length}
 					</span>
-					<button
+					<Button
+						size="compact"
+						variant="ghost"
 						class={s.sectionAction}
 						title="Stage all"
 						onClick={(e) => {
@@ -930,8 +922,10 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 						}}
 					>
 						Stage all
-					</button>
-					<button
+					</Button>
+					<Button
+						size="compact"
+						variant="ghost"
 						class={s.sectionAction}
 						title="Discard all tracked changes"
 						onClick={(e) => {
@@ -940,7 +934,7 @@ export const ChangesTab: Component<ChangesTabProps> = (props) => {
 						}}
 					>
 						Discard all
-					</button>
+					</Button>
 				</div>
 				<Show when={unstagedExpanded()}>
 					<For each={filteredUnstaged()}>

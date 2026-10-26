@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { HttpRpcError } from "../transport";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { HttpRpcError, rpc } from "../transport";
 
 describe("HTTP RPC error detail", () => {
 	// Catches: a JSON error envelope is exposed as raw HTTP metadata in the UI.
@@ -16,3 +16,25 @@ describe("HTTP RPC error detail", () => {
 		},
 	);
 });
+
+// Catches: a caller-owned health deadline is dropped or shares cancellation with another request.
+it("keeps abortable health reads independent and passes their signals to fetch", async () => {
+	vi.stubGlobal("__TAURI_SHIM__", true);
+	const controllers = [new AbortController(), new AbortController()];
+	const fetchStub = vi.fn(
+		(_url: string, init?: RequestInit) =>
+			new Promise<Response>((_resolve, reject) => {
+				init?.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), {
+					once: true,
+				});
+			}),
+	);
+	vi.stubGlobal("fetch", fetchStub);
+	const first = rpc("list_active_sessions", {}, undefined, controllers[0].signal);
+	const second = rpc("list_active_sessions", {}, undefined, controllers[1].signal);
+	const failures = Promise.allSettled([first, second]);
+	expect(fetchStub).toHaveBeenCalledTimes(2);
+	controllers.forEach((controller) => controller.abort());
+	expect((await failures).map((result) => result.status)).toEqual(["rejected", "rejected"]);
+});
+afterEach(() => vi.unstubAllGlobals());

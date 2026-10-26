@@ -1,0 +1,28 @@
+{
+  "url": "tauri://localhost",
+  "visibility": "visible",
+  "focus": false,
+  "events": [
+    {
+      "kind": "dispatch-start",
+      "time": 90263,
+      "wall": 1792496568571
+    },
+    {
+      "kind": "keydown",
+      "time": 90263,
+      "key": "\u03a9",
+      "trusted": false
+    },
+    {
+      "kind": "canvas-echo",
+      "time": 90307,
+      "text": "\u03a9"
+    },
+    {
+      "kind": "next-animation-frame",
+      "time": 90317
+    }
+  ],
+  "defaultPrevented": true
+}

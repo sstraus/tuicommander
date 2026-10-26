@@ -1,6 +1,7 @@
 import { batch, untrack } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { AGENT_TYPES } from "../agents";
+import type { DetachedWorktree, WorktreeDiagnostic } from "../hooks/useRepository";
 import { invoke, listen } from "../invoke";
 import { settingsRefresh } from "../services/settingsRefresh";
 import { setRepoConnectionLookup } from "../transportRuntime";
@@ -44,6 +45,9 @@ export interface RepositoryState {
 	collapsed: boolean; // Whether entire repo is collapsed to icon only
 	parked: boolean; // Whether repo is hidden from sidebar (recallable via popover)
 	workspaces: Record<WorkspaceId, WorkspaceState>;
+	/** Transient backend inventory; never used as workspace identity or persisted. */
+	detachedWorktrees?: DetachedWorktree[];
+	worktreeDiagnostics?: WorktreeDiagnostic[];
 	/** Which workspace is on screen. Indexes `workspaces`, so it is an id — read
 	 *  `workspaces[activeWorkspaceId].branchName` when you want the branch. */
 	activeWorkspaceId: WorkspaceId | null;
@@ -214,7 +218,8 @@ function serializableRepo(repo: RepositoryState): RepositoryState {
 		}
 		workspaces[name] = persisted;
 	}
-	return { ...repo, workspaces };
+	const { detachedWorktrees: _inventory, worktreeDiagnostics: _diagnostics, ...persistedRepo } = repo;
+	return { ...persistedRepo, workspaces };
 }
 
 /**
@@ -1097,6 +1102,14 @@ function createRepositoriesStore() {
 			if (!state.repositories[repoPath]?.workspaces[workspaceId]) return;
 			setState("repositories", repoPath, "workspaces", workspaceId, "tabsCollapsed", (c) => !c);
 			save();
+		},
+
+		setWorktreeDiagnostics(repoPath: string, entries: WorktreeDiagnostic[]): void {
+			if (state.repositories[repoPath]) setState("repositories", repoPath, "worktreeDiagnostics", entries);
+		},
+
+		setDetachedWorktrees(repoPath: string, entries: DetachedWorktree[]): void {
+			if (state.repositories[repoPath]) setState("repositories", repoPath, "detachedWorktrees", entries);
 		},
 
 		/** Update git repo status (used when a directory gains or loses .git) */

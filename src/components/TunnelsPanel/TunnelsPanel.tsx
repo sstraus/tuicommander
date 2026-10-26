@@ -12,6 +12,7 @@ interface AuditEntry {
 	message: string | null;
 }
 
+import { Button } from "../ui/Button";
 import { TunnelEditorModal } from "./TunnelEditorModal";
 import { TunnelStatusBadge } from "./TunnelStatusBadge";
 import s from "./TunnelsPanel.module.css";
@@ -103,14 +104,14 @@ export const TunnelsPanel: Component = () => {
 					<div class={s.header}>
 						<h3>SSH Tunnels</h3>
 						<div class={s.headerActions}>
-							<button class={s.newBtn} onClick={() => openEditor()}>
+							<Button class={s.newBtn} onClick={() => openEditor()}>
 								+ New Tunnel
-							</button>
-							<button class={s.closeBtn} onClick={() => tunnelPanelStore.close()} title="Close">
+							</Button>
+							<Button variant="ghost" class={s.closeBtn} onClick={() => tunnelPanelStore.close()} title="Close">
 								<svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor">
 									<path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
 								</svg>
-							</button>
+							</Button>
 						</div>
 					</div>
 
@@ -132,22 +133,33 @@ export const TunnelsPanel: Component = () => {
 												<TunnelStatusBadge status={tunnelsStore.getTunnelStatus(profile.id)} />
 											</div>
 											<div class={s.rowActions}>
-												<button
+												<Button
+													variant="ghost"
 													class={s.actionBtn}
 													onClick={() => handleToggleTunnel(profile.id)}
 													title={isRunning(profile.id) ? "Stop" : "Start"}
 												>
 													{isRunning(profile.id) ? "Stop" : "Start"}
-												</button>
-												<button class={s.actionBtn} onClick={() => openEditor(profile)} title="Edit">
+												</Button>
+												<Button variant="ghost" class={s.actionBtn} onClick={() => openEditor(profile)} title="Edit">
 													Edit
-												</button>
-												<button class={s.actionBtn} onClick={() => toggleExpand(profile.id)} title="Audit log">
+												</Button>
+												<Button
+													variant="ghost"
+													class={s.actionBtn}
+													onClick={() => toggleExpand(profile.id)}
+													title="Audit log"
+												>
 													{expandedId() === profile.id ? "Hide" : "Log"}
-												</button>
-												<button class={s.actionBtn} onClick={() => handleDelete(profile.id)} title="Delete">
+												</Button>
+												<Button
+													variant="ghost"
+													class={s.actionBtn}
+													onClick={() => handleDelete(profile.id)}
+													title="Delete"
+												>
 													Del
-												</button>
+												</Button>
 											</div>
 										</div>
 										<Show when={expandedId() === profile.id}>

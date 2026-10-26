@@ -40,7 +40,7 @@ use super::mcp_transport_ancillary::handle_voice;
 use super::mcp_transport_ancillary::handle_workflow_launch;
 #[cfg(test)]
 use super::mcp_transport_ancillary::handle_workflow_report;
-#[cfg(test)]
+#[cfg(all(test, unix))]
 use super::mcp_transport_ancillary::handle_workflow_run;
 #[cfg(test)]
 use super::mcp_transport_ancillary::handle_workflow_story_create;
@@ -92,7 +92,6 @@ use super::mcp_transport_catalogue::merged_tool_definitions;
 use super::mcp_transport_catalogue::merged_tool_definitions_for_mode;
 #[cfg(test)]
 use super::mcp_transport_catalogue::meta_tool_definitions;
-pub(crate) use super::mcp_transport_catalogue::native_tool_catalog;
 #[cfg(test)]
 use super::mcp_transport_catalogue::native_tool_definitions;
 pub(crate) use super::mcp_transport_catalogue::rebuild_tool_search_index;
@@ -110,6 +109,7 @@ use super::mcp_transport_catalogue::tag_repo_connection;
 use super::mcp_transport_catalogue::validate_mcp_repo_path;
 #[cfg(test)]
 use super::mcp_transport_catalogue::{handle_get_tool_schema, handle_search_tools};
+pub(crate) use super::mcp_transport_catalogue::{native_capability_catalog, native_tool_catalog};
 #[cfg(test)]
 pub(super) use super::mcp_transport_peer::CLIENT_PID_HEADER;
 use super::mcp_transport_peer::InitializeKind;
@@ -241,7 +241,7 @@ fn unmark_upstream_tool_result(value: serde_json::Value) -> serde_json::Value {
         .unwrap_or(value)
 }
 
-fn upstream_tool_result(value: &serde_json::Value) -> Option<&serde_json::Value> {
+pub(super) fn upstream_tool_result(value: &serde_json::Value) -> Option<&serde_json::Value> {
     value
         .as_object()
         .filter(|object| object.len() == 1)
@@ -451,7 +451,8 @@ where
     match tokio::task::spawn_blocking(f).await {
         Ok(value) => value,
         Err(e) => serde_json::json!({
-            "error": format!("tool handler failed to complete: {e}")
+            "error": format!("tool handler failed to complete: {e}"),
+            "effect": "unknown"
         }),
     }
 }
@@ -517,7 +518,10 @@ async fn guard_secret_inspection(
 ) -> serde_json::Value {
     let inspection = secret_inspection_tool(name, args);
     if inspection && state.secrets.tools_blocked() {
-        return serde_json::json!({"error": "Agent inspection is disabled while a private secret form is open"});
+        return serde_json::json!({
+            "error": "Agent inspection is disabled while a private secret form is open",
+            "effect": "not_started"
+        });
     }
     call.await
 }
@@ -1206,7 +1210,11 @@ pub(super) async fn mcp_post(
                 .get("params")
                 .cloned()
                 .unwrap_or(serde_json::Value::Null);
-            let audit = super::mcp_call_audit::Call::start(&state.mcp.call_audit, &params);
+            let audit = super::mcp_call_audit::Call::start(
+                &state,
+                &params,
+                state.config.read().mcp_call_audit_enabled,
+            );
             let tool_name = params["name"].as_str().unwrap_or("").to_string();
             let args = params
                 .get("arguments")
@@ -1237,7 +1245,7 @@ pub(super) async fn mcp_post(
                         .await
                     {
                         Ok(v) => mark_upstream_tool_result(v),
-                        Err(e) => serde_json::json!({"error": e}),
+                        Err(e) => serde_json::json!({"error": e.message, "effect": e.effect}),
                     }
                 })
                 .await;

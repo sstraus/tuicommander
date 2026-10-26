@@ -15,6 +15,7 @@
 //! absolute-path launches that bypass their shim must supply instructions explicitly.
 use crate::config::{AgentsConfig, AppConfig};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU8, Ordering};
 
 /// Agents with a verified launch-time instruction channel (installed `--help`,
 /// 2026-10-12: claude 2.1.286, codex 0.162.1, grok 1.0.50, opencode 1.18.30,
@@ -62,6 +63,53 @@ pub(crate) fn marker_flags(
         app.intent_tab_title && settings.and_then(|s| s.intent_tab_title).unwrap_or(true),
         app.suggest_followups && settings.and_then(|s| s.suggest_followups).unwrap_or(true),
     )
+}
+
+/// Boss text (2026-10-22), verbatim. Present only when mdkb is installed.
+pub(crate) const MDKB_RULE: &str = "## Code search\nUse MDKB for all code searches, including exact strings, symbols, and surrounding context. Prefer targeted retrieval over reading entire files. Grep, rg, and Bash-based searches are fallback tools only when MDKB cannot cover the target. Do not attempt alternative search commands when a search is blocked.\n";
+
+/// 0 = not checked, 1 = absent, 2 = installed. The check only stats files, and
+/// runs once per process, then again when the launch files are rewritten for a
+/// config change or an mdkb install or uninstall.
+static MDKB_INSTALLED: AtomicU8 = AtomicU8::new(0);
+
+fn mdkb_in(dirs: &[PathBuf]) -> bool {
+    let names: &[&str] = if cfg!(windows) {
+        &["mdkb.exe", "mdkb.cmd"]
+    } else {
+        &["mdkb"]
+    };
+    dirs.iter()
+        .any(|dir| names.iter().any(|name| dir.join(name).is_file()))
+}
+
+fn mdkb_on_disk() -> bool {
+    // A release build lacks the shell PATH, so the install locations are listed too.
+    let mut dirs: Vec<PathBuf> = std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).collect())
+        .unwrap_or_default();
+    if cfg!(windows) {
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            dirs.push(PathBuf::from(local).join("Microsoft/WindowsApps"));
+        }
+    } else {
+        dirs.extend(["/usr/local/bin", "/opt/homebrew/bin"].map(PathBuf::from));
+    }
+    if let Some(home) = dirs::home_dir() {
+        dirs.extend([home.join(".local/bin"), home.join(".cargo/bin")]);
+    }
+    mdkb_in(&dirs)
+}
+
+fn mdkb_installed() -> bool {
+    match MDKB_INSTALLED.load(Ordering::Relaxed) {
+        0 => {
+            let found = mdkb_on_disk();
+            MDKB_INSTALLED.store(if found { 2 } else { 1 }, Ordering::Relaxed);
+            found
+        }
+        state => state == 2,
+    }
 }
 
 const PROGRESS_DUTY: &str = "Record finished work with `progress type=done`; use `type=blocked` only when you stop for the user's answer, not while independent work continues.\n";
@@ -143,6 +191,16 @@ pub(crate) fn effective_text_for(
     agent: &str,
     spawned_child: bool,
 ) -> String {
+    effective_text_with(app, agents, agent, spawned_child, mdkb_installed())
+}
+
+fn effective_text_with(
+    app: &AppConfig,
+    agents: &AgentsConfig,
+    agent: &str,
+    spawned_child: bool,
+    mdkb: bool,
+) -> String {
     let settings = agents.agents.get(agent);
     if agents.launch_instructions_disabled
         || settings.is_some_and(|s| s.launch_instructions_disabled)
@@ -175,6 +233,12 @@ pub(crate) fn effective_text_for(
                 text.push_str(PROGRESS_DUTY);
             }
         }
+    }
+    if mdkb {
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(MDKB_RULE);
     }
     for addition in [
         agents.launch_instructions.as_deref(),
@@ -223,6 +287,11 @@ fn file_path_for(config_dir: &Path, agent: &str, child: bool) -> PathBuf {
 /// Write every agent's file. A disabled agent gets an empty file, which a
 /// launch treats as "inject nothing".
 pub(crate) fn write_files(config_dir: &Path) -> Result<(), String> {
+    MDKB_INSTALLED.store(0, Ordering::Relaxed);
+    write_current(config_dir)
+}
+
+fn write_current(config_dir: &Path) -> Result<(), String> {
     let app = crate::config::load_app_config();
     let agents = crate::config::load_agents_config();
     write_files_with(config_dir, &app, &agents)
@@ -248,7 +317,7 @@ pub(crate) fn write_files_with(
 
 /// The agent's file after a refresh, or `None` when its text is empty.
 fn current_file(agent: &str, config_dir: &Path, child: bool) -> Option<(PathBuf, String)> {
-    if let Err(error) = write_files(config_dir) {
+    if let Err(error) = write_current(config_dir) {
         tracing::error!(
             source = "agent_hooks",
             "Failed to write launch instructions: {error}"

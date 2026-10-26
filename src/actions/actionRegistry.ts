@@ -11,7 +11,9 @@ import { automationsUi } from "../stores/automations";
 import { dictationStore } from "../stores/dictation";
 import { keybindingsStore } from "../stores/keybindings";
 import { progressStore } from "../stores/progress";
+import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
+import { storiesUi } from "../stores/storiesUi";
 import { terminalsStore } from "../stores/terminals";
 import { tunnelPanelStore } from "../stores/tunnelPanel";
 import { isTauri } from "../transport";
@@ -131,6 +133,14 @@ export function getActionEntries(handlers: ShortcutHandlers): ActionEntry[] {
 			keywords: "scheduler schedule",
 			keybinding: "",
 			execute: automationsUi.open,
+		},
+		{
+			id: "plans-stories",
+			label: "Plans and Stories",
+			category: "Navigation",
+			keywords: "plan story workflow designer runs",
+			keybinding: "",
+			execute: () => storiesUi.open(repositoriesStore.state.activeRepoPath),
 		},
 	];
 

@@ -719,7 +719,7 @@ fn bg_lost_queue_reply_and_failed_mail_retries_the_same_key_and_records_acceptan
     let status = wait_for_terminal_wake(&wake_file);
     let (first, retry) = server.join().unwrap();
     let key = first["idempotencyKey"].as_str().expect("stable job key");
-    assert!(!key.is_empty());
+    assert_ne!(key, "");
     assert_eq!(first, retry);
     assert_eq!(status["status"], "queued");
     assert_eq!(status["attempts"], 2);

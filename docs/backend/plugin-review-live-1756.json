@@ -1,0 +1,375 @@
+{
+  "health": {
+    "ok": true,
+    "uptime_secs": 4,
+    "session_count": 0,
+    "protocol_version": 1,
+    "build": {
+      "version": "2.0.0",
+      "target": "aarch64-apple-darwin",
+      "sha256": "36beb821714dde56389bb3d43681990285b421a213e425f9bfed2db1b8a3dd5e"
+    },
+    "socket_path": "/Users/stefano.straus/Gits/.tmp/tuic-at/416e20482e26b1f5/tuic-mcp-416e20482e26b1f5.sock",
+    "instance_id": "6cdbe977-f097-4ff2-9f2e-f9328c6477de"
+  },
+  "modules": {
+    "loader": "/assets/pluginLoader-B6DQ1i1V.js",
+    "registry": "/assets/markdownProviderRegistry-CbQTHtcc.js",
+    "app": "/assets/appEntry-CSXlLino.js"
+  },
+  "reloadExport": "i",
+  "candidate12": {
+    "threads": {
+      "error": "Account not found"
+    },
+    "state": {
+      "error": "Account not found"
+    },
+    "mismatch": {
+      "error": "Error: Item belongs to another provider/account"
+    },
+    "loaded": {
+      "id": "github-work",
+      "loaded": true,
+      "enabled": true,
+      "error": null,
+      "builtIn": false,
+      "manifest": {
+        "id": "github-work",
+        "name": "GitHub Work",
+        "version": "1.0.0",
+        "contentSha256": "0fd734c9cfd8b4049800594501a5aca25e3ff66bddb5e91e47c6f5fb4a4f3aad",
+        "minAppVersion": "1.8.0",
+        "main": "main.js",
+        "description": "GitHub issues, pull requests and Projects v2 as work items in core Tasks.",
+        "author": "sstraus",
+        "capabilities": [
+          "net:http"
+        ],
+        "allowedUrls": [
+          "https://api.github.com/*"
+        ],
+        "agentTypes": [],
+        "binaries": [],
+        "providers": [
+          "github"
+        ]
+      }
+    }
+  },
+  "candidate9": {
+    "jira": {
+      "before": {
+        "error": "Error: Jira project is required"
+      },
+      "saved": {
+        "projectId": "TUIC-1756"
+      },
+      "after": {
+        "error": "Account not found"
+      },
+      "loaded": {
+        "id": "jira",
+        "loaded": true,
+        "enabled": true,
+        "error": null,
+        "builtIn": false,
+        "manifest": {
+          "id": "jira",
+          "name": "Jira",
+          "version": "1.0.0",
+          "contentSha256": "e177774844db3bff520ed8f327cd715da1ef9b3c1393fc37aa575273b403cabc",
+          "minAppVersion": "1.8.0",
+          "main": "main.js",
+          "description": "Jira Cloud and Data Center work items in core Tasks.",
+          "author": "sstraus",
+          "capabilities": [
+            "net:http"
+          ],
+          "allowedUrls": [
+            "https://api.atlassian.com/*"
+          ],
+          "agentTypes": [],
+          "binaries": [],
+          "providers": [
+            {
+              "id": "jira",
+              "label": "Jira",
+              "kinds": [
+                "basic",
+                "bearer"
+              ],
+              "verify": {
+                "path": "/rest/api/2/myself",
+                "loginPointer": "/displayName"
+              }
+            }
+          ],
+          "settings": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "projectId": {
+                  "type": "string",
+                  "title": "Default project ID",
+                  "description": "Used for accounts without a project in Tasks setup. Account-specific projects take precedence.",
+                  "maxLength": 256,
+                  "x-setting": {
+                    "sensitivity": "public",
+                    "apply": "service_restart",
+                    "effect": "Reloads the provider with the saved default project.",
+                    "operations": [
+                      "get",
+                      "set",
+                      "reset"
+                    ],
+                    "confirmationClass": "ordinary"
+                  }
+                }
+              }
+            },
+            "defaults": {
+              "projectId": ""
+            }
+          }
+        }
+      }
+    },
+    "gitlab": {
+      "before": {
+        "error": "Error: GitLab create needs a configured project"
+      },
+      "saved": {
+        "project": "sstraus/tuic-1756"
+      },
+      "after": {
+        "error": "Account not found"
+      },
+      "loaded": {
+        "id": "gitlab",
+        "loaded": true,
+        "enabled": true,
+        "error": null,
+        "builtIn": false,
+        "manifest": {
+          "id": "gitlab",
+          "name": "GitLab",
+          "version": "1.0.0",
+          "contentSha256": "3244efeba5b75c299b8b25d2943593bb93567ae93d8b9ee6b36ff1a2012868a7",
+          "minAppVersion": "1.8.0",
+          "main": "main.js",
+          "description": "GitLab issues, merge requests, boards and pipelines in core Tasks.",
+          "author": "sstraus",
+          "capabilities": [
+            "net:http"
+          ],
+          "allowedUrls": [
+            "https://gitlab.com/api/v4/*"
+          ],
+          "agentTypes": [],
+          "binaries": [],
+          "providers": [
+            {
+              "id": "gitlab",
+              "label": "GitLab",
+              "kinds": [
+                "bearer"
+              ],
+              "verify": {
+                "path": "/api/v4/user",
+                "loginPointer": "/username"
+              }
+            }
+          ],
+          "settings": {
+            "schema": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "project": {
+                  "type": "string",
+                  "title": "Default project path or ID",
+                  "description": "Used for accounts without a project in Tasks setup. Account-specific projects take precedence.",
+                  "maxLength": 256,
+                  "x-setting": {
+                    "sensitivity": "public",
+                    "apply": "service_restart",
+                    "effect": "Reloads the provider with the saved default project.",
+                    "operations": [
+                      "get",
+                      "set",
+                      "reset"
+                    ],
+                    "confirmationClass": "ordinary"
+                  }
+                }
+              }
+            },
+            "defaults": {
+              "project": ""
+            }
+          }
+        }
+      }
+    }
+  },
+  "initial": {
+    "error": null,
+    "entry": {
+      "id": "github-work",
+      "name": "GitHub Work",
+      "description": "GitHub issues, pull requests and Projects v2 as work items in core Tasks. Needs a GitHub account in Settings and data/config.json.",
+      "author": "sstraus",
+      "repo": "sstraus/tuicommander-plugins",
+      "latestVersion": "1.0.0",
+      "minAppVersion": "1.8.0",
+      "capabilities": [
+        "net:http"
+      ],
+      "downloadUrl": "https://github.com/sstraus/tuicommander-plugins/releases/latest/download/github-work.zip",
+      "contentSha256": "0fd734c9cfd8b4049800594501a5aca25e3ff66bddb5e91e47c6f5fb4a4f3aad"
+    },
+    "plugin": {
+      "id": "github-work",
+      "loaded": true,
+      "enabled": true,
+      "error": null,
+      "builtIn": false,
+      "manifest": {
+        "id": "github-work",
+        "name": "GitHub Work",
+        "version": "1.0.0",
+        "contentSha256": "0fd734c9cfd8b4049800594501a5aca25e3ff66bddb5e91e47c6f5fb4a4f3aad",
+        "minAppVersion": "1.8.0",
+        "main": "main.js",
+        "description": "GitHub issues, pull requests and Projects v2 as work items in core Tasks.",
+        "author": "sstraus",
+        "capabilities": [
+          "net:http"
+        ],
+        "allowedUrls": [
+          "https://api.github.com/*"
+        ],
+        "agentTypes": [],
+        "binaries": [],
+        "providers": [
+          "github"
+        ]
+      }
+    },
+    "update": null,
+    "row": "GitHub Work\nv1.0.0\nLOADED\nEXTERNAL\n\nGitHub issues, pull requests and Projects v2 as work items in core Tasks.\n\nCapabilities: net:http\n\n?\nManage plugin",
+    "updateButton": false
+  },
+  "altered": {
+    "error": null,
+    "entry": {
+      "id": "github-work",
+      "name": "GitHub Work",
+      "description": "GitHub issues, pull requests and Projects v2 as work items in core Tasks. Needs a GitHub account in Settings and data/config.json.",
+      "author": "sstraus",
+      "repo": "sstraus/tuicommander-plugins",
+      "latestVersion": "1.0.0",
+      "minAppVersion": "1.8.0",
+      "capabilities": [
+        "net:http"
+      ],
+      "downloadUrl": "https://github.com/sstraus/tuicommander-plugins/releases/latest/download/github-work.zip",
+      "contentSha256": "0fd734c9cfd8b4049800594501a5aca25e3ff66bddb5e91e47c6f5fb4a4f3aad"
+    },
+    "plugin": {
+      "id": "github-work",
+      "loaded": true,
+      "enabled": true,
+      "error": null,
+      "builtIn": false,
+      "manifest": {
+        "id": "github-work",
+        "name": "GitHub Work",
+        "version": "1.0.0",
+        "contentSha256": "5c5a3ad43ee05d91fbe91bbd75eb0b0ef71d703a2c18d2b18815f43327137e90",
+        "minAppVersion": "1.8.0",
+        "main": "main.js",
+        "description": "GitHub issues, pull requests and Projects v2 as work items in core Tasks.",
+        "author": "sstraus",
+        "capabilities": [
+          "net:http"
+        ],
+        "allowedUrls": [
+          "https://api.github.com/*"
+        ],
+        "agentTypes": [],
+        "binaries": [],
+        "providers": [
+          "github"
+        ]
+      }
+    },
+    "update": {
+      "id": "github-work",
+      "name": "GitHub Work",
+      "description": "GitHub issues, pull requests and Projects v2 as work items in core Tasks. Needs a GitHub account in Settings and data/config.json.",
+      "author": "sstraus",
+      "repo": "sstraus/tuicommander-plugins",
+      "latestVersion": "1.0.0",
+      "minAppVersion": "1.8.0",
+      "capabilities": [
+        "net:http"
+      ],
+      "downloadUrl": "https://github.com/sstraus/tuicommander-plugins/releases/latest/download/github-work.zip",
+      "contentSha256": "0fd734c9cfd8b4049800594501a5aca25e3ff66bddb5e91e47c6f5fb4a4f3aad"
+    },
+    "row": "GitHub Work\nv1.0.0\nLOADED\nEXTERNAL\nV1.0.0\n\nGitHub issues, pull requests and Projects v2 as work items in core Tasks.\n\nCapabilities: net:http\n\nUpdate\n?\nManage plugin",
+    "updateButton": true
+  },
+  "restored": {
+    "error": null,
+    "entry": {
+      "id": "github-work",
+      "name": "GitHub Work",
+      "description": "GitHub issues, pull requests and Projects v2 as work items in core Tasks. Needs a GitHub account in Settings and data/config.json.",
+      "author": "sstraus",
+      "repo": "sstraus/tuicommander-plugins",
+      "latestVersion": "1.0.0",
+      "minAppVersion": "1.8.0",
+      "capabilities": [
+        "net:http"
+      ],
+      "downloadUrl": "https://github.com/sstraus/tuicommander-plugins/releases/latest/download/github-work.zip",
+      "contentSha256": "0fd734c9cfd8b4049800594501a5aca25e3ff66bddb5e91e47c6f5fb4a4f3aad"
+    },
+    "plugin": {
+      "id": "github-work",
+      "loaded": true,
+      "enabled": true,
+      "error": null,
+      "builtIn": false,
+      "manifest": {
+        "id": "github-work",
+        "name": "GitHub Work",
+        "version": "1.0.0",
+        "contentSha256": "0fd734c9cfd8b4049800594501a5aca25e3ff66bddb5e91e47c6f5fb4a4f3aad",
+        "minAppVersion": "1.8.0",
+        "main": "main.js",
+        "description": "GitHub issues, pull requests and Projects v2 as work items in core Tasks.",
+        "author": "sstraus",
+        "capabilities": [
+          "net:http"
+        ],
+        "allowedUrls": [
+          "https://api.github.com/*"
+        ],
+        "agentTypes": [],
+        "binaries": [],
+        "providers": [
+          "github"
+        ]
+      }
+    },
+    "update": null,
+    "row": "GitHub Work\nv1.0.0\nLOADED\nEXTERNAL\n\nGitHub issues, pull requests and Projects v2 as work items in core Tasks.\n\nCapabilities: net:http\n\n?\nManage plugin",
+    "updateButton": false
+  },
+  "candidate4": true
+}

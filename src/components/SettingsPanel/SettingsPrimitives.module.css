@@ -20,8 +20,6 @@
 .danger > .actions { margin-top: 12px; }
 @media (max-width: 800px) { .pageHeader, .listRow, .status { flex-wrap: wrap; } }
 
-.actions button, .status button, .empty button { min-height: 36px; }
-@media (max-width: 600px) { .actions button, .status button, .empty button { min-height: 44px; } }
 
 .pageHeader [data-testid="status-badge"], .listRow [data-testid="status-badge"], .status [data-testid="status-badge"] { font-family: var(--font-ui); font-size: 11px; border: 1px solid var(--border); border-radius: 999px; padding: 3px 8px; background: var(--bg-tertiary); }
 .listText > span { font-size: 13px; font-weight: 600; }

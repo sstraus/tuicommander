@@ -29,6 +29,7 @@ impl Visibility {
                 .is_some_and(|clients| clients.iter().any(|tx| !tx.is_closed()))
     }
 
+    #[cfg(any(unix, test))]
     pub(crate) fn recently_active(&self, state: &AppState, id: &str) -> bool {
         let timeout = std::time::Duration::from_secs(
             u64::from(state.config.read().standby_timeout_minutes) * 60,

@@ -560,7 +560,7 @@ mod tests {
     #[test]
     fn capture_shorter_than_a_frame_cleans_nothing_yet() {
         let mut probe = Probe::new();
-        assert!(probe.guard.clean(&[0.1; 40]).is_empty());
+        assert_eq!(probe.guard.clean(&[0.1; 40]), [] as [f32; 0]);
         assert!(
             probe.seen.lock().is_empty(),
             "the canceller was called early"

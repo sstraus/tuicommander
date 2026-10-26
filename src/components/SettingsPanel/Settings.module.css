@@ -57,45 +57,6 @@
   cursor: pointer;
 }
 
-.expertSwitch input {
-  appearance: none;
-  position: relative;
-  width: 36px;
-  height: 20px;
-  margin: 0;
-  border-radius: 10px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  cursor: pointer;
-  transition: background 0.2s;
-}
-
-.expertSwitch input::before {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 14px;
-  height: 14px;
-  border-radius: var(--radius-full);
-  background: #fff;
-  transition: transform 0.2s;
-}
-
-.expertSwitch input:checked {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.expertSwitch input:checked::before {
-  transform: translateX(16px);
-}
-
-.expertSwitch input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 /* Search-result marker for an expert setting — STYLE_GUIDE badge metrics */
 .expertBadge {
   margin-left: 8px;
@@ -107,21 +68,6 @@
   font-weight: 600;
   color: var(--fg-muted);
   vertical-align: middle;
-}
-
-.close {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  font-size: var(--font-2xl);
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: var(--radius-md);
-}
-
-.close:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
 }
 
 .body {
@@ -142,7 +88,7 @@
   position: relative;
 }
 
-.navItem {
+button[data-control-layout="row"].navItem {
   display: block;
   width: 100%;
   text-align: left;
@@ -178,12 +124,12 @@
   color: var(--fg-muted);
 }
 
-.navItem:hover {
+button[data-control-layout="row"].navItem:hover {
   background: var(--bg-highlight);
   color: var(--fg-primary);
 }
 
-.navItem.active {
+button[data-control-layout="row"].navItem.active {
   background: var(--bg-highlight);
   color: var(--fg-primary);
   box-shadow: inset 3px 0 0 var(--accent);
@@ -208,7 +154,7 @@
   flex-shrink: 0;
 }
 
-.navItemRepo {
+button[data-control-layout="row"].navItemRepo {
   padding-left: 24px;
 }
 
@@ -275,38 +221,6 @@
   background: var(--bg-tertiary);
 }
 
-.footerReset {
-  padding: 6px 14px;
-  background: var(--bg-highlight);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.footerReset:hover {
-  background: var(--border);
-  color: var(--fg-primary);
-}
-
-.footerDone {
-  padding: 6px 16px;
-  background: var(--accent);
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--text-on-accent);
-  font-size: var(--font-sm);
-  font-weight: 500;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.footerDone:hover {
-  background: var(--accent-hover);
-}
-
 /* ── Shared Form Elements ── */
 .section {
   max-width: 100%;
@@ -336,41 +250,6 @@
   font-size: var(--font-sm);
   color: var(--fg-secondary);
   margin-bottom: 6px;
-}
-
-.group select:not([data-form-control]),
-.group input[type="text"]:not([data-form-control]),
-.group input[type="url"]:not([data-form-control]),
-.group input[type="password"]:not([data-form-control]),
-.group textarea:not([data-form-control]) {
-  width: 100%;
-  padding: 8px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-primary);
-  font-size: var(--font-sm);
-  box-sizing: border-box;
-}
-
-.group select:not([data-form-control]),
-.group input[type="text"]:not([data-form-control]),
-.group input[type="url"]:not([data-form-control]),
-.group input[type="password"]:not([data-form-control]) {
-  height: 32px;
-}
-
-.group textarea:not([data-form-control]) {
-  font-family: var(--font-mono);
-  resize: vertical;
-  min-height: 100px;
-}
-
-.group select:not([data-form-control]):focus,
-.group input:not([data-form-control]):focus,
-.group textarea:not([data-form-control]):focus {
-  outline: none;
-  border-color: var(--accent);
 }
 
 .hint {
@@ -407,23 +286,6 @@
   gap: 12px;
 }
 
-.slider input[type="range"] {
-  flex: 1;
-  -webkit-appearance: none;
-  height: 4px;
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-xs);
-}
-
-.slider input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 14px;
-  height: 14px;
-  background: var(--accent);
-  border-radius: var(--radius-full);
-  cursor: pointer;
-}
-
 .slider span {
   min-width: 40px;
   text-align: right;
@@ -440,46 +302,6 @@
 
 .toggle + .toggle {
   margin-top: 10px;
-}
-
-.toggle input[type="checkbox"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 30px;
-  height: 16px;
-  min-height: 16px;
-  max-height: 16px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 9999px;
-  position: relative;
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s;
-  flex-shrink: 0;
-}
-
-.toggle input[type="checkbox"]::after {
-  content: "";
-  display: block;
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 10px;
-  height: 10px;
-  aspect-ratio: 1;
-  background: var(--fg-muted);
-  border-radius: 9999px;
-  transition: transform 0.2s, background 0.2s;
-}
-
-.toggle input[type="checkbox"]:checked {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.toggle input[type="checkbox"]:checked::after {
-  transform: translateX(14px);
-  background: white;
 }
 
 .toggle span {
@@ -503,39 +325,6 @@
   border-bottom: none;
 }
 
-.testBtn {
-  padding: 4px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
-  color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  cursor: pointer;
-}
-
-.testBtn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-  border-color: var(--accent);
-}
-
-.testBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.testBtnOk {
-  background: var(--success);
-  border-color: var(--success);
-  color: var(--bg-primary);
-}
-
-.testBtnFail {
-  background: var(--error);
-  border-color: var(--error);
-  color: var(--bg-primary);
-}
-
 .actions {
   display: flex;
   gap: 8px;
@@ -545,40 +334,7 @@
   border-top: 1px solid var(--border);
 }
 
-.actions button {
-  padding: 6px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.actions button:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-  border-color: var(--accent);
-}
-
 /* ── Color Picker (shared by AppearanceTab + RepoWorktreeTab) ── */
-.colorPickerSwatch {
-  position: relative;
-  width: 36px;
-  height: 36px;
-  cursor: pointer;
-  flex-shrink: 0;
-}
-
-.colorPickerSwatch input[type="color"] {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  width: 100%;
-  height: 100%;
-  cursor: pointer;
-}
 
 /* ── Groups Tab ── */
 .groupItem {
@@ -604,26 +360,6 @@
 
 .groupNameInput { flex: 1; }
 
-.groupDeleteBtn {
-  width: 24px;
-  height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: var(--radius-md);
-  color: var(--fg-secondary);
-  font-size: var(--font-md);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s;
-}
-
-.groupDeleteBtn:hover {
-  background: var(--error);
-  color: var(--text-on-accent);
-}
-
 .groupNameError {
   font-size: var(--font-xs);
   color: var(--error);
@@ -637,62 +373,12 @@
   margin-top: 8px;
 }
 
-.colorSwatch {
-  flex-shrink: 0;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: transform 0.1s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--font-xs);
-  color: var(--fg-secondary);
-  padding: 0;
-}
-
-.colorSwatch:hover {
-  transform: scale(1.15);
-}
-
-.colorSwatch.active {
-  border-color: var(--fg-primary);
-  box-shadow: 0 0 0 2px var(--bg-primary);
-}
-
-.colorSwatchCustom {
-  position: relative;
-  overflow: hidden;
-  border: 1px dashed var(--border);
-}
-
-.colorSwatchCustom input[type="color"] {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  width: 100%;
-  height: 100%;
-  cursor: pointer;
-}
-
-.colorSwatchCustom.active {
-  border-color: var(--fg-primary);
-  border-style: solid;
-}
-
 .colorSwatchLabel {
   font-size: var(--font-xl);
   line-height: 1;
   pointer-events: none;
   color: var(--fg-muted);
   transform: translateY(1.5px);
-}
-
-.colorSwatchClear {
-  background: var(--bg-secondary);
-  border: 1px dashed var(--border);
 }
 
 .groupsEmpty {
@@ -704,38 +390,10 @@
 
 .groupsAddBtn {
   width: 100%;
-  padding: 10px;
-  background: transparent;
-  border: 1px dashed var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  cursor: pointer;
-  transition: background 0.1s, color 0.1s, border-color 0.1s;
   margin-top: 8px;
 }
 
-.groupsAddBtn:hover {
-  border-color: var(--accent);
-  color: var(--accent);
-  background: var(--bg-tertiary);
-}
-
 /* ── Services Tab (MCP) ── */
-.input:not([data-form-control]) {
-  width: 100%;
-  padding: 8px 12px;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-primary);
-  font-size: var(--font-sm);
-}
-
-.input:not([data-form-control]):focus {
-  outline: none;
-  border-color: var(--accent);
-}
 
 .passwordRow {
   display: flex;
@@ -745,26 +403,6 @@
 
 .passwordRow .input {
   flex: 1;
-}
-
-.toggleBtn {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-secondary);
-  cursor: pointer;
-}
-
-.toggleBtn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
 }
 
 .inlineBtn {
@@ -782,27 +420,6 @@
 .inlineBtn:hover {
   color: var(--accent);
   border-color: var(--accent);
-}
-
-.saveBtn {
-  padding: 6px 12px;
-  background: var(--accent);
-  border: 1px solid var(--accent);
-  border-radius: var(--radius-sm);
-  color: var(--text-on-accent);
-  font-size: var(--font-sm);
-  font-weight: 600;
-  cursor: pointer;
-  transition: opacity 0.15s;
-}
-
-.saveBtn:hover {
-  opacity: 0.85;
-}
-
-.saveBtn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
 }
 
 .url {
@@ -885,61 +502,7 @@
   user-select: all;
 }
 
-.copyBtn {
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-secondary);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
 
-.copyBtn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-  border-color: var(--accent);
-}
-
-/*
- * The same chrome as .copyBtn, sized to its label instead of to an icon.
- *
- * .copyBtn is a 30x30 box with no padding, which is right for a glyph and wrong
- * for a word: "Connect", "Save" and "Cancel" overflowed it and overlapped the
- * buttons beside them. Reach for this one whenever the button contains text.
- */
-.textBtn {
-  height: 30px;
-  padding: 0 10px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  white-space: nowrap;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  color: var(--fg-secondary);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.textBtn:hover:not(:disabled) {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-  border-color: var(--accent);
-}
-
-.textBtn:disabled {
-  cursor: default;
-  opacity: 0.6;
-}
 
 .mcpStatusRow {
   display: flex;
@@ -1187,49 +750,6 @@
   padding: 0;
 }
 
-.schedulerOneShotLabel input[type="checkbox"] {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 14px;
-  height: 14px;
-  min-width: 14px;
-  min-height: 14px;
-  max-height: 14px;
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-  background: var(--bg-tertiary);
-  border: 1px solid var(--border);
-  border-radius: 3px;
-  cursor: pointer;
-  position: relative;
-  flex-shrink: 0;
-  vertical-align: middle;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.schedulerOneShotLabel input[type="checkbox"]:checked {
-  background: var(--accent);
-  border-color: var(--accent);
-}
-
-.schedulerOneShotLabel input[type="checkbox"]:checked::after {
-  content: "";
-  display: block;
-  position: absolute;
-  top: 1px;
-  left: 4px;
-  width: 3px;
-  height: 7px;
-  border: solid white;
-  border-width: 0 1.5px 1.5px 0;
-  transform: rotate(45deg);
-}
-
-.schedulerAdd .testBtn {
-  height: 32px;
-}
-
 .schedulerCronInput {
   width: 64px;
   height: 32px;
@@ -1273,17 +793,6 @@
 }
 
 /* Manual MCP configuration disclosure */
-.mcpDisclosure {
-  background: none;
-  border: none;
-  color: var(--fg-secondary);
-  cursor: pointer;
-  font-size: var(--font-sm);
-  padding: 2px 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
 
 .mcpDisclosureArrow {
   font-size: var(--font-xs);
@@ -1312,13 +821,6 @@
   position: absolute;
   top: 4px;
   right: 4px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  color: var(--fg-secondary);
-  cursor: pointer;
-  padding: 2px 8px;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-xs);
 }
 
 .mcpCode {
@@ -1392,43 +894,20 @@
   display: block;
 }
 
-
 /* ── Settings Search ── */
 .searchBox {
   position: relative;
   display: flex;
   align-items: center;
-  margin: 0 4px 8px;
+  margin: 0 0 8px;
   flex-shrink: 0;
+  gap: 8px;
 }
 
 .searchIcon {
-  position: absolute;
-  left: 8px;
+  flex-shrink: 0;
   color: var(--fg-muted);
   pointer-events: none;
-}
-
-.searchBox input { width: 100%; padding: 4px 4px 4px 24px; font-family: var(--font-ui); }
-
-.searchBox:has(.searchClear) input { padding-right: 22px; }
-
-
-
-.searchClear {
-  position: absolute;
-  right: 4px;
-  padding: 0 4px;
-  background: transparent;
-  border: none;
-  color: var(--fg-muted);
-  font-size: var(--font-md);
-  line-height: 1;
-  cursor: pointer;
-}
-
-.searchClear:hover {
-  color: var(--fg-primary);
 }
 
 .searchResults {
@@ -1437,7 +916,7 @@
   gap: 2px;
 }
 
-.searchResult {
+button[data-control-layout="row"].searchResult {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1451,7 +930,7 @@
   transition: background 0.1s;
 }
 
-.searchResult:hover {
+button[data-control-layout="row"].searchResult:hover {
   background: var(--bg-highlight);
 }
 
@@ -1489,7 +968,7 @@
   color: var(--fg-muted);
 }
 
-.group [data-form-control], .input[data-form-control] { width: 100%; }
+.group [data-form-control]:not(button):not([data-form-control="switch"]):not([data-form-control="color"]):not([data-form-control="swatch"]), .input[data-form-control] { width: 100%; }
 
 /* Shared row layout; existing field layout is retained unless opted in. */
 .settingRow { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 12px 0; border-bottom: 1px solid var(--border); }
@@ -1499,9 +978,9 @@
 .settingRowText .hint { color: var(--fg-secondary); margin-bottom: 0; }
 .settingRowControl { flex: 0 1 260px; min-width: 0; max-width: 48%; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
 .settingRowControl > div:not(.settingRowValue) { width: 100%; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; }
-.settingRowControl > div > [data-form-control] { width: 100%; }
+.settingRowControl > div > [data-form-control]:not(button):not([data-form-control="switch"]):not([data-form-control="color"]):not([data-form-control="swatch"]) { width: 100%; }
 .settingRowControl > div > .hint { margin: 0; text-align: right; }
-.settingRowControl > [data-form-control] { width: 100%; }
+.settingRowControl > [data-form-control]:not(button):not([data-form-control="switch"]):not([data-form-control="color"]):not([data-form-control="swatch"]) { width: 100%; }
 .fieldError { margin: 4px 0 0; color: var(--error); font-size: 12px; line-height: 1.5; }
 @media (max-width: 800px) {
   .content { padding: 20px; }
@@ -1512,9 +991,7 @@
   .panel { width: calc(100vw - 24px); }
   .body { flex-direction: column; }
   .nav { width: 100% !important; max-height: 180px; border-right: 0; border-bottom: 1px solid var(--border); }
-  .navItem, .close, .footerDone, .footerReset, .content button { min-height: 44px; }
   .content { padding: 16px; }
-  .colorSwatch { width: 44px; height: 44px; }
 }
 
 .compactNav { display: none; }
@@ -1522,35 +999,28 @@
  .nav > :not(.compactNav):not(.navSearch) { display: none; }
  .nav { overflow: visible; padding: 8px 16px; max-height: none; }
  .compactNav { display: block; }
- .compactNav select { width: 100%; min-height: 44px; padding-inline-end: 32px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+ .compactNav select { width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 }
 
 .settingRowText .infoBadge { width: 14px; height: 14px; border: 1px solid var(--fg-muted); background: transparent; font-size: 10px; line-height: 1; }
 .settingHelp { display: inline-flex; border-radius: 50%; }
 .settingHelp:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
 /* Application pages opt in; existing stacked consumers retain their layout. */
-.settingRowControl:has(> .rowSwitch) { flex: 0 0 auto; display: flex; justify-content: flex-end; }
-.rowSwitch { appearance: none; width: 32px; height: 18px; min-height: 18px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-tertiary); cursor: pointer; position: relative; }
-.rowSwitch::after { content: ""; position: absolute; width: 12px; height: 12px; top: 2px; left: 2px; border-radius: 50%; background: var(--fg-secondary); }
-.rowSwitch:checked { background: var(--accent); border-color: var(--accent); }
-.rowSwitch:checked::after { transform: translateX(14px); background: var(--text-on-accent); }
+.settingRowControl:has(> [data-form-control="switch"]) { flex: 0 0 auto; display: flex; justify-content: flex-end; }
 .applicationPage .hint { color: var(--fg-secondary); }
-.applicationPage .testBtn { min-height: 36px; }
 .applicationPage .soundRow { gap: 12px; flex-wrap: wrap; padding: 12px 0; }
 .applicationPage .soundRow .toggle { flex: 1; }
-.applicationPage .soundRow .toggle input { order: 2; margin-left: auto; }
+.applicationPage .soundRow .toggle [data-form-control="switch"] { order: 2; margin-left: auto; }
 .applicationPage .soundRow svg { margin-left: 0; }
 .applicationPage .groupRow { flex-wrap: wrap; }
 .applicationPage .groupNameInput { min-width: 0; }
 .applicationPage .slider input { min-width: 0; }
-@media (max-width: 600px) { .applicationPage .testBtn { min-height: 44px; } }
 
 .applicationPage .groupItem { padding: 12px 0; border-bottom: 1px solid var(--border); }
-.applicationPage .groupDeleteBtn { min-width: 36px; min-height: 36px; }
 
 @media (max-width: 600px) { .navSearch { order: -1; } }
 
-.navSearch { padding: 0 16px 8px; box-sizing: border-box; }
+.navSearch { padding: 0 0 8px; box-sizing: border-box; }
 .navSearch > [data-form-control], .compactNav > [data-form-control] { width: 100%; box-sizing: border-box; }
 @media (max-width: 600px) { .navSearch { padding: 0 0 8px; } }
 
@@ -1589,10 +1059,17 @@
 
 /* Catalogue labels wrap their controls rather than sharing a setting row. */
 .catalogueLabel { display: flex; flex-direction: column; gap: 8px; }
-.catalogueLabel select { padding-inline-end: 32px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.catalogueLabel select { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Reserve the badge width on the final inline label fragment, then occupy that space. */
 .helpLabel > label:has(+ .infoBadge) { padding-inline-end: 20px; }
 .helpLabel > label + .infoBadge { margin-inline-start: -14px; }
 
 .catalogueActions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-block-start: 8px; }
+
+.searchBox > input { flex: 1; width: 100%; }
+
+
+@media (max-width: 600px) {
+ button[data-control-layout="row"].navItem, button[data-control-layout="row"].searchResult { min-height: 44px; }
+}

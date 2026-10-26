@@ -11,10 +11,12 @@ import { SettingsShell } from "../../components/SettingsPanel/SettingsShell";
 describe("SettingsSearchBox layout", () => {
 	it.each([140, 280])("does not clip the placeholder at %ipx nav width", (width) => {
 		const style = document.createElement("style");
-		style.textContent = readFileSync(
-			resolve(process.cwd(), "src/components/SettingsPanel/Settings.module.css"),
-			"utf8",
-		);
+		style.textContent = [
+			"src/components/SettingsPanel/Settings.module.css",
+			"src/components/ui/FormControls.module.css",
+		]
+			.map((file) => readFileSync(resolve(process.cwd(), file), "utf8"))
+			.join("\n");
 		document.head.append(style);
 		try {
 			const { container } = render(() => (
@@ -33,9 +35,15 @@ describe("SettingsSearchBox layout", () => {
 			));
 			const box = getComputedStyle(container.querySelector(".searchBox")!);
 			const input = getComputedStyle(container.querySelector("input")!);
+			const header = getComputedStyle(container.querySelector(".navSearch")!);
+			const icon = container.querySelector("svg")!;
 			const available =
 				width -
 				1 -
+				parseFloat(header.paddingLeft) -
+				parseFloat(header.paddingRight) -
+				Number(icon.getAttribute("width")) -
+				parseFloat(box.gap) -
 				parseFloat(box.marginLeft) -
 				parseFloat(box.marginRight) -
 				2 -

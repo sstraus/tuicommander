@@ -3,6 +3,8 @@ import { t } from "../../i18n";
 import { cx } from "../../utils";
 import { hidesOriginal, OriginalComment, ReviewFindingView } from "../shared/ReviewFindingView";
 import { TaskMarkdown } from "../Tasks/detail/TaskMarkdown";
+import { Button } from "../ui/Button";
+import { Textarea } from "../ui/Textarea";
 import s from "./ReviewThreads.module.css";
 import type { ReviewThread } from "./reviewThreads";
 import type { ReviewSession } from "./useReviewSession";
@@ -34,14 +36,13 @@ export const ReviewThreadView: Component<{ thread: ReviewThread; session: Review
 				<span class={cx(s.badge, props.thread.isResolved ? s.badgeResolved : s.badgeOpen)}>
 					{props.thread.isResolved ? t("prDiff.resolved", "Resolved") : t("prDiff.open", "Open")}
 				</span>
-				<button
+				<Button
 					type="button"
-					class={s.action}
 					disabled={busy()}
 					onClick={() => void props.session.setResolved(props.thread.id, !props.thread.isResolved)}
 				>
 					{props.thread.isResolved ? t("prDiff.unresolve", "Unresolve") : t("prDiff.resolve", "Resolve")}
-				</button>
+				</Button>
 			</header>
 			<Show when={props.thread.finding}>{(finding) => <ReviewFindingView finding={finding()} />}</Show>
 			<For each={props.thread.comments.nodes}>
@@ -61,25 +62,20 @@ export const ReviewThreadView: Component<{ thread: ReviewThread; session: Review
 				)}
 			</For>
 			<Show when={props.thread.comments.pageInfo.hasNextPage}>
-				<button
-					type="button"
-					class={s.action}
-					disabled={busy()}
-					onClick={() => void props.session.loadMoreComments(props.thread.id)}
-				>
+				<Button type="button" disabled={busy()} onClick={() => void props.session.loadMoreComments(props.thread.id)}>
 					{t("prDiff.moreReplies", "Load more replies")}
-				</button>
+				</Button>
 			</Show>
 			<div class={s.composer}>
-				<textarea
+				<Textarea
 					aria-label={t("prDiff.replyLabel", "Reply")}
 					placeholder={t("prDiff.replyPlaceholder", "Reply…")}
 					value={draft()}
 					onInput={(e) => setDraft(e.currentTarget.value)}
 				/>
-				<button type="button" class={s.primary} disabled={busy() || !draft().trim()} onClick={() => void reply()}>
+				<Button type="button" variant="primary" disabled={busy() || !draft().trim()} onClick={() => void reply()}>
 					{t("prDiff.reply", "Reply")}
-				</button>
+				</Button>
 			</div>
 		</section>
 	);

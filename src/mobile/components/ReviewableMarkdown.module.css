@@ -32,29 +32,6 @@
 
 .preview { color: var(--fg-muted); }
 
-.input {
-	min-height: 88px;
-	padding: 8px;
-	border: 1px solid var(--border);
-	border-radius: var(--radius-md);
-	background: var(--bg-primary);
-	color: var(--fg-primary);
-	font: inherit;
-	resize: none;
-}
-
 .actions { display: flex; gap: 8px; }
 
-.button {
-	flex: 1;
-	min-height: 44px;
-	min-width: 44px;
-	border: 1px solid var(--border);
-	border-radius: var(--radius-md);
-	background: var(--bg-tertiary);
-	color: var(--fg-primary);
-	padding: 8px 10px;
-	font: inherit;
-}
-
-.button:disabled { opacity: 0.5; }
+.button { flex: 1; }

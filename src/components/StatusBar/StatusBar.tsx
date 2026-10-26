@@ -35,6 +35,7 @@ import { keyFor } from "../../utils/hotkey";
 import { activePrStatus } from "../../utils/mergedPrGrace";
 import { prReadinessOf } from "../../utils/prReadiness";
 import { PrDetailPopover } from "../PrDetailPopover/PrDetailPopover";
+import { Button } from "../ui";
 import { AgentIcon } from "../ui/AgentIcon";
 import { CountBadge } from "../ui/CountBadge";
 import { CiBadge, PrBadge } from "../ui/StatusBadge";
@@ -438,7 +439,8 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 			<div class={cx(s.section, s.controls)}>
 				{/* Toggle buttons */}
 				<Show when={appLogger.unseenErrorCount() > 0}>
-					<button
+					<Button
+						size="compact"
 						class={s.toggleBtn}
 						onClick={() => props.onToggleErrorLog?.()}
 						title={`Error Log (${keyFor("toggle-error-log")})`}
@@ -448,9 +450,10 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 							<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-2h2v2zm0-4h-2V7h2v6z" />
 						</svg>
 						<CountBadge count={appLogger.unseenErrorCount()} tone="error" />
-					</button>
+					</Button>
 				</Show>
-				<button
+				<Button
+					size="compact"
 					class={s.toggleBtn}
 					onClick={() => props.onToggleNotes?.()}
 					title={`${t("statusBar.toggleNotes", "Toggle Ideas Panel")} (${keyFor("toggle-notes")})`}
@@ -460,8 +463,9 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 						<path d="M9 21c0 .5.4 1 1 1h4c.6 0 1-.5 1-1v-1H9v1zm3-19C8.1 2 5 5.1 5 9c0 2.4 1.2 4.5 3 5.7V17c0 .5.4 1 1 1h6c.6 0 1-.5 1-1v-2.3c1.8-1.3 3-3.4 3-5.7 0-3.9-3.1-7-7-7z" />
 					</svg>
 					<CountBadge count={notesBadgeCount()} />
-				</button>
-				<button
+				</Button>
+				<Button
+					size="compact"
 					class={s.toggleBtn}
 					onClick={() => props.onToggleFileBrowser?.()}
 					title={`${t("statusBar.fileBrowser", "File Browser")} (${keyFor("toggle-file-browser")})`}
@@ -470,8 +474,9 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 					<svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
 						<path d="M10 4H4c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z" />
 					</svg>
-				</button>
-				<button
+				</Button>
+				<Button
+					size="compact"
 					class={s.toggleBtn}
 					onClick={props.onToggleMarkdown}
 					title={`${t("statusBar.markdown", "Markdown")} (${keyFor("toggle-markdown")})`}
@@ -481,8 +486,9 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 						<rect x="5" y="5" width="198" height="118" rx="12" fill="none" stroke="currentColor" stroke-width="12" />
 						<path d="M30 98V30h20l20 25 20-25h20v68h-20V59L70 84 50 59v39H30zm125 0l-30-33h20V30h20v35h20l-30 33z" />
 					</svg>
-				</button>
-				<button
+				</Button>
+				<Button
+					size="compact"
 					class={s.toggleBtn}
 					onClick={props.onToggleDiff}
 					title={`${t("statusBar.git", "Git")} (${keyFor("toggle-git-ops")})`}
@@ -492,10 +498,11 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 						<path d="M9 7H7v2H5v2h2v2h2v-2h2V9H9V7zm7 2h4v2h-4V9zm0 4h4v2h-4v-2zM5 19h14v2H5v-2zM5 3h14v2H5V3z" />
 					</svg>
 					<CountBadge count={changesCount()} />
-				</button>
+				</Button>
 
 				<Show when={settingsStore.isAiChatEnabled()}>
-					<button
+					<Button
+						size="compact"
 						class={s.toggleBtn}
 						onClick={() => props.onToggleAiChat?.()}
 						title={`AI Chat (${keyFor("toggle-ai-chat")})`}
@@ -505,12 +512,14 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 							<path d="M3 2a2 2 0 00-2 2v6a2 2 0 002 2h1v2.5L7.5 12H13a2 2 0 002-2V4a2 2 0 00-2-2H3z" />
 						</svg>
 						<CountBadge count={uiStore.state.aiChatPanelVisible ? 0 : pendingAcpCount()} tone="error" />
-					</button>
+					</Button>
 				</Show>
 
 				{/* Mic button - hold to talk (rightmost) */}
 				<Show when={dictationStore.state.enabled}>
-					<button
+					<Button
+						size="compact"
+						variant={dictationStore.state.recording ? "primary" : "secondary"}
 						class={cx(
 							s.toggleBtn,
 							dictationStore.state.recording && s.micRecording,
@@ -533,7 +542,7 @@ export const StatusBar: Component<StatusBarProps> = (props) => {
 							<path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z" />
 							<path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z" />
 						</svg>
-					</button>
+					</Button>
 				</Show>
 			</div>
 

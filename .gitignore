@@ -49,13 +49,21 @@ ideas
 benchmarks
 .mdkb
 scripts/*
+!scripts/test-headless-github.py
+!scripts/backend-build-identity.mjs
+!scripts/backend-build-identity.test.mjs
 !scripts/agent-test.py
 !scripts/agent-test-visible.py
 !scripts/agent-test-tests.py
 !scripts/test-agent-test.sh
 !scripts/check-desktop-embedding.sh
+!scripts/check-fixture-build-profile.sh
+!scripts/check-fixture-build-graph.py
 !scripts/github-work-live-check.mjs
 !scripts/github-work-live-check.test.mjs
+!scripts/github-work-desktop-e2e.mjs
+!scripts/github-work-desktop-e2e.test.mjs
+!scripts/plugin-review-desktop-e2e.mjs
 !scripts/observe-github-volume-1995.py
 !scripts/observe-github-volume-1995.vite.ts
 !scripts/check-mobile-session-chat-layout.mjs
@@ -67,6 +75,7 @@ scripts/fixtures/*
 !scripts/fixtures/mobile-jump-layout.html
 !scripts/generate-story-types.py
 !scripts/stall-workload/
+!scripts/chat-simulator/
 !scripts/agent_capture/
 !scripts/replay-oracle.sh
 !scripts/build-stall-replay.mjs
@@ -74,6 +83,7 @@ scripts/fixtures/*
 !scripts/record-chat-fixtures.py
 !scripts/chat-view-follow-proof.mjs
 !scripts/design-mode-tokens.test.mjs
+!scripts/fixtures/design-mode-chrome149-capture-denial.json
 !scripts/build-docs.sh
 !scripts/dev-install.sh
 !scripts/dev-server.mjs
@@ -98,6 +108,7 @@ scripts/fixtures/*
 !scripts/test-check-gitlink-reachable.sh
 !scripts/report-frontend-bundles.mjs
 !scripts/check-frontend-cycles.mjs
+!scripts/check-chat-readability.mjs
 !scripts/check-make-instance-scope.sh
 !scripts/check-make-dev-builds-sibling.sh
 !scripts/mutants.sh
@@ -108,6 +119,7 @@ scripts/fixtures/*
 !scripts/install-launch-shells.sh
 !scripts/test-shell-entrypoint.sh
 !scripts/test-make-bump.sh
+!scripts/test-make-build-signing.sh
 !scripts/test-append-only-merge.sh
 !scripts/test-with-test-tmp-prune.sh
 !scripts/test-with-test-tmp-worktree-target.sh
@@ -168,3 +180,4 @@ ORCHESTRATOR.md
 # Mutation test artifacts
 /reports/mutation/
 /.stryker-tmp/
+!scripts/audit-control-styles.mjs

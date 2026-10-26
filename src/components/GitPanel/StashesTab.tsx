@@ -4,6 +4,7 @@ import { appLogger } from "../../stores/appLogger";
 import { repositoriesStore } from "../../stores/repositories";
 import { cx } from "../../utils";
 import { ConfirmDialog } from "../ConfirmDialog/ConfirmDialog";
+import { Button } from "../ui/Button";
 import s from "./StashesTab.module.css";
 
 /** Mirrors the Rust StashEntry struct from git.rs */
@@ -201,19 +202,29 @@ export const StashesTab: Component<StashesTabProps> = (props) => {
 										</div>
 										{/* Line 2: action buttons + diff toggle */}
 										<div class={s.stashActions}>
-											<button class={s.actionBtn} onClick={() => handleApply(stash.ref_name)} disabled={isBusy()}>
+											<Button size="compact" onClick={() => handleApply(stash.ref_name)} disabled={isBusy()}>
 												Apply
-											</button>
-											<button class={s.actionBtn} onClick={() => handlePop(stash.ref_name)} disabled={isBusy()}>
+											</Button>
+											<Button size="compact" onClick={() => handlePop(stash.ref_name)} disabled={isBusy()}>
 												Pop
-											</button>
-											<button class={s.actionBtnDanger} onClick={() => handleDrop(stash.ref_name)} disabled={isBusy()}>
+											</Button>
+											<Button
+												size="compact"
+												variant="danger"
+												onClick={() => handleDrop(stash.ref_name)}
+												disabled={isBusy()}
+											>
 												Drop
-											</button>
-											<button class={s.diffToggle} onClick={() => toggleDiff(stash.ref_name)}>
+											</Button>
+											<Button
+												size="compact"
+												variant="ghost"
+												aria-expanded={isExpanded()}
+												onClick={() => toggleDiff(stash.ref_name)}
+											>
 												<span class={cx(s.chevron, isExpanded() && s.chevronOpen)}>&#9654;</span>
 												Show diff
-											</button>
+											</Button>
 										</div>
 										{/* Expandable diff preview */}
 										<Show when={isExpanded()}>

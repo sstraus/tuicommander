@@ -116,6 +116,9 @@ pub fn render_story_prompt(
         "criteria": story.criteria,
         "checked": story.checked,
         "fileScope": story.file_scope,
+        "problem": story.problem,
+        "risk": story.risk,
+        "storyType": story.story_type,
         "skills": skills,
         "feedback": feedback,
         "artifactSubject": artifact_subject,
@@ -308,6 +311,7 @@ mod tests {
             started_ms: 1,
             paused_since_ms: None,
             paused_duration_ms: 0,
+            pause_cause: None,
             limits: RunLimits::default(),
             loops: 0,
             story_creations: 0,
@@ -321,12 +325,16 @@ mod tests {
             graph_executions: vec![],
         };
         let plan = Plan {
+            revision: 1,
+            archived: false,
             id: "plan-1".into(),
             project: "/project".into(),
             title: "Project delivery".into(),
             source: "plans/delivery.md".into(),
         };
         let story = Story {
+            archived: false,
+            story_type: None,
             id: "story-1".into(),
             plan_id: plan.id.clone(),
             title: "Build the service".into(),
@@ -339,6 +347,8 @@ mod tests {
             status: StoryStatus::Ready,
             revision: 4,
             claim_session: None,
+            problem: None,
+            risk: None,
         };
         let attempt = NodeAttempt {
             id: "attempt-1".into(),
@@ -411,7 +421,7 @@ mod tests {
         assert_eq!(package.contract_version, 1);
         assert_eq!(package.role, AgentRole::Implementer);
         assert_eq!(package.prompt_sha256.len(), 64);
-        assert!(!package.audit_preview.is_empty());
+        assert_ne!(package.audit_preview, "");
     }
 
     #[test]
@@ -539,6 +549,36 @@ mod tests {
         ] {
             assert!(package.prompt.contains(expected), "missing {expected}");
         }
+        // Catches: a moved plan source reusing the old delivered prompt subject.
+        let mut moved_plan = plan.clone();
+        moved_plan.source = "moved.md".into();
+        moved_plan.revision += 1;
+        let moved = render_plan_prompt(
+            &run,
+            &moved_plan,
+            &attempt,
+            &definition,
+            &[],
+            &[],
+            run.sequence,
+            "Deliver the plan",
+            &[],
+        )
+        .expect("moved source prompt");
+        let original = render_plan_prompt(
+            &run,
+            &plan,
+            &attempt,
+            &definition,
+            &[],
+            &[],
+            run.sequence,
+            "Deliver the plan",
+            &[],
+        )
+        .expect("original source prompt");
+        assert_ne!(original.prompt_sha256, moved.prompt_sha256);
+        assert!(moved.prompt.contains("moved.md"));
         assert_eq!(package.role, AgentRole::Coordinator);
         assert_eq!(package.prompt_sha256.len(), 64);
     }

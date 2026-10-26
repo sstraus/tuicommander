@@ -70,7 +70,8 @@ impl From<RunStartError> for String {
 /// Version 2 adds graph events and additive JSON snapshot fields. Legacy JSON
 /// is decoded with defaults, without inventing graph positions. Version 3
 /// records explicit graph-root targets; older binaries must refuse that contract.
-const RUN_STORE_SCHEMA_VERSION: i64 = 3;
+// 4: paused_for events; a build that supports 3 refuses the store instead of failing to decode them.
+const RUN_STORE_SCHEMA_VERSION: i64 = 4;
 
 mod approval;
 mod runtime_start;
@@ -91,6 +92,142 @@ pub(crate) fn guard_manual_story_start(
         .map_err(|e| format!("lock workflow reservations: {e}"))?;
     runtime_start::require_available_story(&conn, project, story_id)?;
     Ok(Some(conn))
+}
+
+/// Story and plan amendments must share the lock-only open contract, including the first write.
+fn lock_run_amendment(path: &Path) -> Result<(Connection, bool), String> {
+    // This is a lock-only connection. RunStore::connect changes journal mode and initializes
+    // schema, which races a concurrent first amendment at PRAGMA journal_mode=WAL.
+    let conn = Connection::open(path)
+        .map_err(|error| format!("open story amendment reservations: {error}"))?;
+    conn.busy_timeout(Duration::from_secs(5))
+        .map_err(|error| format!("story amendment reservation timeout: {error}"))?;
+    conn.execute_batch("BEGIN IMMEDIATE")
+        .map_err(|error| format!("lock story amendment reservations: {error}"))?;
+    let version: i64 = conn
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .map_err(|error| format!("read story amendment run version: {error}"))?;
+    if version > RUN_STORE_SCHEMA_VERSION {
+        return Err(
+            "workflow run store is newer than this build supports; update TUICommander".into(),
+        );
+    }
+    let has_runs: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='workflow_runs')",
+        [], |row| row.get(0),
+    ).map_err(|error| format!("read story amendment run schema: {error}"))?;
+    Ok((conn, has_runs))
+}
+
+/// Fence amendments against both graph reservations and legacy dispatched story executions.
+/// Always open the database so a concurrent first run cannot race an absent-file probe.
+pub(crate) fn guard_story_amendment(
+    path: &Path,
+    project: &str,
+    story_id: &str,
+) -> Result<Connection, String> {
+    let (conn, has_runs) = lock_run_amendment(path)?;
+    if !has_runs {
+        return Ok(conn);
+    }
+    {
+        let mut stmt = conn.prepare(
+            "SELECT snapshot_json FROM workflow_runs WHERE project=?1 AND status IN ('running','paused')"
+        ).map_err(|error| format!("prepare story amendment ownership: {error}"))?;
+        for row in stmt
+            .query_map([project], |row| row.get::<_, String>(0))
+            .map_err(|error| format!("read story amendment ownership: {error}"))?
+        {
+            let run: RunSnapshot =
+                decode(&row.map_err(|error| format!("read story owner: {error}"))?)?;
+            if run
+                .graph_executions
+                .iter()
+                .any(|graph| graph.target_id == story_id)
+            {
+                return Err("story is reserved by an active workflow root".into());
+            }
+            if run
+                .stories
+                .iter()
+                .any(|execution| execution.story_id == story_id)
+            {
+                return Err("story is owned by an active workflow run".into());
+            }
+        }
+    }
+    Ok(conn)
+}
+
+/// Keep a source correction serialized with plan attempt start/bind and report writes.
+/// Open even an unused run store so a first run cannot race the source transaction.
+/// The caller holds this writer before acquiring the story writer, matching coordinator creation.
+pub(crate) fn guard_plan_source_update_in(
+    db_path: &Path,
+    plan_id: &str,
+) -> Result<Connection, String> {
+    let (conn, has_runs) = lock_run_amendment(db_path)?;
+    if !has_runs {
+        return Ok(conn);
+    }
+    {
+        let mut stmt = conn.prepare(
+            "SELECT snapshot_json FROM workflow_runs WHERE plan_id=?1 AND status IN ('running','paused')"
+        ).map_err(|e| format!("find source-dependent plan attempts: {e}"))?;
+        let rows = stmt
+            .query_map([plan_id], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("read source-dependent plan attempts: {e}"))?;
+        for row in rows {
+            let snapshot: RunSnapshot = decode(&row.map_err(|e| format!("read plan run: {e}"))?)?;
+            if snapshot.attempts.iter().any(|attempt| {
+                attempt.story_id == plan_id && attempt.state == AttemptState::Running
+            }) {
+                return Err(format!(
+                    "{}run {}; finish the coordinator or cancel the run before changing the source",
+                    crate::stories::PLAN_SOURCE_IN_USE,
+                    snapshot.id,
+                ));
+            }
+        }
+    }
+    Ok(conn)
+}
+
+/// Hold the workflow writer lock until the native archive transaction commits.
+/// Plan roots own all children; story roots own only their target/executions.
+pub(crate) fn guard_native_archive(
+    path: &Path,
+    project: &str,
+    plan_id: &str,
+    story_id: Option<&str>,
+) -> Result<Connection, String> {
+    let (conn, has_runs) = lock_run_amendment(path)?;
+    if has_runs {
+        let mut stmt = conn.prepare(
+            "SELECT snapshot_json FROM workflow_runs WHERE project=?1 AND plan_id=?2 AND status IN ('running','paused')"
+        ).map_err(|e| format!("read archive reservations: {e}"))?;
+        for row in stmt
+            .query_map(params![project, plan_id], |row| row.get::<_, String>(0))
+            .map_err(|e| format!("read archive reservations: {e}"))?
+        {
+            let run: RunSnapshot = decode(&row.map_err(|e| format!("read archive owner: {e}"))?)?;
+            let owned = story_id.is_none_or(|id| match &run.root_target {
+                Some(RunTarget::Story(target)) => {
+                    target == id
+                        || run.stories.iter().any(|execution| execution.story_id == id)
+                        || run
+                            .graph_executions
+                            .iter()
+                            .any(|graph| graph.target_id == id)
+                }
+                Some(RunTarget::Plan(_)) | None => true,
+            });
+            if owned {
+                return Err("plan or story is owned by an active workflow run".into());
+            }
+        }
+    }
+    Ok(conn)
 }
 
 static SERVICE_RECEIPT_LOCK: Mutex<()> = Mutex::new(());
@@ -223,7 +360,7 @@ impl RunStore {
         let owner = crate::progress::resolve_owning_project(Some(project))?
             .to_string_lossy()
             .to_string();
-        let plan = StoryStore::open()?.get_plan(plan_id)?;
+        let plan = StoryStore::open()?.require_unarchived_plan(plan_id)?;
         if plan.project != owner {
             return Err("plan does not belong to project".into());
         }
@@ -275,6 +412,7 @@ impl RunStore {
             started_ms: now_ms(),
             paused_since_ms: None,
             paused_duration_ms: 0,
+            pause_cause: None,
             limits,
             loops: 0,
             story_creations: 0,
@@ -306,6 +444,7 @@ impl RunStore {
         let tx = conn
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|e| format!("begin run start: {e}"))?;
+        StoryStore::open()?.require_unarchived_plan(plan_id)?;
         insert_started_run(&tx, &snapshot, "start plan run")?;
         insert_event(&tx, &snapshot.id, &receipt)?;
         tx.commit()
@@ -374,6 +513,22 @@ impl RunStore {
         .map_err(|error| format!("list plan runs: {error}"))?
         .map(|row| decode(&row.map_err(|error| format!("read plan run: {error}"))?))
         .collect()
+    }
+
+    /// Validate immutable receipt identity and ownership without copying its payload.
+    pub(crate) fn receipt_belongs_to_plan(
+        &self,
+        run_id: &str,
+        command_id: &str,
+        project: &str,
+        plan_id: &str,
+    ) -> Result<bool, String> {
+        self.connect()?.query_row(
+            "SELECT EXISTS(SELECT 1 FROM workflow_events e JOIN workflow_runs r ON r.id=e.run_id
+             WHERE e.run_id=?1 AND e.command_id=?2 AND r.project=?3 AND r.plan_id=?4)",
+            params![run_id, command_id, project, plan_id],
+            |row| row.get(0),
+        ).map_err(|error| format!("read workflow receipt identity: {error}"))
     }
 
     pub fn events_after(
@@ -736,7 +891,9 @@ impl RunStore {
             .ok_or("story execution not found")?;
         let revision = execution.accepted_revision.ok_or("story is not accepted")?;
         let story = StoryStore::open()?.get_story(story_id)?;
-        if story.status != StoryStatus::Done || story.revision != revision {
+        if story.status != StoryStatus::Done
+            || !story_work_revision_current(story_id, revision, story.revision)?
+        {
             return Err("integration requires the accepted story revision".into());
         }
         let worktree = Path::new(
@@ -866,8 +1023,8 @@ impl RunStore {
             let story = stories.get_story(&execution.story_id)?;
             if story.status != StoryStatus::Done
                 || !execution.accepted
-                || execution.accepted_revision != Some(story.revision)
-                || receipt.story_revision != story.revision
+                || execution.accepted_revision != Some(receipt.story_revision)
+                || !story_work_revision_current(&story.id, receipt.story_revision, story.revision)?
                 || receipt.canonical_ref != canonical_ref
                 || !source_is_ancestor(canonical, &receipt.source_commit, &commit)?
             {
@@ -991,7 +1148,7 @@ impl RunStore {
         }
         let snapshot = read_snapshot(&conn, run_id)?;
         drop(conn);
-        let revisions = fingerprint(&plan_stories(&snapshot)?, true)?;
+        let revisions = fingerprint(&snapshot.plan_id, &plan_stories(&snapshot)?, true)?;
         let current = snapshot
             .stories
             .iter()
@@ -1117,7 +1274,7 @@ impl RunStore {
         if expected_sequence.is_some_and(|expected| expected != snapshot.sequence) {
             return Err("stale workflow sequence".into());
         }
-        let revisions = fingerprint(&plan_stories(&snapshot)?, true)?;
+        let revisions = fingerprint(&snapshot.plan_id, &plan_stories(&snapshot)?, true)?;
         let dispatch_target = match &command {
             RunCommand::Graph {
                 transition: super::graph::GraphTransition::Start { target_id, .. },
@@ -1366,6 +1523,18 @@ pub(crate) fn story_integrated_at_revision_in(
     Ok(false)
 }
 
+/// Archive history is the only revision change that does not change accepted work.
+fn story_work_revision_current(
+    story_id: &str,
+    accepted: i64,
+    current: i64,
+) -> Result<bool, String> {
+    if accepted == current {
+        return Ok(true);
+    }
+    StoryStore::open()?.archive_only_since(story_id, accepted, current)
+}
+
 pub(super) fn receipt_current(
     snapshot: &RunSnapshot,
     story_id: &str,
@@ -1382,8 +1551,8 @@ pub(super) fn receipt_current(
         return Ok(false);
     };
     if !execution.accepted
-        || execution.accepted_revision != Some(revision)
-        || receipt.story_revision != revision
+        || execution.accepted_revision != Some(receipt.story_revision)
+        || !story_work_revision_current(story_id, receipt.story_revision, revision)?
     {
         return Ok(false);
     }
@@ -1673,14 +1842,18 @@ fn validate_preflight(
     revisions: &str,
 ) -> Result<(), String> {
     if read_snapshot(conn, &snapshot.id)?.sequence != snapshot.sequence
-        || fingerprint(&plan_stories(snapshot)?, true)? != revisions
+        || fingerprint(&snapshot.plan_id, &plan_stories(snapshot)?, true)? != revisions
     {
         return Err("workflow or story revisions changed during command preflight; retry".into());
     }
     Ok(())
 }
 
-pub(super) fn fingerprint(stories: &[Story], include_execution: bool) -> Result<String, String> {
+pub(super) fn fingerprint(
+    plan_id: &str,
+    stories: &[Story],
+    include_execution: bool,
+) -> Result<String, String> {
     let mut sorted = stories.to_vec();
     sorted.sort_by(|a, b| a.id.cmp(&b.id));
     let shape: Vec<_> = sorted
@@ -1696,17 +1869,30 @@ pub(super) fn fingerprint(stories: &[Story], include_execution: bool) -> Result<
                     story.dependencies,
                     story.priority,
                     story.origin,
-                    story.file_scope
+                    story.file_scope,
+                    story.problem,
+                    story.risk,
+                    story.story_type
                 ])
             }
         })
         .collect();
-    let bytes = serde_json::to_vec(&shape).map_err(|e| format!("encode plan fingerprint: {e}"))?;
+    // Plan metadata is a prompt and verification subject even when the plan has no stories.
+    let plan = StoryStore::open()?.get_plan(plan_id)?;
+    let subject = serde_json::json!([plan.title, plan.source, shape]);
+    let bytes =
+        serde_json::to_vec(&subject).map_err(|e| format!("encode plan fingerprint: {e}"))?;
     Ok(hex::encode(Sha256::digest(bytes)))
 }
 
-fn plan_stories(snapshot: &RunSnapshot) -> Result<Vec<Story>, String> {
-    StoryStore::open()?.list_stories(&snapshot.plan_id)
+pub(in crate::workflows::run) fn plan_stories(
+    snapshot: &RunSnapshot,
+) -> Result<Vec<Story>, String> {
+    Ok(StoryStore::open()?
+        .list_stories(&snapshot.plan_id)?
+        .into_iter()
+        .filter(|story| !story.archived)
+        .collect())
 }
 
 /// Unknown, globbed or overlapping scopes cannot safely share a work wave.
@@ -1849,6 +2035,7 @@ fn choose_event(
             command,
             RunCommand::Cancel
                 | RunCommand::Pause
+                | RunCommand::PauseFor { .. }
                 | RunCommand::BindAgent { .. }
                 | RunCommand::MarkEffect { .. }
                 | RunCommand::ResolveUncertainEffect { .. }
@@ -1861,7 +2048,7 @@ fn choose_event(
         return Ok(RunEventKind::Paused);
     }
     let stories = plan_stories(snapshot)?;
-    let current_plan = fingerprint(&stories, false)?;
+    let current_plan = fingerprint(&snapshot.plan_id, &stories, false)?;
     if snapshot
         .planning_fingerprint
         .as_deref()
@@ -1870,6 +2057,7 @@ fn choose_event(
             command,
             RunCommand::Cancel
                 | RunCommand::Pause
+                | RunCommand::PauseFor { .. }
                 | RunCommand::BindAgent { .. }
                 | RunCommand::MarkEffect { .. }
                 | RunCommand::ResolveUncertainEffect { .. }
@@ -2411,8 +2599,8 @@ fn choose_event(
                 .ok_or("story execution not found")?;
             if story.status != StoryStatus::Done
                 || !execution.accepted
-                || execution.accepted_revision != Some(story.revision)
-                || receipt.story_revision != story.revision
+                || execution.accepted_revision != Some(receipt.story_revision)
+                || !story_work_revision_current(&story.id, receipt.story_revision, story.revision)?
             {
                 return Err("integration receipt has a stale story revision".into());
             }
@@ -2458,7 +2646,7 @@ fn choose_event(
                 )?;
             }
             Ok(RunEventKind::VerificationPassed {
-                fingerprint: fingerprint(&stories, true)?,
+                fingerprint: fingerprint(&snapshot.plan_id, &stories, true)?,
             })
         }
         RunCommand::Complete => {
@@ -2472,13 +2660,14 @@ fn choose_event(
             }
             ready_to_verify(snapshot, &stories)?;
             if snapshot.verification_fingerprint.as_deref()
-                != Some(fingerprint(&stories, true)?.as_str())
+                != Some(fingerprint(&snapshot.plan_id, &stories, true)?.as_str())
             {
                 return Err("final verification is missing or stale".into());
             }
             Ok(RunEventKind::Completed)
         }
         RunCommand::Pause => Ok(RunEventKind::Paused),
+        RunCommand::PauseFor { cause } => Ok(RunEventKind::PausedFor { cause }),
         RunCommand::ExpireDeadline => unreachable!("deadline handled before ordinary commands"),
         RunCommand::ResumeGraph {
             execution_id,

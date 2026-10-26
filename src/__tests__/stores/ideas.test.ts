@@ -2,6 +2,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { testInScope, testInScopeAsync } from "../helpers/store";
 
 const mockInvoke = vi.fn().mockResolvedValue(undefined);
+const ideaEvents = vi.hoisted(() => ({ handlers: {} as Record<string, () => void>, resync: () => {} }));
+vi.mock("../../transport", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../transport")>()),
+	subscribeEvents: vi.fn(async (handlers: Record<string, () => void>, options: { onResync: () => void }) => {
+		ideaEvents.handlers = handlers;
+		ideaEvents.resync = options.onResync;
+		return () => {};
+	}),
+}));
 
 vi.mock("@tauri-apps/api/core", () => ({
 	invoke: mockInvoke,
@@ -21,6 +30,36 @@ describe("ideasStore", () => {
 		// Without a successful hydrate the store refuses to persist — see GH #107 below.
 		await store.hydrate();
 		mockInvoke.mockClear();
+	});
+
+	// Catches: a notice reload being persisted back, or overwriting an unacknowledged UI edit.
+	it("reloads backend additions after pending writes without saving the reload", async () => {
+		let acknowledge!: () => void;
+		mockInvoke.mockImplementation((command: string) => {
+			if (command === "save_notes")
+				return new Promise<void>((resolve) => {
+					acknowledge = resolve;
+				});
+			return Promise.resolve({
+				notes: [
+					{ id: "agent", text: "Agent idea", createdAt: 2, repoPath: "/repo", source: "ego", images: [] },
+					{ id: "local", text: "Local edit", createdAt: 1, images: [] },
+				],
+			});
+		});
+		store.addIdea("Local edit", null, null, [], "local");
+		ideaEvents.handlers["ideas-changed"]();
+		await Promise.resolve();
+		expect(store.state.ideas.map((idea) => idea.id)).toEqual(["local"]);
+		expect(mockInvoke).not.toHaveBeenCalledWith("load_notes");
+		acknowledge();
+		await vi.waitFor(() => expect(store.state.ideas.map((idea) => idea.id)).toEqual(["agent", "local"]));
+		expect(store.state.ideas[0].source).toBe("ego");
+		expect(mockInvoke.mock.calls.filter(([command]) => command === "save_notes")).toHaveLength(1);
+		mockInvoke.mockClear();
+		ideaEvents.resync();
+		await vi.waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("load_notes"));
+		expect(mockInvoke.mock.calls.filter(([command]) => command === "save_notes")).toHaveLength(0);
 	});
 
 	describe("addIdea()", () => {

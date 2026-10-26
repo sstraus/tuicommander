@@ -37,7 +37,7 @@ pub(super) struct Button {
 }
 
 pub(crate) fn definition() -> Value {
-    json!({"name":"telegram","description":"Call register to opt your own MCP-bound TUIC agent into Telegram; it replaces the previous agent and sends it one TUIC notice. unregister releases your registration. Registration ends on agent exit, PTY close, MCP session end or daemon restart. Request-specific begin/activity/finish stay bound to the peer that received the request, even if another AI Chat connects. Explicit registration takeover revokes pending requests. Only the registered agent or, without one, the selected live AI Chat agent may send unsolicited messages. With no registered agent, allowed inbound text goes to the latest-connected live AI Chat agent. Only when neither exists is text dropped after the bot replies No agent is listening. Ask an agent in TUICommander to register for Telegram.. TUIC acknowledges Telegram mail and opens its status draft automatically. begin is optional and idempotent for the current request, for PTY agents and AI Chat without a PTY. activity sends concise safe unapproved preview text. finish is authoritative: it sends the complete exact reply even after the draft or turn ended, and deduplicates completed requests. AI Chat streams only assistant message text; a Telegram-mail-woken turn settles to its own final text unless finish already replied. send uses the single allowlisted outbound destination with optional rows of {label,data} opaque buttons. Buttons return structured peer mail and confer no publish approval. No raw terminal output or hidden reasoning is streamed.","inputSchema":{"type":"object","properties":{
+    json!({"name":"telegram","description":"Call register to opt your own MCP-bound TUIC agent into Telegram; it replaces the previous agent and sends it one TUIC notice. unregister releases your registration. Registration ends on agent exit, PTY close, MCP session end or daemon restart. Request-specific begin/activity/finish stay bound to the peer that received the request, even if another AI Chat connects. Explicit registration takeover revokes pending requests. Any live MCP-bound agent may send without registration or changing inbound ownership. Non-owner sends carry a server-derived [session name] prefix on every chunk, allow no buttons, and require a 30-second per-peer interval (telegram_sender_rate_limited). Owner sends have no prefix and preserve the authored text exactly. Reply to a prefixed message routes to the unique live peer with that exact name; absent, dead or ambiguous names fall back to the inbound owner. Names must be non-empty, at most 128 UTF-16 units, without brackets or control characters. With no registered agent, allowed inbound text goes to the latest-connected live AI Chat agent. Only when neither exists is text dropped after the bot replies No agent is listening. Ask an agent in TUICommander to register for Telegram.. TUIC acknowledges Telegram mail and opens its status draft automatically. begin is optional and idempotent for the current request, for PTY agents and AI Chat without a PTY. activity sends concise safe unapproved preview text. finish is authoritative: it sends the complete exact reply even after the draft or turn ended, and deduplicates completed requests. AI Chat streams only assistant message text; a Telegram-mail-woken turn settles to its own final text unless finish already replied. send uses the single allowlisted outbound destination with optional rows of {label,data} opaque buttons. Buttons return structured peer mail and confer no publish approval. No raw terminal output or hidden reasoning is streamed.","inputSchema":{"type":"object","properties":{
         "action":{"type":"string","enum":["register","unregister","begin","activity","finish","send"]},
         "request_id":{"type":"string"},"text":{"type":"string"},
         "buttons":{"type":"array","items":{"type":"array","items":{"type":"object","properties":{"label":{"type":"string"},"data":{"type":"string"}},"required":["label","data"],"additionalProperties":false}}}
@@ -88,10 +88,10 @@ mod tests {
         // Dispatch availability and the runtime must read the same private setup.
         std::fs::rename(setup_dir.path(), config_dir.path().join("telegram")).unwrap();
         let paths = crate::telegram::settings::paths().unwrap();
-        let server = FakeServer::start(vec![(
-            StatusCode::OK,
-            json!({"ok":true,"result":{"message_id":7}}),
-        )])
+        let server = FakeServer::start(vec![
+            (StatusCode::OK, json!({"ok":true,"result":{"message_id":7}})),
+            (StatusCode::OK, json!({"ok":true,"result":{"message_id":8}})),
+        ])
         .await;
         let runtime = crate::telegram::tests::outbound_tests::runtime(paths, server.address).await;
         let state = runtime.state.clone();
@@ -116,8 +116,8 @@ mod tests {
             false
         );
         assert_eq!(
-            invoke(json!({"action":"send","text":"before registration"})).await["error"],
-            "telegram_not_registered: call telegram register first"
+            invoke(json!({"action":"send","text":"before registration"})).await["message_ids"],
+            json!([7])
         );
         assert_eq!(
             invoke(json!({"action":"register"})).await["registered"],
@@ -126,7 +126,7 @@ mod tests {
         // The same authenticated dispatch reaches real outbound delivery.
         assert_eq!(
             invoke(json!({"action":"send","text":"hello"})).await["message_ids"],
-            json!([7])
+            json!([8])
         );
         for value in [
             json!({"action":"register","peer":"other"}),
@@ -148,7 +148,7 @@ mod tests {
                 &json!(false)
             );
         }
-        assert_eq!(server.requests().len(), 1);
+        assert_eq!(server.requests().len(), 2);
         let inbox = crate::mcp_http::mcp_transport::local_peer_call_with_message_id(
             &state,
             &json!({"action":"inbox","since":0}),

@@ -137,17 +137,27 @@ export function useConfirmDialog() {
 		const sessions = status.liveSessions?.length
 			? `\nLive sessions in this worktree: ${status.liveSessions.map((session) => session.name).join(", ")}. Removing it will interrupt them.`
 			: "";
-		const branchAction = deleteBranch
-			? "Git will safely delete the local branch; if it is unmerged, the branch is kept."
-			: "The local branch will be kept.";
+		// Mirrors `retain_finished_checkout` (src-tauri/src/worktree.rs): a clean, integrated
+		// checkout is archived for reuse, so the branch stays checked out there.
+		const recycled =
+			deleteBranch &&
+			status.removalSafety === "safe" &&
+			!missing &&
+			status.dirtyFiles === 0 &&
+			!(status.submoduleUnpushedCommits ?? []).some((entry) => entry.count > 0) &&
+			(status.commitStatus === "merged" || status.commitStatus === "in_sync");
+		const branchAction =
+			deleteBranch && !recycled
+				? "Git will safely delete the local branch; if it is unmerged, the branch is kept."
+				: "The local branch will be kept.";
 		const destructive = status.removalSafety === "requires_force";
 		const submoduleCommits = (status.submoduleUnpushedCommits ?? [])
 			.filter((entry) => entry.count > 0)
 			.map((entry) => `${entry.path}: ${entry.count} commits not on a remote-tracking branch`);
 		return await confirm({
-			title: destructive ? "Destroy workspace state?" : "Remove workspace?",
-			message: `Remove "${branchName}"?\n\n${missing ? "The checkout directory is missing; Git still has a worktree registration. Its submodule refs will be preserved before cleanup." : `Working tree: ${dirty}.`}${untracked}${sessions}${submoduleCommits.length ? `\nSubmodules: ${submoduleCommits.join("; ")}.` : ""}\nCommit state: ${commits}.\n${branchAction}`,
-			okLabel: destructive ? "Delete anyway" : "Remove",
+			title: destructive ? "Destroy workspace state?" : recycled ? "Archive workspace?" : "Remove workspace?",
+			message: `${recycled ? "Archive" : "Remove"} "${branchName}"?\n\n${recycled ? "The clean checkout moves to the archive area for reuse; it is not deleted.\n" : ""}${missing ? "The checkout directory is missing; Git still has a worktree registration. Its submodule refs will be preserved before cleanup." : `Working tree: ${dirty}.`}${untracked}${sessions}${submoduleCommits.length ? `\nSubmodules: ${submoduleCommits.join("; ")}.` : ""}\nCommit state: ${commits}.\n${branchAction}`,
+			okLabel: destructive ? "Delete anyway" : recycled ? "Archive" : "Remove",
 			cancelLabel: "Cancel",
 			kind: destructive ? "error" : "warning",
 		});

@@ -49,6 +49,7 @@ import { resumeTerminal, type SuspendOutcome, suspendRefusal, suspendTerminal } 
 import type { ContextMenuItem } from "../ContextMenu/ContextMenu";
 import { ContextMenu, createContextMenu } from "../ContextMenu/ContextMenu";
 import { createAgentLaunchMenu } from "../ContextMenu/createAgentLaunchMenu";
+import { Button } from "../ui/Button";
 import s from "./TabBar.module.css";
 import { DiffTabView, EditorTabView, MarkdownTabView, TerminalTabView } from "./TabViews";
 
@@ -846,14 +847,16 @@ export const TabBar: Component<TabBarProps> = (props) => {
 		>
 			<div class={s.scrollRegion}>
 				{/* Left scroll arrow */}
-				<button
+				<Button
+					geometry="stretch"
+					variant="ghost"
 					class={cx(s.scrollArrow, s.scrollArrowLeft, canScrollLeft() && s.visible)}
 					onClick={() => scrollBy(-200)}
 					onContextMenu={(e) => openOverflowMenu(e, "left")}
 					title="Scroll tabs left"
 				>
 					{chevronLeft}
-				</button>
+				</Button>
 
 				{/* Left fade gradient */}
 				<div class={cx(s.fadeGradient, s.fadeLeft, canScrollLeft() && s.visible)} />
@@ -1036,26 +1039,30 @@ export const TabBar: Component<TabBarProps> = (props) => {
 				<div class={cx(s.fadeGradient, s.fadeRight, canScrollRight() && s.visible)} />
 
 				{/* Right scroll arrow */}
-				<button
+				<Button
+					geometry="stretch"
+					variant="ghost"
 					class={cx(s.scrollArrow, s.scrollArrowRight, canScrollRight() && s.visible)}
 					onClick={() => scrollBy(200)}
 					onContextMenu={(e) => openOverflowMenu(e, "right")}
 					title="Scroll tabs right"
 				>
 					{chevronRight}
-				</button>
+				</Button>
 			</div>
 			{/* end .scrollRegion */}
 
 			{/* New Tab button: outside scroll region so arrows don't overlap it */}
-			<button
+			<Button
+				geometry="stretch"
+				variant="ghost"
 				class={s.newBtn}
 				onClick={handleNewTabClick}
 				{...newAgentMenu.buttonHandlers}
 				title={`${t("tabBar.newTab", "New Tab")} (${keyFor("new-terminal")})`}
 			>
 				+
-			</button>
+			</Button>
 
 			<ContextMenu
 				items={getTabContextMenuItems()}

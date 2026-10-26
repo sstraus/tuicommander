@@ -1,5 +1,5 @@
 import { type JSX, splitProps } from "solid-js";
-import { cx } from "../../utils";
+import { cx } from "../../utils/cx";
 import s from "./FormControls.module.css";
 
 export type InputProps = JSX.InputHTMLAttributes<HTMLInputElement> & { compact?: boolean };

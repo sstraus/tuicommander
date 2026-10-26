@@ -129,45 +129,6 @@
   margin-top: 14px;
 }
 
-.btn {
-  background: none;
-  border: 1px solid var(--border);
-  color: var(--fg-secondary);
-  font-size: var(--font-sm);
-  padding: 6px 14px;
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
-}
-
-.btn:hover {
-  background: var(--bg-highlight);
-  color: var(--fg-primary);
-  border-color: var(--accent);
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.btnPrimary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--bg-primary);
-}
-
-.btnPrimary:hover {
-  opacity: 0.9;
-  color: var(--bg-primary);
-}
-
-.btnDanger:hover {
-  background: rgba(248, 81, 73, 0.1);
-  color: var(--error);
-  border-color: var(--error);
-}
-
 /* ── Disconnected state ── */
 .disconnected {
   text-align: center;
@@ -267,6 +228,3 @@
   color: var(--fg-muted);
   margin-top: 4px;
 }
-
-/* Keep account actions at the shared secondary-button height on narrow screens. */
-.actions .btn { min-height: 36px; padding: 6px 14px; line-height: 20px; }

@@ -76,7 +76,10 @@ fn codex_incomplete_tools_are_hidden_and_failures_are_preserved() {
         let mut adapter = CodexAdapter::default();
         let mut row = recorded_item(kind);
         row["payload"]["item"]["status"] = "in_progress".into();
-        assert!(adapter.absorb(&row.to_string()).is_empty());
+        assert_eq!(
+            adapter.absorb(&row.to_string()),
+            [] as [serde_json::Value; 0]
+        );
         row["payload"]["item"]["status"] = "failed".into();
         assert_eq!(adapter.absorb(&row.to_string())[0]["status"], "failed");
         row["payload"]["item"]["status"] = "completed".into();
@@ -87,7 +90,10 @@ fn codex_incomplete_tools_are_hidden_and_failures_are_preserved() {
         }
         assert_eq!(adapter.absorb(&row.to_string())[0]["status"], "failed");
         row["payload"]["type"] = "item_started".into();
-        assert!(adapter.absorb(&row.to_string()).is_empty());
+        assert_eq!(
+            adapter.absorb(&row.to_string()),
+            [] as [serde_json::Value; 0]
+        );
     }
 }
 
@@ -95,12 +101,14 @@ fn codex_incomplete_tools_are_hidden_and_failures_are_preserved() {
 #[test]
 fn codex_bad_rows_do_not_stop_later_messages_or_expose_hook_context() {
     let mut adapter = CodexAdapter::default();
-    assert!(adapter.absorb("{broken").is_empty());
-    assert!(adapter.absorb(r#"{"type":"future_row"}"#).is_empty());
-    assert!(
-        adapter
-            .absorb(&recorded_item("HookPrompt").to_string())
-            .is_empty()
+    assert_eq!(adapter.absorb("{broken"), [] as [serde_json::Value; 0]);
+    assert_eq!(
+        adapter.absorb(r#"{"type":"future_row"}"#),
+        [] as [serde_json::Value; 0]
+    );
+    assert_eq!(
+        adapter.absorb(&recorded_item("HookPrompt").to_string()),
+        [] as [serde_json::Value; 0]
     );
     let update = adapter.absorb(&recorded_item("AgentMessage").to_string());
     assert_eq!(update[0]["content"]["text"], "Recorded reply");

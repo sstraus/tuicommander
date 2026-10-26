@@ -1,0 +1,62 @@
+{"fixture":"src-tauri/src/fixtures/agent_prompts/ego-provider-failed-idle-2317.tcap","agent":"ego","geometry":[41,128]}
+{"record":0,"event":{"type":"shell-state","state":"busy","agent_type":"ego"}}
+{"record":0,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":1,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":2,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":3,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":4,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":5,"event":{"type":"intent","text":"## TUICommander Multi-Agent Context","title":"εgo","_turn_epoch":0}}
+{"record":5,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
+{"record":5,"event":{"type":"progress","state":0,"value":0,"_turn_epoch":0}}
+{"record":5,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":6,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":7,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":8,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":9,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":10,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":11,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
+{"record":11,"event":{"type":"progress","state":2,"value":0,"_turn_epoch":0}}
+{"record":11,"event":{"type":"api-error","pattern_name":"ego-provider-failure","matched_text":"the response stream failed: HTTP response body failed (127.0.0.1), so the model never reported why the generation stopped; review the output, then send a new prompt to continue","error_kind":"server","_turn_epoch":0}}
+{"record":11,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":12,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":13,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":14,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":17,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":18,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":19,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":20,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":21,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":22,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":23,"event":{"type":"shell-state","state":"busy","agent_type":"ego"}}
+{"record":23,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
+{"record":23,"event":{"type":"intent","text":"SUBMIT_AFTER_FAILURE_2317","title":"εgo","_turn_epoch":0}}
+{"record":23,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
+{"record":23,"event":{"type":"progress","state":2,"value":0,"_turn_epoch":0}}
+{"record":23,"event":{"type":"api-error","pattern_name":"ego-provider-failure","matched_text":"the response stream failed: HTTP response body failed (127.0.0.1), so the model never reported why the generation stopped; review the output, then send a new prompt to continue","error_kind":"server","_turn_epoch":0}}
+{"record":23,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":24,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":25,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":26,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":27,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":28,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":29,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":30,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":31,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":32,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":33,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":34,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":35,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":36,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":37,"event":{"type":"shell-state","state":"busy","agent_type":"ego"}}
+{"record":37,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
+{"record":37,"event":{"type":"intent","text":"[TUIC] message available — read it with: agent action=inbox","title":"εgo","_turn_epoch":0}}
+{"record":37,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
+{"record":37,"event":{"type":"progress","state":2,"value":0,"_turn_epoch":0}}
+{"record":37,"event":{"type":"api-error","pattern_name":"ego-provider-failure","matched_text":"the response stream failed: HTTP response body failed (127.0.0.1), so the model never reported why the generation stopped; review the output, then send a new prompt to continue","error_kind":"server","_turn_epoch":0}}
+{"record":37,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":38,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":39,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":40,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":41,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"record":42,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"ring_len":5621}

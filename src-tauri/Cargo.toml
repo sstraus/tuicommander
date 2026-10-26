@@ -17,7 +17,7 @@ members = [
 resolver = "2"
 
 [workspace.package]
-version = "2.0.0-beta.1"
+version = "2.0.0-beta.3"
 
 [package]
 name = "tuicommander"
@@ -26,6 +26,13 @@ description = "TUICommander - Native platform for AI coding agents"
 authors = ["Stefano Straus <github.com/sstraus>"]
 edition = "2024"
 default-run = "tuicommander"
+
+# This native WebKit reality probe must execute on the process main thread.
+[[test]]
+name = "webkit_nil_url"
+path = "tests/webkit_nil_url.rs"
+harness = false
+required-features = ["desktop"]
 
 [package.metadata.cargo-machete]
 # Used from build.rs behind the desktop feature; cargo-machete does not inspect
@@ -225,6 +232,8 @@ base32 = "0.5.1"
 zeroize = { version = "1", features = ["alloc"] }
 hex = "0.4"
 ring = "0.17"
+# Noise PSK handshake for the relay tunnel (story 2085): reviewed library, no home-made protocol.
+snow = { version = "0.10", default-features = false, features = ["ring-accelerated", "use-curve25519", "use-getrandom", "use-chacha20poly1305", "use-sha2"] }
 dirs = "7"
 tauri-plugin-dialog = { version = "2.7", optional = true }
 # Keep the Rust/npm notification pair on the same 2.7 release line.

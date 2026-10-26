@@ -15,7 +15,6 @@ import {
 	buildActivitySnapshot,
 	effectiveActivityState,
 	isActivityWorking,
-	projectName,
 	terminalStatusLabel,
 } from "../utils/activitySnapshot";
 import { navigateToTerminal } from "../utils/navigateToTerminal";
@@ -30,7 +29,7 @@ export function snapshotToRows(snap: ActivitySnapshot, prev?: readonly TerminalR
 		(t): TerminalRow => ({
 			id: t.id,
 			name: t.name,
-			project: projectName(t.cwd),
+			project: t.project,
 			projectColor: undefined,
 			agent: t.agentType || "shell",
 			status: terminalStatusLabel(

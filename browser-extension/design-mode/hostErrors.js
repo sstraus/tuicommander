@@ -2,7 +2,8 @@
 const LOCAL = new Set(['http://localhost/*','http://127.0.0.1/*','http://[::1]/*','https://localhost/*']);
 export async function syncHostErrors(chrome) {
   const {origins = []} = await chrome.permissions.getAll();
-  const matches = origins.filter((origin) => !LOCAL.has(origin));
+  // The capture-only all-URLs option does not opt into remote error injection.
+  const matches = origins.filter((origin) => origin !== '<all_urls>' && !LOCAL.has(origin));
   const ids = ['tuic-granted-errors-main', 'tuic-granted-errors-bridge'];
   const existing = await chrome.scripting.getRegisteredContentScripts({ids});
   if (existing.length) await chrome.scripting.unregisterContentScripts({ids:existing.map((script) => script.id)});

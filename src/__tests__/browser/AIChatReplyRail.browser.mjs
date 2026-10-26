@@ -51,13 +51,14 @@ after(async () => {
 	await server?.close();
 });
 
-it("renders borderless answers but retains quotation and terminal card borders — catches answer rail leakage", () => {
+it("renders borderless answers but retains quotation and terminal answer borders — catches answer rail leakage", () => {
 	assert.equal(appearances.length, 2);
 	for (const appearance of appearances) {
 		assert.ok(["none", "normal"].includes(appearance.answer.content));
 		assert.equal(parseFloat(appearance.answer.border), 0);
 		assert.ok(parseFloat(appearance.quoteBorder) > 0);
-		assert.equal(parseFloat(appearance.terminalBorder), 3);
+		assert.equal(parseFloat(appearance.terminalBorder), 0);
+		assert.equal(parseFloat(appearance.terminalAnswerBorder), 3);
 	}
 });
 it("aligns rendered Stop, Park and Send bounds with the input — catches Stop offset mismatch", () => {

@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, For, on, Show } from "solid-js";
+import { Button } from "../../components/ui";
 import { appLogger } from "../../stores/appLogger";
 import { toastsStore } from "../../stores/toasts";
 import { rpc } from "../../transport";
@@ -49,9 +50,9 @@ export function SuggestChips(props: SuggestChipsProps) {
 			<div class={styles.row}>
 				<For each={props.items}>
 					{(item) => (
-						<button class={styles.chip} onClick={() => send(item)}>
+						<Button class={styles.chip} onClick={() => send(item)}>
 							{stripNumberPrefix(item)}
-						</button>
+						</Button>
 					)}
 				</For>
 			</div>

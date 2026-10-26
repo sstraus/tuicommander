@@ -65,13 +65,13 @@ async fn a_permission_notice_names_a_live_seat_and_the_desktop_answer_removes_it
         )
         .await
         .unwrap();
-    assert!(
+    assert_eq!(
         fixture
             .manager
             .pending_interactions(connection.connection_id)
             .await
-            .unwrap()
-            .is_empty()
+            .unwrap(),
+        [] as [tuicommander_lib::acp::AcpPendingInteraction; 0]
     );
     fixture
         .manager

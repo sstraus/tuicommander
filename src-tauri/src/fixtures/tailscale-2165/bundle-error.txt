@@ -1,0 +1,2 @@
+exit=1
+2026/10/23 18:32:42 open /Users/stefano.straus/Gits/.tmp/tuic-2165-cert/bundle.crt.tmp901827018: operation not permitted

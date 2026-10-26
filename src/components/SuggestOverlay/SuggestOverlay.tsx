@@ -1,4 +1,5 @@
 import { type Component, createEffect, For, onCleanup, onMount } from "solid-js";
+import { Button } from "../ui";
 import styles from "./SuggestOverlay.module.css";
 
 interface SuggestOverlayProps {
@@ -121,20 +122,20 @@ const SuggestOverlay: Component<SuggestOverlayProps> = (props) => {
 				{(item, index) => {
 					const label = stripNumberPrefix(item);
 					return (
-						<button class={styles.chip} onClick={() => props.onSelect(item)} title={label}>
+						<Button class={styles.chip} onClick={() => props.onSelect(item)} title={label}>
 							<span class={styles.shortcut} data-shortcut>
 								{index() + 1}
 							</span>
 							<span class={styles.chipLabel}>{label}</span>
-						</button>
+						</Button>
 					);
 				}}
 			</For>
-			<button class={styles.closeBtn} onClick={() => props.onDismiss()} title="Dismiss (Esc)">
+			<Button variant="ghost" onClick={() => props.onDismiss()} title="Dismiss (Esc)">
 				<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="12" height="12" fill="currentColor">
 					<path d="M3.72 3.72a.75.75 0 0 1 1.06 0L8 6.94l3.22-3.22a.75.75 0 1 1 1.06 1.06L9.06 8l3.22 3.22a.75.75 0 1 1-1.06 1.06L8 9.06l-3.22 3.22a.75.75 0 0 1-1.06-1.06L6.94 8 3.72 4.78a.75.75 0 0 1 0-1.06Z" />
 				</svg>
-			</button>
+			</Button>
 		</div>
 	);
 };
