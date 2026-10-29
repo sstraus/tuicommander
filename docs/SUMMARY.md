@@ -60,6 +60,7 @@
 ## Architecture Decisions
 
 - [Atomic MCP Agent Submission](./decisions/2026-08-27-atomic-mcp-agent-submission.md)
+- [Ego Triage Read-only Boundary (Design)](./internals/ego-triage-readonly-boundary.md)
 
 ## Agent Detection
 
