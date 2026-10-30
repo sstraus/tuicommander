@@ -1,5 +1,7 @@
 # AI Chat
 
+While an agent works, Chat shows a breathing dot and ring in the theme accent color beside **Working…**. Desktop and mobile share this indicator. With reduced motion enabled, the dot is static and the ring is hidden. The indicator disappears when the turn ends; provider retry messages take its place while a request waits to retry.
+
 The open AI Chat conversation follows across desktop, phone and tablet connected to the same host. Open or select a conversation on either device to show it on the others. The last selection saved by the host wins. A device that was offline reads the current selection when it reconnects. This does not change a session header's **CLI | Chat** choice: that view stays per device. Drafts, tab layout and repository pins also stay local.
 
 On desktop, AI Chat and session Chat share the same 14px default reading scale. Terminal zoom in, zoom out and reset also update AI Chat using the active terminal's zoom step. With no active terminal, AI Chat uses its default size. Font family, line height, weight and colors do not change when you switch between the two Chat views. Mobile keeps its device-local Chat font preference.

@@ -1,0 +1,9 @@
+body { margin: 0; background: var(--bg-primary); color: var(--fg-primary); }
+.working-comparison { max-width: 720px; margin: 32px auto; padding: 0 24px; }
+.working-comparison h1 { font-size: 24px; margin: 0 0 8px; }
+.working-comparison header p, .working-comparison footer { color: var(--fg-secondary); font-size: var(--font-sm); }
+.working-comparison section { border-top: 1px solid var(--border); padding-top: 16px; margin-top: 24px; }
+.working-comparison h2 { display: flex; gap: 16px; flex-wrap: wrap; font-size: var(--font-lg); }
+.working-transcript { display: flex; flex-direction: column; height: 200px; background: var(--bg-secondary); border-radius: var(--radius-lg); }
+.working-comparison footer { margin-top: 24px; }
+.mobile-working-transcript { max-width: 360px; }

@@ -787,20 +787,6 @@
   text-align: center;
 }
 
-/* ── Thinking pulse animation ──────────────────────────── */
-.thinkingPulse {
-  animation: thinkingPulse 1.2s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .thinkingPulse { animation: none; }
-}
-
-@keyframes thinkingPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
 /* ── Input queue badge ─────────────────────────────────── */
 .queueBadge {
   display: inline-flex;

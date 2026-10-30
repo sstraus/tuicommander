@@ -3099,6 +3099,7 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   Targeted recorded-run and HTTP/service parity tests provide automated coverage;
   the running development backend does not hot-reload this Rust change.
 
+- [ ] In a real agent turn after loading the updated frontend, confirm the Chat breathing orb appears while working and disappears when done on desktop and phone. Real-component browser captures cover dark/light themes and reduced motion (#2535-8b6b).
 ## WF06 — typed workflow evidence policy (2513-c433)
 
 - [ ] After the next authorized Rust rebuild/restart, opt a throwaway workflow

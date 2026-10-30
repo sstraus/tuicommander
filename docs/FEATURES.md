@@ -6,7 +6,7 @@
 AI Chat shares the active conversation across desktop and mobile for the configured host workspace. The last saved selection wins; reconnect catches up. Open-tab layout, drafts and the session CLI | Chat switch remain per device.
 
 - **Mobile Chat queue** — Terminal CLI and Chat show pending prompt text and a Queued count above the input, including CLI/desktop additions. Cancel one prompt or clear the queue; delivered entries disappear (#2463-ad1c).
-- **Session Chat working feedback** — Desktop and mobile show **Working…** from Send through existing terminal busy state; native questions and permissions take precedence (#2397-06b6).
+- **Chat working feedback** — Desktop and mobile AI Chat and Session Chat show a theme-accent breathing orb with accessible **Working…** text. Reduced motion shows a static dot. Existing busy state controls its lifetime; provider retry status, native questions and permissions take precedence (#2535-8b6b).
 
 AI Chat automatically connects on opening, restores the selected conversation, and keeps its transcript visible when stopped. Retry after a failed initial connection starts connecting without Send (#2407-84f5). Session model changes keep the same conversation; the global default affects new ego runs only (#2404-e946).
 
