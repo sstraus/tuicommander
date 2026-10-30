@@ -281,6 +281,8 @@ Search within terminal output with `Cmd+F`:
 
 In **CLI**, search is integrated directly with the terminal grid for accurate match highlighting. In **Chat**, **Cmd/Ctrl+F** opens the transcript search: enter text and press **Enter** / **Shift+Enter**, or use **Next** / **Previous**, to select and scroll to matches. Matches span inline Markdown formatting within a paragraph; collapsed thinking bodies are skipped until opened. **Escape** closes search, including after clicking the navigation buttons. Switching CLI/Chat closes the search and clears its highlight.
 
+The search bar opens below the Context and CLI/Chat switch row. Both search navigation and the view switch stay reachable, including in narrow panes.
+
 ## Cross-Terminal Search
 
 Search text across all open terminal buffers from the command palette:

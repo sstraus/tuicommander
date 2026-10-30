@@ -8,6 +8,8 @@ Consolidated reference for all terminal behaviors, keyboard shortcuts, and confi
 
 The desktop CLI | Chat switch uses shared toolbar density. In both modes it is centred on the Context header and stays above its bottom divider, without adding a separate row. Without Context, both modes reserve one shared control row so content cannot run beneath the switch. Switching modes keeps the switch and content at the same height. At touch widths up to 600px, the Context header and collapsed bar reserve a 48px row for the shared 44px switch; expanded Context keeps the same header clearance.
 
+Terminal Find overlays the grid below the Context and CLI/Chat switch row. Search controls wrap within narrow panes without covering the view switch.
+
 ## Mobile composer focus
 
 The composer border highlights only while its textarea has focus. Tapping the mic releases editor focus without changing the insertion range. Recording uses the red mic icon, not an extra accent border. Keyboard navigation retains the mic focus ring. The blue slash key marks an available action, not retained focus.

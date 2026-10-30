@@ -1,3 +1,7 @@
+## Terminal search clearance (2538-c082)
+
+- [x] Browser component geometry covers Context on/off, 1000px/400px panes and desktop/touch viewports. Search and view-switch bounds are disjoint; button centres are hit-testable; close/reopen works. _(verified: `src/__tests__/browser/TerminalSearchGeometry.test.ts`; before/after evidence under `~/Gits/.tmp/search-overlap/`.)_
+
 ## Workflow Fork/all-Join (2509-0e2f) — Rust rebuild/restart required
 
 - [ ] After a manual Rust rebuild/restart, verify a post-all-Join Gate or approval Judge uses current fork checks, a primary critic FIX wins over an approving advisor, and concurrent check admission does not pause on sibling progress. Automated rb regressions cover these paths; this item checks the restarted daemon integration.
