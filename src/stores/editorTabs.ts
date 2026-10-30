@@ -37,9 +37,8 @@ function createEditorTabsStore() {
 		getActive: base.getActive,
 		getCount: base.getCount,
 
-		/** Keep zoom on the open editor tab, like terminal zoom. */
-		zoomIn(defaultFontSize: number): void {
-			const id = base.state.activeId;
+		/** Zoom the active editor, or a specified tab for collective zoom. */
+		zoomIn(defaultFontSize: number, id = base.state.activeId): void {
 			if (!id) return;
 			base._setState(
 				"tabs",
@@ -48,8 +47,7 @@ function createEditorTabsStore() {
 				clampFontSize((base.state.tabs[id]?.fontSize ?? defaultFontSize) + FONT_STEP),
 			);
 		},
-		zoomOut(defaultFontSize: number): void {
-			const id = base.state.activeId;
+		zoomOut(defaultFontSize: number, id = base.state.activeId): void {
 			if (!id) return;
 			base._setState(
 				"tabs",
@@ -58,8 +56,7 @@ function createEditorTabsStore() {
 				clampFontSize((base.state.tabs[id]?.fontSize ?? defaultFontSize) - FONT_STEP),
 			);
 		},
-		zoomReset(defaultFontSize: number): void {
-			const id = base.state.activeId;
+		zoomReset(defaultFontSize: number, id = base.state.activeId): void {
 			if (!id) return;
 			base._setState("tabs", id, "fontSize", clampFontSize(defaultFontSize));
 		},

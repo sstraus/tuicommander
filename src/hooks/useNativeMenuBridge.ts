@@ -99,13 +99,13 @@ export function dispatchNativeMenuAction(action: string, options: NativeMenuBrid
 			shortcutHandlers.zoomReset();
 			break;
 		case "zoom-in-all":
-			terminalLifecycle.zoomInAll();
+			shortcutHandlers.zoomInAll();
 			break;
 		case "zoom-out-all":
-			terminalLifecycle.zoomOutAll();
+			shortcutHandlers.zoomOutAll();
 			break;
 		case "zoom-reset-all":
-			terminalLifecycle.zoomResetAll();
+			shortcutHandlers.zoomResetAll();
 			break;
 		case "diff-panel":
 			togglePanel("git");

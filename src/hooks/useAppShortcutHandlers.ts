@@ -1,4 +1,4 @@
-import type { Accessor, Setter } from "solid-js";
+import { type Accessor, batch, type Setter } from "solid-js";
 import { invoke } from "../invoke";
 import { normalizeCombo } from "../keybindingDefaults";
 import { detachPanel, togglePanel } from "../panelRouter";
@@ -54,6 +54,15 @@ interface AppShortcutHandlerOptions {
 /** Constructs the shared keyboard, palette, and native-menu action callbacks. */
 export function useAppShortcutHandlers(options: AppShortcutHandlerOptions): ShortcutHandlers {
 	const { terminalLifecycle, gitOps, splitPanes, quickSwitcher } = options;
+	const zoomAll = (action: "zoomIn" | "zoomOut" | "zoomReset") => {
+		batch(() => {
+			terminalLifecycle[`${action}All`]();
+			for (const id of mdTabsStore.getIds()) mdTabsStore[action](id);
+			for (const id of editorTabsStore.getIds()) {
+				editorTabsStore[action](settingsStore.state.defaultFontSize, id);
+			}
+		});
+	};
 	return {
 		zoomIn: () =>
 			editorTabsStore.state.activeId
@@ -73,9 +82,9 @@ export function useAppShortcutHandlers(options: AppShortcutHandlerOptions): Shor
 				: mdTabsStore.state.activeId
 					? mdTabsStore.zoomReset()
 					: terminalLifecycle.zoomReset(),
-		zoomInAll: terminalLifecycle.zoomInAll,
-		zoomOutAll: terminalLifecycle.zoomOutAll,
-		zoomResetAll: terminalLifecycle.zoomResetAll,
+		zoomInAll: () => zoomAll("zoomIn"),
+		zoomOutAll: () => zoomAll("zoomOut"),
+		zoomResetAll: () => zoomAll("zoomReset"),
 		createNewTerminal: gitOps.handleNewTab,
 		closeTerminal: terminalLifecycle.closeTerminal,
 		reopenClosedTab: terminalLifecycle.reopenClosedTab,
