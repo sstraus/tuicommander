@@ -62,16 +62,35 @@ pub struct AgentPolicy {
 
 pub(crate) fn settings_fingerprint(profile: &str) -> Result<String, String> {
     let config = crate::config::load_agents_config();
-    config.require_named_run_config(profile)?;
-    // The existing spawn adapter also consumes common/per-agent hook, launch
-    // instruction and flag settings. Pin that whole input rather than claiming
-    // a run-config name alone freezes its actual launch envelope.
-    // Saved settings contain HashMaps. Their iteration order is not a policy
-    // change, so canonicalize recursively before hashing across process loads.
-    let bytes = serde_json::to_vec(&canonical(
-        serde_json::to_value(&config).map_err(|e| e.to_string())?,
-    ))
-    .map_err(|e| e.to_string())?;
+    let (agent, saved) = config.require_named_run_config(profile)?;
+    let settings = &config.agents[agent];
+    // Only the selected launch envelope is pinned. Saved defaults, other
+    // profiles and idle/lifecycle preferences do not change this launch.
+    let launch_text = if crate::launch_instructions::AGENTS.contains(&agent) {
+        crate::launch_instructions::effective_text_for(
+            &crate::config::load_app_config(),
+            &config,
+            agent,
+            false,
+        )
+    } else {
+        String::new()
+    };
+    let inputs = serde_json::json!({
+        "agent": agent,
+        "command": saved.command,
+        "args": saved.args,
+        "model": saved.model,
+        "env": saved.env,
+        "native_status_signals": settings.native_status_signals.unwrap_or(true),
+        "prevent_alt_screen": settings.prevent_alt_screen.unwrap_or(true),
+        "skip_trust_dialog": settings.skip_trust_dialog.unwrap_or(true),
+        "ego_mode": if agent == "ego" { settings.ego_mode } else { None },
+        "ego_sandbox": if agent == "ego" { settings.ego_sandbox } else { None },
+        "launch_instructions": launch_text,
+    });
+    // Saved env maps must have stable ordering across process loads.
+    let bytes = serde_json::to_vec(&canonical(inputs)).map_err(|e| e.to_string())?;
     Ok(hex::encode(Sha256::digest(bytes)))
 }
 

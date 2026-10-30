@@ -130,3 +130,88 @@ fn pty_policy_requires_explicit_settings_and_detects_real_drift() {
     );
     assert_eq!(definitions.agent_policy().unwrap(), Some(imported));
 }
+
+// Catches: unrelated profile and idle-close edits refusing an unchanged route.
+#[test]
+fn unrelated_settings_do_not_refuse_a_pinned_route() {
+    let (_config, _project, _plan, _story, _template, _guard) = fixture();
+    let base = crate::config::load_agents_config();
+    let desired = serde_json::from_value(serde_json::json!({"agents":{"claude":{
+        "run_configs":[{"name":"pinned","command":"claude","model":"model-a","args":["--effort","high"]},
+                       {"name":"other","command":"claude","model":"other-model"}]
+    }}})).unwrap();
+    crate::config::save_agents_config(base, desired).unwrap();
+    let mut input = policy("model-a");
+    input.routes[0].execution = crate::workflows::AgentExecution::Pty {
+        profile: "pinned".into(),
+    };
+    input.routes[0].acp_runtime = None;
+    let imported = WorkflowStore::open()
+        .unwrap()
+        .import_agent_policy(0, input)
+        .unwrap();
+    for edit in [
+        "other_profile",
+        "other_agent",
+        "idle_close",
+        "default_choice",
+    ] {
+        let base = crate::config::load_agents_config();
+        let mut changed = base.clone();
+        match edit {
+            "other_profile" => {
+                changed.agents.get_mut("claude").unwrap().run_configs[1].command =
+                    "unrelated-binary".into()
+            }
+            "other_agent" => {
+                changed
+                    .agents
+                    .insert("gemini".into(), crate::config::AgentSettings::default());
+            }
+            "idle_close" => {
+                changed.hibernate_idle_minutes += 1;
+                changed.abandoned_shell_hours += 1;
+                changed.agents.get_mut("claude").unwrap().idle_close_minutes += 1;
+            }
+            "default_choice" => {
+                changed.agents.get_mut("claude").unwrap().run_configs[0].is_default = true
+            }
+            _ => unreachable!(),
+        }
+        crate::config::save_agents_config(base, changed).unwrap();
+        assert!(
+            imported.routes[0].validate_live_settings().is_ok(),
+            "unrelated edit refused route: {edit}"
+        );
+    }
+    // Catches: narrowing the digest also dropping selected env or shared launch text.
+    for edit in ["selected_env", "common_instructions", "native_status"] {
+        let base = crate::config::load_agents_config();
+        let mut changed = base.clone();
+        match edit {
+            "selected_env" => {
+                changed.agents.get_mut("claude").unwrap().run_configs[0]
+                    .env
+                    .insert("WF04_LAUNCH".into(), "changed".into());
+            }
+            "common_instructions" => {
+                changed.launch_instructions = Some("Additional pinned launch requirement".into())
+            }
+            "native_status" => {
+                changed
+                    .agents
+                    .get_mut("claude")
+                    .unwrap()
+                    .native_status_signals = Some(false)
+            }
+            _ => unreachable!(),
+        }
+        crate::config::save_agents_config(base.clone(), changed).unwrap();
+        assert!(
+            imported.routes[0].validate_live_settings().is_err(),
+            "effective edit was missed: {edit}"
+        );
+        let current = crate::config::load_agents_config();
+        crate::config::save_agents_config(current, base).unwrap();
+    }
+}

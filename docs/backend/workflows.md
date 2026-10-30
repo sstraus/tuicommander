@@ -253,12 +253,17 @@ workspace scope and output-contract version. Each role has exact routes and at
 most one explicit default. This does not parse or certify Markdown policy files.
 
 PTY routes must name a saved configuration with the same explicit model and
-explicit effort arguments. A canonical digest pins the complete launch settings;
-changed settings refuse delivery. ACP routes pin an absolute executable and
+explicit effort arguments. A canonical digest pins only the selected agent,
+command, argv, model, environment, launch flags and effective launch instructions.
+Changes to those inputs refuse delivery. Unrelated profiles, default-profile
+selection and idle-close preferences do not invalidate the route. ACP routes pin an absolute executable and
 machine profile, and the live ACP options must acknowledge model and effort.
 Fresh roots capture the policy in `GraphContract`; children inherit that pin.
 Identical start retries and replay never load the latest routing policy.
-Contract-2 replay and its retained profile selection stay unchanged.
+Contract-3 graph Agent launches are daemon-owned. The retained MCP
+`workflow action=launch` refuses these graphs before reserving a spawn effect;
+it cannot substitute a caller-selected profile. Contract-2 replay and its
+retained serial MCP launch and profile selection stay unchanged.
 
 ### Answer continuation
 

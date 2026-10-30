@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Fix workflow routing pins so unrelated profile and idle-close edits do not block an unchanged route. Keep contract-3 graph launches daemon-owned.
+
 - Workflow daemon launches now retain a pre-spawn workspace baseline and managed launch reference for attribution after retry/restart. This is not safe-close or complete WF04 lifecycle support.
 
 - Keep mobile Markdown images, review saves and Back navigation in the destination folder after opening a local link.

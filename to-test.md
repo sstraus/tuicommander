@@ -3122,3 +3122,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   failed required check cannot approve the story. This Rust change does not
   hot-reload into the current app. Targeted native-store automation covers the
   policy; no desktop instance was launched for this story.
+
+- [ ] WF04 routing correction: after a manual Rust restart, confirm that unrelated profile and idle-close changes do not pause a pinned workflow. Contract-3 MCP launch must refuse caller-profile substitution; use the daemon run controls. Automated rb regressions cover both paths.
