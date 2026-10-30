@@ -13,7 +13,10 @@ import type { AcpTranscriptEntry } from "../../stores/acpTranscript";
 import { terminalsStore } from "../../stores/terminals";
 import { CommandInput } from "../components/CommandInput";
 import { QueuedPrompts } from "../components/QueuedPrompts";
+import { SuggestChips } from "../components/SuggestChips";
+import { TerminalKeybar } from "../components/TerminalKeybar";
 import { useSessionChatView } from "../components/useSessionChatView";
+import { mobileChatReadingStyle } from "../mobileFontSize";
 
 async function mount() {
 	const params = new URLSearchParams(location.search);
@@ -72,14 +75,18 @@ async function mount() {
 		: 'const screen = "mobile";';
 	const entries: AcpTranscriptEntry[] = [
 		{ id: "u", kind: "user", text: "Check the session Chat layout on a narrow screen." },
-		{ id: "s", kind: "agent", text: "Inspecting the shared styles." },
+		{
+			id: "s",
+			kind: "agent",
+			text: "Inspecting the shared styles. This earlier explanatory block must follow the same Chat font preference.",
+		},
 		{ id: "t", kind: "tool", call: { toolCallId: "read", title: "Read: shared presentation", status: "completed" } },
 		{
 			id: "a",
 			kind: "agent",
 			text: params.has("answerScope")
 				? answerScope.text
-				: "💬 The answer uses the same reading layout.\n\n> A genuine quotation.\n\n- Shared user prompt tint\n- Shared folded tool activity\n\n```ts\n" +
+				: "💬 The answer uses the same reading layout without letting Copy cover any part of the first line on a narrow phone screen.\n\n> A genuine quotation.\n\n- Shared user prompt tint\n- Shared folded tool activity\n\n```ts\n" +
 					codeSample +
 					"\n```",
 		},
@@ -116,7 +123,11 @@ async function mount() {
 					<strong>Claude session Chat</strong>
 					{mobile ? <mobileChat.Toggle /> : <ViewModeToggle terminalId={terminalId} />}
 				</header>
-				<div class={reading.chatView}>
+				<div
+					class={reading.chatView}
+					data-mobile-reading={mobile ? "" : undefined}
+					style={mobile ? mobileChatReadingStyle() : undefined}
+				>
 					<Transcript
 						terminalAgent="claude"
 						mobile={mobile}
@@ -129,6 +140,10 @@ async function mount() {
 				<Show when={mobile && params.has("queued")}>
 					<QueuedPrompts sessionId="appearance-only" count={queueCount()} revision={0} />
 				</Show>
+				{mobile && (
+					<SuggestChips sessionId="appearance-only" items={["A2A: remove it", "Review changes", "Run tests"]} />
+				)}
+				{mobile && <TerminalKeybar sessionId="appearance-only" sessionExists={false} />}
 				{mobile ? (
 					<CommandInput sessionId="appearance-only" sessionExists={false} />
 				) : (

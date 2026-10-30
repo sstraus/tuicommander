@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Apply the mobile Chat font setting to all assistant prose, including earlier explanatory blocks (#2492-4944).
+- Keep mobile session Chat Copy below answer text instead of over its first line (#2490-276a).
+
+### Changed
+
+- Reduce mobile terminal command text, suggestion labels and key labels to 15px, trim input spacing, and retain 44px action targets (#2491-1ec2).
+
 ## [2.0.0-beta.5] - 2026-10-29
 
 ### Added

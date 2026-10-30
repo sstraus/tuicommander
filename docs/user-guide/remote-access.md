@@ -210,6 +210,12 @@ Notifications from different sessions remain separate. A newer notification
 for one session can replace its earlier one; tapping either remaining session
 notification opens that session.
 
+### Reading and command size
+
+Mobile **Settings → Appearance** has independent **Terminal font** and **Chat font** controls. They apply only to this browser or installed PWA. All assistant prose, including earlier explanatory blocks and the newest answer, uses the selected Chat size (14px by default). Tool metadata and code retain their semantic sizes. Changing Terminal font does not change Chat text or the command editor.
+
+In terminal Chat, the answer Copy action has its own row below the message, so it does not cover text. The idle command editor, suggestion labels and special-key labels use 15px text with compact spacing. The editor retains 16px text while focused to keep its native input size at the iOS zoom threshold. Action hit targets remain at least 44px.
+
 ### Keyboard correction
 
 Mobile **Settings → Input → Autocorrect and spellcheck** is on by default. It enables autocorrect, spellcheck and sentence capitalization in the terminal prompt composer. Turn it off for literal command entry. The choice stays in this browser or installed PWA across reloads. File and code editors keep spellcheck off. Keyboard suggestions still depend on your phone keyboard settings.

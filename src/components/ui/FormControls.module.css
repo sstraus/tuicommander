@@ -293,3 +293,13 @@
  color: var(--error);
  background: color-mix(in srgb, var(--error) 10%, transparent);
 }
+
+/* Phone terminal command rows: smaller labels, unchanged 44px hit regions.
+   Native fields retain their independent editor typography. */
+.mobileCommand {
+ --control-font-size: 15px;
+ --control-padding-x: 7.5px;
+}
+@media (max-width: 600px) {
+ .mobileCommand .control { font-size: var(--control-font-size); }
+}

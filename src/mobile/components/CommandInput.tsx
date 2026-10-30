@@ -211,7 +211,7 @@ export function CommandInput(props: CommandInputProps) {
 		textareaEl.style.height = "auto";
 		// Native field sizing follows wrapping without pinning the first paint's height.
 		if (globalThis.CSS?.supports?.("field-sizing", "content")) return;
-		textareaEl.style.height = Math.min(textareaEl.scrollHeight, 120) + "px";
+		textareaEl.style.height = Math.min(textareaEl.scrollHeight, 112.5) + "px";
 	}
 
 	function writePty(data: string) {

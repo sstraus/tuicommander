@@ -665,6 +665,8 @@ The mobile PWA has its own standalone stylesheet at `src/mobile/mobile.css`, **c
 | Safe areas | Not used | `env(safe-area-inset-top/bottom)` on `#mobile-app` |
 | Input font-size | From scale | Fixed `16px` minimum to prevent iOS auto-zoom |
 
+The idle terminal command editor and special-key rows intentionally use 15px text at the owner's request. Their shared `mobileCommand` density owns button text and horizontal padding; action hit regions retain the 44px minimum. This is a narrow exception to the usual 16px mobile input typography, not a new density for other forms. The focused command editor retains 16px text at the iOS zoom threshold.
+
 ### Keeping in sync
 When updating core palette colors in `global.css`, **also update `mobile.css`** — the `:root` blocks must stay aligned for the shared variables. Theme-specific variables (`--activity`, `--merged`, `--unseen`) are desktop-only and do not need mobile equivalents until that functionality ships in PWA.
 

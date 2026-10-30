@@ -260,9 +260,9 @@ describe("isSupersetEcho", () => {
 });
 
 describe("CommandInput iOS auto-zoom prevention", () => {
-	it("input font-size is >= 16px to prevent iOS auto-zoom", () => {
-		const match = css.match(/\.input\s*\{[^}]*font-size:\s*(\d+)px/s);
-		expect(match, "font-size not found in .input rule").toBeTruthy();
+	it("focused input font-size is >= 16px to prevent iOS auto-zoom", () => {
+		const match = css.match(/\.input:focus\s*\{[^}]*font-size:\s*(\d+)px/s);
+		expect(match, "font-size not found in .input:focus rule").toBeTruthy();
 		const fontSizePx = parseInt(match![1], 10);
 		expect(fontSizePx).toBeGreaterThanOrEqual(16);
 	});

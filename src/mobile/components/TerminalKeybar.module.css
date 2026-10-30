@@ -1,4 +1,5 @@
 .root {
+  composes: mobileCommand from "../../components/ui/FormControls.module.css";
   position: relative;
   display: flex;
   background: var(--bg-secondary);
@@ -25,8 +26,8 @@
 
 .bar {
   display: flex;
-  gap: 6px;
-  padding: 0 6px 0 12px;
+  gap: 5.625px;
+  padding: 0 5.625px 0 11.25px;
   flex: 1;
   min-width: 0;
   background: var(--bg-secondary);
@@ -67,7 +68,7 @@
 .accent {
   color: var(--accent);
   font-weight: 700;
-  font-size: 16px;
+  font-size: 15px;
 }
 
 .sending {
