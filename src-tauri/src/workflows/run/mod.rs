@@ -28,6 +28,8 @@ mod critic_tests;
 mod graph_critic_1446a_tests;
 #[cfg(test)]
 mod graph_tests;
+#[cfg(test)]
+mod wf02_tests;
 
 #[cfg(test)]
 mod critic_957_tests;
