@@ -320,6 +320,7 @@ fn assert_delivery(expected: EdgeOutcome, automatic: bool, fail_checks: bool) {
         "review prompt must carry the exact artifact subject"
     );
     let assessment = ReviewAssessment {
+        evidence: None,
         decision: if expected == EdgeOutcome::No {
             ReviewDecision::ChangesRequested
         } else {
@@ -587,6 +588,7 @@ async fn event_workflow_creates_native_story_and_reuses_current_review_and_check
         &reviewer,
         "reviewer",
         Some(ReviewAssessment {
+            evidence: None,
             decision: ReviewDecision::Approved,
             artifact_digest: artifact_digest(&commit, &tree),
             findings: vec![],
@@ -646,3 +648,6 @@ async fn event_workflow_creates_native_story_and_reuses_current_review_and_check
             .contains("artifact moved")
     );
 }
+
+#[path = "evidence_policy.rs"]
+mod evidence_policy;

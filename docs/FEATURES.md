@@ -3574,3 +3574,12 @@ approves or merges. See [Incoming PR reviews](user-guide/automations.md#incoming
 ## Archived worktree retention
 
 Opt-in global and per-repository retention in days (0/Off by default). Repository refresh removes only eligible recorded checkouts under `__archived/`, keeps dirty or unsafe archives with named status reasons, and retains commit recovery refs. No new timer or branch deletion. See [Worktrees](user-guide/worktrees.md#archived-worktree-retention).
+
+### Pinned workflow evidence policy
+
+Workflow graph drafts can pin typed, source-and-requirement-bound review proof,
+seven-rule FIX/STORY/ACCEPT triage and separate review/repair budgets. The default
+policy permits two reviews and one repair. Native independent approval and
+required deterministic checks remain mandatory. PR review subjects do not mark
+native stories Done. Old publications and runs keep their prior policy. See
+[workflow evidence policy](backend/workflows.md#typed-evidence-policy-wf06).

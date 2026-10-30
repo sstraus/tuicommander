@@ -1115,7 +1115,24 @@ impl RunStore {
             .iter()
             .find(|check| check.id == check_id)
             .ok_or("check is not pinned by the story definition")?;
-        let receipt = execute_run_check(check, Path::new(path), &self.db_path, run_id, false)?;
+        let requirements = definition
+            .graph
+            .evidence_policy
+            .as_ref()
+            .map(|_| {
+                StoryStore::open()?
+                    .get_story(story_id)
+                    .map(|story| super::evidence::requirements_digest(&story))
+            })
+            .transpose()?;
+        let mut receipt = execute_run_check(check, Path::new(path), &self.db_path, run_id, false)?;
+        if let Some(requirements) = requirements {
+            let current = StoryStore::open()?.get_story(story_id)?;
+            if super::evidence::requirements_digest(&current) != requirements {
+                return Err("requirements changed while check was running".into());
+            }
+            receipt.requirements_digest = Some(requirements);
+        }
         self.commit_completed_check(run_id, execution, command_id, expected_sequence, receipt)
     }
 
@@ -2236,6 +2253,7 @@ fn choose_event(
             if attempts != reached {
                 return Err("Agent activation already has an attempt".into());
             }
+            super::evidence::check_attempt_budget(snapshot, graph, &activation.node_id)?;
             choose_story_attempt(
                 snapshot,
                 &stories,
