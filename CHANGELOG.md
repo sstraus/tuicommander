@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Keep terminal search below the Context and CLI/Chat switch row so navigation and close controls stay reachable in narrow panes (#2538-c082).
+
 - Keep Claude native question previews out of wrapped answer labels in desktop Chat and mobile; show the selected preview, question tabs and Chat about this action (#2536-8e18).
 - Preserve current-generation checks after workflow all-Join, honor each bound critic FIX, route typed join failures correctly, and re-evaluate concurrent check admission without pausing valid sibling work (#2509-0e2f).
 
