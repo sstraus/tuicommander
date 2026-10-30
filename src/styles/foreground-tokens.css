@@ -1,0 +1,7 @@
+/* Shared startup foregrounds for desktop and mobile; match Commander appChrome.
+ * Loaded themes replace these tokens. Informational text must not be faded. */
+:root {
+  --fg-primary: #d4d4d4;
+  --fg-secondary: #b5b5b5;
+  --fg-muted: #a6a6a6;
+}

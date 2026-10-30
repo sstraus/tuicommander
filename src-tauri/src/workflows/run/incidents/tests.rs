@@ -47,6 +47,7 @@ fn run() -> RunSnapshot {
             }),
         }],
         effects: vec![],
+        timers: vec![],
         graph_executions: vec![],
     }
 }

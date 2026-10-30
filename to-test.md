@@ -1,6 +1,13 @@
 ## Workflow Fork/all-Join (2509-0e2f) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a story graph with critic/check Fork branches and inspect the ordered branch arrivals, non-success all-Join edges and generation replacement after critic FIX. This assignment does not restart the daily daemon. Dedicated Designer controls belong to WF11; use the existing definition API for these graph records.
+## Durable workflow timers (2529-844b) — Rust rebuild/restart required
+
+- [ ] Load the new timer ledger/actor only after Boss manually restarts a rebuilt `make dev` or installs `make build`, when losing current sessions is acceptable. Rust does not hot-reload. Automated reducer/store/owner and paused-actor tests cover timer delivery, including a duration-expired run waiting for its pinned check without repeated deadline polling; no new UI or provider consumer is installed by this foundation. The daily app was not restarted.
+## Readable secondary and muted text (2506-22b0) — backend rebuild/restart required
+
+- [x] Worktree browser verification: collapsed Compose with one queued item, sidebar, tabs, status bar and mobile session list have before/after screenshots and computed colors; all built-in secondary/muted foregrounds exceed 4.5:1 on all four neutral surfaces. _(verified: `src/__tests__/themeContrast.test.ts`; browser evidence in orchestrator `reports/tuicommander/img/2026-10-30-grey-contrast/contrast-report.md`.)_
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm a previously seeded Commander profile loads the brighter foregrounds and Compose count without fading. The backend corrects only the exact legacy built-in foreground triplet in memory; custom foregrounds and theme files remain unchanged. The daily app was not restarted. Rust does not hot-reload; restart only when Boss is ready to lose current sessions.
 
 ## Long Claude dictation (2502-571c) — Rust rebuild/restart required
 
@@ -3094,3 +3101,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   runs stay inspectable/cancelable and use exclusive Join. Do not migrate live runs.
   Targeted recorded-run and HTTP/service parity tests provide automated coverage;
   the running development backend does not hot-reload this Rust change.
+
+- [ ] WF02/WF19 integration after rebuild: confirm parallel repair cancels old activation timers without cancelling independent service timers. Rust changes require a manual restart; no live-app validation was performed.

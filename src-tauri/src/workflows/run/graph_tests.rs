@@ -12,7 +12,7 @@ fn evidence() -> DecisionEvidence {
 }
 
 // Native stores are the fixture authority; no fabricated model output is used.
-fn graph_fixture() -> (
+pub(super) fn graph_fixture() -> (
     tempfile::TempDir,
     tempfile::TempDir,
     RunStore,

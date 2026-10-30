@@ -1540,10 +1540,20 @@ Deterministic checks and check-result publication are not part of this executor.
 The backend publishes Fork/all-Join, bounded literal or receipt-driven For each,
 and typed If/else nodes. Event contract 4 adds branch-token stacks, exact
 fork-instance/generation arrivals, durable resource waits/check claims and
-whole-generation repair supersession. Run-store layout 6 prevents an older
+whole-generation repair supersession. Run-store layout 7 prevents an older
 binary from reinterpreting these events; contracts 2 and 3 remain serial.
 Critic FIX fences old attempts, stops owned work, traverses Implement once and
 opens a fresh critic/check generation. Unknown effects or unproven stops block
 repair. Existing definition/run services own both IPC and HTTP; no frontend
 scheduler or new transport surface is added. See the WF02 section of
 `docs/backend/workflows.md` for publication, fan-out and recovery rules.
+### Durable workflow timer foundation (WF19)
+
+Contract-3 and contract-4 runs retain typed Timer schedule/fire/retry/cancel events.
+Layout 6 introduced timers; layout 7 adds parallel regions. The daemon actor sleeps until eligible absolute deadlines and records
+one wake receipt per stable timer key/attempt. Activation timers suspend delivery
+during pauses without resetting time; independent service timers continue across
+recovery pauses. Cancellation fences all timers. Retry hints respect declared
+attempt, expiry and backoff caps. A question expiry is only timed-out/incomplete,
+never consent. WF08 cohort collection, WF13 provider observation and WF03 inbox
+consumers build on this internal primitive; they are not installed by WF19.

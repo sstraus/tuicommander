@@ -11,10 +11,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Add bounded, correlated workflow Fork/all-Join, For each and typed If/else execution, generation-fenced repair, and replay-safe branch readiness (#2509-0e2f).
+- Persist workflow timer wake receipts, bounded provider backoff, one-row cohort deadlines and fail-closed question expiry across daemon restart (#2529-844b).
 
 - Add a separating space after web URLs pasted into mobile terminal and AI Chat composers, unless whitespace already follows (#2494-921f).
 
 ### Fixed
+
+- Raise built-in secondary and muted text contrast on all neutral chrome surfaces, share desktop/mobile startup foregrounds, and remove the collapsed Compose label and queue-count fade (#2506-22b0).
 
 - Preserve the beginning of long Claude CLI dictation by framing it as a bracketed paste, including review-only delivery (#2502-571c).
 

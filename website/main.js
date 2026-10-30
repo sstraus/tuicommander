@@ -1,10 +1,16 @@
-import sal from "sal.js";
-import "sal.js/dist/sal.css";
-
-sal({
-  threshold: 0.1,
-  once: true,
-});
+// Leave content visible when the browser cannot observe viewport intersections.
+if ("IntersectionObserver" in window) {
+  const reveals = new IntersectionObserver((entries, observer) => {
+    for (const entry of entries) {
+      if (entry.intersectionRatio < 0.1) continue;
+      entry.target.classList.add("sal-animate");
+      observer.unobserve(entry.target);
+    }
+  }, { threshold: 0.1, rootMargin: "0% 50%" });
+  document.querySelectorAll("[data-sal]").forEach((element) => reveals.observe(element));
+} else {
+  document.body.classList.add("sal-disabled");
+}
 
 // --- Nav: current page, mobile menu, Features dropdown ---
 const path = location.pathname.replace(/index\.html$/, "");

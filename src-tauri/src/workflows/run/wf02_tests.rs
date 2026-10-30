@@ -450,8 +450,55 @@ fn wf02_sqlite_reopen_replays_waits_cancellation_and_single_repair() {
         RunStore::open_at(&db).unwrap().replay(&run.id).unwrap(),
         waiting
     );
+    // catches: superseded activation timers remaining pending forever and blocking completion,
+    // or retiring an independent service timer together with the old branch generation.
+    let branch = waiting.graph_executions[0]
+        .activations
+        .iter()
+        .find(|a| a.node_id == "critic")
+        .unwrap();
+    for (key, scope) in [
+        (
+            "old-branch",
+            json!({"type":"activation","execution_id":"execution","activation_id":branch.id}),
+        ),
+        (
+            "independent",
+            json!({"type":"service","owner":"proof-cohort"}),
+        ),
+    ] {
+        let command = serde_json::from_value(
+            json!({"action":"timer","command":{"action":"schedule","timer":{
+                "key":key,"scope":scope,"purpose":{"type":"provider_retry","provider":"github"},
+                "dueMs":waiting.started_ms + 100000,"expiresMs":waiting.started_ms + 200000,
+                "maxAttempts":3,"baseBackoffMs":1000,"maxBackoffMs":5000,
+                "expiryOutcome":"incomplete","attempt":1,"state":"pending","outcome":null
+            }}}),
+        )
+        .unwrap();
+        store
+            .command(&run.id, &format!("schedule:{key}"), command)
+            .unwrap();
+    }
     let superseded = commit(
         json!({"type":"supersede_fork","execution_id":"execution","fork_id":"a2","generation":1}),
+    );
+    let timers = serde_json::to_value(&superseded).unwrap()["timers"].clone();
+    assert_eq!(timers[0]["state"], "cancelled");
+    assert_eq!(timers[1]["state"], "pending");
+    let late_timer = serde_json::from_value(
+        json!({"action":"timer","command":{"action":"fire","key":"old-branch","attempt":1}}),
+    )
+    .unwrap();
+    assert!(
+        store
+            .command_at(
+                &run.id,
+                "late-old-timer",
+                late_timer,
+                waiting.started_ms + 100000
+            )
+            .is_err()
     );
     assert!(
         superseded
