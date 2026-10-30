@@ -463,6 +463,21 @@ it("scopes the Chat size to the AI Chat transcript, excluding its composer", asy
 	while (mobileFontSizes.chat() > 14) mobileFontSizes.step("chat", -1);
 });
 
+// Catches: URL separator insertion bypasses large-paste folding and expands the whole mobile draft.
+it("folds a long mobile paste ending in a URL without losing its separator", async () => {
+	const view = render(() => <MobileChatScreen />);
+	const input = view.container.querySelector("textarea")!;
+	const text = `${"word ".repeat(201)}https://example.com`;
+	fireEvent.input(input, { target: { value: "Read REPLACEnext" } });
+	input.setSelectionRange(5, 12);
+	fireEvent.paste(input, { clipboardData: { getData: () => text, items: [], files: [] } });
+	await Promise.resolve();
+	expect(input.value).toBe("Read [Pasted text #1 +202 words]next");
+	expect(aiChatDraft.expandedText()).toBe(`Read ${text} next`);
+	expect(input.selectionStart).toBe(input.value.length - 4);
+	expect(input.selectionEnd).toBe(input.selectionStart);
+});
+
 // Catches: mobile ACP bypasses URL spacing or appends at the end instead of the selected range.
 it.each([
 	["", "", "https://example.com", "https://example.com "],

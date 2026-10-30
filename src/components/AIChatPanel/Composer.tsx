@@ -308,19 +308,13 @@ export const Composer: Component<{
 			const spaced = props.mobileAttachments
 				? spacedUrlPaste(value, textarea.value.charAt(textarea.selectionEnd))
 				: null;
-			if (spaced !== null) {
-				event.preventDefault();
+			let cursor = aiChatDraft.stageTextPaste(spaced ?? value, textarea.selectionStart, textarea.selectionEnd);
+			if (cursor === null) {
+				if (spaced === null) return;
 				textarea.setRangeText(spaced, textarea.selectionStart, textarea.selectionEnd, "end");
-				const cursor = textarea.selectionStart;
+				cursor = textarea.selectionStart;
 				aiChatDraft.set(textarea.value);
-				queueMicrotask(() => {
-					textarea?.setSelectionRange(cursor, cursor);
-					resize();
-				});
-				return;
 			}
-			const cursor = aiChatDraft.stageTextPaste(value, textarea.selectionStart, textarea.selectionEnd);
-			if (cursor === null) return;
 			event.preventDefault();
 			queueMicrotask(() => {
 				textarea?.setSelectionRange(cursor, cursor);
