@@ -900,3 +900,15 @@ untrusted scratch workspace. The PTY replay checks shared session state.
 `ego-trust-short-2461.tcap` records the 12-row boundary: the offer heading has
 scrolled off-screen, but the refusal explanation and active question remain.
 The heading is not required for detection.
+
+### Claude option previews
+
+Claude AskUserQuestion preview forms render a bordered pane beside the numbered
+answers. Parse its rectangle before the answer rows. Join left-column label
+continuations, including `(Recommended)`, without merging pane borders or text.
+The same rectangle extraction accepts a pane below the options. The selected
+option carries the pane text in its existing multiline `hint`; no wire field is
+added. The native question tab row stays in the title, and the unnumbered
+`Chat about this` action follows the numbered choices in navigation order.
+Desktop PTY Chat and mobile share `ChoicePromptOverlay`: multiline hints use a
+monospace block, while ordinary keyboard hints remain inline.

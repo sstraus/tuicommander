@@ -17,6 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Keep Claude native question previews out of wrapped answer labels in desktop Chat and mobile; show the selected preview, question tabs and Chat about this action (#2536-8e18).
+
 - Raise built-in secondary and muted text contrast on all neutral chrome surfaces, share desktop/mobile startup foregrounds, and remove the collapsed Compose label and queue-count fade (#2506-22b0).
 
 - Preserve the beginning of long Claude CLI dictation by framing it as a bracketed paste, including review-only delivery (#2502-571c).

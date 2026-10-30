@@ -1,3 +1,7 @@
+## Claude question previews (2536-8e18) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a multi-question Claude AskUserQuestion with option previews. Check desktop Chat and mobile: full recommended labels, separate monospace preview, question tabs and Chat about this. Real wide/narrow Claude captures and shared-component regressions cover the contract; the installed app was not restarted. Rust does not hot-reload; restart only when losing current sessions is acceptable.
+
 ## Durable workflow timers (2529-844b) — Rust rebuild/restart required
 
 - [ ] Load the new timer ledger/actor only after Boss manually restarts a rebuilt `make dev` or installs `make build`, when losing current sessions is acceptable. Rust does not hot-reload. Automated reducer/store/owner and paused-actor tests cover timer delivery, including a duration-expired run waiting for its pinned check without repeated deadline polling; no new UI or provider consumer is installed by this foundation. The daily app was not restarted.
