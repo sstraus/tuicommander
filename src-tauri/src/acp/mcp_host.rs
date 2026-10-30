@@ -63,6 +63,17 @@ pub trait McpOverAcpHost: Send + Sync {
     /// under. `notify` reaches ego for as long as the connection lives.
     fn connect(&self, peer_id: Option<&str>, notify: McpNotify) -> Result<String, McpOverAcpError>;
 
+    /// A managed channel supplies its immutable ACP origin. Hosts that do not
+    /// authorize workflow reports can retain the ordinary peer-only adapter.
+    fn connect_scoped(
+        &self,
+        peer_id: Option<&str>,
+        notify: McpNotify,
+        _origin: Option<&super::AcpMcpOrigin>,
+    ) -> Result<String, McpOverAcpError> {
+        self.connect(peer_id, notify)
+    }
+
     /// Answer one MCP request with its `result`.
     fn message(
         &self,
@@ -88,6 +99,7 @@ pub trait McpOverAcpHost: Send + Sync {
 pub(super) struct McpChannel {
     host: Option<Arc<dyn McpOverAcpHost>>,
     peer_id: Option<String>,
+    origin: Option<super::AcpMcpOrigin>,
     open: Arc<Mutex<HashSet<String>>>,
 }
 
@@ -96,8 +108,22 @@ impl McpChannel {
         Self {
             host,
             peer_id,
+            origin: None,
             open: Arc::new(Mutex::new(HashSet::new())),
         }
+    }
+
+    pub(super) fn with_origin(
+        mut self,
+        connection_id: super::AcpConnectionId,
+        generation: u64,
+    ) -> Self {
+        self.origin = Some(super::AcpMcpOrigin {
+            peer_id: self.peer_id.clone(),
+            connection_id,
+            generation,
+        });
+        self
     }
 
     fn host(&self) -> Result<&Arc<dyn McpOverAcpHost>, Error> {
@@ -141,7 +167,7 @@ impl McpChannel {
             })
         };
         let id = host
-            .connect(self.peer_id.as_deref(), notify)
+            .connect_scoped(self.peer_id.as_deref(), notify, self.origin.as_ref())
             .map_err(into_acp)?;
         let _ = named.set(id.clone());
         self.open.lock().insert(id.clone());

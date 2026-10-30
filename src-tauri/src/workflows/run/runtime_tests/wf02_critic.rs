@@ -392,3 +392,192 @@ async fn wf02_unknown_old_daemon_check_keeps_its_claim_until_stop_proof() {
     );
     assert_eq!(reopened.replay(&run.id).unwrap(), fenced);
 }
+
+// Catches M1: FIX kills only PTYs, leaving genuine ACP reviewers alive and repair fenced.
+#[cfg(unix)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn wf04_acp_fork_fix_stops_processes_before_one_repair() {
+    let (config, project, _plan, story, _template, _guard) = fixture();
+    super::super::acp_close::recorded_worker(config.path(), project.path(), AgentRole::Reviewer);
+    let app = state(config.path());
+    WorkflowRuntime::spawn(&app);
+    owner_ready(&app).await;
+    let (store, run, worktree) = prepare_fork(config.path(), project.path(), &story, true);
+    let mut hints = app.event_bus.subscribe();
+    app.workflow_runtime.wake(&run.id);
+    let bound = tokio::time::timeout(std::time::Duration::from_secs(120), async {
+        loop {
+            let current = store.snapshot(&run.id).unwrap();
+            if current
+                .attempts
+                .iter()
+                .filter(|a| a.agent.as_ref().is_some_and(|b| b.acp.is_some()))
+                .count()
+                == 2
+            {
+                break current;
+            }
+            assert_eq!(
+                current.status,
+                RunStatus::Running,
+                "{:?}",
+                current.pause_cause
+            );
+            hints.recv().await.unwrap();
+        }
+    })
+    .await
+    .expect("reviewer launch setup did not finish");
+    let bindings: Vec<_> = bound
+        .attempts
+        .iter()
+        .filter_map(|a| a.agent.as_ref())
+        .filter(|b| b.acp.is_some())
+        .cloned()
+        .collect();
+    let processes = crate::pty::process_tree_snapshot().unwrap();
+    let pids: Vec<_> = bindings
+        .iter()
+        .map(|b| crate::pty::workflow_acp_process(&b.session_id, &processes).unwrap())
+        .collect();
+    for binding in &bindings {
+        let mut stream = app
+            .acp
+            .subscribe(binding.acp.as_ref().unwrap().connection_id, 1)
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(120), async {
+            while let Some(frame) = stream.recv().await {
+                if matches!(
+                    frame.unwrap().event,
+                    crate::acp::AcpClientEvent::TurnSettled { .. }
+                ) {
+                    return;
+                }
+            }
+            panic!("recorded reviewer turn did not settle");
+        })
+        .await
+        .expect("reviewer turn setup did not finish");
+    }
+    // Catches: a stale binding stopping a different generation, or a restarted
+    // manager treating missing connection inventory as proof of a stopped child.
+    let mut stale = bindings[0].clone();
+    stale.acp.as_mut().unwrap().generation += 1;
+    let stale_result =
+        crate::mcp_http::launch_transaction::stop_superseded_workflow_agent(&app, &run.id, &stale)
+            .await;
+    assert!(
+        stale_result
+            .unwrap_err()
+            .contains("differs from the owned managed launch")
+    );
+    let restarted = state(config.path());
+    let unknown = crate::mcp_http::launch_transaction::stop_superseded_workflow_agent(
+        &restarted,
+        &run.id,
+        &bindings[0],
+    )
+    .await;
+    assert!(unknown.unwrap_err().contains("inventory is unknown"));
+    assert!(bindings.iter().all(|b| {
+        app.acp
+            .snapshot(b.acp.as_ref().unwrap().connection_id)
+            .unwrap()
+            .settlement
+            .is_none()
+    }));
+    let critic = bound
+        .attempts
+        .iter()
+        .find(|a| a.node_id == "critic")
+        .unwrap();
+    let binding = critic.agent.as_ref().unwrap();
+    let (commit, tree) =
+        super::super::super::check::clean_artifact(std::path::Path::new(&worktree)).unwrap();
+    store
+        .report_acp_agent(
+            AttemptReport {
+                contract_version: crate::workflows::PROMPT_CONTRACT_VERSION,
+                run_id: run.id.clone(),
+                story_id: story.clone(),
+                story_revision: StoryStore::open()
+                    .unwrap()
+                    .get_story(&story)
+                    .unwrap()
+                    .revision,
+                attempt_id: critic.id.clone(),
+                generation: critic.generation,
+                outcome: AttemptOutcome::Completed,
+                summary: "Recorded ACP reviewer requests repair".into(),
+                criterion_results: vec![],
+                evidence: vec![],
+                input_request: None,
+                review: Some(ReviewAssessment {
+                    evidence: None,
+                    decision: ReviewDecision::ChangesRequested,
+                    artifact_digest: artifact_digest(&commit, &tree),
+                    findings: vec![ReviewFinding {
+                        criterion_index: 0,
+                        severity: ReviewSeverity::Major,
+                        summary: "Repair required".into(),
+                        evidence: "Current artifact defect".into(),
+                    }],
+                }),
+            },
+            &binding.session_id,
+            binding.acp.clone().unwrap(),
+        )
+        .unwrap();
+    // Drive the deterministic FIX and external stop directly, so the pre-fix
+    // failure reports the stop fence rather than waiting for an actor timeout.
+    let cancelling = drive_turn(&store, &run.id).unwrap();
+    let stopped = drive_effect(&app, &store, &cancelling).await;
+    let observed = crate::pty::process_tree_snapshot().unwrap();
+    let absent = pids
+        .iter()
+        .all(|pid| !crate::pty::workflow_process_observed(&observed, *pid));
+    // Catches: a retry requiring the already-stopped child to remain live.
+    if stopped.is_ok() {
+        for binding in &bindings {
+            crate::mcp_http::launch_transaction::stop_superseded_workflow_agent(
+                &app, &run.id, binding,
+            )
+            .await
+            .unwrap();
+        }
+    }
+    // Stop only our fixture children even when the regression fails.
+    for binding in &bindings {
+        let _ = app
+            .acp
+            .disconnect(binding.acp.as_ref().unwrap().connection_id)
+            .await;
+    }
+    assert!(stopped.is_ok(), "ACP FIX stop failed: {stopped:?}");
+    assert!(
+        absent,
+        "repair was released while a superseded ACP process remained live"
+    );
+    let repaired = drive_turn(&store, &run.id).unwrap();
+    assert_eq!(
+        repaired.graph_executions[0]
+            .activations
+            .iter()
+            .filter(|a| a.node_id == "implement")
+            .count(),
+        2
+    );
+    assert_eq!(store.replay(&run.id).unwrap(), repaired);
+    store
+        .command(&run.id, "fixture-cleanup", RunCommand::Cancel)
+        .unwrap();
+    app.acp.shutdown_all().await;
+    assert!(
+        app.session_maps.sessions.is_empty(),
+        "ACP must not fabricate a terminal"
+    );
+    assert!(
+        app.session_maps.exit_codes.is_empty(),
+        "ACP must not fabricate a PTY tombstone"
+    );
+}

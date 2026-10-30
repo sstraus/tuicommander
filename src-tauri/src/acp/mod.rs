@@ -263,6 +263,14 @@ pub struct AcpAvailability {
     pub reason: Option<AcpUnavailableReason>,
 }
 
+/// Host-issued origin of an MCP channel, not a peer's mutable latest connection.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AcpMcpOrigin {
+    pub peer_id: Option<String>,
+    pub connection_id: AcpConnectionId,
+    pub generation: u64,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(transparent)]
 pub struct AcpConnectionId(uuid::Uuid);
@@ -809,6 +817,21 @@ pub struct AcpAttachmentSnapshot {
     pub queued_prompts: Vec<AcpQueuedPrompt>,
     pub pending_permission_ids: Vec<AcpHostRequestId>,
     pub pending_elicitation_ids: Vec<AcpHostRequestId>,
+}
+
+impl AcpAttachmentSnapshot {
+    /// The actor retains the most recently settled turn in active_turn. It is
+    /// history, not in-flight work; queued prompts and open seats are work.
+    pub(crate) fn is_quiescent(&self) -> bool {
+        self.state == AcpAttachmentState::Idle
+            && self
+                .active_turn
+                .as_ref()
+                .is_none_or(|turn| turn.state == AcpTurnState::Settled)
+            && self.queued_prompts.is_empty()
+            && self.pending_permission_ids.is_empty()
+            && self.pending_elicitation_ids.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]

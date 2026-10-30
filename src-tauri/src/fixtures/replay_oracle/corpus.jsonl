@@ -1,5 +1,6 @@
 {"fixture":"src-tauri/crates/tuic-terminal/src/fixtures/claude-resize-1407/idle.tcap","events":264}
 {"fixture":"src-tauri/crates/tuic-terminal/src/fixtures/claude-resize-1407/streaming.tcap","events":236}
+{"fixture":"src-tauri/crates/tuic-terminal/tests/fixtures/claude-preview-root-2536.tcap","events":6}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-2.1.294-remote-startup-idle-20261013.tcap","events":13}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-askuser-esc-20260929.tcap","events":203}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-askuser-multi-question-20261012.tcap","events":205}

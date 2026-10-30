@@ -10,6 +10,7 @@ pub mod timer;
 #[cfg(test)]
 mod timer_tests;
 pub use incidents::RunIncident;
+mod proposals;
 mod publication;
 mod reducer;
 mod runtime;
@@ -1198,6 +1199,8 @@ mod tests {
             )
             .expect("reserve spawn");
         let binding = AgentBinding {
+            acp: None,
+            launch_id: None,
             session_id: "managed-session".into(),
             task_id: Some("task-1".into()),
             effect_id: reserved.snapshot.effects[0].id.clone(),
@@ -1297,6 +1300,8 @@ mod tests {
                 &run.id,
                 &next_attempt.id,
                 AgentBinding {
+                    acp: None,
+                    launch_id: None,
                     session_id: "managed-exit".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -1371,6 +1376,8 @@ mod tests {
                 &run.id,
                 &attempt.id,
                 AgentBinding {
+                    acp: None,
+                    launch_id: None,
                     session_id: "input-worker".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -1513,6 +1520,8 @@ mod tests {
                     &run.id,
                     &attempt.id,
                     AgentBinding {
+                        acp: None,
+                        launch_id: None,
                         session_id: session_id.into(),
                         task_id: None,
                         effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -1650,6 +1659,8 @@ mod tests {
                 &run.id,
                 &attempt.id,
                 AgentBinding {
+                    acp: None,
+                    launch_id: None,
                     session_id: "review-worker".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -1746,6 +1757,8 @@ mod tests {
                 &run.id,
                 &attempt.id,
                 AgentBinding {
+                    acp: None,
+                    launch_id: None,
                     session_id: "coordinator-pty".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -2015,8 +2028,8 @@ mod tests {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
-        // 7: contract-4 tokens extend the durable Timer layout (6).
-        assert_eq!(stored_schema_version(&db), 7, "fresh store records version");
+        // 8: WF04 worker lifecycle extends contract-4 parallel regions and Timer layout.
+        assert_eq!(stored_schema_version(&db), 8, "fresh store records version");
         let run = store
             .start_plan(
                 project.path().to_str().unwrap(),
@@ -2026,18 +2039,21 @@ mod tests {
                 RunLimits::default(),
             )
             .unwrap();
-        // A store written before the version existed reports 0 with data in it.
-        rusqlite::Connection::open(&db)
-            .unwrap()
-            .pragma_update(None, "user_version", 0)
-            .unwrap();
-        let upgraded = RunStore::open_at(&db).unwrap();
-        assert_eq!(stored_schema_version(&db), 7);
-        assert_eq!(
-            upgraded.snapshot(&run.id).unwrap().sequence,
-            run.sequence,
-            "the pre-version run survives the upgrade"
-        );
+        // Catches: WF04 and WF02 reusing layout 7 without upgrading main's
+        // store, or an additive upgrade rewriting retained events/snapshots.
+        for old_version in [0, 6, 7] {
+            let conn = rusqlite::Connection::open(&db).unwrap();
+            conn.pragma_update(None, "user_version", old_version)
+                .unwrap();
+            conn.execute_batch("DROP TABLE workflow_report_dispositions")
+                .unwrap();
+            drop(conn);
+            let upgraded = RunStore::open_at(&db).unwrap();
+            assert_eq!(stored_schema_version(&db), 8);
+            assert_eq!(upgraded.snapshot(&run.id).unwrap(), run);
+            assert_eq!(upgraded.replay(&run.id).unwrap(), run);
+            assert_eq!(upgraded.report_dispositions(&run.id).unwrap(), vec![]);
+        }
     }
 
     #[test]
@@ -2360,6 +2376,8 @@ mod tests {
                     &run.id,
                     &attempt_id,
                     AgentBinding {
+                        acp: None,
+                        launch_id: None,
                         session_id: "late-agent".into(),
                         task_id: None,
                         effect_id: reserved.snapshot.effects[0].id.clone(),
@@ -2456,6 +2474,8 @@ mod tests {
                 &run.id,
                 &attempt_id,
                 AgentBinding {
+                    acp: None,
+                    launch_id: None,
                     session_id: "coordinator".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects[0].id.clone(),
@@ -2667,6 +2687,8 @@ mod tests {
                 &run.id,
                 &attempt_id,
                 AgentBinding {
+                    acp: None,
+                    launch_id: None,
                     session_id: "coordinator".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects[0].id.clone(),

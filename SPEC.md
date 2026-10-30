@@ -1536,6 +1536,23 @@ Deterministic checks and check-result publication are not part of this executor.
 
 `archive_retention_days` defaults to 0 (Off), with nullable repository overrides and repo-local configuration. Existing repository-refresh cleanup invokes a shared host-side sweep. Only registered, completed immediate `__archived` children with matching recorded path and sufficient Unix-second archive age are eligible. Legacy archives without timestamps are kept. Non-force Git removal preserves archive refs, refuses dirty files without archive-time recovery, and protects locked or live checkouts. The status line names deleted and kept archives.
 
+### Typed workflow plan proposals (WF04 foundation)
+
+Contract-3 and newer Create Stories visits accept a durable, activation- and plan-revision-
+bound proposal batch through the shared run command API. The daemon consumes
+native keyed story effects without a Coordinator node or session. Missing input
+is an incident, not a request to spawn an author. Contract-2 replay and the
+plan-only Create Stories boundary remain unchanged. ACP launch and lifecycle
+handover/closure are not part of this foundation.
+
+WF04 attribution increment: new daemon workflow launches retain the original
+workspace baseline and managed launch reference before spawning. Retries do not
+replace the baseline with child edits. Bound typed reports also retain durable
+accepted/refused decisions, with accepted decisions atomic with their report
+event and read-only inspection through the shared run action. This is receipt
+disposition, not artifact approval. ACP/policy/continuation/successor/owned-close
+lifecycle remains incomplete; attribution and report receipt permit no cleanup.
+
 
 ### Correlated workflow regions (WF02)
 
@@ -1543,7 +1560,8 @@ The backend publishes Fork/all-Join, bounded literal or receipt-driven For each,
 and typed If/else nodes. Event contract 4 adds branch-token stacks, exact
 fork-instance/generation arrivals, durable resource waits/check claims and
 whole-generation repair supersession. Run-store layout 7 prevents an older
-binary from reinterpreting these events; contracts 2 and 3 remain serial.
+binary from reinterpreting these events; layout 8 adds WF04 lifecycle bindings
+and continuation fences. Contracts 2 and 3 remain serial.
 Critic FIX fences old attempts, stops owned work, traverses Implement once and
 opens a fresh critic/check generation. Unknown effects or unproven stops block
 repair. Existing definition/run services own both IPC and HTTP; no frontend

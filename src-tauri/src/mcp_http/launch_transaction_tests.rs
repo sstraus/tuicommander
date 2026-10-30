@@ -238,12 +238,21 @@ async fn launch_transaction_interrupted_side_effect_blocks_without_retry() {
         let key = hash(&serde_json::to_vec(&("peer", PARENT, stage)).unwrap());
         let record = Record {
             launch_id: uuid::Uuid::new_v4().to_string(),
+            owner_scope: Some(PARENT.into()),
+            acp_connection: None,
+            acp_process_id: None,
+            acp_generation: None,
+            acp_conversation: None,
+            acp_turn: None,
+            acp_prompt_sha256: None,
+            acp_prompt: None,
             digest: hash(
                 &serde_json::to_vec(&canonical(serde_json::to_value(parsed).unwrap())).unwrap(),
             ),
             session_id: uuid::Uuid::new_v4().to_string(),
             stage: stage.into(),
             workspace_path: None,
+            workspace_baseline: None,
             child: None,
             prompt_handoff: false,
             reason: None,
@@ -518,4 +527,179 @@ async fn automation_and_mcp_launch_share_name_hold_and_retry_policy() {
     );
     close(&state, &automated.session_id);
     close(&state, child);
+}
+
+// Catches: daemon-owned launch needs a live parent PTY or loses its original
+// attribution baseline when a branch is renamed and the response is lost.
+#[cfg(unix)]
+#[tokio::test]
+async fn daemon_delivery_launches_with_no_coordinator_session() {
+    let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let repo = repo(root.path()).canonicalize().unwrap();
+    std::fs::write(repo.join("pre-existing.txt"), "Boss work before launch\n").unwrap();
+    let state = Arc::new(crate::state::tests_support::make_test_app_state());
+    let mut request = request();
+    request["parent_session_id"] = json!("workflow:baseline-fixture");
+    request["workspace"] = json!({"existing_path":repo});
+    assert!(state.peer_agents.is_empty());
+    assert!(
+        execute_scoped(&state, addr(), &request, Fault::AfterBaseline, false)
+            .await
+            .unwrap_err()
+            .contains("injected")
+    );
+    assert!(state.session_maps.sessions.is_empty());
+    let db = Journal(state.data_dir.join("managed-launches.sqlite"))
+        .open()
+        .unwrap();
+    let text: String = db
+        .query_row("SELECT record FROM launches", [], |row| row.get(0))
+        .unwrap();
+    drop(db);
+    let before: Record = serde_json::from_str(&text).unwrap();
+    let baseline = before.workspace_baseline.as_ref().unwrap();
+    assert_eq!(baseline.untracked.len(), 1);
+    assert_eq!(baseline.untracked[0].path, "pre-existing.txt");
+    assert_eq!(
+        baseline.untracked[0].sha256,
+        hex::encode(Sha256::digest(b"Boss work before launch\n"))
+    );
+    crate::git_cli::git_cmd(&repo)
+        .args(["branch", "-m", "renamed-before-retry"])
+        .run()
+        .unwrap();
+    std::fs::write(repo.join("pre-existing.txt"), "changed after baseline\n").unwrap();
+    let result = execute_owned(&state, addr(), &request).await;
+    assert!(result.get("error").is_none(), "{result}");
+    let child = result["session_id"].as_str().unwrap();
+    let child_count = state.session_maps.sessions.len();
+    let parent_bound = state.session_maps.session_parent.contains_key(child);
+    close(&state, child);
+    assert_eq!(child_count, 1);
+    assert!(
+        !parent_bound,
+        "run authority is not a fabricated parent terminal"
+    );
+    assert_eq!(
+        result["workspace_baseline"],
+        serde_json::to_value(baseline).unwrap()
+    );
+    let current = super::super::launch_baseline::capture(&repo).unwrap();
+    assert_eq!(current.repository_key, baseline.repository_key);
+    assert_eq!(current.workspace_key, baseline.workspace_key);
+    assert_ne!(current.untracked, baseline.untracked);
+    assert_eq!(
+        std::fs::read_to_string(repo.join("pre-existing.txt")).unwrap(),
+        "changed after baseline\n"
+    );
+    // A new daemon has no live process inventory. Retain evidence and refuse a
+    // replacement; absence here is not a successful attempt or stop proof.
+    let mut restarted = crate::state::tests_support::make_test_app_state();
+    restarted.data_dir = state.data_dir.clone();
+    let restarted = Arc::new(restarted);
+    let retry = execute_owned(&restarted, addr(), &request).await;
+    assert_eq!(retry["session_id"], result["session_id"]);
+    assert_eq!(retry["workspace_baseline"], result["workspace_baseline"]);
+    assert_eq!(retry["ready"], false);
+    assert_eq!(retry["inventory"], "unknown");
+    assert!(
+        retry["reason"]
+            .as_str()
+            .unwrap()
+            .contains("inventory is unknown")
+    );
+    assert!(restarted.session_maps.sessions.is_empty());
+}
+
+// Catches: two linked checkouts get one workspace owner, or repository aliases
+// get separate canonical owners; dirt with unchanged porcelain is missed.
+#[cfg(unix)]
+#[test]
+fn workflow_baseline_distinguishes_checkouts_and_hashes_dirty_bytes() {
+    let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let repo = repo(root.path()).canonicalize().unwrap();
+    std::fs::write(repo.join("tracked"), "base\n").unwrap();
+    crate::git_cli::git_cmd(&repo)
+        .args(["add", "tracked"])
+        .run()
+        .unwrap();
+    crate::git_cli::git_cmd(&repo)
+        .args(["commit", "-m", "baseline fixture"])
+        .run()
+        .unwrap();
+    let checkout = root.path().join("linked");
+    crate::git_cli::git_cmd(&repo)
+        .args([
+            "worktree",
+            "add",
+            "-b",
+            "linked",
+            checkout.to_str().unwrap(),
+        ])
+        .run()
+        .unwrap();
+    let first = super::super::launch_baseline::capture(&repo).unwrap();
+    let linked = super::super::launch_baseline::capture(&checkout).unwrap();
+    assert_eq!(first.repository_key, linked.repository_key);
+    assert_ne!(first.workspace_key, linked.workspace_key);
+    let alias = root.path().join("alias");
+    std::os::unix::fs::symlink(&repo, &alias).unwrap();
+    assert_eq!(
+        super::super::launch_baseline::capture(&alias).unwrap(),
+        first
+    );
+    std::fs::write(repo.join("tracked"), "staged\n").unwrap();
+    crate::git_cli::git_cmd(&repo)
+        .args(["add", "tracked"])
+        .run()
+        .unwrap();
+    std::fs::write(repo.join("tracked"), "unstaged one\n").unwrap();
+    let dirty = super::super::launch_baseline::capture(&repo).unwrap();
+    assert_ne!(first.staged_sha256, dirty.staged_sha256);
+    assert_ne!(first.unstaged_sha256, dirty.unstaged_sha256);
+    std::fs::write(repo.join("tracked"), "unstaged two\n").unwrap();
+    let edited = super::super::launch_baseline::capture(&repo).unwrap();
+    assert_eq!(dirty.status_hex, edited.status_hex);
+    assert_eq!(dirty.staged_sha256, edited.staged_sha256);
+    assert_ne!(dirty.unstaged_sha256, edited.unstaged_sha256);
+    assert_eq!(
+        std::fs::read_to_string(repo.join("tracked")).unwrap(),
+        "unstaged two\n"
+    );
+}
+
+// Catches: hashing a pre-existing symlink follows its target, or invalid Git
+// state is treated as a clean baseline and a worker is started anyway.
+#[cfg(unix)]
+#[tokio::test]
+async fn workflow_baseline_preserves_symlinks_and_refuses_missing_head() {
+    let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let repo = repo(root.path()).canonicalize().unwrap();
+    std::os::unix::fs::symlink("missing target", repo.join("link")).unwrap();
+    let baseline = super::super::launch_baseline::capture(&repo).unwrap();
+    assert_eq!(baseline.untracked[0].kind, "symlink");
+    assert_eq!(
+        baseline.untracked[0].sha256,
+        hex::encode(Sha256::digest(b"missing target"))
+    );
+    let empty = root.path().join("empty");
+    std::fs::create_dir(&empty).unwrap();
+    crate::git_cli::git_cmd(&empty)
+        .args(["init"])
+        .run()
+        .unwrap();
+    let state = Arc::new(crate::state::tests_support::make_test_app_state());
+    let mut request = request();
+    request["parent_session_id"] = json!("workflow:no-base-fixture");
+    request["workspace"] = json!({"existing_path":empty});
+    let result = execute_owned(&state, addr(), &request).await;
+    assert!(
+        result["error"].as_str().unwrap().contains("baseline"),
+        "{result}"
+    );
+    assert!(state.session_maps.sessions.is_empty());
+    assert_eq!(
+        std::fs::read_link(repo.join("link")).unwrap(),
+        PathBuf::from("missing target")
+    );
 }

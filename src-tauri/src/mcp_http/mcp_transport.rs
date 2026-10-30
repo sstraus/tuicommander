@@ -46,7 +46,6 @@ use super::mcp_transport_ancillary::handle_workflow_run;
 use super::mcp_transport_ancillary::handle_workflow_story_create;
 #[cfg(test)]
 use super::mcp_transport_ancillary::handle_worktree;
-pub(crate) use super::mcp_transport_ancillary::launch_daemon_workflow_agent;
 #[cfg(test)]
 use super::mcp_transport_ancillary::queue_workflow_coordinator_wake;
 pub(crate) use super::mcp_transport_ancillary::report_progress;
@@ -59,6 +58,9 @@ use super::mcp_transport_ancillary::resolve_mcp_origin_session;
 use super::mcp_transport_ancillary::resolve_toast_sound;
 #[cfg(test)]
 use super::mcp_transport_ancillary::worktree_remove_success_response;
+pub(crate) use super::mcp_transport_ancillary::{
+    launch_daemon_workflow_agent, resume_daemon_workflow_delivery,
+};
 #[cfg(test)]
 use super::mcp_transport_catalogue::AGENT_ACTIONS;
 #[cfg(test)]
