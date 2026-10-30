@@ -28,6 +28,7 @@ fn run() -> RunSnapshot {
         stories: vec![],
         canonical_recertification: None,
         attempts: vec![NodeAttempt {
+            graph_binding: None,
             id: "attempt-1".into(),
             story_id: "story-1".into(),
             node_id: "implement".into(),

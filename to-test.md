@@ -1,3 +1,7 @@
+## Workflow Fork/all-Join (2509-0e2f) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a story graph with critic/check Fork branches and inspect the ordered branch arrivals, non-success all-Join edges and generation replacement after critic FIX. This assignment does not restart the daily daemon. Dedicated Designer controls belong to WF11; use the existing definition API for these graph records.
+
 ## Long Claude dictation (2502-571c) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, dictate more than 60 seconds to Claude CLI and verify both opening and ending words with Auto-send on and off. Native isolated Claude 2.1.311 probes reproduce plain-write prefix loss and retain all 1159 characters with bracketed paste; the regression tests cover frontend and backend payloads. The owner microphone and daily app were not changed. Rust does not hot-reload; restart only when Boss is ready to lose current sessions.

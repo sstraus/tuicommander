@@ -967,7 +967,7 @@ The headless daemon provides native Telegram mail, correlated drafts, exact fina
 
 Workflow safety: pinned checks own process trees and stop on timeout, run cancellation, and shutdown. Operator decisions and workflow policy mutations require host Human authority (desktop IPC or credential-authenticated HTTP). Workflow plan Done requires current integration evidence for every approved story; stale canonical refs reopen its derived state until recertification.
 
-Graph runtime slice A adds version-2 serial activation/predecessor/decision history and executable start validation with pinned Pause targets and deterministic final checks. History is bounded to 4096 activations per execution. Fork/all-Join schema and execution are deferred to slice G. Pre-contract runs support inspect/cancel only. Autonomous scheduling remains disabled pending slice B and authorization story 956-9745.
+Graph runtime slice A adds version-2 serial activation/predecessor/decision history and executable start validation with pinned Pause targets and deterministic final checks. History is bounded to 4096 activations per execution. That historical slice retained exclusive Join; WF02 below adds correlated parallel regions without changing old replay. Pre-contract runs support inspect/cancel only. Autonomous scheduling remains disabled pending slice B and authorization story 956-9745.
 
 Native stories expose `qa` for work that waits on manual checks. A criterion starts with `[MANUAL]`, or is marked through `set_criterion_manual {index,manual}`. Active work automatically enters QA when all unchecked criteria are manual; `submit_qa` explicitly requests that state. `reject_qa` returns QA to In progress; `approve` requires every criterion checked. QA keeps plans Active and dependencies blocked. All transitions retain expected-revision checks. See the [native stories guide](docs/user-guide/native-stories.md#manual-qa).
 
@@ -1533,3 +1533,17 @@ Deterministic checks and check-result publication are not part of this executor.
 ## Archived worktree retention — Implemented (#2469-c93f)
 
 `archive_retention_days` defaults to 0 (Off), with nullable repository overrides and repo-local configuration. Existing repository-refresh cleanup invokes a shared host-side sweep. Only registered, completed immediate `__archived` children with matching recorded path and sufficient Unix-second archive age are eligible. Legacy archives without timestamps are kept. Non-force Git removal preserves archive refs, refuses dirty files without archive-time recovery, and protects locked or live checkouts. The status line names deleted and kept archives.
+
+
+### Correlated workflow regions (WF02)
+
+The backend publishes Fork/all-Join, bounded literal or receipt-driven For each,
+and typed If/else nodes. Event contract 4 adds branch-token stacks, exact
+fork-instance/generation arrivals, durable resource waits/check claims and
+whole-generation repair supersession. Run-store layout 6 prevents an older
+binary from reinterpreting these events; contracts 2 and 3 remain serial.
+Critic FIX fences old attempts, stops owned work, traverses Implement once and
+opens a fresh critic/check generation. Unknown effects or unproven stops block
+repair. Existing definition/run services own both IPC and HTTP; no frontend
+scheduler or new transport surface is added. See the WF02 section of
+`docs/backend/workflows.md` for publication, fan-out and recovery rules.

@@ -132,16 +132,29 @@ impl Drop for CheckProcess {
     }
 }
 
+fn owner_matches(owner: &CheckOwner, cancelled: &CheckOwner) -> bool {
+    owner.0 == cancelled.0
+        && (owner.1 == cancelled.1 || owner.1.starts_with(&format!("{}:", cancelled.1)))
+}
+
 pub(super) fn cancel_checks(db_path: &Path, run_id: &str) {
     let owner = (db_path.to_owned(), run_id.to_owned());
     let mut registry = CHECKS.lock().unwrap_or_else(|error| error.into_inner());
     registry.cancelled.insert(owner.clone());
-    if let Some(checks) = registry.active.remove(&owner) {
-        for process in checks.into_iter().filter_map(|process| process.upgrade()) {
-            process
-                .lock()
-                .unwrap_or_else(|error| error.into_inner())
-                .stop(true);
+    let keys: Vec<_> = registry
+        .active
+        .keys()
+        .filter(|key| owner_matches(key, &owner))
+        .cloned()
+        .collect();
+    for key in keys {
+        if let Some(checks) = registry.active.remove(&key) {
+            for process in checks.into_iter().filter_map(|process| process.upgrade()) {
+                process
+                    .lock()
+                    .unwrap_or_else(|error| error.into_inner())
+                    .stop(true);
+            }
         }
     }
 }
@@ -201,9 +214,12 @@ fn execute_check_owned(
     let mut registry = CHECKS.lock().unwrap_or_else(|error| error.into_inner());
     if registry.stopped
         || (!allow_cancelled
-            && owner
-                .as_ref()
-                .is_some_and(|owner| registry.cancelled.contains(owner)))
+            && owner.as_ref().is_some_and(|owner| {
+                registry
+                    .cancelled
+                    .iter()
+                    .any(|cancelled| owner_matches(owner, cancelled))
+            }))
     {
         return Err("workflow check cancelled".into());
     }

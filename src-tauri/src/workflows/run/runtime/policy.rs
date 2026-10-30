@@ -21,6 +21,14 @@ pub(in crate::workflows::run) fn gate(
     run: &RunSnapshot,
     graph: &GraphExecution,
 ) -> Result<Option<(EdgeOutcome, DecisionEvidence)>, String> {
+    gate_for_activation(run, graph, None)
+}
+
+pub(in crate::workflows::run) fn gate_for_activation(
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+    activation: Option<&Activation>,
+) -> Result<Option<(EdgeOutcome, DecisionEvidence)>, String> {
     let Some(execution) = run.stories.iter().find(|s| s.story_id == graph.target_id) else {
         return Ok(None);
     };
@@ -31,12 +39,32 @@ pub(in crate::workflows::run) fn gate(
     if graph.definition.required_checks.is_empty() {
         return Err("Gate requires deterministic checks".into());
     }
+    let current_fork = graph.forks.iter().rev().find(|f| {
+        f.parent.is_empty()
+            && (f.state == super::super::parallel::ForkState::Open
+                || f.state == super::super::parallel::ForkState::Joined)
+    });
     let receipts: Option<Vec<_>> = graph
         .definition
         .required_checks
         .iter()
         .map(|check| {
-            execution.check_receipts.iter().rev().find(|r| {
+            let receipts: Vec<_> = if let Some(fork) = current_fork {
+                graph
+                    .checks
+                    .iter()
+                    .filter(|c| {
+                        activation.map_or_else(
+                            || c.token.fork_id == fork.id && c.token.generation == fork.generation,
+                            |a| c.activation_id == a.id,
+                        )
+                    })
+                    .map(|c| &c.receipt)
+                    .collect()
+            } else {
+                execution.check_receipts.iter().collect()
+            };
+            receipts.into_iter().rev().find(|r| {
                 r.check_id == check.id
                     && r.argv == check.argv
                     && r.commit == commit
@@ -90,7 +118,7 @@ pub(in crate::workflows::run) fn drive_policy(
     if is_judge && judge::judge(run, graph, activation)?.0 != EdgeOutcome::Yes {
         return Ok(false);
     }
-    if gate(run, graph)?.is_none() {
+    if gate_for_activation(run, graph, Some(activation))?.is_none() {
         let execution = run
             .stories
             .iter()
@@ -101,12 +129,23 @@ pub(in crate::workflows::run) fn drive_policy(
             .as_deref()
             .ok_or("Gate worktree missing")?;
         let (commit, tree) = super::super::check::clean_artifact(Path::new(path))?;
+        let scoped: Vec<_> = graph
+            .checks
+            .iter()
+            .filter(|c| c.activation_id == activation.id)
+            .map(|c| &c.receipt)
+            .collect();
+        let receipts: Vec<_> = if activation.tokens.is_empty() {
+            execution.check_receipts.iter().collect()
+        } else {
+            scoped
+        };
         let check = graph
             .definition
             .required_checks
             .iter()
             .find(|check| {
-                !execution.check_receipts.iter().any(|r| {
+                !receipts.iter().any(|r| {
                     r.check_id == check.id
                         && r.argv == check.argv
                         && r.commit == commit
@@ -114,7 +153,12 @@ pub(in crate::workflows::run) fn drive_policy(
                 })
             })
             .ok_or("Gate check policy missing")?;
-        store.execute_check(
+        let owner = activation
+            .tokens
+            .last()
+            .map(|token| super::super::parallel::check_owner(&run.id, &graph.id, token))
+            .unwrap_or_else(|| run.id.clone());
+        let result = store.execute_check_owned(
             &run.id,
             &graph.target_id,
             &check.id,
@@ -123,7 +167,30 @@ pub(in crate::workflows::run) fn drive_policy(
                 graph.id, activation.id, check.id, run.sequence
             ),
             run.sequence,
+            &owner,
         )?;
+        if !activation.tokens.is_empty() {
+            let super::super::RunEventKind::CheckRecorded { receipt, .. } = result.event.kind
+            else {
+                return Err("check did not record a receipt".into());
+            };
+            let current = store.snapshot(&run.id)?;
+            store.command_expected(
+                &run.id,
+                &format!(
+                    "bind-check:{}:{}:{}:{}",
+                    activation.id, check.id, receipt.commit, receipt.tree
+                ),
+                current.sequence,
+                RunCommand::Graph {
+                    transition: GraphTransition::CheckBound {
+                        execution_id: graph.id.clone(),
+                        activation_id: activation.id.clone(),
+                        receipt,
+                    },
+                },
+            )?;
+        }
         return Ok(true);
     }
     if !is_judge {

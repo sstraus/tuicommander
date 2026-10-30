@@ -836,7 +836,7 @@ fn old_exclusive_join_replays_without_parallel_wait() {
     assert_eq!(replayed.graph_executions[0].decisions.len(), 1);
     // The upgrade must retain replay while new starts advertise the new pin boundary.
     assert_eq!(
-        replayed.event_contract_version, 3,
+        replayed.event_contract_version, 4,
         "missing WF01 versioned pin boundary"
     );
 }
@@ -879,7 +879,7 @@ fn draft_publish_does_not_repin_active_run() {
         json.get("contract").is_some(),
         "missing immutable definition/policy contract pin"
     );
-    assert_eq!(json["contract"]["version"], 3);
+    assert_eq!(json["contract"]["version"], 4);
 }
 
 fn replay_contract_fixture(bytes: &str) -> RunSnapshot {
@@ -913,10 +913,11 @@ fn contract_pin_refuses_tampering_and_legacy_child_start_stays_serial() {
     )
     .unwrap();
     assert!(legacy.contract.is_none());
-    let current = GraphExecution::start(
+    let current = GraphExecution::start_for_contract(
         "later-child".into(),
         graph.target_id.clone(),
         graph.definition.clone(),
+        3,
     )
     .unwrap();
     let mut initial = old.clone();

@@ -4,6 +4,7 @@ mod contracts;
 pub mod graph;
 mod incidents;
 mod model;
+pub mod parallel;
 pub use incidents::RunIncident;
 mod publication;
 mod reducer;
@@ -2008,8 +2009,8 @@ mod tests {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
-        // 5: contract-3 graph pins; older builds must refuse rather than reinterpret new runs.
-        assert_eq!(stored_schema_version(&db), 5, "fresh store records version");
+        // 6: contract-4 tokens require an explicit store-version upgrade.
+        assert_eq!(stored_schema_version(&db), 6, "fresh store records version");
         let run = store
             .start_plan(
                 project.path().to_str().unwrap(),
@@ -2025,7 +2026,7 @@ mod tests {
             .pragma_update(None, "user_version", 0)
             .unwrap();
         let upgraded = RunStore::open_at(&db).unwrap();
-        assert_eq!(stored_schema_version(&db), 5);
+        assert_eq!(stored_schema_version(&db), 6);
         assert_eq!(
             upgraded.snapshot(&run.id).unwrap().sequence,
             run.sequence,

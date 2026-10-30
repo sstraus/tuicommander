@@ -324,3 +324,360 @@ fn wf02_if_else_routes_unknown_without_evaluating_expressions() {
         assert_eq!(g.activations.last().unwrap().node_id, expected);
     }
 }
+
+#[test]
+fn wf02_sqlite_reopen_replays_waits_cancellation_and_single_repair() {
+    // catches: projection-only waits or cancellation vanish on reopen and release duplicate work.
+    use super::{RunCommand, RunLimits, RunStore};
+    use crate::workflows::WorkflowStore;
+    let (config, project, plan, story, plan_definition, _guard) = super::tests::fixture();
+    assert!(
+        config
+            .path()
+            .starts_with(crate::test_support::test_temp_root())
+    );
+    let definitions = WorkflowStore::open().unwrap();
+    let owner = project
+        .path()
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .into_owned();
+    let mut wire = graph_json();
+    wire["nodes"][4]["kind"] = json!({"type":"agent","role":"validator","capabilities":[],"prompt_template":"Run the declared checks"});
+    wire["nodes"][2]["kind"]["branches"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"id":"advisor","target":"advisor","required":false}));
+    wire["nodes"].as_array_mut().unwrap().push(json!({"id":"advisor","kind":{"type":"agent","role":"reviewer","capabilities":[],"prompt_template":"Advise independently"}}));
+    wire["edges"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({"from":"advisor","to":"join","outcome":null}));
+    let draft = definitions
+        .create_draft(
+            &owner,
+            "WF02 replay",
+            WorkflowKind::Story,
+            serde_json::from_value(wire).unwrap(),
+        )
+        .unwrap();
+    let draft = definitions
+        .update_checks(
+            &draft.id,
+            draft.draft_revision,
+            execution(graph_json()).definition.required_checks,
+        )
+        .unwrap();
+    let publication = definitions
+        .publish(&draft.id, draft.draft_revision)
+        .unwrap();
+    let plan_draft = definitions.get_draft(&plan_definition).unwrap();
+    let mut graph = serde_json::to_value(&plan_draft.graph).unwrap();
+    for node in graph["nodes"].as_array_mut().unwrap() {
+        if node["kind"]["type"] == "story_dispatch" {
+            node["kind"]["story_template_id"] = json!(publication.id);
+            node["kind"]["story_revision"] = json!(publication.revision);
+        }
+    }
+    let plan_draft = definitions
+        .update_draft(
+            &plan_definition,
+            plan_draft.draft_revision,
+            serde_json::from_value(graph).unwrap(),
+        )
+        .unwrap();
+    let publication = definitions
+        .publish(&plan_draft.id, plan_draft.draft_revision)
+        .unwrap();
+    let db = config.path().join("wf02.sqlite3");
+    let store = RunStore::open_at(&db).unwrap();
+    let run = store
+        .start_plan(
+            &owner,
+            &plan,
+            &plan_definition,
+            publication.revision,
+            RunLimits::default(),
+        )
+        .unwrap();
+    let commit = |wire: Value| {
+        let store = RunStore::open_at(&db).unwrap();
+        let snapshot = store.snapshot(&run.id).unwrap();
+        let transition = serde_json::from_value(wire).unwrap();
+        let result = store
+            .command_expected(
+                &run.id,
+                &format!("wf02:{}", snapshot.sequence),
+                snapshot.sequence,
+                RunCommand::Graph { transition },
+            )
+            .unwrap()
+            .snapshot;
+        let reopened = RunStore::open_at(&db).unwrap();
+        assert_eq!(reopened.replay(&run.id).unwrap(), result);
+        assert_eq!(reopened.snapshot(&run.id).unwrap(), result);
+        result
+    };
+    commit(json!({"type":"start","execution_id":"execution","target_id":story}));
+    for id in ["a0", "a1", "a2"] {
+        commit(json!({"type":"activate","execution_id":"execution","activation_id":id}));
+        commit(
+            json!({"type":"complete","execution_id":"execution","activation_id":id,"outcome":null,"evidence":null}),
+        );
+    }
+    let admitted = super::runtime::drive_turn(&store, &run.id).unwrap();
+    assert_eq!(
+        admitted
+            .attempts
+            .iter()
+            .map(|a| a.node_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["critic", "checks"]
+    );
+    assert!(
+        admitted
+            .attempts
+            .iter()
+            .all(|a| a.state == super::AttemptState::Running)
+    );
+    let waiting = RunStore::open_at(&db).unwrap().snapshot(&run.id).unwrap();
+    assert_eq!(
+        serde_json::to_value(&waiting.graph_executions[0]).unwrap()["activations"][5]["resourceWait"],
+        "Parallel activity capacity is occupied"
+    );
+    assert_eq!(
+        RunStore::open_at(&db).unwrap().replay(&run.id).unwrap(),
+        waiting
+    );
+    let superseded = commit(
+        json!({"type":"supersede_fork","execution_id":"execution","fork_id":"a2","generation":1}),
+    );
+    assert!(
+        superseded
+            .attempts
+            .iter()
+            .all(|a| a.state == super::AttemptState::Interrupted)
+    );
+    let old = &superseded.attempts[1];
+    let late = store
+        .command(
+            &run.id,
+            "late-old-check",
+            RunCommand::ReportAttempt {
+                attempt_id: old.id.clone(),
+                generation: old.generation,
+                outcome: super::AttemptOutcome::Completed,
+            },
+        )
+        .unwrap();
+    assert!(matches!(
+        late.event.kind,
+        super::RunEventKind::LateReportIgnored { .. }
+    ));
+    let stopped =
+        json!({"type":"fork_stopped","execution_id":"execution","fork_id":"a2","generation":1});
+    commit(stopped.clone());
+    let replayed = commit(stopped);
+    assert_eq!(
+        replayed.graph_executions[0]
+            .activations
+            .iter()
+            .filter(|a| a.node_id == "implement" && a.state == ActivationState::Ready)
+            .count(),
+        1
+    );
+    // A capacity-waiting advisor had no attempt in generation one. It must not
+    // shift or steal the binding of any generation-two activity.
+    for id in ["a6", "a7"] {
+        commit(json!({"type":"activate","execution_id":"execution","activation_id":id}));
+        commit(
+            json!({"type":"complete","execution_id":"execution","activation_id":id,"outcome":null,"evidence":null}),
+        );
+    }
+    let replacement = super::runtime::drive_turn(&store, &run.id).unwrap();
+    let checks = replacement
+        .attempts
+        .iter()
+        .rev()
+        .find(|a| a.node_id == "checks")
+        .unwrap();
+    assert_eq!(
+        replacement
+            .attempts
+            .iter()
+            .filter(|a| a.state == super::AttemptState::Running)
+            .count(),
+        2
+    );
+    store
+        .command(
+            &run.id,
+            "replacement-check-failed",
+            RunCommand::ReportAttempt {
+                attempt_id: checks.id.clone(),
+                generation: checks.generation,
+                outcome: super::AttemptOutcome::Failed,
+            },
+        )
+        .unwrap();
+    let admitted = super::runtime::drive_turn(&store, &run.id).unwrap();
+    assert!(
+        admitted
+            .attempts
+            .iter()
+            .any(|a| a.node_id == "advisor" && a.state == super::AttemptState::Running)
+    );
+    assert_eq!(
+        RunStore::open_at(&db).unwrap().replay(&run.id).unwrap(),
+        admitted
+    );
+}
+
+#[test]
+fn wf02_cancelling_one_check_generation_fences_late_starts_but_not_repair() {
+    // catches: cancellation either misses late old starts or permanently disables replacement checks.
+    use super::check::{cancel_checks, execute_run_check};
+    use crate::workflows::CheckDefinition;
+    let repo = tempfile::tempdir().unwrap();
+    assert!(
+        repo.path()
+            .starts_with(crate::test_support::test_temp_root())
+    );
+    for args in [
+        vec!["init", "-q"],
+        vec!["config", "user.name", "Workflow"],
+        vec!["config", "user.email", "workflow@example.test"],
+        vec!["commit", "--allow-empty", "-qm", "initial"],
+    ] {
+        let output = std::process::Command::new("git")
+            .args(args)
+            .current_dir(repo.path())
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    let db = repo.path().join("owner.sqlite3");
+    let check = CheckDefinition {
+        id: "status".into(),
+        argv: vec!["git".into(), "status".into(), "--porcelain".into()],
+        timeout_secs: 30,
+    };
+    cancel_checks(&db, "run:execution:fork:1");
+    assert!(
+        execute_run_check(&check, repo.path(), &db, "run:execution:fork:1", false)
+            .unwrap_err()
+            .contains("cancelled")
+    );
+    assert_eq!(
+        execute_run_check(&check, repo.path(), &db, "run:execution:fork:2", false)
+            .unwrap()
+            .exit_code,
+        0
+    );
+    cancel_checks(&db, "run");
+    assert!(
+        execute_run_check(&check, repo.path(), &db, "run:execution:fork:2", false)
+            .unwrap_err()
+            .contains("cancelled")
+    );
+    assert!(
+        execute_run_check(&check, repo.path(), &db, "run:execution:fork:3", false)
+            .unwrap_err()
+            .contains("cancelled")
+    );
+}
+
+#[test]
+fn wf02_dynamic_foreach_expands_exact_receipt_items_with_distinct_tokens() {
+    // catches: duplicate collection values share one obligation or overflow ignores the pinned bound.
+    let mut wire = graph_json();
+    wire["nodes"][2]["kind"] = json!({"type":"for_each","join":"join","body":"checks","items":[],"receipt_evidence":"implement","max_items":2,"empty":"fail"});
+    wire["nodes"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|n| n["id"] != "critic");
+    wire["edges"]
+        .as_array_mut()
+        .unwrap()
+        .retain(|e| e["from"] != "critic");
+    let mut g = execution(wire);
+    visit(&mut g, "start");
+    let source = visit(&mut g, "implement");
+    let id = g.activations.last().unwrap().id.clone();
+    activate(&mut g, &id);
+    let overflow = json!({"type":"expand","execution_id":"execution","activation_id":id,"source_activation_id":source,"items":["a","a","b"]});
+    assert!(
+        g.clone()
+            .apply_for_contract(
+                &serde_json::from_value(overflow).unwrap(),
+                20,
+                RUN_EVENT_CONTRACT_VERSION
+            )
+            .is_err()
+    );
+    apply(
+        &mut g,
+        json!({"type":"expand","execution_id":"execution","activation_id":id,"source_activation_id":source,"items":["a","a"]}),
+    );
+    let state = serde_json::to_value(&g).unwrap();
+    assert_eq!(state["forks"][0]["branches"][0]["item"], "a");
+    assert_eq!(state["forks"][0]["branches"][1]["item"], "a");
+    assert_ne!(
+        state["forks"][0]["branches"][0]["id"],
+        state["forks"][0]["branches"][1]["id"]
+    );
+    let ids: Vec<_> = g
+        .activations
+        .iter()
+        .filter(|a| a.node_id == "checks")
+        .map(|a| a.id.clone())
+        .collect();
+    for id in ids {
+        activate(&mut g, &id);
+        complete(&mut g, &id);
+    }
+    visit(&mut g, "join");
+    assert_eq!(g.activations.last().unwrap().node_id, "done");
+}
+
+#[test]
+fn wf02_unknown_old_daemon_check_keeps_its_claim_until_stop_proof() {
+    // catches: a restarted daemon treats its empty registry as proof that an old check stopped.
+    let mut g = opened();
+    let (id, _) = token(&g, "checks");
+    activate(&mut g, &id);
+    apply(
+        &mut g,
+        json!({"type":"resource_claim","execution_id":"execution","activation_id":id,"key":"check:previous-daemon"}),
+    );
+    let (fork, t) = supersede(&mut g);
+    g = serde_json::from_slice(&serde_json::to_vec(&g).unwrap()).unwrap();
+    assert_eq!(
+        serde_json::to_value(&g).unwrap()["activations"][4]["resourceClaim"],
+        "check:previous-daemon"
+    );
+    assert!(
+        super::runtime::effects::require_known_check_owner(&g, &fork, 1)
+            .unwrap_err()
+            .contains("unknown")
+    );
+    assert!(
+        !g.activations
+            .iter()
+            .any(|a| a.node_id == "implement" && a.state == ActivationState::Ready)
+    );
+    apply(
+        &mut g,
+        json!({"type":"fork_stopped","execution_id":"execution","fork_id":fork,"generation":t["generation"]}),
+    );
+    assert!(
+        serde_json::to_value(&g).unwrap()["activations"][4]
+            .get("resourceClaim")
+            .is_none()
+    );
+}

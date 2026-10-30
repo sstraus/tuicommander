@@ -8,7 +8,7 @@ Each definition has a `closure` policy. Existing records migrate to `human`, and
 
 A definition also pins `requiredChecks`: up to 16 check commands, each with a stable ID, an `argv` array, and a timeout of 1–600 seconds. `update_checks` edits the draft with an expected revision; publication stores the exact set on that immutable revision. Commands invoke executables directly, without a shell. `execute_check` runs a pinned check in the assigned, clean story worktree and appends a durable `CheckRecorded` event with command, exit code, branch ref, commit/tree digest, and duration. A failed command also receives a receipt, but it cannot authorize integration. A changed worktree or ref makes the receipt stale.
 
-The graph contains stable node IDs and directed edges. Node kinds are Start, Agent, Create Stories, Story Dispatch, Judge, Gate, Pause, Loop, Join, Notify, and End. An Agent carries a role, prompt template, and a bounded list of supported capabilities. Story Dispatch is a plan-only node that pins a published story definition ID and revision in the same project. Create Stories is plan-only. Join is story-only, with at least two incoming branches. A Loop is the only source of a back edge and requires `max_iterations` from 1 through 100 plus `repeat` and `exhausted` edges. Judge requires `yes`, `no`, and `uncertain`; Gate requires `pass` and `fail`; Story Dispatch requires `completed` and `blocked`. Invalid references, duplicate or unreachable nodes, missing outcomes, and other cycles are rejected on publish.
+The graph contains stable node IDs and directed edges. Node kinds are Start, Agent, Create Stories, Story Dispatch, Judge, Gate, Pause, Loop, exclusive Join, Fork, all-Join, For each, If/else, Notify, and End. An Agent carries a role, prompt template, and a bounded list of supported capabilities. Story Dispatch is a plan-only node that pins a published story definition ID and revision in the same project. Create Stories is plan-only. Join is story-only, with at least two incoming branches. A Loop is the only source of a back edge and requires `max_iterations` from 1 through 100 plus `repeat` and `exhausted` edges. Judge requires `yes`, `no`, and `uncertain`; Gate requires `pass` and `fail`; Story Dispatch requires `completed` and `blocked`. Invalid references, duplicate or unreachable nodes, missing outcomes, and other cycles are rejected on publish.
 
 The first list or explicit seed action inserts `Story delivery` and `Resolve plan` once per project. The latter pins revision 1 of the former. Fresh story and plan seeds both pin the repository-integrity check (`git fsck --connectivity-only --no-progress`, 300-second timeout), so their drafts can be published and their runs perform deterministic final verification. Projects can replace this baseline with their own checks in a new revision; clearing every check still prevents executable publication. Both remain editable as drafts; a new published revision does not rewrite an older one.
 
@@ -128,3 +128,67 @@ for the effect/receipt schemas, policy ownership, I1–I10 source resolutions,
 recorded serial-run fixtures, complete capability matrix and source/test pins.
 This is a compatibility foundation, not operational migration or authority to
 start a second scheduler, publish externally or retire legacy mechanisms.
+
+
+## Correlated parallel regions (WF02)
+
+New runs use event contract 4 and run-store layout 6. Contracts 2 and 3 retain
+serial replay, including exclusive Join; old definitions and events are not
+rewritten. The pinned definition digest remains part of each new graph start.
+
+A `fork` declares `join`, 1–32 distinct `{id,target,required}` branches and an
+optional `repair_to`. Its matching `all_join` declares `fork` and explicit
+`completed`, `failed`, `cancelled` and `skipped` edges. Branch links are node
+fields, not duplicate graph edges. Publication rejects crossed regions, outside
+arrivals, early exits, cycles and writable agents inside a parallel region.
+Nested regions retain the complete parent-token stack. An activation carries
+its actual predecessor, fork-instance ID, generation and branch ID. Graph Agent
+attempts bind the exact execution/activation IDs; an unstarted superseded branch
+cannot shift a later attempt's ownership. Historical serial runs keep their
+ordinal lookup, and Create Stories retains its existing coordinator-report reuse. Every
+branch must settle; optional branch failure does not fail the join, but optional
+work is not abandoned while still running. A required failure, cancellation or
+skip follows the corresponding non-success edge. Duplicate arrivals do not
+release another successor. Old-generation arrivals cannot satisfy a replacement.
+
+`for_each` uses the same region ledger: `join`, `body`, `items`, `max_items`
+(1–32) and a required `empty` rule (`complete`, `skip`, `fail`). A declared
+`receipt_evidence` Agent node can supply the collection dynamically from its
+completed typed report's evidence list; literal `items` must then be empty.
+Expansion records the exact source activation and items, and replay verifies
+that they match the committed source report. Each item gets a distinct branch,
+even when values repeat. Item context is included in the managed prompt.
+Execution retains the existing 512-activation history bound; no expansion may
+exceed it. Splitter compositions use the ordinary bounded Fork contract.
+
+`if_else` accepts a typed `predicate`: `input {name,value}` declares a pinned
+boolean or unknown value; `receipt {node_id,outcome}` reads a declared node's
+typed terminal outcome. Its edges are `yes`, `no` and `uncertain`. There is no
+expression interpreter, and absent evidence never implies approval.
+
+The daemon scans independent runnable activations, rather than stopping at the
+first running sibling. Agent attempts and asynchronous deterministic checks
+share the configured per-run capacity. Resource waits and check claims are
+committed graph transitions. Checks are bound to their branch activation and
+fork generation; historical receipts cannot satisfy a replacement generation.
+A superseded activity retains its admission slot and check claim until stop is
+observed. Check claims include the owning daemon nonce: after a hard crash, an
+empty registry in another daemon is unknown, not proof of process termination.
+Run cancellation fences and stops every descendant check scope. Fork
+cancellation fences only the old generation, leaving the replacement usable.
+
+A current independent critic FIX supersedes the owning repair region before
+repair begins. The same event fences its unfinished attempts and terminates
+nested obligations. The daemon cancels its scoped checks, stops bound agents
+and requires their exit observations before recording `fork_stopped`. An
+unknown spawn or missing stop observation blocks repair rather than freeing the
+workspace. The stop transition enqueues one Implement activation outside the old
+region. Its published successor opens a fresh generation and reruns both critic
+and checks. Replayed stop transitions cannot enqueue a second repair. Existing
+restart recovery still pauses unknown work for explicit reconciliation; reopening
+a store alone neither repeats an effect nor invents stop proof.
+
+These are backend definition/run contracts on the existing IPC/HTTP service.
+The existing Designer can retain these node records; dedicated parallel-region
+editing and inspection controls belong to WF11. No new scheduler or transport
+is introduced.

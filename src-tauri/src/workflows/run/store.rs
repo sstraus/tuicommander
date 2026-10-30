@@ -72,7 +72,8 @@ impl From<RunStartError> for String {
 /// records explicit graph-root targets; older binaries must refuse that contract.
 // 4: paused_for events; a build that supports 3 refuses the store instead of failing to decode them.
 // 5: contract-3 graph pins; older builds must refuse rather than reinterpret new runs.
-const RUN_STORE_SCHEMA_VERSION: i64 = 5;
+// 6: contract-4 parallel tokens and generation-scoped check/cancellation events.
+const RUN_STORE_SCHEMA_VERSION: i64 = 6;
 
 mod approval;
 mod runtime_start;
@@ -1082,6 +1083,25 @@ impl RunStore {
         command_id: &str,
         expected_sequence: i64,
     ) -> Result<RunReceipt, String> {
+        self.execute_check_owned(
+            run_id,
+            story_id,
+            check_id,
+            command_id,
+            expected_sequence,
+            run_id,
+        )
+    }
+
+    pub(super) fn execute_check_owned(
+        &self,
+        run_id: &str,
+        story_id: &str,
+        check_id: &str,
+        command_id: &str,
+        expected_sequence: i64,
+        owner: &str,
+    ) -> Result<RunReceipt, String> {
         if expected_sequence < 1 {
             return Err("invalid expected workflow sequence".into());
         }
@@ -1115,7 +1135,7 @@ impl RunStore {
             .iter()
             .find(|check| check.id == check_id)
             .ok_or("check is not pinned by the story definition")?;
-        let receipt = execute_run_check(check, Path::new(path), &self.db_path, run_id, false)?;
+        let receipt = execute_run_check(check, Path::new(path), &self.db_path, owner, false)?;
         self.commit_completed_check(run_id, execution, command_id, expected_sequence, receipt)
     }
 
@@ -1193,6 +1213,10 @@ impl RunStore {
         tx.commit()
             .map_err(|e| format!("commit workflow check receipt: {e}"))?;
         Ok(result)
+    }
+
+    pub(super) fn cancel_owned_checks(&self, owner: &str) {
+        cancel_checks(&self.db_path, owner);
     }
 
     fn existing_service_receipt(
@@ -2195,7 +2219,7 @@ fn choose_event(
         }
         RunCommand::StartPlanAgent { node_id } => choose_plan_attempt(snapshot, node_id),
         RunCommand::StartAttempt { story_id, node_id } => {
-            choose_story_attempt(snapshot, &stories, story_id, node_id)
+            choose_story_attempt(snapshot, &stories, story_id, node_id, false)
         }
         RunCommand::StartGraphAgent {
             execution_id,
@@ -2220,27 +2244,48 @@ fn choose_event(
                 {
                     return Err("plan activation already has an attempt".into());
                 }
-                return choose_plan_attempt(snapshot, node_id.to_owned());
+                let event = choose_plan_attempt(snapshot, node_id.to_owned())?;
+                return bind_graph_attempt(
+                    event,
+                    snapshot.event_contract_version,
+                    &execution_id,
+                    &activation_id,
+                );
             }
-            let reached = graph
-                .activations
-                .iter()
-                .take_while(|a| a.id != activation.id)
-                .filter(|a| a.node_id == activation.node_id)
-                .count();
-            let attempts = snapshot
-                .attempts
-                .iter()
-                .filter(|a| a.story_id == graph.target_id && a.node_id == activation.node_id)
-                .count();
-            if attempts != reached {
-                return Err("Agent activation already has an attempt".into());
+            if snapshot.event_contract_version >= 4 {
+                if super::runtime::effects::activation_attempt(snapshot, graph, activation)
+                    .is_some()
+                {
+                    return Err("Agent activation already has an attempt".into());
+                }
+            } else {
+                let reached = graph
+                    .activations
+                    .iter()
+                    .take_while(|a| a.id != activation.id)
+                    .filter(|a| a.node_id == activation.node_id)
+                    .count();
+                let attempts = snapshot
+                    .attempts
+                    .iter()
+                    .filter(|a| a.story_id == graph.target_id && a.node_id == activation.node_id)
+                    .count();
+                if attempts != reached {
+                    return Err("Agent activation already has an attempt".into());
+                }
             }
-            choose_story_attempt(
+            let event = choose_story_attempt(
                 snapshot,
                 &stories,
                 graph.target_id.clone(),
                 activation.node_id.clone(),
+                !activation.tokens.is_empty(),
+            )?;
+            bind_graph_attempt(
+                event,
+                snapshot.event_contract_version,
+                &execution_id,
+                &activation_id,
             )
         }
         RunCommand::ReportAttempt {
@@ -2933,11 +2978,30 @@ pub(super) fn validate_graph_recovery(
     Ok(())
 }
 
+fn bind_graph_attempt(
+    mut event: RunEventKind,
+    version: u16,
+    execution_id: &str,
+    activation_id: &str,
+) -> Result<RunEventKind, String> {
+    if version >= 4 {
+        let RunEventKind::AttemptStarted { attempt } = &mut event else {
+            return Err("graph agent did not start an attempt".into());
+        };
+        attempt.graph_binding = Some(GraphAttemptBinding {
+            execution_id: execution_id.into(),
+            activation_id: activation_id.into(),
+        });
+    }
+    Ok(event)
+}
+
 fn choose_story_attempt(
     snapshot: &RunSnapshot,
     stories: &[Story],
     story_id: String,
     node_id: String,
+    parallel: bool,
 ) -> Result<RunEventKind, String> {
     let story = stories
         .iter()
@@ -2962,21 +3026,26 @@ fn choose_story_attempt(
         .attempts
         .iter()
         .filter(|attempt| {
-            attempt.story_id != snapshot.plan_id && attempt.state == AttemptState::Running
+            attempt.story_id != snapshot.plan_id
+                && super::runtime::effects::attempt_holds_slot(snapshot, attempt)
         })
         .collect();
-    if active.iter().any(|attempt| attempt.story_id == story_id) {
+    if !parallel && active.iter().any(|attempt| attempt.story_id == story_id) {
         return Err("story already has a running attempt".into());
     }
     if active.len() >= usize::from(snapshot.limits.max_parallel_stories) {
         return Err("parallel story limit reached".into());
     }
-    if active.iter().any(|attempt| {
-        stories
-            .iter()
-            .find(|other| other.id == attempt.story_id)
-            .is_none_or(|other| scopes_may_overlap(&story.file_scope, &other.file_scope))
-    }) {
+    if active
+        .iter()
+        .filter(|attempt| attempt.story_id != story_id)
+        .any(|attempt| {
+            stories
+                .iter()
+                .find(|other| other.id == attempt.story_id)
+                .is_none_or(|other| scopes_may_overlap(&story.file_scope, &other.file_scope))
+        })
+    {
         return Err("story file scope overlaps active or unknown work".into());
     }
     if snapshot.attempts.len() >= 512 {
@@ -2986,6 +3055,21 @@ fn choose_story_attempt(
         &snapshot.story_definition_id,
         snapshot.story_definition_revision,
     )?;
+    if parallel
+        && !definition.graph.nodes.iter().any(|n| {
+            n.id == node_id
+                && matches!(
+                    n.kind,
+                    NodeKind::Agent {
+                        role: crate::workflows::AgentRole::Reviewer
+                            | crate::workflows::AgentRole::Validator,
+                        ..
+                    }
+                )
+        })
+    {
+        return Err("parallel agents must be read-only Reviewer or Validator roles".into());
+    }
     if !definition
         .graph
         .nodes
@@ -2994,11 +3078,13 @@ fn choose_story_attempt(
     {
         return Err("node is not an agent in the pinned story template".into());
     }
-    if snapshot.attempts.iter().any(|attempt| {
-        attempt.story_id == story_id
-            && attempt.node_id == node_id
-            && attempt.state == AttemptState::Running
-    }) {
+    if !parallel
+        && snapshot.attempts.iter().any(|attempt| {
+            attempt.story_id == story_id
+                && attempt.node_id == node_id
+                && attempt.state == AttemptState::Running
+        })
+    {
         return Err("story node already has a running attempt".into());
     }
     let generation = snapshot
@@ -3011,6 +3097,7 @@ fn choose_story_attempt(
         + 1;
     Ok(RunEventKind::AttemptStarted {
         attempt: Box::new(NodeAttempt {
+            graph_binding: None,
             id: Uuid::now_v7().to_string(),
             story_id,
             node_id,
@@ -3075,6 +3162,7 @@ fn choose_plan_attempt(snapshot: &RunSnapshot, node_id: String) -> Result<RunEve
         + 1;
     Ok(RunEventKind::AttemptStarted {
         attempt: Box::new(NodeAttempt {
+            graph_binding: None,
             id: Uuid::now_v7().to_string(),
             story_id: snapshot.plan_id.clone(),
             node_id,
