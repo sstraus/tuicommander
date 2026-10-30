@@ -1,7 +1,5 @@
 # TUICommander — Complete Feature Reference
 
-- **Working-effect comparison** — A development fixture offers shimmer, accent dots, a breathing orb and a typewriter cycle in the shared Session Chat / AI Chat transcript. Reduced motion is static. No product default changes (#2533-c51f).
-
 - Mobile terminal and AI Chat composers add one space after a pasted HTTP(S) URL when neither the paste nor the following draft character supplies whitespace (#2494-921f).
 - Mobile list identities stay inside their rows; long session and file names use ellipsis, badges and actions remain visible, and Progress text wraps (#2493-061e).
 
