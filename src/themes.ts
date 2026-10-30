@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import commander from "../src-tauri/src/themes/commander.json";
 import { invoke, listen } from "./invoke";
 import { appLogger } from "./stores/appLogger";
 import { DEFAULT_THEME, FONT_FAMILIES, type FontType, settingsStore } from "./stores/settings";
@@ -170,9 +171,9 @@ const FALLBACK_APP: IAppTheme = {
 	bgSecondary: "#252526",
 	bgTertiary: "#2d2d30",
 	bgHighlight: "#37373d",
-	fgPrimary: "#cccccc",
-	fgSecondary: "#a0a0a0",
-	fgMuted: "#9aa1a9",
+	fgPrimary: commander.appChrome.foreground,
+	fgSecondary: commander.appChrome.foregroundSecondary,
+	fgMuted: commander.appChrome.mutedForeground,
 	accent: "#59a8dd",
 	accentHover: "#7abde5",
 	border: "#3e3e42",
