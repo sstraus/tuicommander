@@ -2026,6 +2026,65 @@ mod tests {
             );
         }
 
+        // Catches: accepting forwarded mail after retirement recreates orphan replay
+        // history; retiring after an accepted enqueue must also remove its history.
+        #[test]
+        fn ordered_enqueue_and_retirement_never_leave_orphan_history() {
+            // These synchronous calls are the serialization boundary: exercise both
+            // complete orders on every run, independent of thread scheduling.
+            for retire_first in [true, false] {
+                let state = test_state();
+                state.peer_agents.insert(
+                    "R".into(),
+                    crate::state::PeerAgent {
+                        tuic_session: "R".into(),
+                        mcp_session_id: "sid-R".into(),
+                        name: "R".into(),
+                        project: None,
+                        registered_at: 0,
+                    },
+                );
+                if retire_first {
+                    unregister_peer(&state, "R");
+                }
+                let enqueued = enqueue_forwarded(&state, "R", message("id-ordered", "mint/s"));
+                if !retire_first {
+                    assert!(matches!(enqueued, Ok(Some(_))), "{enqueued:?}");
+                    assert!(
+                        state
+                            .remote_mail
+                            .forwarded_history
+                            .lock()
+                            .recipients
+                            .contains_key("R"),
+                        "accepted enqueue must create replay history before retirement"
+                    );
+                    assert_eq!(state.agent_inbox.get("R").unwrap().len(), 1);
+                    unregister_peer(&state, "R");
+                }
+                assert!(!state.peer_agents.contains_key("R"));
+                assert!(
+                    !state
+                        .remote_mail
+                        .forwarded_history
+                        .lock()
+                        .recipients
+                        .contains_key("R"),
+                    "orphan replay state after ordered retirement (retire_first={retire_first})"
+                );
+                if retire_first {
+                    assert_eq!(
+                        enqueued,
+                        Err("Forwarded recipient is no longer registered".into())
+                    );
+                    assert!(
+                        !state.agent_inbox.contains_key("R"),
+                        "rejected enqueue must not recreate the retired inbox"
+                    );
+                }
+            }
+        }
+
         // Catches: checking registration before the history lock lets retirement finish
         // before an already-admitted enqueue recreates an unregistered recipient's ring.
         #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
