@@ -419,7 +419,7 @@ fn resolve_profile_path(value: &mut toml::Value, keys: &[&str], base: &Path) {
     };
     match value {
         toml::Value::Table(table) if *key == "*" => {
-            for value in table.values_mut() {
+            for (_, value) in table.iter_mut() {
                 resolve_profile_path(value, rest, base);
             }
         }
