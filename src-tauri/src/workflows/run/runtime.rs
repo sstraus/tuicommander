@@ -253,13 +253,17 @@ async fn run_actor(
             let mut timer_snapshot = snapshot.clone();
             let mut timer_changed = false;
             let result = loop {
-                let remaining = next_wake_ms(&timer_snapshot)
-                    .saturating_sub(now_ms())
-                    .max(0) as u64;
+                let next_wake = if timer_snapshot.status == RunStatus::Running {
+                    Some(next_wake_ms(&timer_snapshot))
+                } else {
+                    super::timer::next_due(&timer_snapshot)
+                };
+                let remaining =
+                    next_wake.map_or(0, |due| due.saturating_sub(now_ms()).max(0) as u64);
                 tokio::select! {
                     result = &mut effect => break result.map(|changed| changed || timer_changed),
                     _ = tokio::time::sleep(std::time::Duration::from_millis(remaining)),
-                        if !matches!(timer_snapshot.status, RunStatus::Completed | RunStatus::Cancelled) => {},
+                        if next_wake.is_some() => {},
                     _ = notify.notified() => {},
                 }
                 // New schedule/cancel hints also recompute the earliest deadline,

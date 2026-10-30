@@ -1,6 +1,6 @@
 ## Durable workflow timers (2529-844b) — Rust rebuild/restart required
 
-- [ ] Load the new timer ledger/actor only after Boss manually restarts a rebuilt `make dev` or installs `make build`, when losing current sessions is acceptable. Rust does not hot-reload. Automated reducer/store/owner and paused-actor tests cover timer delivery; no new UI or provider consumer is installed by this foundation. The daily app was not restarted.
+- [ ] Load the new timer ledger/actor only after Boss manually restarts a rebuilt `make dev` or installs `make build`, when losing current sessions is acceptable. Rust does not hot-reload. Automated reducer/store/owner and paused-actor tests cover timer delivery, including a duration-expired run waiting for its pinned check without repeated deadline polling; no new UI or provider consumer is installed by this foundation. The daily app was not restarted.
 
 ## Long Claude dictation (2502-571c) — Rust rebuild/restart required
 
