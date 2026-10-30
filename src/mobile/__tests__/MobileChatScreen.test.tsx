@@ -462,3 +462,27 @@ it("scopes the Chat size to the AI Chat transcript, excluding its composer", asy
 	expect(view.container.querySelector("header")?.closest("[data-mobile-reading]")).toBeNull();
 	while (mobileFontSizes.chat() > 14) mobileFontSizes.step("chat", -1);
 });
+
+// Catches: mobile ACP bypasses URL spacing or appends at the end instead of the selected range.
+it.each([
+	["", "", "https://example.com", "https://example.com "],
+	["Read ", "next", "See https://example.com", "Read See https://example.com next"],
+	["", " next", "https://example.com", "https://example.com next"],
+	["", "", "plain text", "plain text"],
+])("mobile chat preserves URL paste and suffix: %j %j %j", async (prefix, suffix, text, expected) => {
+	const view = render(() => <MobileChatScreen />);
+	const input = view.container.querySelector("textarea")!;
+	fireEvent.input(input, { target: { value: `${prefix}REPLACE${suffix}` } });
+	input.setSelectionRange(prefix.length, prefix.length + 7);
+	const native = fireEvent.paste(input, { clipboardData: { getData: () => text, items: [], files: [] } });
+	if (native) {
+		input.setRangeText(text, input.selectionStart, input.selectionEnd, "end");
+		fireEvent.input(input);
+	}
+	await Promise.resolve();
+	expect(input.value).toBe(expected);
+	expect(aiChatDraft.text()).toBe(expected);
+	const caret = expected.length - suffix.length;
+	expect(input.selectionStart).toBe(caret);
+	expect(input.selectionEnd).toBe(caret);
+});

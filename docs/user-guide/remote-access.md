@@ -165,6 +165,10 @@ In a terminal, a down-arrow appears to the right of **Send** while CLI or Chat
 output is scrolled back. Tap it to return to the latest output. It does not send
 terminal input or cover the key-bar controls.
 
+Paste an HTTP(S) link into either mobile composer to add a separating space before you continue typing. Text that ends in a link gets the same treatment. Existing whitespace is kept without adding another space. Other text and image pastes are unchanged.
+
+Long session and file names use ellipsis inside their rows. Session badges, times and close controls keep their places; Progress text wraps within its sheet.
+
 Both mobile composers use **+**, a text box with a microphone when browser speech is available, and **Send**. Tap **+ → Attach file** to choose a file or **Take photo** to open the camera capture picker. In a terminal, the upload
 inserts its `@path` into the draft; review the draft and tap Send when ready.
 In mobile AI Chat, images join the image draft and other files appear as file
