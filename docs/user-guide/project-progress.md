@@ -105,13 +105,12 @@ Each PTY and **All repo** has its own last-visit divider. The divider stays
 fixed while you read a view; switching views loads that view's mark. Closing
 the dialog marks every view you visited during that opening.
 
-Blocked entries are red. `intent` entries are muted, because they are what an
-agent set out to do rather than a result. A checkbox narrows the list to blocked
+On desktop, blocked entries are red and `intent` entries are muted, because
+they describe what an agent started rather than a result. Mobile keeps summary
+text in the primary foreground, with status colour in the icon and label. A checkbox narrows the list to blocked
 entries only. A row can be deleted, and deletion is permanent.
 
-On a phone, the Progress tab shows the same controls. The header wraps across
-rows so the project and terminal selectors, **List | Flow**, and **Blocked only**
-remain available at narrow widths.
+On a phone, Progress defaults to Started (intent), Done, and Blocked entries. The backend filters before paging, so messages do not leave short pages. Open **Filters** to select a terminal, show only blocked entries, or include **Messages and delegations**. **Flow** keeps all hand-offs regardless of the list filter. Each card shows the status, time, regular-weight summary and one agent identity. **Entry actions** opens the step, terminal, recipient and Delete action. Long summaries retain **More/Less**, and **Load older** reads the next page.
 
 ### The Flow view
 

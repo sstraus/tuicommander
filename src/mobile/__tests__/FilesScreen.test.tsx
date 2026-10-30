@@ -90,6 +90,45 @@ afterEach(() => {
 });
 
 describe("FilesScreen", () => {
+	// Catches discarding saved desktop group order, display names, or the second path line.
+	it("renders desktop group and repository order with names and short paths", async () => {
+		vi.mocked(rpc).mockResolvedValueOnce({
+			repos: {
+				"/Gits/personal/a": { displayName: "Alpha" },
+				"/Gits/work/b": { displayName: "Beta" },
+				"/Gits/work/c": { displayName: "Gamma" },
+				"/Gits/personal/parked": { parked: true },
+				"C:\\Gits\\other\\d": { displayName: "Delta" },
+			},
+			groupOrder: ["work", "personal"],
+			groups: {
+				personal: { name: "Personal", repoOrder: ["/Gits/personal/a", "/Gits/personal/parked"] },
+				work: { name: "Work", repoOrder: ["/Gits/work/c", "/Gits/work/b", "/missing"] },
+			},
+			repoOrder: ["/Gits/personal/a", "C:\\Gits\\other\\d", "/Gits/work/b"],
+		});
+		const view = render(() => <FilesScreen />);
+		await waitFor(() => expect(view.getByText("Gamma")).toBeTruthy());
+		expect(Array.from(view.container.querySelectorAll("h2"), (node) => node.textContent)).toEqual([
+			"Work2",
+			"Personal1",
+		]);
+		const rows = view.getAllByRole("button");
+		expect(rows.map((row) => row.textContent)).toEqual([
+			"Gammawork/c",
+			"Betawork/b",
+			"Alphapersonal/a",
+			"Deltaother/d",
+		]);
+		expect(rows.every((row) => row.querySelectorAll("svg").length === 2)).toBe(true);
+		expect(rows[0].title).toBe("/Gits/work/c");
+		fireEvent.click(rows[0]);
+		await waitFor(() =>
+			expect(view.getByRole("navigation", { name: "File location" }).textContent).toBe("Files / Gamma"),
+		);
+		expect(view.getByRole("button", { name: "src" }).querySelectorAll("svg")).toHaveLength(2);
+	});
+
 	it("retries a repository opened from the picker when its first directory read failed", async () => {
 		const [revision, setRevision] = createSignal(0);
 		const view = render(() => <FilesScreen recoveryRevision={revision()} />);
@@ -185,8 +224,8 @@ describe("FilesScreen", () => {
 		const order = Array.from(view.container.querySelectorAll("button"))
 			.map((button) => button.textContent?.trim())
 			.filter(Boolean);
-		expect(order.indexOf("▸ src")).toBeLessThan(order.indexOf("▸ .claude"));
-		expect(order.indexOf("▸ docs")).toBeLessThan(order.indexOf("▸ .mdkb"));
+		expect(order.indexOf("src")).toBeLessThan(order.indexOf(".claude"));
+		expect(order.indexOf("docs")).toBeLessThan(order.indexOf(".mdkb"));
 	});
 
 	it("finds a file in a nested folder from the repository tree", async () => {

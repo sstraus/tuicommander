@@ -20,6 +20,30 @@ import { ReviewableMarkdown } from "../components/ReviewableMarkdown";
 import type { SessionInfo } from "../useSessions";
 import styles from "./FilesScreen.module.css";
 
+interface RepositoryDocument {
+	repos?: Record<string, { displayName?: string; parked?: boolean }>;
+	repoOrder?: string[];
+	groups?: Record<string, { name: string; repoOrder: string[] }>;
+	groupOrder?: string[];
+}
+
+const FileIcon = (props: { folder?: boolean }) => (
+	<svg class={styles.fileIcon} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+		<path
+			d={
+				props.folder
+					? "M3 4h7l2 3h9v13H3V4zm2 2v2h14v-1h-8l-2-1H5zm0 4v8h14v-8H5z"
+					: "M5 2h9l5 5v15H5V2zm2 2v16h10V8h-5V4H7zm7 0v2h2l-2-2z"
+			}
+		/>
+	</svg>
+);
+const FileChevron = () => (
+	<svg class={styles.chevron} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+		<path d="m9 5 7 7-7 7-1.4-1.4 5.6-5.6-5.6-5.6z" />
+	</svg>
+);
+
 interface FileEntry {
 	name: string;
 	path: string;
@@ -52,6 +76,26 @@ function withinRoot(path: string, root: string): boolean {
 
 export function FilesScreen(props: FilesScreenProps) {
 	const [repos, setRepos] = createSignal<string[]>([]);
+	const [repositoryDocument, setRepositoryDocument] = createSignal<RepositoryDocument>({});
+	// Saved navigation order, not alphabetical path order. Match the desktop's
+	// group membership and parked-repository presentation without hydrating its
+	// mutation-capable store in the read-only mobile picker.
+	const repositoryGroups = createMemo(() => {
+		const config = repositoryDocument();
+		const available = config.repos ?? {};
+		const visible = (path: string) => path in available && !available[path].parked;
+		const groups = (config.groupOrder ?? []).flatMap((id) => {
+			const group = config.groups?.[id];
+			return group ? [{ name: group.name, paths: group.repoOrder.filter(visible) }] : [];
+		});
+		const grouped = new Set(groups.flatMap((group) => group.paths));
+		const ordered = [...new Set([...(config.repoOrder ?? []), ...Object.keys(available)])];
+		const ungrouped = ordered.filter((path) => visible(path) && !grouped.has(path));
+		return [
+			...groups.filter((group) => group.paths.length),
+			...(ungrouped.length ? [{ name: "", paths: ungrouped }] : []),
+		];
+	});
 	const [repo, setRepo] = createSignal<string | null>(null);
 	const [dir, setDir] = createSignal("");
 	const [entries, setEntries] = createSignal<FileEntry[]>([]);
@@ -185,7 +229,8 @@ export function FilesScreen(props: FilesScreenProps) {
 				setError("Repository path is unavailable for this session.");
 				return;
 			}
-			const config = await rpc<{ repos?: Record<string, unknown> }>("load_repositories");
+			const config = await rpc<RepositoryDocument>("load_repositories");
+			setRepositoryDocument(config);
 			const registered = Object.keys(config.repos ?? {});
 			setRepos(registered);
 			if (cwd) {
@@ -223,7 +268,8 @@ export function FilesScreen(props: FilesScreenProps) {
 			setError("Markdown file is unavailable.");
 			return;
 		}
-		const config = await rpc<{ repos?: Record<string, unknown> }>("load_repositories");
+		const config = await rpc<RepositoryDocument>("load_repositories");
+		setRepositoryDocument(config);
 		setRepos(Object.keys(config.repos ?? {}));
 		const roots = [props.initialRepo?.worktreePath, ...Object.keys(config.repos ?? {})].filter(
 			(path): path is string => !!path,
@@ -471,7 +517,9 @@ export function FilesScreen(props: FilesScreenProps) {
 		}
 	}
 
-	const repoName = (path: string) => path.split("/").filter(Boolean).pop() ?? path;
+	const repoName = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+	const repositoryName = (path: string) => repositoryDocument().repos?.[path]?.displayName || repoName(path);
+	const shortPath = (path: string) => path.split(/[\\/]/).filter(Boolean).slice(-2).join("/");
 	function stopPathPreviewTimer() {
 		if (pathPreviewTimer) clearTimeout(pathPreviewTimer);
 		pathPreviewTimer = undefined;
@@ -504,7 +552,7 @@ export function FilesScreen(props: FilesScreenProps) {
 					</Button>
 				</Show>
 				<strong class={styles.title} title={file() || dir() || repo() || "Files"}>
-					<bdi dir="ltr">{file() ? repoName(file()!) : dir() || repoName(repo() ?? "") || "Files"}</bdi>
+					<bdi dir="ltr">{file() ? repoName(file()!) : dir() || repositoryName(repo() ?? "") || "Files"}</bdi>
 				</strong>
 				<Show when={file() !== null && (editing() || (!error() && !busy()))}>
 					<Show
@@ -567,37 +615,59 @@ export function FilesScreen(props: FilesScreenProps) {
 			</Show>
 			<Show when={repo() === null && !props.initialRepo && !busy() && !error()}>
 				<Show when={repos().length > 0} fallback={<p class={styles.status}>No repositories configured</p>}>
-					<For each={repos()}>
-						{(path) => (
-							<button
-								data-control-layout="row"
-								class={styles.row}
-								title={path}
-								onTouchStart={() => startPathPreview(path)}
-								onTouchEnd={stopPathPreviewTimer}
-								onTouchCancel={stopPathPreviewTimer}
-								onContextMenu={(event) => {
-									event.preventDefault();
-									showPathPreview(path);
-								}}
-								onClick={() => {
-									if (suppressRepoOpen) {
-										suppressRepoOpen = false;
-										return;
-									}
-									void openDirectory(path, "");
-								}}
-							>
-								<span class={styles.name}>{repoName(path)}</span>
-								<span class={styles.path}>
-									<bdi dir="ltr">{path}</bdi>
-								</span>
-							</button>
+					<For each={repositoryGroups()}>
+						{(group) => (
+							<section class={styles.repoGroup} aria-label={group.name || "Repositories"}>
+								<Show when={group.name}>
+									<h2 class={styles.groupTitle}>
+										<span>{group.name}</span>
+										<span>{group.paths.length}</span>
+									</h2>
+								</Show>
+								<div class={styles.groupSurface}>
+									<For each={group.paths}>
+										{(path) => (
+											<button
+												data-control-layout="row"
+												class={`${styles.row} ${styles.repoRow}`}
+												title={path}
+												onTouchStart={() => startPathPreview(path)}
+												onTouchEnd={stopPathPreviewTimer}
+												onTouchCancel={stopPathPreviewTimer}
+												onContextMenu={(event) => {
+													event.preventDefault();
+													showPathPreview(path);
+												}}
+												onClick={() => {
+													if (suppressRepoOpen) {
+														suppressRepoOpen = false;
+														return;
+													}
+													void openDirectory(path, "");
+												}}
+											>
+												<FileIcon folder />
+												<span class={styles.rowBody}>
+													<span class={styles.name}>{repositoryName(path)}</span>
+													<span class={styles.path}>
+														<bdi dir="ltr">{shortPath(path)}</bdi>
+													</span>
+												</span>
+												<FileChevron />
+											</button>
+										)}
+									</For>
+								</div>
+							</section>
 						)}
 					</For>
 				</Show>
 			</Show>
 			<Show when={repo() !== null && file() === null}>
+				<nav class={styles.breadcrumb} aria-label="File location">
+					Files / {repositoryName(repo()!)}
+					<Show when={dir()}> / {dir()}</Show>
+				</nav>
 				<label class={styles.search}>
 					<Input
 						type="search"
@@ -610,20 +680,23 @@ export function FilesScreen(props: FilesScreenProps) {
 				<Show when={searching()}>
 					<p class={styles.status}>Searching…</p>
 				</Show>
-				<For each={visibleEntries()}>
-					{(entry) => (
-						<button
-							data-control-layout="row"
-							class={styles.row}
-							onClick={() => (entry.is_dir ? void openDirectory(repo()!, entry.path) : void openFile(entry))}
-						>
-							<span class={styles.name}>
-								{entry.is_dir ? "▸ " : ""}
-								{searchQuery().trim() ? entry.path : entry.name}
-							</span>
-						</button>
-					)}
-				</For>
+				<div class={styles.directorySurface}>
+					<For each={visibleEntries()}>
+						{(entry) => (
+							<button
+								data-control-layout="row"
+								class={styles.row}
+								onClick={() => (entry.is_dir ? void openDirectory(repo()!, entry.path) : void openFile(entry))}
+							>
+								<FileIcon folder={entry.is_dir} />
+								<span class={styles.name}>{searchQuery().trim() ? entry.path : entry.name}</span>
+								<Show when={entry.is_dir}>
+									<FileChevron />
+								</Show>
+							</button>
+						)}
+					</For>
+				</div>
 				<Show when={visibleEntries().length === 0 && !busy() && !searching() && !error()}>
 					<p class={styles.status}>{searchQuery().trim() ? "No matching files" : "Empty directory"}</p>
 				</Show>

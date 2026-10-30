@@ -654,6 +654,8 @@ rejects approval from the managed session that claimed the story.
 
 ### ProgressDialog (`ProgressDialog/`)
 
+Embedded mobile mode has a two-row project/Filters and List/Flow header, status-labelled cards and an entry detail action. Its default list excludes messages/delegations with backend `progressOnly`; desktop layout is unchanged.
+
 The whole Progress UI: one newest-first list for the active PTY by default,
 with a selector for other PTYs and the repository aggregate. It has a divider
 marking where the last visit ended, and a blocked-only
