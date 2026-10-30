@@ -1611,7 +1611,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 							}
 						}}
 						onSend={async (text) => {
-							const rollback = sessionId ? chatViewStore.beginSubmission(sessionId) : () => {};
+							const rollback = sessionId ? chatViewStore.beginSubmission(sessionId, text) : () => {};
 							try {
 								await submitCompose("send", sessionId, (id) =>
 									pty.sendCommand(id, text, terminalsStore.get(props.id)?.agentType),
