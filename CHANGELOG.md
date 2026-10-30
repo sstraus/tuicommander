@@ -11,10 +11,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Add opt-in pinned workflow evidence policy with source-bound proof, independent review, ordered FIX/STORY/ACCEPT triage and bounded review/repair budgets (#2513-c433).
+- Persist workflow timer wake receipts, bounded provider backoff, one-row cohort deadlines and fail-closed question expiry across daemon restart (#2529-844b).
 
 - Add a separating space after web URLs pasted into mobile terminal and AI Chat composers, unless whitespace already follows (#2494-921f).
 
 ### Fixed
+
+- Raise built-in secondary and muted text contrast on all neutral chrome surfaces, share desktop/mobile startup foregrounds, and remove the collapsed Compose label and queue-count fade (#2506-22b0).
 
 - Preserve the beginning of long Claude CLI dictation by framing it as a bracketed paste, including review-only delivery (#2502-571c).
 

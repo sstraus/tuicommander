@@ -1,3 +1,11 @@
+## Durable workflow timers (2529-844b) — Rust rebuild/restart required
+
+- [ ] Load the new timer ledger/actor only after Boss manually restarts a rebuilt `make dev` or installs `make build`, when losing current sessions is acceptable. Rust does not hot-reload. Automated reducer/store/owner and paused-actor tests cover timer delivery, including a duration-expired run waiting for its pinned check without repeated deadline polling; no new UI or provider consumer is installed by this foundation. The daily app was not restarted.
+## Readable secondary and muted text (2506-22b0) — backend rebuild/restart required
+
+- [x] Worktree browser verification: collapsed Compose with one queued item, sidebar, tabs, status bar and mobile session list have before/after screenshots and computed colors; all built-in secondary/muted foregrounds exceed 4.5:1 on all four neutral surfaces. _(verified: `src/__tests__/themeContrast.test.ts`; browser evidence in orchestrator `reports/tuicommander/img/2026-10-30-grey-contrast/contrast-report.md`.)_
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm a previously seeded Commander profile loads the brighter foregrounds and Compose count without fading. The backend corrects only the exact legacy built-in foreground triplet in memory; custom foregrounds and theme files remain unchanged. The daily app was not restarted. Rust does not hot-reload; restart only when Boss is ready to lose current sessions.
+
 ## Long Claude dictation (2502-571c) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, dictate more than 60 seconds to Claude CLI and verify both opening and ending words with Auto-send on and off. Native isolated Claude 2.1.311 probes reproduce plain-write prefix loss and retain all 1159 characters with bracketed paste; the regression tests cover frontend and backend payloads. The owner microphone and daily app were not changed. Rust does not hot-reload; restart only when Boss is ready to lose current sessions.

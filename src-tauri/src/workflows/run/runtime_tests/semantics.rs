@@ -651,3 +651,151 @@ async fn event_workflow_creates_native_story_and_reuses_current_review_and_check
 
 #[path = "evidence_policy.rs"]
 mod evidence_policy;
+
+#[cfg(unix)]
+#[tokio::test]
+async fn expired_run_does_not_busy_poll_while_its_check_is_still_running() {
+    // catches: the pinned adapter loop repeatedly waking on an already expired run deadline.
+    let (config, project, _plan, story, _template, _guard) = fixture();
+    let worktree = init_worktree(project.path(), config.path());
+    let state = state(config.path());
+    WorkflowRuntime::spawn(&state);
+    owner_ready(&state).await;
+    let published = publish(
+        project.path().to_str().unwrap(),
+        WorkflowGraph {
+            evidence_policy: None,
+            nodes: vec![
+                Node {
+                    id: "start".into(),
+                    kind: NodeKind::Start,
+                },
+                Node {
+                    id: "implement".into(),
+                    kind: NodeKind::Agent {
+                        role: AgentRole::Implementer,
+                        capabilities: vec!["story_read".into(), "story_report".into()],
+                        prompt_template: "Implement".into(),
+                    },
+                },
+                Node {
+                    id: "gate".into(),
+                    kind: NodeKind::Gate,
+                },
+                Node {
+                    id: "pause".into(),
+                    kind: NodeKind::Pause {
+                        resume_to: Some("gate".into()),
+                    },
+                },
+                Node {
+                    id: "end".into(),
+                    kind: NodeKind::End,
+                },
+            ],
+            edges: vec![
+                edge("start", "implement", None),
+                edge("implement", "gate", None),
+                edge("gate", "end", Some("pass")),
+                edge("gate", "pause", Some("fail")),
+            ],
+        },
+    );
+    let marker = config.path().join("check-started");
+    let definitions = WorkflowStore::open().unwrap();
+    let draft = definitions.get_draft(&published.id).unwrap();
+    let draft = definitions
+        .update_checks(
+            &draft.id,
+            draft.draft_revision,
+            vec![CheckDefinition {
+                id: "slow".into(),
+                // Python is already required by the Unix nextest setup scripts.
+                argv: vec![
+                    "python3".into(),
+                    "-c".into(),
+                    "import pathlib,sys,time; pathlib.Path(sys.argv[1]).touch(); time.sleep(60)"
+                        .into(),
+                    marker.to_string_lossy().into_owned(),
+                ],
+                timeout_secs: 60,
+            }],
+        )
+        .unwrap();
+    let published = definitions
+        .publish(&draft.id, draft.draft_revision)
+        .unwrap();
+    let mut request = request(
+        project.path().to_str().unwrap(),
+        &story,
+        &published,
+        "slow-deadline",
+    );
+    // Setup is given 30 seconds; the check stays alive beyond that behavior deadline.
+    request.limits.max_duration_secs = 30;
+    let store = RunStore::open().unwrap();
+    let run = store.start_graph_run(&request).unwrap();
+    let prepared = drive_turn(&store, &run.id).unwrap();
+    store
+        .command(
+            &run.id,
+            "artifact",
+            RunCommand::AssignWorktree {
+                story_id: story,
+                path: worktree,
+            },
+        )
+        .unwrap();
+    let attempt = prepared.attempts.last().unwrap();
+    bind(&store, &run.id, attempt, "deadline-implementer");
+    report(&store, &run.id, attempt, "deadline-implementer", None);
+    let waiting = drive_turn(&store, &run.id).unwrap();
+    assert_eq!(waiting.status, RunStatus::Running);
+    assert_eq!(
+        waiting.graph_executions[0]
+            .activations
+            .last()
+            .unwrap()
+            .node_id,
+        "gate"
+    );
+    let mut hints = state.event_bus.subscribe();
+    state.workflow_runtime.wake(&run.id);
+    let observed = tokio::time::timeout(std::time::Duration::from_secs(90), async {
+        loop {
+            hints.recv().await.unwrap();
+            let current = store.snapshot(&run.id).unwrap();
+            if current.status == RunStatus::Paused {
+                assert!(
+                    marker.exists(),
+                    "check did not start before the run deadline"
+                );
+                let mut unchanged = 0;
+                let until = tokio::time::Instant::now() + std::time::Duration::from_millis(250);
+                while let Ok(Ok(crate::state::AppEvent::WorkflowRunChanged { payload, .. })) =
+                    tokio::time::timeout_at(until, hints.recv()).await
+                {
+                    if payload["runId"] == run.id && payload["sequence"] == current.sequence {
+                        unchanged += 1;
+                        if unchanged > 8 {
+                            break;
+                        }
+                    }
+                }
+                return unchanged;
+            }
+        }
+    })
+    .await;
+    // Cancel before asserting so the real check process is always reaped.
+    store
+        .command(&run.id, "cleanup", RunCommand::Cancel)
+        .unwrap();
+    state.workflow_runtime.wake(&run.id);
+    let unchanged =
+        observed.expect("actor did not publish the run deadline within the outer bound");
+    assert!(
+        unchanged <= 8,
+        "expired pinned adapter busy-polled: {unchanged} unchanged cursor events in 250ms"
+    );
+}

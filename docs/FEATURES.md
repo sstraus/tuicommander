@@ -3583,3 +3583,12 @@ policy permits two reviews and one repair. Native independent approval and
 required deterministic checks remain mandatory. PR review subjects do not mark
 native stories Done. Old publications and runs keep their prior policy. See
 [workflow evidence policy](backend/workflows.md#typed-evidence-policy-wf06).
+
+### Durable workflow timer receipts
+
+Workflow contract-3 runs persist absolute deadlines, stable owner/effect keys,
+bounded retry/backoff and explicit expiry outcomes. Independent service timers
+can flush a one-row cohort through a recovery pause. Activation pauses retain
+their deadlines; cancellation fences delivery. Question expiry never implies
+approval. This is internal infrastructure for later proof, provider and inbox
+consumers, not a new Designer control. See [workflows](backend/workflows.md#durable-timers-wf19).

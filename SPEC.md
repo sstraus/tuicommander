@@ -1543,3 +1543,14 @@ repairs, and typed proof requirements without weakening deterministic checks.
 Generic PR subjects remain evidence contracts, not native story completion.
 Old graph publications and serial event replay retain their existing semantics.
 See [backend evidence contract](docs/backend/workflows.md#typed-evidence-policy-wf06).
+
+### Durable workflow timer foundation (WF19)
+
+Contract-3 runs retain typed Timer schedule/fire/retry/cancel events in run-store
+layout 6. The daemon actor sleeps until eligible absolute deadlines and records
+one wake receipt per stable timer key/attempt. Activation timers suspend delivery
+during pauses without resetting time; independent service timers continue across
+recovery pauses. Cancellation fences all timers. Retry hints respect declared
+attempt, expiry and backoff caps. A question expiry is only timed-out/incomplete,
+never consent. WF08 cohort collection, WF13 provider observation and WF03 inbox
+consumers build on this internal primitive; they are not installed by WF19.
