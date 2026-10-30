@@ -2620,6 +2620,30 @@ mod tests {
         assert!(result.is_none());
     }
 
+    // Catches the legacy-only extension filter using a real Gemini 0.64 transcript.
+    #[test]
+    fn gemini_jsonl_recorded_session_is_discovered_and_verified() {
+        let dir = TempDir::new().unwrap();
+        let chats = dir.path().join(".gemini/tmp/repo/chats");
+        fs::create_dir_all(&chats).unwrap();
+        fs::write(
+            chats.join("session-recorded.jsonl"),
+            include_str!("fixtures/gemini/session-0.64.jsonl"),
+        )
+        .unwrap();
+        let cwd = "/Users/stefano.straus/Gits/.tmp/live-tuic/repo";
+        let id = "1c1a1f22-6455-4886-9644-ccf7bdd191f2";
+        let home = dir.path().to_str().unwrap();
+        let env = HashMap::from([("GEMINI_CLI_HOME".to_string(), home.to_string())]);
+        assert_eq!(
+            discover_session_id("gemini", cwd, &[], None, &env),
+            Some(id.to_string())
+        );
+        assert!(verify_agent_session(
+            "gemini".into(), id.into(), cwd.into(), None, env
+        ));
+    }
+
     // ── gemini discovery mtime bound ──
 
     #[test]
