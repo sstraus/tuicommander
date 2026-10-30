@@ -1,5 +1,7 @@
 # TUICommander Specification
 
+- [x] Desktop and mobile AI Chat and Session Chat use one theme-accent breathing orb while working, with accessible Working text and a static dot under reduced motion (#2535-8b6b).
+
 - [x] Mobile terminal and AI Chat composers add one space after a pasted HTTP(S) URL when neither the paste nor the following draft character supplies whitespace (#2494-921f).
 - [x] Mobile list identities stay inside their rows; long session and file names use ellipsis, badges and actions remain visible, and Progress text wraps (#2493-061e).
 
@@ -1547,6 +1549,16 @@ opens a fresh critic/check generation. Unknown effects or unproven stops block
 repair. Existing definition/run services own both IPC and HTTP; no frontend
 scheduler or new transport surface is added. See the WF02 section of
 `docs/backend/workflows.md` for publication, fan-out and recovery rules.
+### Workflow evidence policy (WF06)
+
+Opt-in graph `evidencePolicy` is immutable with its publication and run pin.
+Typed subjects bind clean source and requirements. The native Judge enforces
+independent review, ordered FIX/STORY/ACCEPT triage, bounded total reviews and
+repairs, and typed proof requirements without weakening deterministic checks.
+Generic PR subjects remain evidence contracts, not native story completion.
+Old graph publications and serial event replay retain their existing semantics.
+See [backend evidence contract](docs/backend/workflows.md#typed-evidence-policy-wf06).
+
 ### Durable workflow timer foundation (WF19)
 
 Contract-3 and contract-4 runs retain typed Timer schedule/fire/retry/cancel events.

@@ -1,0 +1,43 @@
+.indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-block-size: 24px;
+  flex-shrink: 0;
+  color: var(--fg-secondary);
+  font-size: var(--chat-font-status, var(--font-sm));
+}
+
+.orb {
+  position: relative;
+  display: grid;
+  place-items: center;
+  inline-size: 20px;
+  block-size: 20px;
+  flex-shrink: 0;
+}
+
+.orb::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius-full);
+  animation: orbBreathe 2s ease infinite;
+}
+
+.orb i {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+
+@keyframes orbBreathe {
+  0%, 100% { transform: scale(0.8); }
+  50% { transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orb::before { content: none; animation: none; }
+}

@@ -1,9 +1,10 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { readStylesheet } from "../../__tests__/fixtures/readStylesheet";
 
 const chatCss = readFileSync(resolve(__dirname, "../../components/AIChatPanel/AIChatPanel.module.css"), "utf-8");
-const mobileCss = readFileSync(resolve(__dirname, "../mobile.css"), "utf-8");
+const mobileCss = readStylesheet(resolve(__dirname, "../mobile.css"));
 const rule = chatCss.match(/\.assistantMsg\.intermediateMsg\s*\{([^}]*)\}/)?.[1] ?? "";
 
 describe("muted intermediate assistant text on mobile", () => {

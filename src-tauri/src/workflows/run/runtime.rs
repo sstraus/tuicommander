@@ -705,6 +705,12 @@ pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, 
                             }
                         }
                         NodeKind::Judge => {
+                            if graph.definition.graph.evidence_policy.is_some()
+                                && policy::gate_for_activation(&snapshot, graph, Some(activation))?
+                                    .is_none()
+                            {
+                                continue 'activations;
+                            }
                             let decision = judge::judge(&snapshot, graph, activation)?;
                             if decision.0 == super::graph::EdgeOutcome::Yes
                                 && !policy::approved(&snapshot, graph)?

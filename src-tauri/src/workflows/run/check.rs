@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct CheckReceipt {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requirements_digest: Option<String>,
     pub check_id: String,
     pub argv: Vec<String>,
     pub exit_code: i32,
@@ -288,6 +290,7 @@ fn execute_check_owned(
         return Err("workflow check changed the branch, commit, or tree".into());
     }
     Ok(CheckReceipt {
+        requirements_digest: None,
         check_id: check.id.clone(),
         argv: check.argv.clone(),
         exit_code,

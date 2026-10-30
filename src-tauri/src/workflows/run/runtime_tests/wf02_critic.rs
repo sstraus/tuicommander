@@ -137,6 +137,7 @@ fn wf02_primary_critic_fix_is_not_masked_by_later_reviewer() {
                     attempt,
                     node,
                     Some(ReviewAssessment {
+                        evidence: None,
                         decision,
                         artifact_digest: artifact_digest(&commit, &tree),
                         findings: if decision == ReviewDecision::ChangesRequested {

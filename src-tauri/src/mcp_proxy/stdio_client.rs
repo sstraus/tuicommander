@@ -989,14 +989,22 @@ mod tests {
 
     #[test]
     fn is_alive_returns_false_after_process_exits() {
-        // A server that exits immediately after the handshake.
-        let config = make_config_for_scenario("exit-after-handshake");
-        let mut client = StdioMcpClient::new(config);
-        client.spawn_and_initialize().unwrap();
+        // Catches mistaking a delayed child exit for a liveness defect.
+        for scenario in ["exit-after-handshake", "delayed-exit-after-handshake"] {
+            let config = make_config_for_scenario(scenario);
+            let mut client = StdioMcpClient::new(config);
+            client.spawn_and_initialize().unwrap();
 
-        // Give the process a moment to exit
-        std::thread::sleep(Duration::from_millis(200));
-        assert!(!client.is_alive());
+            // Exit is asynchronous; the bound catches a stuck fixture, not slow scheduling.
+            let deadline = Instant::now() + Duration::from_secs(10);
+            while client.is_alive() {
+                assert!(
+                    Instant::now() < deadline,
+                    "{scenario}: child did not exit within 10 s after the handshake"
+                );
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
     }
 
     #[test]

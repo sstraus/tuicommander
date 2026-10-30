@@ -306,6 +306,7 @@ fn empty_recertification_cannot_certify_an_advanced_head() {
         .unwrap()
         .post_checks
         .push(CheckReceipt {
+            requirements_digest: None,
             check_id: "repository-integrity".into(),
             argv: vec!["git".into(), "fsck".into()],
             exit_code: 0,

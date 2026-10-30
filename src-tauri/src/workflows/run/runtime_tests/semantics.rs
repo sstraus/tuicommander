@@ -320,6 +320,7 @@ fn assert_delivery(expected: EdgeOutcome, automatic: bool, fail_checks: bool) {
         "review prompt must carry the exact artifact subject"
     );
     let assessment = ReviewAssessment {
+        evidence: None,
         decision: if expected == EdgeOutcome::No {
             ReviewDecision::ChangesRequested
         } else {
@@ -587,6 +588,7 @@ async fn event_workflow_creates_native_story_and_reuses_current_review_and_check
         &reviewer,
         "reviewer",
         Some(ReviewAssessment {
+            evidence: None,
             decision: ReviewDecision::Approved,
             artifact_digest: artifact_digest(&commit, &tree),
             findings: vec![],
@@ -647,6 +649,9 @@ async fn event_workflow_creates_native_story_and_reuses_current_review_and_check
     );
 }
 
+#[path = "evidence_policy.rs"]
+mod evidence_policy;
+
 #[cfg(unix)]
 #[tokio::test]
 async fn expired_run_does_not_busy_poll_while_its_check_is_still_running() {
@@ -659,6 +664,7 @@ async fn expired_run_does_not_busy_poll_while_its_check_is_still_running() {
     let published = publish(
         project.path().to_str().unwrap(),
         WorkflowGraph {
+            evidence_policy: None,
             nodes: vec![
                 Node {
                     id: "start".into(),
