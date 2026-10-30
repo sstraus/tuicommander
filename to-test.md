@@ -3094,3 +3094,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   runs stay inspectable/cancelable and use exclusive Join. Do not migrate live runs.
   Targeted recorded-run and HTTP/service parity tests provide automated coverage;
   the running development backend does not hot-reload this Rust change.
+
+- [ ] After a manual Rust restart (`make dev` or release rebuild), inspect a new daemon workflow launch: its `workspace_baseline` must retain pre-existing dirt and its attempt binding must retain `launchId` across retry. Do not restart an active daily instance for this check. Safe close and ACP lifecycle remain unfinished.

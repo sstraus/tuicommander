@@ -49,6 +49,8 @@ struct Record {
     session_id: String,
     stage: String,
     workspace_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    workspace_baseline: Option<super::launch_baseline::WorkspaceBaseline>,
     child: Option<Value>,
     #[serde(default)]
     prompt_handoff: bool,
@@ -144,6 +146,8 @@ enum Fault {
     AfterWorktreeEffect,
     #[cfg(test)]
     AfterChild,
+    #[cfg(test)]
+    AfterBaseline,
     #[cfg(test)]
     DuringDelivery,
 }
@@ -241,6 +245,7 @@ async fn execute_scoped(
             session_id: uuid::Uuid::new_v4().to_string(),
             stage: "reserved".into(),
             workspace_path: None,
+            workspace_baseline: None,
             child: None,
             prompt_handoff: false,
             reason: None,
@@ -333,6 +338,29 @@ async fn execute_scoped(
     #[cfg(test)]
     if fault == Fault::AfterWorktree {
         return Err("injected lost reply after worktree selection".into());
+    }
+    if !require_peer
+        && request.parent_session_id.starts_with("workflow:")
+        && record.workspace_baseline.is_none()
+    {
+        let path = PathBuf::from(
+            record
+                .workspace_path
+                .as_deref()
+                .ok_or("missing workflow workspace")?,
+        );
+        record.workspace_baseline = Some(
+            tokio::task::spawn_blocking(move || super::launch_baseline::capture(&path))
+                .await
+                .map_err(|error| format!("capture workspace baseline: {error}"))??,
+        );
+        // The original baseline commits before spawn. A retry after selection
+        // must never replace pre-existing ownership with the worker's edits.
+        journal.save(&key, &mut record)?;
+    }
+    #[cfg(test)]
+    if fault == Fault::AfterBaseline {
+        return Err("injected interruption after workspace baseline".into());
     }
     record.stage = "spawn_started".into();
     journal.save(&key, &mut record)?;
@@ -436,6 +464,7 @@ fn receipt(state: &AppState, record: &Record) -> Value {
         "prompt_delivery": delivery, "ready": ready,
         "reason": record.reason.as_deref().or_else(|| if !live && record.stage == "created" { Some("child is no longer live; this key never creates a replacement") } else if pending.as_ref().is_some_and(|p| p.notified) { Some("initial prompt delivery timed out; prompt remains queued") } else if blocked { Some(if live { "child awaits input" } else { "no live child; repeat the original request only to resume a safe checkpoint" }) } else { None }),
         "workspace_path": record.workspace_path,
+        "workspace_baseline": record.workspace_baseline,
         "warm_artifacts": record.workspace_path.as_ref().map(|path| crate::worktree::warm_status(std::path::Path::new(path))),
         "child": record.child,
     })

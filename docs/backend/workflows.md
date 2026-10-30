@@ -153,3 +153,26 @@ This foundation does not add ACP worker launch, global launch-policy imports,
 continuation delivery, report disposition, successor handover or safe child
 closure. Those WF04 requirements are not certified by the existing PTY spawn
 journal or by proposal-input tests.
+
+
+### Daemon workspace attribution (WF04 increment)
+
+Before a new daemon-owned workflow worker starts, the managed-launch journal
+records its canonical Git common-directory key, per-checkout Git-directory key,
+base HEAD, exact dirty status, staged and unstaged diff hashes, and hashes of
+untracked files or symlink targets. It does not retain file payloads. Linked
+checkouts share the repository key but have different workspace keys; repository
+aliases and branch renames do not create another owner. An unreadable baseline
+or missing base commit refuses the new launch rather than treating it as clean.
+
+The baseline commits before spawn and is never refreshed by a retry. The
+managed launch receipt exposes it as `workspace_baseline`; the durable attempt
+binding also retains the managed `launchId`. Old bindings without this reference
+remain replayable. A restarted daemon can read the original attribution even
+when its live process inventory is unavailable, without spawning a replacement.
+
+This baseline is evidence, not a cleanup authorization. Git cannot observe
+unsaved editor buffers or exclude concurrent writers. Existing dirty work is
+not attributed to the worker, and no worktree, file or branch is removed by this
+increment. ACP launch, effective policy pins, continuation, report disposition,
+successor handover and owned close remain unfinished.

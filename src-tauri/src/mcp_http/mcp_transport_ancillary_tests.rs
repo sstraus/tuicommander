@@ -2520,6 +2520,7 @@ async fn workflow_proposal_create_retries_create_one_story() {
         &run.id,
         &attempt.id,
         AgentBinding {
+            launch_id: None,
             session_id: "proposal-pty".into(),
             task_id: None,
             effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),

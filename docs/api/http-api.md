@@ -3780,3 +3780,13 @@ a separate host effect.
 ## Archive retention cleanup
 
 `POST /worktrees/archive-retention` accepts `{ "repoPath": "/absolute/repository" }` and returns `{ "deleted": ["archive-name"], "kept": ["archive-name: reason"] }`. The host resolves retention from its repository settings; no threshold is accepted from the caller. Desktop IPC uses the identical result via `sweep_archive_retention`. It deletes only recorded eligible completed archives under `__archived/`, with live-session checks and non-force Git removal; commit archive refs remain.
+
+### Workflow launch attribution
+
+Daemon-owned workflow managed-launch receipts add `workspace_baseline` with
+canonical `repository_key`, `workspace_key`, `head`, `status_hex`,
+`staged_sha256`, `unstaged_sha256`, and `untracked` entries (`path`, `kind`,
+`sha256`). Other managed launch receipts return null for this field. These
+values are pre-spawn observations, not cleanup authority. Run attempt bindings
+add optional camel-case `launchId`; old events can omit it. Existing managed
+launch reads and run get/events use the same fields across HTTP, IPC and MCP.

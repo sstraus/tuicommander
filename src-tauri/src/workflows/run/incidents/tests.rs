@@ -38,6 +38,7 @@ fn run() -> RunSnapshot {
             input_answer: None,
             report: None,
             agent: Some(AgentBinding {
+                launch_id: None,
                 session_id: "session-1".into(),
                 task_id: None,
                 effect_id: "effect-1".into(),

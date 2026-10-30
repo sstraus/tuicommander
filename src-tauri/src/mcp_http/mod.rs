@@ -15,6 +15,7 @@ mod github_pr_action_routes;
 mod github_review_routes;
 mod github_routes;
 mod guards;
+mod launch_baseline;
 pub(crate) mod launch_transaction;
 mod log_routes;
 pub(crate) mod managed_launch;

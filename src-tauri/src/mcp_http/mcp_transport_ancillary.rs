@@ -1573,6 +1573,7 @@ fn launch_workflow_effect(
         );
     };
     let binding = crate::workflows::AgentBinding {
+        launch_id: spawned["launch_id"].as_str().map(str::to_owned),
         session_id: session_id.into(),
         task_id: spawned["task_id"].as_str().map(str::to_owned),
         effect_id: effect.id.clone(),

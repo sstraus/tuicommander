@@ -1542,3 +1542,8 @@ native keyed story effects without a Coordinator node or session. Missing input
 is an incident, not a request to spawn an author. Contract-2 replay and the
 plan-only Create Stories boundary remain unchanged. ACP launch and lifecycle
 handover/closure are not part of this foundation.
+
+WF04 attribution increment: new daemon workflow launches retain the original
+workspace baseline and managed launch reference before spawning. Retries do not
+replace the baseline with child edits. ACP/policy/continuation/report/successor/
+owned-close lifecycle remains incomplete; attribution alone permits no cleanup.

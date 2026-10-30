@@ -105,6 +105,8 @@ pub struct NodeAttempt {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentBinding {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch_id: Option<String>,
     pub session_id: String,
     pub task_id: Option<String>,
     pub effect_id: String,

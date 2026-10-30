@@ -1190,6 +1190,7 @@ mod tests {
             )
             .expect("reserve spawn");
         let binding = AgentBinding {
+            launch_id: None,
             session_id: "managed-session".into(),
             task_id: Some("task-1".into()),
             effect_id: reserved.snapshot.effects[0].id.clone(),
@@ -1289,6 +1290,7 @@ mod tests {
                 &run.id,
                 &next_attempt.id,
                 AgentBinding {
+                    launch_id: None,
                     session_id: "managed-exit".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -1363,6 +1365,7 @@ mod tests {
                 &run.id,
                 &attempt.id,
                 AgentBinding {
+                    launch_id: None,
                     session_id: "input-worker".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -1505,6 +1508,7 @@ mod tests {
                     &run.id,
                     &attempt.id,
                     AgentBinding {
+                        launch_id: None,
                         session_id: session_id.into(),
                         task_id: None,
                         effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -1642,6 +1646,7 @@ mod tests {
                 &run.id,
                 &attempt.id,
                 AgentBinding {
+                    launch_id: None,
                     session_id: "review-worker".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -1738,6 +1743,7 @@ mod tests {
                 &run.id,
                 &attempt.id,
                 AgentBinding {
+                    launch_id: None,
                     session_id: "coordinator-pty".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -2352,6 +2358,7 @@ mod tests {
                     &run.id,
                     &attempt_id,
                     AgentBinding {
+                        launch_id: None,
                         session_id: "late-agent".into(),
                         task_id: None,
                         effect_id: reserved.snapshot.effects[0].id.clone(),
@@ -2448,6 +2455,7 @@ mod tests {
                 &run.id,
                 &attempt_id,
                 AgentBinding {
+                    launch_id: None,
                     session_id: "coordinator".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects[0].id.clone(),
@@ -2659,6 +2667,7 @@ mod tests {
                 &run.id,
                 &attempt_id,
                 AgentBinding {
+                    launch_id: None,
                     session_id: "coordinator".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects[0].id.clone(),
