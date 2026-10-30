@@ -10,7 +10,7 @@ import { toastsStore } from "../../stores/toasts";
 import { rpc } from "../../transport";
 import { classifyFile } from "../../utils/filePreview";
 import { buildMarkdownReviewPrompt } from "../../utils/markdownReviewPrompt";
-import { isAbsolutePath, joinPath, pathBasename, pathStripPrefix } from "../../utils/pathUtils";
+import { isAbsolutePath, joinPath, pathBasename, pathDirname, pathStripPrefix } from "../../utils/pathUtils";
 import { repoImageUrl } from "../../utils/repoImageUrl";
 import {
 	insertTweakBlockComment,
@@ -340,8 +340,16 @@ export function FilesScreen(props: FilesScreenProps) {
 				setNotice(`File not found: ${target.absolute_path}`);
 				return;
 			}
+			const config = await rpc<{ repos?: Record<string, unknown> }>("load_repositories");
+			setRepos(Object.keys(config.repos ?? {}));
+			const destinationRoot =
+				[root, props.initialRepo?.worktreePath, ...repos()]
+					.filter((path): path is string => !!path && withinRoot(target.absolute_path, path))
+					.sort((a, b) => b.length - a.length)[0] ?? pathDirname(target.absolute_path);
+			const relative = pathStripPrefix(target.absolute_path, destinationRoot)!;
+			await openDirectory(destinationRoot, pathDirname(relative));
 			await openFile(
-				{ name: pathBasename(target.absolute_path), path: target.absolute_path, is_dir: false, size: stat.size },
+				{ name: pathBasename(relative), path: relative, is_dir: false, size: stat.size },
 				target.line ?? undefined,
 			);
 		} catch (err) {
