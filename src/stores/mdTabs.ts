@@ -820,23 +820,20 @@ function createMdTabsStore() {
 			return base.state.tabs[id]?.fontSize ?? MD_DEFAULT_FONT_SIZE;
 		},
 
-		/** Zoom in the active markdown tab by one step. */
-		zoomIn(): void {
-			const id = base.state.activeId;
+		/** Zoom in the active or specified markdown tab by one step. */
+		zoomIn(id = base.state.activeId): void {
 			if (!id) return;
 			this.setFontSize(id, (base.state.tabs[id]?.fontSize ?? MD_DEFAULT_FONT_SIZE) + MD_FONT_STEP);
 		},
 
-		/** Zoom out the active markdown tab by one step. */
-		zoomOut(): void {
-			const id = base.state.activeId;
+		/** Zoom out the active or specified markdown tab by one step. */
+		zoomOut(id = base.state.activeId): void {
 			if (!id) return;
 			this.setFontSize(id, (base.state.tabs[id]?.fontSize ?? MD_DEFAULT_FONT_SIZE) - MD_FONT_STEP);
 		},
 
-		/** Reset the active markdown tab to the default font size. */
-		zoomReset(): void {
-			const id = base.state.activeId;
+		/** Reset the active or specified markdown tab to the default font size. */
+		zoomReset(id = base.state.activeId): void {
 			if (!id) return;
 			this.setFontSize(id, MD_DEFAULT_FONT_SIZE);
 		},

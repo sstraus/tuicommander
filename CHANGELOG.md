@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Apply collective zoom shortcuts to all open Markdown and code editor tabs as well as terminals (#2499-1156).
+
 - Truncate long mobile session and file names, preserve badges and actions, and wrap unbroken Progress text (#2493-061e).
 
 - Apply the mobile Chat font setting to all assistant prose, including earlier explanatory blocks (#2492-4944).

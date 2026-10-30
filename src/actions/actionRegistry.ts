@@ -57,9 +57,9 @@ const ACTION_META: Partial<Record<ActionName, ActionMeta>> = {
 	"zoom-in": { label: "Zoom in", category: "Zoom" },
 	"zoom-out": { label: "Zoom out", category: "Zoom" },
 	"zoom-reset": { label: "Reset zoom", category: "Zoom" },
-	"zoom-in-all": { label: "Zoom in all terminals", category: "Zoom" },
-	"zoom-out-all": { label: "Zoom out all terminals", category: "Zoom" },
-	"zoom-reset-all": { label: "Reset zoom all terminals", category: "Zoom" },
+	"zoom-in-all": { label: "Zoom in all tabs", category: "Zoom" },
+	"zoom-out-all": { label: "Zoom out all tabs", category: "Zoom" },
+	"zoom-reset-all": { label: "Reset zoom all tabs", category: "Zoom" },
 
 	"toggle-markdown": { label: "Toggle markdown panel", category: "Panels" },
 	"toggle-settings": { label: "Open settings", category: "Panels" },
