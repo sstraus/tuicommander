@@ -371,6 +371,16 @@ mod tests {
     fn actionable_subscription_overflow_counts_only_matching_unacknowledged_mail() {
         let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let store = MailSubscriptions::default();
+        // This checks filtering at the real retention boundary, not power-loss
+        // durability. Keep every append and transaction, but avoid a full disk
+        // flush per fixture row (over 2000) on shared coverage runners.
+        store
+            .with_connection(dir.path(), |connection| {
+                connection
+                    .pragma_update(None, "synchronous", "NORMAL")
+                    .map_err(|error| error.to_string())
+            })
+            .unwrap();
         for (id, filter) in [("pump", "actionable"), ("all", "all")] {
             request(
                 &store,

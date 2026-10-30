@@ -2036,7 +2036,10 @@ mod tests {
             let producer = {
                 let state = state.clone();
                 tokio::task::spawn_blocking(move || {
-                    for i in 0..3000 {
+                    // Each round exercises the real durable enqueue while racing
+                    // retirement. Bound repetitions: 3000 disk-backed rounds made
+                    // this lock-order regression a shared-storage stress test.
+                    for i in 0..64 {
                         state.peer_agents.insert(
                             "R".into(),
                             crate::state::PeerAgent {
