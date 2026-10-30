@@ -53,6 +53,16 @@ A distinct second start on a plan with a running or paused run is refused with `
 
 `start_plan.limits` accepts `maxParallelStories` (default 2 when omitted, range 1–8). `start_attempt` conservatively serializes unknown or overlapping file scopes and refuses dependent stories lacking a current integration receipt at the accepted revision. `execute_check` runs only a check from the pinned story definition in its assigned worktree; `record_integration` verifies a completed non-fast-forward merge and runs the pinned checks again on the canonical result. `recertify_canonical` validates a later clean canonical tip and reruns those checks without claiming a new merge. `assign_worktree`, `record_check`, `record_integration`, and `record_recertification` as nested commands are internal and rejected on this operator API.
 
+Contract-3 `command` also accepts `submit_story_proposals {batch}`. The batch
+contains `executionId`, `activationId`, `planRevision`, and up to 100 `proposals`
+(native `NewStory` objects). It binds one reached plan Create Stories visit and
+requires the current native plan revision. Empty proposals explicitly confirm no
+additions. A second batch for the same visit is refused; retry the original
+command ID and expected sequence after a lost response. The daemon consumes the
+committed batch through keyed creation effects, with no Coordinator-node or PTY
+prerequisite. `incidents` reports a visit waiting for this input. The same
+`RunAction` envelope is used by IPC, HTTP and MCP; there is no new route.
+
 ## Workflow definitions
 
 `POST /workflows/definition/action?path=<absolute-project>` accepts one `WorkflowAction` object and returns `{ type, value }`. Actions are `seed_templates`, `create_draft {name,kind,graph}`, `list_drafts`, `get_draft {id}`, `update_draft {id,expected_revision,graph}`, `update_closure {id,expected_revision,closure}`, `update_checks {id,expected_revision,checks}`, `publish {id,expected_revision}`, and `get_published {id,revision}`. `closure` is `human` or `automatic`, defaults to `human`, and `automatic` cannot be published until its evidence gate exists. Each check has `id`, `argv`, and camel-case `timeoutSecs`; the published revision pins its `requiredChecks`. A graph has `nodes` and `edges`; see [Workflow definitions](../backend/workflows.md) for node, outcome, and publication rules. The path resolves to the canonical owning project. Selecting a workflow from another project returns HTTP 422 (`workflow does not belong to project`), not an internal server error. Published revisions are immutable. This endpoint defines workflows; it does not start one. Executable-graph validation errors during `publish` return HTTP 422 with `{ "error": "invalid workflow definition: ..." }`; invalid Pause targets name `resume_to`. Publishing a draft with no edit since its last publication also returns HTTP 422 (`draft revision has already been published`); each draft carries `lastPublishedDraftRevision`, and a client disables Publish while it equals `draftRevision`.

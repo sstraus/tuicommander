@@ -364,6 +364,34 @@ pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, 
                 let mut outcome = None;
                 let mut evidence = None;
                 match &node.kind {
+                    NodeKind::CreateStories if snapshot.event_contract_version >= 3 => {
+                        let Some(batch) = super::proposals::batch_for(&snapshot, graph, activation)
+                        else {
+                            continue 'graphs;
+                        };
+                        if crate::stories::StoryStore::open()?
+                            .get_plan(&snapshot.plan_id)?
+                            .revision
+                            != batch.plan_revision
+                        {
+                            return Err("story proposal input has a stale plan revision".into());
+                        }
+                        if !super::proposals::complete(&snapshot, batch)? {
+                            continue 'graphs;
+                        }
+                        if snapshot.planning_fingerprint.is_none() {
+                            store.command_expected(
+                                run_id,
+                                &format!(
+                                    "daemon:close-plan:{}:{}",
+                                    activation.id, snapshot.sequence
+                                ),
+                                snapshot.sequence,
+                                RunCommand::ClosePlanning,
+                            )?;
+                            continue 'turn;
+                        }
+                    }
                     NodeKind::Agent { .. } | NodeKind::CreateStories => {
                         let Some(attempt) =
                             effects::activation_attempt(&snapshot, graph, activation)

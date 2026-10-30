@@ -115,6 +115,10 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                 }
             }
         },
+        RunEventKind::StoryProposalsSubmitted { batch } => {
+            super::proposals::validate_batch(&snapshot, batch)?;
+            snapshot.proposal_batches.push(batch.clone());
+        }
         RunEventKind::PlanningClosed { fingerprint } => {
             snapshot.planning_fingerprint = Some(fingerprint.clone());
             snapshot.verification_fingerprint = None;

@@ -22,7 +22,7 @@ pub(in crate::workflows::run) fn activation_attempt<'a>(
         .nth(ordinal)
 }
 
-/// CreateStories consumes the first coordinator report; later visits request a fresh replan.
+/// Retained contract-2 CreateStories maps to its coordinator; contract 3 uses typed input.
 pub(in crate::workflows::run) fn agent_node_id<'a>(
     graph: &'a GraphExecution,
     activation: &Activation,
@@ -80,6 +80,16 @@ pub(in crate::workflows::run) async fn drive_effect(
             .find(|n| n.id == activation.node_id)
             .ok_or("activation node missing")?;
         match &node.kind {
+            NodeKind::CreateStories if run.event_contract_version >= 3 => {
+                let Some(batch) = super::super::proposals::batch_for(run, graph, activation) else {
+                    continue;
+                };
+                if super::super::proposals::drive(store, run, batch)? {
+                    let current = store.snapshot(&run.id)?;
+                    emit_run_changed(state, &run.project, &run.id, current.sequence);
+                    return Ok(true);
+                }
+            }
             NodeKind::Agent { .. } | NodeKind::CreateStories => {
                 let agent_id = agent_node_id(graph, activation)?;
                 let NodeKind::Agent { role, .. } = &graph

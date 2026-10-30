@@ -302,24 +302,6 @@ pub(crate) fn validate_runtime_nodes(
             }
         }
     }
-    if graph
-        .nodes
-        .iter()
-        .any(|n| matches!(n.kind, NodeKind::CreateStories))
-        && !graph.nodes.iter().any(|n| {
-            matches!(
-                n.kind,
-                NodeKind::Agent {
-                    role: AgentRole::Coordinator,
-                    ..
-                }
-            )
-        })
-    {
-        return Err(
-            "Create Stories requires an executable coordinator; keep this graph as a draft".into(),
-        );
-    }
     Ok(())
 }
 

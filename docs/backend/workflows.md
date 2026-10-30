@@ -128,3 +128,28 @@ for the effect/receipt schemas, policy ownership, I1–I10 source resolutions,
 recorded serial-run fixtures, complete capability matrix and source/test pins.
 This is a compatibility foundation, not operational migration or authority to
 start a second scheduler, publish externally or retire legacy mechanisms.
+
+## Typed Create Stories input (WF04 foundation)
+
+Contract-3 plan graphs no longer require a Coordinator Agent node. A reached
+Create Stories activation waits for `submit_story_proposals {batch}` through the
+existing sequence-fenced `command` run action. The batch has camel-case
+`executionId`, `activationId`, `planRevision` and `proposals` fields. Each proposal
+uses the native `NewStory` shape and must name this plan with a `plan_step` origin.
+An empty batch explicitly confirms that the visit has no additions. Submission
+records an event; it does not spawn an author or infer proposals from prose.
+
+The daemon creates each proposal through the existing keyed story/effect
+transaction. Keys bind the execution, activation and proposal index, not an agent
+name. Native story validation, story-creation budgets, cancellation and uncertain
+effect fences remain in force. A changed plan revision refuses unconsumed input.
+A lost response returns the same command receipt; a second batch for the visit is
+refused. Pending input appears in read-only incidents. The Coordinator preset can
+still author proposals, but its report is not input for this node. Contract-2
+Create Stories visits retain their recorded coordinator-attempt behavior, and
+story graphs still refuse Create Stories.
+
+This foundation does not add ACP worker launch, global launch-policy imports,
+continuation delivery, report disposition, successor handover or safe child
+closure. Those WF04 requirements are not certified by the existing PTY spawn
+journal or by proposal-input tests.

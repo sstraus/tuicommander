@@ -104,6 +104,7 @@ impl RunStore {
         let execution =
             GraphExecution::start("root".into(), target_id.clone(), definition.clone())?;
         let initial = RunSnapshot {
+            proposal_batches: vec![],
             event_contract_version: super::super::graph::RUN_EVENT_CONTRACT_VERSION,
             id: Uuid::now_v7().to_string(),
             canonical_ref: git_output(Path::new(&owner), &["symbolic-ref", "HEAD"]).ok(),

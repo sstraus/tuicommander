@@ -3574,3 +3574,12 @@ approves or merges. See [Incoming PR reviews](user-guide/automations.md#incoming
 ## Archived worktree retention
 
 Opt-in global and per-repository retention in days (0/Off by default). Repository refresh removes only eligible recorded checkouts under `__archived/`, keeps dirty or unsafe archives with named status reasons, and retains commit recovery refs. No new timer or branch deletion. See [Worktrees](user-guide/worktrees.md#archived-worktree-retention).
+
+### Typed workflow plan proposals (WF04 foundation)
+
+Contract-3 Create Stories visits accept a durable, activation- and plan-revision-
+bound proposal batch through the shared run command API. The daemon consumes
+native keyed story effects without a Coordinator node or session. Missing input
+is an incident, not a request to spawn an author. Contract-2 replay and the
+plan-only Create Stories boundary remain unchanged. ACP launch and lifecycle
+handover/closure are not part of this foundation.

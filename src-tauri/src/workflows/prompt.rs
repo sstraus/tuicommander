@@ -296,6 +296,7 @@ mod tests {
 
     fn fixture() -> (RunSnapshot, Plan, Story, NodeAttempt, PublishedWorkflow) {
         let mut run = RunSnapshot {
+            proposal_batches: vec![],
             event_contract_version: 2,
             canonical_ref: None,
             id: "run-1".into(),

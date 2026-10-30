@@ -253,9 +253,21 @@ pub enum RunTarget {
     Story(String),
 }
 
+/// An explicit input to one Create Stories visit, never an inferred coordinator report.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StoryProposalBatch {
+    pub execution_id: String,
+    pub activation_id: String,
+    pub plan_revision: i64,
+    pub proposals: Vec<crate::stories::NewStory>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RunSnapshot {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proposal_batches: Vec<StoryProposalBatch>,
     #[serde(default)]
     pub event_contract_version: u16,
     pub id: String,
@@ -302,6 +314,9 @@ pub enum RunEventKind {
     },
     Started {
         initial: Box<RunSnapshot>,
+    },
+    StoryProposalsSubmitted {
+        batch: StoryProposalBatch,
     },
     PlanningClosed {
         fingerprint: String,
@@ -409,6 +424,10 @@ pub enum RunCommand {
     StartGraphAgent {
         execution_id: String,
         activation_id: String,
+    },
+    /// Bind typed story input to the current plan revision and Create Stories activation.
+    SubmitStoryProposals {
+        batch: StoryProposalBatch,
     },
     ClosePlanning,
     StartAttempt {

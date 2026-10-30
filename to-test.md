@@ -1,3 +1,7 @@
+## Typed workflow proposals (2511-37f0 foundation) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, submit a typed proposal batch to a plan Create Stories activation without a Coordinator node. Confirm one native story per proposal and no author PTY. Rust does not hot-reload; the daily app was not restarted. This is a partial WF04 foundation, not ACP/lifecycle completion.
+
 ## Long Claude dictation (2502-571c) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, dictate more than 60 seconds to Claude CLI and verify both opening and ending words with Auto-send on and off. Native isolated Claude 2.1.311 probes reproduce plain-write prefix loss and retain all 1159 characters with bracketed paste; the regression tests cover frontend and backend payloads. The owner microphone and daily app were not changed. Rust does not hot-reload; restart only when Boss is ready to lose current sessions.

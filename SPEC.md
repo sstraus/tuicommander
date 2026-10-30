@@ -1533,3 +1533,12 @@ Deterministic checks and check-result publication are not part of this executor.
 ## Archived worktree retention — Implemented (#2469-c93f)
 
 `archive_retention_days` defaults to 0 (Off), with nullable repository overrides and repo-local configuration. Existing repository-refresh cleanup invokes a shared host-side sweep. Only registered, completed immediate `__archived` children with matching recorded path and sufficient Unix-second archive age are eligible. Legacy archives without timestamps are kept. Non-force Git removal preserves archive refs, refuses dirty files without archive-time recovery, and protects locked or live checkouts. The status line names deleted and kept archives.
+
+### Typed workflow plan proposals (WF04 foundation)
+
+Contract-3 Create Stories visits accept a durable, activation- and plan-revision-
+bound proposal batch through the shared run command API. The daemon consumes
+native keyed story effects without a Coordinator node or session. Missing input
+is an incident, not a request to spawn an author. Contract-2 replay and the
+plan-only Create Stories boundary remain unchanged. ACP launch and lifecycle
+handover/closure are not part of this foundation.

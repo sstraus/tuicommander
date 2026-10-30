@@ -398,6 +398,7 @@ impl RunStore {
             require_nonempty_policy(&story_definition)?;
         }
         let initial = RunSnapshot {
+            proposal_batches: vec![],
             event_contract_version: super::graph::RUN_EVENT_CONTRACT_VERSION,
             id: Uuid::now_v7().to_string(),
             canonical_ref: git_output(Path::new(&owner), &["symbolic-ref", "HEAD"]).ok(),
@@ -635,6 +636,34 @@ impl RunStore {
         {
             return Err("only the active run coordinator may create plan stories".into());
         }
+        self.create_story_from_authority(run_id, proposal_key, input, Some(caller_session), None)
+    }
+
+    pub(super) fn create_story_from_proposal(
+        &self,
+        run_id: &str,
+        batch: &super::StoryProposalBatch,
+        index: usize,
+    ) -> Result<Story, String> {
+        let input = batch
+            .proposals
+            .get(index)
+            .ok_or("proposal index missing")?
+            .clone();
+        let key = super::proposals::proposal_key(batch, index);
+        self.create_story_from_authority(run_id, &key, input, None, Some(batch))
+    }
+
+    fn create_story_from_authority(
+        &self,
+        run_id: &str,
+        proposal_key: &str,
+        input: NewStory,
+        caller_session: Option<&str>,
+        batch: Option<&super::StoryProposalBatch>,
+    ) -> Result<Story, String> {
+        let snapshot = self.snapshot(run_id)?;
+        super::proposals::require_creation_authority(&snapshot, caller_session, batch)?;
         let effect_key = format!("create-story:{proposal_key}");
         let effect = if let Some(effect) = snapshot
             .effects
@@ -678,14 +707,8 @@ impl RunStore {
                         .effects
                         .iter()
                         .any(|entry| entry.id == effect.id && entry.state == EffectState::Intended)
-                    || !current.attempts.iter().any(|attempt| {
-                        attempt.story_id == current.plan_id
-                            && attempt.state == AttemptState::Running
-                            && attempt
-                                .agent
-                                .as_ref()
-                                .is_some_and(|agent| agent.session_id == caller_session)
-                    })
+                    || super::proposals::require_creation_authority(&current, caller_session, batch)
+                        .is_err()
                 {
                     return Err("workflow stopped before story creation".into());
                 }
@@ -2153,6 +2176,14 @@ fn choose_event(
                 super::graph::GraphEvent::Transition { transition }
             };
             Ok(RunEventKind::Graph { event })
+        }
+        RunCommand::SubmitStoryProposals { batch } => {
+            super::proposals::validate_batch(snapshot, &batch)?;
+            let plan = StoryStore::open()?.get_plan(&snapshot.plan_id)?;
+            if plan.revision != batch.plan_revision {
+                return Err("story proposal input has a stale plan revision".into());
+            }
+            Ok(RunEventKind::StoryProposalsSubmitted { batch })
         }
         RunCommand::ClosePlanning => Ok(RunEventKind::PlanningClosed {
             fingerprint: current_plan,

@@ -5,6 +5,7 @@ pub mod graph;
 mod incidents;
 mod model;
 pub use incidents::RunIncident;
+mod proposals;
 mod publication;
 mod reducer;
 mod runtime;

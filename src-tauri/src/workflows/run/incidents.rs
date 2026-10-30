@@ -157,6 +157,29 @@ pub(super) fn project_incidents(run: &RunSnapshot, state: Option<&AppState>) -> 
             }
         }
     }
+    if run.event_contract_version >= 3 && run.status == RunStatus::Running {
+        for graph in &run.graph_executions {
+            for activation in &graph.activations {
+                if activation.state == super::graph::ActivationState::Running
+                    && graph.definition.graph.nodes.iter().any(|n| {
+                        n.id == activation.node_id
+                            && matches!(n.kind, crate::workflows::NodeKind::CreateStories)
+                    })
+                    && super::proposals::batch_for(run, graph, activation).is_none()
+                {
+                    let mut item = incident(
+                        run,
+                        None,
+                        "story_proposal_input",
+                        "Create Stories waits for typed plan proposals".into(),
+                        "Submit a story proposal batch naming this execution, activation and current plan revision; an empty batch explicitly confirms no additions.",
+                    );
+                    item.node_id = Some(activation.node_id.clone());
+                    incidents.push(item);
+                }
+            }
+        }
+    }
     if incidents.is_empty() && run.status == RunStatus::Paused {
         incidents.push(match run.pause_cause.as_deref() {
             Some(cause) => incident(

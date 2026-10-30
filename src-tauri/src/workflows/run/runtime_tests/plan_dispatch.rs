@@ -61,6 +61,39 @@ fn plan_report(store: &RunStore, run: &RunSnapshot, attempt: &NodeAttempt, sessi
             session,
         )
         .unwrap();
+    // Contract 3 requires explicit input for the Create Stories visit; the
+    // coordinator report is no longer a substitute for a proposal batch.
+    let current = drive_turn(store, &run.id).unwrap();
+    for graph in &current.graph_executions {
+        if let Some(activation) = graph.activations.iter().find(|a| {
+            a.state == super::super::super::graph::ActivationState::Running
+                && graph
+                    .definition
+                    .graph
+                    .nodes
+                    .iter()
+                    .any(|n| n.id == a.node_id && matches!(n.kind, NodeKind::CreateStories))
+        }) {
+            store
+                .command(
+                    &run.id,
+                    &format!("seal-proposals:{}", activation.id),
+                    RunCommand::SubmitStoryProposals {
+                        batch: StoryProposalBatch {
+                            execution_id: graph.id.clone(),
+                            activation_id: activation.id.clone(),
+                            plan_revision: StoryStore::open()
+                                .unwrap()
+                                .get_plan(&run.plan_id)
+                                .unwrap()
+                                .revision,
+                            proposals: vec![],
+                        },
+                    },
+                )
+                .unwrap();
+        }
+    }
 }
 
 fn start_plan(
@@ -468,9 +501,9 @@ fn two_plan_roots_share_dispatch_reservations_and_wontfix_never_releases_depende
     );
 }
 
-#[test]
-fn failed_final_plan_gate_replans_through_a_fresh_bound_coordinator() {
-    // catches: replan reusing an exited coordinator or failed final checks certifying completion.
+#[tokio::test]
+async fn failed_final_plan_gate_requests_fresh_typed_proposal_input() {
+    // catches: replan reusing old proposal input or failed checks certifying completion.
     let (config, project, _plan, _story, template, _guard) = fixture();
     let project_path = project.path().to_str().unwrap();
     init_worktree(project.path(), config.path());
@@ -519,30 +552,54 @@ fn failed_final_plan_gate_replans_through_a_fresh_bound_coordinator() {
     let replanning = drive_turn(&store, &run.id).unwrap();
     assert_eq!(replanning.status, RunStatus::Running);
     assert!(replanning.verification_fingerprint.is_none());
-    let fresh = replanning.attempts.last().unwrap();
-    assert_eq!(fresh.node_id, "coordinate");
-    assert_eq!(fresh.generation, 2);
-    assert_ne!(fresh.id, coordinator.id);
-    bind(&store, &run.id, fresh, "new-coordinator");
-    let created = store
-        .create_story_from_coordinator(
+    assert_eq!(
+        replanning.attempts.len(),
+        1,
+        "Create Stories must not spawn a coordinator"
+    );
+    let graph = &replanning.graph_executions[0];
+    let activation = graph.activations.last().unwrap();
+    assert_eq!(activation.node_id, "create");
+    assert!(super::super::super::proposals::batch_for(&replanning, graph, activation).is_none());
+    let submitted = store
+        .command(
             &run.id,
-            "new-coordinator",
-            "repair",
-            NewStory {
-                story_type: None,
-                plan_id: empty_plan.id.clone(),
-                title: "Repair final check".into(),
-                criteria: vec!["Fixed".into()],
-                priority: 1,
-                origin: StoryOrigin::PlanStep {
-                    step: "repair".into(),
+            "repair-input",
+            RunCommand::SubmitStoryProposals {
+                batch: StoryProposalBatch {
+                    execution_id: graph.id.clone(),
+                    activation_id: activation.id.clone(),
+                    plan_revision: stories.get_plan(&empty_plan.id).unwrap().revision,
+                    proposals: vec![NewStory {
+                        story_type: None,
+                        plan_id: empty_plan.id.clone(),
+                        title: "Repair final check".into(),
+                        criteria: vec!["Fixed".into()],
+                        priority: 1,
+                        origin: StoryOrigin::PlanStep {
+                            step: "repair".into(),
+                        },
+                        file_scope: vec!["repair.txt".into()],
+                    }],
                 },
-                file_scope: vec!["repair.txt".into()],
             },
         )
         .unwrap();
-    plan_report(&store, &run, fresh, "new-coordinator");
+    assert!(
+        super::super::super::runtime::effects::drive_effect(
+            &state(config.path()),
+            &store,
+            &submitted.snapshot
+        )
+        .await
+        .unwrap()
+    );
+    let created = stories
+        .list_stories(&empty_plan.id)
+        .unwrap()
+        .into_iter()
+        .find(|s| s.title == "Repair final check")
+        .unwrap();
     let dispatched = drive_turn(&store, &run.id).unwrap();
     assert!(
         dispatched

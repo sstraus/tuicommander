@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Accept typed, revision-bound plan story proposals without requiring a Coordinator Agent node; retain contract-2 behavior (#2511-37f0, foundation only).
+
 - Add a separating space after web URLs pasted into mobile terminal and AI Chat composers, unless whitespace already follows (#2494-921f).
 
 ### Fixed
