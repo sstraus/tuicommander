@@ -131,11 +131,15 @@ fn main() {
             }
 
             // ---------------------------------------------------------------
-            ("exit-after-handshake", "initialize") => {
+            ("exit-after-handshake" | "delayed-exit-after-handshake", "initialize") => {
                 reply(&id, initialize_result("2025-03-26", json!({})));
             }
-            ("exit-after-handshake", "tools/list") => {
+            ("exit-after-handshake" | "delayed-exit-after-handshake", "tools/list") => {
                 reply(&id, json!({"tools": []}));
+                if scenario == "delayed-exit-after-handshake" {
+                    // Reproduce an exit that outlasts a fixed 200 ms observation wait.
+                    std::thread::sleep(std::time::Duration::from_millis(500));
+                }
                 std::process::exit(0);
             }
 
@@ -219,6 +223,7 @@ fn main() {
             (
                 "protocol-offer-probe"
                 | "exit-after-handshake"
+                | "delayed-exit-after-handshake"
                 | "env-tool-name"
                 | "notify-once"
                 | "notify-thrice"

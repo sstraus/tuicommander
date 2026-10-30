@@ -64,6 +64,12 @@ pub struct Edge {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct WorkflowGraph {
+    #[serde(
+        default,
+        rename = "evidencePolicy",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub evidence_policy: Option<super::run::evidence::EvidencePolicy>,
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
 }
@@ -80,6 +86,9 @@ fn required_outcomes(kind: &NodeKind) -> &'static [&'static str] {
 
 /// Validate a bounded, deterministic graph before publishing or running it.
 pub fn validate_graph(graph: &WorkflowGraph, workflow_kind: WorkflowKind) -> Result<(), String> {
+    if let Some(policy) = &graph.evidence_policy {
+        policy.validate()?;
+    }
     if graph.nodes.is_empty() || graph.nodes.len() > 128 || graph.edges.len() > 512 {
         return Err("workflow graph size is outside supported bounds".into());
     }

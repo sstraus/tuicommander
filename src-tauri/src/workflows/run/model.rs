@@ -156,6 +156,8 @@ pub struct ReviewFinding {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReviewAssessment {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<Box<super::evidence::ReviewEvidence>>,
     pub decision: ReviewDecision,
     pub artifact_digest: String,
     pub findings: Vec<ReviewFinding>,

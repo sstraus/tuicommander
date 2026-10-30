@@ -55,6 +55,7 @@ fn graph_step(snapshot: RunSnapshot, transition: GraphTransition) -> RunSnapshot
 
 fn pause_graph() -> WorkflowGraph {
     WorkflowGraph {
+        evidence_policy: None,
         nodes: vec![
             node("start", NodeKind::Start),
             node("judge", NodeKind::Judge),

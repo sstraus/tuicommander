@@ -94,6 +94,8 @@ pub fn render_story_prompt(
                 Ok::<_, String>(serde_json::json!({
                     "artifactDigest": review_artifact_digest(&commit, &tree),
                     "commit": commit, "tree": tree,
+                    "requirements": super::run::evidence::requirements_digest(story),
+                    "evidencePolicy": definition.graph.evidence_policy,
                 }))
             })
             .transpose()?
@@ -121,7 +123,10 @@ pub fn render_story_prompt(
         "storyType": story.story_type,
         "skills": skills,
         "feedback": feedback,
+        "legacyProofNotes": feedback.map(super::run::evidence::LegacyProofNotes::parse),
         "artifactSubject": artifact_subject,
+        "reviewCounters": run.graph_executions.iter().find(|g| g.target_id == story.id)
+            .map(|g| super::run::evidence::review_counters(run, g)),
     });
     let context = serde_json::to_string_pretty(&context)
         .map_err(|error| format!("encode story prompt context: {error}"))?;
@@ -131,6 +136,9 @@ pub fn render_story_prompt(
          runId, storyId, storyRevision, attemptId, generation, outcome, summary, criterionResults and evidence. \
          For needs_input include inputRequest with a concrete question and optional options. \
          Reviewer completed reports must include review with decision, artifactDigest (the supplied artifactSubject digest, SHA-256 of UTF-8 commit:tree), and findings tied to criterionIndex. \
+         When artifactSubject.evidencePolicy is present, include review.evidence with its exact typed subject (type=story, id, commit, tree, requirements), scored findings (id, risk/value/effort 1-5, addsMechanism, deletesOnly, scope, acceptedRisk, proposal), resolvedFixes and typed proof. \
+         Proof includes realityEffect/State/Assumptions/Radius, symptom, red (preFixCommit, test, catches, check), testChanges (test, oldExpectationWrongBecause), checks and explicit omissions. Each proof check binds id, subject, target, native, toolchain, argv, configDigest, scope, matchedTests, exitCode and logDigest. \
+         Only FIX findings authorize current repair; STORY is a separate scoped proposal and ACCEPT names the retained risk. No review may skip a required deterministic check. \
          Review is advisory; it never changes story status by itself. A terminal exit or an inbox message is not a report. \
          The workflow engine decides the next transition."
     );
@@ -371,6 +379,7 @@ mod tests {
             closure: WorkflowClosure::Human,
             required_checks: vec![],
             graph: WorkflowGraph {
+                evidence_policy: None,
                 nodes: vec![Node {
                     id: "implement".into(),
                     kind: NodeKind::Agent {
@@ -516,6 +525,7 @@ mod tests {
             closure: WorkflowClosure::Human,
             required_checks: vec![],
             graph: WorkflowGraph {
+                evidence_policy: None,
                 nodes: vec![Node {
                     id: "coordinate".into(),
                     kind: NodeKind::Agent {

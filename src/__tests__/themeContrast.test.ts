@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { readStylesheet } from "./fixtures/readStylesheet";
 
 interface Theme {
 	name: string;
@@ -56,17 +56,20 @@ describe("informational chrome contrast", () => {
 		expect(failures).toEqual([]);
 	});
 
-	// Catches: startup CSS drifts from the Commander foregrounds loaded by both clients.
-	it("uses Commander foregrounds for the shared desktop and mobile startup defaults", () => {
-		const foregroundDefaults = readFileSync("src/styles/foreground-tokens.css", "utf8");
-		const commander = Object.entries(themes).find(([path]) => path.endsWith("/commander.json"))![1].appChrome;
-		for (const [token, key] of [
-			["primary", "foreground"],
-			["secondary", "foregroundSecondary"],
-			["muted", "mutedForeground"],
-		]) {
-			const actual = foregroundDefaults.match(new RegExp(`--fg-${token}:\\s*(#[a-f\\d]{6})`, "i"))?.[1];
-			expect(actual, token).toBe(commander[key!]);
-		}
-	});
+	// Catches: startup CSS drifts from Commander or an entrypoint drops the shared import.
+	it.each(["src/global.css", "src/mobile/mobile.css"])(
+		"uses Commander foregrounds for the startup defaults in %s",
+		(entrypoint) => {
+			const foregroundDefaults = readStylesheet(entrypoint);
+			const commander = Object.entries(themes).find(([path]) => path.endsWith("/commander.json"))![1].appChrome;
+			for (const [token, key] of [
+				["primary", "foreground"],
+				["secondary", "foregroundSecondary"],
+				["muted", "mutedForeground"],
+			]) {
+				const actual = foregroundDefaults.match(new RegExp(`--fg-${token}:\\s*(#[a-f\\d]{6})`, "i"))?.[1];
+				expect(actual, token).toBe(commander[key!]);
+			}
+		},
+	);
 });

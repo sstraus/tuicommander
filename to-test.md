@@ -3100,3 +3100,11 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   the running development backend does not hot-reload this Rust change.
 
 - [ ] In a real agent turn after loading the updated frontend, confirm the Chat breathing orb appears while working and disappears when done on desktop and phone. Real-component browser captures cover dark/light themes and reduced motion (#2535-8b6b).
+## WF06 — typed workflow evidence policy (2513-c433)
+
+- [ ] After the next authorized Rust rebuild/restart, opt a throwaway workflow
+  draft into `evidencePolicy`, publish it, and inspect the pinned policy and
+  review counters in the reviewer prompt. Verify that a stale artifact or
+  failed required check cannot approve the story. This Rust change does not
+  hot-reload into the current app. Targeted native-store automation covers the
+  policy; no desktop instance was launched for this story.
