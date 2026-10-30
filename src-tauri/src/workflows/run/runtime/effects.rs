@@ -183,15 +183,22 @@ pub(in crate::workflows::run) async fn drive_effect(
                     );
                 }
                 if let Some(binding) = &attempt.agent {
-                    crate::pty::kill_pty_core(state, &binding.session_id);
-                    if !state
-                        .session_maps
-                        .exit_codes
-                        .contains_key(&binding.session_id)
-                    {
-                        return Err(
-                            "Superseded agent stop is unproven; repair remains fenced".into()
-                        );
+                    if binding.acp.is_some() {
+                        crate::mcp_http::launch_transaction::stop_superseded_workflow_agent(
+                            state, &run.id, binding,
+                        )
+                        .await?;
+                    } else {
+                        crate::pty::kill_pty_core(state, &binding.session_id);
+                        if !state
+                            .session_maps
+                            .exit_codes
+                            .contains_key(&binding.session_id)
+                        {
+                            return Err(
+                                "Superseded agent stop is unproven; repair remains fenced".into()
+                            );
+                        }
                     }
                 }
             }

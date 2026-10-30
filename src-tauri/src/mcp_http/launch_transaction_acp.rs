@@ -248,3 +248,67 @@ pub(super) async fn deliver(
     record.stage = "acp_delivered".into();
     journal.save(key, record)
 }
+
+/// Fork cancellation is already durable. Stop only its exact managed ACP child,
+/// and retain the repair fence until the OS proves the recorded process absent.
+pub(crate) async fn stop_superseded_workflow_agent(
+    state: &Arc<AppState>,
+    run_id: &str,
+    binding: &crate::workflows::AgentBinding,
+) -> Result<(), String> {
+    let _guard = state.launch_transaction_lock.lock().await;
+    let acp = binding.acp.as_ref().ok_or("missing ACP binding")?;
+    let journal = Journal(state.data_dir.join("managed-launches.sqlite"));
+    let record = journal
+        .get(
+            binding
+                .launch_id
+                .as_deref()
+                .ok_or("ACP stop has no managed launch identity")?,
+        )?
+        .ok_or("ACP stop launch inventory is unknown")?;
+    if record.owner_scope.as_deref() != Some(format!("workflow:{run_id}").as_str())
+        || record.session_id != binding.session_id
+        || record.acp_connection != Some(acp.connection_id)
+        || record.acp_generation != Some(acp.generation)
+        || record.acp_conversation.as_deref() != Some(acp.conversation_id.as_str())
+    {
+        return Err("ACP stop binding differs from the owned managed launch".into());
+    }
+    let pid = record
+        .acp_process_id
+        .ok_or("ACP process-stop identity was not recorded")?;
+    let snapshot = state
+        .acp
+        .peer_snapshot(&binding.session_id)
+        .filter(|s| s.connection_id == acp.connection_id && s.generation == acp.generation)
+        .ok_or("ACP stop connection inventory is unknown or replaced")?;
+    if snapshot.settlement.is_none() {
+        let peer = binding.session_id.clone();
+        let observed = tokio::task::spawn_blocking(move || {
+            let processes =
+                crate::pty::process_tree_snapshot().ok_or("process inventory unknown")?;
+            crate::pty::workflow_acp_process(&peer, &processes)
+        })
+        .await
+        .map_err(|e| format!("ACP stop observation: {e}"))??;
+        if observed != pid {
+            return Err("ACP owned process identity changed; repair remains fenced".into());
+        }
+    }
+    state
+        .acp
+        .disconnect(acp.connection_id)
+        .await
+        .map_err(|e| e.message)?;
+    let absent = tokio::task::spawn_blocking(move || {
+        crate::pty::process_tree_snapshot()
+            .is_some_and(|processes| !crate::pty::workflow_process_observed(&processes, pid))
+    })
+    .await
+    .map_err(|e| format!("ACP stop observation: {e}"))?;
+    if !absent {
+        return Err("Superseded ACP process stop is unproven; repair remains fenced".into());
+    }
+    Ok(())
+}

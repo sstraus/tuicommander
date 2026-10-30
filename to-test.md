@@ -1,3 +1,7 @@
+## Workflow ACP fork repair (2511-37f0 M1) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, run a fork with ACP reviewers and a critic FIX. Confirm old reviewers stop before one repair activation starts, without creating terminals. The recorded ACP regression covers process absence; the daily app was not restarted. Rust does not hot-reload; restart only when losing current sessions is acceptable.
+
 ## Workflow ACP workers (2511-37f0) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use an explicit published ACP Agent route. Confirm no terminal is created, the managed receipt names the actual peer/conversation, and unobserved delivery is retained rather than resent. Imported policy pins, answer continuation, durable close decisions and owned ACP stop proof have targeted automated evidence. The daily app was not restarted.

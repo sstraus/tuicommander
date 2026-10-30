@@ -14,6 +14,7 @@ use std::{net::SocketAddr, path::PathBuf, sync::Arc};
 
 #[path = "launch_transaction_acp.rs"]
 mod acp_launch;
+pub(crate) use acp_launch::stop_superseded_workflow_agent;
 #[path = "launch_transaction_close.rs"]
 mod owned_close;
 pub(crate) use owned_close::{close_workflow_agent, workflow_agent_closes};

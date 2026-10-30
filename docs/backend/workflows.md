@@ -372,7 +372,11 @@ attempt; a later advisor's missing or approving report cannot mask it. When an
 evidence policy is pinned, its typed triage decision controls supersession, not
 the retained legacy review label. The same event fences its unfinished attempts and terminates
 nested obligations. The daemon cancels its scoped checks, stops bound agents
-and requires their exit observations before recording `fork_stopped`. An
+and requires their exit observations before recording `fork_stopped`. PTY workers
+require their exit tombstones. ACP workers use the exact managed launch, peer,
+connection and generation, disconnect through the ACP manager, and require a
+fresh OS inventory proving the recorded process ID absent. A settled connection
+alone is not process-stop proof, and no terminal is created for an ACP stop. An
 unknown spawn or missing stop observation blocks repair rather than freeing the
 workspace. The stop transition enqueues one Implement activation outside the old
 region. Its published successor opens a fresh generation and reruns both critic

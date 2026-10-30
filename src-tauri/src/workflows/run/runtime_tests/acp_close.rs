@@ -10,96 +10,7 @@ async fn live_background_receipt_prevents_idle_reap() {
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
     let (config, project, _plan, story, _template, _guard) = fixture();
-    let captured = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/acp");
-    let options = std::fs::read_to_string(captured.join("config-set.jsonl")).unwrap();
-    let turn = std::fs::read_to_string(captured.join("prompt-turn.jsonl")).unwrap();
-    let mut scenario = options
-        .lines()
-        .filter(|line| !line.contains("await_stdin_eof"))
-        .map(str::to_owned)
-        .collect::<Vec<_>>();
-    scenario.extend(
-        turn.lines()
-            .skip_while(|line| !line.contains("\"session/prompt\""))
-            .map(str::to_owned),
-    );
-    std::fs::write(
-        project.path().join("scenario.jsonl"),
-        scenario.join("\n") + "\n",
-    )
-    .unwrap();
-    std::fs::write(project.path().join("expected-profile.txt"), "fixture").unwrap();
-    std::fs::copy(
-        captured.join("ego-initialize.json"),
-        project.path().join("ego-initialize.json"),
-    )
-    .unwrap();
-    for args in [
-        vec!["init", "-q"],
-        vec!["config", "user.name", "WF04"],
-        vec!["config", "user.email", "wf04@example.test"],
-        vec!["add", "."],
-        vec!["commit", "-qm", "recorded ACP fixture"],
-    ] {
-        crate::git_cli::git_cmd(project.path())
-            .args(args)
-            .run()
-            .unwrap();
-    }
-    let workspace = config.path().join("acp-workspace");
-    crate::git_cli::git_cmd(project.path())
-        .args([
-            "worktree",
-            "add",
-            "-qb",
-            "acp-worker",
-            workspace.to_str().unwrap(),
-        ])
-        .run()
-        .unwrap();
-    let executable = std::env::current_exe()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join(format!(
-            "tuic-acp-fixture-agent{}",
-            std::env::consts::EXE_SUFFIX
-        ));
-    assert!(
-        executable.is_file(),
-        "nextest fixture-bins must build {}",
-        executable.display()
-    );
-    WorkflowStore::open()
-        .unwrap()
-        .import_agent_policy(
-            0,
-            crate::workflows::AgentPolicyInput {
-                source: "recorded ACP close fixture".into(),
-                source_revision: "1".into(),
-                routes: vec![crate::workflows::RoleRoute {
-                    role: AgentRole::Implementer,
-                    execution: crate::workflows::AgentExecution::Acp {
-                        profile: "fixture".into(),
-                        model: "opus".into(),
-                        effort: "high".into(),
-                    },
-                    acp_runtime: Some(crate::workflows::AcpRuntimeRoute {
-                        executable,
-                        machine_profile: String::new(),
-                    }),
-                    model: "opus".into(),
-                    effort: "high".into(),
-                    capabilities: vec!["story_read".into(), "story_report".into()],
-                    scope: crate::workflows::AgentScope::IsolatedWorkspace,
-                    output_contract_version: 1,
-                    default_for_role: true,
-                }],
-            },
-        )
-        .unwrap();
+    let workspace = recorded_worker(config.path(), project.path(), AgentRole::Implementer);
     let state = state(config.path());
     WorkflowRuntime::spawn(&state);
     owner_ready(&state).await;
@@ -274,4 +185,99 @@ async fn live_background_receipt_prevents_idle_reap() {
     );
     assert_eq!(store.snapshot(&run.id).unwrap(), cancelled);
     assert_eq!(store.replay(&run.id).unwrap(), cancelled);
+}
+
+pub(in crate::workflows::run::runtime_tests) fn recorded_worker(
+    config: &std::path::Path,
+    project: &std::path::Path,
+    role: AgentRole,
+) -> std::path::PathBuf {
+    let captured = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/acp");
+    let options = std::fs::read_to_string(captured.join("config-set.jsonl")).unwrap();
+    let turn = std::fs::read_to_string(captured.join("prompt-turn.jsonl")).unwrap();
+    let mut scenario = options
+        .lines()
+        .filter(|line| !line.contains("await_stdin_eof"))
+        .map(str::to_owned)
+        .collect::<Vec<_>>();
+    scenario.extend(
+        turn.lines()
+            .skip_while(|line| !line.contains("\"session/prompt\""))
+            .map(str::to_owned),
+    );
+    std::fs::write(project.join("scenario.jsonl"), scenario.join("\n") + "\n").unwrap();
+    std::fs::write(project.join("expected-profile.txt"), "fixture").unwrap();
+    std::fs::copy(
+        captured.join("ego-initialize.json"),
+        project.join("ego-initialize.json"),
+    )
+    .unwrap();
+    for args in [
+        vec!["init", "-q"],
+        vec!["config", "user.name", "WF04"],
+        vec!["config", "user.email", "wf04@example.test"],
+        vec!["add", "."],
+        vec!["commit", "-qm", "recorded ACP fixture"],
+    ] {
+        crate::git_cli::git_cmd(project).args(args).run().unwrap();
+    }
+    let workspace = config.join("acp-workspace");
+    crate::git_cli::git_cmd(project)
+        .args([
+            "worktree",
+            "add",
+            "-qb",
+            "acp-worker",
+            workspace.to_str().unwrap(),
+        ])
+        .run()
+        .unwrap();
+    let executable = std::env::current_exe()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join(format!(
+            "tuic-acp-fixture-agent{}",
+            std::env::consts::EXE_SUFFIX
+        ));
+    assert!(
+        executable.is_file(),
+        "nextest fixture-bins must build {}",
+        executable.display()
+    );
+    WorkflowStore::open()
+        .unwrap()
+        .import_agent_policy(
+            0,
+            crate::workflows::AgentPolicyInput {
+                source: "recorded ACP close fixture".into(),
+                source_revision: "1".into(),
+                routes: [AgentRole::Implementer, AgentRole::Reviewer]
+                    .into_iter()
+                    .filter(|candidate| *candidate == role || *candidate == AgentRole::Implementer)
+                    .map(|role| crate::workflows::RoleRoute {
+                        role,
+                        execution: crate::workflows::AgentExecution::Acp {
+                            profile: "fixture".into(),
+                            model: "opus".into(),
+                            effort: "high".into(),
+                        },
+                        acp_runtime: Some(crate::workflows::AcpRuntimeRoute {
+                            executable: executable.clone(),
+                            machine_profile: String::new(),
+                        }),
+                        model: "opus".into(),
+                        effort: "high".into(),
+                        capabilities: vec!["story_read".into(), "story_report".into()],
+                        scope: crate::workflows::AgentScope::IsolatedWorkspace,
+                        output_contract_version: 1,
+                        default_for_role: true,
+                    })
+                    .collect(),
+            },
+        )
+        .unwrap();
+    workspace
 }
