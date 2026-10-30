@@ -128,3 +128,53 @@ for the effect/receipt schemas, policy ownership, I1–I10 source resolutions,
 recorded serial-run fixtures, complete capability matrix and source/test pins.
 This is a compatibility foundation, not operational migration or authority to
 start a second scheduler, publish externally or retire legacy mechanisms.
+
+## Durable timers (WF19)
+
+Run-store layout 6 adds Timer events to contract-3 runs. Contract-2 serial
+replay and the WF01 frozen inputs are unchanged. No Timer graph node or public
+operator command is introduced. The existing internal `RunCommand::Timer`
+service and pure reducer own scheduling, firing, retry and cancellation. Future
+WF08, WF13 and WF03 consumers use this primitive, not another scheduler.
+
+Each timer stores a stable key, owner scope, typed purpose, absolute Unix-ms due
+and expiry times, delivery attempt, attempt budget, base/capped backoff and an
+explicit expiry outcome. Keys cannot be reused, even after cancellation. A run
+retains at most 4096 timers; each permits 1–100 deliveries. Backoff is positive,
+capped at 86,400,000 ms, and doubles after each delivery. Provider retry hints
+can lengthen that delay only up to the declared cap. Retries cannot extend the
+absolute expiry. The final permitted delivery or absolute expiry records the
+configured outcome instead of another retry wake. Budget and timestamps are
+validated again during replay.
+
+Purposes are `cohort_flush` (requires at least one row), `provider_retry` and
+`question_deadline`. The timer is a durable **wake receipt**, not a proof result,
+provider call or permission decision. WF08 can schedule a one-row cohort without
+waiting for dispatch aggregation; WF13 consumes a wake with its provider adapter
+and explicitly requests the next attempt after a retryable failure. WF03 question
+timers require due time equal to expiry and an outcome of `timed_out` or
+`incomplete`. Expiry never answers input, resumes work, accepts a story or grants
+approval. Consumers deduplicate actual work by timer key and attempt and retain
+their own durable effect receipts; a wake cannot justify replaying an uncertain
+external write.
+
+`service` scope names an independent owner (for example the proof-cohort service)
+and continues while the run is paused, including restart recovery pauses.
+`activation` scope pins execution and activation IDs. A pause keeps its absolute
+due time but suspends delivery; resuming does not replenish time. A departed or
+completed activation retires its timers. Run cancellation cancels every timer,
+and terminal runs cannot fire or retry. Pending timers must fire or be explicitly
+cancelled before run completion. Independent cohort ownership does not transfer
+to a story child or imply a parent proof waiter; WF08 owns that subscription.
+
+The sole existing daemon owner wakes its run actor at the earliest eligible
+absolute deadline. Startup recovery keeps pending timers; reads never fire them.
+Firing appends a payload-bound receipt, so a lost reply or second wake cannot
+create another delivery. The actor waits on notifications/deadlines, not a
+polling interval. Timer wakes during an adapter call retain the same pinned
+adapter future rather than cancelling and restarting it. Existing check-process
+timeout, run-cancellation and shutdown fences still own adapter teardown.
+Internal consumers must emit the existing `workflow-run-changed` hint after
+committing schedule/retry/cancel commands so the actor recomputes its deadline.
+This foundation does not install provider polling, a proof collector or a question
+inbox; their consumer stories remain responsible for those behaviors.

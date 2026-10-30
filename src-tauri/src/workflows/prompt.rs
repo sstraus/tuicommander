@@ -322,6 +322,7 @@ mod tests {
             canonical_recertification: None,
             attempts: vec![],
             effects: vec![],
+            timers: vec![],
             graph_executions: vec![],
         };
         let plan = Plan {
