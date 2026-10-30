@@ -74,6 +74,31 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                 if **execution != initial {
                     return Err("graph start state is not pristine".into());
                 }
+                // Positioned commands have a workspace before (or without) an Agent attempt.
+                // Old graphs do not contain these kinds, so serial replay stays unchanged.
+                if execution.target_id != snapshot.plan_id
+                    && execution.definition.graph.nodes.iter().any(|node| {
+                        matches!(
+                            node.kind,
+                            crate::workflows::NodeKind::RunCommand { .. }
+                                | crate::workflows::NodeKind::Tool { .. }
+                        )
+                    })
+                    && !snapshot
+                        .stories
+                        .iter()
+                        .any(|story| story.story_id == execution.target_id)
+                {
+                    snapshot.stories.push(StoryExecution {
+                        story_id: execution.target_id.clone(),
+                        accepted: false,
+                        accepted_revision: None,
+                        worktree_path: None,
+                        attempt_ids: vec![],
+                        check_receipts: vec![],
+                        integration_receipt: None,
+                    });
+                }
                 snapshot.graph_executions.push(initial);
             }
             super::graph::GraphEvent::Transition { transition } => {

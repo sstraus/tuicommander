@@ -527,6 +527,31 @@ pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, 
                             references: vec![format!("activation:{}:{}", graph.id, activation.id)],
                         });
                     }
+                    NodeKind::RunCommand { .. } | NodeKind::Tool { .. } => {
+                        let key = effects::command_identity(&snapshot, graph, activation).effect;
+                        if !snapshot.effects.iter().any(|effect| {
+                            effect.key == key
+                                && matches!(
+                                    effect.state,
+                                    super::EffectState::Succeeded | super::EffectState::Failed
+                                )
+                        }) {
+                            continue 'graphs;
+                        }
+                        let Some(receipt) = store.command_journal().receipt(&key)? else {
+                            continue 'graphs;
+                        };
+                        outcome = Some(if receipt.succeeded {
+                            super::graph::EdgeOutcome::Pass
+                        } else {
+                            super::graph::EdgeOutcome::Fail
+                        });
+                        evidence = Some(DecisionEvidence {
+                            actor: "daemon:typed-command".into(),
+                            reason: receipt.reason.clone(),
+                            references: vec![format!("command:{}:{}", key, receipt.output_sha256)],
+                        });
+                    }
                     NodeKind::Notify => {
                         let key = format!("notify:{}:{}", graph.id, activation.id);
                         let Some(effect) = snapshot.effects.iter().find(|e| e.key == key) else {

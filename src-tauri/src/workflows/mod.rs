@@ -1,4 +1,5 @@
 mod api;
+pub mod command;
 mod definition;
 mod prompt;
 mod run;

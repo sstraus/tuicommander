@@ -80,6 +80,140 @@ pub(in crate::workflows::run) async fn drive_effect(
             .find(|n| n.id == activation.node_id)
             .ok_or("activation node missing")?;
         match &node.kind {
+            NodeKind::RunCommand { command } | NodeKind::Tool { command, .. } => {
+                let identity = command_identity(run, graph, activation);
+                let effect = if let Some(effect) = run
+                    .effects
+                    .iter()
+                    .find(|effect| effect.key == identity.effect)
+                {
+                    effect.clone()
+                } else {
+                    let receipt = store.command(
+                        &run.id,
+                        &format!("reserve:{}", identity.effect),
+                        super::super::RunCommand::ReserveEffect {
+                            key: identity.effect.clone(),
+                            kind: EffectKind::RunCommand,
+                        },
+                    )?;
+                    receipt
+                        .snapshot
+                        .effects
+                        .iter()
+                        .find(|effect| effect.key == identity.effect)
+                        .ok_or("command intent missing")?
+                        .clone()
+                };
+                if let Some(receipt) = store.command_journal().receipt(&identity.effect)? {
+                    if effect.state == EffectState::Intended {
+                        store.command(
+                            &run.id,
+                            &format!("settle:{}", identity.effect),
+                            super::super::RunCommand::MarkEffect {
+                                effect_id: effect.id,
+                                succeeded: receipt.succeeded,
+                            },
+                        )?;
+                        return Ok(true);
+                    }
+                    continue;
+                }
+                if effect.state != EffectState::Intended {
+                    return Err("command intent needs stop-proof reconciliation; never replay a resolved or uncertain effect".into());
+                }
+                let workspace = run
+                    .stories
+                    .iter()
+                    .find(|s| s.story_id == graph.target_id)
+                    .and_then(|s| s.worktree_path.clone());
+                let workspace = if let Some(workspace) = workspace {
+                    workspace
+                } else {
+                    if graph.target_id == run.plan_id {
+                        // DEFERRED (2026-10-30) — WF04 owns durable plan workspace bindings.
+                        // Never guess a canonical checkout or derive one from a PTY identity.
+                        return Err(
+                            "typed plan command needs an assigned plan artifact/workspace".into(),
+                        );
+                    }
+                    let key = format!("command-workspace:{}:{}", run.id, graph.id);
+                    let snapshot = store.snapshot(&run.id)?;
+                    if snapshot.effects.iter().any(|existing| existing.key == key) {
+                        return Err(
+                            "workspace preparation already intended; reconcile before retry".into(),
+                        );
+                    }
+                    let reserved = store.command(
+                        &run.id,
+                        &format!("reserve:{key}"),
+                        super::super::RunCommand::ReserveEffect {
+                            key: key.clone(),
+                            kind: EffectKind::PrepareWorkspace,
+                        },
+                    )?;
+                    let workspace_effect = reserved
+                        .snapshot
+                        .effects
+                        .iter()
+                        .find(|effect| effect.key == key)
+                        .ok_or("workspace intent missing")?;
+                    let branch = format!("workflow/{}-{}", run.id, graph.target_id);
+                    let workspace =
+                        crate::mcp_http::mcp_transport::create_daemon_workflow_worktree(
+                            state,
+                            &run.project,
+                            &branch,
+                            None,
+                        )
+                        .await?;
+                    store.command(
+                        &run.id,
+                        &format!("assign:{key}"),
+                        super::super::RunCommand::AssignWorktree {
+                            story_id: graph.target_id.clone(),
+                            path: workspace.path.clone(),
+                        },
+                    )?;
+                    store.command(
+                        &run.id,
+                        &format!("settle:{key}"),
+                        super::super::RunCommand::MarkEffect {
+                            effect_id: workspace_effect.id.clone(),
+                            succeeded: true,
+                        },
+                    )?;
+                    workspace.path
+                };
+                let command = command.clone();
+                let workspace = std::path::PathBuf::from(workspace);
+                let journal = store.command_journal();
+                let db = store.database_path().to_owned();
+                tokio::task::spawn_blocking(move || {
+                    journal.execute(
+                        &command,
+                        &identity,
+                        &workspace,
+                        &db,
+                        &crate::workflows::command::executor::CommandAdapters::installed(),
+                    )
+                })
+                .await
+                .map_err(|_| "typed command task interrupted")??;
+                let receipt = store
+                    .command_journal()
+                    .receipt(&command_identity(run, graph, activation).effect)?
+                    .ok_or("command receipt missing after execution")?;
+                store.command(
+                    &run.id,
+                    &format!("settle:{}", receipt.identity.effect),
+                    super::super::RunCommand::MarkEffect {
+                        effect_id: effect.id,
+                        succeeded: receipt.succeeded,
+                    },
+                )?;
+                return Ok(true);
+            }
             NodeKind::Agent { .. } | NodeKind::CreateStories => {
                 let agent_id = agent_node_id(graph, activation)?;
                 let NodeKind::Agent { role, .. } = &graph
@@ -404,4 +538,33 @@ pub(in crate::workflows) fn profile_problems(
         }
     }
     problems
+}
+
+pub(super) fn command_identity(
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+    activation: &Activation,
+) -> crate::workflows::command::CommandIdentity {
+    crate::workflows::command::CommandIdentity {
+        run: run.id.clone(),
+        execution: graph.id.clone(),
+        activation: activation.id.clone(),
+        attempt: activation.id.clone(),
+        generation: 1,
+        effect: format!("command:{}:{}:{}", run.id, graph.id, activation.id),
+        tool: graph
+            .definition
+            .graph
+            .nodes
+            .iter()
+            .find(|node| node.id == activation.node_id)
+            .and_then(|node| match &node.kind {
+                NodeKind::Tool {
+                    tool_id,
+                    tool_revision,
+                    ..
+                } => Some((tool_id.clone(), *tool_revision)),
+                _ => None,
+            }),
+    }
 }

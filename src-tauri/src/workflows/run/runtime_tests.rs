@@ -11,6 +11,7 @@ use std::sync::Arc;
 mod critic_c;
 mod default_install;
 mod parity;
+mod typed_commands;
 
 fn fixture() -> (
     tempfile::TempDir,

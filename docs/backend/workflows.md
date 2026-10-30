@@ -115,7 +115,7 @@ findings in the draft body. Existing intake without a workflow remains unchanged
 
 ## Shared contract and preservation baseline (WF01)
 
-New runs use event contract 3 and run-store layout 5. Version 2 serial graph
+WF01 introduced event contract 3 and run-store layout 5. WF05 uses layout 6 for typed command/workspace effects without changing existing serial replay. Version 2 serial graph
 replay remains supported: Join is still an exclusive merge, not an all-Join.
 Graph-start events add an immutable `contract` with version, definition SHA-256
 and explicit policy imports. Current starts pin the existing native definition,
@@ -128,3 +128,61 @@ for the effect/receipt schemas, policy ownership, I1–I10 source resolutions,
 recorded serial-run fixtures, complete capability matrix and source/test pins.
 This is a compatibility foundation, not operational migration or authority to
 start a second scheduler, publish externally or retire legacy mechanisms.
+
+## Typed command execution (WF05)
+
+Run-store layout 6 refuses older binaries before they read the new command and workspace effect kinds; retained contract-2/3 serial histories remain replayable.
+
+Published `run_command {command}` and `tool {tool_id,tool_revision,command}` nodes
+have `pass` and `fail` edges. Their version-1 command contract pins an argv
+invocation (no implicit shell), or an explicit `shell` invocation with a program,
+script and shell-contract version. It also pins `workspace: "assigned"`, target,
+resources, secret references, optional workspace-relative stdin artifact, timeout
+(1–86400 seconds), and output schema. Tool IDs and revisions are receipt inputs;
+provisioning tools are explicit authorized maintenance, never automatic installs.
+These nodes do not add Designer controls; author them through the existing
+versioned definition API. They require the run's assigned clean Git workspace.
+Story commands can prepare that workspace before the first Agent node. Plan
+commands without an assigned workspace fail closed; durable plan workspace
+bindings remain part of WF04.
+
+`local {os,arch}` refuses a different host. `rb` delegates to the installed
+build-slot/rb adapters, including freeze, source manifests, reservations and
+fair build admission. `rb_after_native {native_effect,os,arch}` additionally
+requires successful local proof for the exact source and command/schema before
+setting RB_FORCE. Linux proof cannot satisfy a native macOS requirement. The
+adapter root defaults to the orchestrator tools checkout and can be selected by
+`TUIC_WORKFLOW_ADAPTER_ROOT` on daemon startup. No SSH scheduler is added.
+
+Resources are Build (capacity/fairness owned by the wrapper), canonical Git
+(resolved from the actual Git common directory), Mutation, GUI and Device.
+The durable sidecar `workflow_runs.commands.sqlite3` records ready, queued,
+admitted, uncertain and completed observations and named-resource ownership.
+The command intent commits before starting a process. Duplicate identical effects
+return their immutable receipt; conflicting payloads refuse. Freeze prevents new
+admission but not history reads. A queued node pauses with its reason; explicitly
+resume it after the recorded blocker changes. There is no busy polling loop.
+
+`secretRefs` maps command environment names to daemon environment references.
+Resolved values go only into the child environment or temporary private rb input
+transport, never into definitions, argv or receipts. Local captured output is
+redacted; remote output is redacted inside the admitted task before rb records
+it. Capture is bounded. Exit-status output checks the exit code. `test_summary`
+requires JSON `{matched,passed,failed}` with a positive `minimum_matched`, every
+matched test passing and no failures. `json_object` requires named fields. A zero
+exit with no matching tests cannot pass a declared test-summary requirement.
+
+Local commands use the same process-tree cancellation owner as pinned checks.
+A lost remote client or lease never releases a named resource. Reconciliation
+uses the rb task/generation/fence and observed stop/release, not `result.txt`
+alone. A recovered stop without retained command output is failed proof, not
+success or permission to replay. Failed/unknown lookup retains the reservation
+and workspace. A completed receipt records source commit/tree, command and
+output digests, target, toolchain, stop/release and remote manifest references.
+Explicit Tool effects can change their assigned workspace; their receipts distinguish the starting subject from a clean result artifact, or disclose a dirty/unresolved result. Such a receipt cannot satisfy unchanged-artifact/native proof. A source-changing Run command fails proof but still releases its slot after observed stop. The graph follows only a committed terminal receipt. Old serial replay and
+legacy `requiredChecks` keep their original contracts.
+
+IPC, HTTP and MCP run actions accept `command_executions {run_id}`. The reply is
+`{type:"command_executions",value:[...]}` with sequence-ordered durable command
+observations. It is read-only and project-scoped. The existing run event cursor
+still owns graph transitions; the command observation cursor is separate.

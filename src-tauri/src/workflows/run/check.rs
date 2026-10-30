@@ -188,7 +188,6 @@ fn execute_check_owned(
         .argv
         .first()
         .ok_or("workflow check has no executable")?;
-    let start = Instant::now();
     let mut command = Command::new(executable);
     command
         .args(check.argv.iter().skip(1))
@@ -196,6 +195,70 @@ fn execute_check_owned(
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    let output = execute_process(
+        command,
+        Duration::from_secs(u64::from(check.timeout_secs)),
+        owner,
+        allow_cancelled,
+    )?;
+    if output.cancelled {
+        return Err("workflow check cancelled".into());
+    }
+    let (exit_code, duration_ms) = (output.exit_code, output.duration_ms);
+    if clean_artifact(path)? != (commit.clone(), tree.clone())
+        || git_output(path, &["symbolic-ref", "HEAD"])? != ref_name
+    {
+        return Err("workflow check changed the branch, commit, or tree".into());
+    }
+    Ok(CheckReceipt {
+        check_id: check.id.clone(),
+        argv: check.argv.clone(),
+        exit_code,
+        ref_name,
+        commit,
+        tree,
+        duration_ms,
+    })
+}
+
+pub(in crate::workflows) struct ProcessOutput {
+    pub exit_code: i32,
+    pub duration_ms: u64,
+    pub cancelled: bool,
+    pub stdout: Vec<u8>,
+    pub stderr: Vec<u8>,
+}
+
+fn drain_output(
+    reader: Option<impl std::io::Read + Send + 'static>,
+) -> std::thread::JoinHandle<Vec<u8>> {
+    std::thread::spawn(move || {
+        let Some(mut reader) = reader else {
+            return vec![];
+        };
+        let mut captured = Vec::new();
+        let mut bytes = [0; 8192];
+        loop {
+            match reader.read(&mut bytes) {
+                Ok(0) | Err(_) => break,
+                Ok(count) => {
+                    let remaining = (1024 * 1024_usize).saturating_sub(captured.len());
+                    captured.extend_from_slice(&bytes[..count.min(remaining)]);
+                }
+            }
+        }
+        captured
+    })
+}
+
+/// One cancellation registry for legacy checks and positioned command nodes.
+pub(in crate::workflows) fn execute_process(
+    mut command: Command,
+    timeout: Duration,
+    owner: Option<(PathBuf, String)>,
+    allow_cancelled: bool,
+) -> Result<ProcessOutput, String> {
+    let start = Instant::now();
     // Registration and spawn share the cancellation lock: cancellation also
     // fences workers which were reading Git when the run was cancelled.
     let mut registry = CHECKS.lock().unwrap_or_else(|error| error.into_inner());
@@ -211,32 +274,33 @@ fn execute_check_owned(
         .map_err(|error| format!("prepare workflow check tree: {error}"))?;
     let mut child = command
         .spawn()
-        .map_err(|error| format!("start workflow check {}: {error}", check.id))?;
+        .map_err(|error| format!("start workflow command: {error}"))?;
     if let Err(error) = tree_owner.assign(&child) {
         tree_owner.terminate(child.id());
         let _ = child.kill();
         let _ = child.wait();
         return Err(format!("assign workflow check tree: {error}"));
     }
+    let stdout = drain_output(child.stdout.take());
+    let stderr = drain_output(child.stderr.take());
     let process = Arc::new(Mutex::new(CheckProcess {
         child,
         tree: Some(tree_owner),
         cancelled: false,
     }));
-    let key = owner.unwrap_or_else(|| (path.to_owned(), uuid::Uuid::new_v4().to_string()));
+    let key = owner.unwrap_or_else(|| (PathBuf::new(), uuid::Uuid::new_v4().to_string()));
     registry
         .active
         .entry(key.clone())
         .or_default()
         .push(Arc::downgrade(&process));
     drop(registry);
-    let timeout = Duration::from_secs(u64::from(check.timeout_secs));
-    let result = (|| {
+    let result: Result<i32, String> = (|| {
         loop {
             {
                 let mut process = process.lock().unwrap_or_else(|error| error.into_inner());
                 if process.cancelled {
-                    return Err("workflow check cancelled".to_string());
+                    return Ok(-2);
                 }
                 if let Some(status) = process
                     .child
@@ -266,19 +330,12 @@ fn execute_check_owned(
     drop(registry);
     let exit_code = result?;
     let duration_ms = start.elapsed().as_millis().min(u64::MAX as u128) as u64;
-    if clean_artifact(path)? != (commit.clone(), tree.clone())
-        || git_output(path, &["symbolic-ref", "HEAD"])? != ref_name
-    {
-        return Err("workflow check changed the branch, commit, or tree".into());
-    }
-    Ok(CheckReceipt {
-        check_id: check.id.clone(),
-        argv: check.argv.clone(),
+    Ok(ProcessOutput {
         exit_code,
-        ref_name,
-        commit,
-        tree,
         duration_ms,
+        cancelled: exit_code == -2,
+        stdout: stdout.join().unwrap_or_default(),
+        stderr: stderr.join().unwrap_or_default(),
     })
 }
 

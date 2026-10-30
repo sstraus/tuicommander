@@ -1,0 +1,7 @@
+head=802c63c546de7b24c4f01de877e7f2f210908e9e
+tree_sha256=5385d41132559fa0087f0698688a34a8bbfd48583041ae76131573752ac87eaa
+exit=101
+stale=no
+box_dirty=no
+cache_mode=plain
+cargo_build_jobs=13

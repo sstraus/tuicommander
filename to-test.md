@@ -1,3 +1,7 @@
+## Typed workflow commands (2512-5a42) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a backend Run command graph in a throwaway project with an assigned workspace and inspect `command_executions`. Verify admission, target and immutable receipt; the daily instance was not restarted. Rust changes do not hot-reload.
+
 ## Long Claude dictation (2502-571c) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, dictate more than 60 seconds to Claude CLI and verify both opening and ending words with Auto-send on and off. Native isolated Claude 2.1.311 probes reproduce plain-write prefix loss and retain all 1159 characters with bracketed paste; the regression tests cover frontend and backend payloads. The owner microphone and daily app were not changed. Rust does not hot-reload; restart only when Boss is ready to lose current sessions.

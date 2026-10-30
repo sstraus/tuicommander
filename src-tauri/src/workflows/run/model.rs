@@ -184,6 +184,8 @@ pub struct AttemptReport {
 #[serde(rename_all = "snake_case")]
 pub enum EffectKind {
     SpawnAgent,
+    RunCommand,
+    PrepareWorkspace,
     CreateStory,
     Notify,
     Integrate,

@@ -72,7 +72,8 @@ impl From<RunStartError> for String {
 /// records explicit graph-root targets; older binaries must refuse that contract.
 // 4: paused_for events; a build that supports 3 refuses the store instead of failing to decode them.
 // 5: contract-3 graph pins; older builds must refuse rather than reinterpret new runs.
-const RUN_STORE_SCHEMA_VERSION: i64 = 5;
+// 6: typed command/Tool definitions and command/workspace effect kinds.
+const RUN_STORE_SCHEMA_VERSION: i64 = 6;
 
 mod approval;
 mod runtime_start;
@@ -238,6 +239,15 @@ thread_local! {
 }
 
 impl RunStore {
+    pub(in crate::workflows) fn command_journal(
+        &self,
+    ) -> crate::workflows::command::executor::CommandJournal {
+        crate::workflows::command::executor::CommandJournal::for_runs(&self.db_path)
+    }
+    pub(in crate::workflows) fn database_path(&self) -> &Path {
+        &self.db_path
+    }
+
     pub(crate) fn duration_expired(&self, run_id: &str) -> Result<bool, String> {
         Ok(now_ms() >= super::runtime::deadline_ms(&self.snapshot(run_id)?))
     }
@@ -1286,7 +1296,7 @@ impl RunStore {
             }
             _ => None,
         };
-        let cancelled = matches!(&command, RunCommand::Cancel);
+        let cancelled = matches!(&command, RunCommand::Cancel | RunCommand::ExpireDeadline);
         // All filesystem/Git probes finish before acquiring the writer lock.
         let kind = match choose_event(&snapshot, command, at_ms) {
             Ok(kind) => kind,
@@ -2166,10 +2176,28 @@ fn choose_event(
             if story.worktree_path.is_some() {
                 return Err("story worktree already assigned".into());
             }
-            if !snapshot.attempts.iter().any(|attempt| {
-                attempt.story_id == story_id && attempt.state == AttemptState::Running
-            }) {
-                return Err("story has no running attempt".into());
+            let command_position = snapshot.graph_executions.iter().any(|graph| {
+                graph.target_id == story_id
+                    && graph.activations.iter().any(|activation| {
+                        matches!(
+                            activation.state,
+                            super::graph::ActivationState::Ready
+                                | super::graph::ActivationState::Running
+                        ) && graph.definition.graph.nodes.iter().any(|node| {
+                            node.id == activation.node_id
+                                && matches!(
+                                    node.kind,
+                                    NodeKind::RunCommand { .. } | NodeKind::Tool { .. }
+                                )
+                        })
+                    })
+            });
+            if !command_position
+                && !snapshot.attempts.iter().any(|attempt| {
+                    attempt.story_id == story_id && attempt.state == AttemptState::Running
+                })
+            {
+                return Err("story has no running attempt or positioned command".into());
             }
             if snapshot
                 .stories
