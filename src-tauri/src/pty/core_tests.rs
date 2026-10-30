@@ -10861,7 +10861,14 @@ async fn claude_multi_question_capture_exposes_every_tab_to_mobile() {
                         })
                     })
                     .await,
-                    "step {answers} must expose {title:?} to mobile"
+                    "step {answers} must expose {title:?} to mobile; screen: {:#?}",
+                    state
+                        .grid
+                        .vt_log_buffers
+                        .get(sid)
+                        .unwrap()
+                        .lock()
+                        .screen_rows()
                 );
                 answers += 1;
                 crate::state::resolve_choice_prompt_input(&state, sid, "\r");

@@ -11,6 +11,9 @@
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-mobile-startup-1987.tcap","events":33}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-mobile-verbose-tools-2109.tcap","events":392}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-narrow-2093.tcap","events":107}
+{"fixture":"src-tauri/src/fixtures/agent_prompts/claude-preview-chat-2536.tcap","events":148}
+{"fixture":"src-tauri/src/fixtures/agent_prompts/claude-preview-narrow-2536.tcap","events":109}
+{"fixture":"src-tauri/src/fixtures/agent_prompts/claude-preview-wide-2536.tcap","events":113}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-question-exit-2091.tcap","events":191}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-quoted-ink-footer.tcap","events":127}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/claude-ready-idle-notify-statement.tcap","events":24}

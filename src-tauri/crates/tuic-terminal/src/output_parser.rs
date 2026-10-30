@@ -2816,9 +2816,10 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
     if let Some(tabs) = screen_rows[..title_start]
         .iter()
         .rev()
-        .find(|row| !row.trim().is_empty())
-        && tabs.starts_with('←')
-        && tabs.contains("✔ Submit")
+        // The Submit review places its answer summary between the tabs and
+        // the title. Stay inside this dialog's full-bleed separator boundary.
+        .take_while(|row| !row.starts_with("──"))
+        .find(|row| row.starts_with('←') && row.contains("✔ Submit"))
     {
         title_text = format!("{}\n{title_text}", tabs.trim());
     }
@@ -2890,7 +2891,14 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
             }
             continue;
         };
-        label_column = Some(row[..caps.get(3)?.start()].chars().count());
+        // Ink hangs wrapped labels under the number's punctuation, one cell
+        // before the first label character ("❯ 1. Label" / "    wrap").
+        label_column = Some(
+            row[..caps.get(3)?.start()]
+                .chars()
+                .count()
+                .saturating_sub(1),
+        );
         let key = caps[2].to_string();
         if key.parse::<usize>().ok() != Some(options.len() + 1) {
             // At the last visible option Claude can omit the scroll arrow while
@@ -7657,7 +7665,8 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
                 "Schede nel dettaglio processo (Recommended)",
                 "Nuova scheda Inspect",
                 "Chat about this"
-            ]
+            ],
+            "recorded rows: {rows:#?}"
         );
         assert!(
             title.contains("Posizione UI")
