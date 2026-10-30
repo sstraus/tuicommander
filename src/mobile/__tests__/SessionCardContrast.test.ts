@@ -2,10 +2,11 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import commander from "../../../src-tauri/src/themes/commander.json";
 import paper from "../../../src-tauri/src/themes/vscode-light.json";
+import { readStylesheet } from "../../__tests__/fixtures/readStylesheet";
 import { contrastRatio } from "../../themes";
 
 const css = readFileSync("src/mobile/components/SessionCard.module.css", "utf8");
-const palette = readFileSync("src/mobile/mobile.css", "utf8");
+const palette = readStylesheet("src/mobile/mobile.css");
 const rule = (source: string, selector: string) =>
 	[...source.matchAll(/([^{}]+)\{([^{}]*)\}/g)].find((match) => match[1].trim() === selector)?.[2] ?? "";
 const color = (block: string) => block.match(/(?:^|[;\s])color:\s*var\((--[\w-]+)\);/)?.[1];
