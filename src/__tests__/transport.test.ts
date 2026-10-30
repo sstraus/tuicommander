@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import * as ts from "@typescript/typescript6";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Catches: browser reload dropping the changed-ID filter and scanning every plugin.
 it("maps targeted plugin discovery with the same ID array as IPC", () => {
@@ -205,7 +205,10 @@ function collectFrontendSources(): { path: string; source: string }[] {
  *   - `transport.onEvent("foo")`, which TauriTransport expands to
  *     `pty-foo-${sessionId}` (canvasTerminalTransport.ts)
  */
-function extractSubscribedPtyEvents(sources = collectFrontendSources()): Map<string, string[]> {
+function extractSubscribedPtyEvents(
+	sources = collectFrontendSources(),
+	parseSource = ts.createSourceFile,
+): Map<string, string[]> {
 	const subscribed = new Map<string, string[]>();
 	const add = (name: string, path: string) => {
 		const where = subscribed.get(name) ?? [];
@@ -213,10 +216,17 @@ function extractSubscribedPtyEvents(sources = collectFrontendSources()): Map<str
 		subscribed.set(name, where);
 	};
 	for (const { path, source } of sources) {
-		// Most frontend files cannot contain either supported call. Keep Unicode
-		// escapes eligible: TypeScript decodes escaped identifiers in the AST.
-		if (!source.includes("listen") && !source.includes("onEvent") && !source.includes("\\u")) continue;
-		const file = ts.createSourceFile(path, source, ts.ScriptTarget.Latest, false);
+		// A literal listen needs a PTY prefix, not just an unrelated UI listener.
+		// Keep escaped identifiers and event literals eligible for AST decoding;
+		// onEvent arguments may be wrapped, so do not prefilter their shape.
+		if (
+			!source.includes("\\u") &&
+			!source.includes("\\x") &&
+			!source.includes("onEvent") &&
+			!(source.includes("listen") && source.includes("pty-"))
+		)
+			continue;
+		const file = parseSource(path, source, ts.ScriptTarget.Latest, false);
 		for (const call of findNodes(file, ts.isCallExpression)) {
 			const argument = call.arguments[0];
 			if (argument && ts.isIdentifier(call.expression) && call.expression.text === "listen") {
@@ -236,12 +246,25 @@ function extractSubscribedPtyEvents(sources = collectFrontendSources()): Map<str
 }
 
 describe("PTY event source scan", () => {
+	// Catches: ordinary UI listeners paying for an unrelated TypeScript AST parse.
+	it("skips parsing files with only non-PTY listen calls", () => {
+		const parse = vi.fn(ts.createSourceFile);
+		expect(
+			extractSubscribedPtyEvents([{ path: "src/unrelated.ts", source: 'listen("settings-changed", handler);' }], parse),
+		).toEqual(new Map());
+		expect(parse).not.toHaveBeenCalled();
+	});
+
 	// Catches: the cheap prefilter dropping escaped listeners or wrapped onEvent calls.
 	it.each([
 		// biome-ignore lint/suspicious/noTemplateCurlyInString: The placeholder is source text for the parser.
 		["escaped listen", "li\\u0073ten(`pty-activity-${sessionId}`, () => {});"],
 		["wrapped onEvent", 'transport.onEvent(mutant ? "activity" : (coverage(), "activity"), handler);'],
 		["escaped onEvent", String.raw`transport.on\u0045vent("activity", handler);`],
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: The placeholder is source text for the parser.
+		["hex-escaped event", "listen(`\\x70ty-activity-${sessionId}`, handler);"],
+		// biome-ignore lint/suspicious/noTemplateCurlyInString: The placeholder is source text for the parser.
+		["Unicode-escaped event", "listen(`pty\\u002dactivity-${sessionId}`, handler);"],
 	])("finds the activity listener with %s", (_name, source) => {
 		expect(extractSubscribedPtyEvents([{ path: "src/transport.ts", source }]).has("pty-activity")).toBe(true);
 	});
@@ -266,9 +289,14 @@ describe("transport", () => {
 	 * consumes) is wasteful but harmless, and is deliberately not asserted.
 	 */
 	describe("per-session Tauri event parity", () => {
-		// Both assertions inspect one immutable repository snapshot, not two full AST scans.
-		let subscribed: Map<string, string[]> | undefined;
-		const subscriptions = () => (subscribed ??= extractSubscribedPtyEvents());
+		let subscribed: Map<string, string[]>;
+		beforeAll(() => {
+			// Repository setup is not the behavior under test. The previous scan
+			// took 8.422 s under load (0.49 s unloaded across 829 source files).
+			// Allow 60 s for this one shared snapshot, outside each assertion's
+			// 5 s budget; do not make parity depend on frontend size or CPU load.
+			subscribed = extractSubscribedPtyEvents();
+		}, 60_000);
 
 		it("every pty-* event the frontend subscribes to is emitted by Rust", () => {
 			const rustSources = [
@@ -279,7 +307,6 @@ describe("transport", () => {
 				.map((relative) => readRepoFile(relative))
 				.join("\n");
 
-			const subscribed = subscriptions();
 			expect(subscribed.size).toBeGreaterThan(0);
 
 			const orphaned = [...subscribed.entries()].filter(([name]) => !rustSources.includes(`${name}-{session_id}`));
@@ -290,7 +317,7 @@ describe("transport", () => {
 		it("includes the activity pulse, which is the signal that regressed", () => {
 			// Guards the guard: if the extraction above silently stopped matching,
 			// the parity test would pass vacuously for the very event it exists for.
-			expect([...subscriptions().keys()]).toContain("pty-activity");
+			expect([...subscribed.keys()]).toContain("pty-activity");
 		});
 	});
 
