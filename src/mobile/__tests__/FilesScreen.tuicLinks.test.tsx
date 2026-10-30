@@ -21,7 +21,7 @@ describe("mobile rendered tuic links", () => {
 		rpc.mockImplementation(async (command: string, args?: Record<string, string>) => {
 			if (command === "load_repositories") return { repos: { "/repo": {}, "/other-worktree": {} } };
 			if (command === "list_directory") return [{ name: "report.md", path: "report.md", is_dir: false, size: 100 }];
-			if (command === "fs_read_file")
+			if (command === "fs_read_file" || command === "read_file")
 				return args?.file === "report.md"
 					? `[target](${href})`
 					: args?.file === "index.html"

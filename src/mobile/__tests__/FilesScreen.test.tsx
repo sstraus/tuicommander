@@ -103,7 +103,9 @@ describe("FilesScreen", () => {
 		async (_label, destination, root, image) => {
 			const original = "# Destination\n\n![Shot](shot.png)\n\n- [ ] Review target\n";
 			files.set(destination, original);
-			onTestFinished(() => files.delete(destination));
+			onTestFinished(() => {
+				files.delete(destination);
+			});
 			files.set("src/guide.md", `[Target](tuic://open/${destination})`);
 			const view = render(() => <FilesScreen />);
 			await waitFor(() => expect(view.getByRole("button", { name: /repo-one/ })).toBeTruthy());
