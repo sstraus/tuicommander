@@ -97,15 +97,16 @@ describe("browser repository preview boundary", () => {
 		const { container } = render(() => <HtmlPreviewTab tab={tab("/repo/docs/shot.png")} />);
 		expect(imageUrl(container).searchParams.get("file")).toBe("docs/shot.png");
 	});
-	it("shows a placeholder for an external image tab — catches: external tabs rendering a broken img", () => {
-		const { container, getByRole } = render(() => <HtmlPreviewTab tab={tab("/outside/shot.png")} />);
-		expect(container.querySelector("img")).toBeNull();
-		expect(getByRole("img", { name: "Image unavailable" })).toBeDefined();
+	it("routes an explicitly opened external image — catches: local image tabs replaced by a placeholder", () => {
+		const { container } = render(() => <HtmlPreviewTab tab={tab("/outside/shot.png")} />);
+		const url = imageUrl(container);
+		expect(url.pathname).toBe("/fs/markdown-image");
+		expect(url.searchParams.get("repoPath")).toBe("/outside");
+		expect(url.searchParams.get("file")).toBe("shot.png");
 	});
-	it("blocks an external HTML tab — catches: HTML preview reading a file outside the repository boundary", async () => {
+	it("asks the backend to read an external HTML tab — catches: frontend registration checks blocking local previews", async () => {
 		const { container } = render(() => <HtmlPreviewTab tab={tab("/outside/page.html")} />);
-		await waitFor(() => expect(container.textContent).toContain("Preview unavailable: outside open repositories."));
-		expect(container.querySelector("iframe")).toBeNull();
+		await waitFor(() => expect(container.querySelector("iframe")?.getAttribute("srcdoc")).toContain("<html>"));
 	});
 	it("routes local images in an HTML preview — catches: HTML base tags pointing browser images at bare paths", async () => {
 		const { container } = render(() => <HtmlPreviewTab tab={tab("/repo/docs/page.html")} />);

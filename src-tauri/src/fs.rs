@@ -2200,6 +2200,23 @@ fn resolve_markdown_link_with_home(
     href: &str,
     home: Option<&Path>,
 ) -> MarkdownLinkTarget {
+    // An in-document open link names a file, not an OS protocol handler. Decode
+    // its delimiter before the normal local-path/UNC and filesystem checks.
+    let tuic_path;
+    let href = if href
+        .get(..12)
+        .is_some_and(|prefix| prefix.eq_ignore_ascii_case("tuic://open/"))
+    {
+        let path = &href[12..];
+        tuic_path = if path.starts_with('/') {
+            format!("/{}", path.trim_start_matches('/'))
+        } else {
+            path.to_string()
+        };
+        tuic_path.as_str()
+    } else {
+        href
+    };
     let (raw_path, raw_anchor) = href.split_once('#').unwrap_or((href, ""));
     let raw_path = raw_path.split_once('?').map_or(raw_path, |(path, _)| path);
     let Some(mut path) = decode_markdown_link_part(raw_path) else {
@@ -3880,6 +3897,35 @@ mod tests {
         assert!(!is_tcc_protected_path(
             &home.join("Downloads/../Projects/readme.md")
         ));
+    }
+
+    // Catches: tuic://open is treated as a relative filesystem name instead of a local link.
+    #[test]
+    fn markdown_tuic_open_links_resolve_local_file_types_and_directories() {
+        let fixture = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let root = fixture.path().join("active");
+        std::fs::create_dir_all(&root).unwrap();
+        for directory in ["active", "other-worktree", "unregistered"] {
+            let directory = fixture.path().join(directory);
+            std::fs::create_dir_all(&directory).unwrap();
+            for name in ["target.md", "image.png", "index.html", "folder"] {
+                let target = directory.join(name);
+                if name == "folder" {
+                    std::fs::create_dir_all(&target).unwrap();
+                } else {
+                    std::fs::write(&target, "fixture").unwrap();
+                }
+                let target = portable_spelling(&target.to_string_lossy());
+                let href = format!("tuic://open/{target}");
+                let resolved =
+                    resolve_markdown_link_impl(&root.to_string_lossy(), "report.md", &href);
+                assert!(
+                    matches!(resolved, MarkdownLinkTarget::File { absolute_path, is_directory, .. }
+                    if absolute_path == target && is_directory == (name == "folder")),
+                    "{href}"
+                );
+            }
+        }
     }
 
     #[test]

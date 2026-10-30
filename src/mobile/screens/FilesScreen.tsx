@@ -1,13 +1,16 @@
 import { createEffect, createMemo, createSignal, For, on, onCleanup, onMount, Show } from "solid-js";
 import { aiChatDraft } from "../../components/AIChatPanel/draft";
+import { HtmlPreviewTab } from "../../components/HtmlPreviewTab/HtmlPreviewTab";
+import type { MarkdownLinkTarget } from "../../components/MarkdownTab/MarkdownTab";
 import { Button, Input, Select } from "../../components/ui";
 import { t } from "../../i18n";
 import { aiChatTabs } from "../../stores/aiChatTabs";
 import { appLogger } from "../../stores/appLogger";
 import { toastsStore } from "../../stores/toasts";
 import { rpc } from "../../transport";
+import { classifyFile } from "../../utils/filePreview";
 import { buildMarkdownReviewPrompt } from "../../utils/markdownReviewPrompt";
-import { isAbsolutePath, joinPath, pathStripPrefix } from "../../utils/pathUtils";
+import { isAbsolutePath, joinPath, pathBasename, pathStripPrefix } from "../../utils/pathUtils";
 import { repoImageUrl } from "../../utils/repoImageUrl";
 import {
 	insertTweakBlockComment,
@@ -311,6 +314,42 @@ export function FilesScreen(props: FilesScreenProps) {
 		}
 	}
 
+	async function openMarkdownLink(href: string) {
+		const root = repo();
+		const currentFile = file();
+		if (!root || !currentFile) return;
+		try {
+			const target = await rpc<MarkdownLinkTarget>("resolve_markdown_link", { root, currentFile, href });
+			if (target.kind === "heading") {
+				document.getElementById(target.anchor)?.scrollIntoView({ block: "start" });
+				return;
+			}
+			if (target.kind !== "file") {
+				setNotice(target.kind === "blocked" ? target.reason : `File not found: ${target.path}`);
+				return;
+			}
+			if (target.is_directory) {
+				setFile(null);
+				await openDirectory(target.absolute_path, "");
+				return;
+			}
+			const stat = await rpc<{ exists: boolean; is_dir: boolean; size: number }>("stat_path", {
+				path: target.absolute_path,
+			});
+			if (!stat.exists || stat.is_dir) {
+				setNotice(`File not found: ${target.absolute_path}`);
+				return;
+			}
+			await openFile(
+				{ name: pathBasename(target.absolute_path), path: target.absolute_path, is_dir: false, size: stat.size },
+				target.line ?? undefined,
+			);
+		} catch (err) {
+			appLogger.warn("network", "Could not open Markdown link", err);
+			setNotice("Could not open link. Try again.");
+		}
+	}
+
 	async function openFile(entry: FileEntry, line?: number) {
 		openedEntry = entry;
 		const currentRequest = ++requestId;
@@ -321,13 +360,19 @@ export function FilesScreen(props: FilesScreenProps) {
 		setEditing(false);
 		setError("");
 		setNotice("");
+		if (classifyFile(entry.path) === "preview" && !line) {
+			setBusy(false);
+			return;
+		}
 		if (entry.size > MAX_MOBILE_FILE_BYTES) {
 			setError("File too large to open on mobile (1 MB limit).");
 			return;
 		}
 		setBusy(true);
 		try {
-			const result = await rpc<string>("fs_read_file", { repoPath: repo(), file: entry.path });
+			const result = isAbsolutePath(entry.path)
+				? await rpc<string>("read_external_file", { path: entry.path })
+				: await rpc<string>("fs_read_file", { repoPath: repo(), file: entry.path });
 			if (currentRequest !== requestId) return;
 			if (result.includes("\0")) {
 				setError("This is a binary or non-text file.");
@@ -632,7 +677,19 @@ export function FilesScreen(props: FilesScreenProps) {
 				<Show
 					when={editing()}
 					fallback={
-						file()?.toLowerCase().endsWith(".md") ? (
+						classifyFile(file()!) === "preview" ? (
+							<HtmlPreviewTab
+								tab={{
+									id: "mobile-file-preview",
+									type: "html-preview",
+									title: pathBasename(file()!),
+									fileName: pathBasename(file()!),
+									repoPath: repo()!,
+									filePath: file()!,
+									fsRoot: repo()!,
+								}}
+							/>
+						) : file()?.toLowerCase().endsWith(".md") ? (
 							<>
 								<Show when={hasReviewChanges()}>
 									<div class={styles.reviewActions}>
@@ -669,6 +726,7 @@ export function FilesScreen(props: FilesScreenProps) {
 								<div class={styles.markdownView}>
 									<ReviewableMarkdown
 										content={content()}
+										onLinkClick={(href) => void openMarkdownLink(href)}
 										onSaveInlineComment={saveInlineComment}
 										chatReference={chatReference()}
 										imageSrc={markdownImageSrc}

@@ -63,7 +63,7 @@ function isMissingFileError(msg: string): boolean {
 	return msg.includes("No such file") || msg.includes("os error 2");
 }
 
-type MarkdownLinkTarget =
+export type MarkdownLinkTarget =
 	| { kind: "heading"; anchor: string }
 	| {
 			kind: "file";

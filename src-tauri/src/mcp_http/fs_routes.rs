@@ -226,16 +226,22 @@ fn registered_repo_roots() -> Vec<String> {
     crate::config::registered_repo_paths()
 }
 
-pub(super) async fn read_external_file_http(Query(q): Query<FsExternalFileQuery>) -> Response {
-    // Restrict to files within registered repos — prevents arbitrary file reads via HTTP
-    if let Some(resp) = deny_unless_in_roots(&q.path, &registered_repo_roots()) {
+pub(super) async fn read_external_file_http(
+    axum::extract::ConnectInfo(addr): axum::extract::ConnectInfo<std::net::SocketAddr>,
+    Query(q): Query<FsExternalFileQuery>,
+) -> Response {
+    // The local browser belongs to the desktop user. Network callers retain
+    // their existing registered-repository boundary, after HTTP authentication.
+    if !addr.ip().is_loopback()
+        && let Some(resp) = deny_unless_in_roots(&q.path, &registered_repo_roots())
+    {
         return resp;
     }
     json_result(crate::read_external_file(q.path).await)
 }
 
 /// External (absolute-path) file read for the code editor, at the larger
-/// `MAX_EDITOR_LARGE_FILE_SIZE` cap. Same repo-root restriction as `read_external_file_http`.
+/// `MAX_EDITOR_LARGE_FILE_SIZE` cap. This editor route remains repo-root restricted.
 pub(super) async fn read_editor_file_external_http(
     Query(q): Query<FsExternalFileQuery>,
 ) -> Response {
@@ -369,9 +375,9 @@ pub(super) async fn warm_content_index_http(
 }
 
 /// Write a file at an absolute path (editor saves for files outside any repo).
-/// Gated to registered repo roots for the HTTP boundary, matching
-/// `read_external_file_http` — the editor can only *open* repo-root files over
-/// HTTP, so saves target the same set. `write_external_file` also confines to $HOME.
+/// Gated to registered repo roots for the HTTP boundary, matching external
+/// network reads. Loopback preview reads do not grant write access.
+/// `write_external_file` also confines to $HOME.
 pub(super) async fn write_external_file_http(Json(body): Json<FsExternalWriteRequest>) -> Response {
     if let Some(resp) = deny_unless_in_roots(&body.path, &registered_repo_roots()) {
         return resp;
@@ -491,9 +497,12 @@ mod tests {
         write_real_shaped_repositories(cfg.path(), repo.path());
 
         let get = |p: std::path::PathBuf| {
-            read_external_file_http(Query(FsExternalFileQuery {
-                path: p.to_string_lossy().into_owned(),
-            }))
+            read_external_file_http(
+                axum::extract::ConnectInfo(std::net::SocketAddr::from(([203, 0, 113, 1], 4444))),
+                Query(FsExternalFileQuery {
+                    path: p.to_string_lossy().into_owned(),
+                }),
+            )
         };
         assert_eq!(
             get(repo.path().join("AGENTS.md")).await.status(),
