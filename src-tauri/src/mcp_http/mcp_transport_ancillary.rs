@@ -1512,7 +1512,7 @@ fn launch_workflow_effect(
     if run.status != crate::workflows::RunStatus::Running {
         return Err("workflow run is not running".into());
     }
-    if !daemon && run.event_contract_version >= 3 {
+    if !daemon && run.event_contract_version >= 3 && !run.graph_executions.is_empty() {
         return Err("contract-3 graph agent launch is daemon-owned; use the run controls".into());
     }
     let attempt = run
