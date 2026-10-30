@@ -38,6 +38,19 @@ async fn public_graph_start_pins_revision_and_retries_without_duplicate_roots() 
     };
     assert_eq!(run.root_target, Some(RunTarget::Story(story)));
     assert_eq!(run.graph_executions[0].definition, definition);
+    // Catches: one transport loses the immutable contract pin or advertises v2 for new starts.
+    assert_eq!(run.event_contract_version, 3);
+    let contract = run.graph_executions[0]
+        .contract
+        .as_ref()
+        .expect("contract pin");
+    assert_eq!(contract.version, 3);
+    assert_eq!(
+        contract.policy_imports,
+        [] as [super::super::contracts::PolicyImport; 0]
+    );
+    assert_eq!(contract.definition_sha256.len(), 64);
+
     assert_eq!(run.graph_executions[0].activations[1].node_id, "implement");
     let RunReply::Snapshot(retry) = run_action_with_events(
         &state,
@@ -48,6 +61,10 @@ async fn public_graph_start_pins_revision_and_retries_without_duplicate_roots() 
         panic!("snapshot");
     };
     assert_eq!(retry.id, run.id);
+    assert_eq!(
+        retry.graph_executions[0].contract,
+        run.graph_executions[0].contract
+    );
     let mut changed = input.clone();
     changed["expected_revision"] = serde_json::json!(0);
     assert!(

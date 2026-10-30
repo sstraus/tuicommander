@@ -1,0 +1,17 @@
+AB_SESSION=ego-smoke-a689949ba9214d08bd2095a12d8ad1e1
+AB_AGENT_BROWSER_DIR=/Users/stefano.straus/Gits/.tmp/wfstudy-canvas/smoke-74a47148d9/reap-scope
+Permission posture: record from the invoking ego session; not inferred here.
+$ /Users/stefano.straus/Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh file:///Users/stefano.straus/Gits/.tmp/wfstudy-canvas/smoke-74a47148d9/local.html
+[ab-stealth] session=ego-smoke-a689949ba9214d08bd2095a12d8ad1e1 Chrome=39441 CDP=52224 tab=7CEA4154750B0EB7742A7C8C75A080C8
+exit=0
+$ /Users/stefano.straus/Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh -- screenshot /Users/stefano.straus/Gits/.tmp/wfstudy-canvas/smoke-74a47148d9/screenshot.png
+✓ Screenshot saved to /Users/stefano.straus/Gits/.tmp/wfstudy-canvas/smoke-74a47148d9/screenshot.png
+[ab-stealth] session=ego-smoke-a689949ba9214d08bd2095a12d8ad1e1 Chrome=39441 CDP=52224 tab=pinned
+exit=0
+$ /Users/stefano.straus/Gits/personal/brainstorming/tools/browser-stealth/ab-stealth.sh -- tab close
+✓ Tab [t4] closed
+[ab-stealth] session=ego-smoke-a689949ba9214d08bd2095a12d8ad1e1 Chrome=39441 CDP=52224 tab=pinned
+exit=0
+$ agent-browser --session ab-shared-ego-smoke-a689949ba9214d08bd2095a12d8ad1e1-39441 close
+✓ Browser closed
+exit=0
