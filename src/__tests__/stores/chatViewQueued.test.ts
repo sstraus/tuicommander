@@ -48,6 +48,34 @@ it("keeps pending prompts through activity and consumes repeated echoes only onc
 	).toEqual(["repeat", "repeat", "repeat"]);
 });
 
+it.each(["/help", "dropped input", "rewritten input"])(
+	"retires unmatched older sends when a later receipt arrives: %s",
+	async (unmatched) => {
+		chatViewStore.beginSubmission("queued", unmatched);
+		chatViewStore.beginSubmission("queued", "next prompt");
+		chatViewStore.beginSubmission("queued", "still waiting");
+		await read([user("next", "next prompt")]);
+		expect(chatViewStore.entries("queued").flatMap((e) => (e.kind === "user" && e.pending ? [e.text] : []))).toEqual([
+			"still waiting",
+		]);
+	},
+);
+
+it("does not reuse a later receipt after retiring several unmatched sends", async () => {
+	chatViewStore.beginSubmission("queued", "/help");
+	chatViewStore.beginSubmission("queued", "dropped input");
+	chatViewStore.beginSubmission("queued", "repeat");
+	chatViewStore.beginSubmission("queued", "repeat");
+	await read([user("next", "repeat")]);
+	expect(chatViewStore.entries("queued").flatMap((e) => (e.kind === "user" && e.pending ? [e.text] : []))).toEqual([
+		"repeat",
+	]);
+	await read([]);
+	expect(chatViewStore.entries("queued").filter((e) => e.kind === "user" && e.pending)).toHaveLength(1);
+	await read([user("last", "repeat")]);
+	expect(chatViewStore.entries("queued").filter((e) => e.kind === "user" && e.pending)).toHaveLength(0);
+});
+
 it("rolls back only its own failed send and never consumes another PTY's prompt", async () => {
 	const rollback = chatViewStore.beginSubmission("queued", "first");
 	chatViewStore.beginSubmission("queued", "second");

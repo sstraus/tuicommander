@@ -148,13 +148,18 @@ async function readOnce(sessionId: string): Promise<void> {
 		const pending = state.pending[sessionId] ?? [];
 		let after = 0;
 		let consumed = 0;
-		for (const prompt of pending) {
+		// CLI sends are ordered: a later receipt also retires older sends that
+		// produced no matching user record (for example, a local slash command).
+		// DEFERRED (2026-10-30) — Rust adapters redact and truncate user text.
+		// Exact matching can leave the last transformed send pending; sharing
+		// their comparison form needs a backend contract, not copied TS rules.
+		for (const [pendingIndex, prompt] of pending.entries()) {
 			const index = users.findIndex(
 				(entry, index) => index >= Math.max(after, prompt.after) && entry.text.trim() === prompt.text.trim(),
 			);
-			if (index < 0) break;
+			if (index < 0) continue;
 			after = index + 1;
-			consumed += 1;
+			consumed = pendingIndex + 1;
 		}
 		if (consumed > 0)
 			setState(
