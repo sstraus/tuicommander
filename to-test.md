@@ -1,3 +1,7 @@
+## Gemini JSONL discovery (2543-4bbf) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, start Gemini 0.64 in a throwaway project. Confirm the native session ID is discovered and resumes after restore; a session from another project must not be selected. Recorded owner-transcript regression covers JSONL metadata; no owner login, settings or running app was changed. Rust does not hot-reload; restart only when losing current sessions is acceptable.
+
 ## Terminal search clearance (2538-c082)
 
 - [x] Browser component geometry covers Context on/off, 1000px/400px panes and desktop/touch viewports. Search and view-switch bounds are disjoint; button centres are hit-testable; close/reopen works. _(verified: `src/__tests__/browser/TerminalSearchGeometry.test.ts`; before/after evidence under `~/Gits/.tmp/search-overlap/`.)_

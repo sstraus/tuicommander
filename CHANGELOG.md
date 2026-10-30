@@ -20,6 +20,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Discover and verify Gemini CLI JSONL sessions for the matching project, with legacy JSON resume support (#2543-4bbf).
+
 - Keep terminal search below the Context and CLI/Chat switch row so navigation and close controls stay reachable in narrow panes (#2538-c082).
 
 - Keep Claude native question previews out of wrapped answer labels in desktop Chat and mobile; show the selected preview, question tabs and Chat about this action (#2536-8e18).
