@@ -363,6 +363,7 @@ mod tests {
             risk: None,
         };
         let attempt = NodeAttempt {
+            graph_binding: None,
             id: "attempt-1".into(),
             story_id: story.id.clone(),
             node_id: "implement".into(),
@@ -511,6 +512,7 @@ mod tests {
     fn plan_prompt_is_pinned_and_carries_story_summary_and_event_cursor() {
         let (mut run, plan, story, _story_attempt, _story_definition) = fixture();
         let attempt = NodeAttempt {
+            graph_binding: None,
             id: "plan-attempt".into(),
             story_id: plan.id.clone(),
             node_id: "coordinate".into(),

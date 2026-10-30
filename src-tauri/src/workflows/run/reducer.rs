@@ -31,6 +31,7 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
     ) && !matches!(
         snapshot.event_contract_version,
         super::contracts::SERIAL_EVENT_CONTRACT_VERSION
+            | super::contracts::PINNED_SERIAL_EVENT_CONTRACT_VERSION
             | super::contracts::CURRENT_EVENT_CONTRACT_VERSION
     ) {
         return Err("unsupported workflow graph event contract".into());
@@ -68,7 +69,7 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                     execution.definition.clone(),
                 )?;
                 if snapshot.event_contract_version
-                    == super::contracts::CURRENT_EVENT_CONTRACT_VERSION
+                    >= super::contracts::PINNED_SERIAL_EVENT_CONTRACT_VERSION
                 {
                     let policy = execution
                         .contract
@@ -78,6 +79,8 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                         &execution.definition,
                         policy,
                     )?);
+                    initial.contract.as_mut().expect("pinned contract").version =
+                        snapshot.event_contract_version;
                 }
                 if **execution != initial {
                     return Err("graph start state is not pristine".into());
@@ -91,6 +94,90 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                 ) {
                     validate_resume(&snapshot)?;
                 }
+                if let super::graph::GraphTransition::Expand {
+                    execution_id,
+                    activation_id,
+                    source_activation_id,
+                    items,
+                } = transition
+                {
+                    let graph = snapshot
+                        .graph_executions
+                        .iter()
+                        .find(|g| g.id == *execution_id)
+                        .ok_or("expansion graph missing")?;
+                    let activation = graph
+                        .activations
+                        .iter()
+                        .find(|a| a.id == *activation_id)
+                        .ok_or("expansion activation missing")?;
+                    let crate::workflows::NodeKind::ForEach {
+                        receipt_evidence: Some(source_node),
+                        ..
+                    } = &graph
+                        .definition
+                        .graph
+                        .nodes
+                        .iter()
+                        .find(|n| n.id == activation.node_id)
+                        .ok_or("expansion node missing")?
+                        .kind
+                    else {
+                        return Err("expansion has no declared receipt source".into());
+                    };
+                    let current = graph
+                        .activations
+                        .iter()
+                        .position(|a| a.id == activation.id)
+                        .ok_or("expansion position missing")?;
+                    let source = graph.activations[..current]
+                        .iter()
+                        .rev()
+                        .find(|a| {
+                            a.node_id == *source_node
+                                && a.state == super::graph::ActivationState::Completed
+                                && activation.tokens.starts_with(&a.tokens)
+                        })
+                        .filter(|a| a.id == *source_activation_id)
+                        .ok_or("expansion source is not the current completed receipt")?;
+                    let report =
+                        super::runtime::effects::activation_attempt(&snapshot, graph, source)
+                            .and_then(|a| a.report.as_ref())
+                            .filter(|r| r.outcome == AttemptOutcome::Completed)
+                            .ok_or("expansion source has no completed typed report")?;
+                    if report.evidence != *items {
+                        return Err("expansion items differ from the committed receipt".into());
+                    }
+                }
+                let superseded_attempts: Vec<String> =
+                    if let super::graph::GraphTransition::SupersedeFork {
+                        execution_id,
+                        fork_id,
+                        generation,
+                    } = transition
+                    {
+                        snapshot
+                            .graph_executions
+                            .iter()
+                            .find(|g| g.id == *execution_id)
+                            .into_iter()
+                            .flat_map(|g| {
+                                g.activations
+                                    .iter()
+                                    .filter(|a| {
+                                        a.tokens.iter().any(|t| {
+                                            t.fork_id == *fork_id && t.generation == *generation
+                                        })
+                                    })
+                                    .filter_map(|a| {
+                                        super::runtime::effects::activation_attempt(&snapshot, g, a)
+                                            .map(|attempt| attempt.id.clone())
+                                    })
+                            })
+                            .collect()
+                    } else {
+                        vec![]
+                    };
                 let execution = snapshot
                     .graph_executions
                     .iter_mut()
@@ -109,6 +196,14 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                         snapshot.event_contract_version,
                     )?)
                     .ok_or("loop counter overflow")?;
+                for attempt in &mut snapshot.attempts {
+                    if superseded_attempts.contains(&attempt.id)
+                        && attempt.state == AttemptState::Running
+                    {
+                        attempt.state = AttemptState::Interrupted;
+                        attempt.outcome = Some(AttemptOutcome::Interrupted);
+                    }
+                }
                 if snapshot
                     .graph_executions
                     .iter()
@@ -136,6 +231,28 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
             snapshot.verification_fingerprint = None;
         }
         RunEventKind::AttemptStarted { attempt } => {
+            if let Some(binding) = &attempt.graph_binding {
+                let graph = snapshot
+                    .graph_executions
+                    .iter()
+                    .find(|g| g.id == binding.execution_id)
+                    .ok_or("attempt graph binding is foreign")?;
+                if snapshot.event_contract_version < 4
+                    || attempt.story_id != graph.target_id
+                    || !graph.activations.iter().any(|a| {
+                        a.id == binding.activation_id
+                            && super::runtime::effects::agent_node_id(graph, a).ok()
+                                == Some(attempt.node_id.as_str())
+                            && a.state == super::graph::ActivationState::Running
+                    })
+                    || snapshot
+                        .attempts
+                        .iter()
+                        .any(|a| a.graph_binding.as_ref() == Some(binding))
+                {
+                    return Err("attempt activation binding is stale or duplicated".into());
+                }
+            }
             if snapshot
                 .attempts
                 .iter()
@@ -506,7 +623,12 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                     && !graph.completed
                     && graph.activations.iter().any(|a| {
                         a.id == *activation_id
-                            && a.state != super::graph::ActivationState::Completed
+                            && matches!(
+                                a.state,
+                                super::graph::ActivationState::Ready
+                                    | super::graph::ActivationState::Running
+                                    | super::graph::ActivationState::Paused
+                            )
                     })
             });
             if departed {

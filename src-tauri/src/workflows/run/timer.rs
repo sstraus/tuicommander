@@ -186,10 +186,13 @@ pub(super) fn choose(
     command: TimerCommand,
     at_ms: i64,
 ) -> Result<TimerEvent, String> {
-    if snapshot.event_contract_version != super::contracts::CURRENT_EVENT_CONTRACT_VERSION
-        || matches!(snapshot.status, RunStatus::Completed | RunStatus::Cancelled)
+    if !matches!(
+        snapshot.event_contract_version,
+        super::contracts::PINNED_SERIAL_EVENT_CONTRACT_VERSION
+            | super::contracts::CURRENT_EVENT_CONTRACT_VERSION
+    ) || matches!(snapshot.status, RunStatus::Completed | RunStatus::Cancelled)
     {
-        return Err("timer requires an active current-contract run".into());
+        return Err("timer requires an active pinned-contract run".into());
     }
     match command {
         TimerCommand::Schedule { timer: new } => {

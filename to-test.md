@@ -9,6 +9,18 @@
 ## Typed workflow proposals (2511-37f0 foundation) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, submit a typed proposal batch to a plan Create Stories activation without a Coordinator node. Confirm one native story per proposal and no author PTY. Rust does not hot-reload; the daily app was not restarted. Typed proposal, routing and lifecycle regressions passed on rb; this check loads the Rust change into the daily app.
+## Terminal search clearance (2538-c082)
+
+- [x] Browser component geometry covers Context on/off, 1000px/400px panes and desktop/touch viewports. Search and view-switch bounds are disjoint; button centres are hit-testable; close/reopen works. _(verified: `src/__tests__/browser/TerminalSearchGeometry.test.ts`; before/after evidence under `~/Gits/.tmp/search-overlap/`.)_
+## Claude question previews (2536-8e18) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a multi-question Claude AskUserQuestion with option previews. Check desktop Chat and mobile: full recommended labels, separate monospace preview, question tabs and Chat about this. Real wide/narrow Claude captures and shared-component regressions cover the contract; the installed app was not restarted. Rust does not hot-reload; restart only when losing current sessions is acceptable.
+
+## Workflow Fork/all-Join (2509-0e2f) — Rust rebuild/restart required
+
+- [ ] After a manual Rust rebuild/restart, verify a post-all-Join Gate or approval Judge uses current fork checks, a primary critic FIX wins over an approving advisor, and concurrent check admission does not pause on sibling progress. Automated rb regressions cover these paths; this item checks the restarted daemon integration.
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a story graph with critic/check Fork branches and inspect the ordered branch arrivals, non-success all-Join edges and generation replacement after critic FIX. This assignment does not restart the daily daemon. Dedicated Designer controls belong to WF11; use the existing definition API for these graph records.
 ## Durable workflow timers (2529-844b) — Rust rebuild/restart required
 
 - [ ] Load the new timer ledger/actor only after Boss manually restarts a rebuilt `make dev` or installs `make build`, when losing current sessions is acceptable. Rust does not hot-reload. Automated reducer/store/owner and paused-actor tests cover timer delivery, including a duration-expired run waiting for its pinned check without repeated deadline polling; no new UI or provider consumer is installed by this foundation. The daily app was not restarted.
@@ -3113,6 +3125,8 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] After a manual Rust restart (`make dev` or release rebuild), inspect a new daemon workflow launch: its `workspace_baseline` must retain pre-existing dirt and its attempt binding must retain `launchId` across retry. Do not restart an active daily instance for this check. Automated baseline, ACP and owned-close regressions passed on rb; the daily process still requires a rebuild/restart.
 
 - [ ] WF04 owned close: after a backend rebuild, inspect `close_agent` refusal/stop receipts and confirm dirty work, pending input, background receipts and test apps prevent closure. Workspaces must remain. Automated ACP stop-proof and real background-receipt refusal tests passed on rb. The daily app was not restarted.
+- [ ] WF02/WF19 integration after rebuild: confirm parallel repair cancels old activation timers without cancelling independent service timers. Rust changes require a manual restart; no live-app validation was performed.
+- [ ] After the next backend rebuild/restart, verify a WF02 fork with pinned WF06 evidence policy starts repair for a typed FIX even if the retained legacy label says approved. Targeted RunStore automation covers generation fencing and replay; this Rust change does not hot-reload (#2509-0e2f).
 - [ ] In a real agent turn after loading the updated frontend, confirm the Chat breathing orb appears while working and disappears when done on desktop and phone. Real-component browser captures cover dark/light themes and reduced motion (#2535-8b6b).
 ## WF06 — typed workflow evidence policy (2513-c433)
 

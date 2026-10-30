@@ -5,6 +5,7 @@ pub mod evidence;
 pub mod graph;
 mod incidents;
 mod model;
+pub mod parallel;
 pub mod timer;
 #[cfg(test)]
 mod timer_tests;
@@ -33,6 +34,8 @@ mod critic_tests;
 mod graph_critic_1446a_tests;
 #[cfg(test)]
 mod graph_tests;
+#[cfg(test)]
+mod wf02_tests;
 
 #[cfg(test)]
 mod critic_957_tests;
@@ -2025,8 +2028,8 @@ mod tests {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
-        // 7: combined timer and daemon worker lifecycle contract.
-        assert_eq!(stored_schema_version(&db), 7, "fresh store records version");
+        // 8: WF04 worker lifecycle extends contract-4 parallel regions and Timer layout.
+        assert_eq!(stored_schema_version(&db), 8, "fresh store records version");
         let run = store
             .start_plan(
                 project.path().to_str().unwrap(),
@@ -2036,18 +2039,21 @@ mod tests {
                 RunLimits::default(),
             )
             .unwrap();
-        // A store written before the version existed reports 0 with data in it.
-        rusqlite::Connection::open(&db)
-            .unwrap()
-            .pragma_update(None, "user_version", 0)
-            .unwrap();
-        let upgraded = RunStore::open_at(&db).unwrap();
-        assert_eq!(stored_schema_version(&db), 7);
-        assert_eq!(
-            upgraded.snapshot(&run.id).unwrap().sequence,
-            run.sequence,
-            "the pre-version run survives the upgrade"
-        );
+        // Catches: WF04 and WF02 reusing layout 7 without upgrading main's
+        // store, or an additive upgrade rewriting retained events/snapshots.
+        for old_version in [0, 6, 7] {
+            let conn = rusqlite::Connection::open(&db).unwrap();
+            conn.pragma_update(None, "user_version", old_version)
+                .unwrap();
+            conn.execute_batch("DROP TABLE workflow_report_dispositions")
+                .unwrap();
+            drop(conn);
+            let upgraded = RunStore::open_at(&db).unwrap();
+            assert_eq!(stored_schema_version(&db), 8);
+            assert_eq!(upgraded.snapshot(&run.id).unwrap(), run);
+            assert_eq!(upgraded.replay(&run.id).unwrap(), run);
+            assert_eq!(upgraded.report_dispositions(&run.id).unwrap(), vec![]);
+        }
     }
 
     #[test]

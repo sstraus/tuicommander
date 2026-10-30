@@ -210,6 +210,7 @@ fn resolve_pause_keeps_the_uncertain_effect_fence() {
     // Answered input still cannot override an uncertain effect.
     s.attempts.push(NodeAttempt {
         continuation: None,
+        graph_binding: None,
         id: "input".into(),
         story_id: s.plan_id.clone(),
         node_id: "judge".into(),
