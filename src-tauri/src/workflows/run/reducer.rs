@@ -28,8 +28,11 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
     if matches!(
         event.kind,
         RunEventKind::Graph { .. } | RunEventKind::GraphResumed { .. }
-    ) && snapshot.event_contract_version != super::graph::RUN_EVENT_CONTRACT_VERSION
-    {
+    ) && !matches!(
+        snapshot.event_contract_version,
+        super::contracts::SERIAL_EVENT_CONTRACT_VERSION
+            | super::contracts::CURRENT_EVENT_CONTRACT_VERSION
+    ) {
         return Err("unsupported workflow graph event contract".into());
     }
     let previous_status = snapshot.status;
@@ -56,11 +59,18 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                 {
                     return Err("graph execution has a foreign definition".into());
                 }
-                let initial = super::graph::GraphExecution::pristine(
+                let mut initial = super::graph::GraphExecution::pristine(
                     execution.id.clone(),
                     execution.target_id.clone(),
                     execution.definition.clone(),
                 )?;
+                if snapshot.event_contract_version
+                    == super::contracts::CURRENT_EVENT_CONTRACT_VERSION
+                {
+                    initial.contract = Some(super::contracts::GraphContract::serial(
+                        &execution.definition,
+                    )?);
+                }
                 if **execution != initial {
                     return Err("graph start state is not pristine".into());
                 }
@@ -85,7 +95,11 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                     .ok_or("workflow loop budget exhausted")?;
                 snapshot.loops = snapshot
                     .loops
-                    .checked_add(execution.apply(transition, remaining)?)
+                    .checked_add(execution.apply_for_contract(
+                        transition,
+                        remaining,
+                        snapshot.event_contract_version,
+                    )?)
                     .ok_or("loop counter overflow")?;
                 if snapshot
                     .graph_executions

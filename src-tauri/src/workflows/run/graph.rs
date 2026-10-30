@@ -3,7 +3,7 @@ use crate::workflows::{NodeKind, PublishedWorkflow, validate_executable_graph};
 use serde::{Deserialize, Serialize};
 
 /// Run event contract that owns serial graph transition and replay semantics.
-pub const RUN_EVENT_CONTRACT_VERSION: u16 = 2;
+pub const RUN_EVENT_CONTRACT_VERSION: u16 = super::contracts::CURRENT_EVENT_CONTRACT_VERSION;
 
 /// Every event snapshots all activations, so the bound caps per-run storage.
 pub(super) const MAX_ACTIVATIONS: usize = 512;
@@ -112,6 +112,8 @@ pub struct GraphExecution {
     pub id: String,
     pub target_id: String,
     pub definition: PublishedWorkflow,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub contract: Option<super::contracts::GraphContract>,
     pub activations: Vec<Activation>,
     pub decisions: Vec<GraphDecision>,
     pub loops: Vec<LoopCounter>,
@@ -131,7 +133,10 @@ impl GraphExecution {
             definition.kind,
             !definition.required_checks.is_empty(),
         )?;
-        Self::pristine(id, target_id, definition)
+        let contract = super::contracts::GraphContract::serial(&definition)?;
+        let mut execution = Self::pristine(id, target_id, definition)?;
+        execution.contract = Some(contract);
+        Ok(execution)
     }
 
     /// Initial state of a pinned definition. Replay uses this alone, so a later
@@ -164,12 +169,47 @@ impl GraphExecution {
             id,
             target_id,
             definition,
+            contract: None,
             activations: vec![root],
             decisions: vec![],
             loops: vec![],
             pauses: vec![],
             completed: false,
         })
+    }
+
+    /// Keep the run's contract when a version-2 run dispatches a later child.
+    pub(super) fn start_for_contract(
+        id: String,
+        target_id: String,
+        definition: PublishedWorkflow,
+        version: u16,
+    ) -> Result<Self, String> {
+        let mut execution = Self::start(id, target_id, definition)?;
+        match version {
+            super::contracts::SERIAL_EVENT_CONTRACT_VERSION => execution.contract = None,
+            super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {}
+            _ => return Err("unsupported workflow graph event contract".into()),
+        }
+        Ok(execution)
+    }
+
+    /// Versions 2 and 3 intentionally share the frozen exclusive/serial
+    /// transition implementation. A future token contract must add a new arm,
+    /// not replace this method or reinterpret historical Join nodes.
+    pub(super) fn apply_for_contract(
+        &mut self,
+        transition: &GraphTransition,
+        remaining_loops: u16,
+        version: u16,
+    ) -> Result<u16, String> {
+        match version {
+            super::contracts::SERIAL_EVENT_CONTRACT_VERSION
+            | super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {
+                self.apply(transition, remaining_loops)
+            }
+            _ => Err("unsupported workflow graph event contract".into()),
+        }
     }
 
     fn enqueue(&mut self, edge_index: Option<usize>, target: String) -> Result<(), String> {
