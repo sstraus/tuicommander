@@ -236,3 +236,40 @@ describe.each(["desktop", "mobile"] as const)("%s terminal chat contract", (host
 		await waitFor(() => expect(view.container.textContent).toContain("Resumed answer"));
 	});
 });
+
+// Catches: one host using the raw transcript instead of the shared pending projection.
+for (const host of ["desktop", "mobile"] as const) {
+	it(`${host} shows queued sends muted, then replaces the pending bubble without duplication`, async () => {
+		const view = mount(host);
+		fireEvent.click(view.getByText("Chat"));
+		await waitFor(() => expect(view.getByText("First answer")).toBeTruthy());
+		view.busy(true);
+		chatViewStore.beginSubmission("contract", "Review the tests");
+		chatViewStore.beginSubmission("contract", "Then check the docs");
+		await waitFor(() => expect(view.getAllByLabelText("Pending prompt")).toHaveLength(2));
+		expect(view.getAllByLabelText("Pending prompt").map((element) => element.textContent)).toEqual([
+			"PendingReview the testsCopy",
+			"PendingThen check the docsCopy",
+		]);
+		expect(view.getAllByLabelText("Pending prompt").every((element) => element.hasAttribute("data-pending"))).toBe(
+			true,
+		);
+		invoke.mockResolvedValue({
+			epoch: 1,
+			nextSeq: 2,
+			reset: false,
+			unknownRows: 0,
+			malformedRows: 0,
+			updates: [
+				{
+					sessionUpdate: "user_message_chunk",
+					messageId: "submitted",
+					content: { type: "text", text: "Review the tests" },
+				},
+			],
+		});
+		wake();
+		await waitFor(() => expect(view.getAllByLabelText("Pending prompt")).toHaveLength(1));
+		expect(view.getAllByText("Review the tests")).toHaveLength(1);
+	});
+}

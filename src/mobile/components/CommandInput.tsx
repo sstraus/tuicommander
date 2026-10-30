@@ -356,7 +356,7 @@ export function CommandInput(props: CommandInputProps) {
 
 		browserDictation.cancel();
 
-		const rollback = chatViewStore.beginSubmission(sessionId);
+		const rollback = chatViewStore.beginSubmission(sessionId, text);
 		if (atomicReply()) {
 			setSubmitting(true);
 			try {

@@ -830,7 +830,14 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 													</Show>
 												}
 											>
-												<div class={s.userMsg}>
+												<div
+													class={s.userMsg}
+													data-pending={user().pending || undefined}
+													aria-label={user().pending ? "Pending prompt" : undefined}
+												>
+													<Show when={user().pending}>
+														<span class={s.pendingLabel}>Pending</span>
+													</Show>
 													<Show
 														when={props.terminalAgent}
 														fallback={<UserText text={user().text} onOpenFile={props.onOpenFile} />}

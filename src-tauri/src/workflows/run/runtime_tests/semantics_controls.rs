@@ -349,7 +349,7 @@ fn publication_visibly_refuses_nodes_without_an_executor() {
 }
 
 #[tokio::test]
-async fn agent_without_required_profile_pauses_with_a_durable_reason() {
+async fn agent_without_imported_policy_pauses_with_a_durable_reason() {
     // catches: silently substituting a model, or leaving a reached Agent running without a spawn.
     let (config, project, _plan, story, _template, _guard) = fixture();
     // Catches raw aliases being used as SQLite keys instead of the canonical owner.
@@ -409,11 +409,11 @@ async fn agent_without_required_profile_pauses_with_a_durable_reason() {
         notices
             .entries
             .iter()
-            .any(|n| n.text.contains(&run.id) && n.text.contains("mark one as default"))
+            .any(|n| n.text.contains(&run.id) && n.text.contains("routing policy"))
     );
     // catches: a pause whose cause lives only in the progress journal, so Incidents says none is retained.
     let cause = current.pause_cause.as_deref().unwrap();
-    assert!(cause.contains("mark one as default"), "{cause}");
+    assert!(cause.contains("routing policy"), "{cause}");
     let incidents = crate::workflows::run::incidents::project_incidents(&current, None);
     assert_eq!(incidents[0].cause, cause);
     assert_eq!(store.replay(&run.id).unwrap(), current);
@@ -480,7 +480,7 @@ fn readiness_names_each_problem_once_for_a_definition_with_agents() {
         &crate::config::AgentsConfig::default(),
     );
     assert_eq!(problems.len(), 1, "{problems:?}");
-    assert!(problems[0].contains("Settings > Agents"));
+    assert!(problems[0].contains("host routing policy is not imported"));
 }
 
 #[test]
@@ -503,29 +503,18 @@ fn a_default_profile_that_bypasses_the_sandbox_is_refused_for_workflows() {
     assert_eq!(resolve(&chosen, &AgentRole::Implementer).unwrap(), "sol");
 }
 
-/// What the Start dialog would be told for a published Agent workflow under this saved config.
-fn readiness_under(agents_json: serde_json::Value) -> Vec<String> {
-    let (_config, project, _plan, _story, _template, _guard) = fixture();
-    let project_path = project.path().to_str().unwrap();
-    let published = definition(project_path, false, true);
-    crate::config::save_agents_config(crate::config::AgentsConfig::default(), agents(agents_json))
-        .unwrap();
-    match crate::workflows::run_action(
-        project_path,
-        crate::workflows::RunAction::StartReadiness {
-            definition_id: published.id.clone(),
-            definition_revision: published.revision,
-        },
-    )
-    .unwrap()
-    {
-        crate::workflows::RunReply::Readiness(problems) => problems,
-        other => panic!("unexpected reply {other:?}"),
-    }
+/// Retained contract-2 profile resolution. New runs require explicit routing
+/// policy; interactive defaults are no longer workflow launch authority.
+fn legacy_readiness_under(agents_json: serde_json::Value) -> Vec<String> {
+    let config = agents(agents_json);
+    super::super::runtime::effects::resolve_run_profile(&config, &AgentRole::Implementer)
+        .err()
+        .into_iter()
+        .collect()
 }
 
 #[test]
-fn readiness_refuses_every_effective_ego_yolo_default() {
+fn legacy_readiness_refuses_every_effective_ego_yolo_default() {
     // catches: a fallback that checks two flag spellings but launches ego with yolo through --mode forms or ego_mode.
     for (args, ego_mode) in [
         (serde_json::json!(["--mode=yolo"]), serde_json::json!(null)),
@@ -535,7 +524,7 @@ fn readiness_refuses_every_effective_ego_yolo_default() {
         ),
         (serde_json::json!([]), serde_json::json!("yolo")),
     ] {
-        let problems = readiness_under(serde_json::json!({"agents": {
+        let problems = legacy_readiness_under(serde_json::json!({"agents": {
             "codex": {"codex_bypass_migrated": true},
             "ego": {"ego_mode": ego_mode, "run_configs": [
                 {"name": "Ego", "command": "ego", "args": args, "is_default": true}
@@ -552,7 +541,7 @@ fn readiness_refuses_every_effective_ego_yolo_default() {
 }
 
 #[test]
-fn readiness_refuses_claude_permission_mode_and_codex_full_access_defaults() {
+fn legacy_readiness_refuses_claude_permission_mode_and_codex_full_access_defaults() {
     // catches: fallback agents bypassing permissions via value-taking CLI options instead of --dangerously-*.
     // Options confirmed by installed claude --help and codex --help on 2026-10-23.
     let mut missed = Vec::new();
@@ -563,7 +552,7 @@ fn readiness_refuses_claude_permission_mode_and_codex_full_access_defaults() {
         ("codex", vec!["-s", "danger-full-access"]),
         ("codex", vec!["--sandbox=danger-full-access"]),
     ] {
-        let problems = readiness_under(serde_json::json!({"agents": {
+        let problems = legacy_readiness_under(serde_json::json!({"agents": {
             "codex": {"codex_bypass_migrated": true},
             (agent): {"codex_bypass_migrated": true, "run_configs": [
                 {"name": "Interactive", "command": agent, "args": args, "is_default": true}
@@ -577,16 +566,16 @@ fn readiness_refuses_claude_permission_mode_and_codex_full_access_defaults() {
 }
 
 #[test]
-fn readiness_picks_the_one_safe_default_among_per_agent_defaults_and_names_real_ambiguity() {
+fn legacy_readiness_picks_the_one_safe_default_among_per_agent_defaults_and_names_real_ambiguity() {
     // catches: choosing the alphabetically first agent's default as if defaults were global.
-    let seeded_and_safe = readiness_under(serde_json::json!({"agents": {
+    let seeded_and_safe = legacy_readiness_under(serde_json::json!({"agents": {
         "codex": {"codex_bypass_migrated": true, "run_configs": [
             {"name": "Codex Default", "command": "codex",
              "args": ["--dangerously-bypass-approvals-and-sandbox"], "is_default": true}]},
         "claude": {"run_configs": [{"name": "Zed", "command": "claude", "is_default": true}]}
     }}));
     assert_eq!(seeded_and_safe, Vec::<String>::new());
-    let two_safe = readiness_under(serde_json::json!({"agents": {
+    let two_safe = legacy_readiness_under(serde_json::json!({"agents": {
         "codex": {"codex_bypass_migrated": true, "run_configs": [
             {"name": "Alpha", "command": "codex", "is_default": true}]},
         "claude": {"run_configs": [{"name": "Zed", "command": "claude", "is_default": true}]}

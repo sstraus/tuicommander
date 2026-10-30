@@ -1045,3 +1045,5 @@ Ego terminal usage uses the exact live pid lease and `ego usage --json` v3 or v4
 ### Chat working indicator
 
 The shared `Transcript` renders `WorkingIndicator` from its existing busy and retry props on desktop and mobile. The indicator uses the theme accent for a dot and breathing ring, preserves the host working label through its status role, and hides the decorative orb from assistive technology. Reduced motion removes the ring animation and leaves the static dot. Provider retry status takes precedence; no effect selector or setting exists.
+
+Terminal Chat sends use a session-scoped, presentation-only pending projection. Desktop Compose and mobile CommandInput show the submitted text immediately as muted **Pending** user bubbles, in send order. New matching native user messages replace that feedback atomically; activity and idle updates do not clear it. A failed send removes only its own bubble. The CLI owns delivery and cancellation: these bubbles are not the server-owned command queue or the ACP queue. Closing Chat or replacing its transcript clears this local feedback.

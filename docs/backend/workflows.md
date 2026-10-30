@@ -129,11 +129,164 @@ recorded serial-run fixtures, complete capability matrix and source/test pins.
 This is a compatibility foundation, not operational migration or authority to
 start a second scheduler, publish externally or retire legacy mechanisms.
 
+## Typed Create Stories input (WF04 foundation)
+
+Contract-3 and newer plan graphs no longer require a Coordinator Agent node. A reached
+Create Stories activation waits for `submit_story_proposals {batch}` through the
+existing sequence-fenced `command` run action. The batch has camel-case
+`executionId`, `activationId`, `planRevision` and `proposals` fields. Each proposal
+uses the native `NewStory` shape and must name this plan with a `plan_step` origin.
+An empty batch explicitly confirms that the visit has no additions. Submission
+records an event; it does not spawn an author or infer proposals from prose.
+
+The daemon creates each proposal through the existing keyed story/effect
+transaction. Keys bind the execution, activation and proposal index, not an agent
+name. Native story validation, story-creation budgets, cancellation and uncertain
+effect fences remain in force. A changed plan revision refuses unconsumed input.
+A lost response returns the same command receipt; a second batch for the visit is
+refused. Pending input appears in read-only incidents. The Coordinator preset can
+still author proposals, but its report is not input for this node. Contract-2
+Create Stories visits retain their recorded coordinator-attempt behavior, and
+story graphs still refuse Create Stories.
+
+The lifecycle sections below define separate launch, routing, continuation and
+close contracts. Typed proposal input alone does not authorize any of those effects.
+
+
+### Daemon workspace attribution (WF04 increment)
+
+Before a new daemon-owned workflow worker starts, the managed-launch journal
+records its canonical Git common-directory key, per-checkout Git-directory key,
+base HEAD, exact dirty status, staged and unstaged diff hashes, and hashes of
+untracked files or symlink targets. It does not retain file payloads. Linked
+checkouts share the repository key but have different workspace keys; repository
+aliases and branch renames do not create another owner. An unreadable baseline
+or missing base commit refuses the new launch rather than treating it as clean.
+
+The baseline commits before spawn and is never refreshed by a retry. The
+managed launch receipt exposes it as `workspace_baseline`; the durable attempt
+binding also retains the managed `launchId`. Old bindings without this reference
+remain replayable. A restarted daemon can read the original attribution even
+when its live process inventory is unavailable, without spawning a replacement.
+
+This baseline is evidence, not a cleanup authorization. Git cannot observe
+unsaved editor buffers or exclude concurrent writers. Existing dirty work is
+not attributed to the worker, and no worktree, file or branch is removed by this
+process-close path. Launch and close receipts retain the original baseline; a
+successor must independently establish its matching workspace ownership.
+
+### Durable report disposition (WF04 increment)
+
+Bound typed reports retain an accepted or refused decision, the resolved caller,
+attempt and generation, submission SHA-256, decision time, and the event sequence
+or refusal reason. An accepted decision commits in the same SQLite transaction
+as the report event. If the decision cannot be saved, the report event rolls
+back. A response-lost retry returns the original event and decision; a changed
+payload or caller cannot overwrite them. Repeated identical refusals are retained
+once; a later distinct decision is retained separately rather than erasing a
+refusal. The journal does not copy report payloads.
+
+The read-only run action `report_dispositions {run_id}` returns
+`{type: "report_dispositions", value: [...]}` through the existing IPC, HTTP and
+MCP run-action adapters, with the same canonical project scope check. An accepted
+report means that the engine received valid evidence, not that the artifact was
+approved, a successor was accepted, or a worker may be closed. Contract-2 event
+replay remains unchanged. A malformed request or one that cannot resolve a
+managed caller is refused before this bound-report journal.
+
+### Owned process close (WF04)
+
+The shared run action `close_agent` accepts `run_id`, `attempt_id`, `request_id`,
+`expected_sequence` and an optional `successor_attempt_id`. It records a durable
+refusal or stop intent in the managed launch database. An identical retry reads
+that decision or reconciles the recorded process absence; it does not stop a
+replacement. A conflicting request ID refuses.
+
+Closure requires this run's durable launch binding, a reported attempt, and a
+bound successor for the same target and canonical workspace, or a terminal run.
+Dirty baselines, current dirty work, pending input, drafts, unread mail, live
+background runners, isolated test apps and unknown process inventory refuse
+closure. The process-tree check does not use the activity detector's startup-age
+exemption. A stop never removes a workspace or branch and does not approve an
+artifact. ACP closure requires its recorded direct-child PID, matching host-issued peer
+environment, idle conversation and a quiet process tree; protocol
+settlement alone is not process-stop proof. A retained settled turn is history,
+not live work; queued prompts or pending interactions still prevent close.
+
+### Explicit managed ACP routes (WF04)
+
+A published Agent node can add `execution` with either
+`{transport:"pty", profile:"<saved run config>"}` or
+`{transport:"acp", profile:"<ego profile>", model:"<exact model>", effort:"<exact effort>"}`.
+Omitting `execution` retains the historical PTY profile resolver and unchanged
+serialized contract-2 definitions. ACP profiles and saved PTY run configurations
+are separate namespaces. The machine ACP executable and repository profile
+ceiling still apply; an unavailable exact ACP model/effort refuses delivery.
+The explicit host policy below supplies the runtime and exact route; missing
+policy refuses daemon delivery instead of falling back to mutable defaults.
+
+ACP workers use a host-issued peer UUID and the real connection, generation and
+conversation returned by `AcpClientManager`. They do not get a terminal, PTY
+parent or task ID. Managed receipts have `transport:"acp"`, a null `session_id`,
+and explicit peer/connection/conversation references. Attempt bindings retain
+these under `acp`; their `sessionId` is then a peer address, not a terminal ID.
+The run-store marker advances for these new bindings; serial replay stays serial.
+
+The journal commits before connect, session creation and prompt submission.
+The initial prompt remains durable as `not_delivered` until the workflow binding
+commits. The exact retained payload is then released; a native ACP `PromptSent`
+record for that turn and text proves handoff. A queued/unobserved submission is
+not replayed. The immutable ACP MCP-channel origin fences reports to the bound
+connection generation and conversation; looking up a peer's newest connection
+is not report authority. Channel settlement and missing inventory do not prove
+process stop or attempt success. Incidents carry launch and ACP references.
+Process closure remains separate from artifact approval and worktree cleanup;
+no cleanup is authorized. PTY receipts distinguish present inventory, an observed
+exit, and unknown inventory after restart; missing maps never prove worker death.
+
+### Explicit host routing policy
+
+`WorkflowAction::ImportAgentPolicy {expected_revision,policy}` imports an operator
+routing declaration with an optimistic revision. `AgentPolicy` reads it. Import
+requires explicit source provenance, role, model, effort, capabilities, isolated
+workspace scope and output-contract version. Each role has exact routes and at
+most one explicit default. This does not parse or certify Markdown policy files.
+
+PTY routes must name a saved configuration with the same explicit model and
+explicit effort arguments. A canonical digest pins only the selected agent,
+command, argv, model, environment, launch flags and effective launch instructions.
+Changes to those inputs refuse delivery. Unrelated profiles, default-profile
+selection and idle-close preferences do not invalidate the route. ACP routes pin an absolute executable and
+machine profile, and the live ACP options must acknowledge model and effort.
+Fresh roots capture the policy in `GraphContract`; children inherit that pin.
+Identical start retries and replay never load the latest routing policy.
+Contract-3 and newer graph Agent launches are daemon-owned. The retained MCP
+`workflow action=launch` refuses these graphs before reserving a spawn effect;
+it cannot substitute a caller-selected profile. Contract-2 replay and its
+retained serial MCP launch and profile selection stay unchanged.
+
+### Answer continuation
+
+For a bound contract-3 or newer attempt, `answer_input` keeps the existing launch and
+conversation, advances the report generation and records the answer as `pending`.
+The run still requires explicit graph resume. The daemon journals `handoff_started`
+before external delivery and `delivered` after the ACP PromptSent acknowledgement
+or exact peer-inbox handoff. PTY inbox delivery uses the normal payload-free wake;
+it is not proof that the model consumed the answer. No new worker is allocated.
+
+Missing inventory retains pending input. An interrupted handoff without its exact
+retained receipt is uncertain and is not automatically replayed. Incidents expose
+this state with the launch/conversation references. An old-generation report or
+an answer alone cannot finish the node; the continued attempt needs a fresh typed
+report after a confirmed delivery. Report command keys include the continuation
+generation; identical retries retain their receipt and changed payloads refuse.
+Contract-2 answer semantics and first-generation command keys are unchanged.
+
 
 ### Current version sequence
 
 The run-store schema and layout are the same `PRAGMA user_version`, not separate
-version counters. The combined build writes layout **7** and starts event
+version counters. The combined build writes layout **8** and starts event
 contract **4**. The retained sequence is:
 
 | Run-store layout | Contract and compatibility boundary |
@@ -145,19 +298,20 @@ contract **4**. The retained sequence is:
 | 5 | WF01 immutable definition pins and serial event contract 3. |
 | 6 | WF19 durable timers for contract 3. |
 | 7 | WF02 correlated regions and event contract 4; retained contract-3 timers still replay. |
+| 8 | WF04 explicit worker transport/conversation bindings, answer continuation and durable report disposition; contract 4 remains current. |
 
 WF06 adds an optional evidence policy to the pinned definition and optional typed
 review evidence/check requirements digests. It does not allocate a competing
 layout or event-contract number. Omitted policy/evidence fields retain the legacy
 contract; snapshots written before WF19 decode with an empty timer list. Layouts
-0–6 open through the existing additive upgrade without rewriting their event
+0–7 open through the existing additive upgrade without rewriting their event
 streams. Contracts 2 and 3 keep serial Join semantics; contract 3 and 4 support
-Timer events, while contract 2 refuses them. Older binaries refuse layout 7
-rather than interpreting parallel events as serial work.
+Timer events, while contract 2 refuses them. Older binaries refuse layout 8 rather than interpreting lifecycle events without
+their ownership and continuation fences. Layout 7 remains the parallel-event boundary.
 
 ## Correlated parallel regions (WF02)
 
-New runs use event contract 4 and run-store layout 7. Contracts 2 and 3 retain
+New runs use event contract 4 and run-store layout 8. Contracts 2 and 3 retain
 serial replay, including exclusive Join; old definitions and events are not
 rewritten. The pinned definition digest remains part of each new graph start.
 
@@ -218,7 +372,11 @@ attempt; a later advisor's missing or approving report cannot mask it. When an
 evidence policy is pinned, its typed triage decision controls supersession, not
 the retained legacy review label. The same event fences its unfinished attempts and terminates
 nested obligations. The daemon cancels its scoped checks, stops bound agents
-and requires their exit observations before recording `fork_stopped`. An
+and requires their exit observations before recording `fork_stopped`. PTY workers
+require their exit tombstones. ACP workers use the exact managed launch, peer,
+connection and generation, disconnect through the ACP manager, and require a
+fresh OS inventory proving the recorded process ID absent. A settled connection
+alone is not process-stop proof, and no terminal is created for an ACP stop. An
 unknown spawn or missing stop observation blocks repair rather than freeing the
 workspace. The stop transition enqueues one Implement activation outside the old
 region. Its published successor opens a fresh generation and reruns both critic

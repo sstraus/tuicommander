@@ -2,8 +2,7 @@ import { type Component, createEffect, createMemo, on, onCleanup, onMount } from
 import type { AgentType } from "../../agents";
 import { listen } from "../../invoke";
 import { createVisibilityInterval } from "../../mobile/utils/visibilityInterval";
-import { acpTranscript } from "../../stores/acpTranscript";
-import { type ChatViewWake, chatViewKey, chatViewStore } from "../../stores/chatView";
+import { type ChatViewWake, chatViewStore } from "../../stores/chatView";
 import { settingsStore } from "../../stores/settings";
 import { Transcript, type TranscriptSearchRef } from "../AIChatPanel/Transcript";
 import s from "./TerminalChatView.module.css";
@@ -87,7 +86,7 @@ export const TerminalChatTranscript: Component<{
 				onRegisterScrollToBottom={props.onRegisterScrollToBottom}
 				onSearchRef={props.onSearchRef}
 				onOpenFile={props.onOpenFile}
-				entries={() => acpTranscript.entries(chatViewKey(props.sessionId))}
+				entries={() => chatViewStore.entries(props.sessionId)}
 				busy={() => !props.awaitingInput && (props.busy === true || !!chatViewStore.state.submissions[props.sessionId])}
 				busyLabel="Working…"
 				observeToolDuration={false}
