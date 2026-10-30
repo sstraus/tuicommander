@@ -1,0 +1,428 @@
+[
+  {
+    "sequence": 1,
+    "commandId": "start:01a18ca8-f386-7030-b43c-014293b42f54",
+    "commandHash": null,
+    "atMs": 1793361245063,
+    "kind": {
+      "type": "started",
+      "initial": {
+        "eventContractVersion": 2,
+        "id": "01a18ca8-f386-7030-b43c-014293b42f54",
+        "project": "/home/rb/Gits/.tmp/tuic-tests/tuic-run.LbCHfj/.tmpj2Kbs0",
+        "canonicalRef": null,
+        "planId": "01a18ca8-f320-7097-9bfa-026df885e8b7",
+        "rootTarget": null,
+        "definitionId": "01a18ca8-f337-74a6-9992-60da8e946ae0",
+        "definitionRevision": 2,
+        "storyDefinitionId": "01a18ca8-f337-74a6-9992-60d9507b650a",
+        "storyDefinitionRevision": 2,
+        "status": "running",
+        "sequence": 0,
+        "startedMs": 1793361245063,
+        "pausedSinceMs": null,
+        "pausedDurationMs": 0,
+        "limits": {
+          "maxLoops": 8,
+          "maxStoryCreations": 100,
+          "maxSpawns": 24,
+          "maxParallelStories": 2,
+          "maxDurationSecs": 86400
+        },
+        "loops": 0,
+        "storyCreations": 0,
+        "spawns": 0,
+        "planningFingerprint": null,
+        "verificationFingerprint": null,
+        "stories": [],
+        "canonicalRecertification": null,
+        "attempts": [],
+        "effects": [],
+        "graphExecutions": []
+      }
+    }
+  },
+  {
+    "sequence": 2,
+    "commandId": "graph-start",
+    "commandHash": "80502cd8bb4bdd9a8c12946f6a9b9a5cbe8721e62b3fa646e8351b3991b8a6f7",
+    "atMs": 1793361245073,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "started",
+        "execution": {
+          "id": "story-execution",
+          "targetId": "01a18ca8-f322-7069-92c3-53f4742546be",
+          "definition": {
+            "id": "01a18ca8-f337-74a6-9992-60d9507b650a",
+            "project": "/home/rb/Gits/.tmp/tuic-tests/tuic-run.LbCHfj/.tmpj2Kbs0",
+            "name": "Story delivery",
+            "kind": "story",
+            "closure": "human",
+            "requiredChecks": [
+              {
+                "id": "repository-integrity",
+                "argv": [
+                  "git",
+                  "fsck",
+                  "--connectivity-only",
+                  "--no-progress"
+                ],
+                "timeoutSecs": 300
+              }
+            ],
+            "graph": {
+              "nodes": [
+                {
+                  "id": "start",
+                  "kind": {
+                    "type": "start"
+                  }
+                },
+                {
+                  "id": "implement",
+                  "kind": {
+                    "type": "agent",
+                    "role": "implementer",
+                    "capabilities": [
+                      "story_read",
+                      "story_report"
+                    ],
+                    "prompt_template": "Implement {{story.title}} and report evidence for {{story.id}}."
+                  }
+                },
+                {
+                  "id": "review",
+                  "kind": {
+                    "type": "agent",
+                    "role": "reviewer",
+                    "capabilities": [
+                      "story_read",
+                      "story_report"
+                    ],
+                    "prompt_template": "Review {{story.id}} against its criteria and report findings."
+                  }
+                },
+                {
+                  "id": "judge",
+                  "kind": {
+                    "type": "judge"
+                  }
+                },
+                {
+                  "id": "repair",
+                  "kind": {
+                    "type": "loop",
+                    "max_iterations": 3
+                  }
+                },
+                {
+                  "id": "pause",
+                  "kind": {
+                    "type": "pause",
+                    "resume_to": "implement"
+                  }
+                },
+                {
+                  "id": "end",
+                  "kind": {
+                    "type": "join"
+                  }
+                },
+                {
+                  "id": "done",
+                  "kind": {
+                    "type": "end"
+                  }
+                }
+              ],
+              "edges": [
+                {
+                  "from": "start",
+                  "to": "implement",
+                  "outcome": null
+                },
+                {
+                  "from": "implement",
+                  "to": "review",
+                  "outcome": null
+                },
+                {
+                  "from": "review",
+                  "to": "judge",
+                  "outcome": null
+                },
+                {
+                  "from": "judge",
+                  "to": "end",
+                  "outcome": "yes"
+                },
+                {
+                  "from": "judge",
+                  "to": "repair",
+                  "outcome": "no"
+                },
+                {
+                  "from": "judge",
+                  "to": "end",
+                  "outcome": "uncertain"
+                },
+                {
+                  "from": "repair",
+                  "to": "implement",
+                  "outcome": "repeat"
+                },
+                {
+                  "from": "repair",
+                  "to": "pause",
+                  "outcome": "exhausted"
+                },
+                {
+                  "from": "end",
+                  "to": "done",
+                  "outcome": null
+                }
+              ]
+            },
+            "revision": 2
+          },
+          "activations": [
+            {
+              "id": "a0",
+              "nodeId": "start",
+              "state": "ready",
+              "edgeIndex": null
+            }
+          ],
+          "decisions": [],
+          "loops": [],
+          "pauses": [],
+          "completed": false
+        }
+      }
+    }
+  },
+  {
+    "sequence": 3,
+    "commandId": "activate-a0",
+    "commandHash": "88447d97741f94cf3b20823c35ae6f0768c91cf70661e46dc324e00208561cf4",
+    "atMs": 1793361245087,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "transition",
+        "transition": {
+          "type": "activate",
+          "execution_id": "story-execution",
+          "activation_id": "a0"
+        }
+      }
+    }
+  },
+  {
+    "sequence": 4,
+    "commandId": "complete-a0",
+    "commandHash": "aed900706c3c687c9c91c2aadb16c3382fc220fefc8201ed31420ea254b378ff",
+    "atMs": 1793361245098,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "transition",
+        "transition": {
+          "type": "complete",
+          "execution_id": "story-execution",
+          "activation_id": "a0",
+          "outcome": null,
+          "evidence": null
+        }
+      }
+    }
+  },
+  {
+    "sequence": 5,
+    "commandId": "activate-a1",
+    "commandHash": "e8657884cfa3517d4f5ee9517a720590212eff1850d8d8dbc811979269d08bc5",
+    "atMs": 1793361245110,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "transition",
+        "transition": {
+          "type": "activate",
+          "execution_id": "story-execution",
+          "activation_id": "a1"
+        }
+      }
+    }
+  },
+  {
+    "sequence": 6,
+    "commandId": "complete-a1",
+    "commandHash": "28bae3b5f6788472ecabfe6102ce685f2e01a297eb8f0757e3d0a9e2f8909ccf",
+    "atMs": 1793361245121,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "transition",
+        "transition": {
+          "type": "complete",
+          "execution_id": "story-execution",
+          "activation_id": "a1",
+          "outcome": null,
+          "evidence": null
+        }
+      }
+    }
+  },
+  {
+    "sequence": 7,
+    "commandId": "activate-a2",
+    "commandHash": "9df08ef9fc719115625767d8eb5121ecafb6e88e06b54a2d96a750d2226149c4",
+    "atMs": 1793361245133,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "transition",
+        "transition": {
+          "type": "activate",
+          "execution_id": "story-execution",
+          "activation_id": "a2"
+        }
+      }
+    }
+  },
+  {
+    "sequence": 8,
+    "commandId": "complete-a2",
+    "commandHash": "d0c326164a17504c2b6e625e51f9565cabc80b1d2cb9c6fc83933ca364694a16",
+    "atMs": 1793361245143,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "transition",
+        "transition": {
+          "type": "complete",
+          "execution_id": "story-execution",
+          "activation_id": "a2",
+          "outcome": null,
+          "evidence": null
+        }
+      }
+    }
+  },
+  {
+    "sequence": 9,
+    "commandId": "activate-a3",
+    "commandHash": "d7a1d3e9c1db8ab126e80253b435fee010942473c158a6c763825022d8131030",
+    "atMs": 1793361245155,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "transition",
+        "transition": {
+          "type": "activate",
+          "execution_id": "story-execution",
+          "activation_id": "a3"
+        }
+      }
+    }
+  },
+  {
+    "sequence": 10,
+    "commandId": "complete-a3",
+    "commandHash": "c44145232ce796b7b1513931ebdec559d69c2f36592a7d6913d9049df51c7118",
+    "atMs": 1793361245166,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "transition",
+        "transition": {
+          "type": "complete",
+          "execution_id": "story-execution",
+          "activation_id": "a3",
+          "outcome": "yes",
+          "evidence": {
+            "actor": "reviewer-session",
+            "reason": "Recorded current review evidence",
+            "references": [
+              "review:current-artifact"
+            ]
+          }
+        }
+      }
+    }
+  },
+  {
+    "sequence": 11,
+    "commandId": "activate-a4",
+    "commandHash": "c6080ed99caea96247552be23bb3ce74900996e63f5bed8292b32fa16954644f",
+    "atMs": 1793361245178,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "transition",
+        "transition": {
+          "type": "activate",
+          "execution_id": "story-execution",
+          "activation_id": "a4"
+        }
+      }
+    }
+  },
+  {
+    "sequence": 12,
+    "commandId": "complete-a4",
+    "commandHash": "f5c9c62fd9ad57a619fdbc9be1173f81262cf3a723ce37e09f66726bfb63345d",
+    "atMs": 1793361245190,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "transition",
+        "transition": {
+          "type": "complete",
+          "execution_id": "story-execution",
+          "activation_id": "a4",
+          "outcome": null,
+          "evidence": null
+        }
+      }
+    }
+  },
+  {
+    "sequence": 13,
+    "commandId": "activate-a5",
+    "commandHash": "efc09f7742eadc78d2ad3a5838a9098cef44bb1b3df87f1834163482925ffccb",
+    "atMs": 1793361245201,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "transition",
+        "transition": {
+          "type": "activate",
+          "execution_id": "story-execution",
+          "activation_id": "a5"
+        }
+      }
+    }
+  },
+  {
+    "sequence": 14,
+    "commandId": "complete-a5",
+    "commandHash": "fd83921f2c39321f1f8cf00a51199e2916a1d49bea031c7f781a6846dda573c0",
+    "atMs": 1793361245212,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "transition",
+        "transition": {
+          "type": "complete",
+          "execution_id": "story-execution",
+          "activation_id": "a5",
+          "outcome": null,
+          "evidence": null
+        }
+      }
+    }
+  }
+]

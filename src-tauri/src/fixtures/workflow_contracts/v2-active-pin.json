@@ -1,0 +1,195 @@
+[
+  {
+    "sequence": 1,
+    "commandId": "start:01a18ca8-f387-743f-98d1-ac26e42c079f",
+    "commandHash": null,
+    "atMs": 1793361245064,
+    "kind": {
+      "type": "started",
+      "initial": {
+        "eventContractVersion": 2,
+        "id": "01a18ca8-f387-743f-98d1-ac26e42c079f",
+        "project": "/home/rb/Gits/.tmp/tuic-tests/tuic-run.LbCHfj/.tmpKU8OC4",
+        "canonicalRef": null,
+        "planId": "01a18ca8-f321-754e-a933-b494523e79ef",
+        "rootTarget": null,
+        "definitionId": "01a18ca8-f338-76d2-ba99-a1521b66ca00",
+        "definitionRevision": 2,
+        "storyDefinitionId": "01a18ca8-f338-76d2-ba99-a1519c731bac",
+        "storyDefinitionRevision": 2,
+        "status": "running",
+        "sequence": 0,
+        "startedMs": 1793361245064,
+        "pausedSinceMs": null,
+        "pausedDurationMs": 0,
+        "limits": {
+          "maxLoops": 8,
+          "maxStoryCreations": 100,
+          "maxSpawns": 24,
+          "maxParallelStories": 2,
+          "maxDurationSecs": 86400
+        },
+        "loops": 0,
+        "storyCreations": 0,
+        "spawns": 0,
+        "planningFingerprint": null,
+        "verificationFingerprint": null,
+        "stories": [],
+        "canonicalRecertification": null,
+        "attempts": [],
+        "effects": [],
+        "graphExecutions": []
+      }
+    }
+  },
+  {
+    "sequence": 2,
+    "commandId": "graph-start",
+    "commandHash": "4942b85ece26377518d2551589dae004876171b0162bf303c6b7515698ef522c",
+    "atMs": 1793361245073,
+    "kind": {
+      "type": "graph",
+      "event": {
+        "type": "started",
+        "execution": {
+          "id": "story-execution",
+          "targetId": "01a18ca8-f323-7497-9e45-5dabdc5e6695",
+          "definition": {
+            "id": "01a18ca8-f338-76d2-ba99-a1519c731bac",
+            "project": "/home/rb/Gits/.tmp/tuic-tests/tuic-run.LbCHfj/.tmpKU8OC4",
+            "name": "Story delivery",
+            "kind": "story",
+            "closure": "human",
+            "requiredChecks": [
+              {
+                "id": "repository-integrity",
+                "argv": [
+                  "git",
+                  "fsck",
+                  "--connectivity-only",
+                  "--no-progress"
+                ],
+                "timeoutSecs": 300
+              }
+            ],
+            "graph": {
+              "nodes": [
+                {
+                  "id": "start",
+                  "kind": {
+                    "type": "start"
+                  }
+                },
+                {
+                  "id": "implement",
+                  "kind": {
+                    "type": "agent",
+                    "role": "implementer",
+                    "capabilities": [
+                      "story_read",
+                      "story_report"
+                    ],
+                    "prompt_template": "Implement {{story.title}} and report evidence for {{story.id}}."
+                  }
+                },
+                {
+                  "id": "review",
+                  "kind": {
+                    "type": "agent",
+                    "role": "reviewer",
+                    "capabilities": [
+                      "story_read",
+                      "story_report"
+                    ],
+                    "prompt_template": "Review {{story.id}} against its criteria and report findings."
+                  }
+                },
+                {
+                  "id": "judge",
+                  "kind": {
+                    "type": "judge"
+                  }
+                },
+                {
+                  "id": "repair",
+                  "kind": {
+                    "type": "loop",
+                    "max_iterations": 3
+                  }
+                },
+                {
+                  "id": "pause",
+                  "kind": {
+                    "type": "pause",
+                    "resume_to": "implement"
+                  }
+                },
+                {
+                  "id": "end",
+                  "kind": {
+                    "type": "end"
+                  }
+                }
+              ],
+              "edges": [
+                {
+                  "from": "start",
+                  "to": "implement",
+                  "outcome": null
+                },
+                {
+                  "from": "implement",
+                  "to": "review",
+                  "outcome": null
+                },
+                {
+                  "from": "review",
+                  "to": "judge",
+                  "outcome": null
+                },
+                {
+                  "from": "judge",
+                  "to": "end",
+                  "outcome": "yes"
+                },
+                {
+                  "from": "judge",
+                  "to": "repair",
+                  "outcome": "no"
+                },
+                {
+                  "from": "judge",
+                  "to": "pause",
+                  "outcome": "uncertain"
+                },
+                {
+                  "from": "repair",
+                  "to": "implement",
+                  "outcome": "repeat"
+                },
+                {
+                  "from": "repair",
+                  "to": "pause",
+                  "outcome": "exhausted"
+                }
+              ]
+            },
+            "revision": 2
+          },
+          "activations": [
+            {
+              "id": "a0",
+              "nodeId": "start",
+              "state": "ready",
+              "edgeIndex": null
+            }
+          ],
+          "decisions": [],
+          "loops": [],
+          "pauses": [],
+          "completed": false
+        }
+      }
+    }
+  }
+]

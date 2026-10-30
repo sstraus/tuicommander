@@ -3082,3 +3082,11 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 
 - [ ] After a manual `make dev` restart, open the orchestrator workflow report and click its `tuic://open` Markdown, PNG and HTML links. Also check directory links and an unregistered local folder. Rust Markdown-link decoding and loopback file reads require the restart (#2497-ec72).
 - [ ] After rebuilding/restarting the backend, verify mobile Progress defaults to Started/Done/Blocked, Filters includes messages/delegations, full pages load with interleaved mail, and Flow still shows hand-offs (#2496-cbae). Rust does not hot-reload.
+
+## WF01 shared workflow contracts (2508-3a15)
+
+- [ ] After the next authorized Rust rebuild/restart, confirm a newly started workflow
+  returns eventContractVersion 3 with graph contract metadata; retained version-2
+  runs stay inspectable/cancelable and use exclusive Join. Do not migrate live runs.
+  Targeted recorded-run and HTTP/service parity tests provide automated coverage;
+  the running development backend does not hot-reload this Rust change.

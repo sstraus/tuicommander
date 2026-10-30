@@ -12,6 +12,14 @@ Slice F exposes `start_graph {target:{type:story|plan,id},expected_revision?,def
 
 ## Workflow runs
 
+WF01 adds optional `graphExecutions[].contract` metadata to the shared snapshot:
+`{version:3,definitionSha256,policyImports:[]}` for new contract-3 graphs. Historical
+contract-2 graphs omit it and retain serial/exclusive-Join semantics. The empty
+imports list means only native graph/check/closure policy is pinned, not imported
+global routing or publication authority. Routes, actions and command receipt
+shapes do not change. See the [shared contract baseline](../backend/workflow-baseline/contract.md).
+
+
 | Command | Parameters | Result | Description |
 |---|---|---|---|
 | `workflow_run_action` | `project, action` | tagged `RunReply` | Starts, reads, lists plan runs, pages events, executes pinned checks, records checked integrations or canonical recertifications, or commands a durable project-scoped run. See [Workflow runs](../backend/workflows.md#durable-runs). |

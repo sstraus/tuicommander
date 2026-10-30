@@ -1,3 +1,4 @@
+use super::contracts::{PolicyDomain, PolicyImport};
 use super::graph::*;
 use super::*;
 use crate::workflows::{Node, NodeKind, WorkflowKind, WorkflowStore, validate_executable_graph};
@@ -12,6 +13,19 @@ fn evidence() -> DecisionEvidence {
 
 // Native stores are the fixture authority; no fabricated model output is used.
 fn graph_fixture() -> (
+    tempfile::TempDir,
+    tempfile::TempDir,
+    RunStore,
+    RunSnapshot,
+    String,
+    impl Drop,
+) {
+    graph_fixture_with_join(false)
+}
+
+fn graph_fixture_with_join(
+    join: bool,
+) -> (
     tempfile::TempDir,
     tempfile::TempDir,
     RunStore,
@@ -44,6 +58,32 @@ fn graph_fixture() -> (
         if let NodeKind::Pause { resume_to } = &mut node.kind {
             *resume_to = Some("implement".into());
         }
+    }
+    if join {
+        story
+            .graph
+            .nodes
+            .iter_mut()
+            .find(|n| n.id == "end")
+            .unwrap()
+            .kind = NodeKind::Join {};
+        story.graph.nodes.push(Node {
+            id: "done".into(),
+            kind: NodeKind::End,
+        });
+        // Two mutually exclusive Judge outcomes converge, not two parallel tokens.
+        story
+            .graph
+            .edges
+            .iter_mut()
+            .find(|e| e.from == "judge" && e.outcome.as_deref() == Some("uncertain"))
+            .unwrap()
+            .to = "end".into();
+        story.graph.edges.push(crate::workflows::Edge {
+            from: "end".into(),
+            to: "done".into(),
+            outcome: None,
+        });
     }
     let story = definitions
         .update_draft(&story.id, story.draft_revision, story.graph)
@@ -745,4 +785,174 @@ fn serial_replay_requires_its_contract_predecessor_and_history_bound() {
     };
     assert!(valid.apply(&complete, 3).unwrap_err().contains("budget"));
     assert_eq!(valid.activations.len(), MAX_ACTIVATIONS);
+}
+
+// Catches: upgrading the contract reinterprets the historical exclusive Join as all-Join.
+#[test]
+fn old_exclusive_join_replays_without_parallel_wait() {
+    let old = replay_contract_fixture(include_str!(
+        "../../fixtures/workflow_contracts/v2-exclusive-join.json"
+    ));
+    assert_eq!(old.event_contract_version, 2);
+    assert!(old.graph_executions[0].completed);
+    assert_eq!(old.graph_executions[0].decisions.len(), 1);
+    assert!(old.graph_executions[0].contract.is_none());
+    let cancelled = super::reducer::apply_event(
+        Some(old.clone()),
+        &RunEvent {
+            sequence: old.sequence + 1,
+            command_id: "cancel-old".into(),
+            command_hash: None,
+            at_ms: old.started_ms,
+            kind: RunEventKind::Cancelled,
+        },
+    )
+    .unwrap();
+    assert_eq!(cancelled.status, RunStatus::Cancelled);
+    let (_config, _project, store, run, story, _guard) = graph_fixture_with_join(true);
+    start_graph(&store, &run.id, &story);
+    reach_judge(&store, &run.id, true);
+    visit(
+        &store,
+        &run.id,
+        "judge",
+        Some(EdgeOutcome::Yes),
+        Some(evidence()),
+    );
+    visit(&store, &run.id, "end", None, None);
+    let completed = visit(&store, &run.id, "done", None, None).snapshot;
+    let events = store.events_after(&run.id, 0, 500).unwrap();
+    let serialized = serde_json::to_string(&events).unwrap();
+    let events: Vec<RunEvent> = serde_json::from_str(&serialized).unwrap();
+    let replayed = events
+        .iter()
+        .try_fold(None, |state, event| {
+            super::reducer::apply_event(state, event).map(Some)
+        })
+        .unwrap()
+        .unwrap();
+    assert_eq!(replayed, completed);
+    assert!(replayed.graph_executions[0].completed);
+    assert_eq!(replayed.graph_executions[0].decisions.len(), 1);
+    // The upgrade must retain replay while new starts advertise the new pin boundary.
+    assert_eq!(
+        replayed.event_contract_version, 3,
+        "missing WF01 versioned pin boundary"
+    );
+}
+
+// Catches: publication changes the policy or graph of an already active execution.
+#[test]
+fn draft_publish_does_not_repin_active_run() {
+    let (_config, _project, store, run, story, _guard) = graph_fixture();
+    let before = start_graph(&store, &run.id, &story).snapshot;
+    let old = replay_contract_fixture(include_str!(
+        "../../fixtures/workflow_contracts/v2-active-pin.json"
+    ));
+    assert_eq!(old.event_contract_version, 2);
+    assert_eq!(
+        old.graph_executions[0].definition.required_checks,
+        before.graph_executions[0].definition.required_checks
+    );
+    assert!(old.graph_executions[0].contract.is_none());
+    let definitions = WorkflowStore::open().unwrap();
+    let draft = definitions.get_draft(&run.story_definition_id).unwrap();
+    let checks = vec![crate::workflows::CheckDefinition {
+        id: "changed-policy".into(),
+        argv: vec!["git".into(), "status".into()],
+        timeout_secs: 42,
+    }];
+    let draft = definitions
+        .update_checks(&draft.id, draft.draft_revision, checks.clone())
+        .unwrap();
+    let publication = definitions
+        .publish(&draft.id, draft.draft_revision)
+        .unwrap();
+    assert_eq!(publication.required_checks, checks);
+    assert_ne!(
+        publication.revision,
+        before.graph_executions[0].definition.revision
+    );
+    assert_eq!(store.replay(&run.id).unwrap(), before);
+    let json = serde_json::to_value(&before.graph_executions[0]).unwrap();
+    assert!(
+        json.get("contract").is_some(),
+        "missing immutable definition/policy contract pin"
+    );
+    assert_eq!(json["contract"]["version"], 3);
+}
+
+fn replay_contract_fixture(bytes: &str) -> RunSnapshot {
+    let events: Vec<RunEvent> = serde_json::from_str(bytes).unwrap();
+    // Catches: additive API metadata changing the encoding of historical events.
+    assert_eq!(
+        serde_json::to_value(&events).unwrap(),
+        serde_json::from_str::<serde_json::Value>(bytes).unwrap()
+    );
+    events
+        .iter()
+        .try_fold(None, |state, event| {
+            super::reducer::apply_event(state, event).map(Some)
+        })
+        .unwrap()
+        .unwrap()
+}
+
+// Catches: digest metadata silently accepting a changed pinned graph or checks.
+#[test]
+fn contract_pin_refuses_tampering_and_legacy_child_start_stays_serial() {
+    let old = replay_contract_fixture(include_str!(
+        "../../fixtures/workflow_contracts/v2-active-pin.json"
+    ));
+    let graph = &old.graph_executions[0];
+    let legacy = GraphExecution::start_for_contract(
+        "later-child".into(),
+        graph.target_id.clone(),
+        graph.definition.clone(),
+        2,
+    )
+    .unwrap();
+    assert!(legacy.contract.is_none());
+    let current = GraphExecution::start(
+        "later-child".into(),
+        graph.target_id.clone(),
+        graph.definition.clone(),
+    )
+    .unwrap();
+    let mut initial = old.clone();
+    initial.event_contract_version = 3;
+    initial.graph_executions.clear();
+    let sequence = initial.sequence + 1;
+    let at_ms = initial.started_ms;
+    let event = |execution| RunEvent {
+        sequence,
+        command_id: "graph-start".into(),
+        command_hash: None,
+        at_ms,
+        kind: RunEventKind::Graph {
+            event: GraphEvent::Started {
+                execution: Box::new(execution),
+            },
+        },
+    };
+    assert!(super::reducer::apply_event(Some(initial.clone()), &event(current.clone())).is_ok());
+    let mut changed = current.clone();
+    changed.definition.required_checks[0].timeout_secs += 1;
+    assert!(super::reducer::apply_event(Some(initial.clone()), &event(changed)).is_err());
+    let mut changed = current.clone();
+    changed
+        .contract
+        .as_mut()
+        .unwrap()
+        .policy_imports
+        .push(PolicyImport {
+            domain: PolicyDomain::PublicationAuthority,
+            source: "invented".into(),
+            revision: "1".into(),
+            sha256: "a".repeat(64),
+        });
+    assert!(super::reducer::apply_event(Some(initial.clone()), &event(changed)).is_err());
+    assert!(super::reducer::apply_event(Some(initial.clone()), &event(legacy)).is_err());
+    initial.event_contract_version = 2;
+    assert!(super::reducer::apply_event(Some(initial.clone()), &event(current)).is_err());
 }

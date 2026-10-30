@@ -76,6 +76,7 @@
 # Backend
 
 - [Configuration](./backend/config.md)
+- [Workflow Contract Baseline](./backend/workflow-baseline/contract.md)
 - [PTY Management](./backend/pty.md)
 - [Output Parser](./backend/output-parser.md)
 - [Error Classification](./backend/error-classification.md)
