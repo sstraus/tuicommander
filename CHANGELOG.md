@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Raise built-in secondary and muted text contrast on all neutral chrome surfaces, share desktop/mobile startup foregrounds, and remove the collapsed Compose label and queue-count fade (#2506-22b0).
+
 - Preserve the beginning of long Claude CLI dictation by framing it as a bracketed paste, including review-only delivery (#2502-571c).
 
 - Open local `tuic://open` links from Markdown in desktop and mobile/browser views. Route Markdown, images, HTML and directories to their proper views, including cross-worktree targets; keep network external-text reads restricted to registered repositories (#2497-ec72).

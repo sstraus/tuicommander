@@ -51,21 +51,21 @@ Reference for all UI/CSS/layout work. Every visual change MUST follow this guide
 
 ## Color Palette
 
-Values shown are the `:root` defaults of `global.css` (the former VS Code Dark palette, in effect until a theme loads). The app supports **13 bundled themes** (Commander is the default and the fallback) — all core colors are CSS custom properties overridden at runtime by `applyAppTheme()` in `themes.ts`, which also sets `html[data-theme="<key>"]` so a theme can carry typography rules in `global.css` (only `clean` does: neutral gray `--tab-*-rgb` tints so typed tabs do not each bring their own hue). Font smoothing is global: `html` forces `-webkit-font-smoothing: antialiased` and 0.01em tracking, the rasterization every native-looking macOS app uses. The native window and webview backing layers also use `bgPrimary`: Rust resolves the saved theme before window creation, and `applyAppTheme()` synchronizes both layers on theme changes and hot reload. When writing CSS, always use variables, never hardcode core palette values.
+Values shown are the startup `:root` defaults: foregrounds from shared `foreground-tokens.css` and other colors from `global.css`, in effect until a theme loads. The app supports **13 bundled themes** (Commander is the default and the fallback) — all core colors are CSS custom properties overridden at runtime by `applyAppTheme()` in `themes.ts`, which also sets `html[data-theme="<key>"]` so a theme can carry typography rules in `global.css` (only `clean` does: neutral gray `--tab-*-rgb` tints so typed tabs do not each bring their own hue). Font smoothing is global: `html` forces `-webkit-font-smoothing: antialiased` and 0.01em tracking, the rasterization every native-looking macOS app uses. Existing profile files keep their user edits. On load, Rust replaces only a recognized built-in's exact legacy foreground triplet with the current bundled triplet; partial foreground customizations and renamed themes stay unchanged, and no file is rewritten. The native window and webview backing layers also use `bgPrimary`: Rust resolves the saved theme before window creation, and `applyAppTheme()` synchronizes both layers on theme changes and hot reload. When writing CSS, always use variables, never hardcode core palette values.
 
-**Theme gallery (dev only).** With `make dev` running, open `http://127.0.0.1:1421/theme-gallery.html` (`src/dev/themeGallery.tsx`). It renders one row per bundled theme: the shipped theme on the left and, on the right, the edit proposed in `src/dev/themeProposals.ts` (a partial override merged over the JSON; empty when nothing is under review). Each card mounts the real `Toolbar`, `Sidebar`, `TabBar` and `StatusBar` components over stores seeded once in the page (a fake `__TAURI_INTERNALS__` in `theme-gallery.html` answers every `invoke`), so a component or stylesheet edit repaints every theme through HMR and a theme JSON edit shows up within a second. Only the terminal body and the dialog are stand-ins; never hand-copy component markup into the gallery, a copy drifts within a session (the page polls `/__tuic_themes`, a serve-only Vite middleware in `vite.config.ts`). Use it to check a palette change against every theme at once before touching the live app. A static snapshot of the 2026-09-22 review, taken before its edits were applied, is in `docs/design/theme-gallery-2026-09-22/`. It is not a build input and never ships. To show it as a TUIC `ui` tab inside a dev build, use `http://localhost:1421/...`: the dev app is served from `127.0.0.1:1421`, and `PluginPanel` blanks a same-origin iframe (`guardSameOriginNav`).
+**Theme gallery (dev only).** With `make dev` running, open `http://127.0.0.1:1421/theme-gallery.html` (`src/dev/themeGallery.tsx`). It renders one row per bundled theme: the shipped theme on the left and, on the right, the edit proposed in `src/dev/themeProposals.ts` (a partial override merged over the JSON; empty when nothing is under review). Each card mounts the real `Toolbar`, `Sidebar`, `TabBar`, `StatusBar` and collapsed `ComposeToggle` components over stores seeded once in the page (a fake `__TAURI_INTERNALS__` in `theme-gallery.html` answers every `invoke`), so a component or stylesheet edit repaints every theme through HMR and a theme JSON edit shows up within a second. Only the terminal body and the dialog are stand-ins; never hand-copy component markup into the gallery, a copy drifts within a session (the page polls `/__tuic_themes`, a serve-only Vite middleware in `vite.config.ts`). Use it to check a palette change against every theme at once before touching the live app. A static snapshot of the 2026-09-22 review, taken before its edits were applied, is in `docs/design/theme-gallery-2026-09-22/`. It is not a build input and never ships. To show it as a TUIC `ui` tab inside a dev build, use `http://localhost:1421/...`: the dev app is served from `127.0.0.1:1421`, and `PluginPanel` blanks a same-origin iframe (`guardSameOriginNav`).
 
-### CSS Variables (`:root` in `global.css`)
+### CSS Variables (startup `:root` tokens)
 
-| Variable | Default (vscode-dark) | Usage |
+| Variable | Startup default | Usage |
 |----------|-------|-------|
 | `--bg-primary` | `#1e1e1e` | Main canvas — terminals, panel bodies |
 | `--bg-secondary` | `#252526` | Sidebar, tab bar, status bar |
 | `--bg-tertiary` | `#2d2d30` | Inputs, settings rows, button defaults |
 | `--bg-highlight` | `#37373d` | Hover states, active branch bg |
-| `--fg-primary` | `#cccccc` | Primary text (max brightness for text) |
-| `--fg-secondary` | `#a0a0a0` | Labels, secondary text |
-| `--fg-muted` | `#9aa1a9` | Section titles, tertiary text |
+| `--fg-primary` | `#d4d4d4` | Primary text (Commander startup value) |
+| `--fg-secondary` | `#b5b5b5` | Labels, secondary text |
+| `--fg-muted` | `#a6a6a6` | Section titles, tertiary text |
 | `--accent` | `#59a8dd` | Primary actions, active indicators, links (theme-dependent) |
 | `--accent-hover` | `#7abde5` | Hover on accent elements (theme-dependent) |
 | `--activity` | `#59a8dd` | Busy/activity pulse indicators (fixed in `global.css`, not overridden by themes) |
@@ -637,8 +637,9 @@ CSS classes on `<html>`: `.platform-macos`, `.platform-windows`, `.platform-linu
 
 ## Accessibility
 
-- Primary text (#cccccc on #1e1e1e): 10:1+ contrast ratio (exceeds WCAG AAA).
-- Secondary text (#a0a0a0 on #252526): 6:1+ (exceeds WCAG AA).
+- Commander primary text (#d4d4d4 on #1e1e1e) exceeds WCAG AAA.
+- Secondary and muted informational text must meet WCAG AA (4.5:1) on all four neutral chrome surfaces, including highlighted rows and pills. Built-in themes retain primary > secondary > muted contrast. Do not reduce informational text with whole-control opacity.
+- Desktop and mobile startup foregrounds come from `src/styles/foreground-tokens.css`; the runtime fallback reads Commander foregrounds from its bundled theme JSON. `themeContrast.test.ts` protects the contrast and startup palette contract.
 - Status communicated by **color + shape + icon** — never color alone.
 - `:focus-visible` outlines for keyboard navigation.
 - `prefers-reduced-motion` query disables all animations.
@@ -669,11 +670,11 @@ The mobile PWA has its own standalone stylesheet at `src/mobile/mobile.css`, **c
 The idle terminal command editor and special-key rows intentionally use 15px text at the owner's request. Their shared `mobileCommand` density owns button text and horizontal padding; action hit regions retain the 44px minimum. This is a narrow exception to the usual 16px mobile input typography, not a new density for other forms. The focused command editor retains 16px text at the iOS zoom threshold.
 
 ### Keeping in sync
-When updating core palette colors in `global.css`, **also update `mobile.css`** — the `:root` blocks must stay aligned for the shared variables. Theme-specific variables (`--activity`, `--merged`, `--unseen`) are desktop-only and do not need mobile equivalents until that functionality ships in PWA.
+The foreground startup palette is defined once in `src/styles/foreground-tokens.css`, imported by both entrypoints. When updating other core palette colors in `global.css`, **also update `mobile.css`** — the `:root` blocks must stay aligned for the shared variables. Theme-specific variables (`--activity`, `--merged`, `--unseen`) are desktop-only and do not need mobile equivalents until that functionality ships in PWA.
 
 ## Anti-Patterns (DO NOT)
 
-- **No bright whites** — max text brightness is `--fg-primary` (#cccccc).
+- **No bright whites** — max text brightness is the selected theme's `--fg-primary`.
 - **No new shadows** — only the three defined levels exist.
 - **No `transition: all`** — always list specific properties.
 - **No hardcoded core colors** — use CSS variables for the four bg levels, three fg levels, and status colors.

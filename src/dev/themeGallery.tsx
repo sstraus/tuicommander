@@ -29,6 +29,7 @@ import { Sidebar } from "../components/Sidebar/Sidebar";
 import { StatusBar } from "../components/StatusBar/StatusBar";
 import dialog from "../components/shared/dialog.module.css";
 import { TabBar } from "../components/TabBar/TabBar";
+import { ComposeToggle } from "../components/Terminal/ComposeToggle";
 import { Toolbar } from "../components/Toolbar/Toolbar";
 import { Button } from "../components/ui/Button";
 import { applyPlatformClass } from "../platform";
@@ -316,6 +317,12 @@ const Terminal = () => (
 		<span style={{ color: "var(--ansi-magenta)" }}>▸ bypass permissions on</span> ·{" "}
 		<span style={{ color: "var(--ansi-cyan)" }}>1 shell</span> ·{" "}
 		<span style={{ color: "var(--ansi-bright-black)" }}>gpt-5.6-sol medium</span>
+		<ComposeToggle
+			shortcut="⌘I"
+			queuedCount={() => 1}
+			onOpen={noop}
+			onLoadQueue={async () => [{ id: 1, kind: "notice", text: "Peer mail available" }]}
+		/>
 	</div>
 );
 
@@ -450,7 +457,7 @@ body { background: #111; color: #ddd; padding: 16px; font-family: var(--font-ui)
 /* The app inherits text color from html/body (global.css); the gallery body is fixed #ddd, so each card restores it. */
 .gallery-card #app { height: 600px; width: auto; border: 1px solid #000; border-radius: 6px; overflow: hidden; color: var(--fg-primary); background: var(--bg-primary); }
 .gallery-dialog-slot { display: flex; justify-content: center; padding: 0 0 24px; }
-.gallery-terminal { flex: 1; background: var(--term-bg); color: var(--term-fg); font-family: var(--font-mono); line-height: 1.6; padding: 8px 10px; overflow: hidden; }
+.gallery-terminal { position: relative; flex: 1; background: var(--term-bg); color: var(--term-fg); font-family: var(--font-mono); line-height: 1.6; padding: 8px 10px; overflow: hidden; }
 `;
 
 function Gallery() {

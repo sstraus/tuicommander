@@ -7,10 +7,6 @@ settings:
 importers:
 
   .:
-    dependencies:
-      sal.js:
-        specifier: ^0.8.5
-        version: 0.8.5
     devDependencies:
       vite:
         specifier: ^8.1.5
@@ -250,10 +246,6 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     hasBin: true
 
-  sal.js@0.8.5:
-    resolution: {integrity: sha512-KUb3fNrVZ1oWxxkEAfQfQ4Mrd910yboIRHqsvioBkulQInqMVeSMah+J5f7ch7KXFLicKlAaE0TzTsG/eJ02Dg==}
-    engines: {node: '>=12.0.0'}
-
   source-map-js@1.2.1:
     resolution: {integrity: sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA==}
     engines: {node: '>=0.10.0'}
@@ -481,8 +473,6 @@ snapshots:
       '@rolldown/binding-wasm32-wasi': 1.1.5
       '@rolldown/binding-win32-arm64-msvc': 1.1.5
       '@rolldown/binding-win32-x64-msvc': 1.1.5
-
-  sal.js@0.8.5: {}
 
   source-map-js@1.2.1: {}
 

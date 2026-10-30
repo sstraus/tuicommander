@@ -112,13 +112,6 @@
   z-index: 10;
   gap: 4px;
   font-family: var(--font-ui);
-  opacity: 0.5;
-  transition: opacity 0.15s ease;
-}
-
-.composeHint:hover,
-.composeHint:focus-visible {
-  opacity: 1;
 }
 
 .composeQueueCount {
