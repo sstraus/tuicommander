@@ -6,7 +6,7 @@ import { shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
 import { editorTabsStore } from "../../stores/editorTabs";
 import { type HtmlPreviewTab as HtmlPreviewTabData, mdTabsStore } from "../../stores/mdTabs";
-import { locateFile, repositoriesStore } from "../../stores/repositories";
+import { repositoriesStore } from "../../stores/repositories";
 import { isTauri } from "../../transport";
 import { IFRAME_EXTERNAL_LINK_SCRIPT } from "../../utils/iframeExternalLinks";
 import { attachIframeKeyForwarder } from "../../utils/iframeKeyForwarder";
@@ -170,7 +170,7 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 
 	/** Asset URL for binary files (PDF, images, video, audio), cache-busted via repo revision */
 	const assetUrl = () => {
-		if (!isTauri()) return browserLocalImageUrl(absolutePath(props.tab)) ?? undefined;
+		if (!isTauri()) return browserLocalImageUrl(absolutePath(props.tab), kind() === "image") ?? undefined;
 		const rev = props.tab.repoPath ? repositoriesStore.getRevision(props.tab.repoPath) : 0;
 		return `${convertFileSrc(absolutePath(props.tab))}?v=${rev}`;
 	};
@@ -197,12 +197,6 @@ export const HtmlPreviewTab: Component<HtmlPreviewTabProps> = (props) => {
 			return;
 		}
 
-		if (!isTauri() && !locateFile(absolutePath(props.tab)).fsRoot) {
-			setContent("");
-			setLoading(false);
-			setError("Preview unavailable: outside open repositories.");
-			return;
-		}
 		if (!content()) setLoading(true);
 		setError(null);
 

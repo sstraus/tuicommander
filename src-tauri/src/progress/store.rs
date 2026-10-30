@@ -401,8 +401,20 @@ impl ProgressStore {
     ) -> Result<ProgressList, String> {
         let conn = self.connect()?;
         let blocked_only = input.blocked_only.unwrap_or(false);
-        let known_kinds = ProgressKind::ALL
+        let kinds = if input.progress_only.unwrap_or(false) {
+            &[
+                ProgressKind::Done,
+                ProgressKind::Blocked,
+                ProgressKind::Intent,
+            ][..]
+        } else {
+            &ProgressKind::ALL[..]
+        };
+        let known_kinds = kinds
+            .iter()
+            .copied()
             .map(|kind| format!("'{}'", kind.as_str()))
+            .collect::<Vec<_>>()
             .join(",");
         let total: i64 = conn
             .query_row(
@@ -796,7 +808,7 @@ mod tests {
     }
 
     #[test]
-    fn the_blocked_filter_is_the_only_one() {
+    fn the_blocked_filter_selects_only_blocked_entries() {
         let (_guard, store, _dir) = isolated_store();
         store
             .record("/p", &entry(ProgressKind::Done, "done"))
@@ -989,6 +1001,89 @@ mod tests {
                 .map(|i| format!("event {i}"))
                 .collect::<Vec<_>>()
         );
+    }
+
+    // Catches filtering noise after LIMIT, incorrect totals/cursors, and leaking
+    // another PTY/project when combining the human-progress and blocked filters.
+    #[test]
+    fn progress_only_pages_are_full_with_interleaved_hand_offs() {
+        let (_guard, store, _dir) = isolated_store();
+        for index in 0..7 {
+            let kind = [
+                ProgressKind::Intent,
+                ProgressKind::Done,
+                ProgressKind::Blocked,
+            ][index % 3];
+            store
+                .record_for_pty("/p", &entry(kind, &format!("real {index}")), Some("a"))
+                .unwrap();
+            for noise in [ProgressKind::Message, ProgressKind::Delegated] {
+                store
+                    .record_for_pty("/p", &entry(noise, "mail"), Some("a"))
+                    .unwrap();
+            }
+        }
+        store
+            .record_for_pty(
+                "/p",
+                &entry(ProgressKind::Blocked, "other terminal"),
+                Some("b"),
+            )
+            .unwrap();
+        store
+            .record_for_pty(
+                "/elsewhere",
+                &entry(ProgressKind::Blocked, "other project"),
+                Some("a"),
+            )
+            .unwrap();
+        let mut input: ProgressListInput = serde_json::from_value(serde_json::json!({
+            "progressOnly": true, "ptyId": "a", "limit": 3
+        }))
+        .unwrap();
+        let mut texts = Vec::new();
+        for expected_len in [3, 3, 1] {
+            let page = store.list("/p", &input).unwrap();
+            assert_eq!(page.total, 7);
+            assert_eq!(page.entries.len(), expected_len);
+            texts.extend(page.entries.into_iter().map(|row| row.text));
+            input.cursor = page.next_cursor;
+            assert_eq!(input.cursor.is_some(), expected_len == 3);
+        }
+        assert_eq!(
+            texts,
+            [
+                "real 6", "real 5", "real 4", "real 3", "real 2", "real 1", "real 0"
+            ]
+        );
+        input.blocked_only = Some(true);
+        input.cursor = None;
+        let blocked = store.list("/p", &input).unwrap();
+        assert_eq!(blocked.total, 2);
+        assert_eq!(
+            blocked
+                .entries
+                .iter()
+                .map(|row| row.text.as_str())
+                .collect::<Vec<_>>(),
+            ["real 5", "real 2"]
+        );
+        assert_eq!(blocked.next_cursor, None);
+        let all = store
+            .list(
+                "/p",
+                &ProgressListInput {
+                    limit: Some(100),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        assert_eq!(all.total, 22, "unfiltered callers and Flow keep hand-offs");
+        assert_eq!(all.entries.len(), 22);
+        let empty = store.list("/empty", &input).unwrap();
+        assert_eq!(empty.total, 0);
+        assert_eq!(empty.entries, [] as [ProgressEntry; 0]);
+        assert_eq!(empty.next_cursor, None);
     }
 
     #[test]

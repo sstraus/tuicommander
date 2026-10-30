@@ -20,6 +20,7 @@ interface ReviewableMarkdownProps {
 	chatReference?: MarkdownChatReference;
 	onSaveInlineComment?: (comment: TweakComment, occurrence: number) => Promise<boolean>;
 	content: string;
+	onLinkClick?: (href: string) => void;
 	imageSrc: (relativePath: string) => string;
 	onCheckboxToggle: (sourceLine: number, mark: " " | "x" | "~", sourceCol?: number) => void;
 	/** Resolves true when the comment reached the file. */
@@ -144,6 +145,7 @@ export function ReviewableMarkdown(props: ReviewableMarkdownProps) {
 			>
 				<ContentRenderer
 					content={props.content}
+					onLinkClick={props.onLinkClick}
 					imageSrc={props.imageSrc}
 					onCheckboxToggle={props.onCheckboxToggle}
 					commentableBlocks

@@ -24,7 +24,8 @@
 .sectionTitle {
   margin-right: auto;
   color: var(--fg-primary);
-  font-size: 17px;
+  font-size: var(--mobile-heading-size);
+  line-height: 26px;
   font-weight: 600;
 }
 
@@ -66,7 +67,7 @@
   align-items: center;
   gap: 8px;
   padding: 40px 16px;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   text-align: center;
 }
 
@@ -76,7 +77,7 @@
   justify-content: center;
   padding-bottom: 8px;
   font-size: 12px;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   overflow: hidden;
   transition: height 0.15s ease;
 }
@@ -101,7 +102,7 @@
   justify-content: center;
   height: 100%;
   gap: 8px;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   padding: 32px 16px;
 }
 

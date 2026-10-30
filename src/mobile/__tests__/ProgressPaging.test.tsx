@@ -60,7 +60,7 @@ it("appends the exclusive older page once even when Load older is pressed twice"
 	expect(invoke).toHaveBeenCalledTimes(2);
 	expect(invoke).toHaveBeenLastCalledWith("progress_list", {
 		project: "/paging",
-		input: { blockedOnly: false, limit: 100, cursor: 901 },
+		input: { progressOnly: true, blockedOnly: false, limit: 100, cursor: 901 },
 	});
 	const texts = Array.from(document.querySelectorAll("[data-kind] p"), (node) => node.textContent);
 	expect(texts).toEqual(history.slice(0, 200).map((entry) => entry.text));

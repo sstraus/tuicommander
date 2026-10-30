@@ -4469,6 +4469,37 @@ mod tests {
         }
     }
 
+    // Catches: a local browser cannot read a Markdown/HTML target outside registered repos;
+    // the same path must remain forbidden to an authenticated network client.
+    #[tokio::test]
+    async fn local_link_external_text_reads_keep_the_network_repository_boundary() {
+        let fixture = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let target = fixture.path().join("target.md");
+        std::fs::write(&target, "# Local link target").unwrap();
+        let state = test_state();
+        let token = state.session_token.read().clone();
+        let app = build_router(state, true, true);
+        let mut params = url::form_urlencoded::Serializer::new(String::new());
+        params
+            .append_pair("path", target.to_str().unwrap())
+            .append_pair("token", &token);
+        let uri = format!("/fs/read-external?{}", params.finish());
+        for (address, expected) in [
+            (([127, 0, 0, 1], 0), StatusCode::OK),
+            (([203, 0, 113, 1], 4444), StatusCode::FORBIDDEN),
+        ] {
+            let mut request = Request::get(&uri)
+                .header(header::HOST, "127.0.0.1:9876")
+                .body(Body::empty())
+                .unwrap();
+            request
+                .extensions_mut()
+                .insert(ConnectInfo(std::net::SocketAddr::from(address)));
+            let response = app.clone().oneshot(request).await.unwrap();
+            assert_eq!(response.status(), expected, "{address:?}");
+        }
+    }
+
     #[tokio::test]
     async fn loopback_story_action_without_session_is_local_api_not_human() {
         use crate::stories::{
@@ -4750,6 +4781,37 @@ mod tests {
         assert_eq!(stored.entries.len(), 1);
         assert_eq!(stored.entries[0].id, receipt["id"].as_i64().unwrap());
         assert_eq!(stored.entries[0].text, "HTTP transport is equivalent.");
+
+        // Catches the HTTP body dropping progressOnly before the shared query.
+        crate::progress::ProgressStore::open()
+            .unwrap()
+            .record(
+                &owner.to_string_lossy(),
+                &crate::progress::NewProgressEntry {
+                    kind: crate::progress::ProgressKind::Message,
+                    text: "operational mail".to_string(),
+                    step: None,
+                    agent_name: None,
+                },
+            )
+            .unwrap();
+        url.set_path("/progress/list");
+        let mut request = Request::post(&url[url::Position::BeforePath..])
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"progressOnly":true,"limit":1}"#))
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 0))));
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let page: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(page["total"], 1);
+        assert_eq!(page["entries"][0]["id"], receipt["id"]);
+        assert_eq!(page["nextCursor"], serde_json::Value::Null);
     }
 
     /// A phone has no desktop active repository. The journal itself must name
@@ -6215,15 +6277,17 @@ mod tests {
     async fn test_read_external_rejects_path_outside_repos() {
         let state = test_state();
         let app = build_router(state, false, true);
-        // No repos registered in test_state → any path should be rejected
-        let resp = app
-            .oneshot(
-                Request::get("/fs/read-external?path=/etc/passwd")
-                    .body(Body::empty())
-                    .unwrap(),
-            )
-            .await
+        // Network reads still require a registered root; loopback file tabs do not.
+        let mut request = Request::get("/fs/read-external?path=/etc/passwd")
+            .body(Body::empty())
             .unwrap();
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(std::net::SocketAddr::from((
+                [192, 168, 0, 1],
+                5000,
+            ))));
+        let resp = app.oneshot(request).await.unwrap();
         assert_eq!(
             resp.status(),
             StatusCode::FORBIDDEN,

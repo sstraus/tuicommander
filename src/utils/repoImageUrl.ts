@@ -2,7 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { locateFile } from "../stores/repositories";
 import { isTauri } from "../transport";
 import { getRemoteBaseUrl, getRepoConnection, withRemoteToken } from "../transportRuntime";
-import { isAbsolutePath, joinPath } from "./pathUtils";
+import { isAbsolutePath, joinPath, pathBasename, pathDirname } from "./pathUtils";
 
 /** Browser URL of a repository image, served by the authenticated `/fs/markdown-image` route. */
 export function repoImageUrl(repoPath: string, file: string, ownerRepoPath = repoPath): string {
@@ -15,9 +15,12 @@ export function repoImageUrl(repoPath: string, file: string, ownerRepoPath = rep
 }
 
 /** Resolve browser assets against registered roots, including linked worktrees. */
-export function browserLocalImageUrl(path: string): string | null {
+export function browserLocalImageUrl(path: string, localFileTab = false): string | null {
 	const location = locateFile(path);
-	return location.fsRoot ? repoImageUrl(location.fsRoot, location.filePath, location.repoPath) : null;
+	if (location.fsRoot) return repoImageUrl(location.fsRoot, location.filePath, location.repoPath);
+	// An explicitly opened local image tab already names its source directory.
+	// The existing HTTP image route still authenticates and confines the image to it.
+	return localFileTab && isAbsolutePath(path) ? repoImageUrl(pathDirname(path), pathBasename(path)) : null;
 }
 
 /** The serialized `src` attribute back to the filesystem filename: HTML entities first, then URL escapes. */

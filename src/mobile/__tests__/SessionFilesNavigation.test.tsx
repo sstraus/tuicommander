@@ -14,7 +14,10 @@ const { rpc, mockSessions, mockRepos, outputMounts } = vi.hoisted(() => ({
 }));
 
 vi.mock("../../transport", () => ({ rpc, subscribeEvents: vi.fn(async () => () => {}) }));
-vi.mock("../../invoke", () => ({ invoke: vi.fn() }));
+vi.mock("../../invoke", () => ({
+	invoke: vi.fn(),
+	listen: vi.fn(async () => () => {}),
+}));
 vi.mock("../../stores/appLogger", () => ({ appLogger: { warn: vi.fn(), info: vi.fn() } }));
 vi.mock("../../stores/ideas", () => ({ ideasStore: { hydrate: vi.fn() } }));
 vi.mock("../useSessions", () => ({

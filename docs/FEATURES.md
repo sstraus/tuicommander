@@ -150,7 +150,7 @@ The component is available for Tasks shell integration; it does not add a tab by
 | Plugins and MCP | [Plugins](user-guide/plugins.md) · [MCP Proxy Hub](user-guide/mcp-proxy.md) |
 | Remote, mobile, and browser modes | [TUICommander Modes](user-guide/modes.md) · [Remote Access](user-guide/remote-access.md) |
 | Setup and recovery | [Getting Started](user-guide/getting-started.md) · [Troubleshooting](user-guide/troubleshooting.md) |
-| Project history | [Project Progress](user-guide/project-progress.md) |
+| Project history, mobile outcome-first list and full hand-off Flow | [Project Progress](user-guide/project-progress.md) |
 | Native plans and stories | [Native plans and stories](user-guide/native-stories.md) |
 
 Selecting a New plan source that already belongs to an archived plan shows its title and ID with instructions to enable **Archived plans**, select it, and choose **Restore plan**. This does not create a duplicate or restore the plan implicitly; an active source match still selects its existing plan.
@@ -2159,6 +2159,7 @@ shortcuts and the Global Hotkey. Keys macOS itself claims before the process
 - CLI `tuic <dir>` / `tuic open <dir>` and MCP `repo action=add` register and activate directories through the running server, without an OS URL handler; repeat adds preserve existing workspaces and terminals. MCP `ui tab` rejects `tuic://open-repo` and directs callers to `repo add`.
 - `tuic://open-repo?path=/path` — Activate a repo already in the sidebar; a folder that is not in it yet is added after one confirmation (native deep-link flow)
 - `tuic://settings?tab=plugins` — Open Settings to specific tab
+- Markdown document links using `tuic://open/<path>` open Markdown in a document tab, images and HTML in a preview, and directories in the file browser. Desktop and mobile/browser views support absolute paths across repositories and worktrees. Local desktop and loopback browser clients can open unregistered local files; network external-text reads retain their registered-repository boundary and HTTP authentication.
 - `tuic://open/<path>` — Open a Markdown file in a native tab. MCP `ui action=tab` also accepts absolute Markdown paths outside registered repositories; the iframe SDK keeps its repository path validation.
 - Absolute file URLs use `tuic://open//Users/name/file.md` or `tuic://edit//home/name/file.rs`. Redundant leading slashes normalize to one filesystem root before tab creation, including iframe SDK and mobile output links; relative paths and Windows drive paths keep their existing meaning.
 - Focused absolute `tuic://open`/`tuic://edit` targets switch to their owning registered repository so the native file tab remains visible; background opens preserve the current repository
