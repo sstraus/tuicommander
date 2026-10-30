@@ -1,3 +1,7 @@
+## Codex profile session quota (2541-18a3) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a Codex session with an existing `--profile` and check its mobile session quota. Include a profile with `model_instructions_file = "instructions.md"` beside the profile file. The installed Codex 0.166 App Server accepted the rebased profile path without a defaults warning in the isolated CLI probe; the earlier probe returned live quota. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
 ## Gemini JSONL discovery (2543-4bbf) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, start Gemini 0.64 in a throwaway project. Confirm the native session ID is discovered and resumes after restore; a session from another project must not be selected. Recorded owner-transcript regression covers JSONL metadata; no owner login, settings or running app was changed. Rust does not hot-reload; restart only when losing current sessions is acceptable.
