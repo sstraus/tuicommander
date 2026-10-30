@@ -1,3 +1,7 @@
+## Collective zoom native menu (2499-1156) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm the View menu collective zoom labels say All Tabs. Native collective in/out/reset dispatch is covered by real-store frontend regression tests. Rust menu labels do not hot-reload; the daily app was not restarted.
+
 ## CLI return focus (2484-9adb)
 
 - [ ] After landing, check Chat → CLI by click in the desktop WKWebView and type without clicking the terminal. Worktree Chrome verified the real Terminal and CanvasTerminal focus plus typed write_pty data through an isolated IPC sink; the assignment did not launch a desktop instance, so WebKit-specific focus behavior is not verified.

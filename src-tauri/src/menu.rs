@@ -101,17 +101,17 @@ pub fn build_menu(app: &App) -> Result<tauri::menu::Menu<Wry>, tauri::Error> {
         .separator()
         .item(&item!(
             "zoom-in-all",
-            "Zoom In All Terminals",
+            "Zoom In All Tabs",
             "CmdOrCtrl+Shift+="
         ))
         .item(&item!(
             "zoom-out-all",
-            "Zoom Out All Terminals",
+            "Zoom Out All Tabs",
             "CmdOrCtrl+Shift+-"
         ))
         .item(&item!(
             "zoom-reset-all",
-            "Reset Zoom All Terminals",
+            "Reset Zoom All Tabs",
             "CmdOrCtrl+Shift+0"
         ))
         .separator()
