@@ -576,6 +576,7 @@ export const ContentRenderer: Component<ContentRendererProps> = (props) => {
 			// A bare name:42 can be an extensionless file; Rust resolves the target.
 			// Keep known URL schemes out of that ambiguous file-line form.
 			/^[a-z][a-z\d+.-]*:/i.test(href) &&
+			!/^tuic:\/\/open\//i.test(href) &&
 			!/^[a-z]:[\\/]/i.test(href) &&
 			!(
 				/^[^:/\\]+:[1-9]\d*$/.test(href) &&

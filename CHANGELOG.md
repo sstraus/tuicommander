@@ -6,12 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Keep mobile Markdown images, review saves and Back navigation in the destination folder after opening a local link.
+
 ### Added
 
 - Add a separating space after web URLs pasted into mobile terminal and AI Chat composers, unless whitespace already follows (#2494-921f).
 
 ### Fixed
 
+- Open local `tuic://open` links from Markdown in desktop and mobile/browser views. Route Markdown, images, HTML and directories to their proper views, including cross-worktree targets; keep network external-text reads restricted to registered repositories (#2497-ec72).
 - Apply collective zoom shortcuts to all open Markdown and code editor tabs as well as terminals (#2499-1156).
 
 - Truncate long mobile session and file names, preserve badges and actions, and wrap unbroken Progress text (#2493-061e).

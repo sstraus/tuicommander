@@ -56,14 +56,18 @@ vi.mock("../../transport", () => ({
 		}
 		if (command === "stat_path") return { exists: true, is_dir: false, size: 110 };
 		if (command === "resolve_terminal_path") return linkedTarget.value;
+		if (command === "resolve_markdown_link")
+			return { kind: "file", absolute_path: linkedTarget.value.absolute_path, is_directory: false };
+		if (command === "read_external_file") return files.get(args?.path ?? "") ?? "";
 		if (command === "fs_read_file") {
 			if (args?.file === "src/image.bin") throw new Error("Failed to read file: stream did not contain valid UTF-8");
-			return files.get(args?.file ?? "") ?? "";
+			return files.get(`${args?.repoPath}/${args?.file}`) ?? files.get(args?.file ?? "") ?? "";
 		}
 		if (command === "write_file_if_unchanged") {
 			if (failSave) throw new Error("disk full");
-			if (files.get(args?.file ?? "") !== args?.expected) return false;
-			files.set(args?.file ?? "", args?.content ?? "");
+			const key = files.has(`${args?.repoPath}/${args?.file}`) ? `${args?.repoPath}/${args?.file}` : (args?.file ?? "");
+			if (files.get(key) !== args?.expected) return false;
+			files.set(key, args?.content ?? "");
 			return true;
 		}
 		throw new Error(`Unexpected command: ${command}`);
@@ -90,6 +94,37 @@ afterEach(() => {
 });
 
 describe("FilesScreen", () => {
+	it.each([
+		["same repository", "/repo-one/docs/target.md", "/repo-one", "docs/shot.png"],
+		["another worktree", "/repo-two/docs/target.md", "/repo-two", "docs/shot.png"],
+		["unregistered folder", "/local/review/target.md", "/local/review", "shot.png"],
+	])(
+		"keeps destination images and review saves out of the source context for %s",
+		async (_label, destination, root, image) => {
+			const original = "# Destination\n\n![Shot](shot.png)\n\n- [ ] Review target\n";
+			files.set(destination, original);
+			onTestFinished(() => {
+				files.delete(destination);
+			});
+			files.set("src/guide.md", `[Target](tuic://open/${destination})`);
+			const view = render(() => <FilesScreen />);
+			await waitFor(() => expect(view.getByRole("button", { name: /repo-one/ })).toBeTruthy());
+			await openRepo(view.getByRole);
+			await fireEvent.click(view.getByRole("button", { name: /guide.md/ }));
+			linkedTarget.value = { absolute_path: destination, is_directory: false };
+			await fireEvent.click(await waitFor(() => view.getByText("Target")));
+			await waitFor(() => expect(view.getByRole("heading", { name: "Destination" })).toBeTruthy());
+			const src = new URL(view.getByRole("img", { name: "Shot" }).getAttribute("src")!, location.origin);
+			expect(src.searchParams.get("repoPath")).toBe(root);
+			expect(src.searchParams.get("file")).toBe(image);
+			await fireEvent.click(view.getByRole("checkbox"));
+			await waitFor(() => expect(files.get(destination)).toBe(original.replace("[ ]", "[x]")));
+			expect(view.queryByRole("alert")).toBeNull();
+			await fireEvent.click(view.getByRole("button", { name: "Back" }));
+			expect(view.getByRole("searchbox", { name: "Search files" })).toBeTruthy();
+		},
+	);
+
 	// Catches discarding saved desktop group order, display names, or the second path line.
 	it("renders desktop group and repository order with names and short paths", async () => {
 		vi.mocked(rpc).mockResolvedValueOnce({

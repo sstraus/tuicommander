@@ -3076,4 +3076,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 
 - [ ] On iPhone, paste an HTTP(S) URL into terminal and AI Chat drafts, then continue typing. Check the separator and caret with the native keyboard. Verify long Sessions and Files names keep actions visible (#2493-061e, #2494-921f).
 
+- [ ] After a manual `make dev` restart, open the orchestrator workflow report and click its `tuic://open` Markdown, PNG and HTML links. Also check directory links and an unregistered local folder. Rust Markdown-link decoding and loopback file reads require the restart (#2497-ec72).
 - [ ] After rebuilding/restarting the backend, verify mobile Progress defaults to Started/Done/Blocked, Filters includes messages/delegations, full pages load with interleaved mail, and Flow still shows hand-offs (#2496-cbae). Rust does not hot-reload.
