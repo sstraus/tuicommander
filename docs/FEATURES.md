@@ -1949,6 +1949,8 @@ Terminal Compose uses `Enter` to send, `Ctrl+Enter` or `Shift+Enter` for a new l
 | `Cmd+=` | Zoom in (+2px) |
 | `Cmd+-` | Zoom out (-2px) |
 | `Cmd+0` | Reset zoom |
+| `Cmd+Shift+=` / `Cmd+Shift+-` | Zoom all open terminal, Markdown, and code editor tabs in / out |
+| `Cmd+Shift+0` | Reset zoom in all open terminal, Markdown, and code editor tabs |
 
 ### Split Panes
 | Shortcut | Action |
