@@ -63,6 +63,7 @@ pub fn render_story_prompt(
         role,
         capabilities,
         prompt_template,
+        ..
     } = &node.kind
     else {
         return Err("attempt node is not an agent".into());
@@ -223,6 +224,7 @@ pub fn render_plan_prompt(
         role,
         capabilities,
         prompt_template,
+        ..
     } = &node.kind
     else {
         return Err("plan attempt node is not an agent".into());
@@ -361,6 +363,7 @@ mod tests {
             agent: None,
             report: None,
             input_answer: None,
+            continuation: None,
         };
         run.attempts.push(attempt.clone());
         let definition = PublishedWorkflow {
@@ -374,6 +377,7 @@ mod tests {
                 nodes: vec![Node {
                     id: "implement".into(),
                     kind: NodeKind::Agent {
+                        execution: None,
                         role: AgentRole::Implementer,
                         capabilities: vec!["story_read".into(), "story_report".into()],
                         prompt_template: "Implement {{story.title}}".into(),
@@ -506,6 +510,7 @@ mod tests {
             agent: None,
             report: None,
             input_answer: None,
+            continuation: None,
         };
         run.attempts.push(attempt.clone());
         let definition = PublishedWorkflow {
@@ -519,6 +524,7 @@ mod tests {
                 nodes: vec![Node {
                     id: "coordinate".into(),
                     kind: NodeKind::Agent {
+                        execution: None,
                         role: AgentRole::Coordinator,
                         capabilities: vec!["story_create".into()],
                         prompt_template: "Coordinate {{plan.title}}".into(),

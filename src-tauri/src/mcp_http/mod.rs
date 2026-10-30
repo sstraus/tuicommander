@@ -19,6 +19,7 @@ mod launch_baseline;
 pub(crate) mod launch_transaction;
 mod log_routes;
 pub(crate) mod managed_launch;
+mod managed_launch_acp;
 pub(crate) mod mcp_call_audit;
 mod mcp_input_contract;
 pub(crate) mod mcp_transport;

@@ -36,6 +36,8 @@ pub struct GraphContract {
     /// Empty means only the legacy native graph/check/closure policy is pinned.
     /// It does not mean global routing or publication authority was imported.
     pub policy_imports: Vec<PolicyImport>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_policy: Option<crate::workflows::AgentPolicy>,
 }
 
 impl GraphContract {
@@ -45,9 +47,27 @@ impl GraphContract {
         Ok(Self {
             version: CURRENT_EVENT_CONTRACT_VERSION,
             definition_sha256: hex::encode(Sha256::digest(bytes)),
-            // DEFERRED (2026-10-30) — WF09 resolves transitive policy imports at
-            // publication/start. WF01 must not invent installed or approved policy.
+            // WF09 still owns transitive repository/publication policy imports.
+            // This is only the explicitly imported host routing authority.
             policy_imports: vec![],
+            agent_policy: None,
         })
+    }
+    pub(super) fn with_agent_policy(
+        definition: &PublishedWorkflow,
+        policy: Option<crate::workflows::AgentPolicy>,
+    ) -> Result<Self, String> {
+        let mut contract = Self::serial(definition)?;
+        if let Some(policy) = policy {
+            policy.validate_definition(definition)?;
+            contract.policy_imports.push(PolicyImport {
+                domain: PolicyDomain::GlobalRouting,
+                source: policy.source.clone(),
+                revision: format!("{}:{}", policy.source_revision, policy.revision),
+                sha256: policy.sha256.clone(),
+            });
+            contract.agent_policy = Some(policy);
+        }
+        Ok(contract)
     }
 }

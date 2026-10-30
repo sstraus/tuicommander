@@ -1190,6 +1190,7 @@ mod tests {
             )
             .expect("reserve spawn");
         let binding = AgentBinding {
+            acp: None,
             launch_id: None,
             session_id: "managed-session".into(),
             task_id: Some("task-1".into()),
@@ -1290,6 +1291,7 @@ mod tests {
                 &run.id,
                 &next_attempt.id,
                 AgentBinding {
+                    acp: None,
                     launch_id: None,
                     session_id: "managed-exit".into(),
                     task_id: None,
@@ -1365,6 +1367,7 @@ mod tests {
                 &run.id,
                 &attempt.id,
                 AgentBinding {
+                    acp: None,
                     launch_id: None,
                     session_id: "input-worker".into(),
                     task_id: None,
@@ -1508,6 +1511,7 @@ mod tests {
                     &run.id,
                     &attempt.id,
                     AgentBinding {
+                        acp: None,
                         launch_id: None,
                         session_id: session_id.into(),
                         task_id: None,
@@ -1646,6 +1650,7 @@ mod tests {
                 &run.id,
                 &attempt.id,
                 AgentBinding {
+                    acp: None,
                     launch_id: None,
                     session_id: "review-worker".into(),
                     task_id: None,
@@ -1743,6 +1748,7 @@ mod tests {
                 &run.id,
                 &attempt.id,
                 AgentBinding {
+                    acp: None,
                     launch_id: None,
                     session_id: "coordinator-pty".into(),
                     task_id: None,
@@ -2358,6 +2364,7 @@ mod tests {
                     &run.id,
                     &attempt_id,
                     AgentBinding {
+                        acp: None,
                         launch_id: None,
                         session_id: "late-agent".into(),
                         task_id: None,
@@ -2455,6 +2462,7 @@ mod tests {
                 &run.id,
                 &attempt_id,
                 AgentBinding {
+                    acp: None,
                     launch_id: None,
                     session_id: "coordinator".into(),
                     task_id: None,
@@ -2667,6 +2675,7 @@ mod tests {
                 &run.id,
                 &attempt_id,
                 AgentBinding {
+                    acp: None,
                     launch_id: None,
                     session_id: "coordinator".into(),
                     task_id: None,

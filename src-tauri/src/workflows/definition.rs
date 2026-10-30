@@ -18,6 +18,21 @@ pub enum AgentRole {
     Validator,
 }
 
+/// An explicit execution route is part of the immutable published definition.
+/// Absence retains the historical saved-run-profile PTY route.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(tag = "transport", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AgentExecution {
+    Pty {
+        profile: String,
+    },
+    Acp {
+        profile: String,
+        model: String,
+        effort: String,
+    },
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum NodeKind {
@@ -26,6 +41,8 @@ pub enum NodeKind {
         role: AgentRole,
         capabilities: Vec<String>,
         prompt_template: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        execution: Option<AgentExecution>,
     },
     CreateStories,
     StoryDispatch {
@@ -127,8 +144,30 @@ pub fn validate_graph(graph: &WorkflowGraph, workflow_kind: WorkflowKind) -> Res
             NodeKind::Agent {
                 capabilities,
                 prompt_template,
+                execution,
                 ..
             } => {
+                if let Some(execution) = execution {
+                    let fields = match execution {
+                        AgentExecution::Pty { profile } => vec![profile],
+                        AgentExecution::Acp {
+                            profile,
+                            model,
+                            effort,
+                        } => vec![profile, model, effort],
+                    };
+                    if fields.iter().any(|value| {
+                        value.is_empty()
+                            || value.len() > 256
+                            || value.trim() != value.as_str()
+                            || value.contains(['\0', '\r', '\n'])
+                    }) {
+                        return Err(
+                            "agent execution needs explicit bounded profile/model/effort values"
+                                .into(),
+                        );
+                    }
+                }
                 if prompt_template.trim().is_empty() || prompt_template.len() > 10_000 {
                     return Err("agent prompt template is empty or too large".into());
                 }

@@ -1,5 +1,6 @@
 //! Daemon-owned serial scheduling. Mailboxes wake actors; SQLite owns the work.
 use super::graph::{ActivationState, DecisionEvidence, GraphTransition};
+mod continuation;
 pub(super) mod effects;
 pub(super) mod judge;
 pub(super) mod plan;

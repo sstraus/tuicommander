@@ -263,6 +263,14 @@ pub struct AcpAvailability {
     pub reason: Option<AcpUnavailableReason>,
 }
 
+/// Host-issued origin of an MCP channel, not a peer's mutable latest connection.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AcpMcpOrigin {
+    pub peer_id: Option<String>,
+    pub connection_id: AcpConnectionId,
+    pub generation: u64,
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
 #[serde(transparent)]
 pub struct AcpConnectionId(uuid::Uuid);

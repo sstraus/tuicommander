@@ -1,3 +1,11 @@
+## Workflow ACP workers (2511-37f0 in progress) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use an explicit published ACP Agent route. Confirm no terminal is created, the managed receipt names the actual peer/conversation, and unobserved delivery is retained rather than resent. Full global-policy, continuation, handover and owned-close work is still pending. The daily app was not restarted.
+
+## Workflow report disposition (2511-37f0 increment) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, inspect `report_dispositions` for a bound typed report, an identical retry and a conflicting payload. Confirm the original decision remains and no report receipt grants artifact approval or cleanup. This is not complete WF04 lifecycle support. The daily app was not restarted.
+
 ## Typed workflow proposals (2511-37f0 foundation) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, submit a typed proposal batch to a plan Create Stories activation without a Coordinator node. Confirm one native story per proposal and no author PTY. Rust does not hot-reload; the daily app was not restarted. This is a partial WF04 foundation, not ACP/lifecycle completion.
@@ -3096,3 +3104,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   the running development backend does not hot-reload this Rust change.
 
 - [ ] After a manual Rust restart (`make dev` or release rebuild), inspect a new daemon workflow launch: its `workspace_baseline` must retain pre-existing dirt and its attempt binding must retain `launchId` across retry. Do not restart an active daily instance for this check. Safe close and ACP lifecycle remain unfinished.
+
+- [ ] WF04 owned close: after a backend rebuild, inspect `close_agent` refusal/stop receipts and confirm dirty work, pending input, background receipts and test apps prevent closure. Workspaces must remain. ACP stop-proof support and automated lifecycle tests remain in progress.

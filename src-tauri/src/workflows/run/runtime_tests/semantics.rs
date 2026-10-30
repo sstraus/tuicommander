@@ -94,6 +94,7 @@ fn bind(store: &RunStore, run_id: &str, attempt: &NodeAttempt, session: &str) {
             run_id,
             &attempt.id,
             AgentBinding {
+                acp: None,
                 launch_id: None,
                 session_id: session.into(),
                 task_id: None,

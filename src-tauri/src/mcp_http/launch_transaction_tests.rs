@@ -238,6 +238,14 @@ async fn launch_transaction_interrupted_side_effect_blocks_without_retry() {
         let key = hash(&serde_json::to_vec(&("peer", PARENT, stage)).unwrap());
         let record = Record {
             launch_id: uuid::Uuid::new_v4().to_string(),
+            owner_scope: Some(PARENT.into()),
+            acp_connection: None,
+            acp_process_id: None,
+            acp_generation: None,
+            acp_conversation: None,
+            acp_turn: None,
+            acp_prompt_sha256: None,
+            acp_prompt: None,
             digest: hash(
                 &serde_json::to_vec(&canonical(serde_json::to_value(parsed).unwrap())).unwrap(),
             ),

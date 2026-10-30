@@ -13,6 +13,10 @@ pub struct RunIncident {
     pub node_id: Option<String>,
     pub session_id: Option<String>,
     pub task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acp: Option<super::AcpAgentBinding>,
     pub source: String,
     pub cause: String,
     pub next_action: String,
@@ -31,8 +35,12 @@ fn incident(
         attempt_id: attempt.map(|attempt| attempt.id.clone()),
         story_id: attempt.map(|attempt| attempt.story_id.clone()),
         node_id: attempt.map(|attempt| attempt.node_id.clone()),
-        session_id: agent.map(|agent| agent.session_id.clone()),
+        session_id: agent
+            .filter(|agent| agent.acp.is_none())
+            .map(|agent| agent.session_id.clone()),
         task_id: agent.and_then(|agent| agent.task_id.clone()),
+        launch_id: agent.and_then(|agent| agent.launch_id.clone()),
+        acp: agent.and_then(|agent| agent.acp.clone()),
         source: source.into(),
         cause,
         next_action: next_action.into(),
@@ -80,6 +88,13 @@ fn project_story_incidents(
 pub(super) fn project_incidents(run: &RunSnapshot, state: Option<&AppState>) -> Vec<RunIncident> {
     let mut incidents = Vec::new();
     for attempt in &run.attempts {
+        if let Some(continuation) = &attempt.continuation
+            && continuation.delivery != super::ContinuationDelivery::Delivered
+        {
+            incidents.push(incident(run, Some(attempt), "continuation_not_delivered",
+                format!("Input generation {} delivery is {:?}", continuation.generation, continuation.delivery),
+                "Inspect the retained launch and conversation before delivery; an uncertain handoff must not be replayed."));
+        }
         let report = attempt.report.as_ref();
         let summary = report
             .map(|report| report.summary.trim())
@@ -119,6 +134,19 @@ pub(super) fn project_incidents(run: &RunSnapshot, state: Option<&AppState>) -> 
         let Some((state, agent)) = state.zip(attempt.agent.as_ref()) else {
             continue;
         };
+        if let Some(acp) = &agent.acp {
+            match state.acp.snapshot(acp.connection_id) {
+                Ok(snapshot) if snapshot.generation == acp.generation && snapshot.settlement.is_none() => {
+                    if let Some(attachment) = snapshot.attachments.iter().find(|a| a.session_id.to_string() == acp.conversation_id)
+                        && (!attachment.pending_permission_ids.is_empty() || !attachment.pending_elicitation_ids.is_empty()) {
+                        incidents.push(incident(run, Some(attempt), "acp_interaction", "ACP conversation awaits an answer".into(), "Inspect the bound ACP conversation and pending interaction; idle is not an outcome."));
+                    }
+                }
+                Ok(_) => incidents.push(incident(run, Some(attempt), "acp_channel_settled", "ACP channel settled or changed generation; this alone is not worker stop proof".into(), "Inspect the retained connection and conversation before replacement or close.")),
+                Err(_) => incidents.push(incident(run, Some(attempt), "agent_inventory_unknown", "ACP process inventory is unavailable; worker state is unknown".into(), "Recover the retained launch/conversation references; do not infer a dead child or start a replacement.")),
+            }
+            continue;
+        }
         if let Some(pending) = state.pending_initial_prompts.get(&agent.session_id)
             && pending.notified
         {

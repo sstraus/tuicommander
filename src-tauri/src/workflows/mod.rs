@@ -1,4 +1,6 @@
+mod agent_policy;
 mod api;
+pub use agent_policy::*;
 mod definition;
 mod prompt;
 mod run;
@@ -27,6 +29,7 @@ mod tests {
                 Node {
                     id: "work".into(),
                     kind: NodeKind::Agent {
+                        execution: None,
                         role: AgentRole::Implementer,
                         capabilities: vec!["story_read".into(), "story_report".into()],
                         prompt_template: "Implement {{story.title}}".into(),

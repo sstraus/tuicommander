@@ -17,6 +17,7 @@ fn report(store: &RunStore, run: &RunSnapshot, outcome: AttemptOutcome) {
             &run.id,
             &attempt.id,
             AgentBinding {
+                acp: None,
                 launch_id: None,
                 session_id: "critic-implementer".into(),
                 task_id: None,
@@ -36,6 +37,7 @@ fn report(store: &RunStore, run: &RunSnapshot, outcome: AttemptOutcome) {
             &run.id,
             "critic-report",
             RunCommand::ReportBoundAttempt {
+                caller_acp: None,
                 caller_session: "critic-implementer".into(),
                 report: AttemptReport {
                     contract_version: 1,
@@ -167,6 +169,17 @@ fn answered_input_does_not_complete_the_unfinished_agent() {
             .any(|a| a.node_id == "end"),
         "answered input released End without a completed implementation report"
     );
-    assert_eq!(after.status, RunStatus::Paused);
+    assert_eq!(after.status, RunStatus::Running);
+    let continued = after.attempts.last().unwrap();
+    assert_eq!(continued.generation, 2);
+    assert_eq!(
+        continued.agent.as_ref().unwrap().session_id,
+        "critic-implementer"
+    );
+    assert_eq!(
+        continued.continuation.as_ref().unwrap().delivery,
+        ContinuationDelivery::Pending
+    );
     assert_eq!(store.snapshot(&run.id).unwrap(), after);
+    assert_eq!(store.replay(&run.id).unwrap(), after);
 }

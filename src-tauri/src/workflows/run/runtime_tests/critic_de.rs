@@ -17,6 +17,7 @@ async fn resumed_gate_checks_the_corrected_artifact_instead_of_reusing_old_comma
                 Node {
                     id: "implement".into(),
                     kind: NodeKind::Agent {
+                        execution: None,
                         role: AgentRole::Implementer,
                         capabilities: vec!["story_read".into(), "story_report".into()],
                         prompt_template: "Implement the criteria".into(),

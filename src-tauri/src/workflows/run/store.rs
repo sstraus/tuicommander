@@ -72,9 +72,11 @@ impl From<RunStartError> for String {
 /// records explicit graph-root targets; older binaries must refuse that contract.
 // 4: paused_for events; a build that supports 3 refuses the store instead of failing to decode them.
 // 5: contract-3 graph pins; older builds must refuse rather than reinterpret new runs.
-const RUN_STORE_SCHEMA_VERSION: i64 = 5;
+// 6: explicit worker transport/conversation bindings and report-disposition journal.
+const RUN_STORE_SCHEMA_VERSION: i64 = 6;
 
 mod approval;
+mod report_disposition;
 mod runtime_start;
 pub(crate) use runtime_start::GraphStartRequest;
 
@@ -299,6 +301,10 @@ impl RunStore {
                 run_id TEXT NOT NULL REFERENCES workflow_runs(id), effect_id TEXT NOT NULL,
                 effect_key TEXT NOT NULL, document_json TEXT NOT NULL,
                 PRIMARY KEY(run_id,effect_id), UNIQUE(run_id,effect_key)
+            );
+            CREATE TABLE IF NOT EXISTS workflow_report_dispositions (
+                run_id TEXT NOT NULL REFERENCES workflow_runs(id), decision_key TEXT NOT NULL,
+                document_json TEXT NOT NULL, PRIMARY KEY(run_id,decision_key)
             );",
         )
         .map_err(|e| format!("prepare workflow run schema: {e}"))?;
@@ -593,15 +599,67 @@ impl RunStore {
         report: AttemptReport,
         caller_session: &str,
     ) -> Result<RunReceipt, String> {
+        self.report_agent_from(report, caller_session, None)
+    }
+
+    /// The ACP adapter derives this fence from its immutable MCP channel and
+    /// the matching attached conversation, never from report-supplied fields.
+    pub(crate) fn report_acp_agent(
+        &self,
+        report: AttemptReport,
+        caller_session: &str,
+        caller_acp: AcpAgentBinding,
+    ) -> Result<RunReceipt, String> {
+        self.report_agent_from(report, caller_session, Some(caller_acp))
+    }
+
+    fn report_agent_from(
+        &self,
+        report: AttemptReport,
+        caller_session: &str,
+        caller_acp: Option<AcpAgentBinding>,
+    ) -> Result<RunReceipt, String> {
         let run_id = report.run_id.clone();
         let command_id = format!("agent-report:{}", report.attempt_id);
-        self.command(
+        self.snapshot(&run_id)?;
+        let result = self.command(
             &run_id,
             &command_id,
             RunCommand::ReportBoundAttempt {
                 caller_session: caller_session.into(),
-                report,
+                caller_acp: caller_acp.clone(),
+                report: report.clone(),
             },
+        );
+        report_disposition::persist(
+            &self.connect()?,
+            &report,
+            caller_session,
+            caller_acp.as_ref(),
+            result
+                .as_ref()
+                .map(|receipt| receipt.sequence)
+                .map_err(String::as_str),
+            now_ms(),
+        )?;
+        result
+    }
+
+    pub(crate) fn record_report_refusal(
+        &self,
+        report: &AttemptReport,
+        caller: &str,
+        origin: Option<&AcpAgentBinding>,
+        reason: &str,
+    ) -> Result<(), String> {
+        self.snapshot(&report.run_id)?;
+        report_disposition::persist(
+            &self.connect()?,
+            report,
+            caller,
+            origin,
+            Err(reason),
+            now_ms(),
         )
     }
 
@@ -1289,6 +1347,14 @@ impl RunStore {
             return Err("reserved workflow command id".into());
         }
         let command_hash = command_hash(expected_sequence, &command)?;
+        let report_submission = match &command {
+            RunCommand::ReportBoundAttempt {
+                caller_session,
+                caller_acp,
+                report,
+            } => Some((caller_session.clone(), caller_acp.clone(), report.clone())),
+            _ => None,
+        };
         let conn = self.connect()?;
         if let Some(receipt) = read_command_receipt(&conn, run_id, command_id)? {
             return command_retry(receipt, &command_hash);
@@ -1335,6 +1401,16 @@ impl RunStore {
             require_dispatch_slot(&tx, &snapshot, &story)?;
         }
         let receipt = persist_event(&tx, snapshot, command_id, Some(command_hash), at_ms, kind)?;
+        if let Some((caller, caller_acp, report)) = &report_submission {
+            report_disposition::persist(
+                &tx,
+                report,
+                caller,
+                caller_acp.as_ref(),
+                Ok(receipt.sequence),
+                at_ms,
+            )?;
+        }
         tx.commit()
             .map_err(|e| format!("commit workflow command: {e}"))?;
         if cancelled {
@@ -2164,13 +2240,27 @@ fn choose_event(
                 if definition.project != snapshot.project {
                     return Err("graph definition does not belong to run project".into());
                 }
+                let mut execution = super::graph::GraphExecution::start_for_contract(
+                    execution_id.clone(),
+                    target_id.clone(),
+                    definition.clone(),
+                    snapshot.event_contract_version,
+                )?;
+                if snapshot.event_contract_version >= 3 {
+                    // A dispatched child inherits its root's exact routing policy,
+                    // not whichever policy was edited before this later dispatch.
+                    let policy = snapshot
+                        .graph_executions
+                        .first()
+                        .and_then(|graph| graph.contract.as_ref())
+                        .and_then(|contract| contract.agent_policy.clone());
+                    execution.contract = Some(super::contracts::GraphContract::with_agent_policy(
+                        &definition,
+                        policy,
+                    )?);
+                }
                 super::graph::GraphEvent::Started {
-                    execution: Box::new(super::graph::GraphExecution::start_for_contract(
-                        execution_id.clone(),
-                        target_id.clone(),
-                        definition,
-                        snapshot.event_contract_version,
-                    )?),
+                    execution: Box::new(execution),
                 }
             } else {
                 super::graph::GraphEvent::Transition { transition }
@@ -2308,6 +2398,16 @@ fn choose_event(
         } => {
             validate_key("agent session", &binding.session_id)?;
             validate_key("spawn effect", &binding.effect_id)?;
+            if let Some(acp) = &binding.acp {
+                validate_key("ACP conversation", &acp.conversation_id)?;
+                if !crate::acp::valid_peer_id(&binding.session_id)
+                    || acp.generation == 0
+                    || binding.task_id.is_some()
+                    || binding.launch_id.is_none()
+                {
+                    return Err("ACP binding requires its genuine managed peer/conversation and launch references".into());
+                }
+            }
             if binding.prompt_contract_version != crate::workflows::PROMPT_CONTRACT_VERSION
                 || binding.prompt_sha256.len() != 64
                 || !binding
@@ -2356,6 +2456,7 @@ fn choose_event(
         }
         RunCommand::ReportBoundAttempt {
             caller_session,
+            caller_acp,
             report,
         } => {
             validate_key("agent session", &caller_session)?;
@@ -2404,6 +2505,11 @@ fn choose_event(
                     != Some(caller_session.as_str())
             {
                 return Err("agent does not own the attempt".into());
+            }
+            if attempt.agent.as_ref().and_then(|agent| agent.acp.as_ref()) != caller_acp.as_ref() {
+                return Err(
+                    "report caller transport or ACP conversation generation is superseded".into(),
+                );
             }
             let definition = if report.story_id == snapshot.plan_id {
                 WorkflowStore::open()?
@@ -2470,6 +2576,14 @@ fn choose_event(
                     return Err("invalid review evidence".into());
                 }
             }
+            if attempt.generation == report.generation
+                && attempt
+                    .continuation
+                    .as_ref()
+                    .is_some_and(|c| c.delivery != super::model::ContinuationDelivery::Delivered)
+            {
+                return Err("continued input has no confirmed delivery receipt".into());
+            }
             if expired
                 || attempt.generation != report.generation
                 || attempt.state != AttemptState::Running
@@ -2504,6 +2618,43 @@ fn choose_event(
                     kind,
                     state: EffectState::Intended,
                 },
+            })
+        }
+        RunCommand::ContinuationDeliveryChanged {
+            attempt_id,
+            generation,
+            delivery,
+            reference,
+        } => {
+            let attempt = snapshot
+                .attempts
+                .iter()
+                .find(|a| a.id == attempt_id)
+                .ok_or("attempt missing")?;
+            let continuation = attempt
+                .continuation
+                .as_ref()
+                .ok_or("continuation missing")?;
+            use super::model::ContinuationDelivery::{Delivered, HandoffStarted, Pending};
+            if snapshot.event_contract_version < 3
+                || snapshot.status != RunStatus::Running
+                || attempt.state != AttemptState::Running
+                || attempt.generation != generation
+                || !matches!(
+                    (continuation.delivery, delivery),
+                    (Pending, HandoffStarted) | (HandoffStarted, Delivered)
+                )
+                || reference
+                    .as_ref()
+                    .is_none_or(|r| r.is_empty() || r.len() > 256)
+            {
+                return Err("invalid continuation delivery transition".into());
+            }
+            Ok(RunEventKind::ContinuationDeliveryChanged {
+                attempt_id,
+                generation,
+                delivery,
+                reference,
             })
         }
         RunCommand::AnswerInput { attempt_id, answer } => {
@@ -3051,6 +3202,7 @@ fn choose_story_attempt(
             agent: None,
             report: None,
             input_answer: None,
+            continuation: None,
         }),
     })
 }
@@ -3115,6 +3267,7 @@ fn choose_plan_attempt(snapshot: &RunSnapshot, node_id: String) -> Result<RunEve
             agent: None,
             report: None,
             input_answer: None,
+            continuation: None,
         }),
     })
 }

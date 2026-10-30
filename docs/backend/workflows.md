@@ -149,9 +149,9 @@ still author proposals, but its report is not input for this node. Contract-2
 Create Stories visits retain their recorded coordinator-attempt behavior, and
 story graphs still refuse Create Stories.
 
-This foundation does not add ACP worker launch, global launch-policy imports,
+This foundation alone does not certify ACP worker launch, global routing pins,
 continuation delivery, report disposition, successor handover or safe child
-closure. Those WF04 requirements are not certified by the existing PTY spawn
+closure. The lifecycle additions below require their own evidence, not the PTY spawn
 journal or by proposal-input tests.
 
 
@@ -174,5 +174,103 @@ when its live process inventory is unavailable, without spawning a replacement.
 This baseline is evidence, not a cleanup authorization. Git cannot observe
 unsaved editor buffers or exclude concurrent writers. Existing dirty work is
 not attributed to the worker, and no worktree, file or branch is removed by this
-increment. ACP launch, effective policy pins, continuation, report disposition,
-successor handover and owned close remain unfinished.
+increment. ACP launch, effective policy pins, continuation, successor handover
+and owned close remain unfinished.
+
+### Durable report disposition (WF04 increment)
+
+Bound typed reports retain an accepted or refused decision, the resolved caller,
+attempt and generation, submission SHA-256, decision time, and the event sequence
+or refusal reason. An accepted decision commits in the same SQLite transaction
+as the report event. If the decision cannot be saved, the report event rolls
+back. A response-lost retry returns the original event and decision; a changed
+payload or caller cannot overwrite them. Repeated identical refusals are retained
+once; a later distinct decision is retained separately rather than erasing a
+refusal. The journal does not copy report payloads.
+
+The read-only run action `report_dispositions {run_id}` returns
+`{type: "report_dispositions", value: [...]}` through the existing IPC, HTTP and
+MCP run-action adapters, with the same canonical project scope check. An accepted
+report means that the engine received valid evidence, not that the artifact was
+approved, a successor was accepted, or a worker may be closed. Contract-2 event
+replay remains unchanged. A malformed request or one that cannot resolve a
+managed caller is refused before this bound-report journal.
+
+### Owned process close (WF04 in progress)
+
+The shared run action `close_agent` accepts `run_id`, `attempt_id`, `request_id`,
+`expected_sequence` and an optional `successor_attempt_id`. It records a durable
+refusal or stop intent in the managed launch database. An identical retry reads
+that decision or reconciles the recorded process absence; it does not stop a
+replacement. A conflicting request ID refuses.
+
+Closure requires this run's durable launch binding, a reported attempt, and a
+bound successor for the same target and canonical workspace, or a terminal run.
+Dirty baselines, current dirty work, pending input, drafts, unread mail, live
+background runners, isolated test apps and unknown process inventory refuse
+closure. The process-tree check does not use the activity detector's startup-age
+exemption. A stop never removes a workspace or branch and does not approve an
+artifact. ACP closure requires its recorded direct-child PID, matching host-issued peer
+environment, idle conversation and a quiet process tree; protocol
+settlement alone is not process-stop proof. This path is not yet test-certified.
+
+### Explicit managed ACP routes (WF04 in progress)
+
+A published Agent node can add `execution` with either
+`{transport:"pty", profile:"<saved run config>"}` or
+`{transport:"acp", profile:"<ego profile>", model:"<exact model>", effort:"<exact effort>"}`.
+Omitting `execution` retains the historical PTY profile resolver and unchanged
+serialized contract-2 definitions. ACP profiles and saved PTY run configurations
+are separate namespaces. The machine ACP executable and repository profile
+ceiling still apply; an unavailable exact ACP model/effort refuses delivery.
+The explicit host policy below supplies the runtime and exact route; missing
+policy refuses daemon delivery instead of falling back to mutable defaults.
+
+ACP workers use a host-issued peer UUID and the real connection, generation and
+conversation returned by `AcpClientManager`. They do not get a terminal, PTY
+parent or task ID. Managed receipts have `transport:"acp"`, a null `session_id`,
+and explicit peer/connection/conversation references. Attempt bindings retain
+these under `acp`; their `sessionId` is then a peer address, not a terminal ID.
+The run-store marker advances for these new bindings; serial replay stays serial.
+
+The journal commits before connect, session creation and prompt submission.
+The initial prompt remains durable as `not_delivered` until the workflow binding
+commits. The exact retained payload is then released; a native ACP `PromptSent`
+record for that turn and text proves handoff. A queued/unobserved submission is
+not replayed. The immutable ACP MCP-channel origin fences reports to the bound
+connection generation and conversation; looking up a peer's newest connection
+is not report authority. Channel settlement and missing inventory do not prove
+process stop or attempt success. Incidents carry launch and ACP references.
+Process closure remains separate from artifact approval and worktree cleanup;
+no cleanup is authorized. These additions await the final targeted WF04 gate.
+
+### Explicit host routing policy
+
+`WorkflowAction::ImportAgentPolicy {expected_revision,policy}` imports an operator
+routing declaration with an optimistic revision. `AgentPolicy` reads it. Import
+requires explicit source provenance, role, model, effort, capabilities, isolated
+workspace scope and output-contract version. Each role has exact routes and at
+most one explicit default. This does not parse or certify Markdown policy files.
+
+PTY routes must name a saved configuration with the same explicit model and
+explicit effort arguments. A canonical digest pins the complete launch settings;
+changed settings refuse delivery. ACP routes pin an absolute executable and
+machine profile, and the live ACP options must acknowledge model and effort.
+Fresh roots capture the policy in `GraphContract`; children inherit that pin.
+Identical start retries and replay never load the latest routing policy.
+Contract-2 replay and its retained profile selection stay unchanged.
+
+### Answer continuation
+
+For a bound contract-3 attempt, `answer_input` keeps the existing launch and
+conversation, advances the report generation and records the answer as `pending`.
+The run still requires explicit graph resume. The daemon journals `handoff_started`
+before external delivery and `delivered` after the ACP PromptSent acknowledgement
+or exact peer-inbox handoff. PTY inbox delivery uses the normal payload-free wake;
+it is not proof that the model consumed the answer. No new worker is allocated.
+
+Missing inventory retains pending input. An interrupted handoff without its exact
+retained receipt is uncertain and is not automatically replayed. Incidents expose
+this state with the launch/conversation references. An old-generation report or
+an answer alone cannot finish the node; the continued attempt needs a fresh typed
+report after a confirmed delivery. Contract-2 answer semantics are unchanged.

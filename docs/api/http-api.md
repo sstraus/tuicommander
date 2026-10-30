@@ -3089,6 +3089,20 @@ The host ACP session list gathers all ego pages before ordering ancestry. Each r
 
 `POST /workflows/run/action?path=<project>` accepts `{"action":"incidents","run_id":"<id>"}`. The read-only reply is `{"type":"incidents","value":[...]}`. Entries use camelCase fields: `runId`, nullable `attemptId`, `storyId`, `nodeId`, `sessionId`, `taskId`, plus `source`, `cause` and `nextAction`. Sources are `workflow_report`, `attempt_interrupted`, `prompt_delivery_failed`, `session_exit`, `state_change`, `task_record`, or `run_state`. Only evidence explicitly bound to the run is returned. Project ownership is checked before reading live evidence. The action never mutates the run or executes recovery. The desktop `workflow_run_action` returns the same shape.
 
+### Workflow report decisions
+
+`POST /workflows/run/action?path=<project>` also accepts
+`{"action":"report_dispositions","run_id":"<id>"}`. IPC `workflow_run_action`
+and MCP `workflow action=run` use the same action and canonical project check.
+The read-only reply is `{"type":"report_dispositions","value":[...]}`. Each
+entry has camel-case `submissionSha256`, `runId`, `attemptId`, `generation`,
+`callerSession`, `decision` (`accepted` or `refused`), nullable `sequence` and
+`reason`, and `receivedAtMs`. The digest binds the resolved caller and exact
+typed report. Accepted decisions commit atomically with their report event;
+conflicting payloads retain separate refusals and do not replace the original.
+Identical retries retain one decision per outcome. These records do not approve
+an artifact, hand over a successor or authorize closing a worker.
+
 ### Conversation-specific AI Chat launch
 
 `POST /acp/chat/open` accepts `{ "profile": "coordinator", "workspace": "/absolute/workspace", "executable": "/absolute/ego" }`. All fields are optional for a new conversation; omitted values use global defaults. It returns `{ connection, sessionId, launch, replayed }`, where `launch` contains the resolved executable, profile, workspace and durable `peerId`. Use the existing ACP session prompt and stream routes with the returned ids.
@@ -3790,3 +3804,17 @@ canonical `repository_key`, `workspace_key`, `head`, `status_hex`,
 values are pre-spawn observations, not cleanup authority. Run attempt bindings
 add optional camel-case `launchId`; old events can omit it. Existing managed
 launch reads and run get/events use the same fields across HTTP, IPC and MCP.
+
+### Workflow ACP worker identity (WF04 in progress)
+
+Agent definitions may add `execution:{transport:"acp",profile,model,effort}` or
+`execution:{transport:"pty",profile}`. Omission retains legacy PTY routing.
+Daemon-owned ACP managed-launch receipts expose `transport:"acp"`, null
+`session_id`, `peer_id`, `connection_id`, `generation`, `conversation_id`,
+`turn_id`, and `inventory` (`present` or `unknown`). `prompt_delivery` distinguishes
+`not_delivered`, `delivered`, and `unknown`; it is never attempt completion.
+A binding's optional camel-case `acp` contains `connectionId`, `generation` and
+`conversationId`; `sessionId` then addresses that peer, not a terminal.
+Workflow incidents add optional `launchId` and `acp` with the same durable
+references. ACP report callers are fenced by the native MCP channel, not a
+caller-supplied terminal ID or the peer's latest connection.

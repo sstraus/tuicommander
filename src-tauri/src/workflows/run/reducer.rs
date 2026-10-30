@@ -67,8 +67,13 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                 if snapshot.event_contract_version
                     == super::contracts::CURRENT_EVENT_CONTRACT_VERSION
                 {
-                    initial.contract = Some(super::contracts::GraphContract::serial(
+                    let policy = execution
+                        .contract
+                        .as_ref()
+                        .and_then(|contract| contract.agent_policy.clone());
+                    initial.contract = Some(super::contracts::GraphContract::with_agent_policy(
                         &execution.definition,
+                        policy,
                     )?);
                 }
                 if **execution != initial {
@@ -185,6 +190,7 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
             attempt.outcome = Some(*outcome);
             attempt.report = report.clone();
             if *outcome == AttemptOutcome::NeedsInput {
+                attempt.input_answer = None;
                 snapshot.status = RunStatus::Paused;
             }
         }
@@ -199,6 +205,39 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                 return Err("attempt has no pending input request".into());
             }
             attempt.input_answer = Some(answer.clone());
+            if snapshot.event_contract_version >= 3 && attempt.agent.is_some() {
+                attempt.generation = attempt
+                    .generation
+                    .checked_add(1)
+                    .ok_or("attempt generation exhausted")?;
+                attempt.state = AttemptState::Running;
+                attempt.outcome = None;
+                attempt.report = None;
+                attempt.continuation = Some(super::model::AgentContinuation {
+                    generation: attempt.generation,
+                    answer: answer.clone(),
+                    delivery: super::model::ContinuationDelivery::Pending,
+                    delivery_reference: None,
+                });
+            }
+        }
+        RunEventKind::ContinuationDeliveryChanged {
+            attempt_id,
+            generation,
+            delivery,
+            reference,
+        } => {
+            let continuation = snapshot
+                .attempts
+                .iter_mut()
+                .find(|a| a.id == *attempt_id)
+                .and_then(|a| a.continuation.as_mut())
+                .ok_or("continuation missing")?;
+            if continuation.generation != *generation {
+                return Err("continuation generation changed".into());
+            }
+            continuation.delivery = *delivery;
+            continuation.delivery_reference = reference.clone();
         }
         RunEventKind::AgentBound {
             attempt_id,

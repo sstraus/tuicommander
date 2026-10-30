@@ -1184,11 +1184,32 @@ pub(super) fn handle_workflow_report(
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
 ) -> serde_json::Value {
-    let Some(pty) = resolve_mcp_origin_pty(state, mcp_session_id) else {
-        return serde_json::json!({"error": "workflow report requires a bound live managed session"});
+    let acp_origin = mcp_session_id.and_then(|id| {
+        state
+            .mcp
+            .acp_origins
+            .get(id)
+            .map(|entry| entry.value().clone())
+    });
+    let pty = resolve_mcp_origin_pty(state, mcp_session_id);
+    let caller = pty.clone().or_else(|| {
+        acp_origin
+            .as_ref()
+            .and_then(|origin| origin.peer_id.clone())
+    });
+    let Some(caller) = caller else {
+        return serde_json::json!({"error":"workflow report requires a bound live managed session"});
     };
-    let Some(project) = crate::progress::project_for_session(state, &pty) else {
-        return serde_json::json!({"error": "calling session has no registered project"});
+    let project = if let Some(pty) = &pty {
+        crate::progress::project_for_session(state, pty)
+    } else {
+        state
+            .acp
+            .peer_root(&caller)
+            .map(|path| path.to_string_lossy().into_owned())
+    };
+    let Some(project) = project else {
+        return serde_json::json!({"error":"calling session has no registered project"});
     };
     let report: crate::workflows::AttemptReport =
         match serde_json::from_value(args["input"].clone()) {
@@ -1212,8 +1233,74 @@ pub(super) fn handle_workflow_report(
     if snapshot.project != owner.to_string_lossy() {
         return serde_json::json!({"error": "workflow run does not belong to calling session's project"});
     }
+    let binding = snapshot
+        .attempts
+        .iter()
+        .find(|a| a.id == report.attempt_id)
+        .and_then(|a| a.agent.as_ref());
+    let observed_acp = acp_origin.as_ref().and_then(|origin| {
+        state
+            .acp
+            .snapshot(origin.connection_id)
+            .ok()
+            .and_then(|snapshot| {
+                (snapshot.generation == origin.generation && snapshot.attachments.len() == 1).then(
+                    || crate::workflows::AcpAgentBinding {
+                        connection_id: origin.connection_id,
+                        generation: origin.generation,
+                        conversation_id: snapshot.attachments[0].session_id.to_string(),
+                    },
+                )
+            })
+    });
+    let refuse = |reason: &str| match store.record_report_refusal(
+        &report,
+        &caller,
+        observed_acp.as_ref(),
+        reason,
+    ) {
+        Ok(()) => serde_json::json!({"error":reason}),
+        Err(error) => {
+            serde_json::json!({"error":format!("{reason}; disposition persistence failed: {error}")})
+        }
+    };
+    match (
+        binding.and_then(|binding| binding.acp.as_ref()),
+        acp_origin.as_ref(),
+    ) {
+        (Some(binding), Some(origin))
+            if pty.is_none()
+                && binding.connection_id == origin.connection_id
+                && binding.generation == origin.generation
+                && origin.peer_id.as_deref() == Some(caller.as_str()) =>
+        {
+            let matching = state
+                .acp
+                .snapshot(origin.connection_id)
+                .is_ok_and(|snapshot| {
+                    snapshot.generation == origin.generation
+                        && snapshot.settlement.is_none()
+                        && snapshot.attachments.len() == 1
+                        && snapshot.attachments[0].session_id.to_string() == binding.conversation_id
+                });
+            if !matching {
+                return refuse("ACP workflow caller attachment is unavailable or superseded");
+            }
+        }
+        (None, None) if pty.is_some() => {}
+        _ => {
+            return refuse(
+                "workflow report transport or ACP generation does not match the bound attempt",
+            );
+        }
+    }
     let reported_story_id = report.story_id.clone();
-    match store.report_bound_agent(report, &pty) {
+    let result = if let Some(origin) = observed_acp {
+        store.report_acp_agent(report, &caller, origin)
+    } else {
+        store.report_bound_agent(report, &caller)
+    };
+    match result {
         Ok(receipt) => {
             if receipt.sequence > snapshot.sequence {
                 crate::workflows::emit_run_changed(
@@ -1237,7 +1324,7 @@ pub(super) fn handle_workflow_report(
                         queue_workflow_coordinator_wake(
                             state,
                             &peer,
-                            &pty,
+                            &caller,
                             &receipt.snapshot.id,
                             &reported_story_id,
                             receipt.sequence,
@@ -1434,6 +1521,20 @@ fn launch_workflow_effect(
         return Err("workflow attempt is not running".into());
     }
     if let Some(binding) = &attempt.agent {
+        if let Some(acp) = &binding.acp {
+            let delivery = super::managed_launch_acp::deliver(
+                state,
+                binding
+                    .launch_id
+                    .as_deref()
+                    .ok_or("ACP binding has no launch reference")?,
+            )?;
+            return Ok(serde_json::json!({
+                "runId":run.id,"attemptId":attempt.id,"session_id":null,
+                "peer_id":binding.session_id,"acp":acp,"launch_id":binding.launch_id,
+                "already_bound":true,"delivery":delivery,
+            }));
+        }
         return Ok(serde_json::json!({
             "runId": run.id,
             "attemptId": attempt.id,
@@ -1442,13 +1543,25 @@ fn launch_workflow_effect(
             "already_bound": true,
         }));
     }
-    let package = if attempt.story_id == run.plan_id {
+    let (mut package, mut execution) = if attempt.story_id == run.plan_id {
         let plan = crate::stories::StoryStore::open()?.get_plan(&run.plan_id)?;
         let definition = crate::workflows::WorkflowStore::open()?
             .get_published(&run.definition_id, run.definition_revision)?;
         let stories = crate::stories::StoryStore::open()?.list_stories(&run.plan_id)?;
         let plan_text = read_plan_text_for_prompt(&worktree, &plan.source)?;
-        crate::workflows::render_plan_prompt(
+        let execution = definition
+            .graph
+            .nodes
+            .iter()
+            .find_map(|node| match &node.kind {
+                crate::workflows::NodeKind::Agent { execution, .. }
+                    if node.id == attempt.node_id =>
+                {
+                    execution.clone()
+                }
+                _ => None,
+            });
+        let package = crate::workflows::render_plan_prompt(
             &run,
             &plan,
             attempt,
@@ -1458,19 +1571,47 @@ fn launch_workflow_effect(
             run.sequence,
             &plan_text,
             &input.skills,
-        )?
+        )?;
+        (package, execution)
     } else {
         let story = crate::stories::StoryStore::open()?.get_story(&attempt.story_id)?;
         let definition = crate::workflows::WorkflowStore::open()?
             .get_published(&run.story_definition_id, run.story_definition_revision)?;
-        crate::workflows::render_story_prompt(
+        let execution = definition
+            .graph
+            .nodes
+            .iter()
+            .find_map(|node| match &node.kind {
+                crate::workflows::NodeKind::Agent { execution, .. }
+                    if node.id == attempt.node_id =>
+                {
+                    execution.clone()
+                }
+                _ => None,
+            });
+        let package = crate::workflows::render_story_prompt(
             &run,
             &story,
             attempt,
             &definition,
             &input.skills,
             input.feedback.as_deref(),
-        )?
+        )?;
+        (package, execution)
+    };
+    let pinned_route = if daemon && run.event_contract_version >= 3 {
+        let (policy, pinned) = crate::workflows::pinned_agent_route(&run, attempt)?;
+        pinned.validate_live_settings()?;
+        execution = Some(pinned.route.execution.clone());
+        package.audit_preview.push_str(&format!(
+            "\nHost routing policy: {} revision {}; route: {}",
+            policy.sha256,
+            policy.revision,
+            serde_json::to_string(&pinned.route).map_err(|e| e.to_string())?
+        ));
+        Some(pinned.clone())
+    } else {
+        None
     };
     let effect_key = format!("spawn:{}", attempt.id);
     let intended = run.effects.iter().find(|effect| effect.key == effect_key);
@@ -1539,20 +1680,35 @@ fn launch_workflow_effect(
         }
         return Err("workflow stopped before agent spawn".into());
     }
-    let spawned = super::managed_launch::launch(
-        state,
-        addr,
-        mcp_session_id,
-        super::managed_launch::Launch {
-            profile: &input.agent_type,
-            name: &format!("Workflow {:?}", package.role),
-            prompt: &package.prompt,
-            workspace: &worktree,
-            owner_scope: &format!("workflow:{}", run.id),
-            idempotency_key: &attempt.id,
-            keep_open: true,
+    let launch_input = super::managed_launch::Launch {
+        profile: match &execution {
+            Some(crate::workflows::AgentExecution::Pty { profile }) => profile,
+            _ => &input.agent_type,
         },
-    );
+        name: &format!("Workflow {:?}", package.role),
+        prompt: &package.prompt,
+        workspace: &worktree,
+        owner_scope: &format!("workflow:{}", run.id),
+        idempotency_key: &attempt.id,
+        keep_open: true,
+    };
+    let spawned = match &execution {
+        Some(crate::workflows::AgentExecution::Acp {
+            profile,
+            model,
+            effort,
+        }) => {
+            if !daemon {
+                return Err("ACP workflow launch requires daemon authority".into());
+            }
+            let runtime = pinned_route
+                .as_ref()
+                .and_then(|p| p.route.acp_runtime.as_ref())
+                .ok_or("ACP launch has no pinned host runtime")?;
+            super::managed_launch_acp::launch(state, launch_input, profile, model, effort, runtime)
+        }
+        _ => super::managed_launch::launch(state, addr, mcp_session_id, launch_input),
+    };
     if let Some(error) = spawned.get("error").and_then(serde_json::Value::as_str) {
         if let Ok(failed) = store.command(
             &run.id,
@@ -1566,13 +1722,25 @@ fn launch_workflow_effect(
         }
         return Err(error.to_owned());
     }
-    let Some(session_id) = spawned["session_id"].as_str() else {
+    let acp: Option<crate::workflows::AcpAgentBinding> = spawned
+        .get("acp")
+        .map(|value| {
+            serde_json::from_value(value.clone())
+                .map_err(|e| format!("invalid managed ACP reference: {e}"))
+        })
+        .transpose()?;
+    let Some(session_id) = (if acp.is_some() {
+        spawned["peer_id"].as_str()
+    } else {
+        spawned["session_id"].as_str()
+    }) else {
         let _ = store.reconcile(&run.id);
         return Err(
             "managed spawn returned no session id; workflow paused for reconciliation".into(),
         );
     };
     let binding = crate::workflows::AgentBinding {
+        acp: acp.clone(),
         launch_id: spawned["launch_id"].as_str().map(str::to_owned),
         session_id: session_id.into(),
         task_id: spawned["task_id"].as_str().map(str::to_owned),
@@ -1587,11 +1755,16 @@ fn launch_workflow_effect(
             // Cancellation can still win while the managed process starts.
             // Stop the unbound child; its intent remains uncertain in the run
             // snapshot so an operator can see what happened.
-            let killed = handle_session(
-                state,
-                &serde_json::json!({"action": "kill", "session_id": session_id}),
-                mcp_session_id,
-            );
+            let killed = if let Some(acp) = &acp {
+                let runtime = tokio::runtime::Handle::try_current().map_err(|e| e.to_string())?;
+                serde_json::json!({"acp_disconnect":runtime.block_on(state.acp.disconnect(acp.connection_id)).map_err(|e| e.message)})
+            } else {
+                handle_session(
+                    state,
+                    &serde_json::json!({"action":"kill","session_id":session_id}),
+                    mcp_session_id,
+                )
+            };
             let _ = store.reconcile(&run.id);
             return Err(format!(
                 "managed agent started but attempt binding failed: {error}; child termination: {killed}"
@@ -1599,7 +1772,14 @@ fn launch_workflow_effect(
         }
     };
     crate::workflows::emit_run_changed(state, &run.project, &run.id, bound.sequence);
-    if !state.session_maps.sessions.contains_key(session_id) {
+    if acp.is_some() {
+        super::managed_launch_acp::deliver(
+            state,
+            spawned["launch_id"]
+                .as_str()
+                .ok_or("ACP binding has no managed launch reference")?,
+        )?;
+    } else if !state.session_maps.sessions.contains_key(session_id) {
         for changed in store.interrupt_agent_session(session_id)? {
             crate::workflows::emit_run_changed(
                 state,
@@ -1612,7 +1792,10 @@ fn launch_workflow_effect(
     Ok(serde_json::json!({
         "runId": run.id,
         "attemptId": attempt.id,
-        "session_id": session_id,
+        "session_id": if acp.is_some() { None } else { Some(session_id) },
+        "peer_id": if acp.is_some() { Some(session_id) } else { None },
+        "acp": acp,
+        "launch_id": spawned["launch_id"],
         "task_id": spawned["task_id"],
         "sequence": bound.sequence,
     }))
@@ -2611,6 +2794,54 @@ pub(crate) fn launch_daemon_workflow_agent(
         &run.project,
         true,
     )
+}
+
+/// Retry only a persisted, definitely-not-delivered ACP prompt. A submitted
+/// but uncertain prompt is never replayed, and an absent process is not replaced.
+pub(crate) fn resume_daemon_workflow_delivery(
+    state: &Arc<AppState>,
+    run_id: &str,
+    attempt_id: &str,
+) -> Result<bool, String> {
+    state.workflow_runtime.require_owner()?;
+    let run = crate::workflows::RunStore::open()?.snapshot(run_id)?;
+    if run.status != crate::workflows::RunStatus::Running {
+        return Ok(false);
+    }
+    let attempt = run
+        .attempts
+        .iter()
+        .find(|attempt| attempt.id == attempt_id)
+        .ok_or("workflow attempt missing")?;
+    if attempt.state != crate::workflows::AttemptState::Running {
+        return Ok(false);
+    }
+    let binding = attempt.agent.as_ref().ok_or("workflow binding missing")?;
+    let Some(acp) = &binding.acp else {
+        return Ok(false);
+    };
+    let launch_id = binding
+        .launch_id
+        .as_deref()
+        .ok_or("ACP launch reference missing")?;
+    let runtime = tokio::runtime::Handle::try_current().map_err(|e| e.to_string())?;
+    let receipt = runtime.block_on(super::launch_transaction::execute_owned(
+        state,
+        ([127, 0, 0, 1], 0).into(),
+        &serde_json::json!({"launch_id":launch_id}),
+    ));
+    if receipt["peer_id"] != binding.session_id
+        || receipt["connection_id"] != serde_json::json!(acp.connection_id)
+        || receipt["generation"] != acp.generation
+        || receipt["conversation_id"] != acp.conversation_id
+    {
+        return Err("ACP launch receipt does not match its bound conversation".into());
+    }
+    match receipt["prompt_delivery"].as_str() {
+        Some("delivered") => Ok(false),
+        Some("not_delivered") => { super::managed_launch_acp::deliver(state, launch_id)?; Ok(true) }
+        _ => Err("ACP prompt outcome unknown; inspect the retained launch and conversation before replacement".into()),
+    }
 }
 
 pub(crate) struct DaemonWorkspace {

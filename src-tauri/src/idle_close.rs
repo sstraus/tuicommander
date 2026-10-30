@@ -67,7 +67,7 @@ pub(crate) fn wake_marker_path(session_id: &str) -> std::path::PathBuf {
         .join(format!("{session_id}.json"))
 }
 
-fn bg_wake_blocks_close(session_id: &str) -> bool {
+pub(crate) fn bg_wake_blocks_close(session_id: &str) -> bool {
     let path = wake_marker_path(session_id);
     let content = match std::fs::read_to_string(&path) {
         Ok(content) => content,

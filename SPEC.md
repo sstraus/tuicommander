@@ -1545,5 +1545,8 @@ handover/closure are not part of this foundation.
 
 WF04 attribution increment: new daemon workflow launches retain the original
 workspace baseline and managed launch reference before spawning. Retries do not
-replace the baseline with child edits. ACP/policy/continuation/report/successor/
-owned-close lifecycle remains incomplete; attribution alone permits no cleanup.
+replace the baseline with child edits. Bound typed reports also retain durable
+accepted/refused decisions, with accepted decisions atomic with their report
+event and read-only inspection through the shared run action. This is receipt
+disposition, not artifact approval. ACP/policy/continuation/successor/owned-close
+lifecycle remains incomplete; attribution and report receipt permit no cleanup.
