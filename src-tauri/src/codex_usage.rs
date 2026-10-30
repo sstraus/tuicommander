@@ -426,16 +426,16 @@ pub async fn get_codex_usage_stats() -> Result<CodexStatsResponse, String> {
 mod tests {
     use super::*;
 
-    /// Catches: passing root --profile after app-server, which the real CLI rejects.
+    /// Catches: forwarding --profile to app-server instead of loading its TOML layer.
     #[cfg(unix)]
     #[tokio::test]
-    async fn codex_profile_quota_uses_root_arguments_at_process_boundary() {
-        // Syntax mirrors the installed CLI help captured by critic-2150r1.
+    async fn codex_profile_quota_applies_profile_layer_at_process_boundary() {
+        // Codex 0.166 live config/read evidence: explicit -c model selects the layer.
         let script = crate::test_support::fake_ssh_script(
-            "2150-codex-root-profile",
+            "2541-codex-profile-layer",
             r#"
 case "$*" in
-  'app-server'|'--profile work app-server') ;;
+  'app-server'|'app-server -c "model"="profile-marker"') ;;
   *) exit 2 ;;
 esac
 while IFS= read -r request; do
@@ -451,6 +451,11 @@ done
         let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let binary = dir.path().join("codex");
         std::fs::copy(script, &binary).unwrap();
+        std::fs::write(
+            dir.path().join("work.config.toml"),
+            "model = \"profile-marker\"\n",
+        )
+        .unwrap();
         for profile in [Some("work"), None] {
             let quota = session_quota_from_binary(
                 &binary,
