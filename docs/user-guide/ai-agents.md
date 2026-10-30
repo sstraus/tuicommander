@@ -314,11 +314,13 @@ goose session "fix the bug"                               # wrapper adds --name 
 goose session --name $TUIC_SESSION "fix the bug"          # explicit, wrapper bypassed
 ```
 
-**Gemini CLI session binding (manual):**
+**Gemini CLI session binding:**
 
-```bash
-gemini --resume $TUIC_SESSION
-```
+TUICommander discovers Gemini's native session ID from its project-scoped
+transcript metadata; `TUIC_SESSION` is not the Gemini session ID. Current JSONL
+and legacy JSON transcripts are supported. Restore verifies the same project
+before using `gemini --resume <discovered-id>`. Discovery remains heuristic when
+multiple Gemini tabs use the same project.
 
 **Custom scripts that persist state per-tab:**
 

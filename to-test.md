@@ -1,3 +1,7 @@
+## Gemini JSONL discovery (2543-4bbf) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, start Gemini 0.64 in a throwaway project. Confirm the native session ID is discovered and resumes after restore; a session from another project must not be selected. Recorded owner-transcript regression covers JSONL metadata; no owner login, settings or running app was changed. Rust does not hot-reload; restart only when losing current sessions is acceptable.
+
 ## Workflow ACP fork repair (2511-37f0 M1) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, run a fork with ACP reviewers and a critic FIX. Confirm old reviewers stop before one repair activation starts, without creating terminals. The recorded ACP regression covers process absence; the daily app was not restarted. Rust does not hot-reload; restart only when losing current sessions is acceptable.

@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Discover and verify Gemini CLI JSONL sessions for the matching project, with legacy JSON resume support (#2543-4bbf).
 - Stop superseded ACP workflow reviewers through their managed connection and require OS process absence before repair (#2511-37f0).
 - Retire older unmatched terminal Chat prompt bubbles when a later send reaches the transcript, so local slash commands cannot block subsequent receipts (#2540-b929).
 
