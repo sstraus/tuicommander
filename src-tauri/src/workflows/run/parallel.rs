@@ -72,6 +72,19 @@ pub struct ScopedCheck {
     pub receipt: super::check::CheckReceipt,
 }
 
+impl ForkInstance {
+    fn outcome(&self) -> ArrivalOutcome {
+        self.empty.unwrap_or_else(|| {
+            self.branches
+                .iter()
+                .filter(|b| b.required)
+                .filter_map(|b| b.arrival)
+                .find(|a| *a != ArrivalOutcome::Completed)
+                .unwrap_or(ArrivalOutcome::Completed)
+        })
+    }
+}
+
 pub(super) fn check_owner(run_id: &str, graph_id: &str, token: &BranchToken) -> String {
     format!("{run_id}:{graph_id}:{}:{}", token.fork_id, token.generation)
 }
@@ -454,18 +467,8 @@ impl GraphExecution {
                                         })
                                     })
                             })
-                            .map(|a| {
-                                let arrival = a.tokens.last().and_then(|t| {
-                                    self.forks
-                                        .iter()
-                                        .find(|f| f.id == t.fork_id)
-                                        .and_then(|f| {
-                                            f.branches.iter().find(|b| b.id == t.branch_id)
-                                        })
-                                        .and_then(|b| b.arrival)
-                                });
-                                arrival.unwrap_or(ArrivalOutcome::Completed).label() == outcome
-                            }),
+                            .and_then(|a| self.receipt_outcome(a))
+                            .map(|actual| actual.label() == outcome),
                     };
                     let label = match value {
                         Some(true) => "yes",
@@ -489,14 +492,7 @@ impl GraphExecution {
                                 && format!("join:{}", f.id) == activation.id
                         })
                         .ok_or("all-Join obligations are unresolved")?;
-                    let outcome = fork.empty.unwrap_or_else(|| {
-                        fork.branches
-                            .iter()
-                            .filter(|b| b.required)
-                            .filter_map(|b| b.arrival)
-                            .find(|a| *a != ArrivalOutcome::Completed)
-                            .unwrap_or(ArrivalOutcome::Completed)
-                    });
+                    let outcome = fork.outcome();
                     return self
                         .follow_parallel_edge(index, &activation, outcome.label(), outcome)
                         .map(|_| 0);
@@ -566,6 +562,49 @@ impl GraphExecution {
             successor.tokens = activation.tokens.clone();
         }
         Ok(result)
+    }
+
+    fn receipt_outcome(&self, activation: &Activation) -> Option<ArrivalOutcome> {
+        if self
+            .definition
+            .graph
+            .nodes
+            .iter()
+            .any(|n| n.id == activation.node_id && matches!(n.kind, NodeKind::AllJoin { .. }))
+        {
+            return self
+                .forks
+                .iter()
+                .find(|f| {
+                    f.join == activation.node_id
+                        && f.state == ForkState::Joined
+                        && format!("join:{}", f.id) == activation.id
+                })
+                .map(ForkInstance::outcome);
+        }
+        if let Some(decision) = self
+            .decisions
+            .iter()
+            .find(|d| d.activation_id == activation.id)
+        {
+            return match self.definition.graph.edges[decision.edge_index]
+                .outcome
+                .as_deref()
+            {
+                Some("yes" | "pass" | "completed") => Some(ArrivalOutcome::Completed),
+                Some("no" | "fail" | "blocked") => Some(ArrivalOutcome::Failed),
+                _ => None,
+            };
+        }
+        // A terminal branch arrival is durable evidence; mere activation completion
+        // without a typed decision or arrival is not a fabricated successful receipt.
+        activation.tokens.last().and_then(|t| {
+            self.forks
+                .iter()
+                .find(|f| f.id == t.fork_id && f.generation == t.generation)
+                .and_then(|f| f.branches.iter().find(|b| b.id == t.branch_id))
+                .and_then(|b| b.arrival)
+        })
     }
 
     fn follow_parallel_edge(

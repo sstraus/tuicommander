@@ -164,13 +164,23 @@ exceed it. Splitter compositions use the ordinary bounded Fork contract.
 `if_else` accepts a typed `predicate`: `input {name,value}` declares a pinned
 boolean or unknown value; `receipt {node_id,outcome}` reads a declared node's
 typed terminal outcome. Its edges are `yes`, `no` and `uncertain`. There is no
-expression interpreter, and absent evidence never implies approval.
+expression interpreter, and absent evidence never implies approval. An all-Join
+receipt reads its matching durable fork outcome, including the empty rule;
+failed, cancelled and skipped joins never become completed merely because the
+join activation has no enclosing branch token. Other sources require a typed
+decision or terminal branch arrival; completion alone is unknown evidence.
 
 The daemon scans independent runnable activations, rather than stopping at the
 first running sibling. Agent attempts and asynchronous deterministic checks
 share the configured per-run capacity. Resource waits and check claims are
 committed graph transitions. Checks are bound to their branch activation and
 fork generation; historical receipts cannot satisfy a replacement generation.
+A branch Gate selects its own receipts. A Gate or approval Judge after all-Join
+selects the current region's receipts, not its new activation ID. An empty
+successful For each uses the ordinary post-region check receipts. Gate readiness
+and missing-check selection use the same receipt set. Unrelated sibling cursor
+or preflight contention releases the asynchronous claim and wakes the existing
+actor to re-evaluate; it does not pause the run as a policy failure.
 A superseded activity retains its admission slot and check claim until stop is
 observed. Check claims include the owning daemon nonce: after a hard crash, an
 empty registry in another daemon is unknown, not proof of process termination.
@@ -178,7 +188,8 @@ Run cancellation fences and stops every descendant check scope. Fork
 cancellation fences only the old generation, leaving the replacement usable.
 
 A current independent critic FIX supersedes the owning repair region before
-repair begins. The same event fences its unfinished attempts and terminates
+repair begins. FIX validation reads the exact submitting Reviewer activation and
+attempt; a later advisor's missing or approving report cannot mask it. The same event fences its unfinished attempts and terminates
 nested obligations. The daemon cancels its scoped checks, stops bound agents
 and requires their exit observations before recording `fork_stopped`. An
 unknown spawn or missing stop observation blocks repair rather than freeing the

@@ -193,6 +193,11 @@ fn require_supported_nodes(definition: &crate::workflows::PublishedWorkflow) -> 
     crate::workflows::definition::validate_runtime_nodes(&definition.graph, definition.kind)
 }
 
+/// Cursor and preflight movement asks the actor to re-evaluate current state.
+fn is_contention(error: &str) -> bool {
+    error.contains("sequence") || error.contains("preflight; retry")
+}
+
 async fn run_actor(
     state: Weak<AppState>,
     owner: Weak<RuntimeOwner>,
@@ -215,7 +220,7 @@ async fn run_actor(
             Ok(Ok(snapshot)) => snapshot,
             Ok(Err(error)) => {
                 tracing::warn!(source = "workflows", %run_id, %error, "Workflow scheduling turn failed");
-                if error.contains("sequence") || error.contains("preflight; retry") {
+                if is_contention(&error) {
                     tokio::task::yield_now().await;
                     continue;
                 }
@@ -306,6 +311,10 @@ async fn run_actor(
                     continue;
                 }
                 Ok(false) => {}
+                Err(error) if is_contention(&error) => {
+                    tokio::task::yield_now().await;
+                    continue;
+                }
                 Err(error) => {
                     tracing::warn!(source = "workflows", %run_id, %error, "Workflow effect paused");
                     pause_failure(&state, &current.store, &run_id, &error);

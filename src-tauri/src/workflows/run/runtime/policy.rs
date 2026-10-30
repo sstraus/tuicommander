@@ -39,32 +39,13 @@ pub(in crate::workflows::run) fn gate_for_activation(
     if graph.definition.required_checks.is_empty() {
         return Err("Gate requires deterministic checks".into());
     }
-    let current_fork = graph.forks.iter().rev().find(|f| {
-        f.parent.is_empty()
-            && (f.state == super::super::parallel::ForkState::Open
-                || f.state == super::super::parallel::ForkState::Joined)
-    });
+    let available = current_check_receipts(run, graph, activation);
     let receipts: Option<Vec<_>> = graph
         .definition
         .required_checks
         .iter()
         .map(|check| {
-            let receipts: Vec<_> = if let Some(fork) = current_fork {
-                graph
-                    .checks
-                    .iter()
-                    .filter(|c| {
-                        activation.map_or_else(
-                            || c.token.fork_id == fork.id && c.token.generation == fork.generation,
-                            |a| c.activation_id == a.id,
-                        )
-                    })
-                    .map(|c| &c.receipt)
-                    .collect()
-            } else {
-                execution.check_receipts.iter().collect()
-            };
-            receipts.into_iter().rev().find(|r| {
+            available.iter().copied().rev().find(|r| {
                 r.check_id == check.id
                     && r.argv == check.argv
                     && r.commit == commit
@@ -103,6 +84,49 @@ pub(in crate::workflows::run) fn gate_for_activation(
     )))
 }
 
+/// Branch consumers use their own receipts; consumers after a region use its
+/// current generation. An empty region has no branch checks to bind.
+fn current_check_receipts<'a>(
+    run: &'a RunSnapshot,
+    graph: &'a GraphExecution,
+    activation: Option<&Activation>,
+) -> Vec<&'a super::super::check::CheckReceipt> {
+    if let Some(activation) = activation.filter(|a| !a.tokens.is_empty()) {
+        return graph
+            .checks
+            .iter()
+            .filter(|c| c.activation_id == activation.id)
+            .map(|c| &c.receipt)
+            .collect();
+    }
+    if let Some(fork) = graph
+        .forks
+        .iter()
+        .rev()
+        .find(|f| {
+            f.parent.is_empty()
+                && matches!(
+                    f.state,
+                    super::super::parallel::ForkState::Open
+                        | super::super::parallel::ForkState::Joined
+                )
+        })
+        .filter(|f| !f.branches.is_empty())
+    {
+        return graph
+            .checks
+            .iter()
+            .filter(|c| c.token.fork_id == fork.id && c.token.generation == fork.generation)
+            .map(|c| &c.receipt)
+            .collect();
+    }
+    run.stories
+        .iter()
+        .find(|s| s.story_id == graph.target_id)
+        .map(|s| s.check_receipts.iter().collect())
+        .unwrap_or_default()
+}
+
 pub(in crate::workflows::run) fn drive_policy(
     store: &RunStore,
     run: &RunSnapshot,
@@ -129,17 +153,7 @@ pub(in crate::workflows::run) fn drive_policy(
             .as_deref()
             .ok_or("Gate worktree missing")?;
         let (commit, tree) = super::super::check::clean_artifact(Path::new(path))?;
-        let scoped: Vec<_> = graph
-            .checks
-            .iter()
-            .filter(|c| c.activation_id == activation.id)
-            .map(|c| &c.receipt)
-            .collect();
-        let receipts: Vec<_> = if activation.tokens.is_empty() {
-            execution.check_receipts.iter().collect()
-        } else {
-            scoped
-        };
+        let receipts = current_check_receipts(run, graph, Some(activation));
         let check = graph
             .definition
             .required_checks

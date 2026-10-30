@@ -502,6 +502,9 @@ pub(in crate::workflows::run) async fn drive_effect(
                                 }
                                 match result {
                                     Ok(Ok(_)) => {}
+                                    // Release the claim and wake the actor to re-evaluate
+                                    // ordinary sibling/preflight contention, just as a sync turn does.
+                                    Ok(Err(error)) if super::is_contention(&error) => {}
                                     Ok(Err(error)) if current_generation => {
                                         super::pause_failure(&state, &store, &run.id, &error)
                                     }

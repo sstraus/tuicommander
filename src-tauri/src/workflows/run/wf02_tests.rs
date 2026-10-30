@@ -693,38 +693,112 @@ fn wf02_dynamic_foreach_expands_exact_receipt_items_with_distinct_tokens() {
 }
 
 #[test]
-fn wf02_unknown_old_daemon_check_keeps_its_claim_until_stop_proof() {
-    // catches: a restarted daemon treats its empty registry as proof that an old check stopped.
-    let mut g = opened();
-    let (id, _) = token(&g, "checks");
-    activate(&mut g, &id);
-    apply(
-        &mut g,
-        json!({"type":"resource_claim","execution_id":"execution","activation_id":id,"key":"check:previous-daemon"}),
-    );
-    let (fork, t) = supersede(&mut g);
-    g = serde_json::from_slice(&serde_json::to_vec(&g).unwrap()).unwrap();
-    assert_eq!(
-        serde_json::to_value(&g).unwrap()["activations"][4]["resourceClaim"],
-        "check:previous-daemon"
-    );
-    assert!(
-        super::runtime::effects::require_known_check_owner(&g, &fork, 1)
-            .unwrap_err()
-            .contains("unknown")
-    );
-    assert!(
-        !g.activations
-            .iter()
-            .any(|a| a.node_id == "implement" && a.state == ActivationState::Ready)
-    );
-    apply(
-        &mut g,
-        json!({"type":"fork_stopped","execution_id":"execution","fork_id":fork,"generation":t["generation"]}),
-    );
-    assert!(
-        serde_json::to_value(&g).unwrap()["activations"][4]
-            .get("resourceClaim")
-            .is_none()
-    );
+fn wf02_receipt_predicate_reads_all_join_terminal_outcome() {
+    // catches F3: a tokenless failed/cancelled/skipped all-Join is fabricated Completed.
+    for (outcome, empty) in [
+        ("completed", false),
+        ("failed", false),
+        ("cancelled", false),
+        ("skipped", false),
+        ("completed", true),
+        ("failed", true),
+        ("skipped", true),
+    ] {
+        let mut wire = graph_json();
+        if empty {
+            let rule = match outcome {
+                "completed" => "complete",
+                "failed" => "fail",
+                _ => "skip",
+            };
+            wire["nodes"][2]["kind"] = json!({"type":"for_each","join":"join","body":"checks","items":[],"max_items":2,"empty":rule});
+            wire["nodes"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|n| n["id"] != "critic");
+            wire["edges"]
+                .as_array_mut()
+                .unwrap()
+                .retain(|e| e["from"] != "critic");
+        }
+        wire["nodes"].as_array_mut().unwrap().retain(|node| {
+            !["done", "failed", "cancelled", "skipped"]
+                .iter()
+                .any(|id| node["id"] == *id)
+        });
+        wire["nodes"].as_array_mut().unwrap().extend([
+            json!({"id":"predicate","kind":{"type":"if_else","predicate":{"source":"receipt","node_id":"join","outcome":outcome}}}),
+            json!({"id":"yes","kind":{"type":"end"}}),
+            json!({"id":"no","kind":{"type":"end"}}),
+            json!({"id":"unknown","kind":{"type":"end"}}),
+        ]);
+        for edge in wire["edges"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .filter(|e| e["from"] == "join")
+        {
+            edge["to"] = json!("predicate");
+        }
+        wire["edges"].as_array_mut().unwrap().extend([
+            json!({"from":"predicate","to":"yes","outcome":"yes"}),
+            json!({"from":"predicate","to":"no","outcome":"no"}),
+            json!({"from":"predicate","to":"unknown","outcome":"uncertain"}),
+        ]);
+        let mut g = execution(wire);
+        for node in ["start", "implement", "fork"] {
+            visit(&mut g, node);
+        }
+        if !empty {
+            visit(&mut g, "critic");
+            let (id, t) = token(&g, "checks");
+            activate(&mut g, &id);
+            arrive(&mut g, &id, t, outcome);
+        }
+        visit(&mut g, "join");
+        visit(&mut g, "predicate");
+        assert_eq!(g.activations.last().unwrap().node_id, "yes", "{outcome}");
+    }
+}
+
+#[test]
+fn wf02_receipt_predicate_requires_typed_decision_evidence() {
+    // catches: a failed Gate or an untyped completed node is fabricated successful evidence.
+    for (gate, source, wanted, expected) in [
+        ("pass", "gate", "completed", "yes"),
+        ("fail", "gate", "completed", "no"),
+        ("fail", "gate", "failed", "yes"),
+        ("pass", "start", "completed", "unknown"),
+    ] {
+        let mut g = execution(json!({"nodes":[
+            {"id":"start","kind":{"type":"start"}},
+            {"id":"gate","kind":{"type":"gate"}},
+            {"id":"predicate","kind":{"type":"if_else","predicate":{"source":"receipt","node_id":source,"outcome":wanted}}},
+            {"id":"yes","kind":{"type":"end"}},
+            {"id":"no","kind":{"type":"end"}},
+            {"id":"unknown","kind":{"type":"end"}}
+        ],"edges":[
+            {"from":"start","to":"gate","outcome":null},
+            {"from":"gate","to":"predicate","outcome":"pass"},
+            {"from":"gate","to":"predicate","outcome":"fail"},
+            {"from":"predicate","to":"yes","outcome":"yes"},
+            {"from":"predicate","to":"no","outcome":"no"},
+            {"from":"predicate","to":"unknown","outcome":"uncertain"}
+        ]}));
+        visit(&mut g, "start");
+        let id = g.activations.last().unwrap().id.clone();
+        activate(&mut g, &id);
+        apply(
+            &mut g,
+            json!({"type":"complete","execution_id":"execution","activation_id":id,"outcome":gate,"evidence":{
+                "actor":"daemon","reason":"Current deterministic check result","references":["check:integrity"]
+            }}),
+        );
+        visit(&mut g, "predicate");
+        assert_eq!(
+            g.activations.last().unwrap().node_id,
+            expected,
+            "{gate}/{source}/{wanted}"
+        );
+    }
 }

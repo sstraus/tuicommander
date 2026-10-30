@@ -53,24 +53,39 @@ pub(in crate::workflows::run) fn judge(
     let implementer = current
         .find(|(role, _)| *role == AgentRole::Implementer)
         .map(|(_, a)| a);
-    let reviewer = graph.activations.iter().skip(epoch).rev().find_map(|a| {
-        let node = graph
-            .definition
-            .graph
-            .nodes
-            .iter()
-            .find(|n| n.id == a.node_id)?;
-        if !matches!(
-            node.kind,
-            NodeKind::Agent {
-                role: AgentRole::Reviewer,
-                ..
+    // FIX is submitted by this bound Reviewer, not by the last sibling in the graph.
+    // A standalone Judge still resolves the current epoch's final review.
+    let reviewer = if graph.definition.graph.nodes.iter().any(|n| {
+        n.id == activation.node_id
+            && matches!(
+                n.kind,
+                NodeKind::Agent {
+                    role: AgentRole::Reviewer,
+                    ..
+                }
+            )
+    }) {
+        super::effects::activation_attempt(run, graph, activation)
+    } else {
+        graph.activations.iter().skip(epoch).rev().find_map(|a| {
+            let node = graph
+                .definition
+                .graph
+                .nodes
+                .iter()
+                .find(|n| n.id == a.node_id)?;
+            if !matches!(
+                node.kind,
+                NodeKind::Agent {
+                    role: AgentRole::Reviewer,
+                    ..
+                }
+            ) {
+                return None;
             }
-        ) {
-            return None;
-        }
-        super::effects::activation_attempt(run, graph, a)
-    });
+            super::effects::activation_attempt(run, graph, a)
+        })
+    };
     let Some(reviewer) = reviewer else {
         return Ok(uncertain("No current reviewer report"));
     };

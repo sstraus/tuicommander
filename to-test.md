@@ -1,5 +1,7 @@
 ## Workflow Fork/all-Join (2509-0e2f) — Rust rebuild/restart required
 
+- [ ] After a manual Rust rebuild/restart, verify a post-all-Join Gate or approval Judge uses current fork checks, a primary critic FIX wins over an approving advisor, and concurrent check admission does not pause on sibling progress. Automated rb regressions cover these paths; this item checks the restarted daemon integration.
+
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a story graph with critic/check Fork branches and inspect the ordered branch arrivals, non-success all-Join edges and generation replacement after critic FIX. This assignment does not restart the daily daemon. Dedicated Designer controls belong to WF11; use the existing definition API for these graph records.
 ## Durable workflow timers (2529-844b) — Rust rebuild/restart required
 
