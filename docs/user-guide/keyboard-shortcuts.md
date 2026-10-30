@@ -113,14 +113,16 @@ Hold `Cmd` alone (`Ctrl` on Windows/Linux) for 450 ms to show shortcut badges on
 
 | Shortcut | Action |
 |----------|--------|
-| `Cmd+=` (or `Cmd++`) | Zoom in (active terminal CLI/Chat view or code editor) |
-| `Cmd+-` | Zoom out (active terminal CLI/Chat view or code editor) |
-| `Cmd+0` | Reset zoom to default (active terminal CLI/Chat view or code editor) |
-| `Cmd+Shift+=` (or `Cmd+Shift++`) | Zoom in all terminals |
-| `Cmd+Shift+-` | Zoom out all terminals |
-| `Cmd+Shift+0` | Reset zoom all terminals |
+| `Cmd+=` (or `Cmd++`) | Zoom in (active terminal CLI/Chat view, Markdown tab, or code editor) |
+| `Cmd+-` | Zoom out (active terminal CLI/Chat view, Markdown tab, or code editor) |
+| `Cmd+0` | Reset zoom to default (active terminal CLI/Chat view, Markdown tab, or code editor) |
+| `Cmd+Shift+=` (or `Cmd+Shift++`) | Zoom in all tabs |
+| `Cmd+Shift+-` | Zoom out all tabs |
+| `Cmd+Shift+0` | Reset zoom all tabs |
 
-Font size range: 8px to 32px, step 2px per action. A session shares one zoom level between its CLI and Chat views. The all-terminals shortcuts also update Chat views.
+The collective shortcuts affect all open terminal, Markdown, and code editor tabs, including inactive tabs. Each tab uses its existing zoom step and bounds. Reset uses the Markdown default or the configured terminal/editor default. Standard zoom shortcuts affect only the active tab.
+
+Font size range: 8px to 32px, step 2px per action. A session shares one zoom level between its CLI and Chat views. The collective shortcuts also update terminal Chat views.
 
 ## Split Panes
 
@@ -265,9 +267,9 @@ While a context menu is open, pressing a menu item's shortcut chord (modifier + 
 | `zoom-in` | `Cmd+=` | Zoom in |
 | `zoom-out` | `Cmd+-` | Zoom out |
 | `zoom-reset` | `Cmd+0` | Reset zoom |
-| `zoom-in-all` | `Cmd+Shift+=` | Zoom in all terminals |
-| `zoom-out-all` | `Cmd+Shift+-` | Zoom out all terminals |
-| `zoom-reset-all` | `Cmd+Shift+0` | Reset zoom all terminals |
+| `zoom-in-all` | `Cmd+Shift+=` | Zoom in all tabs |
+| `zoom-out-all` | `Cmd+Shift+-` | Zoom out all tabs |
+| `zoom-reset-all` | `Cmd+Shift+0` | Reset zoom all tabs |
 | `new-terminal` | `Cmd+T` | New terminal tab |
 | `close-terminal` | `Cmd+W` | Close terminal/pane |
 | `reopen-closed-tab` | `Cmd+Shift+T` | Reopen closed tab |

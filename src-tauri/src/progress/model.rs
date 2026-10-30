@@ -189,7 +189,10 @@ pub struct ProgressList {
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ProgressListInput {
-    /// The dialog's single filter.
+    /// Only human progress (intent, done, blocked), before paging.
+    #[serde(default)]
+    pub progress_only: Option<bool>,
+    /// Restrict the selected kinds to blocked entries.
     #[serde(default)]
     pub blocked_only: Option<bool>,
     /// None includes every terminal in the project.

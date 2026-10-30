@@ -4781,6 +4781,37 @@ mod tests {
         assert_eq!(stored.entries.len(), 1);
         assert_eq!(stored.entries[0].id, receipt["id"].as_i64().unwrap());
         assert_eq!(stored.entries[0].text, "HTTP transport is equivalent.");
+
+        // Catches the HTTP body dropping progressOnly before the shared query.
+        crate::progress::ProgressStore::open()
+            .unwrap()
+            .record(
+                &owner.to_string_lossy(),
+                &crate::progress::NewProgressEntry {
+                    kind: crate::progress::ProgressKind::Message,
+                    text: "operational mail".to_string(),
+                    step: None,
+                    agent_name: None,
+                },
+            )
+            .unwrap();
+        url.set_path("/progress/list");
+        let mut request = Request::post(&url[url::Position::BeforePath..])
+            .header("content-type", "application/json")
+            .body(Body::from(r#"{"progressOnly":true,"limit":1}"#))
+            .unwrap();
+        request
+            .extensions_mut()
+            .insert(ConnectInfo(std::net::SocketAddr::from(([127, 0, 0, 1], 0))));
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let page: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(page["total"], 1);
+        assert_eq!(page["entries"][0]["id"], receipt["id"]);
+        assert_eq!(page["nextCursor"], serde_json::Value::Null);
     }
 
     /// A phone has no desktop active repository. The journal itself must name

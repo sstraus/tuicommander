@@ -1,3 +1,7 @@
+## Collective zoom native menu (2499-1156) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm the View menu collective zoom labels say All Tabs. Native collective in/out/reset dispatch is covered by real-store frontend regression tests. Rust menu labels do not hot-reload; the daily app was not restarted.
+
 ## CLI return focus (2484-9adb)
 
 - [ ] After landing, check Chat → CLI by click in the desktop WKWebView and type without clicking the terminal. Worktree Chrome verified the real Terminal and CanvasTerminal focus plus typed write_pty data through an isolated IPC sink; the assignment did not launch a desktop instance, so WebKit-specific focus behavior is not verified.
@@ -3073,3 +3077,4 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] On iPhone, paste an HTTP(S) URL into terminal and AI Chat drafts, then continue typing. Check the separator and caret with the native keyboard. Verify long Sessions and Files names keep actions visible (#2493-061e, #2494-921f).
 
 - [ ] After a manual `make dev` restart, open the orchestrator workflow report and click its `tuic://open` Markdown, PNG and HTML links. Also check directory links and an unregistered local folder. Rust Markdown-link decoding and loopback file reads require the restart (#2497-ec72).
+- [ ] After rebuilding/restarting the backend, verify mobile Progress defaults to Started/Done/Blocked, Filters includes messages/delegations, full pages load with interleaved mail, and Flow still shows hand-offs (#2496-cbae). Rust does not hot-reload.

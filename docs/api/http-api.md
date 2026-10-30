@@ -96,7 +96,7 @@ require an explicit `path` query naming a registered project.
 | Route | Body | Response |
 |---|---|---|
 | `/progress/report` | `{ type, text, step? }`, `type` is `done` or `blocked` | `{ id }` |
-| `/progress/list` | `{ blockedOnly?, ptyId?, limit?, cursor? }` | `{ project, entries, total, nextCursor, ptyIds, lastViewedMs? }` |
+| `/progress/list` | `{ progressOnly?, blockedOnly?, ptyId?, limit?, cursor? }` | `{ project, entries, total, nextCursor, ptyIds, lastViewedMs? }` |
 | `GET /progress/projects` | none | Array of project paths with journal entries, newest first |
 | `/progress/delete` | `{ ids }` | `{ deleted }` |
 | `/progress/viewed?ptyId=<id>` | none | `{ lastViewedMs }` |
@@ -170,6 +170,8 @@ With `ptyId`, the flow keeps that terminal, its direct parent and its direct
 children.
 
 REST API served by the Axum HTTP server when MCP server is enabled. All Tauri commands are accessible as HTTP endpoints.
+
+`progressOnly: true` selects only `intent`, `done`, and `blocked` before counting and pagination. It intersects with `blockedOnly` and `ptyId`; omitted or false keeps all five kinds. The mobile list enables it by default. Flow is not filtered.
 
 ## Base URL
 

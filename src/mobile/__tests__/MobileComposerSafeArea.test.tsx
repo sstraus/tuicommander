@@ -25,7 +25,8 @@ it.each([0, 34])("keeps CLI composer padding compact with a %ipx browser inset",
 	));
 	const composer = view.getByRole("textbox").closest(".form")!;
 	const style = getComputedStyle(composer);
-	expect(["4px", "calc(4px)", "calc(4px + 0px)"]).toContain(style.paddingBottom);
+	// Story 2491 intentionally reduced outer vertical padding from 4px to 2px.
+	expect(style.paddingBottom).toBe("2px");
 	expect(Number.parseFloat(style.marginBottom || "0")).toBe(0);
 	expect(style.flexShrink).toBe("0");
 });

@@ -439,7 +439,8 @@ mounted inside a toolbar. Mark custom modal roots with their dialog role and
 accessible name; do not add a per-dialog density override.
 Shared icon actions and segmented switches follow the row density. Settings and
 configuration forms keep form density. Both densities retain the 44px touch
-minimum at viewport widths up to 600px.
+minimum at viewport widths up to 600px. Mobile segmented controls draw their
+border inside the surface, so the segments keep the full 44px hit region.
 
 Use `Button`, `Select`, `Input` and `Textarea` from `src/components/ui` for form fields.
 They forward native attributes, refs, options and events. `Input` is for text,

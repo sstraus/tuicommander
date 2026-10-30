@@ -26,7 +26,10 @@ vi.mock("../../transport", () => ({
 		},
 	),
 }));
-vi.mock("../../invoke", () => ({ invoke: vi.fn() }));
+vi.mock("../../invoke", () => ({
+	invoke: vi.fn(),
+	listen: vi.fn(async () => () => {}),
+}));
 vi.mock("../mobileTheme", () => ({ loadMobileTheme: vi.fn(async () => "commander") }));
 vi.mock("../../stores/appLogger", () => ({ appLogger: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }));
 vi.mock("../../stores/ideas", () => ({ ideasStore: { hydrate: vi.fn() } }));

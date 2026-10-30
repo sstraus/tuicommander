@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Open local `tuic://open` links from Markdown in desktop and mobile/browser views. Route Markdown, images, HTML and directories to their proper views, including cross-worktree targets; keep network external-text reads restricted to registered repositories (#2497-ec72).
+- Apply collective zoom shortcuts to all open Markdown and code editor tabs as well as terminals (#2499-1156).
 
 - Truncate long mobile session and file names, preserve badges and actions, and wrap unbroken Progress text (#2493-061e).
 
@@ -22,6 +23,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Keep mobile session Chat Copy below answer text instead of over its first line (#2490-276a).
 
 ### Changed
+
+- Restyle mobile Files with saved groups, names, short paths and folder navigation; align mobile typography and readable Progress cards without changing desktop views (#2495-73c6).
+- Default mobile Progress to intent/done/blocked with backend filtering before pagination; keep messages and delegations in Filters and Flow (#2496-cbae).
 
 - Reduce mobile terminal command text, suggestion labels and key labels to 15px, trim input spacing, and retain 44px action targets (#2491-1ec2).
 

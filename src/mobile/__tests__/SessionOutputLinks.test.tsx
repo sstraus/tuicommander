@@ -18,7 +18,10 @@ vi.mock("../../transport", () => ({
 	subscribeEvents: vi.fn(async () => () => {}),
 	isTauri: () => false,
 }));
-vi.mock("../../invoke", () => ({ invoke: vi.fn() }));
+vi.mock("../../invoke", () => ({
+	invoke: vi.fn(),
+	listen: vi.fn(async () => () => {}),
+}));
 vi.mock("../../stores/appLogger", () => ({ appLogger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } }));
 vi.mock("../../stores/ideas", () => ({ ideasStore: { hydrate: vi.fn() } }));
 vi.mock("../useSessions", () => ({
