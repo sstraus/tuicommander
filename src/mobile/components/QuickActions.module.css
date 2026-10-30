@@ -1,7 +1,8 @@
 .row {
+  composes: mobileCommand from "../../components/ui/FormControls.module.css";
   display: flex;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 5.625px;
+  padding: 7.5px 11.25px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   flex-shrink: 0;

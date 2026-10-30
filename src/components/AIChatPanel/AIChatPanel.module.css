@@ -1169,6 +1169,8 @@
 
 /* A flex item's automatic minimum must never widen the phone transcript. */
 .mobileTranscript { min-width: 0; }
+/* Phone reading size applies to earlier explanatory blocks as well as final answers. */
+.mobileTranscript .assistantMsg.intermediateMsg { font-size: var(--font-base); }
 .mobileTranscript > * { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .mobileTranscript .suggestedReplies button { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
 .mobileTranscript .toolActivitySummary,
@@ -1193,7 +1195,7 @@
   padding: 12px 16px;
 }
 
-.messageList[data-terminal-chat] [data-answer-card] .replyActions {
+.messageList[data-terminal-chat]:not(.mobileTranscript) [data-answer-card] .replyActions {
   position: absolute;
   top: 4px;
   right: 8px;

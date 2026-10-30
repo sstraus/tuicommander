@@ -35,7 +35,7 @@
     "file": "src/mobile/components/CommandInput.module.css",
     "reason": "Native embedded composer layout (data-control-layout=composer), not a standalone form field; preserves content sizing and draft selection.",
     "rules": [
-      "[[],\".input\",[\"min-height: 38px\",\"max-height: 120px\",\"padding: 8px 2px 8px 4px\",\"border: none\"]]",
+      "[[],\".input\",[\"min-height: 36px\",\"max-height: 112.5px\",\"padding: 7.5px 2px 7.5px 4px\",\"border: none\"]]",
       "[[],\".input:focus\",[\"border-color: var(--accent)\"]]"
     ]
   },
