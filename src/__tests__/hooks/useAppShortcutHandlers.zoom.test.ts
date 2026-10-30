@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "../mocks/tauri";
 import { useAppShortcutHandlers } from "../../hooks/useAppShortcutHandlers";
+import { dispatchNativeMenuAction } from "../../hooks/useNativeMenuBridge";
 import { useTerminalLifecycle } from "../../hooks/useTerminalLifecycle";
 import { appLogger } from "../../stores/appLogger";
 import { editorTabsStore } from "../../stores/editorTabs";
@@ -9,13 +10,16 @@ import { settingsStore } from "../../stores/settings";
 import { terminalsStore } from "../../stores/terminals";
 import { makeTerminal, testInScope } from "../helpers/store";
 
-function createHandlers() {
-	const terminalLifecycle = useTerminalLifecycle({
+function createLifecycle() {
+	return useTerminalLifecycle({
 		pty: { canSpawn: vi.fn(), close: vi.fn() },
 		dialogs: { confirmCloseTerminal: vi.fn(), confirmSaveChanges: vi.fn(), confirm: vi.fn() },
 		setStatusInfo: vi.fn(),
 		getDefaultFontSize: () => settingsStore.state.defaultFontSize,
 	});
+}
+
+function createHandlers(terminalLifecycle = createLifecycle()) {
 	return useAppShortcutHandlers({
 		terminalLifecycle,
 		gitOps: {},
@@ -56,6 +60,33 @@ describe("collective shortcut zoom with real tab stores", () => {
 	afterEach(() => {
 		clearTabs();
 		vi.restoreAllMocks();
+	});
+
+	it("native collective zoom does not bypass Markdown and editor stores", () => {
+		testInScope(() => {
+			const tabs = openTabs();
+			const terminalLifecycle = createLifecycle();
+			const options = {
+				terminalLifecycle,
+				shortcutHandlers: createHandlers(terminalLifecycle),
+			} as Parameters<typeof dispatchNativeMenuAction>[1];
+			const defaultSize = settingsStore.state.defaultFontSize;
+			dispatchNativeMenuAction("zoom-in-all", options);
+			expect(sizes(tabs)).toEqual({
+				markdown: [17, 17],
+				editors: [defaultSize + 2, defaultSize + 2],
+				terminals: [15, 21],
+			});
+			dispatchNativeMenuAction("zoom-out-all", options);
+			expect(sizes(tabs)).toEqual({ markdown: [15, 15], editors: [defaultSize, defaultSize], terminals: [13, 19] });
+			options.shortcutHandlers.zoomInAll();
+			dispatchNativeMenuAction("zoom-reset-all", options);
+			expect(sizes(tabs)).toEqual({
+				markdown: [15, 15],
+				editors: [defaultSize, defaultSize],
+				terminals: [defaultSize, defaultSize],
+			});
+		});
 	});
 
 	it("collective zoom updates inactive Markdown and editor tabs instead of only terminals", () => {
