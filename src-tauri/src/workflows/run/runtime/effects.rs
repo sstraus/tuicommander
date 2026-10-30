@@ -501,7 +501,7 @@ pub(super) fn reconcile_command_effects(
             };
             store.command(
                 &run.id,
-                &format!("reconcile-command:{}", effect.id),
+                &format!("daemon:reconcile-command:{}", effect.id),
                 command,
             )?;
             return Ok(true);
