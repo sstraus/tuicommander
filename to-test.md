@@ -3122,3 +3122,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   failed required check cannot approve the story. This Rust change does not
   hot-reload into the current app. Targeted native-store automation covers the
   policy; no desktop instance was launched for this story.
+
+- [ ] Terminal Chat queued prompt feedback: while Claude or Codex works, send two follow-ups from Chat; confirm muted Pending bubbles stay in send order and each disappears when its normal native transcript message arrives, without duplication. Repeat after a failed send and on mobile. Automated shared-host contracts and a worktree Vite appearance screenshot cover presentation; native busy-agent delivery remains owned by the CLI.

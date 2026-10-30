@@ -2,7 +2,7 @@ import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { invoke, listen } from "../invoke";
 import type { AcpSessionUpdate } from "../types/acp";
-import { acpTranscript } from "./acpTranscript";
+import { type AcpTranscriptEntry, acpTranscript } from "./acpTranscript";
 import { appLogger } from "./appLogger";
 import type { TerminalData } from "./terminals";
 
@@ -29,18 +29,28 @@ interface Cursor {
 	nextSeq: number;
 }
 
+interface PendingPrompt {
+	id: string;
+	text: string;
+	/** User messages already visible before this send; never match old history. */
+	after: number;
+}
+
 interface ChatViewState {
 	cursors: Record<string, Cursor>;
 	/** Why the last read of a terminal found nothing to show. */
 	unavailable: Record<string, string>;
 	/** UI-only bridge from Send until the next existing activity/transcript update. */
 	submissions: Record<string, symbol>;
+	pending: Record<string, PendingPrompt[]>;
 }
+
+let nextPendingId = 0;
 
 const inFlight = new Map<string, { again: boolean }>();
 const watchOwners = new Map<string, symbol>();
 
-const [state, setState] = createStore<ChatViewState>({ cursors: {}, unavailable: {}, submissions: {} });
+const [state, setState] = createStore<ChatViewState>({ cursors: {}, unavailable: {}, submissions: {}, pending: {} });
 
 /** The key a terminal's conversation is filed under in `acpTranscript`. */
 export function chatViewKey(sessionId: string): string {
@@ -117,7 +127,10 @@ async function readOnce(sessionId: string): Promise<void> {
 	// A snapshot is one publication, not a stream of partial histories. Without
 	// this boundary, every replayed entry reprojects and renders the growing list.
 	batch(() => {
-		if (snapshot.reset) acpTranscript.clear(key);
+		if (snapshot.reset) {
+			acpTranscript.clear(key);
+			if (cursor.epoch !== null && cursor.epoch !== snapshot.epoch) setState("pending", sessionId, []);
+		}
 		for (const update of snapshot.updates) {
 			acpTranscript.applyFrame({
 				kind: "event",
@@ -129,6 +142,26 @@ async function readOnce(sessionId: string): Promise<void> {
 				event: { kind: "sessionUpdate", update },
 			});
 		}
+		// Native adapters publish complete user messages. Only new user messages
+		// acknowledge a local send, never activity/idle or an assistant reply.
+		const users = acpTranscript.entries(key).filter((entry) => entry.kind === "user");
+		const pending = state.pending[sessionId] ?? [];
+		let after = 0;
+		let consumed = 0;
+		for (const prompt of pending) {
+			const index = users.findIndex(
+				(entry, index) => index >= Math.max(after, prompt.after) && entry.text.trim() === prompt.text.trim(),
+			);
+			if (index < 0) break;
+			after = index + 1;
+			consumed += 1;
+		}
+		if (consumed > 0)
+			setState(
+				"pending",
+				sessionId,
+				pending.slice(consumed).map((prompt) => ({ ...prompt, after: Math.max(after, prompt.after) })),
+			);
 		setState("cursors", sessionId, { epoch: snapshot.epoch, nextSeq: snapshot.nextSeq });
 		chatViewStore.clearUnavailable(sessionId);
 	});
@@ -139,11 +172,17 @@ export const chatViewStore = {
 
 	/** Start feedback only for an open Chat view, without changing terminal state.
 	 * The returned rollback cannot cancel a newer submission to the same PTY. */
-	beginSubmission(sessionId: string): () => void {
+	beginSubmission(sessionId: string, text?: string): () => void {
 		if (!watchOwners.has(sessionId)) return () => {};
 		const token = Symbol();
 		setState("submissions", sessionId, token);
+		const id = `pending-${++nextPendingId}`;
+		if (text?.trim()) {
+			const after = acpTranscript.entries(chatViewKey(sessionId)).filter((entry) => entry.kind === "user").length;
+			setState("pending", sessionId, [...(state.pending[sessionId] ?? []), { id, text, after }]);
+		}
 		return () => {
+			setState("pending", sessionId, (pending = []) => pending.filter((prompt) => prompt.id !== id));
 			if (state.submissions[sessionId] === token) chatViewStore.clearSubmission(sessionId);
 		};
 	},
@@ -154,6 +193,14 @@ export const chatViewStore = {
 				delete s.submissions[sessionId];
 			}),
 		);
+	},
+
+	/** Presentation-only receipts; the CLI still owns its queue and execution. */
+	entries(sessionId: string): AcpTranscriptEntry[] {
+		return [
+			...acpTranscript.entries(chatViewKey(sessionId)),
+			...(state.pending[sessionId] ?? []).map(({ id, text }) => ({ id, kind: "user" as const, text, pending: true })),
+		];
 	},
 
 	/** Why this terminal's chat view could not be read, or null. */
@@ -220,6 +267,7 @@ export const chatViewStore = {
 				produce((s) => {
 					delete s.cursors[sessionId];
 					delete s.submissions[sessionId];
+					delete s.pending[sessionId];
 				}),
 			);
 			acpTranscript.clear(chatViewKey(sessionId));
@@ -230,6 +278,6 @@ export const chatViewStore = {
 	reset(): void {
 		inFlight.clear();
 		watchOwners.clear();
-		setState({ cursors: {}, unavailable: {}, submissions: {} });
+		setState({ cursors: {}, unavailable: {}, submissions: {}, pending: {} });
 	},
 };
