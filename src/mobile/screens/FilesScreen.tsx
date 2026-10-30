@@ -439,7 +439,8 @@ export function FilesScreen(props: FilesScreenProps) {
 			const inRepo = pathStripPrefix(relativePath, repoPath);
 			return inRepo ? repoImageUrl(repoPath, inRepo) : relativePath;
 		}
-		return repoImageUrl(repoPath, `${currentFile.split("/").slice(0, -1).join("/")}/${relativePath}`);
+		const directory = pathDirname(currentFile);
+		return repoImageUrl(repoPath, directory ? joinPath(directory, relativePath) : relativePath);
 	}
 
 	/** Replace the open file with `next`, but only if the disk still holds what this screen last read. */

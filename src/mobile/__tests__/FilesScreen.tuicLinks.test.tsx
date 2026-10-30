@@ -22,7 +22,11 @@ describe("mobile rendered tuic links", () => {
 			if (command === "load_repositories") return { repos: { "/repo": {}, "/other-worktree": {} } };
 			if (command === "list_directory") return [{ name: "report.md", path: "report.md", is_dir: false, size: 100 }];
 			if (command === "fs_read_file")
-				return args?.file === "report.md" ? `[target](${href})` : "# Opened Markdown target";
+				return args?.file === "report.md"
+					? `[target](${href})`
+					: args?.file === "index.html"
+						? "<h1>Opened HTML target</h1>"
+						: "# Opened Markdown target";
 			if (command === "read_external_file")
 				return name === "index.html" ? "<h1>Opened HTML target</h1>" : "# Opened Markdown target";
 			if (command === "resolve_markdown_link")
