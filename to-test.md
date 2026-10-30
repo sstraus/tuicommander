@@ -3098,3 +3098,12 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   runs stay inspectable/cancelable and use exclusive Join. Do not migrate live runs.
   Targeted recorded-run and HTTP/service parity tests provide automated coverage;
   the running development backend does not hot-reload this Rust change.
+
+## WF06 — typed workflow evidence policy (2513-c433)
+
+- [ ] After the next authorized Rust rebuild/restart, opt a throwaway workflow
+  draft into `evidencePolicy`, publish it, and inspect the pinned policy and
+  review counters in the reviewer prompt. Verify that a stale artifact or
+  failed required check cannot approve the story. This Rust change does not
+  hot-reload into the current app. Targeted native-store automation covers the
+  policy; no desktop instance was launched for this story.

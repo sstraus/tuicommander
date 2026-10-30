@@ -28,6 +28,17 @@ pub(in crate::workflows::run) fn gate(
         return Ok(None);
     };
     let (commit, tree) = super::super::check::clean_artifact(Path::new(path))?;
+    let requirements = graph
+        .definition
+        .graph
+        .evidence_policy
+        .as_ref()
+        .map(|_| {
+            StoryStore::open()?
+                .get_story(&graph.target_id)
+                .map(|story| super::super::evidence::requirements_digest(&story))
+        })
+        .transpose()?;
     if graph.definition.required_checks.is_empty() {
         return Err("Gate requires deterministic checks".into());
     }
@@ -41,6 +52,7 @@ pub(in crate::workflows::run) fn gate(
                     && r.argv == check.argv
                     && r.commit == commit
                     && r.tree == tree
+                    && (requirements.is_none() || r.requirements_digest == requirements)
             })
         })
         .collect();
@@ -87,7 +99,10 @@ pub(in crate::workflows::run) fn drive_policy(
         .nodes
         .iter()
         .any(|n| n.id == activation.node_id && matches!(n.kind, NodeKind::Judge));
-    if is_judge && judge::judge(run, graph, activation)?.0 != EdgeOutcome::Yes {
+    if is_judge
+        && graph.definition.graph.evidence_policy.is_none()
+        && judge::judge(run, graph, activation)?.0 != EdgeOutcome::Yes
+    {
         return Ok(false);
     }
     if gate(run, graph)?.is_none() {
@@ -101,6 +116,17 @@ pub(in crate::workflows::run) fn drive_policy(
             .as_deref()
             .ok_or("Gate worktree missing")?;
         let (commit, tree) = super::super::check::clean_artifact(Path::new(path))?;
+        let requirements = graph
+            .definition
+            .graph
+            .evidence_policy
+            .as_ref()
+            .map(|_| {
+                StoryStore::open()?
+                    .get_story(&graph.target_id)
+                    .map(|story| super::super::evidence::requirements_digest(&story))
+            })
+            .transpose()?;
         let check = graph
             .definition
             .required_checks
@@ -111,6 +137,7 @@ pub(in crate::workflows::run) fn drive_policy(
                         && r.argv == check.argv
                         && r.commit == commit
                         && r.tree == tree
+                        && (requirements.is_none() || r.requirements_digest == requirements)
                 })
             })
             .ok_or("Gate check policy missing")?;
@@ -131,6 +158,9 @@ pub(in crate::workflows::run) fn drive_policy(
     }
     if gate(run, graph)?.is_some_and(|d| d.0 == EdgeOutcome::Fail) {
         return Err("Pre-approval deterministic checks failed; approval refused".into());
+    }
+    if judge::judge(run, graph, activation)?.0 != EdgeOutcome::Yes {
+        return Ok(false);
     }
     if approved(run, graph)? {
         return Ok(false);

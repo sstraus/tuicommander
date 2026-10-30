@@ -129,6 +129,76 @@ recorded serial-run fixtures, complete capability matrix and source/test pins.
 This is a compatibility foundation, not operational migration or authority to
 start a second scheduler, publish externally or retire legacy mechanisms.
 
+## Typed evidence policy (WF06)
+
+A graph draft can set optional `evidencePolicy` through the existing
+`update_draft` action. Publication and graph-start contract pins include this
+policy. Omit the field to retain the existing serial evidence contract; old
+publications, event streams and seed templates are not rewritten. No live
+workflow is opted in by this change. The same graph JSON crosses IPC and HTTP.
+
+The policy has `maxReviews` (default 2, range 1–16), `maxRepairs` (default 1,
+less than `maxReviews`), `maxStoryProposals` (default 16, range 0–100),
+`requireRed`, `requireStrictClippy`, `nativeTargets`, `consumerScope` and
+`changedTests`. Boolean defaults are false and list defaults are empty when
+constructing the Rust default policy; a submitted policy must contain each
+field. Only an explicit published policy can change these limits. A maximum
+policy admits 16 review reports with at most 100 findings each; reports and
+proof lists are bounded. Run-wide attempt, duration and activation limits still
+apply. Counters derive from durable attempts and receipts: total reviews,
+rejects, repair traversals and deterministic-check attempts remain separate
+across restart and reviewer replacement. Exhaustion refuses another attempt;
+it does not approve the work. The daemon pauses for an explicit decision.
+
+For an opted-in graph, `review.evidence` contains:
+
+- `subject`: a tagged `story` subject (`id`, `commit`, `tree`, `requirements`),
+  or a reusable `pull_request` subject (`repository`, `number`, `base`, `head`,
+  `tree`, `requirements`). Requirements are a SHA-256 digest; Git subjects use
+  exact commit/tree IDs. A PR evidence verdict is not a native story transition.
+- `findings`: stable IDs, integer `risk`, `value`, `effort` scores from 1–5,
+  `addsMechanism`, `deletesOnly`, `scope`, optional `acceptedRisk` and `proposal`.
+- `resolvedFixes`: earlier FIX IDs verified by the re-review. A replacement
+  reviewer must resolve or repeat each earlier FIX.
+- `proof`: `realityEffect`, `realityState`, `realityAssumptions`,
+  `realityRadius`, optional `symptom` and `red`, `testChanges`, `checks`, and
+  explicit `omissions`. A test change names `test` and
+  `oldExpectationWrongBecause`. Every pinned changed test needs a rationale.
+
+Triage uses these first-match rules: risk 5 → FIX; adds a mechanism → STORY
+when value ≥3, otherwise ACCEPT; deletes only with effort ≤2 → FIX; risk 3–4
+with effort ≤3 → FIX; value minus effort ≥2 → FIX; value ≥3 → STORY; otherwise
+ACCEPT. Out-of-range or contradictory scores are unresolved. Only FIX findings
+enter repair feedback. STORY needs a proposal whose explicit scope is contained
+in the pinned consumer scope; it never creates work automatically. ACCEPT needs
+named risk evidence. Publication reports retain these decisions and omissions.
+
+A proof check names `id`, `subject`, `target`, `native`, `toolchain`, `argv`,
+`configDigest`, `scope`, `matchedTests`, `exitCode` and `logDigest`. Final checks
+must pass on the current subject. Nonempty test scope cannot pass with zero
+matched tests. Every pinned consumer needs final coverage. Required native
+targets need native evidence; Linux evidence cannot discharge Mac proof.
+Required clippy evidence invokes `cargo clippy`, includes `--all-targets`, ends
+with `-- -D warnings` and has no cap-lints override. RED names a pre-fix commit,
+test and caught bug, with a failing check on that pre-fix subject and a SYMPTOM.
+The native Judge verifies the actual pre-fix tree and ancestry against Git.
+REALITY, TEST-CHANGE and omissions are typed records; the legacy note parser
+extracts notes only and cannot turn prose into proof success.
+
+The native Judge derives the current clean artifact and requirements from Git
+and StoryStore, not from the submitted subject. Requirements hash the story ID,
+title, problem, criteria and file scope; approval status, revision increments
+and check ticks are not requirements. Host-executed required check receipts also
+bind that digest. Any artifact or requirement change invalidates the evidence.
+An independent reviewer cannot be any implementer of that story, including an
+earlier generation. Native Review/Done, criterion and approval-transition
+requirements remain in force. Required deterministic commands still execute in
+the host check runner: reviewer proof, scores and accepted risk never bypass a
+missing or failed required check. Typed proof describes the independent
+reviewer's attestation; it does not claim that the host independently ran every
+command named in that report. WF05 executor receipts remain a separate adapter
+boundary. This change adds no PR execution or provider action.
+
 ## Durable timers (WF19)
 
 Run-store layout 6 adds Timer events to contract-3 runs. Contract-2 serial

@@ -1534,6 +1534,16 @@ Deterministic checks and check-result publication are not part of this executor.
 
 `archive_retention_days` defaults to 0 (Off), with nullable repository overrides and repo-local configuration. Existing repository-refresh cleanup invokes a shared host-side sweep. Only registered, completed immediate `__archived` children with matching recorded path and sufficient Unix-second archive age are eligible. Legacy archives without timestamps are kept. Non-force Git removal preserves archive refs, refuses dirty files without archive-time recovery, and protects locked or live checkouts. The status line names deleted and kept archives.
 
+### Workflow evidence policy (WF06)
+
+Opt-in graph `evidencePolicy` is immutable with its publication and run pin.
+Typed subjects bind clean source and requirements. The native Judge enforces
+independent review, ordered FIX/STORY/ACCEPT triage, bounded total reviews and
+repairs, and typed proof requirements without weakening deterministic checks.
+Generic PR subjects remain evidence contracts, not native story completion.
+Old graph publications and serial event replay retain their existing semantics.
+See [backend evidence contract](docs/backend/workflows.md#typed-evidence-policy-wf06).
+
 ### Durable workflow timer foundation (WF19)
 
 Contract-3 runs retain typed Timer schedule/fire/retry/cancel events in run-store

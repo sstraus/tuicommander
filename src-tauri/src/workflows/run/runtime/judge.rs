@@ -112,6 +112,26 @@ pub(in crate::workflows::run) fn judge(
     {
         return Ok(uncertain("Review must come from a separate bound agent"));
     }
+    if graph.definition.graph.evidence_policy.is_some()
+        && run.attempts.iter().any(|attempt| {
+            attempt.story_id == story.id
+                && binding_session(attempt) == Some(binding.session_id.as_str())
+                && graph.definition.graph.nodes.iter().any(|node| {
+                    node.id == attempt.node_id
+                        && matches!(
+                            node.kind,
+                            NodeKind::Agent {
+                                role: AgentRole::Implementer,
+                                ..
+                            }
+                        )
+                })
+        })
+    {
+        return Ok(uncertain(
+            "Review identity implemented this subject in an earlier generation",
+        ));
+    }
     if report.outcome != AttemptOutcome::Completed {
         return Ok(uncertain("Reviewer report is not completed"));
     }
@@ -128,6 +148,69 @@ pub(in crate::workflows::run) fn judge(
     if review.artifact_digest != artifact_digest(&commit, &tree) {
         return Ok(uncertain("Review artifact moved"));
     }
+    let typed_decision = if let Some(policy) = &graph.definition.graph.evidence_policy {
+        let Some(typed) = &review.evidence else {
+            return Ok(uncertain("Typed evidence required by pinned policy"));
+        };
+        let subject = super::super::evidence::ReviewSubject::Story {
+            id: story.id.clone(),
+            commit: commit.clone(),
+            tree: tree.clone(),
+            requirements: super::super::evidence::requirements_digest(&story),
+        };
+        if let Some(red) = &typed.proof.red {
+            let pre_tree = super::super::check::git_output(
+                Path::new(path),
+                &["rev-parse", &format!("{}^{{tree}}", red.pre_fix_commit)],
+            );
+            let ancestor = super::super::check::git_output(
+                Path::new(path),
+                &["merge-base", &red.pre_fix_commit, &commit],
+            );
+            let valid = match (pre_tree, ancestor) {
+                (Ok(pre_tree), Ok(ancestor)) => {
+                    ancestor == red.pre_fix_commit
+                        && red.check.subject
+                            == super::super::evidence::ReviewSubject::Story {
+                                id: story.id.clone(),
+                                commit: red.pre_fix_commit.clone(),
+                                tree: pre_tree,
+                                requirements: super::super::evidence::requirements_digest(&story),
+                            }
+                }
+                _ => false,
+            };
+            if !valid {
+                return Ok(uncertain(
+                    "RED is not bound to an actual pre-fix ancestor and current requirements",
+                ));
+            }
+        }
+        let decision = match typed.validate(&subject, policy) {
+            Ok(decision) => decision,
+            Err(error) => return Ok(uncertain(&error)),
+        };
+        // A re-review must account for each earlier FIX, including reviewer replacement.
+        let unresolved = run
+            .attempts
+            .iter()
+            .filter(|a| a.story_id == story.id && a.id != reviewer.id)
+            .filter_map(|a| a.report.as_ref()?.review.as_ref()?.evidence.as_ref())
+            .flat_map(|e| &e.findings)
+            .filter(|f| f.decision() == super::super::evidence::TriageDecision::Fix)
+            .any(|f| {
+                !typed.resolved_fixes.contains(&f.id)
+                    && !typed.findings.iter().any(|new| new.id == f.id)
+            });
+        if unresolved {
+            return Ok(uncertain(
+                "Re-review did not account for prior FIX findings",
+            ));
+        }
+        Some(decision)
+    } else {
+        None
+    };
     let evidence = DecisionEvidence {
         actor: binding.session_id.clone(),
         reason: report.summary.clone(),
@@ -136,7 +219,9 @@ pub(in crate::workflows::run) fn judge(
             format!("artifact:{commit}:{tree}"),
         ],
     };
-    if review.decision == ReviewDecision::ChangesRequested {
+    if typed_decision == Some(super::super::evidence::TriageDecision::Fix)
+        || (typed_decision.is_none() && review.decision == ReviewDecision::ChangesRequested)
+    {
         return Ok((EdgeOutcome::No, evidence));
     }
     if implementer
@@ -162,6 +247,13 @@ pub(in crate::workflows::run) fn judge(
     {
         return Ok(uncertain(
             "Independent review lacks current criterion evidence",
+        ));
+    }
+    if typed_decision.is_some()
+        && !super::policy::gate(run, graph)?.is_some_and(|d| d.0 == EdgeOutcome::Pass)
+    {
+        return Ok(uncertain(
+            "Current required deterministic checks have not passed",
         ));
     }
     Ok((EdgeOutcome::Yes, evidence))

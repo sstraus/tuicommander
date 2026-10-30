@@ -99,7 +99,11 @@ fn definition(project: &str, pause: bool, agent: bool) -> crate::workflows::Publ
             project,
             "Runtime contract",
             WorkflowKind::Story,
-            WorkflowGraph { nodes, edges },
+            WorkflowGraph {
+                evidence_policy: None,
+                nodes,
+                edges,
+            },
         )
         .unwrap();
     let draft = store

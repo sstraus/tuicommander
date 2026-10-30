@@ -689,6 +689,7 @@ fn agent(role: AgentRole, prompt_template: &str, capabilities: &[&str]) -> NodeK
 }
 fn story_template_graph() -> WorkflowGraph {
     WorkflowGraph {
+        evidence_policy: None,
         nodes: vec![
             node("start", NodeKind::Start),
             node(
@@ -731,6 +732,7 @@ fn story_template_graph() -> WorkflowGraph {
 }
 fn resolve_plan_graph(story_template_id: &str, story_revision: i64) -> WorkflowGraph {
     WorkflowGraph {
+        evidence_policy: None,
         nodes: vec![
             node("start", NodeKind::Start),
             node(
