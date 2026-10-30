@@ -138,10 +138,7 @@ fn acp_refusal(
     if snapshot.generation != binding.generation
         || snapshot.settlement.is_some()
         || attachment.session_id.to_string() != binding.conversation_id
-        || attachment.state != crate::acp::AcpAttachmentState::Idle
-        || attachment.active_turn.is_some()
-        || !attachment.pending_permission_ids.is_empty()
-        || !attachment.pending_elicitation_ids.is_empty()
+        || !attachment.is_quiescent()
     {
         return Err("ACP conversation has live work or unknown inventory".into());
     }

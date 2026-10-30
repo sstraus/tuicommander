@@ -548,6 +548,10 @@ fn receipt(state: &AppState, record: &Record) -> Value {
         return acp_receipt(state, record);
     }
     let live = state.session_maps.sessions.contains_key(&record.session_id);
+    let exited = state
+        .session_maps
+        .exit_codes
+        .contains_key(&record.session_id);
     let pending = state
         .pending_initial_prompts
         .get(&record.session_id)
@@ -583,8 +587,9 @@ fn receipt(state: &AppState, record: &Record) -> Value {
     json!({
         "launch_id": record.launch_id, "session_id": record.session_id,
         "status": status, "stage": record.stage, "live": live,
+        "inventory": if live { "present" } else if exited { "exited" } else { "unknown" },
         "prompt_delivery": delivery, "ready": ready,
-        "reason": record.reason.as_deref().or_else(|| if !live && record.stage == "created" { Some("child is no longer live; this key never creates a replacement") } else if pending.as_ref().is_some_and(|p| p.notified) { Some("initial prompt delivery timed out; prompt remains queued") } else if blocked { Some(if live { "child awaits input" } else { "no live child; repeat the original request only to resume a safe checkpoint" }) } else { None }),
+        "reason": record.reason.as_deref().or_else(|| if !live && !exited { Some("worker inventory is unknown; retain the launch references, do not infer death or spawn a replacement") } else if !live && record.stage == "created" { Some("observed child exit; this key never creates a replacement") } else if pending.as_ref().is_some_and(|p| p.notified) { Some("initial prompt delivery timed out; prompt remains queued") } else if blocked { Some(if live { "child awaits input" } else { "no live child; repeat the original request only to resume a safe checkpoint" }) } else { None }),
         "workspace_path": record.workspace_path,
         "workspace_baseline": record.workspace_baseline,
         "warm_artifacts": record.workspace_path.as_ref().map(|path| crate::worktree::warm_status(std::path::Path::new(path))),

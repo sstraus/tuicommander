@@ -1603,12 +1603,15 @@ fn launch_workflow_effect(
         let (policy, pinned) = crate::workflows::pinned_agent_route(&run, attempt)?;
         pinned.validate_live_settings()?;
         execution = Some(pinned.route.execution.clone());
-        package.audit_preview.push_str(&format!(
-            "\nHost routing policy: {} revision {}; route: {}",
-            policy.sha256,
-            policy.revision,
-            serde_json::to_string(&pinned.route).map_err(|e| e.to_string())?
-        ));
+        // The complete route is pinned in GraphContract. Keep its digest in
+        // the bounded display preview instead of exceeding binding's limit.
+        package.audit_preview = format!(
+            "Host routing policy: {} revision {}\n{}",
+            policy.sha256, policy.revision, package.audit_preview
+        )
+        .chars()
+        .take(2_000)
+        .collect();
         Some(pinned.clone())
     } else {
         None

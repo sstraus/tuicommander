@@ -29,6 +29,7 @@ fn fixture() -> (tempfile::TempDir, Arc<AppState>, Value) {
             .map(str::to_owned),
     );
     std::fs::write(repo.join("scenario.jsonl"), scenario.join("\n") + "\n").unwrap();
+    std::fs::write(repo.join("expected-profile.txt"), "fixture").unwrap();
     std::fs::copy(
         captured.join("ego-initialize.json"),
         repo.join("ego-initialize.json"),
@@ -160,6 +161,16 @@ async fn lost_spawn_response_does_not_spawn_again() {
     })
     .await;
     state.acp.disconnect(connection).await.unwrap();
+    // A genuinely stopped child retains its launch and conversation. Neither
+    // settlement nor a retry can allocate a replacement or certify success.
+    let dead = execute_owned(&state, "127.0.0.1:0".parse().unwrap(), &request).await;
+    assert_eq!(dead["launch_id"], first["launch_id"]);
+    assert_eq!(dead["connection_id"], first["connection_id"]);
+    assert_eq!(dead["conversation_id"], first["conversation_id"]);
+    assert_eq!(dead["live"], false);
+    assert_eq!(dead["ready"], false);
+    assert_eq!(dead["status"], "blocked");
+    assert!(!dead["settlement"].is_null());
     assert_eq!(
         observed.expect("recorded ACP turn did not settle"),
         (1, "Implement the bound task".into())

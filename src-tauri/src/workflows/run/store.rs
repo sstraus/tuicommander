@@ -622,8 +622,17 @@ impl RunStore {
         caller_acp: Option<AcpAgentBinding>,
     ) -> Result<RunReceipt, String> {
         let run_id = report.run_id.clone();
-        let command_id = format!("agent-report:{}", report.attempt_id);
-        self.snapshot(&run_id)?;
+        let snapshot = self.snapshot(&run_id)?;
+        // A continuation reuses the attempt and conversation, but requires a
+        // fresh report. Keep legacy/first-generation keys for replay and retries.
+        let command_id = if snapshot.event_contract_version >= 3 && report.generation > 1 {
+            format!(
+                "agent-report:{}:generation:{}",
+                report.attempt_id, report.generation
+            )
+        } else {
+            format!("agent-report:{}", report.attempt_id)
+        };
         let result = self.command(
             &run_id,
             &command_id,

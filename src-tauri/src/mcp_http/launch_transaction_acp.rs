@@ -218,11 +218,11 @@ pub(super) async fn deliver(
                 && s.settlement.is_none()
         })
         .ok_or("ACP delivery not attempted: matching live peer is unavailable")?;
-    if !snapshot.attachments.iter().any(|a| {
-        a.session_id == session
-            && a.active_turn.is_none()
-            && a.state == crate::acp::AcpAttachmentState::Idle
-    }) {
+    if !snapshot
+        .attachments
+        .iter()
+        .any(|a| a.session_id == session && a.is_quiescent())
+    {
         return Err("ACP delivery not attempted: conversation is not idle".into());
     }
     record.stage = "acp_prompt_started".into();

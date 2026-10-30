@@ -819,6 +819,21 @@ pub struct AcpAttachmentSnapshot {
     pub pending_elicitation_ids: Vec<AcpHostRequestId>,
 }
 
+impl AcpAttachmentSnapshot {
+    /// The actor retains the most recently settled turn in active_turn. It is
+    /// history, not in-flight work; queued prompts and open seats are work.
+    pub(crate) fn is_quiescent(&self) -> bool {
+        self.state == AcpAttachmentState::Idle
+            && self
+                .active_turn
+                .as_ref()
+                .is_none_or(|turn| turn.state == AcpTurnState::Settled)
+            && self.queued_prompts.is_empty()
+            && self.pending_permission_ids.is_empty()
+            && self.pending_elicitation_ids.is_empty()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AcpConnectionSnapshot {

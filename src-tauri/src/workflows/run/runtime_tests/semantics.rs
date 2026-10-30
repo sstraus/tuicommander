@@ -675,6 +675,7 @@ async fn expired_run_does_not_busy_poll_while_its_check_is_still_running() {
                 Node {
                     id: "implement".into(),
                     kind: NodeKind::Agent {
+                        execution: None,
                         role: AgentRole::Implementer,
                         capabilities: vec!["story_read".into(), "story_report".into()],
                         prompt_template: "Implement".into(),

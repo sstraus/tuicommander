@@ -2025,7 +2025,7 @@ mod tests {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
-        // 6: durable Timer events; older builds must refuse rather than reinterpret new runs.
+        // 7: combined timer and daemon worker lifecycle contract.
         assert_eq!(stored_schema_version(&db), 7, "fresh store records version");
         let run = store
             .start_plan(

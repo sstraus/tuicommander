@@ -115,7 +115,7 @@ findings in the draft body. Existing intake without a workflow remains unchanged
 
 ## Shared contract and preservation baseline (WF01)
 
-New runs use event contract 3 and run-store layout 5. Version 2 serial graph
+New runs use event contract 3 and run-store layout 7 (WF04 lifecycle plus WF19 timers). Version 2 serial graph
 replay remains supported: Join is still an exclusive merge, not an all-Join.
 Graph-start events add an immutable `contract` with version, definition SHA-256
 and explicit policy imports. Current starts pin the existing native definition,
@@ -149,10 +149,8 @@ still author proposals, but its report is not input for this node. Contract-2
 Create Stories visits retain their recorded coordinator-attempt behavior, and
 story graphs still refuse Create Stories.
 
-This foundation alone does not certify ACP worker launch, global routing pins,
-continuation delivery, report disposition, successor handover or safe child
-closure. The lifecycle additions below require their own evidence, not the PTY spawn
-journal or by proposal-input tests.
+The lifecycle sections below define separate launch, routing, continuation and
+close contracts. Typed proposal input alone does not authorize any of those effects.
 
 
 ### Daemon workspace attribution (WF04 increment)
@@ -174,8 +172,8 @@ when its live process inventory is unavailable, without spawning a replacement.
 This baseline is evidence, not a cleanup authorization. Git cannot observe
 unsaved editor buffers or exclude concurrent writers. Existing dirty work is
 not attributed to the worker, and no worktree, file or branch is removed by this
-increment. ACP launch, effective policy pins, continuation, successor handover
-and owned close remain unfinished.
+process-close path. Launch and close receipts retain the original baseline; a
+successor must independently establish its matching workspace ownership.
 
 ### Durable report disposition (WF04 increment)
 
@@ -196,7 +194,7 @@ approved, a successor was accepted, or a worker may be closed. Contract-2 event
 replay remains unchanged. A malformed request or one that cannot resolve a
 managed caller is refused before this bound-report journal.
 
-### Owned process close (WF04 in progress)
+### Owned process close (WF04)
 
 The shared run action `close_agent` accepts `run_id`, `attempt_id`, `request_id`,
 `expected_sequence` and an optional `successor_attempt_id`. It records a durable
@@ -212,9 +210,10 @@ closure. The process-tree check does not use the activity detector's startup-age
 exemption. A stop never removes a workspace or branch and does not approve an
 artifact. ACP closure requires its recorded direct-child PID, matching host-issued peer
 environment, idle conversation and a quiet process tree; protocol
-settlement alone is not process-stop proof. This path is not yet test-certified.
+settlement alone is not process-stop proof. A retained settled turn is history,
+not live work; queued prompts or pending interactions still prevent close.
 
-### Explicit managed ACP routes (WF04 in progress)
+### Explicit managed ACP routes (WF04)
 
 A published Agent node can add `execution` with either
 `{transport:"pty", profile:"<saved run config>"}` or
@@ -242,7 +241,8 @@ connection generation and conversation; looking up a peer's newest connection
 is not report authority. Channel settlement and missing inventory do not prove
 process stop or attempt success. Incidents carry launch and ACP references.
 Process closure remains separate from artifact approval and worktree cleanup;
-no cleanup is authorized. These additions await the final targeted WF04 gate.
+no cleanup is authorized. PTY receipts distinguish present inventory, an observed
+exit, and unknown inventory after restart; missing maps never prove worker death.
 
 ### Explicit host routing policy
 
@@ -273,7 +273,9 @@ Missing inventory retains pending input. An interrupted handoff without its exac
 retained receipt is uncertain and is not automatically replayed. Incidents expose
 this state with the launch/conversation references. An old-generation report or
 an answer alone cannot finish the node; the continued attempt needs a fresh typed
-report after a confirmed delivery. Contract-2 answer semantics are unchanged.
+report after a confirmed delivery. Report command keys include the continuation
+generation; identical retries retain their receipt and changed payloads refuse.
+Contract-2 answer semantics and first-generation command keys are unchanged.
 
 ## Typed evidence policy (WF06)
 

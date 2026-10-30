@@ -8,6 +8,8 @@ use crate::workflows::{
 };
 use std::sync::Arc;
 
+#[cfg(unix)]
+mod acp_close;
 mod critic_c;
 mod default_install;
 #[cfg(unix)]

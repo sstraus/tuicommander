@@ -1,14 +1,14 @@
-## Workflow ACP workers (2511-37f0 in progress) — Rust rebuild/restart required
+## Workflow ACP workers (2511-37f0) — Rust rebuild/restart required
 
-- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use an explicit published ACP Agent route. Confirm no terminal is created, the managed receipt names the actual peer/conversation, and unobserved delivery is retained rather than resent. Full global-policy, continuation, handover and owned-close work is still pending. The daily app was not restarted.
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use an explicit published ACP Agent route. Confirm no terminal is created, the managed receipt names the actual peer/conversation, and unobserved delivery is retained rather than resent. Imported policy pins, answer continuation, durable close decisions and owned ACP stop proof have targeted automated evidence. The daily app was not restarted.
 
 ## Workflow report disposition (2511-37f0 increment) — Rust rebuild/restart required
 
-- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, inspect `report_dispositions` for a bound typed report, an identical retry and a conflicting payload. Confirm the original decision remains and no report receipt grants artifact approval or cleanup. This is not complete WF04 lifecycle support. The daily app was not restarted.
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, inspect `report_dispositions` for a bound typed report, an identical retry and a conflicting payload. Confirm the original decision remains and no report receipt grants artifact approval or cleanup. Automated report-disposition and real launch/close seam tests passed on rb. The daily app was not restarted.
 
 ## Typed workflow proposals (2511-37f0 foundation) — Rust rebuild/restart required
 
-- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, submit a typed proposal batch to a plan Create Stories activation without a Coordinator node. Confirm one native story per proposal and no author PTY. Rust does not hot-reload; the daily app was not restarted. This is a partial WF04 foundation, not ACP/lifecycle completion.
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, submit a typed proposal batch to a plan Create Stories activation without a Coordinator node. Confirm one native story per proposal and no author PTY. Rust does not hot-reload; the daily app was not restarted. Typed proposal, routing and lifecycle regressions passed on rb; this check loads the Rust change into the daily app.
 ## Durable workflow timers (2529-844b) — Rust rebuild/restart required
 
 - [ ] Load the new timer ledger/actor only after Boss manually restarts a rebuilt `make dev` or installs `make build`, when losing current sessions is acceptable. Rust does not hot-reload. Automated reducer/store/owner and paused-actor tests cover timer delivery, including a duration-expired run waiting for its pinned check without repeated deadline polling; no new UI or provider consumer is installed by this foundation. The daily app was not restarted.
@@ -3110,9 +3110,9 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   Targeted recorded-run and HTTP/service parity tests provide automated coverage;
   the running development backend does not hot-reload this Rust change.
 
-- [ ] After a manual Rust restart (`make dev` or release rebuild), inspect a new daemon workflow launch: its `workspace_baseline` must retain pre-existing dirt and its attempt binding must retain `launchId` across retry. Do not restart an active daily instance for this check. Safe close and ACP lifecycle remain unfinished.
+- [ ] After a manual Rust restart (`make dev` or release rebuild), inspect a new daemon workflow launch: its `workspace_baseline` must retain pre-existing dirt and its attempt binding must retain `launchId` across retry. Do not restart an active daily instance for this check. Automated baseline, ACP and owned-close regressions passed on rb; the daily process still requires a rebuild/restart.
 
-- [ ] WF04 owned close: after a backend rebuild, inspect `close_agent` refusal/stop receipts and confirm dirty work, pending input, background receipts and test apps prevent closure. Workspaces must remain. ACP stop-proof support and automated lifecycle tests remain in progress.
+- [ ] WF04 owned close: after a backend rebuild, inspect `close_agent` refusal/stop receipts and confirm dirty work, pending input, background receipts and test apps prevent closure. Workspaces must remain. Automated ACP stop-proof and real background-receipt refusal tests passed on rb. The daily app was not restarted.
 - [ ] In a real agent turn after loading the updated frontend, confirm the Chat breathing orb appears while working and disappears when done on desktop and phone. Real-component browser captures cover dark/light themes and reduced motion (#2535-8b6b).
 ## WF06 — typed workflow evidence policy (2513-c433)
 

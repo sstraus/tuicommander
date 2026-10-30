@@ -238,6 +238,8 @@ fn implementer_cannot_supply_independent_review() {
             &run.id,
             &reviewer.id,
             AgentBinding {
+                acp: None,
+                launch_id: None,
                 session_id: "wf06-implementer".into(),
                 task_id: None,
                 effect_id: effect.id,

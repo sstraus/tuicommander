@@ -601,6 +601,13 @@ async fn daemon_delivery_launches_with_no_coordinator_session() {
     assert_eq!(retry["session_id"], result["session_id"]);
     assert_eq!(retry["workspace_baseline"], result["workspace_baseline"]);
     assert_eq!(retry["ready"], false);
+    assert_eq!(retry["inventory"], "unknown");
+    assert!(
+        retry["reason"]
+            .as_str()
+            .unwrap()
+            .contains("inventory is unknown")
+    );
     assert!(restarted.session_maps.sessions.is_empty());
 }
 

@@ -45,13 +45,10 @@ pub(super) async fn deliver(
             .map_err(|_| "continuation remains pending: ACP inventory unknown")?;
         if snapshot.generation != acp.generation
             || snapshot.settlement.is_some()
-            || !snapshot.attachments.iter().any(|a| {
-                a.session_id.to_string() == acp.conversation_id
-                    && a.state == crate::acp::AcpAttachmentState::Idle
-                    && a.active_turn.is_none()
-                    && a.pending_permission_ids.is_empty()
-                    && a.pending_elicitation_ids.is_empty()
-            })
+            || !snapshot
+                .attachments
+                .iter()
+                .any(|a| a.session_id.to_string() == acp.conversation_id && a.is_quiescent())
         {
             return Err(
                 "continuation remains pending: matching ACP conversation is not idle".into(),

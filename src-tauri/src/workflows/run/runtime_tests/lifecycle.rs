@@ -87,6 +87,12 @@ async fn close_preserves_unattributed_dirty_work() {
             if current.attempts.first().is_some_and(|a| a.agent.is_some()) {
                 break current;
             }
+            assert_eq!(
+                current.status,
+                RunStatus::Running,
+                "PTY launch setup stopped: {:?}",
+                current.pause_cause
+            );
             events.recv().await.unwrap();
         }
     })
@@ -145,10 +151,13 @@ async fn close_preserves_unattributed_dirty_work() {
         continued.continuation.as_ref().unwrap().delivery,
         ContinuationDelivery::Pending
     );
-    let late = store
-        .report_bound_agent(report.clone(), &peer)
-        .unwrap()
-        .snapshot;
+    assert!(
+        store
+            .report_bound_agent(report.clone(), &peer)
+            .unwrap_err()
+            .contains("reused with a different payload")
+    );
+    let late = store.snapshot(&run.id).unwrap();
     assert_eq!(late.attempts[0].generation, 2);
     assert_eq!(late.attempts[0].state, AttemptState::Running);
     let graph = &late.graph_executions[0];
@@ -211,7 +220,19 @@ async fn close_preserves_unattributed_dirty_work() {
     assert_eq!(store.replay(&run.id).unwrap(), delivered);
     let mut report = report;
     report.generation = 2;
-    store.report_bound_agent(report, &peer).unwrap();
+    let completed = store.report_bound_agent(report.clone(), &peer).unwrap();
+    assert_eq!(
+        store.report_bound_agent(report.clone(), &peer).unwrap(),
+        completed,
+        "same-generation report retry must retain the original receipt"
+    );
+    report.summary = "Conflicting generation-two report".into();
+    assert!(
+        store
+            .report_bound_agent(report, &peer)
+            .unwrap_err()
+            .contains("reused with a different payload")
+    );
     let cancelled = store
         .command(&run.id, "cancel-before-owned-close", RunCommand::Cancel)
         .unwrap()
