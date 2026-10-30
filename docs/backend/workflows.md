@@ -214,7 +214,9 @@ cancellation fences only the old generation, leaving the replacement usable.
 
 A current independent critic FIX supersedes the owning repair region before
 repair begins. FIX validation reads the exact submitting Reviewer activation and
-attempt; a later advisor's missing or approving report cannot mask it. The same event fences its unfinished attempts and terminates
+attempt; a later advisor's missing or approving report cannot mask it. When an
+evidence policy is pinned, its typed triage decision controls supersession, not
+the retained legacy review label. The same event fences its unfinished attempts and terminates
 nested obligations. The daemon cancels its scoped checks, stops bound agents
 and requires their exit observations before recording `fork_stopped`. An
 unknown spawn or missing stop observation blocks repair rather than freeing the

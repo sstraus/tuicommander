@@ -574,20 +574,13 @@ pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, 
                                 continue 'activations;
                             }
                             if let Some(token) = activation.tokens.last() {
-                                if attempt
-                                    .report
-                                    .as_ref()
-                                    .and_then(|r| r.review.as_ref())
-                                    .is_some_and(|r| {
-                                        r.decision == super::ReviewDecision::ChangesRequested
-                                    })
-                                    && matches!(
-                                        node.kind,
-                                        NodeKind::Agent {
-                                            role: crate::workflows::AgentRole::Reviewer,
-                                            ..
-                                        }
-                                    )
+                                if matches!(
+                                    node.kind,
+                                    NodeKind::Agent {
+                                        role: crate::workflows::AgentRole::Reviewer,
+                                        ..
+                                    }
+                                )
                                     && judge::judge(&snapshot, graph, activation)?.0
                                         == super::graph::EdgeOutcome::No
                                 {
