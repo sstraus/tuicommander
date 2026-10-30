@@ -109,17 +109,50 @@ pub struct NodeAttempt {
     pub report: Option<AttemptReport>,
     #[serde(default)]
     pub input_answer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub continuation: Option<AgentContinuation>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ContinuationDelivery {
+    Pending,
+    HandoffStarted,
+    Delivered,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentContinuation {
+    pub generation: u64,
+    pub answer: String,
+    pub delivery: ContinuationDelivery,
+    pub delivery_reference: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct AgentBinding {
+    /// Present only for a genuine ACP peer. In that case session_id is the
+    /// host-issued peer address, never a terminal or conversation identifier.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub acp: Option<AcpAgentBinding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub launch_id: Option<String>,
     pub session_id: String,
     pub task_id: Option<String>,
     pub effect_id: String,
     pub prompt_contract_version: u16,
     pub prompt_sha256: String,
     pub audit_preview: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcpAgentBinding {
+    pub connection_id: crate::acp::AcpConnectionId,
+    pub generation: u64,
+    pub conversation_id: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
@@ -264,9 +297,21 @@ pub enum RunTarget {
     Story(String),
 }
 
+/// An explicit input to one Create Stories visit, never an inferred coordinator report.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StoryProposalBatch {
+    pub execution_id: String,
+    pub activation_id: String,
+    pub plan_revision: i64,
+    pub proposals: Vec<crate::stories::NewStory>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct RunSnapshot {
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proposal_batches: Vec<StoryProposalBatch>,
     #[serde(default)]
     pub event_contract_version: u16,
     pub id: String,
@@ -319,6 +364,9 @@ pub enum RunEventKind {
     Started {
         initial: Box<RunSnapshot>,
     },
+    StoryProposalsSubmitted {
+        batch: StoryProposalBatch,
+    },
     PlanningClosed {
         fingerprint: String,
     },
@@ -336,6 +384,12 @@ pub enum RunEventKind {
         outcome: AttemptOutcome,
         #[serde(default)]
         report: Option<AttemptReport>,
+    },
+    ContinuationDeliveryChanged {
+        attempt_id: String,
+        generation: u64,
+        delivery: ContinuationDelivery,
+        reference: Option<String>,
     },
     InputAnswered {
         attempt_id: String,
@@ -431,6 +485,10 @@ pub enum RunCommand {
         execution_id: String,
         activation_id: String,
     },
+    /// Bind typed story input to the current plan revision and Create Stories activation.
+    SubmitStoryProposals {
+        batch: StoryProposalBatch,
+    },
     ClosePlanning,
     StartAttempt {
         story_id: String,
@@ -460,7 +518,15 @@ pub enum RunCommand {
     #[schemars(skip)]
     ReportBoundAttempt {
         caller_session: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        caller_acp: Option<AcpAgentBinding>,
         report: AttemptReport,
+    },
+    ContinuationDeliveryChanged {
+        attempt_id: String,
+        generation: u64,
+        delivery: ContinuationDelivery,
+        reference: Option<String>,
     },
     AnswerInput {
         attempt_id: String,
@@ -535,4 +601,27 @@ pub struct RunReceipt {
     pub sequence: i64,
     pub event: RunEvent,
     pub snapshot: RunSnapshot,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ReportDecision {
+    Accepted,
+    Refused,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportDisposition {
+    pub submission_sha256: String,
+    pub run_id: String,
+    pub attempt_id: String,
+    pub generation: u64,
+    pub caller_session: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub caller_acp: Option<AcpAgentBinding>,
+    pub decision: ReportDecision,
+    pub sequence: Option<i64>,
+    pub reason: Option<String>,
+    pub received_at_ms: i64,
 }

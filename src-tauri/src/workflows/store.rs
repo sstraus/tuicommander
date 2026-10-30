@@ -166,6 +166,10 @@ impl WorkflowStore {
                 builtin_key TEXT,
                 UNIQUE(project,builtin_key)
             );
+            CREATE TABLE IF NOT EXISTS workflow_agent_policy (
+                singleton INTEGER PRIMARY KEY CHECK(singleton=1),
+                revision INTEGER NOT NULL, document TEXT NOT NULL
+            );
             CREATE INDEX IF NOT EXISTS workflow_definitions_project ON workflow_definitions(project);
             CREATE TABLE IF NOT EXISTS workflow_published (
                 id TEXT NOT NULL REFERENCES workflow_definitions(id),
@@ -212,6 +216,52 @@ impl WorkflowStore {
             }
         }
         Ok(conn)
+    }
+
+    /// Host-global routing, explicitly imported by the local operator.
+    pub fn agent_policy(&self) -> Result<Option<super::AgentPolicy>, String> {
+        let raw: Option<String> = self
+            .connect()?
+            .query_row(
+                "SELECT document FROM workflow_agent_policy WHERE singleton=1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        raw.map(|raw| serde_json::from_str(&raw).map_err(|e| e.to_string()))
+            .transpose()
+    }
+
+    pub fn import_agent_policy(
+        &self,
+        expected_revision: i64,
+        input: super::AgentPolicyInput,
+    ) -> Result<super::AgentPolicy, String> {
+        let revision = expected_revision
+            .checked_add(1)
+            .filter(|r| *r > 0)
+            .ok_or("invalid routing policy revision")?;
+        let policy = super::AgentPolicy::prepare(input, revision)?;
+        let raw = serde_json::to_string(&policy).map_err(|e| e.to_string())?;
+        let mut conn = self.connect()?;
+        let tx = conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|e| e.to_string())?;
+        let current: Option<i64> = tx
+            .query_row(
+                "SELECT revision FROM workflow_agent_policy WHERE singleton=1",
+                [],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| e.to_string())?;
+        if current.unwrap_or(0) != expected_revision {
+            return Err("stale host agent policy revision".into());
+        }
+        tx.execute("INSERT INTO workflow_agent_policy VALUES (1,?1,?2) ON CONFLICT(singleton) DO UPDATE SET revision=excluded.revision,document=excluded.document", params![revision, raw]).map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(policy)
     }
 
     pub fn create_draft(
@@ -682,6 +732,7 @@ fn node(id: &str, kind: NodeKind) -> Node {
 }
 fn agent(role: AgentRole, prompt_template: &str, capabilities: &[&str]) -> NodeKind {
     NodeKind::Agent {
+        execution: None,
         role,
         prompt_template: prompt_template.into(),
         capabilities: capabilities.iter().map(|s| (*s).into()).collect(),

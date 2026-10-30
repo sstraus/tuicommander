@@ -3,6 +3,7 @@ use crate::workflows::{AgentBinding, AttemptReport, InputRequest, RunLimits};
 
 fn run() -> RunSnapshot {
     RunSnapshot {
+        proposal_batches: vec![],
         event_contract_version: 1,
         id: "run-1".into(),
         project: "/repo".into(),
@@ -36,8 +37,11 @@ fn run() -> RunSnapshot {
             state: AttemptState::Running,
             outcome: None,
             input_answer: None,
+            continuation: None,
             report: None,
             agent: Some(AgentBinding {
+                acp: None,
+                launch_id: None,
                 session_id: "session-1".into(),
                 task_id: None,
                 effect_id: "effect-1".into(),

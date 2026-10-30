@@ -91,6 +91,11 @@ async function mount() {
 					"\n```",
 		},
 	];
+	if (params.has("pending"))
+		entries.push(
+			{ id: "pending-1", kind: "user", text: "Review the migration and check backward compatibility.", pending: true },
+			{ id: "pending-2", kind: "user", text: "Then update the release notes.", pending: true },
+		);
 	const terminalId = terminalsStore.add({
 		sessionId: "appearance-only",
 		cwd: "/layout-only",

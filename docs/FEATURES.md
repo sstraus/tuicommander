@@ -230,6 +230,7 @@ Right-click an HTTP(S) terminal link (including localhost) and choose **Start in
 
 - **Readable session edits** — Expand a Chat tool card to read structured old/new edit blocks with aligned four-space tab stops and horizontal scrolling.
 - **Native terminal Chat questions** — Desktop and mobile expose exported native question titles and choices. Answers use agent-specific PTY keys, not Compose submission or ACP replies. Desktop preserves transcript binding and returns to CLI for unexported or free-form prompts.
+- **Pending terminal Chat prompts** — Prompts submitted through the open desktop or mobile Chat composer appear immediately as muted Pending bubbles in send order, including sends while Claude or Codex is busy. Matching new native transcript messages replace them without a duplicate bubble and retire older unmatched sends, so a local slash command cannot block later receipts. This is local send feedback, not a cancellable CLI queue; prompts typed directly into the CLI or sent by another client cannot be shown before the native transcript records them.
 - **Mobile session Chat appearance** — The session detail CLI/Chat view shares desktop prompt/answer theme tokens and transcript typography. Mobile keeps its existing touch-sized switch and native input; AI Chat is a separate surface.
 - **Deferred update restart** — After an in-app update installs, TUICommander restarts only when no session is busy or awaiting input; the APP UPDATE notification shows how many are busy and offers **Restart now** (with confirmation). Turn off in **Settings → General → Updates → Wait for agents before restarting** (`defer_update_relaunch`, default on).
 - **Eager resume after an update** — When the app restarts to apply an update, every agent tab with a confirmed session id resumes by itself on every branch, without selecting the branch first. Tabs without a confirmed id keep the click-to-resume banner. Turn off in **Settings → General → Updates → Resume all agents after an update** (`eager_resume_after_update`, default on).
@@ -916,7 +917,7 @@ The per-agent **Prevent alternate screen** setting defaults on. New TUIC shells 
 When an agent is detected running in a terminal, TUICommander automatically discovers its session ID from the filesystem and stores it per-terminal (`agentSessionId`). On restore, this enables session-specific resume instead of generic fallback commands.
 
 - **Claude Code** — Sessions stored as `~/.claude/projects/<slug>/<uuid>.jsonl`; UUID from filename. Windows drive colons become dashes in the project slug (`C:\Users\foo\bar` → `C--Users-foo-bar`).
-- **Gemini CLI** — Sessions stored in `~/.gemini/tmp/<hash>/chats/session-*.json`; `sessionId` field from JSON
+- **Gemini CLI** — Sessions stored in `~/.gemini/tmp/<project>/chats/session-*.jsonl` (legacy `.json` also supported). Discovery and restore match the recorded `projectHash` to the session project and read `sessionId` from metadata. Discovery selects the newest unclaimed recent session; multiple tabs in the same project remain heuristic.
 - **Codex CLI** — Sessions stored in `~/.codex/sessions/YYYY/MM/DD/rollout-*-<UUID>.jsonl`; UUID from filename. Codex does *not* partition by project, so candidates are filtered on the working directory recorded in the rollout's first `session_meta` record — otherwise a terminal in one project would bind to another project's session. A rollout whose `cwd` can't be read is rejected rather than accepted
 - **Goose turn completion** — A reply followed by the ready composer returns the tab to idle and allows the next submission, without the five-minute stale recovery (#1812-022d).
 - **Goose** — Sessions stored in SQLite (`~/Library/Application Support/Block/goose/sessions/sessions.db`); shell wrapper injects `--name $TUIC_SESSION` for deterministic binding on normal `session`/`run` launches, preserving explicit names, paths, resume and stateless arguments; resume by name
@@ -3578,6 +3579,23 @@ approves or merges. See [Incoming PR reviews](user-guide/automations.md#incoming
 ## Archived worktree retention
 
 Opt-in global and per-repository retention in days (0/Off by default). Repository refresh removes only eligible recorded checkouts under `__archived/`, keeps dirty or unsafe archives with named status reasons, and retains commit recovery refs. No new timer or branch deletion. See [Worktrees](user-guide/worktrees.md#archived-worktree-retention).
+
+### Typed workflow plan proposals (WF04 foundation)
+
+Contract-3 Create Stories visits accept a durable, activation- and plan-revision-
+bound proposal batch through the shared run command API. The daemon consumes
+native keyed story effects without a Coordinator node or session. Missing input
+is an incident, not a request to spawn an author. Contract-2 replay and the
+plan-only Create Stories boundary remain unchanged. ACP launch and lifecycle
+handover/closure are not part of this foundation.
+
+WF04 attribution increment: new daemon workflow launches retain the original
+workspace baseline and managed launch reference before spawning. Retries do not
+replace the baseline with child edits. Bound typed reports also retain durable
+accepted/refused decisions, with accepted decisions atomic with their report
+event and read-only inspection through the shared run action. This is receipt
+disposition, not artifact approval. ACP/policy/continuation/successor/owned-close
+lifecycle remains incomplete; attribution and report receipt permit no cleanup.
 
 ### Pinned workflow evidence policy
 

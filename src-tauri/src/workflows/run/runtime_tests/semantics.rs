@@ -94,6 +94,8 @@ fn bind(store: &RunStore, run_id: &str, attempt: &NodeAttempt, session: &str) {
             run_id,
             &attempt.id,
             AgentBinding {
+                acp: None,
+                launch_id: None,
                 session_id: session.into(),
                 task_id: None,
                 effect_id: effect.id,
@@ -673,6 +675,7 @@ async fn expired_run_does_not_busy_poll_while_its_check_is_still_running() {
                 Node {
                     id: "implement".into(),
                     kind: NodeKind::Agent {
+                        execution: None,
                         role: AgentRole::Implementer,
                         capabilities: vec!["story_read".into(), "story_report".into()],
                         prompt_template: "Implement".into(),

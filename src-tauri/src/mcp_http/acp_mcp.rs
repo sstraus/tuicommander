@@ -191,6 +191,20 @@ impl McpOverAcpHost for AcpMcpHost {
         Ok(id)
     }
 
+    fn connect_scoped(
+        &self,
+        peer_id: Option<&str>,
+        notify: McpNotify,
+        origin: Option<&crate::acp::AcpMcpOrigin>,
+    ) -> Result<String, McpOverAcpError> {
+        let state = self.state()?;
+        let id = self.connect(peer_id, notify)?;
+        if let Some(origin) = origin {
+            state.mcp.acp_origins.insert(id.clone(), origin.clone());
+        }
+        Ok(id)
+    }
+
     fn message(
         &self,
         connection_id: &str,
@@ -338,6 +352,7 @@ impl McpOverAcpHost for AcpMcpHost {
         };
         link.forwarder.abort();
         if let Ok(state) = self.state() {
+            state.mcp.acp_origins.remove(connection_id);
             end_mcp_session(&state, connection_id);
             state.session_maps.messaging_channels.remove(connection_id);
         }

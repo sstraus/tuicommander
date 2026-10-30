@@ -201,3 +201,7 @@ Claude native question cards in desktop PTY Chat and mobile keep wrapped answer
 labels separate from the selected option's monospace preview. They retain the
 question tabs and the native Chat about this action. Hidden options still use
 explicit previous/next/select controls rather than guessed labels.
+
+### Pending Chat prompts
+
+In an open terminal Chat view, a submitted composer prompt appears immediately as a muted **Pending** bubble. Several prompts stay in send order while the agent works. A matching new user message from the native transcript replaces its bubble and removes older unmatched bubbles, since the CLI handles sends in order. A local slash command or rewritten prompt therefore cannot block later receipts. Adapter-redacted or truncated text can remain pending until a later matching prompt arrives or Chat closes. Failed sends remove their own feedback; ordinary activity and idle signals do not. This applies to the shared Claude, Codex, Grok and ego transcript presentation, but does not add queueing support to a CLI that lacks it. TUIC cannot preview prompts typed in the hidden CLI or sent outside this client. The CLI owns its queue; pending bubbles have no Cancel action and are not persisted when Chat closes.

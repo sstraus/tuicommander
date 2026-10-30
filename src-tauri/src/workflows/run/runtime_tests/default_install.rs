@@ -14,6 +14,34 @@ async fn paused_run_under(
         serde_json::from_value(agents_json).unwrap(),
     )
     .unwrap();
+    if crate::config::load_agents_config()
+        .named_run_config("mine")
+        .is_some()
+    {
+        WorkflowStore::open()
+            .unwrap()
+            .import_agent_policy(
+                0,
+                crate::workflows::AgentPolicyInput {
+                    source: "explicit fixture routing".into(),
+                    source_revision: "1".into(),
+                    routes: vec![crate::workflows::RoleRoute {
+                        role: AgentRole::Implementer,
+                        execution: crate::workflows::AgentExecution::Pty {
+                            profile: "mine".into(),
+                        },
+                        acp_runtime: None,
+                        model: "fixture".into(),
+                        effort: "fixture".into(),
+                        capabilities: vec!["story_read".into(), "story_report".into()],
+                        scope: crate::workflows::AgentScope::IsolatedWorkspace,
+                        output_contract_version: 1,
+                        default_for_role: true,
+                    }],
+                },
+            )
+            .unwrap();
+    }
     let state = state(config.path());
     WorkflowRuntime::spawn(&state);
     owner_ready(&state).await;
@@ -61,7 +89,7 @@ async fn a_run_on_a_config_without_sol_or_sonnet_reaches_the_agent_spawn_effect(
     // catches: the first Agent step pausing before any spawn because the profile names sol/sonnet are hardcoded.
     let (run, _incidents) = paused_run_under(serde_json::json!({"agents": {
         "codex": {"codex_bypass_migrated": true},
-        "claude": {"run_configs": [{"name": "mine", "command": "claude"}]}
+        "claude": {"run_configs": [{"name": "mine", "command": "claude", "model":"fixture", "args":["--effort","fixture"]}]}
     }}))
     .await;
     assert_eq!(
@@ -85,7 +113,7 @@ async fn incidents_name_the_pause_cause_the_daemon_knows() {
     assert_eq!(incidents.len(), 1, "{incidents:?}");
     assert!(
         !incidents[0].cause.contains("no more specific cause")
-            && incidents[0].cause.contains("default"),
+            && incidents[0].cause.contains("routing policy"),
         "{}",
         incidents[0].cause
     );

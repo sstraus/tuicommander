@@ -53,6 +53,16 @@ A distinct second start on a plan with a running or paused run is refused with `
 
 `start_plan.limits` accepts `maxParallelStories` (default 2 when omitted, range 1–8). `start_attempt` conservatively serializes unknown or overlapping file scopes and refuses dependent stories lacking a current integration receipt at the accepted revision. `execute_check` runs only a check from the pinned story definition in its assigned worktree; `record_integration` verifies a completed non-fast-forward merge and runs the pinned checks again on the canonical result. `recertify_canonical` validates a later clean canonical tip and reruns those checks without claiming a new merge. `assign_worktree`, `record_check`, `record_integration`, and `record_recertification` as nested commands are internal and rejected on this operator API.
 
+Contract-3 `command` also accepts `submit_story_proposals {batch}`. The batch
+contains `executionId`, `activationId`, `planRevision`, and up to 100 `proposals`
+(native `NewStory` objects). It binds one reached plan Create Stories visit and
+requires the current native plan revision. Empty proposals explicitly confirm no
+additions. A second batch for the same visit is refused; retry the original
+command ID and expected sequence after a lost response. The daemon consumes the
+committed batch through keyed creation effects, with no Coordinator-node or PTY
+prerequisite. `incidents` reports a visit waiting for this input. The same
+`RunAction` envelope is used by IPC, HTTP and MCP; there is no new route.
+
 ## Workflow definitions
 
 `POST /workflows/definition/action?path=<absolute-project>` accepts one `WorkflowAction` object and returns `{ type, value }`. Actions are `seed_templates`, `create_draft {name,kind,graph}`, `list_drafts`, `get_draft {id}`, `update_draft {id,expected_revision,graph}`, `update_closure {id,expected_revision,closure}`, `update_checks {id,expected_revision,checks}`, `publish {id,expected_revision}`, and `get_published {id,revision}`. `closure` is `human` or `automatic`, defaults to `human`, and `automatic` cannot be published until its evidence gate exists. Each check has `id`, `argv`, and camel-case `timeoutSecs`; the published revision pins its `requiredChecks`. A graph has `nodes` and `edges`; see [Workflow definitions](../backend/workflows.md) for node, outcome, and publication rules. The path resolves to the canonical owning project. Selecting a workflow from another project returns HTTP 422 (`workflow does not belong to project`), not an internal server error. Published revisions are immutable. This endpoint defines workflows; it does not start one. Executable-graph validation errors during `publish` return HTTP 422 with `{ "error": "invalid workflow definition: ..." }`; invalid Pause targets name `resume_to`. Publishing a draft with no edit since its last publication also returns HTTP 422 (`draft revision has already been published`); each draft carries `lastPublishedDraftRevision`, and a client disables Publish while it equals `draftRevision`.
@@ -3079,6 +3089,20 @@ The host ACP session list gathers all ego pages before ordering ancestry. Each r
 
 `POST /workflows/run/action?path=<project>` accepts `{"action":"incidents","run_id":"<id>"}`. The read-only reply is `{"type":"incidents","value":[...]}`. Entries use camelCase fields: `runId`, nullable `attemptId`, `storyId`, `nodeId`, `sessionId`, `taskId`, plus `source`, `cause` and `nextAction`. Sources are `workflow_report`, `attempt_interrupted`, `prompt_delivery_failed`, `session_exit`, `state_change`, `task_record`, or `run_state`. Only evidence explicitly bound to the run is returned. Project ownership is checked before reading live evidence. The action never mutates the run or executes recovery. The desktop `workflow_run_action` returns the same shape.
 
+### Workflow report decisions
+
+`POST /workflows/run/action?path=<project>` also accepts
+`{"action":"report_dispositions","run_id":"<id>"}`. IPC `workflow_run_action`
+and MCP `workflow action=run` use the same action and canonical project check.
+The read-only reply is `{"type":"report_dispositions","value":[...]}`. Each
+entry has camel-case `submissionSha256`, `runId`, `attemptId`, `generation`,
+`callerSession`, `decision` (`accepted` or `refused`), nullable `sequence` and
+`reason`, and `receivedAtMs`. The digest binds the resolved caller and exact
+typed report. Accepted decisions commit atomically with their report event;
+conflicting payloads retain separate refusals and do not replace the original.
+Identical retries retain one decision per outcome. These records do not approve
+an artifact, hand over a successor or authorize closing a worker.
+
 ### Conversation-specific AI Chat launch
 
 `POST /acp/chat/open` accepts `{ "profile": "coordinator", "workspace": "/absolute/workspace", "executable": "/absolute/ego" }`. All fields are optional for a new conversation; omitted values use global defaults. It returns `{ connection, sessionId, launch, replayed }`, where `launch` contains the resolved executable, profile, workspace and durable `peerId`. Use the existing ACP session prompt and stream routes with the returned ids.
@@ -3770,3 +3794,27 @@ a separate host effect.
 ## Archive retention cleanup
 
 `POST /worktrees/archive-retention` accepts `{ "repoPath": "/absolute/repository" }` and returns `{ "deleted": ["archive-name"], "kept": ["archive-name: reason"] }`. The host resolves retention from its repository settings; no threshold is accepted from the caller. Desktop IPC uses the identical result via `sweep_archive_retention`. It deletes only recorded eligible completed archives under `__archived/`, with live-session checks and non-force Git removal; commit archive refs remain.
+
+### Workflow launch attribution
+
+Daemon-owned workflow managed-launch receipts add `workspace_baseline` with
+canonical `repository_key`, `workspace_key`, `head`, `status_hex`,
+`staged_sha256`, `unstaged_sha256`, and `untracked` entries (`path`, `kind`,
+`sha256`). Other managed launch receipts return null for this field. These
+values are pre-spawn observations, not cleanup authority. Run attempt bindings
+add optional camel-case `launchId`; old events can omit it. Existing managed
+launch reads and run get/events use the same fields across HTTP, IPC and MCP.
+
+### Workflow ACP worker identity (WF04 in progress)
+
+Agent definitions may add `execution:{transport:"acp",profile,model,effort}` or
+`execution:{transport:"pty",profile}`. Omission retains legacy PTY routing.
+Daemon-owned ACP managed-launch receipts expose `transport:"acp"`, null
+`session_id`, `peer_id`, `connection_id`, `generation`, `conversation_id`,
+`turn_id`, and `inventory` (`present` or `unknown`). `prompt_delivery` distinguishes
+`not_delivered`, `delivered`, and `unknown`; it is never attempt completion.
+A binding's optional camel-case `acp` contains `connectionId`, `generation` and
+`conversationId`; `sessionId` then addresses that peer, not a terminal.
+Workflow incidents add optional `launchId` and `acp` with the same durable
+references. ACP report callers are fenced by the native MCP channel, not a
+caller-supplied terminal ID or the peer's latest connection.

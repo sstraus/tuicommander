@@ -1404,3 +1404,15 @@ button[data-control-layout="row"].slashCommand:hover {
   font-size: 11px;
   overflow-wrap: anywhere;
 }
+
+/* Same muted palette as the ACP composer queue; no cancellation claim for a CLI-owned queue. */
+.userMsg[data-pending] {
+  color: var(--fg-muted);
+  background: var(--bg-tertiary);
+}
+
+.pendingLabel {
+  display: block;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
+}

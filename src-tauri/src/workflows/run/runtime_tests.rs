@@ -8,9 +8,15 @@ use crate::workflows::{
 };
 use std::sync::Arc;
 
+#[cfg(unix)]
+mod acp_close;
 mod critic_c;
 mod default_install;
+#[cfg(unix)]
+mod lifecycle;
 mod parity;
+mod proposals;
+mod routing;
 
 fn fixture() -> (
     tempfile::TempDir,
@@ -81,6 +87,7 @@ fn definition(project: &str, pause: bool, agent: bool) -> crate::workflows::Publ
         nodes.push(Node {
             id: "implement".into(),
             kind: NodeKind::Agent {
+                execution: None,
                 role: AgentRole::Implementer,
                 capabilities: vec!["story_read".into(), "story_report".into()],
                 prompt_template: "Implement the native criteria".into(),
