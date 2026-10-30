@@ -1212,6 +1212,8 @@ PTY and the repository aggregate.
 `repo_watcher.rs` asserts that: it snapshots the repository tree byte-for-byte
 around a record/delete/mark-viewed cycle and requires it unchanged.
 
+The optional list input `progressOnly` restricts the SQL kind predicate to intent, done and blocked before COUNT and LIMIT. It defaults to false, intersects with PTY/blocked filters, and leaves the journal and Flow unchanged.
+
 Five entry kinds. `done` and `blocked` are reported by agents through the MCP
 `progress` tool, the HTTP routes or the Tauri commands. `intent` is written by
 TUIC from the agent's `intent:` marker. `delegated` and `message` are written by

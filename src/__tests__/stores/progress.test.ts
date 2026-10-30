@@ -109,7 +109,7 @@ describe("progressStore", () => {
 	});
 
 	// Catches: a pending older page leaking into a changed filter or a reopened scope.
-	it.each(["blocked", "pty", "project", "reopen"])(
+	it.each(["blocked", "human", "pty", "project", "reopen"])(
 		"discards an older page after a %s selection reset",
 		async (change) => {
 			invokeMock.mockResolvedValue({ ...list([entry(3, 300)]), nextCursor: 3 });
@@ -127,6 +127,7 @@ describe("progressStore", () => {
 			const older = store.loadOlder();
 			invokeMock.mockResolvedValue({ ...list([entry(9, 900)]), nextCursor: null });
 			if (change === "blocked") store.setBlockedOnly(true);
+			if (change === "human") store.setProgressOnly(true);
 			if (change === "pty") store.selectPty("pty-b");
 			if (change === "project") {
 				store.open("/other", null);

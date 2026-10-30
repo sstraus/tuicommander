@@ -113,6 +113,7 @@ const [dialogVisible, setDialogVisible] = createSignal(false);
 const [requestedProject, setRequestedProject] = createSignal<string | null>(null);
 const [selectedPtyId, setSelectedPtyId] = createSignal<string | null>(null);
 const [blockedOnly, setBlockedOnly] = createSignal(false);
+const [progressOnly, setProgressOnly] = createSignal(false);
 const [view, setView] = createSignal<ProgressView>("list");
 
 function messageOf(error: unknown): string {
@@ -162,13 +163,24 @@ export function createProgressStore() {
 		const epoch = older ? listEpoch : ++listEpoch;
 		const ptyId = selectedPtyId();
 		const blocked = blockedOnly();
+		const human = progressOnly();
 		const isCurrent = () =>
-			epoch === listEpoch && requestedProject() === project && selectedPtyId() === ptyId && blockedOnly() === blocked;
+			epoch === listEpoch &&
+			requestedProject() === project &&
+			selectedPtyId() === ptyId &&
+			blockedOnly() === blocked &&
+			progressOnly() === human;
 		setState("projects", project, { loading: true, error: null, ...(!older ? { nextCursor: null } : {}) });
 		try {
 			const page = await invoke<ProgressList>("progress_list", {
 				project,
-				input: { blockedOnly: blocked, ...(ptyId ? { ptyId } : {}), limit: 100, ...(cursor != null ? { cursor } : {}) },
+				input: {
+					...(human ? { progressOnly: true } : {}),
+					blockedOnly: blocked,
+					...(ptyId ? { ptyId } : {}),
+					limit: 100,
+					...(cursor != null ? { cursor } : {}),
+				},
 			});
 			if (!isCurrent()) return;
 			const frozen = freezeDivider ? (state.projects[project]?.dividerMs ?? page.lastViewedMs) : page.lastViewedMs;
@@ -406,6 +418,16 @@ export function createProgressStore() {
 		requestedProject,
 		selectedPtyId,
 		selectPty,
+		progressOnly,
+		setProgressOnly: (value: boolean) => {
+			if (value === progressOnly()) return;
+			setProgressOnly(value);
+			const project = requestedProject();
+			if (project) {
+				setState("projects", project, "entries", []);
+				void refreshProject(project);
+			}
+		},
 		blockedOnly,
 		setBlockedOnly: (value: boolean) => {
 			setBlockedOnly(value);
@@ -457,6 +479,7 @@ export function createProgressStore() {
 				setRequestedProject(null);
 				setSelectedPtyId(null);
 				setBlockedOnly(false);
+				setProgressOnly(false);
 				setArrivedSinceOpen(0);
 				visitedScopes.clear();
 			});
