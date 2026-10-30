@@ -199,3 +199,18 @@ it("keeps suggestions in a separate final message actionable without reviving ol
 		[...container.querySelectorAll('[aria-label="Suggested replies"] button')].map((button) => button.textContent),
 	).toEqual(["Next A", "Next B", "Next C"]);
 });
+
+// Catches: pending styling being forced on acknowledged messages or removed from queued prompts.
+it("marks only pending user bubbles for pending styling", () => {
+	const { container, getByLabelText } = transcript([
+		{ id: "received", kind: "user", text: "Acknowledged prompt" },
+		{ id: "pending", kind: "user", text: "Queued prompt", pending: true },
+	]);
+	const pending = getByLabelText("Pending prompt");
+	expect(pending.getAttribute("data-pending")).toBe("true");
+	expect(container.querySelectorAll('[data-pending="true"]')).toHaveLength(1);
+	const received = [...container.querySelectorAll('button[aria-label="Copy user message"]')]
+		.map((button) => button.parentElement!)
+		.find((bubble) => bubble.textContent?.includes("Acknowledged prompt"))!;
+	expect(received.hasAttribute("data-pending")).toBe(false);
+});
