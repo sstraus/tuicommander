@@ -215,6 +215,15 @@ The API quota follows the focused Claude session's `CLAUDE_CONFIG_DIR`. Switchin
 
 This helps you pace your usage across the week.
 
+## Codex session quota
+
+Codex session quota follows the live process's `HOME`, `CODEX_HOME` and selected
+profile. For `--profile work`, TUIC reads `<CODEX_HOME>/work.config.toml` and passes
+its TOML values to `codex app-server` through `-c` overrides. Codex 0.166 rejects
+`--profile` for App Server. Codex still loads its base configuration and owns
+credential access and token refresh. An unreadable or invalid selected profile
+shows unavailable usage instead of silently querying the default configuration.
+
 ## Claude Usage Dashboard
 
 A native feature (not a plugin) that provides detailed analytics for your Claude Code usage. Enable it in **Settings** > **Agents** > expand **Claude Code** > **Features** > **Usage Dashboard**.

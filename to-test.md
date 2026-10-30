@@ -1,3 +1,7 @@
+## Codex profile session quota (2541-18a3) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a Codex session with an existing `--profile` and check its mobile session quota. The installed Codex 0.166 App Server accepted the selected profile values and returned live quota in the isolated CLI probe. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
 ## Terminal search clearance (2538-c082)
 
 - [x] Browser component geometry covers Context on/off, 1000px/400px panes and desktop/touch viewports. Search and view-switch bounds are disjoint; button centres are hit-testable; close/reopen works. _(verified: `src/__tests__/browser/TerminalSearchGeometry.test.ts`; before/after evidence under `~/Gits/.tmp/search-overlap/`.)_

@@ -372,11 +372,24 @@ async fn session_quota_from_binary(
     codex_home: &str,
     profile: Option<&str>,
 ) -> Result<CodexUsageApiResponse, String> {
-    let mut args = Vec::new();
+    // App Server 0.166 rejects --profile (on either side of app-server), and
+    // -c profile=... is a rejected legacy selector. Apply the profile's top-level
+    // TOML values as supported CLI overrides; Codex still owns the base config,
+    // authentication and the merge of nested tables.
+    let mut args = vec!["app-server".to_string()];
     if let Some(profile) = profile {
-        args.extend(["--profile", profile]);
+        let path = Path::new(codex_home).join(format!("{profile}.config.toml"));
+        let contents = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|_| "Codex profile configuration unavailable".to_string())?;
+        let layer: toml::Table = toml::from_str(&contents)
+            .map_err(|_| "Codex profile configuration invalid".to_string())?;
+        for (key, value) in layer {
+            args.push("-c".to_string());
+            args.push(format!("{key}={value}"));
+        }
     }
-    args.push("app-server");
+    let args = args.iter().map(String::as_str).collect::<Vec<_>>();
     let messages = [
         serde_json::json!({"method":"initialize","id":0,"params":{"clientInfo":{"name":"tuicommander","version":env!("CARGO_PKG_VERSION")}}}),
         serde_json::json!({"method":"initialized","params":{}}),
@@ -435,13 +448,14 @@ mod tests {
             "2541-codex-profile-layer",
             r#"
 case "$*" in
-  'app-server'|'app-server -c "model"="profile-marker"') ;;
+  'app-server') used=5 ;;
+  'app-server -c model="profile-marker"') used=23.5 ;;
   *) exit 2 ;;
 esac
 while IFS= read -r request; do
   case "$request" in
     *account/rateLimits/read*)
-      printf '%s\n' '{"id":1,"result":{"rateLimits":{"primary":{"usedPercent":23.5,"windowDurationMins":300}}}}'
+      printf '{"id":1,"result":{"rateLimits":{"primary":{"usedPercent":%s,"windowDurationMins":300}}}}\n' "$used"
       ;;
   esac
 done
@@ -472,9 +486,26 @@ done
                     .primary_window
                     .unwrap()
                     .used_percent,
-                23.5
+                if profile.is_some() { 23.5 } else { 5.0 }
             );
         }
+    }
+
+    /// Catches: a missing or malformed selected profile silently querying the default account.
+    #[tokio::test]
+    async fn codex_profile_quota_rejects_unavailable_and_invalid_layers() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let binary = dir.path().join("must-not-start");
+        let home = dir.path().to_str().unwrap();
+        let missing = session_quota_from_binary(&binary, home, home, Some("missing"))
+            .await
+            .unwrap_err();
+        assert_eq!(missing, "Codex profile configuration unavailable");
+        std::fs::write(dir.path().join("broken.config.toml"), "model = [").unwrap();
+        let invalid = session_quota_from_binary(&binary, home, home, Some("broken"))
+            .await
+            .unwrap_err();
+        assert_eq!(invalid, "Codex profile configuration invalid");
     }
 
     #[test]
