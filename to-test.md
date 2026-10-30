@@ -2,6 +2,21 @@
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, start Gemini 0.64 in a throwaway project. Confirm the native session ID is discovered and resumes after restore; a session from another project must not be selected. Recorded owner-transcript regression covers JSONL metadata; no owner login, settings or running app was changed. Rust does not hot-reload; restart only when losing current sessions is acceptable.
 
+## Workflow ACP fork repair (2511-37f0 M1) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, run a fork with ACP reviewers and a critic FIX. Confirm old reviewers stop before one repair activation starts, without creating terminals. The recorded ACP regression covers process absence; the daily app was not restarted. Rust does not hot-reload; restart only when losing current sessions is acceptable.
+
+## Workflow ACP workers (2511-37f0) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use an explicit published ACP Agent route. Confirm no terminal is created, the managed receipt names the actual peer/conversation, and unobserved delivery is retained rather than resent. Imported policy pins, answer continuation, durable close decisions and owned ACP stop proof have targeted automated evidence. The daily app was not restarted.
+
+## Workflow report disposition (2511-37f0 increment) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, inspect `report_dispositions` for a bound typed report, an identical retry and a conflicting payload. Confirm the original decision remains and no report receipt grants artifact approval or cleanup. Automated report-disposition and real launch/close seam tests passed on rb. The daily app was not restarted.
+
+## Typed workflow proposals (2511-37f0 foundation) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, submit a typed proposal batch to a plan Create Stories activation without a Coordinator node. Confirm one native story per proposal and no author PTY. Rust does not hot-reload; the daily app was not restarted. Typed proposal, routing and lifecycle regressions passed on rb; this check loads the Rust change into the daily app.
 ## Terminal search clearance (2538-c082)
 
 - [x] Browser component geometry covers Context on/off, 1000px/400px panes and desktop/touch viewports. Search and view-switch bounds are disjoint; button centres are hit-testable; close/reopen works. _(verified: `src/__tests__/browser/TerminalSearchGeometry.test.ts`; before/after evidence under `~/Gits/.tmp/search-overlap/`.)_
@@ -3115,6 +3130,9 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   Targeted recorded-run and HTTP/service parity tests provide automated coverage;
   the running development backend does not hot-reload this Rust change.
 
+- [ ] After a manual Rust restart (`make dev` or release rebuild), inspect a new daemon workflow launch: its `workspace_baseline` must retain pre-existing dirt and its attempt binding must retain `launchId` across retry. Do not restart an active daily instance for this check. Automated baseline, ACP and owned-close regressions passed on rb; the daily process still requires a rebuild/restart.
+
+- [ ] WF04 owned close: after a backend rebuild, inspect `close_agent` refusal/stop receipts and confirm dirty work, pending input, background receipts and test apps prevent closure. Workspaces must remain. Automated ACP stop-proof and real background-receipt refusal tests passed on rb. The daily app was not restarted.
 - [ ] WF02/WF19 integration after rebuild: confirm parallel repair cancels old activation timers without cancelling independent service timers. Rust changes require a manual restart; no live-app validation was performed.
 - [ ] After the next backend rebuild/restart, verify a WF02 fork with pinned WF06 evidence policy starts repair for a typed FIX even if the retained legacy label says approved. Targeted RunStore automation covers generation fencing and replay; this Rust change does not hot-reload (#2509-0e2f).
 - [ ] In a real agent turn after loading the updated frontend, confirm the Chat breathing orb appears while working and disappears when done on desktop and phone. Real-component browser captures cover dark/light themes and reduced motion (#2535-8b6b).
@@ -3126,3 +3144,6 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   failed required check cannot approve the story. This Rust change does not
   hot-reload into the current app. Targeted native-store automation covers the
   policy; no desktop instance was launched for this story.
+
+- [ ] WF04 routing correction: after a manual Rust restart, confirm that unrelated profile and idle-close changes do not pause a pinned workflow. Contract-3 MCP launch must refuse caller-profile substitution; use the daemon run controls. Automated rb regressions cover both paths.
+- [ ] Terminal Chat queued prompt feedback: while Claude or Codex works, send two follow-ups from Chat; confirm muted Pending bubbles stay in send order and each disappears when its normal native transcript message arrives, without duplication. Repeat after a failed send and on mobile. Automated shared-host contracts and a worktree Vite appearance screenshot cover presentation; native busy-agent delivery remains owned by the CLI.

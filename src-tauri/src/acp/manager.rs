@@ -324,7 +324,8 @@ impl AcpClientManager {
                 updates: updates_rx,
                 shutdown: shutdown_rx,
                 journal: Arc::clone(&journal),
-                mcp: McpChannel::new(self.mcp_host.lock().clone(), peer_id.clone()),
+                mcp: McpChannel::new(self.mcp_host.lock().clone(), peer_id.clone())
+                    .with_origin(connection_id, generation),
             },
             Arc::clone(&self.connections),
         ));
@@ -1009,6 +1010,29 @@ impl AcpClientManager {
             })
             .max_by_key(|(_, connection)| connection.snapshot.generation)
             .map(|(connection_id, _)| *connection_id)
+    }
+
+    pub(crate) fn has_sent_prompt(
+        &self,
+        connection_id: AcpConnectionId,
+        turn: AcpTurnId,
+        text: &str,
+    ) -> bool {
+        self.connections
+            .lock()
+            .get(&connection_id)
+            .is_some_and(|connection| connection.journal.has_sent_prompt(turn, text))
+    }
+
+    /// Exact managed-peer observation, including a terminal settlement when
+    /// retained. Absence is unknown inventory, never process-stop proof.
+    pub(crate) fn peer_snapshot(&self, peer_id: &str) -> Option<AcpConnectionSnapshot> {
+        self.connections
+            .lock()
+            .values()
+            .filter(|connection| connection.peer_id.as_deref() == Some(peer_id))
+            .max_by_key(|connection| connection.snapshot.generation)
+            .map(|connection| connection.snapshot.clone())
     }
 
     pub fn peer_root(&self, peer_id: &str) -> Option<PathBuf> {

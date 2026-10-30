@@ -92,7 +92,7 @@ pub(in crate::workflows::run) fn require_known_check_owner(
     Ok(())
 }
 
-/// CreateStories consumes the first coordinator report; later visits request a fresh replan.
+/// Retained contract-2 CreateStories maps to its coordinator; contract 3+ uses typed input.
 pub(in crate::workflows::run) fn agent_node_id<'a>(
     graph: &'a GraphExecution,
     activation: &Activation,
@@ -183,15 +183,22 @@ pub(in crate::workflows::run) async fn drive_effect(
                     );
                 }
                 if let Some(binding) = &attempt.agent {
-                    crate::pty::kill_pty_core(state, &binding.session_id);
-                    if !state
-                        .session_maps
-                        .exit_codes
-                        .contains_key(&binding.session_id)
-                    {
-                        return Err(
-                            "Superseded agent stop is unproven; repair remains fenced".into()
-                        );
+                    if binding.acp.is_some() {
+                        crate::mcp_http::launch_transaction::stop_superseded_workflow_agent(
+                            state, &run.id, binding,
+                        )
+                        .await?;
+                    } else {
+                        crate::pty::kill_pty_core(state, &binding.session_id);
+                        if !state
+                            .session_maps
+                            .exit_codes
+                            .contains_key(&binding.session_id)
+                        {
+                            return Err(
+                                "Superseded agent stop is unproven; repair remains fenced".into()
+                            );
+                        }
                     }
                 }
             }
@@ -223,9 +230,22 @@ pub(in crate::workflows::run) async fn drive_effect(
                 .find(|n| n.id == activation.node_id)
                 .ok_or("activation node missing")?;
             match &node.kind {
+                NodeKind::CreateStories if run.event_contract_version >= 3 => {
+                    let Some(batch) = super::super::proposals::batch_for(run, graph, activation)
+                    else {
+                        continue;
+                    };
+                    if super::super::proposals::drive(store, run, batch)? {
+                        let current = store.snapshot(&run.id)?;
+                        emit_run_changed(state, &run.project, &run.id, current.sequence);
+                        return Ok(true);
+                    }
+                }
                 NodeKind::Agent { .. } | NodeKind::CreateStories => {
                     let agent_id = agent_node_id(graph, activation)?;
-                    let NodeKind::Agent { role, .. } = &graph
+                    let NodeKind::Agent {
+                        role, execution, ..
+                    } = &graph
                         .definition
                         .graph
                         .nodes
@@ -239,9 +259,32 @@ pub(in crate::workflows::run) async fn drive_effect(
                     let Some(attempt) = activation_attempt(run, graph, activation) else {
                         continue;
                     };
-                    if attempt.state != super::super::AttemptState::Running
-                        || attempt.agent.is_some()
-                    {
+                    if attempt.state != super::super::AttemptState::Running {
+                        continue;
+                    }
+                    if let Some(binding) = &attempt.agent {
+                        if attempt.continuation.is_some()
+                            && continuation::deliver(state, store, run, attempt).await?
+                        {
+                            return Ok(true);
+                        }
+                        if binding.acp.is_some() {
+                            let state = state.clone();
+                            let run_id = run.id.clone();
+                            let attempt_id = attempt.id.clone();
+                            let progressed = tokio::task::spawn_blocking(move || {
+                                crate::mcp_http::mcp_transport::resume_daemon_workflow_delivery(
+                                    &state,
+                                    &run_id,
+                                    &attempt_id,
+                                )
+                            })
+                            .await
+                            .map_err(|e| format!("ACP delivery task: {e}"))??;
+                            if progressed {
+                                return Ok(true);
+                            }
+                        }
                         continue;
                     }
                     if *role == AgentRole::Implementer {
@@ -282,7 +325,26 @@ pub(in crate::workflows::run) async fn drive_effect(
                                 .into(),
                         );
                     }
-                    let profile = resolve_run_profile(&crate::config::load_agents_config(), role)?;
+                    let pinned_execution = if run.event_contract_version >= 3 {
+                        Some(
+                            crate::workflows::pinned_agent_route(run, attempt)?
+                                .1
+                                .route
+                                .execution
+                                .clone(),
+                        )
+                    } else {
+                        execution.clone()
+                    };
+                    let profile = match &pinned_execution {
+                        Some(crate::workflows::AgentExecution::Acp { .. }) => "ego".to_owned(),
+                        Some(crate::workflows::AgentExecution::Pty { profile }) => {
+                            crate::config::load_agents_config()
+                                .require_named_run_config(profile)?;
+                            profile.clone()
+                        }
+                        None => resolve_run_profile(&crate::config::load_agents_config(), role)?,
+                    };
                     let receipt = store.command_expected(
                         &run.id,
                         &format!("spawn-intent:{}", attempt.id),
@@ -692,15 +754,32 @@ pub(in crate::workflows) fn resolve_run_profile(
 /// What stops a published workflow from reaching its Agent steps, checked before a run starts.
 pub(in crate::workflows) fn profile_problems(
     definition: &crate::workflows::PublishedWorkflow,
-    config: &crate::config::AgentsConfig,
+    _config: &crate::config::AgentsConfig,
 ) -> Vec<String> {
-    let mut problems: Vec<String> = Vec::new();
+    let policy =
+        match crate::workflows::WorkflowStore::open().and_then(|store| store.agent_policy()) {
+            Ok(policy) => policy,
+            Err(error) => return vec![format!("host routing policy unavailable: {error}")],
+        };
+    let mut problems = vec![];
     for node in &definition.graph.nodes {
-        if let NodeKind::Agent { role, .. } = &node.kind
-            && let Err(problem) = resolve_run_profile(config, role)
-            && !problems.contains(&problem)
+        if let NodeKind::Agent {
+            role,
+            execution,
+            capabilities,
+            ..
+        } = &node.kind
         {
-            problems.push(problem);
+            let result = policy
+                .as_ref()
+                .ok_or("effective host routing policy is not imported".to_owned())
+                .and_then(|policy| policy.select(*role, execution.as_ref(), capabilities))
+                .and_then(|pinned| pinned.validate_live_settings());
+            if let Err(problem) = result
+                && !problems.contains(&problem)
+            {
+                problems.push(problem);
+            }
         }
     }
     problems

@@ -20,6 +20,7 @@ mod store;
 pub use api::*;
 pub use model::*;
 pub use store::StoryStore;
+pub(crate) use store::validate_new_story as validate_workflow_proposal;
 
 #[cfg(test)]
 mod tests {

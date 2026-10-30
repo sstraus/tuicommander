@@ -6,10 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Fix workflow routing pins so unrelated profile and idle-close edits do not block an unchanged route. Keep contract-3 graph launches daemon-owned.
+
+- Workflow daemon launches now retain a pre-spawn workspace baseline and managed launch reference for attribution after retry/restart. This is not safe-close or complete WF04 lifecycle support.
+
 - Keep mobile Markdown images, review saves and Back navigation in the destination folder after opening a local link.
 
 ### Added
 
+- Add explicit workflow PTY/ACP execution routes and genuine ACP launch/conversation references, with binding-before-prompt journaling and channel-generation report fences (#2511-37f0, policy/handover/close still incomplete).
+
+- Retain workflow bound-report acceptance/refusal decisions across retry and restart, with atomic accepted-event recording and a read-only `report_dispositions` run action (#2511-37f0, lifecycle increment only).
+
+- Accept typed, revision-bound plan story proposals without requiring a Coordinator Agent node; retain contract-2 behavior (#2511-37f0, foundation only).
 - Add bounded, correlated workflow Fork/all-Join, For each and typed If/else execution, generation-fenced repair, and replay-safe branch readiness (#2509-0e2f).
 - Use a theme-accent breathing orb for working feedback in desktop and mobile Chat. Reduced motion shows a static dot; accessible Working text and provider retry status remain unchanged (#2535-8b6b).
 
@@ -21,6 +30,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Discover and verify Gemini CLI JSONL sessions for the matching project, with legacy JSON resume support (#2543-4bbf).
+- Stop superseded ACP workflow reviewers through their managed connection and require OS process absence before repair (#2511-37f0).
+- Retire older unmatched terminal Chat prompt bubbles when a later send reaches the transcript, so local slash commands cannot block subsequent receipts (#2540-b929).
 
 - Keep terminal search below the Context and CLI/Chat switch row so navigation and close controls stay reachable in narrow panes (#2538-c082).
 

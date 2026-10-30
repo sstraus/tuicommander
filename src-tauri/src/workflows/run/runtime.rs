@@ -1,5 +1,6 @@
 //! Daemon-owned serial scheduling. Mailboxes wake actors; SQLite owns the work.
 use super::graph::{ActivationState, DecisionEvidence, GraphTransition};
+mod continuation;
 pub(super) mod effects;
 pub(super) mod judge;
 pub(super) mod plan;
@@ -434,6 +435,35 @@ pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, 
                     let mut outcome = None;
                     let mut evidence = None;
                     match &node.kind {
+                        NodeKind::CreateStories if snapshot.event_contract_version >= 3 => {
+                            let Some(batch) =
+                                super::proposals::batch_for(&snapshot, graph, activation)
+                            else {
+                                continue 'activations;
+                            };
+                            if crate::stories::StoryStore::open()?
+                                .get_plan(&snapshot.plan_id)?
+                                .revision
+                                != batch.plan_revision
+                            {
+                                return Err("story proposal input has a stale plan revision".into());
+                            }
+                            if !super::proposals::complete(&snapshot, batch)? {
+                                continue 'activations;
+                            }
+                            if snapshot.planning_fingerprint.is_none() {
+                                store.command_expected(
+                                    run_id,
+                                    &format!(
+                                        "daemon:close-plan:{}:{}",
+                                        activation.id, snapshot.sequence
+                                    ),
+                                    snapshot.sequence,
+                                    RunCommand::ClosePlanning,
+                                )?;
+                                continue 'turn;
+                            }
+                        }
                         NodeKind::ForEach {
                             receipt_evidence: Some(source),
                             ..
