@@ -1,18 +1,12 @@
-import { createSignal } from "solid-js";
 import { render } from "solid-js/web";
 import { Transcript } from "../../components/AIChatPanel/Transcript";
-import type { WorkingEffect } from "../../components/AIChatPanel/WorkingIndicator";
-import { Select } from "../../components/ui/Select";
 import "../../global.css";
 import "../../styles.css";
 import commander from "../../../src-tauri/src/themes/commander.json";
 import paper from "../../../src-tauri/src/themes/vscode-light.json";
-import "./chatWorkingEffects.css";
+import "./chatBreathing.css";
 
 const params = new URLSearchParams(location.search);
-const effects: WorkingEffect[] = ["shimmer", "dots", "orb", "typewriter"];
-const initial = params.get("effect") as WorkingEffect;
-const [effect, setEffect] = createSignal<WorkingEffect>(effects.includes(initial) ? initial : "shimmer");
 const palette = params.get("theme") === "light" ? paper.appChrome : commander.appChrome;
 const variables: Record<string, string> = {
 	background: "bg-primary",
@@ -41,28 +35,16 @@ render(
 	() => (
 		<main class="working-comparison">
 			<header>
-				<h1>Chat · working effects</h1>
-				<p>Four candidates. No product default selected.</p>
-				<label>
-					Effect{" "}
-					<Select value={effect()} onChange={(event) => setEffect(event.currentTarget.value as WorkingEffect)}>
-						<option value="shimmer">01 · Shimmer sweep</option>
-						<option value="dots">02 · Accent dots</option>
-						<option value="orb">03 · Breathing orb</option>
-						<option value="typewriter">04 · Typewriter cycle</option>
-					</Select>
-				</label>
+				<h1>Chat · breathing orb</h1>
+				<p>Default working feedback · theme accent · reduced-motion support</p>
 			</header>
 			<section>
-				<h2>
-					Session Chat <small>Current: Working…</small>
-				</h2>
+				<h2>Session Chat</h2>
 				<div class="working-transcript">
 					<Transcript
 						entries={entries}
 						busy={() => true}
 						busyLabel="Working…"
-						workingEffect={effect()}
 						terminalAgent="claude"
 						emptyMessage=""
 						observeToolDuration={false}
@@ -70,14 +52,19 @@ render(
 				</div>
 			</section>
 			<section>
-				<h2>
-					AI Chat <small>Current: pulsing ellipsis</small>
-				</h2>
+				<h2>AI Chat</h2>
 				<div class="working-transcript">
+					<Transcript entries={entries} busy={() => true} emptyMessage="" observeToolDuration={false} />
+				</div>
+			</section>
+			<section>
+				<h2>Mobile Chat</h2>
+				<div class="working-transcript mobile-working-transcript">
 					<Transcript
 						entries={entries}
 						busy={() => true}
-						workingEffect={effect()}
+						mobile
+						busyLabel="Working…"
 						emptyMessage=""
 						observeToolDuration={false}
 					/>

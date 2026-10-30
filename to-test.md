@@ -3099,4 +3099,4 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   Targeted recorded-run and HTTP/service parity tests provide automated coverage;
   the running development backend does not hot-reload this Rust change.
 
-- [ ] Compare the four chat working-effect candidates in `src/__tests__/browser/chatWorkingEffects.html` and select a preferred effect. No default is selected (#2533-c51f).
+- [ ] In a real agent turn after loading the updated frontend, confirm the Chat breathing orb appears while working and disappears when done on desktop and phone. Real-component browser captures cover dark/light themes and reduced motion (#2535-8b6b).

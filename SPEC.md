@@ -1,6 +1,6 @@
 # TUICommander Specification
 
-- [x] Four opt-in chat working-effect candidates share the real transcript, with theme tokens, stable dimensions and reduced-motion fallbacks; no default selected (#2533-c51f).
+- [x] Desktop and mobile AI Chat and Session Chat use one theme-accent breathing orb while working, with accessible Working text and a static dot under reduced motion (#2535-8b6b).
 
 - [x] Mobile terminal and AI Chat composers add one space after a pasted HTTP(S) URL when neither the paste nor the following draft character supplies whitespace (#2494-921f).
 - [x] Mobile list identities stay inside their rows; long session and file names use ellipsis, badges and actions remain visible, and Progress text wraps (#2493-061e).

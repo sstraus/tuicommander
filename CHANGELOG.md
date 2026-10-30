@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- Add an opt-in development comparison of four chat working effects without changing the product default (#2533-c51f).
+- Use a theme-accent breathing orb for working feedback in desktop and mobile Chat. Reduced motion shows a static dot; accessible Working text and provider retry status remain unchanged (#2535-8b6b).
 
 - Persist workflow timer wake receipts, bounded provider backoff, one-row cohort deadlines and fail-closed question expiry across daemon restart (#2529-844b).
 

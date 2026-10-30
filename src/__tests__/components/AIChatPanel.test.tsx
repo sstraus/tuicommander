@@ -629,7 +629,7 @@ describe("AIChatPanel: transcript actions", () => {
 		transcript.dispatchEvent(new Event("scroll"));
 		feed({ kind: "turnStarted" }, SESSION, "turn-1");
 		await settle();
-		expect(container.querySelector(".thinkingPulse")).not.toBeNull();
+		expect(container.querySelector('[role="status"][aria-label="Working…"]')).not.toBeNull();
 		expect(transcript.scrollTop).toBe(900);
 	});
 	// Catches: a permanently visible Copy label or a button removed from keyboard focus.
