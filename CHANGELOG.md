@@ -20,7 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- Restore session quota for Codex profiles with Codex 0.166 by loading the selected profile file through supported App Server configuration overrides (#2541-18a3).
+- Restore session quota for Codex profiles with Codex 0.166 by loading the selected profile file through supported App Server configuration overrides. Preserve profile-relative paths, and reject App Server's invalid-configuration defaults fallback (#2541-18a3).
 
 - Keep terminal search below the Context and CLI/Chat switch row so navigation and close controls stay reachable in narrow panes (#2538-c082).
 

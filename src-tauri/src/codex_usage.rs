@@ -366,6 +366,77 @@ pub(crate) async fn session_quota(
     session_quota_from_binary(Path::new(&binary), home, codex_home, profile).await
 }
 
+// AbsolutePathBuf fields from Codex 0.166's codex-rs/core/config.schema.json:
+// https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/core/config.schema.json
+// Its loader
+// resolves exactly these fields against each layer's directory before merging:
+// https://github.com/openai/codex/blob/rust-v0.166.0/codex-rs/config/src/loader/mod.rs
+// Keep full paths: similarly named MCP commands, args and unknown keys are not paths.
+const CODEX_PROFILE_PATHS: &[&str] = &[
+    "agents.*.config_file",
+    "experimental_compact_prompt_file",
+    "log_dir",
+    "model_catalog_json",
+    "model_instructions_file",
+    "model_providers.*.auth.cwd",
+    "otel.exporter.otlp-http.tls.ca-certificate",
+    "otel.exporter.otlp-http.tls.client-certificate",
+    "otel.exporter.otlp-http.tls.client-private-key",
+    "otel.exporter.otlp-grpc.tls.ca-certificate",
+    "otel.exporter.otlp-grpc.tls.client-certificate",
+    "otel.exporter.otlp-grpc.tls.client-private-key",
+    "otel.metrics_exporter.otlp-http.tls.ca-certificate",
+    "otel.metrics_exporter.otlp-http.tls.client-certificate",
+    "otel.metrics_exporter.otlp-http.tls.client-private-key",
+    "otel.metrics_exporter.otlp-grpc.tls.ca-certificate",
+    "otel.metrics_exporter.otlp-grpc.tls.client-certificate",
+    "otel.metrics_exporter.otlp-grpc.tls.client-private-key",
+    "otel.trace_exporter.otlp-http.tls.ca-certificate",
+    "otel.trace_exporter.otlp-http.tls.client-certificate",
+    "otel.trace_exporter.otlp-http.tls.client-private-key",
+    "otel.trace_exporter.otlp-grpc.tls.ca-certificate",
+    "otel.trace_exporter.otlp-grpc.tls.client-certificate",
+    "otel.trace_exporter.otlp-grpc.tls.client-private-key",
+    "profiles.*.experimental_compact_prompt_file",
+    "profiles.*.model_catalog_json",
+    "profiles.*.model_instructions_file",
+    "sandbox_workspace_write.writable_roots.*",
+    "skills.config.*.path",
+    "sqlite_home",
+];
+
+fn resolve_profile_path(value: &mut toml::Value, keys: &[&str], base: &Path) {
+    let Some((key, rest)) = keys.split_first() else {
+        if let toml::Value::String(path) = value {
+            // Leave home expansion to Codex under the session-bound HOME.
+            let home_relative =
+                path == "~" || path.starts_with("~/") || (cfg!(windows) && path.starts_with("~\\"));
+            if !home_relative && !Path::new(path.as_str()).is_absolute() {
+                *path = base.join(&*path).to_string_lossy().into_owned();
+            }
+        }
+        return;
+    };
+    match value {
+        toml::Value::Table(table) if *key == "*" => {
+            for value in table.values_mut() {
+                resolve_profile_path(value, rest, base);
+            }
+        }
+        toml::Value::Array(array) if *key == "*" => {
+            for value in array {
+                resolve_profile_path(value, rest, base);
+            }
+        }
+        toml::Value::Table(table) => {
+            if let Some(value) = table.get_mut(*key) {
+                resolve_profile_path(value, rest, base);
+            }
+        }
+        _ => {}
+    }
+}
+
 async fn session_quota_from_binary(
     binary: &Path,
     home: &str,
@@ -382,9 +453,17 @@ async fn session_quota_from_binary(
         let contents = tokio::fs::read_to_string(&path)
             .await
             .map_err(|_| "Codex profile configuration unavailable".to_string())?;
-        let layer: toml::Table = toml::from_str(&contents)
+        let mut layer: toml::Value = toml::from_str(&contents)
             .map_err(|_| "Codex profile configuration invalid".to_string())?;
-        for (key, value) in layer {
+        let base = std::path::absolute(path.parent().ok_or("Codex profile directory unavailable")?)
+            .map_err(|_| "Codex profile directory unavailable".to_string())?;
+        for key in CODEX_PROFILE_PATHS {
+            resolve_profile_path(&mut layer, &key.split('.').collect::<Vec<_>>(), &base);
+        }
+        for (key, value) in layer
+            .as_table()
+            .ok_or("Codex profile configuration invalid")?
+        {
             args.push("-c".to_string());
             args.push(format!("{key}={value}"));
         }
@@ -439,7 +518,7 @@ pub async fn get_codex_usage_stats() -> Result<CodexStatsResponse, String> {
 mod tests {
     use super::*;
 
-    /// Catches: forwarding --profile to app-server instead of loading its TOML layer.
+    /// Catches: CLI overrides resolving profile-relative instructions from the process cwd.
     #[cfg(unix)]
     #[tokio::test]
     async fn codex_profile_quota_preserves_relative_instruction_path_at_process_boundary() {
@@ -474,12 +553,18 @@ done
         std::fs::write(dir.path().join("instructions.md"), "Profile instructions").unwrap();
         for (profile, instructions) in [
             (Some("work"), "instructions.md".to_string()),
-            (Some("work"), dir.path().join("instructions.md").display().to_string()),
+            (
+                Some("work"),
+                dir.path().join("instructions.md").display().to_string(),
+            ),
             (None, "instructions.md".to_string()),
         ] {
             std::fs::write(
                 dir.path().join("work.config.toml"),
-                format!("model = \"profile-marker\"\nmodel_instructions_file = {}\n", toml::Value::String(instructions)),
+                format!(
+                    "model = \"profile-marker\"\nmodel_instructions_file = {}\n",
+                    toml::Value::String(instructions)
+                ),
             )
             .unwrap();
             let quota = session_quota_from_binary(
@@ -517,6 +602,154 @@ done
             .await
             .unwrap_err();
         assert_eq!(invalid, "Codex profile configuration invalid");
+    }
+
+    /// Catches: publishing default-account usage after Codex rejects a selected layer.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn codex_profile_quota_rejects_provider_defaults_fallback() {
+        let script = crate::test_support::fake_ssh_script(
+            "2541-codex-profile-warning",
+            r#"
+while IFS= read -r request; do
+  case "$request" in
+    *account/rateLimits/read*)
+      cat "$CODEX_HOME/warning.json"
+      printf '{"id":1,"result":{"rateLimits":{"primary":{"usedPercent":5}}}}\n'
+      ;;
+  esac
+done
+"#,
+            "exit /b 2",
+        );
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        std::fs::write(dir.path().join("work.config.toml"), "model = \"marker\"").unwrap();
+        std::fs::write(
+            dir.path().join("warning.json"),
+            include_str!("fixtures/codex_profile_invalid_configuration_0166.json"),
+        )
+        .unwrap();
+        let error = session_quota_from_binary(
+            &script,
+            dir.path().to_str().unwrap(),
+            dir.path().to_str().unwrap(),
+            Some("work"),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            error,
+            "Provider usage configuration invalid; defaults rejected"
+        );
+        assert!(
+            looks_like_contract_failure(&error),
+            "must not enable stale-cache fallback"
+        );
+    }
+
+    /// Catches: rebasing only top-level paths, or rebasing unrelated strings and home paths.
+    #[test]
+    fn codex_profile_paths_preserve_nested_origins_and_non_path_values() {
+        let base = crate::test_support::test_temp_root();
+        let mut layer: toml::Value = toml::from_str(
+            r#"
+model_instructions_file = "instructions.md"
+experimental_compact_prompt_file = "compact.md"
+model_catalog_json = "catalog.json"
+log_dir = "logs"
+sqlite_home = "db"
+notify = ["relative-command"]
+[agents."role.with.dot"]
+config_file = "agents/reviewer.toml"
+[model_providers.custom.auth]
+cwd = "provider"
+[profiles.nested]
+model_instructions_file = "nested.md"
+[skills]
+config = [{ path = "skills/SKILL.md", enabled = false }]
+[sandbox_workspace_write]
+writable_roots = ["workspace", "~/shared"]
+[mcp_servers.custom]
+command = "relative-command"
+cwd = "relative-mcp-cwd"
+[unknown]
+model_instructions_file = "not-a-known-path"
+"#,
+        )
+        .unwrap();
+        // Both exporter variants under all three OTEL settings use AbsolutePathBuf TLS fields.
+        let mut otel = String::new();
+        for exporter in ["exporter", "metrics_exporter", "trace_exporter"] {
+            for protocol in ["otlp-http", "otlp-grpc"] {
+                otel.push_str(&format!("[otel.{exporter}.{protocol}.tls]\n"));
+                for key in ["ca-certificate", "client-certificate", "client-private-key"] {
+                    otel.push_str(&format!("{key} = \"tls.pem\"\n"));
+                }
+            }
+        }
+        layer
+            .as_table_mut()
+            .unwrap()
+            .extend(toml::from_str::<toml::Table>(&otel).unwrap());
+        for key in CODEX_PROFILE_PATHS {
+            resolve_profile_path(&mut layer, &key.split('.').collect::<Vec<_>>(), &base);
+        }
+        for (key, file) in [
+            ("model_instructions_file", "instructions.md"),
+            ("experimental_compact_prompt_file", "compact.md"),
+            ("model_catalog_json", "catalog.json"),
+            ("log_dir", "logs"),
+            ("sqlite_home", "db"),
+        ] {
+            assert_eq!(layer[key].as_str(), base.join(file).to_str(), "{key}");
+        }
+        assert_eq!(
+            layer["agents"]["role.with.dot"]["config_file"].as_str(),
+            base.join("agents/reviewer.toml").to_str()
+        );
+        assert_eq!(
+            layer["model_providers"]["custom"]["auth"]["cwd"].as_str(),
+            base.join("provider").to_str()
+        );
+        assert_eq!(
+            layer["profiles"]["nested"]["model_instructions_file"].as_str(),
+            base.join("nested.md").to_str()
+        );
+        assert_eq!(
+            layer["skills"]["config"][0]["path"].as_str(),
+            base.join("skills/SKILL.md").to_str()
+        );
+        assert_eq!(
+            layer["sandbox_workspace_write"]["writable_roots"][0].as_str(),
+            base.join("workspace").to_str()
+        );
+        assert_eq!(
+            layer["sandbox_workspace_write"]["writable_roots"][1].as_str(),
+            Some("~/shared")
+        );
+        assert_eq!(layer["notify"][0].as_str(), Some("relative-command"));
+        assert_eq!(
+            layer["mcp_servers"]["custom"]["command"].as_str(),
+            Some("relative-command")
+        );
+        assert_eq!(
+            layer["mcp_servers"]["custom"]["cwd"].as_str(),
+            Some("relative-mcp-cwd")
+        );
+        assert_eq!(
+            layer["unknown"]["model_instructions_file"].as_str(),
+            Some("not-a-known-path")
+        );
+        for exporter in ["exporter", "metrics_exporter", "trace_exporter"] {
+            for protocol in ["otlp-http", "otlp-grpc"] {
+                for key in ["ca-certificate", "client-certificate", "client-private-key"] {
+                    assert_eq!(
+                        layer["otel"][exporter][protocol]["tls"][key].as_str(),
+                        base.join("tls.pem").to_str()
+                    );
+                }
+            }
+        }
     }
 
     #[test]

@@ -221,8 +221,13 @@ Codex session quota follows the live process's `HOME`, `CODEX_HOME` and selected
 profile. For `--profile work`, TUIC reads `<CODEX_HOME>/work.config.toml` and passes
 its TOML values to `codex app-server` through `-c` overrides. Codex 0.166 rejects
 `--profile` for App Server. Codex still loads its base configuration and owns
-credential access and token refresh. An unreadable or invalid selected profile
-shows unavailable usage instead of silently querying the default configuration.
+credential access and token refresh. Before serialization, TUIC resolves Codex's
+path-valued fields against the selected profile file's directory, including nested
+agent, skill, provider-auth, workspace-root and OTEL TLS paths. Absolute paths and
+`~` home paths keep their meaning. Commands, arguments and unknown fields are not
+rebased. An unreadable or invalid selected profile, or an App Server warning that
+it discarded the configuration, shows unavailable usage instead of silently
+querying the default configuration.
 
 ## Claude Usage Dashboard
 

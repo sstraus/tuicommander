@@ -56,6 +56,7 @@ pub(crate) fn looks_like_contract_failure(message: &str) -> bool {
         || lower.contains("method not found")
         || lower.contains("unknown method")
         || lower.contains("unsupported method")
+        || lower.contains("configuration invalid; defaults rejected")
 }
 
 fn record_response(line: &str, wanted: &HashSet<u64>, responses: &mut HashMap<u64, Value>) {
@@ -145,6 +146,15 @@ pub(crate) async fn request_jsonl_with_env(
                 .await
                 .map_err(|error| format!("Failed to read provider usage response: {error}"))?
                 .ok_or_else(|| "Provider usage process exited before responding".to_string())?;
+            // Codex can keep serving account RPCs after discarding an invalid
+            // configuration. Never publish that default account as selected usage.
+            if let Ok(value) = serde_json::from_str::<Value>(&line)
+                && value.get("method").and_then(Value::as_str) == Some("configWarning")
+                && value.pointer("/params/summary").and_then(Value::as_str)
+                    == Some("Invalid configuration; using defaults.")
+            {
+                return Err("Provider usage configuration invalid; defaults rejected".to_string());
+            }
             record_response(&line, &wanted, &mut responses);
         }
         Ok::<_, String>(responses)
