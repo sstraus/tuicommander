@@ -799,3 +799,6 @@ async fn expired_run_does_not_busy_poll_while_its_check_is_still_running() {
         "expired pinned adapter busy-polled: {unchanged} unchanged cursor events in 250ms"
     );
 }
+
+#[path = "wf02_critic.rs"]
+mod wf02_critic;

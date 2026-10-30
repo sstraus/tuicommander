@@ -3,10 +3,11 @@ use crate::workflows::PublishedWorkflow;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-/// Version 2 remains the serial replay contract. Version 3 adds immutable pins;
-/// it deliberately does not introduce Fork/all-Join or branch-local questions.
+/// Versions 2 and 3 retain serial replay; 3 adds immutable definition pins.
+/// Version 4 introduces correlated parallel regions without reinterpreting Join.
 pub const SERIAL_EVENT_CONTRACT_VERSION: u16 = 2;
-pub const CURRENT_EVENT_CONTRACT_VERSION: u16 = 3;
+pub const PINNED_SERIAL_EVENT_CONTRACT_VERSION: u16 = 3;
+pub const CURRENT_EVENT_CONTRACT_VERSION: u16 = 4;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]

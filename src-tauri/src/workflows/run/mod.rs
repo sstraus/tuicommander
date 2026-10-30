@@ -5,6 +5,7 @@ pub mod evidence;
 pub mod graph;
 mod incidents;
 mod model;
+pub mod parallel;
 pub mod timer;
 #[cfg(test)]
 mod timer_tests;
@@ -32,6 +33,8 @@ mod critic_tests;
 mod graph_critic_1446a_tests;
 #[cfg(test)]
 mod graph_tests;
+#[cfg(test)]
+mod wf02_tests;
 
 #[cfg(test)]
 mod critic_957_tests;
@@ -2012,8 +2015,8 @@ mod tests {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
-        // 6: durable Timer events; older builds must refuse rather than reinterpret new runs.
-        assert_eq!(stored_schema_version(&db), 6, "fresh store records version");
+        // 7: contract-4 tokens extend the durable Timer layout (6).
+        assert_eq!(stored_schema_version(&db), 7, "fresh store records version");
         let run = store
             .start_plan(
                 project.path().to_str().unwrap(),
@@ -2029,7 +2032,7 @@ mod tests {
             .pragma_update(None, "user_version", 0)
             .unwrap();
         let upgraded = RunStore::open_at(&db).unwrap();
-        assert_eq!(stored_schema_version(&db), 6);
+        assert_eq!(stored_schema_version(&db), 7);
         assert_eq!(
             upgraded.snapshot(&run.id).unwrap().sequence,
             run.sequence,

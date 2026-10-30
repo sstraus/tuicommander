@@ -390,3 +390,63 @@ fn activation_timer_pause_preserves_absolute_due_and_cancel_fences_wake() {
         store.snapshot(&run.id).unwrap()
     );
 }
+
+#[test]
+fn timer_replay_preserves_wf19_contract_three_and_rejects_contract_two() {
+    // catches: moving CURRENT to 4 makes historical WF19 schedule/fire events unreplayable.
+    let (config, project, plan, _, definition, _guard) = super::tests::fixture();
+    let store = RunStore::open_at(&config.path().join("timer-contracts.sqlite3")).unwrap();
+    let run = store
+        .start_plan(
+            project.path().to_str().unwrap(),
+            &plan,
+            &definition,
+            1,
+            RunLimits::default(),
+        )
+        .unwrap();
+    let receipt = store
+        .command_at(
+            &run.id,
+            "schedule",
+            schedule(
+                "compat",
+                json!({"type":"service","owner":"review"}),
+                json!({"type":"provider_retry","provider":"github"}),
+                run.started_ms + 1000,
+                run.started_ms + 30000,
+                "incomplete",
+            ),
+            run.started_ms,
+        )
+        .unwrap();
+    let fired = store
+        .command_at(&run.id, "fire", fire("compat", 1), run.started_ms + 1000)
+        .unwrap();
+    let started = store
+        .events_after(&run.id, 0, 1)
+        .unwrap()
+        .into_iter()
+        .next()
+        .unwrap();
+    for version in [2, 3, 4] {
+        // Decode the historical start wire contract, not a hand-set timer state.
+        let mut wire = serde_json::to_value(&started).unwrap();
+        wire["kind"]["initial"]["eventContractVersion"] = json!(version);
+        let event: RunEvent = serde_json::from_value(wire).unwrap();
+        let initial = super::reducer::apply_event(None, &event).unwrap();
+        let scheduled = super::reducer::apply_event(Some(initial), &receipt.event);
+        if version == 2 {
+            assert!(scheduled.is_err(), "contract 2 never supported timers");
+        } else {
+            let replayed =
+                super::reducer::apply_event(Some(scheduled.unwrap()), &fired.event).unwrap();
+            assert_eq!(timers(&replayed)[0]["state"], "fired", "contract {version}");
+            assert_eq!(
+                timers(&replayed)[0]["outcome"],
+                "wake",
+                "contract {version}"
+            );
+        }
+    }
+}

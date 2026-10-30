@@ -15,6 +15,7 @@ pub enum ActivationState {
     Running,
     Completed,
     Paused,
+    Superseded,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -24,6 +25,14 @@ pub struct Activation {
     pub node_id: String,
     pub state: ActivationState,
     pub edge_index: Option<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub predecessor: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tokens: Vec<super::parallel::BranchToken>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_wait: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub resource_claim: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -119,6 +128,10 @@ pub struct GraphExecution {
     pub loops: Vec<LoopCounter>,
     pub pauses: Vec<GraphPause>,
     pub completed: bool,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub forks: Vec<super::parallel::ForkInstance>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub checks: Vec<super::parallel::ScopedCheck>,
 }
 
 impl GraphExecution {
@@ -164,6 +177,10 @@ impl GraphExecution {
             node_id: start.id.clone(),
             state: ActivationState::Ready,
             edge_index: None,
+            predecessor: None,
+            tokens: vec![],
+            resource_wait: None,
+            resource_claim: None,
         };
         Ok(Self {
             id,
@@ -175,6 +192,8 @@ impl GraphExecution {
             loops: vec![],
             pauses: vec![],
             completed: false,
+            forks: vec![],
+            checks: vec![],
         })
     }
 
@@ -188,15 +207,21 @@ impl GraphExecution {
         let mut execution = Self::start(id, target_id, definition)?;
         match version {
             super::contracts::SERIAL_EVENT_CONTRACT_VERSION => execution.contract = None,
+            super::contracts::PINNED_SERIAL_EVENT_CONTRACT_VERSION => {
+                execution
+                    .contract
+                    .as_mut()
+                    .expect("pinned contract")
+                    .version = version;
+            }
             super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {}
             _ => return Err("unsupported workflow graph event contract".into()),
         }
         Ok(execution)
     }
 
-    /// Versions 2 and 3 intentionally share the frozen exclusive/serial
-    /// transition implementation. A future token contract must add a new arm,
-    /// not replace this method or reinterpret historical Join nodes.
+    /// Versions 2 and 3 share the frozen exclusive/serial implementation.
+    /// Version 4 uses explicit branch tokens; historical Join stays exclusive.
     pub(super) fn apply_for_contract(
         &mut self,
         transition: &GraphTransition,
@@ -204,15 +229,22 @@ impl GraphExecution {
         version: u16,
     ) -> Result<u16, String> {
         match version {
+            super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {
+                self.apply_parallel(transition, remaining_loops)
+            }
             super::contracts::SERIAL_EVENT_CONTRACT_VERSION
-            | super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {
+            | super::contracts::PINNED_SERIAL_EVENT_CONTRACT_VERSION => {
                 self.apply(transition, remaining_loops)
             }
             _ => Err("unsupported workflow graph event contract".into()),
         }
     }
 
-    fn enqueue(&mut self, edge_index: Option<usize>, target: String) -> Result<(), String> {
+    pub(super) fn enqueue(
+        &mut self,
+        edge_index: Option<usize>,
+        target: String,
+    ) -> Result<(), String> {
         if self.activations.len() >= MAX_ACTIVATIONS {
             return Err("graph activation budget exhausted".into());
         }
@@ -222,6 +254,10 @@ impl GraphExecution {
             node_id: target,
             state: ActivationState::Ready,
             edge_index,
+            predecessor: None,
+            tokens: vec![],
+            resource_wait: None,
+            resource_claim: None,
         });
         Ok(())
     }
@@ -239,7 +275,7 @@ impl GraphExecution {
             GraphTransition::Activate { activation_id, .. }
             | GraphTransition::Complete { activation_id, .. }
             | GraphTransition::ResolvePause { activation_id, .. } => activation_id,
-            GraphTransition::Start { .. } => return Err("graph execution already exists".into()),
+            _ => return Err("transition is not part of the serial contract".into()),
         };
         let index = self
             .activations
@@ -407,7 +443,7 @@ impl GraphExecution {
                 self.pauses[pause_index].resolution = Some(resolution.clone());
                 self.activations[index].state = ActivationState::Completed;
             }
-            GraphTransition::Start { .. } => unreachable!(),
+            _ => return Err("transition is not part of the serial contract".into()),
         }
         Ok(0)
     }
@@ -430,6 +466,43 @@ pub enum GraphTransition {
         outcome: Option<EdgeOutcome>,
         evidence: Option<DecisionEvidence>,
     },
+    Expand {
+        execution_id: String,
+        activation_id: String,
+        source_activation_id: String,
+        items: Vec<String>,
+    },
+    ResourceClaim {
+        execution_id: String,
+        activation_id: String,
+        key: Option<String>,
+    },
+    CheckBound {
+        execution_id: String,
+        activation_id: String,
+        receipt: super::check::CheckReceipt,
+    },
+    ResourceWait {
+        execution_id: String,
+        activation_id: String,
+        reason: Option<String>,
+    },
+    Arrive {
+        execution_id: String,
+        activation_id: String,
+        token: super::parallel::BranchToken,
+        outcome: super::parallel::ArrivalOutcome,
+    },
+    SupersedeFork {
+        execution_id: String,
+        fork_id: String,
+        generation: u32,
+    },
+    ForkStopped {
+        execution_id: String,
+        fork_id: String,
+        generation: u32,
+    },
     ResolvePause {
         execution_id: String,
         activation_id: String,
@@ -443,7 +516,14 @@ impl GraphTransition {
             Self::Start { execution_id, .. }
             | Self::Activate { execution_id, .. }
             | Self::Complete { execution_id, .. }
-            | Self::ResolvePause { execution_id, .. } => execution_id,
+            | Self::ResolvePause { execution_id, .. }
+            | Self::Expand { execution_id, .. }
+            | Self::ResourceClaim { execution_id, .. }
+            | Self::CheckBound { execution_id, .. }
+            | Self::ResourceWait { execution_id, .. }
+            | Self::Arrive { execution_id, .. }
+            | Self::SupersedeFork { execution_id, .. }
+            | Self::ForkStopped { execution_id, .. } => execution_id,
         }
     }
 }

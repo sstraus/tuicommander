@@ -86,9 +86,18 @@ pub enum AttemptState {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GraphAttemptBinding {
+    pub execution_id: String,
+    pub activation_id: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeAttempt {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub graph_binding: Option<GraphAttemptBinding>,
     pub story_id: String,
     pub node_id: String,
     pub generation: u64,

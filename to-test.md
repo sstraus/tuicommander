@@ -1,3 +1,8 @@
+## Workflow Fork/all-Join (2509-0e2f) — Rust rebuild/restart required
+
+- [ ] After a manual Rust rebuild/restart, verify a post-all-Join Gate or approval Judge uses current fork checks, a primary critic FIX wins over an approving advisor, and concurrent check admission does not pause on sibling progress. Automated rb regressions cover these paths; this item checks the restarted daemon integration.
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a story graph with critic/check Fork branches and inspect the ordered branch arrivals, non-success all-Join edges and generation replacement after critic FIX. This assignment does not restart the daily daemon. Dedicated Designer controls belong to WF11; use the existing definition API for these graph records.
 ## Durable workflow timers (2529-844b) — Rust rebuild/restart required
 
 - [ ] Load the new timer ledger/actor only after Boss manually restarts a rebuilt `make dev` or installs `make build`, when losing current sessions is acceptable. Rust does not hot-reload. Automated reducer/store/owner and paused-actor tests cover timer delivery, including a duration-expired run waiting for its pinned check without repeated deadline polling; no new UI or provider consumer is installed by this foundation. The daily app was not restarted.
@@ -3099,6 +3104,8 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   Targeted recorded-run and HTTP/service parity tests provide automated coverage;
   the running development backend does not hot-reload this Rust change.
 
+- [ ] WF02/WF19 integration after rebuild: confirm parallel repair cancels old activation timers without cancelling independent service timers. Rust changes require a manual restart; no live-app validation was performed.
+- [ ] After the next backend rebuild/restart, verify a WF02 fork with pinned WF06 evidence policy starts repair for a typed FIX even if the retained legacy label says approved. Targeted RunStore automation covers generation fencing and replay; this Rust change does not hot-reload (#2509-0e2f).
 - [ ] In a real agent turn after loading the updated frontend, confirm the Chat breathing orb appears while working and disappears when done on desktop and phone. Real-component browser captures cover dark/light themes and reduced motion (#2535-8b6b).
 ## WF06 — typed workflow evidence policy (2513-c433)
 

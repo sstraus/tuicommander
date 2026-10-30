@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add bounded, correlated workflow Fork/all-Join, For each and typed If/else execution, generation-fenced repair, and replay-safe branch readiness (#2509-0e2f).
 - Use a theme-accent breathing orb for working feedback in desktop and mobile Chat. Reduced motion shows a static dot; accessible Working text and provider retry status remain unchanged (#2535-8b6b).
 
 - Add opt-in pinned workflow evidence policy with source-bound proof, independent review, ordered FIX/STORY/ACCEPT triage and bounded review/repair budgets (#2513-c433).
@@ -18,6 +19,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Add a separating space after web URLs pasted into mobile terminal and AI Chat composers, unless whitespace already follows (#2494-921f).
 
 ### Fixed
+
+- Preserve current-generation checks after workflow all-Join, honor each bound critic FIX, route typed join failures correctly, and re-evaluate concurrent check admission without pausing valid sibling work (#2509-0e2f).
 
 - Raise built-in secondary and muted text contrast on all neutral chrome surfaces, share desktop/mobile startup foregrounds, and remove the collapsed Compose label and queue-count fade (#2506-22b0).
 
