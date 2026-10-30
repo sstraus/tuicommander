@@ -1,6 +1,6 @@
 import { EditorView } from "@codemirror/view";
 import { terminalsStore } from "../stores/terminals";
-import { getShellFamily, sendCommand } from "../utils/sendCommand";
+import { agentInputPayload, getShellFamily, sendCommand } from "../utils/sendCommand";
 
 export interface DictationTarget {
 	kind: "input" | "editor" | "compose" | "contenteditable" | "pty" | "none";
@@ -121,7 +121,7 @@ export function captureDictationTarget(): DictationTarget {
 				if (autoSend) {
 					const shellFamily = await getShellFamily(sessionId);
 					await sendCommand(writeFn, text, agentType, shellFamily, true, sessionId);
-				} else await writeFn(text);
+				} else await writeFn(agentInputPayload(text, agentType));
 				requestAnimationFrame(() => {
 					if (terminalId && terminalsStore.getActive()?.id === terminalId) terminalsStore.get(terminalId)?.ref?.focus();
 				});

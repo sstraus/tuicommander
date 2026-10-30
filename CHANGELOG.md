@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Preserve the beginning of long Claude CLI dictation by framing it as a bracketed paste, including review-only delivery (#2502-571c).
+
 - Open local `tuic://open` links from Markdown in desktop and mobile/browser views. Route Markdown, images, HTML and directories to their proper views, including cross-worktree targets; keep network external-text reads restricted to registered repositories (#2497-ec72).
 - Apply collective zoom shortcuts to all open Markdown and code editor tabs as well as terminals (#2499-1156).
 

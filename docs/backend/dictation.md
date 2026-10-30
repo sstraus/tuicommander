@@ -35,6 +35,21 @@ requests no global keyboard-monitor permission and does not poll while idle.
 The file log records `Fn focus loss observed` with the physical key state; a
 release found by the timer records `origin="fn-state-poll"`.
 
+## Long text delivery to Claude
+
+Push-to-talk sends long Claude CLI text as a bracketed paste, with or without
+Auto-send. The frontend and backend frame Claude text above 500 UTF-8 bytes;
+short dialog answers remain key events. Codex keeps its existing character
+threshold. Recording limits and Whisper decode flags do not change.
+
+Claude Code 2.1.311 accepted only the last 137 characters of an isolated
+1159-character plain write. The same text inside bracketed paste markers reached
+its native transcript in full. The recorded fixture is
+`src-tauri/src/fixtures/agent_prompts/claude-long-dictation-2502.json`.
+`Dictation delivered` records a completed target write, not proof that the
+external CLI accepted every character. Compare the actual CLI transcript with
+that log before attributing a missing beginning to audio capture or Whisper.
+
 ## Diagnose speech that also appears in the mobile composer
 
 Hands-free uses `pty::write_voice_turn` for its bound session. The mobile
