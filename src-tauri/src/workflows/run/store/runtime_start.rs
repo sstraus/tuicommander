@@ -130,6 +130,7 @@ impl RunStore {
             canonical_recertification: None,
             attempts: vec![],
             effects: vec![],
+            timers: vec![],
             graph_executions: vec![],
         };
         let mut conn = self.connect()?;

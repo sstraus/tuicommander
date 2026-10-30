@@ -72,7 +72,8 @@ impl From<RunStartError> for String {
 /// records explicit graph-root targets; older binaries must refuse that contract.
 // 4: paused_for events; a build that supports 3 refuses the store instead of failing to decode them.
 // 5: contract-3 graph pins; older builds must refuse rather than reinterpret new runs.
-const RUN_STORE_SCHEMA_VERSION: i64 = 5;
+// 6: durable Timer events; older builds cannot decode their ledger.
+const RUN_STORE_SCHEMA_VERSION: i64 = 6;
 
 mod approval;
 mod runtime_start;
@@ -424,6 +425,7 @@ impl RunStore {
             canonical_recertification: None,
             attempts: vec![],
             effects: vec![],
+            timers: vec![],
             graph_executions: vec![],
         };
         let event = RunEvent {
@@ -2010,6 +2012,10 @@ fn choose_event(
     {
         return Err("graph runs require an eligible typed activation transition".into());
     }
+    if let RunCommand::Timer { command } = command {
+        return super::timer::choose(snapshot, command, at_ms)
+            .map(|event| RunEventKind::Timer { event });
+    }
     let expired = at_ms >= super::runtime::deadline_at(snapshot, at_ms);
     if matches!(command, RunCommand::ExpireDeadline) {
         if !expired || snapshot.status != RunStatus::Running {
@@ -2091,6 +2097,7 @@ fn choose_event(
         return Err("workflow is paused".into());
     }
     match command {
+        RunCommand::Timer { .. } => unreachable!("timer command handled before run timing"),
         RunCommand::Graph { transition } => {
             if matches!(
                 transition,
