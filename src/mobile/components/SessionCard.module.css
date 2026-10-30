@@ -66,7 +66,7 @@ button[data-control-layout="row"].cardMain {
 
 .name {
   composes: ellipsis from "../mobileText.module.css";
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 600;
   color: var(--fg-primary);
 }
@@ -75,8 +75,8 @@ button[data-control-layout="row"].cardMain {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
-  color: var(--fg-muted);
+  font-size: 13px;
+  color: var(--fg-secondary);
 }
 
 .project {
@@ -91,7 +91,7 @@ button[data-control-layout="row"].cardMain {
 .branch {
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: 13px;
   color: var(--fg-secondary);
   max-width: 140px;
   overflow: hidden;
@@ -104,7 +104,7 @@ button[data-control-layout="row"].cardMain {
 }
 
 .snippet {
-  font-size: 12px;
+  font-size: 13px;
   color: var(--fg-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -117,7 +117,7 @@ button[data-control-layout="row"].cardMain {
   align-items: center;
   gap: 5px;
   font-size: 13px;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -154,9 +154,8 @@ button[data-control-layout="row"].cardMain {
 }
 
 .usageLabel {
-  font-size: 11px;
-  color: var(--fg-muted);
-  opacity: 0.7;
+  font-size: 13px;
+  color: var(--fg-secondary);
 }
 
 .actions {
@@ -168,13 +167,13 @@ button[data-control-layout="row"].cardMain {
 }
 
 .time {
-  font-size: 11px;
-  color: var(--fg-muted);
+  font-size: 13px;
+  color: var(--fg-secondary);
   white-space: nowrap;
 }
 
 .killBtn {
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
   /* Shared44px touch target retains a28px footprint without reaching left. */
   margin: -8px -16px -8px 0;
 }

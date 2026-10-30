@@ -50,6 +50,12 @@
   --shadow-popup: 0 8px 32px rgba(0, 0, 0, 0.4);
   --shadow-dropdown: 0 4px 16px rgba(0, 0, 0, 0.3);
 
+  /* Mobile interface hierarchy; transcript reading sizes remain independent. */
+  --mobile-heading-size: 20px;
+  --mobile-body-size: 15px;
+  --mobile-meta-size: 13px;
+  --mobile-path-size: 12px;
+
   /* --- Fonts --- */
   --font-mono: "SF Mono", "Menlo", "Consolas", "DejaVu Sans Mono", monospace;
   --font-ui: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans", sans-serif;
@@ -79,6 +85,8 @@ html, body {
   background: var(--bg-primary);
   color: var(--fg-primary);
   font-family: var(--font-ui);
+  font-size: var(--mobile-body-size);
+  line-height: 22px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   overscroll-behavior: none;

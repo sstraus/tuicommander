@@ -65,3 +65,29 @@
 .empty { padding: 36px 16px; color: var(--fg-muted); text-align: center; }
 
 .loadOlder { display: block; margin: 8px auto; }
+
+/* Embedded mobile surface only: desktop keeps its compact journal. */
+.embedded { background: var(--bg-primary); }
+.mobileHeader { flex: 0 0 auto; padding: 0 16px 14px; }
+.mobileHeader h4 { display: flex; align-items: center; min-height: 60px; margin: 0; font-size: 20px; line-height: 26px; font-weight: 600; }
+.mobileControls { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; margin-bottom: 12px; }
+.mobileControls select { width: 100%; min-width: 0; }
+.mobileProject { align-self: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; }
+.mobileViewRow { display: flex; align-items: center; gap: 12px; }
+.scope { margin-left: auto; min-width: 0; color: var(--fg-secondary); font-size: 13px; line-height: 20px; text-align: right; overflow-wrap: anywhere; }
+.mobileFilters { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; padding: 12px; background: var(--bg-secondary); border-radius: var(--radius-xl); }
+.mobileFilters label { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-secondary); }
+.embedded .list { padding: 0 12px 12px; }
+.embedded .entry { padding: 14px 12px; margin-bottom: 10px; border: 0; border-radius: var(--radius-xl); background: var(--bg-secondary); }
+.embedded .entry .text { font-size: 15px; line-height: 22px; font-weight: 400; color: var(--fg-primary); font-style: normal; }
+.eventHeader { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; font-size: 13px; line-height: 20px; font-weight: 600; color: var(--fg-secondary); }
+.eventHeader .icon { margin: 0; color: inherit; }
+.eventHeader time { margin-left: auto; color: var(--fg-secondary); font-weight: 400; }
+.embedded .entry[data-kind="done"] .eventHeader { color: var(--success); }
+.embedded .entry[data-kind="blocked"] .eventHeader, .embedded .entry[data-kind="blocked"] .icon { color: var(--attention); }
+.mobileMeta { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; color: var(--fg-secondary); font-size: 13px; line-height: 20px; }
+.mobileMeta > span { min-width: 0; overflow-wrap: anywhere; }
+.entryDetail { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 20px; color: var(--fg-secondary); overflow-wrap: anywhere; }
+.embedded .divider { padding: 10px 4px 12px; color: var(--fg-secondary); font-size: 13px; text-transform: none; letter-spacing: normal; }
+.embedded .divider::before, .embedded .divider::after { display: none; }
+.embedded .empty { color: var(--fg-secondary); font-size: 15px; }

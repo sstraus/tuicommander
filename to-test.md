@@ -3075,3 +3075,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] After the next backend rebuild, create a worktree in a repo that ignores `stories/`: the shared link must not add a dirty badge. In a repo that does not ignore stories, creation must warn and leave the main untracked files visible (#2476-b3eb).
 
 - [ ] On iPhone, paste an HTTP(S) URL into terminal and AI Chat drafts, then continue typing. Check the separator and caret with the native keyboard. Verify long Sessions and Files names keep actions visible (#2493-061e, #2494-921f).
+
+- [ ] After rebuilding/restarting the backend, verify mobile Progress defaults to Started/Done/Blocked, Filters includes messages/delegations, full pages load with interleaved mail, and Flow still shows hand-offs (#2496-cbae). Rust does not hot-reload.

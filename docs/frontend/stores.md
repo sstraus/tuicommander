@@ -655,6 +655,8 @@ Dynamic context menu action registration.
 
 ### progressStore (`progress.ts`)
 
+`progressOnly` is an optional list scope used by embedded mobile Progress. Changing it clears list entries/cursor, invalidates older requests and refetches; Flow requests do not inherit this filter.
+
 Transport-neutral presentation state for Progress. It selects the active PTY
 when available and retains a repository aggregate view. It holds the selected
 scope's entry list and its divider timestamp frozen while that scope is shown.

@@ -13,6 +13,7 @@ import d from "../shared/dialog.module.css";
 import { Button } from "../ui/Button";
 import { SegmentedControl } from "../ui/SegmentedControl";
 import { Select } from "../ui/Select";
+import { Switch } from "../ui/Switch";
 import s from "./ProgressDialog.module.css";
 import { ProgressFlow } from "./ProgressFlow";
 
@@ -60,6 +61,7 @@ export interface ProgressDialogProps {
  * where the last visit ended, and on-demand older pages.
  */
 export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
+	progressStore.setProgressOnly(!!props.embedded);
 	if (!props.embedded) registerModal(() => void progressStore.close());
 	createEffect(() => {
 		if (!props.embedded || !props.projects?.length) return;
@@ -72,6 +74,8 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 		return path ? progressStore.state.projects[path] : undefined;
 	};
 	const entries = createMemo<ProgressEntry[]>(() => projectState()?.entries ?? []);
+	const [filtersOpen, setFiltersOpen] = createSignal(false);
+	const [detailEntry, setDetailEntry] = createSignal<number | null>(null);
 	const [expandedEntries, setExpandedEntries] = createSignal<number[]>([]);
 	createEffect(() => {
 		project();
@@ -133,78 +137,153 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 			aria-label="Progress"
 			onClick={(e) => e.stopPropagation()}
 		>
-			<div class={s.header}>
-				<div class={s.title}>
+			<Show
+				when={props.embedded}
+				fallback={
+					<div class={s.header}>
+						<div class={s.title}>
+							<h4>Progress</h4>
+							<Show when={!showProjectSelector()}>
+								<span class={s.project}>{displayName()}</span>
+							</Show>
+						</div>
+						<Show when={showProjectSelector()}>
+							<Select
+								class={s.terminalSelect}
+								aria-label="Progress project"
+								value={project() ?? ""}
+								onChange={(event) => progressStore.open(event.currentTarget.value, null)}
+							>
+								<For each={props.projects}>
+									{(path) => <option value={path}>{path.split(/[\\/]/).pop() || path}</option>}
+								</For>
+							</Select>
+						</Show>
+						<Select
+							class={s.terminalSelect}
+							aria-label="Progress terminal"
+							onChange={(event) => progressStore.selectPty(event.currentTarget.value || null)}
+						>
+							<option value="" selected={!progressStore.selectedPtyId()}>
+								All repo
+							</option>
+							<For each={ptyOptions()}>
+								{(terminal) => (
+									<option value={terminal.id} selected={progressStore.selectedPtyId() === terminal.id}>
+										{terminal.label}
+									</option>
+								)}
+							</For>
+						</Select>
+						<SegmentedControl
+							class={s.viewToggle}
+							aria-label="Progress view"
+							options={[
+								{ id: "list", label: "List" },
+								{ id: "flow", label: "Flow" },
+							]}
+							value={isFlow() ? "flow" : "list"}
+							onChange={(view) => progressStore.setView(view)}
+						/>
+						<Show when={!isFlow()}>
+							<label class={s.filter}>
+								<input
+									type="checkbox"
+									checked={progressStore.blockedOnly()}
+									onChange={(e) => progressStore.setBlockedOnly(e.currentTarget.checked)}
+								/>
+								Blocked only
+							</label>
+						</Show>
+						<Show when={!props.embedded}>
+							<Button type="button" variant="ghost" aria-label="Close" onClick={() => void progressStore.close()}>
+								<svg
+									width="16"
+									height="16"
+									viewBox="0 0 24 24"
+									fill="none"
+									stroke="currentColor"
+									stroke-width="2"
+									stroke-linecap="round"
+									aria-hidden="true"
+								>
+									<path d="M18 6 6 18M6 6l12 12" />
+								</svg>
+							</Button>
+						</Show>
+					</div>
+				}
+			>
+				<div class={s.mobileHeader}>
 					<h4>Progress</h4>
-					<Show when={!showProjectSelector()}>
-						<span class={s.project}>{displayName()}</span>
+					<div class={s.mobileControls}>
+						<Show when={showProjectSelector()} fallback={<span class={s.mobileProject}>{displayName()}</span>}>
+							<Select
+								aria-label="Progress project"
+								value={project() ?? ""}
+								onChange={(event) => progressStore.open(event.currentTarget.value, null)}
+							>
+								<For each={props.projects}>
+									{(path) => (
+										<option value={path}>
+											{repositoriesStore.get(path)?.displayName ?? path.split(/[\\/]/).pop() ?? path}
+										</option>
+									)}
+								</For>
+							</Select>
+						</Show>
+						<Button
+							aria-expanded={filtersOpen()}
+							aria-controls="mobile-progress-filters"
+							onClick={() => setFiltersOpen(!filtersOpen())}
+						>
+							Filters
+						</Button>
+					</div>
+					<div class={s.mobileViewRow}>
+						<SegmentedControl
+							aria-label="Progress view"
+							options={[
+								{ id: "list", label: "List" },
+								{ id: "flow", label: "Flow" },
+							]}
+							value={isFlow() ? "flow" : "list"}
+							onChange={(view) => progressStore.setView(view)}
+						/>
+						<span class={s.scope}>
+							{progressStore.selectedPtyId() ? terminalName(progressStore.selectedPtyId()!) : "All agents"}
+						</span>
+					</div>
+					<Show when={filtersOpen()}>
+						<div class={s.mobileFilters} id="mobile-progress-filters">
+							<Select
+								aria-label="Progress terminal"
+								value={progressStore.selectedPtyId() ?? ""}
+								onChange={(event) => progressStore.selectPty(event.currentTarget.value || null)}
+							>
+								<option value="">All agents</option>
+								<For each={ptyOptions()}>{(terminal) => <option value={terminal.id}>{terminal.label}</option>}</For>
+							</Select>
+							<Show when={!isFlow()}>
+								<label>
+									<Switch
+										checked={progressStore.blockedOnly()}
+										onChange={(event) => progressStore.setBlockedOnly(event.currentTarget.checked)}
+									/>
+									Blocked only
+								</label>
+								<label>
+									<Switch
+										checked={!progressStore.progressOnly()}
+										onChange={(event) => progressStore.setProgressOnly(!event.currentTarget.checked)}
+									/>
+									Messages and delegations
+								</label>
+							</Show>
+						</div>
 					</Show>
 				</div>
-				<Show when={showProjectSelector()}>
-					<Select
-						class={s.terminalSelect}
-						aria-label="Progress project"
-						value={project() ?? ""}
-						onChange={(event) => progressStore.open(event.currentTarget.value, null)}
-					>
-						<For each={props.projects}>
-							{(path) => <option value={path}>{path.split(/[\\/]/).pop() || path}</option>}
-						</For>
-					</Select>
-				</Show>
-				<Select
-					class={s.terminalSelect}
-					aria-label="Progress terminal"
-					onChange={(event) => progressStore.selectPty(event.currentTarget.value || null)}
-				>
-					<option value="" selected={!progressStore.selectedPtyId()}>
-						All repo
-					</option>
-					<For each={ptyOptions()}>
-						{(terminal) => (
-							<option value={terminal.id} selected={progressStore.selectedPtyId() === terminal.id}>
-								{terminal.label}
-							</option>
-						)}
-					</For>
-				</Select>
-				<SegmentedControl
-					class={s.viewToggle}
-					aria-label="Progress view"
-					options={[
-						{ id: "list", label: "List" },
-						{ id: "flow", label: "Flow" },
-					]}
-					value={isFlow() ? "flow" : "list"}
-					onChange={(view) => progressStore.setView(view)}
-				/>
-				<Show when={!isFlow()}>
-					<label class={s.filter}>
-						<input
-							type="checkbox"
-							checked={progressStore.blockedOnly()}
-							onChange={(e) => progressStore.setBlockedOnly(e.currentTarget.checked)}
-						/>
-						Blocked only
-					</label>
-				</Show>
-				<Show when={!props.embedded}>
-					<Button type="button" variant="ghost" aria-label="Close" onClick={() => void progressStore.close()}>
-						<svg
-							width="16"
-							height="16"
-							viewBox="0 0 24 24"
-							fill="none"
-							stroke="currentColor"
-							stroke-width="2"
-							stroke-linecap="round"
-							aria-hidden="true"
-						>
-							<path d="M18 6 6 18M6 6l12 12" />
-						</svg>
-					</Button>
-				</Show>
-			</div>
+			</Show>
 
 			<Show when={projectState()?.error}>
 				{/* One line for the whole failure. The old panel printed one red block
@@ -262,8 +341,27 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 									<div class={s.divider}>Seen before</div>
 								</Show>
 								<div class={s.entry} data-kind={entry.type}>
-									<KindIcon kind={entry.type} />
+									<Show when={!props.embedded}>
+										<KindIcon kind={entry.type} />
+									</Show>
 									<div class={s.body}>
+										<Show when={props.embedded}>
+											<div class={s.eventHeader}>
+												<KindIcon kind={entry.type} />
+												<span>
+													{
+														{
+															done: "Done",
+															blocked: "Blocked",
+															intent: "Started",
+															message: "Message",
+															delegated: "Delegated",
+														}[entry.type]
+													}
+												</span>
+												<time>{formatRelativeTime(entry.createdAtMs, { showDateFallback: true })}</time>
+											</div>
+										</Show>
 										<p
 											class={s.text}
 											classList={{
@@ -284,57 +382,98 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 												{expandedEntries().includes(entry.id) ? "Less" : "More"}
 											</Button>
 										</Show>
-										<div class={s.meta}>
-											<Show when={entry.type === "intent"}>
-												<span class={s.kindLabel}>set out to</span>
-												<span>·</span>
-											</Show>
-											<Show when={entry.type === "delegated" || entry.type === "message"}>
-												<span class={s.kindLabel}>
-													{entry.type === "delegated" ? "delegated to" : "messaged"}{" "}
-													{entry.targetPtyId
-														? terminalNames().get(entry.targetPtyId) ||
-															entry.targetName ||
-															terminalName(entry.targetPtyId)
-														: entry.targetName}
-												</span>
-												<span>·</span>
-											</Show>
-											<span>{formatRelativeTime(entry.createdAtMs, { showDateFallback: true })}</span>
-											<Show when={entry.step}>
-												<span>· {entry.step}</span>
-											</Show>
-											<Show when={entry.agentName}>
-												<span>· {entry.agentName}</span>
-											</Show>
-											<Show when={!progressStore.selectedPtyId()}>
-												<span>· {entry.ptyId ? terminalName(entry.ptyId) : "Terminal unknown"}</span>
-											</Show>
-										</div>
-									</div>
-									<Button
-										type="button"
-										variant="ghost"
-										class={s.delete}
-										aria-label="Delete entry"
-										onClick={() => {
-											const path = project();
-											if (path) void progressStore.deleteEntries(path, [entry.id]);
-										}}
-									>
-										<svg
-											width="14"
-											height="14"
-											viewBox="0 0 24 24"
-											fill="none"
-											stroke="currentColor"
-											stroke-width="2"
-											stroke-linecap="round"
-											aria-hidden="true"
+										<Show
+											when={props.embedded}
+											fallback={
+												<div class={s.meta}>
+													<Show when={entry.type === "intent"}>
+														<span class={s.kindLabel}>set out to</span>
+														<span>·</span>
+													</Show>
+													<Show when={entry.type === "delegated" || entry.type === "message"}>
+														<span class={s.kindLabel}>
+															{entry.type === "delegated" ? "delegated to" : "messaged"}{" "}
+															{entry.targetPtyId
+																? terminalNames().get(entry.targetPtyId) ||
+																	entry.targetName ||
+																	terminalName(entry.targetPtyId)
+																: entry.targetName}
+														</span>
+														<span>·</span>
+													</Show>
+													<span>{formatRelativeTime(entry.createdAtMs, { showDateFallback: true })}</span>
+													<Show when={entry.step}>
+														<span>· {entry.step}</span>
+													</Show>
+													<Show when={entry.agentName}>
+														<span>· {entry.agentName}</span>
+													</Show>
+													<Show when={!progressStore.selectedPtyId()}>
+														<span>· {entry.ptyId ? terminalName(entry.ptyId) : "Terminal unknown"}</span>
+													</Show>
+												</div>
+											}
 										>
-											<path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14" />
-										</svg>
-									</Button>
+											<div class={s.mobileMeta}>
+												<span>{entry.agentName || (entry.ptyId ? terminalName(entry.ptyId) : "Terminal unknown")}</span>
+												<Button
+													variant="ghost"
+													shape="icon"
+													aria-label="Entry actions"
+													aria-expanded={detailEntry() === entry.id}
+													aria-controls={`progress-detail-${entry.id}`}
+													onClick={() => setDetailEntry(detailEntry() === entry.id ? null : entry.id)}
+												>
+													⋯
+												</Button>
+											</div>
+											<Show when={detailEntry() === entry.id}>
+												<div class={s.entryDetail} id={`progress-detail-${entry.id}`}>
+													<Show when={entry.step}>
+														<span>{entry.step}</span>
+													</Show>
+													<span>{entry.ptyId ? terminalName(entry.ptyId) : "Terminal unknown"}</span>
+													<Show when={entry.targetPtyId || entry.targetName}>
+														<span>To: {entry.targetName || terminalName(entry.targetPtyId!)}</span>
+													</Show>
+													<Button
+														variant="danger"
+														onClick={() => {
+															const path = project();
+															if (path) void progressStore.deleteEntries(path, [entry.id]);
+														}}
+													>
+														Delete entry
+													</Button>
+												</div>
+											</Show>
+										</Show>
+									</div>
+									<Show when={!props.embedded}>
+										<Button
+											type="button"
+											variant="ghost"
+											class={s.delete}
+											aria-label="Delete entry"
+											onClick={() => {
+												const path = project();
+												if (path) void progressStore.deleteEntries(path, [entry.id]);
+											}}
+										>
+											<svg
+												width="14"
+												height="14"
+												viewBox="0 0 24 24"
+												fill="none"
+												stroke="currentColor"
+												stroke-width="2"
+												stroke-linecap="round"
+												aria-hidden="true"
+											>
+												<path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14" />
+											</svg>
+										</Button>
+									</Show>
 								</div>
 							</>
 						)}

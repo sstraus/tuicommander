@@ -150,7 +150,7 @@ The component is available for Tasks shell integration; it does not add a tab by
 | Plugins and MCP | [Plugins](user-guide/plugins.md) · [MCP Proxy Hub](user-guide/mcp-proxy.md) |
 | Remote, mobile, and browser modes | [TUICommander Modes](user-guide/modes.md) · [Remote Access](user-guide/remote-access.md) |
 | Setup and recovery | [Getting Started](user-guide/getting-started.md) · [Troubleshooting](user-guide/troubleshooting.md) |
-| Project history | [Project Progress](user-guide/project-progress.md) |
+| Project history, mobile outcome-first list and full hand-off Flow | [Project Progress](user-guide/project-progress.md) |
 | Native plans and stories | [Native plans and stories](user-guide/native-stories.md) |
 
 Selecting a New plan source that already belongs to an archived plan shows its title and ID with instructions to enable **Archived plans**, select it, and choose **Restore plan**. This does not create a duplicate or restore the plan implicitly; an active source match still selects its existing plan.

@@ -598,6 +598,7 @@ fn native_reference_tool_definitions() -> serde_json::Value {
                 "base_ref": { "type": "string", "description": "Base ref to branch from, default HEAD (action=worktree_create)" },
                 "spawn_session": { "type": "boolean", "description": "Auto-create a PTY session in the worktree (action=worktree_create, default false)" },
                 "input": { "type": "object", "description": "Typed action payload for progress_list. Defaults to 8 entries; follow nextCursor until null. Unknown fields are rejected.", "properties": {
+                    "progressOnly": { "type": "boolean", "description": "Only intent, done and blocked entries, applied before paging. Defaults to false." },
                     "blockedOnly": { "type": "boolean", "description": "Only blocked entries, applied before paging." },
                     "ptyId": { "type": "string", "description": "Only this terminal's entries, applied before paging." },
                     "limit": { "type": "integer", "minimum": 0, "description": "Entries per page, default 8; clamped to 1..100." },

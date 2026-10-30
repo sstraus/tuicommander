@@ -60,6 +60,8 @@ vi.mock("../../stores/progress", () => ({
 		requestedProject: () => "/repo",
 		selectedPtyId: () => "pty-a",
 		selectPty,
+		progressOnly: () => false,
+		setProgressOnly: vi.fn(),
 		blockedOnly: () => false,
 		setBlockedOnly,
 		open,

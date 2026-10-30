@@ -52,6 +52,29 @@ describe("mobile Progress", () => {
 		},
 	);
 
+	// Catches losing access to operational events or filtering them only after paging in the UI.
+	it("defaults to backend human-progress filtering and exposes event and terminal filters", async () => {
+		render(() => <ProgressDialog embedded projects={["/newer"]} />);
+		await waitFor(() => expect(screen.getByText("Later work is blocked.")).toBeTruthy());
+		expect(invoke).toHaveBeenLastCalledWith("progress_list", {
+			project: "/newer",
+			input: { progressOnly: true, blockedOnly: false, limit: 100 },
+		});
+		expect(screen.queryByLabelText("Progress terminal")).toBeNull();
+		fireEvent.click(screen.getByRole("button", { name: "Filters" }));
+		expect(screen.getByLabelText("Progress terminal")).toBeTruthy();
+		fireEvent.click(screen.getByRole("switch", { name: "Messages and delegations" }));
+		await waitFor(() =>
+			expect(invoke).toHaveBeenLastCalledWith("progress_list", {
+				project: "/newer",
+				input: { blockedOnly: false, limit: 100 },
+			}),
+		);
+		fireEvent.click(screen.getByRole("button", { name: "Entry actions" }));
+		expect(screen.getByRole("button", { name: "Delete entry" })).toBeTruthy();
+		expect(screen.getByText("Blocked")).toBeTruthy();
+	});
+
 	it("opens the newest populated project and lets Boss read another project's entries", async () => {
 		render(() => <ProgressDialog embedded projects={["/newer", "/older"]} />);
 		await waitFor(() => expect(screen.getByText("Later work is blocked.")).toBeTruthy());

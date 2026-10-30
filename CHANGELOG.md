@@ -21,6 +21,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Restyle mobile Files with saved groups, names, short paths and folder navigation; align mobile typography and readable Progress cards without changing desktop views (#2495-73c6).
+- Default mobile Progress to intent/done/blocked with backend filtering before pagination; keep messages and delegations in Filters and Flow (#2496-cbae).
+
 - Reduce mobile terminal command text, suggestion labels and key labels to 15px, trim input spacing, and retain 44px action targets (#2491-1ec2).
 
 ## [2.0.0-beta.5] - 2026-10-29

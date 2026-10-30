@@ -46,7 +46,8 @@
    changing header spacing or the translucent status-bar policy. */
 .appName {
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 600;
+  line-height: 26px;
   color: var(--fg-primary);
 }
 
@@ -81,5 +82,5 @@
 
 .subtitle {
   font-size: 13px;
-  color: var(--fg-muted);
+  color: var(--fg-secondary);
 }
