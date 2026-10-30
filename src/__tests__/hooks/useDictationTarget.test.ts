@@ -1,6 +1,7 @@
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import claudeLongInput from "../../../src-tauri/src/fixtures/agent_prompts/claude-long-dictation-2502.json";
 import { useDictation } from "../../hooks/useDictation";
 import { appLogger } from "../../stores/appLogger";
 import { dictationStore } from "../../stores/dictation";
@@ -176,6 +177,21 @@ describe("dictation delivery target", () => {
 			if (change === "draft edited") expect(view?.state.doc.toString()).toBe("new before THIS after");
 		},
 	);
+
+	// Catches: review-only dictation bypasses framing and drops the beginning too.
+	it.each([false, true])("frames long Claude dictation with auto-send=%s", async (autoSend) => {
+		const id = terminal("long-dictation-session");
+		terminalsStore.update(id, { agentType: "claude" });
+		mockInvoke.mockResolvedValueOnce({}).mockResolvedValueOnce(undefined);
+		await dictationStore.saveConfig({ auto_send: autoSend });
+		recording.stopRecording.mockResolvedValueOnce({ ...result, text: claudeLongInput.sent, duration_s: 82 });
+		await hook.handleDictationStart();
+		await hook.handleDictationStop();
+		const payload = `\x1b[200~${claudeLongInput.sent}\x1b[201~`;
+		expect(write.mock.calls).toEqual(
+			(autoSend ? ["\x15", payload, "\r"] : [payload]).map((data) => ["long-dictation-session", data]),
+		);
+	});
 
 	// Catches: metadata accidentally includes a dictated body or omits the correlation id.
 	it("logs correlated delivery metadata without transcript text", async () => {

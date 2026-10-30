@@ -1090,6 +1090,20 @@ fn bracketed_payload(text: &str) -> String {
 /// keystrokes, so slash commands and one-key answers keep working.
 const CODEX_PASTE_FRAME_MIN_CHARS: usize = 500;
 
+/// Claude 2.1.311 loses the initial read of long unframed input (1159 bytes
+/// sent, 137 retained in the native #2502 fixture). Use bytes, not characters,
+/// so multibyte dictation is framed before that boundary too. Short dialog
+/// replies stay keystrokes. Mirrors agentInputPayload in sendCommand.ts.
+const CLAUDE_PASTE_FRAME_MIN_BYTES: usize = 500;
+
+fn claude_payload(text: &str) -> String {
+    if text.len() > CLAUDE_PASTE_FRAME_MIN_BYTES {
+        bracketed_payload(text)
+    } else {
+        injection_payload(text)
+    }
+}
+
 fn codex_payload(text: &str) -> String {
     if text.chars().count() > CODEX_PASTE_FRAME_MIN_CHARS {
         bracketed_payload(text)
@@ -1201,10 +1215,10 @@ pub(super) fn agent_submit_profile(agent_type: Option<&str>) -> AgentSubmitProfi
         _ => (UNVERIFIED_ENTER_GAP, HookOnly),
     };
     AgentSubmitProfile {
-        payload: if agent_type == Some("codex") {
-            codex_payload
-        } else {
-            injection_payload
+        payload: match agent_type {
+            Some("codex") => codex_payload,
+            Some("claude") => claude_payload,
+            _ => injection_payload,
         },
         enter_gap,
         confirmation,

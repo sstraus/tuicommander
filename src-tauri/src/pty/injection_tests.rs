@@ -3118,14 +3118,13 @@ fn agent_submission_keeps_ctrl_u_gap_and_brackets_a_long_single_line_codex_wake(
     );
 }
 
-/// Critic (1163): only Codex is framed, and only a verified agent gets the
-/// short gap. Catches: the Codex branch leaking to another agent, or an agent
+/// Critic (1163), updated by 2502: only verified long-paste adapters frame, and a verified agent gets the
+/// short gap. Catches: framing leaking to an unverified agent, or an agent
 /// losing its >=50ms gap (Claude swallows a CR that shares the payload's read).
 #[test]
-fn long_single_line_payload_is_framed_for_codex_only_and_every_known_gap_is_at_least_50ms() {
+fn long_single_line_payload_framing_and_known_agent_gaps() {
     let long = "x".repeat(1000);
     for agent in [
-        "claude",
         "gemini",
         "opencode",
         "goose",
@@ -3151,6 +3150,17 @@ fn long_single_line_payload_is_framed_for_codex_only_and_every_known_gap_is_at_l
     for short in ["y", "/status", &"x".repeat(500)] {
         assert_eq!((codex.payload)(short), short);
     }
+    let claude = agent_submit_profile(Some("claude"));
+    assert_eq!((claude.payload)(&long), format!("\x1b[200~{long}\x1b[201~"));
+    for short in ["y", "/status", &"x".repeat(500)] {
+        assert_eq!((claude.payload)(short), short);
+    }
+    // Catches: counting characters misses multibyte text beyond the read margin.
+    let multibyte = "界".repeat(167);
+    assert_eq!(
+        (claude.payload)(&multibyte),
+        format!("\x1b[200~{multibyte}\x1b[201~")
+    );
     assert!(codex.enter_gap >= std::time::Duration::from_millis(50));
 }
 
@@ -3182,6 +3192,32 @@ fn a_short_human_reply_to_a_codex_question_is_typed_not_pasted() {
         !written.windows(4).any(|w| w == b"\x1b[20"),
         "a one-key answer must not be framed as a paste: {:?}",
         String::from_utf8_lossy(&written)
+    );
+}
+
+// Catches: backend Claude submission drops the beginning of a long plain paste.
+#[cfg(unix)]
+#[test]
+fn long_claude_submission_frames_the_recorded_dictation_payload() {
+    let fixture: serde_json::Value = serde_json::from_str(include_str!(
+        "../fixtures/agent_prompts/claude-long-dictation-2502.json"
+    ))
+    .unwrap();
+    let text = fixture["sent"].as_str().unwrap();
+    let state = crate::state::tests_support::make_test_app_state();
+    agent_session(&state, "claude-long-dictation", SHELL_IDLE);
+    let bytes = insert_recording_session(&state, "claude-long-dictation");
+    state
+        .session_maps
+        .session_states
+        .get_mut("claude-long-dictation")
+        .unwrap()
+        .agent_type = Some("claude".into());
+
+    write_agent_command_to_pty(&state, "claude-long-dictation", text).unwrap();
+    assert_eq!(
+        *bytes.lock().unwrap(),
+        format!("\x15\x1b[200~{text}\x1b[201~\r").as_bytes()
     );
 }
 

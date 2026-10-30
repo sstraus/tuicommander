@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import claudeLongInput from "../../../src-tauri/src/fixtures/agent_prompts/claude-long-dictation-2502.json";
 import { resetPlatformCache } from "../../platform";
 import {
 	AGENT_ENTER_GAP_MS,
@@ -44,6 +45,15 @@ describe("sendCommand", () => {
 		setPlatform(originalPlatform);
 	});
 
+	// Catches: Claude 2.1.311 drops the first read of a long unframed paste.
+	it("frames long Claude input to prevent first-chunk loss", async () => {
+		const { sent, bracketedAccepted } = claudeLongInput;
+		expect(bracketedAccepted).toContain(sent);
+		const { writeFn, calls } = makeRecorder();
+		await sendCommand(writeFn, sent, "claude", "posix");
+		expect(calls).toEqual(["\x15", `\x1b[200~${sent}\x1b[201~`, "\r"]);
+	});
+
 	it("always sends Ctrl-U prefix when an agent is attached (ignores shellFamily)", async () => {
 		setPlatform("Win32");
 		const { writeFn, calls } = makeRecorder();
@@ -69,7 +79,7 @@ describe("sendCommand", () => {
 		};
 		const longText = "dictated text ".repeat(50).trim();
 		await sendCommand(writeFn, longText, "claude", "posix");
-		expect(calls).toEqual(["\x15", longText, "\r"]);
+		expect(calls).toEqual(["\x15", `\x1b[200~${longText}\x1b[201~`, "\r"]);
 		expect(stamps[1] - stamps[0]).toBeGreaterThanOrEqual(AGENT_ENTER_GAP_MS - 5);
 	});
 
@@ -297,9 +307,9 @@ describe("shouldAutoSubmitSuggestion", () => {
 describe("sendCommand framing (critic 1163)", () => {
 	// Catches: the Codex bracketed branch leaking to other agents or to a plain
 	// shell, which would paste "ls" into a shell prompt as literal escape bytes.
-	it("frames a long single-line payload for codex only, and keeps short text plain", async () => {
+	it("frames long verified paste payloads, and keeps other agents plain", async () => {
 		const long = "x".repeat(1000);
-		for (const agent of ["claude", "gemini", "opencode", "grok", "pi", "future-agent", null]) {
+		for (const agent of ["gemini", "opencode", "grok", "pi", "future-agent", null]) {
 			const { writeFn, calls } = makeRecorder();
 			await sendCommand(writeFn, long, agent, "posix");
 			expect(calls.at(-2)!, String(agent)).not.toContain("\x1b[200~");
@@ -312,6 +322,18 @@ describe("sendCommand framing (critic 1163)", () => {
 			await sendCommand(rec.writeFn, short, "codex", "posix");
 			expect(rec.calls).toEqual(["\x15", short, "\r"]);
 		}
+	});
+
+	// Catches: a character-count threshold misses a long UTF-8 dictation read.
+	it.each([
+		["x".repeat(500), false],
+		["x".repeat(501), true],
+		["界".repeat(167), true],
+		["y", false],
+	])("preserves Claude byte-boundary and short-reply semantics (%s)", async (text, framed) => {
+		const { writeFn, calls } = makeRecorder();
+		await sendCommand(writeFn, text, "claude", "posix");
+		expect(calls).toEqual(["\x15", framed ? `\x1b[200~${text}\x1b[201~` : text, "\r"]);
 	});
 
 	// Catches: the framed Codex prefill (submit=false) still sending Enter.

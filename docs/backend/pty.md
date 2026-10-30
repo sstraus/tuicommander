@@ -631,6 +631,13 @@ Frontend input helpers route through `src/utils/sendCommand.ts`:
 - `sendCommand(fn, text)` — full command: `Ctrl-U` (family-gated) + text + `\r`. With an agent attached, Ctrl-U precedes text by 50 ms. Enter follows text by 200 ms for Codex and 50 ms for other known agents. If the type is unknown but a non-shell process owns the foreground, the frontend uses agent framing and the 200 ms gap; a failed foreground probe keeps shell framing and delays Enter. Claude Code strips a Ctrl-U inside a long pasted text; Codex suppresses Enter for 120 ms after a paste burst.
 - `sendPtyKey(fn, key)` — pass-through single key/escape sequence. No prefix, no trailing CR. Use for `ChoicePrompt` option keys, TUI app navigation, and any raw-stdin interaction.
 
+`agentInputPayload` and Rust's agent submission profile frame Claude text above
+500 UTF-8 bytes as bracketed paste. This prevents Claude Code 2.1.311 from
+losing the first read of a long plain input burst. Review-only dictation uses
+the same encoding without Ctrl-U or Enter, so it appends without clearing a
+draft. Codex keeps its existing 500-character threshold; short dialog replies
+and unverified agents keep their existing input semantics.
+
 Never write `text + "\r"` directly to a PTY — see `AGENTS.md`.
 
 ## OSC 133 Semantic Prompts

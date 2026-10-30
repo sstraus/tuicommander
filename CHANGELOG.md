@@ -12,6 +12,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Preserve the beginning of long Claude CLI dictation by framing it as a bracketed paste, including review-only delivery (#2502-571c).
+
 - Apply collective zoom shortcuts to all open Markdown and code editor tabs as well as terminals (#2499-1156).
 
 - Truncate long mobile session and file names, preserve badges and actions, and wrap unbroken Progress text (#2493-061e).

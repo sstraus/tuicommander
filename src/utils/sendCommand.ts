@@ -48,6 +48,21 @@ const SHORT_ENTER_GAP_AGENTS = new Set([
 	"pi",
 ]);
 
+/** Claude 2.1.311 drops the initial read of a long unframed paste. A native
+ *  1159-byte probe retained only its last 137 bytes. Frame above 500 UTF-8
+ *  bytes, before that observed read boundary, including multibyte dictation.
+ *  Short dialog replies remain key events. Mirrors claude_payload in Rust. */
+const CLAUDE_PASTE_FRAME_MIN_BYTES = 500;
+
+/** Encode pasted text identically for submission and review-only dictation. */
+export function agentInputPayload(text: string, agentType?: string | null): string {
+	const bracketed =
+		text.includes("\n") ||
+		(agentType === "codex" && text.length > CODEX_PASTE_FRAME_MIN_CHARS) ||
+		(agentType === "claude" && new TextEncoder().encode(text).length > CLAUDE_PASTE_FRAME_MIN_BYTES);
+	return bracketed ? `\x1b[200~${text}\x1b[201~` : text;
+}
+
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Keep Enter in its own read after the last input write. */
@@ -130,8 +145,7 @@ export async function sendCommand(
 	const agentInput = Boolean(agentType) || unknownForeground;
 	const skipPrefix = !agentInput && isWindowsNative(shellFamily);
 	const prefix = skipPrefix ? "" : "\x15";
-	const bracketed = text.includes("\n") || (agentType === "codex" && text.length > CODEX_PASTE_FRAME_MIN_CHARS);
-	const payload = bracketed ? `\x1b[200~${text}\x1b[201~` : text;
+	const payload = agentInputPayload(text, agentType);
 	if (agentInput) {
 		// Ctrl-U must reach an agent in its own read. Claude Code treats a long
 		// input chunk as a paste: a Ctrl-U inside it is stripped as an invisible

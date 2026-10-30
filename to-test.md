@@ -1,3 +1,7 @@
+## Long Claude dictation (2502-571c) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, dictate more than 60 seconds to Claude CLI and verify both opening and ending words with Auto-send on and off. Native isolated Claude 2.1.311 probes reproduce plain-write prefix loss and retain all 1159 characters with bracketed paste; the regression tests cover frontend and backend payloads. The owner microphone and daily app were not changed. Rust does not hot-reload; restart only when Boss is ready to lose current sessions.
+
 ## Collective zoom native menu (2499-1156) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm the View menu collective zoom labels say All Tabs. Native collective in/out/reset dispatch is covered by real-store frontend regression tests. Rust menu labels do not hot-reload; the daily app was not restarted.
