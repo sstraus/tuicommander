@@ -3105,6 +3105,7 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   the running development backend does not hot-reload this Rust change.
 
 - [ ] WF02/WF19 integration after rebuild: confirm parallel repair cancels old activation timers without cancelling independent service timers. Rust changes require a manual restart; no live-app validation was performed.
+- [ ] After the next backend rebuild/restart, verify a WF02 fork with pinned WF06 evidence policy starts repair for a typed FIX even if the retained legacy label says approved. Targeted RunStore automation covers generation fencing and replay; this Rust change does not hot-reload (#2509-0e2f).
 - [ ] In a real agent turn after loading the updated frontend, confirm the Chat breathing orb appears while working and disappears when done on desktop and phone. Real-component browser captures cover dark/light themes and reduced motion (#2535-8b6b).
 ## WF06 — typed workflow evidence policy (2513-c433)
 

@@ -580,9 +580,8 @@ pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, 
                                         role: crate::workflows::AgentRole::Reviewer,
                                         ..
                                     }
-                                )
-                                    && judge::judge(&snapshot, graph, activation)?.0
-                                        == super::graph::EdgeOutcome::No
+                                ) && judge::judge(&snapshot, graph, activation)?.0
+                                    == super::graph::EdgeOutcome::No
                                 {
                                     let token = activation
                                         .tokens
