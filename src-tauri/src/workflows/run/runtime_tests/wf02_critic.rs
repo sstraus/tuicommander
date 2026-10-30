@@ -169,6 +169,41 @@ fn wf02_primary_critic_fix_is_not_masked_by_later_reviewer() {
     }
 }
 
+#[test]
+fn wf02_typed_fix_supersedes_even_when_legacy_label_approves() {
+    // catches: the legacy review label masks the pinned policy's authoritative FIX.
+    let (config, project, _plan, story, _template, _guard) = fixture();
+    let mut graph = fork_graph(true);
+    graph.evidence_policy = Some(Default::default());
+    let (store, run, worktree) = prepare_graph(config.path(), project.path(), &story, graph);
+    let critic = run.attempts.iter().find(|a| a.node_id == "critic").unwrap();
+    bind(&store, &run.id, critic, "critic");
+    let (commit, tree) =
+        super::super::super::check::clean_artifact(std::path::Path::new(&worktree)).unwrap();
+    let native_story = StoryStore::open().unwrap().get_story(&story).unwrap();
+    let assessment = serde_json::from_value(json!({
+        "decision":"approved", "artifactDigest":artifact_digest(&commit, &tree), "findings":[],
+        "evidence":{
+            "subject":{"type":"story","id":story,"commit":commit,"tree":tree,
+                "requirements":super::super::super::evidence::requirements_digest(&native_story)},
+            "findings":[{"id":"required-repair","risk":4,"value":4,"effort":1,
+                "addsMechanism":false,"deletesOnly":false,"scope":[],"acceptedRisk":null,"proposal":null}],
+            "resolvedFixes":[],
+            "proof":{"realityEffect":"repair the defect","realityState":"native source",
+                "realityAssumptions":"none","realityRadius":"story","symptom":null,"red":null,
+                "testChanges":[],"checks":[],"omissions":[]}
+        }
+    })).unwrap();
+    report(&store, &run.id, critic, "critic", Some(assessment));
+    let current = drive_turn(&store, &run.id).unwrap();
+    assert_eq!(
+        current.graph_executions[0].forks[0].state,
+        super::super::super::parallel::ForkState::Cancelling,
+        "typed FIX was masked by the legacy approval label"
+    );
+    assert_eq!(store.replay(&run.id).unwrap(), current);
+}
+
 #[tokio::test]
 async fn wf02_sibling_progress_does_not_pause_async_check() {
     // catches F4: ordinary sibling cursor movement is escalated to policy failure.
