@@ -10848,7 +10848,9 @@ async fn claude_multi_question_capture_exposes_every_tab_to_mobile() {
                 assert!(
                     await_session(&state, sid, |s| {
                         s.choice_prompt.as_ref().is_some_and(|prompt| {
-                            prompt.title == title
+                            prompt.title.rsplit('\n').next() == Some(title)
+                                && prompt.title.starts_with('←')
+                                && prompt.title.contains("✔ Submit")
                                 && prompt.selection_mode
                                     == Some(
                                         crate::output_parser::ChoiceSelectionMode::NavigateEnter,
@@ -10859,7 +10861,14 @@ async fn claude_multi_question_capture_exposes_every_tab_to_mobile() {
                         })
                     })
                     .await,
-                    "step {answers} must expose {title:?} to mobile"
+                    "step {answers} must expose {title:?} to mobile; screen: {:#?}",
+                    state
+                        .grid
+                        .vt_log_buffers
+                        .get(sid)
+                        .unwrap()
+                        .lock()
+                        .screen_rows()
                 );
                 answers += 1;
                 crate::state::resolve_choice_prompt_input(&state, sid, "\r");
@@ -16180,5 +16189,62 @@ fn task_secret_unfinished_osc_eof_leaks_2319() {
     assert!(
         !remaining.contains("canary-secret-2319") && !live.contains("canary-secret-2319"),
         "EOF secret leaked to watchers or WS"
+    );
+}
+
+// Catches: PTY composition drops preview controls before desktop/mobile SessionState consumers receive them.
+#[tokio::test(flavor = "current_thread")]
+async fn captured_claude_preview_exports_shared_question_controls() {
+    let capture =
+        crate::pty_capture::decode_capture(&agent_prompt_fixture("claude-preview-wide-2536.tcap"))
+            .expect("real preview capture");
+    let (rows, cols) = capture.geometry.expect("recorded geometry");
+    let sid = "claude-preview-2536";
+    let (state, silence) = chunk_trace_state(sid);
+    state
+        .session_maps
+        .session_states
+        .get_mut(sid)
+        .unwrap()
+        .agent_type = Some("claude".into());
+    state
+        .grid
+        .vt_log_buffers
+        .insert(sid.into(), Mutex::new(VtLogBuffer::new(rows, cols, 2000)));
+    crate::state::AppState::spawn_session_state_accumulator(state.clone());
+    let mut processor = ChunkProcessor::new(None, None);
+    let mut utf8 = Utf8ReadBuffer::new();
+    let mut escape = EscapeAwareBuffer::new();
+    for record in capture.records {
+        if record.direction == crate::pty_capture::CaptureDirection::Output {
+            let data = utf8.push(&record.data);
+            let data = escape.push(&data);
+            let (clean, _) = crate::state::strip_kitty_sequences(&data);
+            processor.process_chunk(&clean, &silence, sid, &state);
+        }
+    }
+    assert!(
+        await_session(&state, sid, |s| {
+            s.awaiting_input
+                && s.choice_prompt.as_ref().is_some_and(|p| {
+                    p.title.contains("Posizione UI")
+                        && p.title.contains("Endpoint Sec")
+                        && p.options
+                            .iter()
+                            .map(|o| o.label.as_str())
+                            .collect::<Vec<_>>()
+                            == [
+                                "Schede nel dettaglio processo (Recommended)",
+                                "Nuova scheda Inspect",
+                                "Chat about this",
+                            ]
+                        && p.options[0]
+                            .hint
+                            .as_deref()
+                            .is_some_and(|hint| hint.contains("Files"))
+                })
+        })
+        .await,
+        "both transports must publish clean native choices and their selected preview"
     );
 }

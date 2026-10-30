@@ -196,3 +196,8 @@ Restored PTY sessions attach their event listeners before the first layout pass.
 The reconnect resize waits for that attachment and reuses successful listeners
 instead of adding another API-error consumer. If the initial handshake failed,
 reconnect retries the attachment once. Suspend detaches them; resume attaches the replacement PTY once.
+
+Claude native question cards in desktop PTY Chat and mobile keep wrapped answer
+labels separate from the selected option's monospace preview. They retain the
+question tabs and the native Chat about this action. Hidden options still use
+explicit previous/next/select controls rather than guessed labels.

@@ -1,6 +1,9 @@
 ## Terminal search clearance (2538-c082)
 
 - [x] Browser component geometry covers Context on/off, 1000px/400px panes and desktop/touch viewports. Search and view-switch bounds are disjoint; button centres are hit-testable; close/reopen works. _(verified: `src/__tests__/browser/TerminalSearchGeometry.test.ts`; before/after evidence under `~/Gits/.tmp/search-overlap/`.)_
+## Claude question previews (2536-8e18) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a multi-question Claude AskUserQuestion with option previews. Check desktop Chat and mobile: full recommended labels, separate monospace preview, question tabs and Chat about this. Real wide/narrow Claude captures and shared-component regressions cover the contract; the installed app was not restarted. Rust does not hot-reload; restart only when losing current sessions is acceptable.
 
 ## Workflow Fork/all-Join (2509-0e2f) — Rust rebuild/restart required
 
