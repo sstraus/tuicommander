@@ -3574,3 +3574,12 @@ approves or merges. See [Incoming PR reviews](user-guide/automations.md#incoming
 ## Archived worktree retention
 
 Opt-in global and per-repository retention in days (0/Off by default). Repository refresh removes only eligible recorded checkouts under `__archived/`, keeps dirty or unsafe archives with named status reasons, and retains commit recovery refs. No new timer or branch deletion. See [Worktrees](user-guide/worktrees.md#archived-worktree-retention).
+
+### Durable workflow timer receipts
+
+Workflow contract-3 runs persist absolute deadlines, stable owner/effect keys,
+bounded retry/backoff and explicit expiry outcomes. Independent service timers
+can flush a one-row cohort through a recovery pause. Activation pauses retain
+their deadlines; cancellation fences delivery. Question expiry never implies
+approval. This is internal infrastructure for later proof, provider and inbox
+consumers, not a new Designer control. See [workflows](backend/workflows.md#durable-timers-wf19).

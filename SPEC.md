@@ -1533,3 +1533,14 @@ Deterministic checks and check-result publication are not part of this executor.
 ## Archived worktree retention — Implemented (#2469-c93f)
 
 `archive_retention_days` defaults to 0 (Off), with nullable repository overrides and repo-local configuration. Existing repository-refresh cleanup invokes a shared host-side sweep. Only registered, completed immediate `__archived` children with matching recorded path and sufficient Unix-second archive age are eligible. Legacy archives without timestamps are kept. Non-force Git removal preserves archive refs, refuses dirty files without archive-time recovery, and protects locked or live checkouts. The status line names deleted and kept archives.
+
+### Durable workflow timer foundation (WF19)
+
+Contract-3 runs retain typed Timer schedule/fire/retry/cancel events in run-store
+layout 6. The daemon actor sleeps until eligible absolute deadlines and records
+one wake receipt per stable timer key/attempt. Activation timers suspend delivery
+during pauses without resetting time; independent service timers continue across
+recovery pauses. Cancellation fences all timers. Retry hints respect declared
+attempt, expiry and backoff caps. A question expiry is only timed-out/incomplete,
+never consent. WF08 cohort collection, WF13 provider observation and WF03 inbox
+consumers build on this internal primitive; they are not installed by WF19.
