@@ -19,11 +19,13 @@
   font-weight: 600;
   border-bottom: 1px solid var(--border);
   overflow-wrap: anywhere;
+  white-space: pre-line;
 }
 
 button.item[data-control-layout="row"] {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 14px 16px;
   border: none;
@@ -77,6 +79,17 @@ button.item[data-control-layout="row"] {
 .hint {
   color: var(--fg-muted);
   font-size: 0.8em;
+  font-family: var(--font-mono);
+}
+
+.preview {
+  flex-basis: 100%;
+  margin: 0;
+  min-width: 0;
+  overflow-x: auto;
+  white-space: pre;
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
   font-family: var(--font-mono);
 }
 

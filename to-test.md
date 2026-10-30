@@ -1,3 +1,7 @@
+## Claude question previews (2536-8e18) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a multi-question Claude AskUserQuestion with option previews. Check desktop Chat and mobile: full recommended labels, separate monospace preview, question tabs and Chat about this. Real wide/narrow Claude captures and shared-component regressions cover the contract; the installed app was not restarted. Rust does not hot-reload; restart only when losing current sessions is acceptable.
+
 ## Workflow Fork/all-Join (2509-0e2f) — Rust rebuild/restart required
 
 - [ ] After a manual Rust rebuild/restart, verify a post-all-Join Gate or approval Judge uses current fork checks, a primary critic FIX wins over an approving advisor, and concurrent check admission does not pause on sibling progress. Automated rb regressions cover these paths; this item checks the restarted daemon integration.

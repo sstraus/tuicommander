@@ -320,3 +320,44 @@ it("selects terminal Chat with the shared switch arrow key", () => {
 	expect(terminalsStore.get(id)?.viewMode).toBe("chat");
 	expect(view.getByRole("tab", { name: "Chat" }).getAttribute("aria-selected")).toBe("true");
 });
+
+// Catches: desktop Chat omits the preview or sends a digit for the native unnumbered Chat action.
+it("renders preview labels and opens native Chat with the recorded navigation keys", async () => {
+	const id = addTerminal("claude", "uuid");
+	terminalsStore.setViewMode(id, "chat");
+	applySessionStateEvent({
+		session_id: "sess-1",
+		state: {
+			...claudeNativeQuestion,
+			choice_prompt: {
+				title:
+					"← ☐ Posizione UI ☐ Accesso root ☐ Endpoint Sec ✔ Submit →\nDove mettiamo l’ispezione profonda nell’interfaccia?",
+				selection_mode: "navigate-enter",
+				options: [
+					{
+						key: "1",
+						label: "Schede nel dettaglio processo (Recommended)",
+						highlighted: true,
+						destructive: false,
+						hint: "Overview | Files | Network\n/usr/bin/example 1234",
+					},
+					{ key: "2", label: "Nuova scheda Inspect", highlighted: false, destructive: false },
+					{ key: "3", label: "Chat about this", highlighted: false, destructive: false },
+				],
+			},
+		},
+	});
+	const view = render(() => <TerminalChatView terminalId={id} sessionId="sess-1" />);
+	await new Promise((resolve) => setTimeout(resolve, 0));
+	expect(view.getByText("Schede nel dettaglio processo (Recommended)")).toBeTruthy();
+	expect(view.container.querySelector("pre")?.textContent).toContain("/usr/bin/example");
+	vi.mocked(invoke).mockClear();
+	view.getByRole("button", { name: /Chat about this/ }).click();
+	await waitFor(() =>
+		expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "write_pty")).toEqual([
+			["write_pty", { sessionId: "sess-1", data: "\x1b[B" }],
+			["write_pty", { sessionId: "sess-1", data: "\x1b[B" }],
+			["write_pty", { sessionId: "sess-1", data: "\r" }],
+		]),
+	);
+});
