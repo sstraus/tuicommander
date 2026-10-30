@@ -458,7 +458,15 @@ async fn restart_uses_committed_receipt_to_settle_uncertain_effect() {
         .iter()
         .find(|a| a.state == ActivationState::Running)
         .unwrap();
-    let identity = super::super::runtime::effects::command_identity(&run, graph, activation);
+    let identity = crate::workflows::command::CommandIdentity {
+        run: run.id.clone(),
+        execution: graph.id.clone(),
+        activation: activation.id.clone(),
+        attempt: activation.id.clone(),
+        generation: 1,
+        effect: format!("command:{}:{}:{}", run.id, graph.id, activation.id),
+        tool: None,
+    };
     store
         .command(
             &run.id,
