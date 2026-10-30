@@ -36,6 +36,7 @@ import { ANSWER_MARKER_RE, answerBlockRanges, type ChatBlock } from "../Terminal
 import { ContentRenderer } from "../ui/ContentRenderer";
 import s from "./AIChatPanel.module.css";
 import { projectChatProtocolText } from "./protocolText";
+import { type WorkingEffect, WorkingIndicator } from "./WorkingIndicator";
 
 /** Why a turn ended, for the turns that ended without an answer. */
 const SETTLEMENTS: Record<string, string> = {
@@ -314,7 +315,9 @@ export interface TranscriptProps {
 	entries: () => AcpTranscriptEntry[];
 	/** Shown while a turn is running and nothing has streamed back yet. */
 	busy: () => boolean;
-	/** Accessible working text for PTY hosts; AI Chat keeps its compact pulse. */
+	/** Opt-in visual comparison; no candidate is selected by default. */
+	workingEffect?: WorkingEffect;
+	/** Accessible working text for PTY hosts; AI Chat keeps its compact pulse by default. */
 	busyLabel?: string;
 	/** History has no execution timestamps: never time it from the view's mount. */
 	observeToolDuration?: boolean;
@@ -1034,9 +1037,16 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 					when={props.retry?.()}
 					fallback={
 						<Show when={props.busy()}>
-							<div class={cx(s.assistantMsg, s.thinkingPulse)} role={props.busyLabel ? "status" : undefined}>
-								{props.busyLabel ?? "…"}
-							</div>
+							<Show
+								when={props.workingEffect}
+								fallback={
+									<div class={cx(s.assistantMsg, s.thinkingPulse)} role={props.busyLabel ? "status" : undefined}>
+										{props.busyLabel ?? "…"}
+									</div>
+								}
+							>
+								{(effect) => <WorkingIndicator effect={effect()} label={props.busyLabel} />}
+							</Show>
 						</Show>
 					}
 				>

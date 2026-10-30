@@ -1,0 +1,83 @@
+/* One fixed line for all candidates, including the longest typewriter word. */
+.indicator {
+  display: flex;
+  align-items: center;
+  min-block-size: 24px;
+  inline-size: 160px;
+  max-inline-size: 100%;
+  flex-shrink: 0;
+  color: var(--fg-secondary);
+  font-size: var(--chat-font-status, var(--font-sm));
+}
+
+.visual { display: flex; align-items: center; gap: 8px; }
+
+.shimmer {
+  color: var(--fg-secondary);
+  background: linear-gradient(100deg, var(--fg-secondary) 25%, var(--accent) 48%, var(--fg-primary) 52%, var(--fg-secondary) 75%);
+  background-size: 250% 100%;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: shimmer 2.4s linear infinite;
+}
+@keyframes shimmer { from { background-position: 150% 0; } to { background-position: -100% 0; } }
+
+.dots { display: inline-flex; align-items: center; gap: 4px; block-size: 20px; }
+.dots i {
+  inline-size: 4px;
+  block-size: 4px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+  animation: dotWave 1.4s ease-in-out infinite;
+}
+.dots i:nth-child(2) { animation-delay: 0.16s; }
+.dots i:nth-child(3) { animation-delay: 0.32s; }
+@keyframes dotWave { 0%, 60%, 100% { transform: translateY(0); } 30% { transform: translateY(-4px); } }
+
+.orb {
+  display: grid;
+  place-items: center;
+  inline-size: 20px;
+  block-size: 20px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--radius-full);
+  animation: orbitBreathe 2s ease-in-out infinite;
+}
+.orb i {
+  inline-size: 8px;
+  block-size: 8px;
+  border-radius: var(--radius-full);
+  background: var(--accent);
+}
+@keyframes orbitBreathe { 0%, 100% { transform: scale(0.8); } 50% { transform: scale(1); } }
+
+.typewriter {
+  position: relative;
+  display: block;
+  inline-size: 13ch;
+  block-size: 24px;
+  line-height: 24px;
+  font-family: var(--font-mono);
+}
+.typewriter > span {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  clip-path: inset(0 100% 0 0);
+  animation: typeWord 9s steps(11, end) infinite;
+}
+.typewriter > span:nth-child(2) { animation-delay: 3s; }
+.typewriter > span:nth-child(3) { animation-delay: 6s; }
+@keyframes typeWord {
+  0% { clip-path: inset(0 100% 0 0); }
+  12%, 25% { clip-path: inset(0 0 0 0); }
+  33%, 100% { clip-path: inset(0 100% 0 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .indicator *, .indicator *::before, .indicator *::after { animation: none; }
+  .shimmer { background: none; -webkit-text-fill-color: currentColor; }
+  .typewriter > span { display: none; }
+  .typewriter > span:first-child { display: block; clip-path: none; }
+}

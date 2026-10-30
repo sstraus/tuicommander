@@ -3098,3 +3098,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   runs stay inspectable/cancelable and use exclusive Join. Do not migrate live runs.
   Targeted recorded-run and HTTP/service parity tests provide automated coverage;
   the running development backend does not hot-reload this Rust change.
+
+- [ ] Compare the four chat working-effect candidates in `src/__tests__/browser/chatWorkingEffects.html` and select a preferred effect. No default is selected (#2533-c51f).

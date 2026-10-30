@@ -10,6 +10,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add an opt-in development comparison of four chat working effects without changing the product default (#2533-c51f).
+
 - Persist workflow timer wake receipts, bounded provider backoff, one-row cohort deadlines and fail-closed question expiry across daemon restart (#2529-844b).
 
 - Add a separating space after web URLs pasted into mobile terminal and AI Chat composers, unless whitespace already follows (#2494-921f).
