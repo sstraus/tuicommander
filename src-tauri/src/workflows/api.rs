@@ -243,6 +243,7 @@ mod validation_tests {
                 name: "draft".into(),
                 kind: WorkflowKind::Plan,
                 graph: WorkflowGraph {
+                    evidence_policy: None,
                     nodes: vec![],
                     edges: vec![],
                 },

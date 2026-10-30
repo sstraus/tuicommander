@@ -242,6 +242,17 @@ pub(in crate::workflows::run) async fn drive_effect(
                     .filter(|a| a.story_id == graph.target_id)
                     .find_map(|a| a.report.as_ref())
                     .map(|r| {
+                        if *role == AgentRole::Implementer
+                            && let Some(typed) = r.review.as_ref().and_then(|r| r.evidence.as_ref()) {
+                            let fixes: Vec<_> = typed.findings.iter().filter(|f| f.decision() == super::super::evidence::TriageDecision::Fix).collect();
+                            return format!("Repair only these FIX findings; STORY proposals are separate work and ACCEPT risks are not repair scope: {fixes:?}");
+                        }
+                        if *role == AgentRole::Reviewer && graph.definition.graph.evidence_policy.is_some() {
+                            let prior: Vec<_> = run.attempts.iter().filter(|a| a.story_id == graph.target_id)
+                                .filter_map(|a| a.report.as_ref()?.review.as_ref()?.evidence.as_ref())
+                                .collect();
+                            return format!("Implementation: {}\nPrior typed reviews (resolve or repeat each FIX): {prior:?}", r.summary);
+                        }
                         format!(
                             "{}\nReview: {:?}\nEvidence: {:?}",
                             r.summary, r.review, r.evidence

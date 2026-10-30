@@ -1,9 +1,13 @@
 mod api;
 pub(super) mod check;
 mod contracts;
+pub mod evidence;
 pub mod graph;
 mod incidents;
 mod model;
+pub mod timer;
+#[cfg(test)]
+mod timer_tests;
 pub use incidents::RunIncident;
 mod proposals;
 mod publication;
@@ -243,6 +247,7 @@ mod tests {
             timeout_secs: 30,
         };
         let mut receipt = CheckReceipt {
+            requirements_digest: None,
             check_id: "unit".into(),
             argv: check.argv.clone(),
             exit_code: 1,
@@ -343,6 +348,7 @@ mod tests {
             )
             .expect("accept");
         let receipt = CheckReceipt {
+            requirements_digest: None,
             check_id: "unit".into(),
             argv: vec!["git".into(), "status".into()],
             exit_code: 0,
@@ -2019,8 +2025,8 @@ mod tests {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
-        // 5: contract-3 graph pins; older builds must refuse rather than reinterpret new runs.
-        assert_eq!(stored_schema_version(&db), 5, "fresh store records version");
+        // 6: durable Timer events; older builds must refuse rather than reinterpret new runs.
+        assert_eq!(stored_schema_version(&db), 7, "fresh store records version");
         let run = store
             .start_plan(
                 project.path().to_str().unwrap(),
@@ -2036,7 +2042,7 @@ mod tests {
             .pragma_update(None, "user_version", 0)
             .unwrap();
         let upgraded = RunStore::open_at(&db).unwrap();
-        assert_eq!(stored_schema_version(&db), 5);
+        assert_eq!(stored_schema_version(&db), 7);
         assert_eq!(
             upgraded.snapshot(&run.id).unwrap().sequence,
             run.sequence,

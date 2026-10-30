@@ -21,6 +21,7 @@ mod tests {
 
     fn story_graph() -> WorkflowGraph {
         WorkflowGraph {
+            evidence_policy: None,
             nodes: vec![
                 Node {
                     id: "start".into(),

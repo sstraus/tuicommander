@@ -1,3 +1,4 @@
+@import "./styles/foreground-tokens.css";
 @import "./styles/chat-tokens.css";
 @import "./styles/ready-actions.css";
 
@@ -201,15 +202,12 @@
   --bg-secondary: #252526;
   --bg-tertiary: #2d2d30;
   --bg-highlight: #37373d;
-  --fg-primary: #cccccc;
-  --fg-secondary: #a0a0a0;
   /* Settings copy must remain readable on elevated and highlighted surfaces. */
   --success-marker: var(--success);
   --identity-on-light: #000000;
   --identity-on-dark: #ffffff;
   --settings-foreground: color-mix(in srgb, var(--fg-primary) 30%, var(--fg-secondary));
   --link-foreground: color-mix(in srgb, var(--accent) 85%, var(--fg-primary));
-  --fg-muted: #9aa1a9;
   --accent: #59a8dd;
   --accent-hover: #7abde5;
   --activity: #59a8dd;  /* semantic: always blue, not overridden by themes */

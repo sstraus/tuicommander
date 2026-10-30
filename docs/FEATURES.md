@@ -6,7 +6,7 @@
 AI Chat shares the active conversation across desktop and mobile for the configured host workspace. The last saved selection wins; reconnect catches up. Open-tab layout, drafts and the session CLI | Chat switch remain per device.
 
 - **Mobile Chat queue** — Terminal CLI and Chat show pending prompt text and a Queued count above the input, including CLI/desktop additions. Cancel one prompt or clear the queue; delivered entries disappear (#2463-ad1c).
-- **Session Chat working feedback** — Desktop and mobile show **Working…** from Send through existing terminal busy state; native questions and permissions take precedence (#2397-06b6).
+- **Chat working feedback** — Desktop and mobile AI Chat and Session Chat show a theme-accent breathing orb with accessible **Working…** text. Reduced motion shows a static dot. Existing busy state controls its lifetime; provider retry status, native questions and permissions take precedence (#2535-8b6b).
 
 AI Chat automatically connects on opening, restores the selected conversation, and keeps its transcript visible when stopped. Retry after a failed initial connection starts connecting without Send (#2407-84f5). Session model changes keep the same conversation; the global default affects new ego runs only (#2404-e946).
 
@@ -3591,3 +3591,21 @@ accepted/refused decisions, with accepted decisions atomic with their report
 event and read-only inspection through the shared run action. This is receipt
 disposition, not artifact approval. ACP/policy/continuation/successor/owned-close
 lifecycle remains incomplete; attribution and report receipt permit no cleanup.
+
+### Pinned workflow evidence policy
+
+Workflow graph drafts can pin typed, source-and-requirement-bound review proof,
+seven-rule FIX/STORY/ACCEPT triage and separate review/repair budgets. The default
+policy permits two reviews and one repair. Native independent approval and
+required deterministic checks remain mandatory. PR review subjects do not mark
+native stories Done. Old publications and runs keep their prior policy. See
+[workflow evidence policy](backend/workflows.md#typed-evidence-policy-wf06).
+
+### Durable workflow timer receipts
+
+Workflow contract-3 runs persist absolute deadlines, stable owner/effect keys,
+bounded retry/backoff and explicit expiry outcomes. Independent service timers
+can flush a one-row cohort through a recovery pause. Activation pauses retain
+their deadlines; cancellation fences delivery. Question expiry never implies
+approval. This is internal infrastructure for later proof, provider and inbox
+consumers, not a new Designer control. See [workflows](backend/workflows.md#durable-timers-wf19).

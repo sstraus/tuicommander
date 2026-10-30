@@ -1,5 +1,7 @@
 # TUICommander Specification
 
+- [x] Desktop and mobile AI Chat and Session Chat use one theme-accent breathing orb while working, with accessible Working text and a static dot under reduced motion (#2535-8b6b).
+
 - [x] Mobile terminal and AI Chat composers add one space after a pasted HTTP(S) URL when neither the paste nor the following draft character supplies whitespace (#2494-921f).
 - [x] Mobile list identities stay inside their rows; long session and file names use ellipsis, badges and actions remain visible, and Progress text wraps (#2493-061e).
 
@@ -1550,3 +1552,24 @@ accepted/refused decisions, with accepted decisions atomic with their report
 event and read-only inspection through the shared run action. This is receipt
 disposition, not artifact approval. ACP/policy/continuation/successor/owned-close
 lifecycle remains incomplete; attribution and report receipt permit no cleanup.
+
+### Workflow evidence policy (WF06)
+
+Opt-in graph `evidencePolicy` is immutable with its publication and run pin.
+Typed subjects bind clean source and requirements. The native Judge enforces
+independent review, ordered FIX/STORY/ACCEPT triage, bounded total reviews and
+repairs, and typed proof requirements without weakening deterministic checks.
+Generic PR subjects remain evidence contracts, not native story completion.
+Old graph publications and serial event replay retain their existing semantics.
+See [backend evidence contract](docs/backend/workflows.md#typed-evidence-policy-wf06).
+
+### Durable workflow timer foundation (WF19)
+
+Contract-3 runs retain typed Timer schedule/fire/retry/cancel events in run-store
+layout 6. The daemon actor sleeps until eligible absolute deadlines and records
+one wake receipt per stable timer key/attempt. Activation timers suspend delivery
+during pauses without resetting time; independent service timers continue across
+recovery pauses. Cancellation fences all timers. Retry hints respect declared
+attempt, expiry and backoff caps. A question expiry is only timed-out/incomplete,
+never consent. WF08 cohort collection, WF13 provider observation and WF03 inbox
+consumers build on this internal primitive; they are not installed by WF19.

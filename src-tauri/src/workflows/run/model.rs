@@ -189,6 +189,8 @@ pub struct ReviewFinding {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ReviewAssessment {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<Box<super::evidence::ReviewEvidence>>,
     pub decision: ReviewDecision,
     pub artifact_digest: String,
     pub findings: Vec<ReviewFinding>,
@@ -335,6 +337,8 @@ pub struct RunSnapshot {
     pub canonical_recertification: Option<CanonicalReceipt>,
     pub attempts: Vec<NodeAttempt>,
     pub effects: Vec<EffectIntent>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub timers: Vec<super::timer::DurableTimer>,
     #[serde(default)]
     pub graph_executions: Vec<super::graph::GraphExecution>,
 }
@@ -342,6 +346,9 @@ pub struct RunSnapshot {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RunEventKind {
+    Timer {
+        event: super::timer::TimerEvent,
+    },
     Graph {
         event: super::graph::GraphEvent,
     },
@@ -453,6 +460,11 @@ pub struct RunEvent {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RunCommand {
+    /// Internal durable deadline service; never an operator assertion of elapsed time.
+    #[schemars(skip)]
+    Timer {
+        command: super::timer::TimerCommand,
+    },
     /// Internal only: graph transitions are not operator-supplied reports.
     #[schemars(skip)]
     Graph {

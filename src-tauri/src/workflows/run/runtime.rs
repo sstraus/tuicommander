@@ -247,11 +247,58 @@ async fn run_actor(
             let Some(current) = owner.upgrade() else {
                 break;
             };
-            let remaining = deadline_ms(&snapshot).saturating_sub(now_ms()).max(0) as u64;
-            let result = tokio::select! {
-                result = effects::drive_effect(&state, &current.store, &snapshot) => result,
-                _ = tokio::time::sleep(std::time::Duration::from_millis(remaining)) => {
-                    current.store.command(&run_id, &format!("daemon:effect-deadline:{}", snapshot.sequence), RunCommand::ExpireDeadline).map(|_| true)
+            // A timer wake must not drop an in-flight adapter future. Keep it pinned
+            // while independently committing due timer receipts.
+            let effect = effects::drive_effect(&state, &current.store, &snapshot);
+            tokio::pin!(effect);
+            let mut timer_snapshot = snapshot.clone();
+            let mut timer_changed = false;
+            let result = loop {
+                let next_wake = if timer_snapshot.status == RunStatus::Running {
+                    Some(next_wake_ms(&timer_snapshot))
+                } else {
+                    super::timer::next_due(&timer_snapshot)
+                };
+                let remaining =
+                    next_wake.map_or(0, |due| due.saturating_sub(now_ms()).max(0) as u64);
+                tokio::select! {
+                    result = &mut effect => break result.map(|changed| changed || timer_changed),
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(remaining)),
+                        if next_wake.is_some() => {},
+                    _ = notify.notified() => {},
+                }
+                // New schedule/cancel hints also recompute the earliest deadline,
+                // without restarting the already-running adapter.
+                let store = current.store.clone();
+                let id = run_id.clone();
+                let fired = tokio::task::spawn_blocking(move || {
+                    let latest = store.snapshot(&id)?;
+                    if latest.status == RunStatus::Running && now_ms() >= deadline_ms(&latest) {
+                        return store
+                            .command(
+                                &id,
+                                &format!("daemon:effect-deadline:{}", latest.sequence),
+                                RunCommand::ExpireDeadline,
+                            )
+                            .map(|receipt| receipt.snapshot);
+                    }
+                    super::timer::fire_due(&store, &latest, now_ms())?;
+                    store.snapshot(&id)
+                })
+                .await;
+                match fired {
+                    Ok(Ok(latest)) => {
+                        timer_changed |= latest.sequence != timer_snapshot.sequence;
+                        super::api::emit_run_cursor(
+                            &state,
+                            &latest.project,
+                            &latest.id,
+                            latest.sequence,
+                        );
+                        timer_snapshot = latest;
+                    }
+                    Ok(Err(error)) => break Err(error),
+                    Err(error) => break Err(format!("timer task failed: {error}")),
                 }
             };
             match result {
@@ -271,7 +318,13 @@ async fn run_actor(
                 tokio::task::yield_now().await;
                 continue;
             }
-            let remaining = deadline_ms(&snapshot).saturating_sub(now_ms()).max(0) as u64;
+            let remaining = next_wake_ms(&snapshot).saturating_sub(now_ms()).max(0) as u64;
+            tokio::select! {
+                _ = notify.notified() => {},
+                _ = tokio::time::sleep(std::time::Duration::from_millis(remaining)) => {},
+            }
+        } else if let Some(due) = super::timer::next_due(&snapshot) {
+            let remaining = due.saturating_sub(now_ms()).max(0) as u64;
             tokio::select! {
                 _ = notify.notified() => {},
                 _ = tokio::time::sleep(std::time::Duration::from_millis(remaining)) => {},
@@ -283,6 +336,13 @@ async fn run_actor(
     if let Some(owner) = owner.upgrade() {
         owner.actors.lock().remove(&run_id);
     }
+}
+
+fn next_wake_ms(snapshot: &RunSnapshot) -> i64 {
+    super::timer::next_due(snapshot).map_or_else(
+        || deadline_ms(snapshot),
+        |due| due.min(deadline_ms(snapshot)),
+    )
 }
 
 pub(super) fn deadline_ms(snapshot: &RunSnapshot) -> i64 {
@@ -316,6 +376,9 @@ fn deterministic_work_pending(snapshot: &RunSnapshot) -> bool {
 pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, String> {
     'turn: for _ in 0..TRANSITIONS_PER_TURN {
         let snapshot = store.snapshot(run_id)?;
+        if super::timer::fire_due(store, &snapshot, now_ms())? {
+            continue;
+        }
         if snapshot.status != RunStatus::Running {
             return Ok(snapshot);
         }
@@ -515,6 +578,11 @@ pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, 
                         }
                     }
                     NodeKind::Judge => {
+                        if graph.definition.graph.evidence_policy.is_some()
+                            && policy::gate(&snapshot, graph)?.is_none()
+                        {
+                            continue 'graphs;
+                        }
                         let decision = judge::judge(&snapshot, graph, activation)?;
                         if decision.0 == super::graph::EdgeOutcome::Yes
                             && !policy::approved(&snapshot, graph)?

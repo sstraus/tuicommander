@@ -38,6 +38,9 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
     let previous_status = snapshot.status;
     match &event.kind {
         RunEventKind::Started { .. } => unreachable!(),
+        RunEventKind::Timer { event: timer } => {
+            super::timer::apply(&mut snapshot, timer, event.at_ms)?
+        }
         RunEventKind::Graph { event } => match event {
             super::graph::GraphEvent::Started { execution } => {
                 if snapshot.graph_executions.iter().any(|existing| {
@@ -472,9 +475,44 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                     attempt.outcome = Some(AttemptOutcome::Interrupted);
                 }
             }
+            for timer in &mut snapshot.timers {
+                timer.state = super::timer::TimerState::Cancelled;
+            }
             snapshot.status = RunStatus::Cancelled;
         }
-        RunEventKind::Completed => snapshot.status = RunStatus::Completed,
+        RunEventKind::Completed => {
+            if snapshot
+                .timers
+                .iter()
+                .any(|t| t.state == super::timer::TimerState::Pending)
+            {
+                return Err(
+                    "pending timers must fire or be explicitly cancelled before completion".into(),
+                );
+            }
+            snapshot.status = RunStatus::Completed;
+        }
+    }
+    // The owning graph event also retires timers belonging to a departed activation.
+    // A paused activation keeps its absolute deadline for an explicit resume.
+    for timer in &mut snapshot.timers {
+        if let super::timer::TimerScope::Activation {
+            execution_id,
+            activation_id,
+        } = &timer.scope
+        {
+            let departed = !snapshot.graph_executions.iter().any(|graph| {
+                graph.id == *execution_id
+                    && !graph.completed
+                    && graph.activations.iter().any(|a| {
+                        a.id == *activation_id
+                            && a.state != super::graph::ActivationState::Completed
+                    })
+            });
+            if departed {
+                timer.state = super::timer::TimerState::Cancelled;
+            }
+        }
     }
     if snapshot.status != RunStatus::Paused {
         snapshot.pause_cause = None;

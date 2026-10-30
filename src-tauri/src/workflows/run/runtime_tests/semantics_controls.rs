@@ -7,6 +7,7 @@ fn daemon_loop_exhaustion_and_pause_resume_keep_the_pinned_cap() {
     let published = publish(
         project.path().to_str().unwrap(),
         WorkflowGraph {
+            evidence_policy: None,
             nodes: vec![
                 Node {
                     id: "start".into(),
@@ -184,6 +185,7 @@ async fn notify_retry_keeps_one_durable_notice() {
     let published = publish(
         project_path,
         WorkflowGraph {
+            evidence_policy: None,
             nodes: vec![
                 Node {
                     id: "start".into(),
@@ -241,6 +243,7 @@ async fn join_ignores_unselected_arrivals_and_actor_continues_after_turn_budget(
     let published = publish(
         project_path,
         WorkflowGraph {
+            evidence_policy: None,
             nodes: vec![
                 Node {
                     id: "start".into(),

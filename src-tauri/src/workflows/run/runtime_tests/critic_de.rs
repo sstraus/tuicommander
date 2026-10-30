@@ -9,6 +9,7 @@ async fn resumed_gate_checks_the_corrected_artifact_instead_of_reusing_old_comma
     let published = publish(
         project_path,
         WorkflowGraph {
+            evidence_policy: None,
             nodes: vec![
                 Node {
                     id: "start".into(),

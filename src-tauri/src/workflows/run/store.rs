@@ -72,8 +72,9 @@ impl From<RunStartError> for String {
 /// records explicit graph-root targets; older binaries must refuse that contract.
 // 4: paused_for events; a build that supports 3 refuses the store instead of failing to decode them.
 // 5: contract-3 graph pins; older builds must refuse rather than reinterpret new runs.
-// 6: explicit worker transport/conversation bindings and report-disposition journal.
-const RUN_STORE_SCHEMA_VERSION: i64 = 6;
+// 6: durable Timer events; older builds cannot decode their ledger.
+// 7: explicit worker transport/conversation bindings, input continuation and report disposition.
+const RUN_STORE_SCHEMA_VERSION: i64 = 7;
 
 mod approval;
 mod report_disposition;
@@ -431,6 +432,7 @@ impl RunStore {
             canonical_recertification: None,
             attempts: vec![],
             effects: vec![],
+            timers: vec![],
             graph_executions: vec![],
         };
         let event = RunEvent {
@@ -1196,7 +1198,24 @@ impl RunStore {
             .iter()
             .find(|check| check.id == check_id)
             .ok_or("check is not pinned by the story definition")?;
-        let receipt = execute_run_check(check, Path::new(path), &self.db_path, run_id, false)?;
+        let requirements = definition
+            .graph
+            .evidence_policy
+            .as_ref()
+            .map(|_| {
+                StoryStore::open()?
+                    .get_story(story_id)
+                    .map(|story| super::evidence::requirements_digest(&story))
+            })
+            .transpose()?;
+        let mut receipt = execute_run_check(check, Path::new(path), &self.db_path, run_id, false)?;
+        if let Some(requirements) = requirements {
+            let current = StoryStore::open()?.get_story(story_id)?;
+            if super::evidence::requirements_digest(&current) != requirements {
+                return Err("requirements changed while check was running".into());
+            }
+            receipt.requirements_digest = Some(requirements);
+        }
         self.commit_completed_check(run_id, execution, command_id, expected_sequence, receipt)
     }
 
@@ -2109,6 +2128,10 @@ fn choose_event(
     {
         return Err("graph runs require an eligible typed activation transition".into());
     }
+    if let RunCommand::Timer { command } = command {
+        return super::timer::choose(snapshot, command, at_ms)
+            .map(|event| RunEventKind::Timer { event });
+    }
     let expired = at_ms >= super::runtime::deadline_at(snapshot, at_ms);
     if matches!(command, RunCommand::ExpireDeadline) {
         if !expired || snapshot.status != RunStatus::Running {
@@ -2190,6 +2213,7 @@ fn choose_event(
         return Err("workflow is paused".into());
     }
     match command {
+        RunCommand::Timer { .. } => unreachable!("timer command handled before run timing"),
         RunCommand::Graph { transition } => {
             if matches!(
                 transition,
@@ -2357,6 +2381,7 @@ fn choose_event(
             if attempts != reached {
                 return Err("Agent activation already has an attempt".into());
             }
+            super::evidence::check_attempt_budget(snapshot, graph, &activation.node_id)?;
             choose_story_attempt(
                 snapshot,
                 &stories,

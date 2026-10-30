@@ -9,6 +9,13 @@
 ## Typed workflow proposals (2511-37f0 foundation) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, submit a typed proposal batch to a plan Create Stories activation without a Coordinator node. Confirm one native story per proposal and no author PTY. Rust does not hot-reload; the daily app was not restarted. This is a partial WF04 foundation, not ACP/lifecycle completion.
+## Durable workflow timers (2529-844b) — Rust rebuild/restart required
+
+- [ ] Load the new timer ledger/actor only after Boss manually restarts a rebuilt `make dev` or installs `make build`, when losing current sessions is acceptable. Rust does not hot-reload. Automated reducer/store/owner and paused-actor tests cover timer delivery, including a duration-expired run waiting for its pinned check without repeated deadline polling; no new UI or provider consumer is installed by this foundation. The daily app was not restarted.
+## Readable secondary and muted text (2506-22b0) — backend rebuild/restart required
+
+- [x] Worktree browser verification: collapsed Compose with one queued item, sidebar, tabs, status bar and mobile session list have before/after screenshots and computed colors; all built-in secondary/muted foregrounds exceed 4.5:1 on all four neutral surfaces. _(verified: `src/__tests__/themeContrast.test.ts`; browser evidence in orchestrator `reports/tuicommander/img/2026-10-30-grey-contrast/contrast-report.md`.)_
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm a previously seeded Commander profile loads the brighter foregrounds and Compose count without fading. The backend corrects only the exact legacy built-in foreground triplet in memory; custom foregrounds and theme files remain unchanged. The daily app was not restarted. Rust does not hot-reload; restart only when Boss is ready to lose current sessions.
 
 ## Long Claude dictation (2502-571c) — Rust rebuild/restart required
 
@@ -3106,3 +3113,12 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] After a manual Rust restart (`make dev` or release rebuild), inspect a new daemon workflow launch: its `workspace_baseline` must retain pre-existing dirt and its attempt binding must retain `launchId` across retry. Do not restart an active daily instance for this check. Safe close and ACP lifecycle remain unfinished.
 
 - [ ] WF04 owned close: after a backend rebuild, inspect `close_agent` refusal/stop receipts and confirm dirty work, pending input, background receipts and test apps prevent closure. Workspaces must remain. ACP stop-proof support and automated lifecycle tests remain in progress.
+- [ ] In a real agent turn after loading the updated frontend, confirm the Chat breathing orb appears while working and disappears when done on desktop and phone. Real-component browser captures cover dark/light themes and reduced motion (#2535-8b6b).
+## WF06 — typed workflow evidence policy (2513-c433)
+
+- [ ] After the next authorized Rust rebuild/restart, opt a throwaway workflow
+  draft into `evidencePolicy`, publish it, and inspect the pinned policy and
+  review counters in the reviewer prompt. Verify that a stale artifact or
+  failed required check cannot approve the story. This Rust change does not
+  hot-reload into the current app. Targeted native-store automation covers the
+  policy; no desktop instance was launched for this story.

@@ -222,7 +222,8 @@ pub fn run_action(project: &str, action: RunAction) -> Result<RunReply, String> 
             scoped_snapshot(&store, &owner, &run_id)?;
             if matches!(
                 command,
-                RunCommand::ExpireDeadline
+                RunCommand::Timer { .. }
+                    | RunCommand::ExpireDeadline
                     | RunCommand::StartGraphAgent { .. }
                     | RunCommand::AcceptUnspawnedStory { .. }
                     | RunCommand::CompleteReviewedStory { .. }

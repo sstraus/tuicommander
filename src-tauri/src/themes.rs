@@ -162,11 +162,13 @@ fn parse_theme_file(path: &Path) -> Option<ThemeEntry> {
             .join(" ")
     });
 
-    let app_chrome = if let Some(ac) = wt.app_chrome {
+    let mut app_chrome = if let Some(ac) = wt.app_chrome {
         map_app_chrome_json(&ac)
     } else {
         derive_app_chrome(bg, fg, &ansi)
     };
+
+    upgrade_builtin_foregrounds(&key, &mut app_chrome);
 
     Some(ThemeEntry {
         key,
@@ -333,6 +335,54 @@ const BUILTIN_THEMES: &[(&str, &str)] = &[
     ),
     ("clean.json", include_str!("themes/clean.json")),
 ];
+
+// Profiles keep their seeded theme files across releases. Upgrade the exact old
+// built-in foreground triplet in memory, without rewriting files or overriding
+// a custom foreground palette (including a partial edit) or a renamed theme.
+const LEGACY_BUILTIN_FOREGROUNDS: &[(&str, &str, &str, &str)] = &[
+    ("catppuccin-mocha", "#cdd6f4", "#a6adc8", "#656981"),
+    ("clean", "#fafafa", "#a1a1a1", "#737373"),
+    ("commander", "#d4d4d4", "#a0a0a0", "#737373"),
+    ("darksun", "#d4d2d0", "#a09e9a", "#706e6a"),
+    ("dracula", "#f8f8f2", "#bfbfbf", "#6272a4"),
+    ("github-dark", "#c9d1d9", "#8b949e", "#6e7681"),
+    ("minimal-kiwi", "#cdd4c4", "#9aa18d", "#828975"),
+    ("monokai", "#f8f8f2", "#c0c0b0", "#75715e"),
+    ("nord", "#d8dee9", "#b0b8c8", "#7b88a1"),
+    ("solarized-dark", "#839496", "#657b83", "#5d757c"),
+    ("tokyo-night", "#a9b1d6", "#787c99", "#61667c"),
+    ("vscode-dark", "#bfbfbf", "#8c8c8c", "#6e6f70"),
+    ("vscode-light", "#333333", "#6f6f6f", "#767676"),
+];
+
+fn upgrade_builtin_foregrounds(key: &str, colors: &mut AppChromeColors) {
+    let Some((_, primary, secondary, muted)) = LEGACY_BUILTIN_FOREGROUNDS
+        .iter()
+        .find(|(name, _, _, _)| *name == key)
+    else {
+        return;
+    };
+    if colors.fg_primary != *primary
+        || colors.fg_secondary != *secondary
+        || colors.fg_muted != *muted
+    {
+        return;
+    }
+    let Some((_, json)) = BUILTIN_THEMES
+        .iter()
+        .find(|(filename, _)| filename.strip_suffix(".json") == Some(key))
+    else {
+        return;
+    };
+    if let Ok(theme) = serde_json::from_str::<WtJson>(json)
+        && let Some(chrome) = theme.app_chrome
+    {
+        let current = map_app_chrome_json(&chrome);
+        colors.fg_primary = current.fg_primary;
+        colors.fg_secondary = current.fg_secondary;
+        colors.fg_muted = current.fg_muted;
+    }
+}
 
 /// Seed the themes directory with built-in themes (only when the dir doesn't exist).
 pub(crate) fn seed_builtin_themes(dir: &Path) -> std::io::Result<()> {
@@ -629,6 +679,95 @@ mod tests {
 
         // Only the custom file should exist — no built-ins seeded
         assert_eq!(fs::read_dir(&themes_dir).unwrap().count(), 1);
+    }
+
+    // Catches: existing profiles keep the pre-fix seed colors after an upgrade.
+    #[test]
+    fn legacy_builtin_foregrounds_upgrade_on_read_without_rewriting_files() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        for (filename, primary, secondary, muted) in [
+            ("commander.json", "#d4d4d4", "#a0a0a0", "#737373"),
+            ("solarized-dark.json", "#839496", "#657b83", "#5d757c"),
+            ("vscode-light.json", "#333333", "#6f6f6f", "#767676"),
+        ] {
+            let (_, current) = BUILTIN_THEMES
+                .iter()
+                .find(|(name, _)| *name == filename)
+                .unwrap();
+            let mut old: serde_json::Value = serde_json::from_str(current).unwrap();
+            old["appChrome"]["foreground"] = primary.into();
+            old["appChrome"]["foregroundSecondary"] = secondary.into();
+            old["appChrome"]["mutedForeground"] = muted.into();
+            let bytes = serde_json::to_vec(&old).unwrap();
+            let path = dir.path().join(filename);
+            fs::write(&path, &bytes).unwrap();
+            let loaded = parse_theme_file(&path).unwrap();
+            let expected: WtJson = serde_json::from_str(current).unwrap();
+            let expected_chrome = map_app_chrome_json(&expected.app_chrome.unwrap());
+            assert_eq!(
+                loaded.app_chrome.fg_primary, expected_chrome.fg_primary,
+                "{filename}"
+            );
+            assert_eq!(
+                loaded.app_chrome.fg_secondary, expected_chrome.fg_secondary,
+                "{filename}"
+            );
+            assert_eq!(
+                loaded.app_chrome.fg_muted, expected_chrome.fg_muted,
+                "{filename}"
+            );
+            assert_eq!(
+                loaded.terminal.foreground,
+                old["foreground"].as_str().unwrap()
+            );
+            assert_eq!(fs::read(&path).unwrap(), bytes);
+        }
+    }
+
+    // Catches: a foreground correction overwrites a partial user customization.
+    #[test]
+    fn legacy_builtin_foregrounds_preserve_each_custom_foreground() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        for field in ["foreground", "foregroundSecondary", "mutedForeground"] {
+            let mut old: serde_json::Value =
+                serde_json::from_str(include_str!("themes/commander.json")).unwrap();
+            old["appChrome"]["foreground"] = "#d4d4d4".into();
+            old["appChrome"]["foregroundSecondary"] = "#a0a0a0".into();
+            old["appChrome"]["mutedForeground"] = "#737373".into();
+            old["appChrome"][field] = "#123456".into();
+            let path = dir.path().join("commander.json");
+            fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+            let loaded = parse_theme_file(&path).unwrap();
+            assert_eq!(
+                loaded.app_chrome.fg_primary,
+                old["appChrome"]["foreground"].as_str().unwrap()
+            );
+            assert_eq!(
+                loaded.app_chrome.fg_secondary,
+                old["appChrome"]["foregroundSecondary"].as_str().unwrap()
+            );
+            assert_eq!(
+                loaded.app_chrome.fg_muted,
+                old["appChrome"]["mutedForeground"].as_str().unwrap()
+            );
+        }
+    }
+
+    // Catches: an imported/renamed theme is mistaken for a built-in by color alone.
+    #[test]
+    fn legacy_builtin_foregrounds_preserve_renamed_themes() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let mut old: serde_json::Value =
+            serde_json::from_str(include_str!("themes/commander.json")).unwrap();
+        old["appChrome"]["foreground"] = "#d4d4d4".into();
+        old["appChrome"]["foregroundSecondary"] = "#a0a0a0".into();
+        old["appChrome"]["mutedForeground"] = "#737373".into();
+        let path = dir.path().join("custom.json");
+        fs::write(&path, serde_json::to_vec(&old).unwrap()).unwrap();
+        let loaded = parse_theme_file(&path).unwrap();
+        assert_eq!(loaded.app_chrome.fg_primary, "#d4d4d4");
+        assert_eq!(loaded.app_chrome.fg_secondary, "#a0a0a0");
+        assert_eq!(loaded.app_chrome.fg_muted, "#737373");
     }
 
     #[test]

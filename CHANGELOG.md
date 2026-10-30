@@ -17,10 +17,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Retain workflow bound-report acceptance/refusal decisions across retry and restart, with atomic accepted-event recording and a read-only `report_dispositions` run action (#2511-37f0, lifecycle increment only).
 
 - Accept typed, revision-bound plan story proposals without requiring a Coordinator Agent node; retain contract-2 behavior (#2511-37f0, foundation only).
+- Use a theme-accent breathing orb for working feedback in desktop and mobile Chat. Reduced motion shows a static dot; accessible Working text and provider retry status remain unchanged (#2535-8b6b).
+
+- Add opt-in pinned workflow evidence policy with source-bound proof, independent review, ordered FIX/STORY/ACCEPT triage and bounded review/repair budgets (#2513-c433).
+- Persist workflow timer wake receipts, bounded provider backoff, one-row cohort deadlines and fail-closed question expiry across daemon restart (#2529-844b).
 
 - Add a separating space after web URLs pasted into mobile terminal and AI Chat composers, unless whitespace already follows (#2494-921f).
 
 ### Fixed
+
+- Raise built-in secondary and muted text contrast on all neutral chrome surfaces, share desktop/mobile startup foregrounds, and remove the collapsed Compose label and queue-count fade (#2506-22b0).
 
 - Preserve the beginning of long Claude CLI dictation by framing it as a bracketed paste, including review-only delivery (#2502-571c).
 

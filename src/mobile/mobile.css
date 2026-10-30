@@ -1,3 +1,4 @@
+@import "../styles/foreground-tokens.css";
 @import "../styles/chat-tokens.css";
 @import "../styles/ready-actions.css";
 
@@ -20,9 +21,6 @@
   --bg-secondary: #252526;
   --bg-tertiary: #2d2d30;
   --bg-highlight: #37373d;
-  --fg-primary: #cccccc;
-  --fg-secondary: #a0a0a0;
-  --fg-muted: #9aa1a9;
   --accent: #59a8dd;
   --accent-hover: #7abde5;
   --border: #3e3e42;

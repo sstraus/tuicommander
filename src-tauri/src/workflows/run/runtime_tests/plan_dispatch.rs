@@ -182,6 +182,7 @@ fn finish_child(store: &RunStore, run_id: &str, story_id: &str, worktree: &str, 
         &review,
         &reviewer,
         Some(ReviewAssessment {
+            evidence: None,
             decision: ReviewDecision::Approved,
             artifact_digest: artifact_digest(&commit, &tree),
             findings: vec![],
