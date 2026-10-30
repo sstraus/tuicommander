@@ -442,14 +442,20 @@ mod tests {
     /// Catches: forwarding --profile to app-server instead of loading its TOML layer.
     #[cfg(unix)]
     #[tokio::test]
-    async fn codex_profile_quota_applies_profile_layer_at_process_boundary() {
+    async fn codex_profile_quota_preserves_relative_instruction_path_at_process_boundary() {
         // Codex 0.166 live config/read evidence: explicit -c model selects the layer.
         let script = crate::test_support::fake_ssh_script(
             "2541-codex-profile-layer",
             r#"
 case "$*" in
   'app-server') used=5 ;;
-  'app-server -c model="profile-marker"') used=23.5 ;;
+  'app-server -c model="profile-marker" -c model_instructions_file='*)
+    instructions=${5#model_instructions_file=}
+    instructions=${instructions#\"}
+    instructions=${instructions%\"}
+    # Recorded 0.166 behavior: an unreadable instruction file drops the whole layer.
+    if [ -r "$instructions" ]; then used=23.5; else used=5; fi
+    ;;
   *) exit 2 ;;
 esac
 while IFS= read -r request; do
@@ -465,12 +471,17 @@ done
         let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let binary = dir.path().join("codex");
         std::fs::copy(script, &binary).unwrap();
-        std::fs::write(
-            dir.path().join("work.config.toml"),
-            "model = \"profile-marker\"\n",
-        )
-        .unwrap();
-        for profile in [Some("work"), None] {
+        std::fs::write(dir.path().join("instructions.md"), "Profile instructions").unwrap();
+        for (profile, instructions) in [
+            (Some("work"), "instructions.md".to_string()),
+            (Some("work"), dir.path().join("instructions.md").display().to_string()),
+            (None, "instructions.md".to_string()),
+        ] {
+            std::fs::write(
+                dir.path().join("work.config.toml"),
+                format!("model = \"profile-marker\"\nmodel_instructions_file = {}\n", toml::Value::String(instructions)),
+            )
+            .unwrap();
             let quota = session_quota_from_binary(
                 &binary,
                 dir.path().to_str().unwrap(),
