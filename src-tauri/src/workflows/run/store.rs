@@ -71,7 +71,8 @@ impl From<RunStartError> for String {
 /// is decoded with defaults, without inventing graph positions. Version 3
 /// records explicit graph-root targets; older binaries must refuse that contract.
 // 4: paused_for events; a build that supports 3 refuses the store instead of failing to decode them.
-const RUN_STORE_SCHEMA_VERSION: i64 = 4;
+// 5: contract-3 graph pins; older builds must refuse rather than reinterpret new runs.
+const RUN_STORE_SCHEMA_VERSION: i64 = 5;
 
 mod approval;
 mod runtime_start;
@@ -2141,10 +2142,11 @@ fn choose_event(
                     return Err("graph definition does not belong to run project".into());
                 }
                 super::graph::GraphEvent::Started {
-                    execution: Box::new(super::graph::GraphExecution::start(
+                    execution: Box::new(super::graph::GraphExecution::start_for_contract(
                         execution_id.clone(),
                         target_id.clone(),
                         definition,
+                        snapshot.event_contract_version,
                     )?),
                 }
             } else {

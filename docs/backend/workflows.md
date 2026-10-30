@@ -112,3 +112,19 @@ alone is not approval. It requires a separate current reviewer, matching clean
 artifact digest, accepted native revision and every configured passing check.
 The publisher checks the pushed GitHub branch SHA and includes the independent
 findings in the draft body. Existing intake without a workflow remains unchanged.
+
+## Shared contract and preservation baseline (WF01)
+
+New runs use event contract 3 and run-store layout 5. Version 2 serial graph
+replay remains supported: Join is still an exclusive merge, not an all-Join.
+Graph-start events add an immutable `contract` with version, definition SHA-256
+and explicit policy imports. Current starts pin the existing native definition,
+checks and closure; an empty import list does not claim imported global policy
+or installed model/hook health. Old runs retain their recorded contract and
+publications. Draft edits and publication never migrate an active run.
+
+See the [WF01 shared contract and frozen baseline](workflow-baseline/contract.md)
+for the effect/receipt schemas, policy ownership, I1–I10 source resolutions,
+recorded serial-run fixtures, complete capability matrix and source/test pins.
+This is a compatibility foundation, not operational migration or authority to
+start a second scheduler, publish externally or retire legacy mechanisms.

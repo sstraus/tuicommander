@@ -35,6 +35,14 @@ HTML GET navigation to `/` and `/mobile` uses `/mobile/login` when credentials a
 
 ## Workflow runs
 
+WF01 adds optional `graphExecutions[].contract` metadata to the shared snapshot:
+`{version:3,definitionSha256,policyImports:[]}` for new contract-3 graphs. Historical
+contract-2 graphs omit it and retain serial/exclusive-Join semantics. The empty
+imports list means only native graph/check/closure policy is pinned, not imported
+global routing or publication authority. Routes, actions and command receipt
+shapes do not change. See the [shared contract baseline](../backend/workflow-baseline/contract.md).
+
+
 Slice F exposes `start_graph {target:{type:story|plan,id},expected_revision?,definition_id,definition_revision,request_id,limits?}` through the existing owning-daemon service. Story starts require the current native revision and pin the selected publication; the request ID is bound to its payload. Omitted limits use Rust defaults. Plan dispatch remains unavailable in this build and its start control says so. The `workflow action=run` MCP entry uses an inline schema generated from `RunAction` and the public `RunCommand` variants; it returns the same scoped snapshots and cursor-ordered events as IPC/HTTP. Run history shows pinned activations, decisions/evidence, repair counters, pause targets and complete event payloads across pages. Graph recovery uses `resume_graph {execution_id,activation_id,resolution}` after answering pending input; pause and cancel use the existing sequence-fenced commands. Legacy runs offer inspection and cancellation in the UI. No new persistence or client scheduler is added.
 
 `POST /workflows/run/action?path=<absolute-project>` accepts one tagged `RunAction` and returns `{type,value}`. Actions: `start_plan {plan_id,definition_id,definition_revision,limits}`, `get {run_id}`, `incidents {run_id}` (read-only causes and manual next steps), `list_plan_runs {plan_id,limit}`, `events {run_id,after_sequence,limit}`, `command {run_id,command_id,expected_sequence,command}`, `execute_check {run_id,story_id,check_id,command_id,expected_sequence}`, `record_integration {run_id,story_id,command_id,expected_sequence}`, and `recertify_canonical {run_id,command_id,expected_sequence}`. `list_plan_runs` returns newest first and accepts a limit of 1–100. Run commands include planning closure, agent attempt and effect bookkeeping, loop advancement, story acceptance, final verification, pause/resume, cancellation, and completion. The server checks canonical project ownership for every action and rejects a command whose expected sequence is stale. Event cursors start at zero and return up to 500 entries. A duplicate command ID returns its original receipt only when the payload matches. See [Workflow runs](../backend/workflows.md) for recovery and completion rules. Serial story graph execution is available through `start_graph`; `start_plan` remains the legacy record-only ledger.
