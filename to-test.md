@@ -3069,3 +3069,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 
 - [ ] After a manual backend restart, set archive retention to 1 day in a throwaway repository and refresh after expiry. Confirm the status names deleted clean and retained dirty archives, with archive refs intact (#2469-c93f). Rust does not hot-reload.
 - [ ] After the next backend rebuild, create a worktree in a repo that ignores `stories/`: the shared link must not add a dirty badge. In a repo that does not ignore stories, creation must warn and leave the main untracked files visible (#2476-b3eb).
+
+- [ ] On iPhone, paste an HTTP(S) URL into terminal and AI Chat drafts, then continue typing. Check the separator and caret with the native keyboard. Verify long Sessions and Files names keep actions visible (#2493-061e, #2494-921f).

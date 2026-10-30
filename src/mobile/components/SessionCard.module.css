@@ -65,6 +65,7 @@ button[data-control-layout="row"].cardMain {
 }
 
 .name {
+  composes: ellipsis from "../mobileText.module.css";
   font-size: 14px;
   font-weight: 600;
   color: var(--fg-primary);
@@ -79,6 +80,7 @@ button[data-control-layout="row"].cardMain {
 }
 
 .project {
+  min-width: 0;
   color: var(--fg-primary);
   max-width: 120px;
   overflow: hidden;
@@ -87,6 +89,7 @@ button[data-control-layout="row"].cardMain {
 }
 
 .branch {
+  min-width: 0;
   font-family: var(--font-mono);
   font-size: 11px;
   color: var(--fg-secondary);

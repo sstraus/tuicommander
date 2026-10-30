@@ -10,6 +10,12 @@ const mod = isMacOS() ? "Cmd" : "Ctrl";
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Mobile URL paste",
+		description:
+			"Paste a web link into a mobile terminal or AI Chat draft. A space separates the URL from your next words unless whitespace already follows it.",
+		shortcut: null,
+	},
+	{
 		feature: "Archived worktree retention",
 		description:
 			"Set retention days in Git & GitHub Worktree Defaults or override them per repository. 0 keeps archives; cleanup keeps dirty work and preserves commit recovery refs.",

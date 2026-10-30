@@ -5,6 +5,7 @@ import { appLogger } from "../../stores/appLogger";
 import { chatViewStore } from "../../stores/chatView";
 import { toastsStore } from "../../stores/toasts";
 import { HttpRpcError, rpc } from "../../transport";
+import { spacedUrlPaste } from "../../utils/pastedUrl";
 import { waitForAgentEnterGap } from "../../utils/sendCommand";
 import { sendNativeChoice } from "../../utils/sendNativeChoice";
 import { useBrowserDictation } from "../useBrowserDictation";
@@ -546,6 +547,16 @@ export function CommandInput(props: CommandInputProps) {
 					class={styles.input}
 					placeholder="Type a command..."
 					onInput={handleInput}
+					onPaste={(event) => {
+						const input = event.currentTarget;
+						const text = spacedUrlPaste(
+							event.clipboardData?.getData("text/plain") ?? "",
+							input.value.charAt(input.selectionEnd),
+						);
+						if (text === null) return;
+						event.preventDefault();
+						insertText(text);
+					}}
 					onKeyDown={handleKeyDown}
 					autocomplete="off"
 					autocorrect={keyboardCorrection.enabled() ? "on" : "off"}

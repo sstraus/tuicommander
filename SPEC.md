@@ -1,5 +1,8 @@
 # TUICommander Specification
 
+- [x] Mobile terminal and AI Chat composers add one space after a pasted HTTP(S) URL when neither the paste nor the following draft character supplies whitespace (#2494-921f).
+- [x] Mobile list identities stay inside their rows; long session and file names use ellipsis, badges and actions remain visible, and Progress text wraps (#2493-061e).
+
 - [x] Headless `--credential-file` selects a read-once JSON seed with process-local credential edits, fail-closed content-free boot diagnostics and restart-based rotation; desktop keyring defaults remain unchanged (#2343-5358).
 
 - [x] Mobile terminal CLI and Chat display the existing backend prompt queue, including CLI/desktop additions, and supports cancellation and clearing (#2463-ad1c).

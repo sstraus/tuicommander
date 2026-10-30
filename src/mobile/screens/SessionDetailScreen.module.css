@@ -41,20 +41,16 @@ button[data-control-layout="row"].headerInfo {
 }
 
 .agentName {
+  composes: ellipsis from "../mobileText.module.css";
   font-size: 15px;
   font-weight: 600;
   color: var(--fg-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .project {
+  composes: ellipsis from "../mobileText.module.css";
   font-size: 11px;
   color: var(--fg-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .logo {

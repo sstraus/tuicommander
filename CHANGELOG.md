@@ -6,7 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- Add a separating space after web URLs pasted into mobile terminal and AI Chat composers, unless whitespace already follows (#2494-921f).
+
 ### Fixed
+
+- Truncate long mobile session and file names, preserve badges and actions, and wrap unbroken Progress text (#2493-061e).
 
 - Apply the mobile Chat font setting to all assistant prose, including earlier explanatory blocks (#2492-4944).
 - Keep mobile session Chat Copy below answer text instead of over its first line (#2490-276a).

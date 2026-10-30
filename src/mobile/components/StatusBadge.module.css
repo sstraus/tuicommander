@@ -1,4 +1,5 @@
 .badge {
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;

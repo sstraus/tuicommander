@@ -9,6 +9,7 @@
 
 .sheet {
   box-sizing: border-box;
+  overflow-wrap: anywhere;
   width: 100%;
   max-height: 72%;
   overflow-y: auto;

@@ -462,3 +462,42 @@ it("scopes the Chat size to the AI Chat transcript, excluding its composer", asy
 	expect(view.container.querySelector("header")?.closest("[data-mobile-reading]")).toBeNull();
 	while (mobileFontSizes.chat() > 14) mobileFontSizes.step("chat", -1);
 });
+
+// Catches: URL separator insertion bypasses large-paste folding and expands the whole mobile draft.
+it("folds a long mobile paste ending in a URL without losing its separator", async () => {
+	const view = render(() => <MobileChatScreen />);
+	const input = view.container.querySelector("textarea")!;
+	const text = `${"word ".repeat(201)}https://example.com`;
+	fireEvent.input(input, { target: { value: "Read REPLACEnext" } });
+	input.setSelectionRange(5, 12);
+	fireEvent.paste(input, { clipboardData: { getData: () => text, items: [], files: [] } });
+	await Promise.resolve();
+	expect(input.value).toBe("Read [Pasted text #1 +202 words]next");
+	expect(aiChatDraft.expandedText()).toBe(`Read ${text} next`);
+	expect(input.selectionStart).toBe(input.value.length - 4);
+	expect(input.selectionEnd).toBe(input.selectionStart);
+});
+
+// Catches: mobile ACP bypasses URL spacing or appends at the end instead of the selected range.
+it.each([
+	["", "", "https://example.com", "https://example.com "],
+	["Read ", "next", "See https://example.com", "Read See https://example.com next"],
+	["", " next", "https://example.com", "https://example.com next"],
+	["", "", "plain text", "plain text"],
+])("mobile chat preserves URL paste and suffix: %j %j %j", async (prefix, suffix, text, expected) => {
+	const view = render(() => <MobileChatScreen />);
+	const input = view.container.querySelector("textarea")!;
+	fireEvent.input(input, { target: { value: `${prefix}REPLACE${suffix}` } });
+	input.setSelectionRange(prefix.length, prefix.length + 7);
+	const native = fireEvent.paste(input, { clipboardData: { getData: () => text, items: [], files: [] } });
+	if (native) {
+		input.setRangeText(text, input.selectionStart, input.selectionEnd, "end");
+		fireEvent.input(input);
+	}
+	await Promise.resolve();
+	expect(input.value).toBe(expected);
+	expect(aiChatDraft.text()).toBe(expected);
+	const caret = expected.length - suffix.length;
+	expect(input.selectionStart).toBe(caret);
+	expect(input.selectionEnd).toBe(caret);
+});

@@ -16,6 +16,7 @@ import { useKeyboardCorrection } from "../../mobile/useKeyboardCorrection";
 import { uploadAttachment } from "../../services/uploadAttachment";
 import type { AcpAvailableCommand } from "../../types/acp";
 import { pastedImageFiles } from "../../utils/pastedImage";
+import { spacedUrlPaste } from "../../utils/pastedUrl";
 import { pathBasename } from "../../utils/pathUtils";
 import { getRepoTextColor } from "../../utils/repoColor";
 import { ComposeSendIcon } from "../shared/ComposeActionIcons";
@@ -304,8 +305,16 @@ export const Composer: Component<{
 		if (files.length === 0) {
 			const value = event.clipboardData?.getData("text/plain") ?? "";
 			if (!textarea) return;
-			const cursor = aiChatDraft.stageTextPaste(value, textarea.selectionStart, textarea.selectionEnd);
-			if (cursor === null) return;
+			const spaced = props.mobileAttachments
+				? spacedUrlPaste(value, textarea.value.charAt(textarea.selectionEnd))
+				: null;
+			let cursor = aiChatDraft.stageTextPaste(spaced ?? value, textarea.selectionStart, textarea.selectionEnd);
+			if (cursor === null) {
+				if (spaced === null) return;
+				textarea.setRangeText(spaced, textarea.selectionStart, textarea.selectionEnd, "end");
+				cursor = textarea.selectionStart;
+				aiChatDraft.set(textarea.value);
+			}
 			event.preventDefault();
 			queueMicrotask(() => {
 				textarea?.setSelectionRange(cursor, cursor);

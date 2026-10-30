@@ -48,7 +48,10 @@ button[data-control-layout="row"].row {
 
 button[data-control-layout="row"].row:active { background: var(--bg-highlight); }
 
-.name { font-size: var(--font-base); }
+.name {
+	composes: ellipsis from "../mobileText.module.css";
+	font-size: var(--font-base);
+}
 .path {
 	max-width: 100%;
 	overflow: hidden;
