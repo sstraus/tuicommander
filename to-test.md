@@ -3094,3 +3094,7 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   runs stay inspectable/cancelable and use exclusive Join. Do not migrate live runs.
   Targeted recorded-run and HTTP/service parity tests provide automated coverage;
   the running development backend does not hot-reload this Rust change.
+
+## WF05 critic fixes — load after a manual Rust rebuild (2512-5a42)
+
+- [ ] After Boss chooses to restart `make dev` (or rebuild release), inspect a paused remote typed command interrupted by daemon restart. Fenced stop/release must create a failed-proof receipt, release its named resources, and settle its uncertain effect without replay or automatic graph resume. Automated regression covers dirty-source recovery and lost output; the current live daemon does not contain this Rust change.

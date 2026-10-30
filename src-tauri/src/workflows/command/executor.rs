@@ -72,6 +72,12 @@ struct ExecutionContext<'a> {
     stdin: Option<&'a [u8]>,
 }
 
+struct PreparedCommand {
+    command: Command,
+    _environment: Option<tempfile::NamedTempFile>,
+    _stdin: Option<tempfile::NamedTempFile>,
+}
+
 impl CommandJournal {
     pub fn for_runs(path: &Path) -> Self {
         Self {
@@ -289,6 +295,62 @@ impl CommandJournal {
         tx.commit().map_err(sql)
     }
 
+    /// Inspect an existing intent only. This entry point never admits or starts a process.
+    pub fn recover_existing(
+        &self,
+        definition: &CommandDefinition,
+        identity: &CommandIdentity,
+        adapters: &CommandAdapters,
+    ) -> Result<Option<CommandReceipt>, String> {
+        let definition_sha256 = digest(encode(definition)?.as_bytes());
+        if let Some(receipt) = self.receipt(&identity.effect)? {
+            if receipt.identity != *identity || receipt.definition_sha256 != definition_sha256 {
+                return Err("command effect key conflicts with pinned payload".into());
+            }
+            return Ok(Some(receipt));
+        }
+        let existing: Option<(String, String, String)> = self
+            .connect()?
+            .query_row(
+                "SELECT payload,state,handle_path FROM commands WHERE effect=?1",
+                [&identity.effect],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()
+            .map_err(sql)?;
+        let Some((payload, state, handle)) = existing else {
+            return Ok(None);
+        };
+        if matches!(state.as_str(), "ready" | "queued") {
+            return Ok(None);
+        }
+        let (pinned_identity, pinned_definition, subject): (
+            CommandIdentity,
+            CommandDefinition,
+            CommandSubject,
+        ) = serde_json::from_str(&payload)
+            .map_err(|_| "admitted command subject unavailable; retain uncertainty")?;
+        if pinned_identity != *identity || pinned_definition != *definition {
+            return Err("command effect key conflicts with pinned payload".into());
+        }
+        if !matches!(
+            definition.target,
+            CommandTarget::Rb | CommandTarget::RbAfterNative { .. }
+        ) {
+            return Err("local command stop unknown after client loss; retain uncertainty".into());
+        }
+        let context = ExecutionContext {
+            definition,
+            identity,
+            workspace: Path::new(&subject.workspace),
+            runs_db: &self.path,
+            adapters,
+            stdin: None,
+        };
+        self.reconcile(&context, &subject, &definition_sha256, Path::new(&handle))
+            .map(Some)
+    }
+
     pub fn execute(
         &self,
         definition: &CommandDefinition,
@@ -299,10 +361,8 @@ impl CommandJournal {
     ) -> Result<CommandReceipt, String> {
         definition.validate()?;
         let definition_sha256 = digest(encode(definition)?.as_bytes());
-        if let Some(receipt) = self.receipt(&identity.effect)? {
-            if receipt.identity != *identity || receipt.definition_sha256 != definition_sha256 {
-                return Err("command effect key conflicts with pinned payload".into());
-            }
+        // Recovery uses the admitted subject, never a fresh/clean working tree or secrets.
+        if let Some(receipt) = self.recover_existing(definition, identity, adapters)? {
             return Ok(receipt);
         }
         let (commit, tree) = clean_artifact(workspace)?;
@@ -330,7 +390,9 @@ impl CommandJournal {
             commit,
             tree,
         };
-        let payload = digest(encode(&(identity, definition, &subject))?.as_bytes());
+        // The immutable payload also retains the subject needed after daemon/client loss.
+        let payload = encode(&(identity, definition, &subject))?;
+        let values = self.preflight(definition, &subject)?;
         let private = self.path.with_extension("command-inputs");
         std::fs::create_dir_all(&private).map_err(|_| "create command input directory")?;
         let handle_path = private.join(format!(
@@ -338,45 +400,30 @@ impl CommandJournal {
             digest(identity.effect.as_bytes())
         ));
         let resources = resource_keys(definition, workspace)?;
+        let context = ExecutionContext {
+            definition,
+            identity,
+            workspace,
+            runs_db,
+            adapters,
+            stdin: stdin.as_deref(),
+        };
+        // All deterministic preparation, including private transport files, is
+        // complete before named resources become owned by this effect.
+        let prepared = self.prepare_command(&context, &handle_path, &private, &values)?;
         if !self.admit(identity, &payload, &resources, &handle_path, adapters)? {
-            if handle_path.exists()
-                && matches!(
-                    definition.target,
-                    CommandTarget::Rb | CommandTarget::RbAfterNative { .. }
-                )
-            {
-                return self.reconcile(
-                    &ExecutionContext {
-                        definition,
-                        identity,
-                        workspace,
-                        runs_db,
-                        adapters,
-                        stdin: stdin.as_deref(),
-                    },
-                    &subject,
-                    &definition_sha256,
-                    &handle_path,
-                );
-            }
             return Err(
                 "command queued or uncertain; inspect command_executions before retry or cleanup"
                     .into(),
             );
         }
         let result = self.run_admitted(
-            &ExecutionContext {
-                definition,
-                identity,
-                workspace,
-                runs_db,
-                adapters,
-                stdin: stdin.as_deref(),
-            },
+            &context,
             subject,
             definition_sha256,
             &handle_path,
-            &private,
+            prepared,
+            &values,
         );
         match result {
             Ok(receipt) => {
@@ -390,22 +437,11 @@ impl CommandJournal {
         }
     }
 
-    fn run_admitted(
+    fn preflight(
         &self,
-        context: &ExecutionContext<'_>,
-        subject: CommandSubject,
-        definition_sha256: String,
-        handle_path: &Path,
-        private: &Path,
-    ) -> Result<CommandReceipt, String> {
-        let ExecutionContext {
-            definition,
-            identity,
-            workspace,
-            runs_db,
-            adapters,
-            stdin,
-        } = *context;
+        definition: &CommandDefinition,
+        subject: &CommandSubject,
+    ) -> Result<BTreeMap<String, String>, String> {
         let mut values = BTreeMap::new();
         for (name, reference) in &definition.secret_refs {
             let value = std::env::var(reference).map_err(|_| "secret reference unavailable")?;
@@ -414,7 +450,6 @@ impl CommandJournal {
             }
             values.insert(name.clone(), value);
         }
-        let argv = definition.invocation.argv();
         if let CommandTarget::RbAfterNative {
             native_effect,
             os,
@@ -435,15 +470,33 @@ impl CommandJournal {
                 return Err("forced rb rerun lacks matching native artifact/command proof".into());
             }
         }
-        let remote = matches!(
-            definition.target,
-            CommandTarget::Rb | CommandTarget::RbAfterNative { .. }
-        );
         if let CommandTarget::Local { os, arch } = &definition.target
             && (os != std::env::consts::OS || arch != std::env::consts::ARCH)
         {
             return Err("local target does not match required platform".into());
         }
+        Ok(values)
+    }
+
+    fn prepare_command(
+        &self,
+        context: &ExecutionContext<'_>,
+        handle_path: &Path,
+        private: &Path,
+        values: &BTreeMap<String, String>,
+    ) -> Result<PreparedCommand, String> {
+        let ExecutionContext {
+            definition,
+            workspace,
+            adapters,
+            stdin,
+            ..
+        } = *context;
+        let argv = definition.invocation.argv();
+        let remote = matches!(
+            definition.target,
+            CommandTarget::Rb | CommandTarget::RbAfterNative { .. }
+        );
         let mut private_env = None;
         let mut command =
             if remote {
@@ -464,7 +517,7 @@ impl CommandJournal {
                 command.arg("--").args(&argv);
                 let file = tempfile::NamedTempFile::new_in(private)
                     .map_err(|_| "create private environment input")?;
-                serde_json::to_writer(file.as_file(), &values)
+                serde_json::to_writer(file.as_file(), values)
                     .map_err(|_| "write private environment input")?;
                 command
                     .env("RB_SECRET_ENV_FILE", file.path())
@@ -479,11 +532,11 @@ impl CommandJournal {
                     command.arg("--gate");
                 }
                 command.args(&argv);
-                command.envs(&values);
+                command.envs(values);
                 command
             } else {
                 let mut command = Command::new(&argv[0]);
-                command.args(&argv[1..]).envs(&values);
+                command.args(&argv[1..]).envs(values);
                 command
             };
         command
@@ -502,6 +555,7 @@ impl CommandJournal {
             .current_dir(workspace)
             .env("PATH", execution_path())
             .env("RB_AGENT_NAME", &adapters.agent_name)
+            .env("BUILD_SLOT_AGENT", &adapters.agent_name)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
@@ -520,16 +574,63 @@ impl CommandJournal {
         } else {
             None
         };
-        let output = execute_process(
+        Ok(PreparedCommand {
+            command,
+            _environment: private_env,
+            _stdin: private_stdin,
+        })
+    }
+
+    fn run_admitted(
+        &self,
+        context: &ExecutionContext<'_>,
+        subject: CommandSubject,
+        definition_sha256: String,
+        handle_path: &Path,
+        prepared: PreparedCommand,
+        values: &BTreeMap<String, String>,
+    ) -> Result<CommandReceipt, String> {
+        let ExecutionContext {
+            definition,
+            identity,
+            workspace,
+            runs_db,
+            adapters,
+            ..
+        } = *context;
+        let argv = definition.invocation.argv();
+        let remote = matches!(
+            definition.target,
+            CommandTarget::Rb | CommandTarget::RbAfterNative { .. }
+        );
+        let PreparedCommand {
+            command,
+            _environment,
+            _stdin,
+        } = prepared;
+        let (output, no_start) = match execute_process(
             command,
             Duration::from_secs(u64::from(definition.timeout_secs)),
             Some((runs_db.to_owned(), identity.run.clone())),
             false,
-        )?;
-        drop(private_env);
-        drop(private_stdin);
-        let stdout = redact_captured(&output.stdout, &values);
-        let stderr = redact_captured(&output.stderr, &values);
+        ) {
+            Ok(output) => (output, None),
+            Err(crate::workflows::run::check::ProcessError::NotStarted(reason)) => (
+                crate::workflows::run::check::ProcessOutput {
+                    exit_code: -1,
+                    duration_ms: 0,
+                    cancelled: false,
+                    stdout: vec![],
+                    stderr: vec![],
+                },
+                Some(reason),
+            ),
+            Err(error) => return Err(error.into()),
+        };
+        drop(_environment);
+        drop(_stdin);
+        let stdout = redact_captured(&output.stdout, values);
+        let stderr = redact_captured(&output.stderr, values);
         let mut receipt = CommandReceipt {
             identity: identity.clone(),
             definition: definition.clone(),
@@ -545,7 +646,9 @@ impl CommandJournal {
             toolchain: executable_stamp(&argv[0], workspace),
             exit_code: output.exit_code,
             succeeded: output.exit_code == 0 && !output.cancelled,
-            reason: if output.cancelled {
+            reason: if let Some(reason) = &no_start {
+                format!("command not started: {reason}")
+            } else if output.cancelled {
                 "owned process tree cancelled".into()
             } else {
                 "owned process tree stopped".into()
@@ -559,7 +662,7 @@ impl CommandJournal {
             source_manifest_sha256: None,
             source_fingerprint: None,
         };
-        if remote {
+        if remote && no_start.is_none() {
             let lookup = lookup_remote(adapters, handle_path)?;
             apply_remote_proof(&mut receipt, &lookup)?;
             let result = receipt
@@ -644,7 +747,9 @@ impl CommandJournal {
             source_manifest_sha256: None,
             source_fingerprint: None,
         };
-        apply_remote_proof(&mut receipt, &lookup)?;
+        // Stop authority does not depend on successful artifact collection. Lost
+        // source/output evidence makes this failed proof, not a retained process.
+        apply_remote_stop(&mut receipt, &lookup)?;
         // A recovered stop permits cleanup, not a fabricated successful proof or replay.
         self.finish(&receipt)?;
         Ok(receipt)
@@ -749,12 +854,37 @@ fn resource_keys(definition: &CommandDefinition, workspace: &Path) -> Result<Vec
         .collect()
 }
 
+fn secret_spellings(values: &BTreeMap<String, String>) -> Vec<String> {
+    let mut spellings = Vec::new();
+    for value in values.values() {
+        spellings.push(value.clone());
+        let quoted = serde_json::to_string(value).expect("string serialization");
+        let escaped = quoted[1..quoted.len() - 1].to_owned();
+        // Python and many JSON tools emit ASCII-only JSON, including surrogate pairs.
+        let mut ascii = String::new();
+        for ch in escaped.chars() {
+            if ch.is_ascii() {
+                ascii.push(ch);
+            } else {
+                for unit in ch.encode_utf16(&mut [0; 2]) {
+                    ascii.push_str(&format!("\\u{unit:04x}"));
+                }
+            }
+        }
+        spellings.extend([escaped, ascii]);
+    }
+    spellings.sort_by_key(|value| std::cmp::Reverse(value.len()));
+    spellings.dedup();
+    spellings
+}
+
 fn redact_captured(bytes: &[u8], values: &BTreeMap<String, String>) -> String {
     let mut text = String::from_utf8_lossy(bytes).into_owned();
-    // Capture truncation must not retain a partial secret at the final boundary.
+    // Capture truncation must not retain a partial raw or JSON-escaped secret.
     if bytes.len() == 1024 * 1024 {
-        let prefix = values
-            .values()
+        let spellings = secret_spellings(values);
+        let prefix = spellings
+            .iter()
             .flat_map(|value| {
                 value
                     .char_indices()
@@ -773,10 +903,8 @@ fn redact_captured(bytes: &[u8], values: &BTreeMap<String, String>) -> String {
 
 fn redact(text: &str, values: &BTreeMap<String, String>) -> String {
     let mut result = text.to_owned();
-    let mut values: Vec<_> = values.values().collect();
-    values.sort_by_key(|value| std::cmp::Reverse(value.len()));
-    for value in values {
-        result = result.replace(value, "[REDACTED]");
+    for value in secret_spellings(values) {
+        result = result.replace(&value, "[REDACTED]");
     }
     result
 }
@@ -813,7 +941,7 @@ fn validate_remote_stop(lookup: &serde_json::Value) -> Result<(), String> {
     Ok(())
 }
 
-fn apply_remote_proof(
+fn apply_remote_stop(
     receipt: &mut CommandReceipt,
     lookup: &serde_json::Value,
 ) -> Result<(), String> {
@@ -822,6 +950,14 @@ fn apply_remote_proof(
     receipt.remote_handle = Some(lookup.clone());
     receipt.stopped = true;
     receipt.released = true;
+    Ok(())
+}
+
+fn apply_remote_proof(
+    receipt: &mut CommandReceipt,
+    lookup: &serde_json::Value,
+) -> Result<(), String> {
+    apply_remote_stop(receipt, lookup)?;
     let run_dir = lookup["run_dir"]
         .as_str()
         .ok_or("remote receipt missing artifact directory")?;
@@ -864,7 +1000,11 @@ const REMOTE_COMMAND: &str = r#"
 import hashlib, json, os, platform, shutil, signal, subprocess, sys, threading
 request=json.loads(sys.argv[1])
 argv=sys.argv[3:]
-values=sorted([os.environ[name] for name in request['names']],key=len,reverse=True)
+values=[os.environ[name] for name in request['names']]
+spellings=set(values)
+for value in values:
+    for ascii_only in (False, True): spellings.add(json.dumps(value,ensure_ascii=ascii_only)[1:-1])
+values=sorted(spellings,key=len,reverse=True)
 def capture(pipe, target):
     while True:
         data=pipe.read(8192)
@@ -896,7 +1036,17 @@ if executable:
     with open(executable,'rb') as source:
         for data in iter(lambda: source.read(65536),b''): hasher.update(data)
     toolchain+='; sha256='+hasher.hexdigest()
-print('TUIC_COMMAND_RESULT='+json.dumps(dict(os=platform.system().lower(),arch=platform.machine(),toolchain=toolchain,exit_code=code,stdout=redact(out),stderr=redact(err))))
+def bounded(text):
+    # Budget encoded JSON, not source bytes: control characters expand sixfold.
+    budget=(1048576-65536)//2
+    if len(json.dumps(text).encode('utf-8'))<=budget: return text
+    lo=0; hi=len(text)
+    while lo<hi:
+        mid=(lo+hi+1)//2
+        if len(json.dumps(text[:mid]+'[TRUNCATED]').encode('utf-8'))<=budget: lo=mid
+        else: hi=mid-1
+    return text[:lo]+'[TRUNCATED]'
+print('TUIC_COMMAND_RESULT='+json.dumps(dict(os=platform.system().lower(),arch=platform.machine(),toolchain=toolchain,exit_code=code,stdout=bounded(redact(out)),stderr=bounded(redact(err)))))
 "#;
 
 #[cfg(test)]

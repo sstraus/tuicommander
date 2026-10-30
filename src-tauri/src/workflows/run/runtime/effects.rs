@@ -61,6 +61,10 @@ pub(in crate::workflows::run) async fn drive_effect(
     store: &RunStore,
     run: &RunSnapshot,
 ) -> Result<bool, String> {
+    // Restart recovery is inspection only and is valid while the run is paused.
+    if reconcile_command_effects(store, run)? {
+        return Ok(true);
+    }
     if run.status != RunStatus::Running {
         return Ok(false);
     }
@@ -439,6 +443,78 @@ pub(in crate::workflows::run) async fn drive_effect(
         }
     }
     Ok(false)
+}
+
+pub(super) fn reconcile_command_effects(
+    store: &RunStore,
+    run: &RunSnapshot,
+) -> Result<bool, String> {
+    for graph in &run.graph_executions {
+        for activation in &graph.activations {
+            let Some(node) = graph
+                .definition
+                .graph
+                .nodes
+                .iter()
+                .find(|node| node.id == activation.node_id)
+            else {
+                continue;
+            };
+            let (NodeKind::RunCommand { command } | NodeKind::Tool { command, .. }) = &node.kind
+            else {
+                continue;
+            };
+            let identity = command_identity(run, graph, activation);
+            let Some(effect) = run
+                .effects
+                .iter()
+                .find(|effect| effect.key == identity.effect)
+            else {
+                continue;
+            };
+            if !matches!(effect.state, EffectState::Uncertain | EffectState::Intended) {
+                continue;
+            }
+            // Running Intended commands still use the execution path below. Only a
+            // paused/uncertain intent may inspect recovery state without admission.
+            if effect.state == EffectState::Intended && run.status == RunStatus::Running {
+                continue;
+            }
+            let Some(receipt) = store.command_journal().recover_existing(
+                command,
+                &identity,
+                &crate::workflows::command::executor::CommandAdapters::installed(),
+            )?
+            else {
+                continue;
+            };
+            let command = if effect.state == EffectState::Uncertain {
+                RunCommand::ResolveUncertainEffect {
+                    effect_id: effect.id.clone(),
+                    succeeded: receipt.succeeded,
+                }
+            } else {
+                RunCommand::MarkEffect {
+                    effect_id: effect.id.clone(),
+                    succeeded: receipt.succeeded,
+                }
+            };
+            store.command(
+                &run.id,
+                &format!("reconcile-command:{}", effect.id),
+                command,
+            )?;
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+pub(super) fn has_pending_command_recovery(run: &RunSnapshot) -> bool {
+    run.effects.iter().any(|effect| {
+        effect.kind == EffectKind::RunCommand
+            && matches!(effect.state, EffectState::Intended | EffectState::Uncertain)
+    })
 }
 
 fn fail_effect(store: &RunStore, run_id: &str, effect_id: &str) -> Result<(), String> {

@@ -524,31 +524,105 @@ fn json_escaped_secrets_do_not_reach_remote_durable_output_or_local_receipts() {
     let secret = "wf05-\"quoted\\credential\n\t";
     let script = "import json,os; print(json.dumps({'credential':os.environ['WF05_SECRET']}))";
     let output = Command::new(python())
-        .args(["-c", REMOTE_COMMAND, r#"{"names":["WF05_SECRET"],"timeout":10}"#, "--", python(), "-c", script])
-        .env("WF05_SECRET", secret).output().unwrap();
+        .args([
+            "-c",
+            REMOTE_COMMAND,
+            r#"{"names":["WF05_SECRET"],"timeout":10}"#,
+            "--",
+            python(),
+            "-c",
+            script,
+        ])
+        .env("WF05_SECRET", secret)
+        .output()
+        .unwrap();
     assert!(output.status.success());
     let envelope = String::from_utf8(output.stdout).unwrap();
-    let remote: serde_json::Value = serde_json::from_str(envelope.trim().strip_prefix("TUIC_COMMAND_RESULT=").unwrap()).unwrap();
-    let decoded: serde_json::Value = serde_json::from_str(remote["stdout"].as_str().unwrap()).unwrap();
-    assert_eq!(decoded["credential"], "[REDACTED]", "secret recoverable from durable envelope");
-    let mut values = BTreeMap::new();
-    values.insert("secret".into(), secret.into());
-    let local = redact_captured(serde_json::to_string(&serde_json::json!({"credential":secret})).unwrap().as_bytes(), &values);
-    assert_eq!(serde_json::from_str::<serde_json::Value>(&local).unwrap()["credential"], "[REDACTED]");
+    let remote: serde_json::Value = serde_json::from_str(
+        envelope
+            .trim()
+            .strip_prefix("TUIC_COMMAND_RESULT=")
+            .unwrap(),
+    )
+    .unwrap();
+    let decoded: serde_json::Value =
+        serde_json::from_str(remote["stdout"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        decoded["credential"], "[REDACTED]",
+        "secret recoverable from durable envelope"
+    );
+    if std::env::var_os("WF05_LOCAL_SECRET").is_none() {
+        let output = Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", "workflows::command::executor::tests::json_escaped_secrets_do_not_reach_remote_durable_output_or_local_receipts", "--nocapture"])
+            .env("WF05_LOCAL_SECRET", secret).output().unwrap();
+        assert!(
+            output.status.success(),
+            "{} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let mut spec = definition(script);
+    spec.secret_refs
+        .insert("WF05_SECRET".into(), "WF05_LOCAL_SECRET".into());
+    let db = root.path().join("runs.db");
+    let journal = CommandJournal::for_runs(&db);
+    let receipt = journal
+        .execute(
+            &spec,
+            &identity("json-secret"),
+            &workspace,
+            &db,
+            &adapters(root.path()),
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(&receipt.stdout).unwrap()["credential"],
+        "[REDACTED]"
+    );
+    let reopened = CommandJournal::for_runs(&db)
+        .receipt("json-secret")
+        .unwrap()
+        .unwrap();
+    assert_eq!(reopened, receipt);
+    assert!(!encode(&reopened).unwrap().contains("quoted"));
 }
 
 #[test]
 fn dual_stream_escaped_remote_output_fits_outer_capture() {
     // catches F4: valid bounded streams becoming a truncated, undecodable receipt envelope.
-    let mut command = Command::new(python());
-    command.args(["-c", REMOTE_COMMAND, r#"{"names":[],"timeout":10}"#, "--", python(), "-c", "import sys; sys.stdout.write(chr(1)*600000); sys.stderr.write(chr(2)*600000)"])
-        .stdout(Stdio::piped()).stderr(Stdio::piped());
-    let output = execute_process(command, Duration::from_secs(20), None, false).unwrap();
-    assert_eq!(output.exit_code, 0);
-    let envelope = String::from_utf8(output.stdout).unwrap();
-    let remote: serde_json::Value = serde_json::from_str(envelope.trim().strip_prefix("TUIC_COMMAND_RESULT=").unwrap()).expect("complete envelope within outer capture");
-    assert!(remote["stdout"].as_str().unwrap().ends_with("[TRUNCATED]"));
-    assert!(remote["stderr"].as_str().unwrap().ends_with("[TRUNCATED]"));
+    for script in [
+        "import sys; sys.stdout.write(chr(1)*600000); sys.stderr.write(chr(2)*600000)",
+        "import sys; sys.stdout.write('a'*600000); sys.stderr.write('b'*600000)",
+        "import sys; sys.stdout.write(chr(0x1f600)*600000); sys.stderr.write(chr(0x1f601)*600000)",
+    ] {
+        let mut command = Command::new(python());
+        command
+            .args([
+                "-c",
+                REMOTE_COMMAND,
+                r#"{"names":[],"timeout":10}"#,
+                "--",
+                python(),
+                "-c",
+                script,
+            ])
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let output = execute_process(command, Duration::from_secs(20), None, false).unwrap();
+        assert_eq!(output.exit_code, 0);
+        let envelope = String::from_utf8(output.stdout).unwrap();
+        let remote: serde_json::Value = serde_json::from_str(
+            envelope
+                .trim()
+                .strip_prefix("TUIC_COMMAND_RESULT=")
+                .unwrap(),
+        )
+        .expect("complete envelope within outer capture");
+        assert!(remote["stdout"].as_str().unwrap().ends_with("[TRUNCATED]"));
+        assert!(remote["stderr"].as_str().unwrap().ends_with("[TRUNCATED]"));
+    }
 }
 
 #[test]
@@ -556,46 +630,143 @@ fn missing_secret_does_not_reserve_named_resource() {
     // catches F5: deterministic preflight failure permanently reserving GUI/mutation resources.
     let root = scratch();
     let workspace = root.path().join("repo");
-    std::fs::create_dir(&workspace).unwrap(); repo(&workspace);
+    std::fs::create_dir(&workspace).unwrap();
+    repo(&workspace);
     let db = root.path().join("runs.db");
     let journal = CommandJournal::for_runs(&db);
     let mut spec = definition("print('ok')");
     spec.resources = vec![CommandResource::Gui("preflight".into())];
-    spec.secret_refs.insert("SECRET".into(), "WF05_DELIBERATELY_ABSENT_SECRET".into());
-    assert!(journal.execute(&spec, &identity("missing-secret"), &workspace, &db, &adapters(root.path())).is_err());
+    spec.secret_refs
+        .insert("SECRET".into(), "WF05_DELIBERATELY_ABSENT_SECRET".into());
+    assert!(
+        journal
+            .execute(
+                &spec,
+                &identity("missing-secret"),
+                &workspace,
+                &db,
+                &adapters(root.path())
+            )
+            .is_err()
+    );
     spec.secret_refs.clear();
-    let receipt = journal.execute(&spec, &identity("replacement"), &workspace, &db, &adapters(root.path())).expect("preflight failure must not lock subsequent command");
+    let local_target = spec.target.clone();
+    spec.target = CommandTarget::Local {
+        os: "wrong-host".into(),
+        arch: std::env::consts::ARCH.into(),
+    };
+    assert!(
+        journal
+            .execute(
+                &spec,
+                &identity("wrong-platform"),
+                &workspace,
+                &db,
+                &adapters(root.path())
+            )
+            .is_err()
+    );
+    spec.target = CommandTarget::RbAfterNative {
+        native_effect: "absent-proof".into(),
+        os: std::env::consts::OS.into(),
+        arch: std::env::consts::ARCH.into(),
+    };
+    assert!(
+        journal
+            .execute(
+                &spec,
+                &identity("missing-native-proof"),
+                &workspace,
+                &db,
+                &adapters(root.path())
+            )
+            .is_err()
+    );
+    spec.target = local_target;
+    let receipt = journal
+        .execute(
+            &spec,
+            &identity("replacement"),
+            &workspace,
+            &db,
+            &adapters(root.path()),
+        )
+        .expect("preflight failure must not lock subsequent command");
     assert!(receipt.succeeded);
 }
 
 #[cfg(unix)]
 fn isolated_gate(command: &mut Command, root: &Path) {
-    command.env("BUILD_SLOT_DIR", root).env("BUILD_SLOT_FREE", "100").env("BUILD_SLOT_LOAD", "0")
-        .env("BUILD_SLOT_DISK_GIB", "100").env("BUILD_SLOT_AGENTS", "0").env("BUILD_SLOT_POLL", "1").env("BUILD_SLOT_GRACE", "1");
+    command
+        .env("BUILD_SLOT_DIR", root)
+        .env("BUILD_SLOT_FREE", "100")
+        .env("BUILD_SLOT_LOAD", "0")
+        .env("BUILD_SLOT_DISK_GIB", "100")
+        .env("BUILD_SLOT_AGENTS", "0")
+        .env("BUILD_SLOT_POLL", "1")
+        .env("BUILD_SLOT_GRACE", "1");
 }
 
 #[cfg(unix)]
 #[test]
 fn mutation_wrapper_timeout_stops_separate_child_group() {
     // catches F2: killing wrapper PGID but certifying stop while its --gate group still writes.
-    let root = scratch();
-    let marker = root.path().join("writes");
-    let pid_file = root.path().join("child.pid");
-    let script = "import os,sys,time; open(sys.argv[2],'w').write(str(os.getpid())); os.close(1); os.close(2); f=open(sys.argv[1],'a');\nfor _ in range(150): f.write('x'); f.flush(); time.sleep(.02)";
-    let wrapper = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/workflows/command/fixtures/build-slot.sh");
-    let mut command = Command::new("bash");
-    command.arg(wrapper).args(["--gate", python(), "-c", script]).arg(&marker).arg(&pid_file)
-        .env("RB_BIN", "unused").stdout(Stdio::piped()).stderr(Stdio::piped());
-    isolated_gate(&mut command, &root.path().join("slots"));
-    let output = execute_process(command, Duration::from_secs(2), None, false).unwrap();
-    assert_eq!(output.exit_code, -1);
-    let before = std::fs::metadata(&marker).expect("gate child started").len();
-    std::thread::sleep(Duration::from_millis(150));
-    let after = std::fs::metadata(&marker).unwrap().len();
-    // Cleanup only the child group recorded by this test, even on the RED implementation.
-    let pid: i32 = std::fs::read_to_string(pid_file).unwrap().parse().unwrap();
-    unsafe { libc::kill(-pid, libc::SIGKILL); }
-    assert_eq!(before, after, "separately grouped gate child continued mutating after receipt");
+    for cancel in [false, true] {
+        let root = scratch();
+        let marker = root.path().join("writes");
+        let pid_file = root.path().join("child.pid");
+        let script = "import os,sys,time; open(sys.argv[2],'w').write(str(os.getpid())); os.close(1); os.close(2); f=open(sys.argv[1],'a');\nfor _ in range(150): f.write('x'); f.flush(); time.sleep(.02)";
+        let wrapper = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("src/workflows/command/fixtures/build/build-slot.sh");
+        let mut command = Command::new("bash");
+        command
+            .arg(wrapper)
+            .args(["--gate", python(), "-c", script])
+            .arg(&marker)
+            .arg(&pid_file)
+            .env("RB_BIN", "unused")
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        isolated_gate(&mut command, &root.path().join("slots"));
+        let owner = (root.path().join("runs.db"), "owned-wrapper".to_owned());
+        let cancellation = if cancel {
+            let marker = marker.clone();
+            let owner = owner.clone();
+            Some(std::thread::spawn(move || {
+                while !marker.exists() {
+                    std::thread::sleep(Duration::from_millis(10));
+                }
+                crate::workflows::run::check::cancel_checks(&owner.0, &owner.1);
+            }))
+        } else {
+            None
+        };
+        let output = execute_process(
+            command,
+            Duration::from_secs(if cancel { 30 } else { 2 }),
+            Some(owner),
+            false,
+        )
+        .unwrap();
+        if let Some(worker) = cancellation {
+            worker.join().unwrap();
+        }
+        assert_eq!(output.exit_code, if cancel { -2 } else { -1 });
+        let before = std::fs::metadata(&marker)
+            .expect("gate child started")
+            .len();
+        std::thread::sleep(Duration::from_millis(150));
+        let after = std::fs::metadata(&marker).unwrap().len();
+        // Cleanup only the child group recorded by this test, even on the RED implementation.
+        let pid: i32 = std::fs::read_to_string(pid_file).unwrap().parse().unwrap();
+        unsafe {
+            libc::kill(-pid, libc::SIGKILL);
+        }
+        assert_eq!(
+            before, after,
+            "separately grouped gate child continued mutating after receipt"
+        );
+    }
 }
 
 #[cfg(unix)]
@@ -611,20 +782,40 @@ fn local_wrapper_uses_same_freeze_identity_as_journal() {
             .env("WF05_IDENTITY_CHILD", root.path()).env_remove("BUILD_SLOT_AGENT");
         isolated_gate(&mut command, root.path());
         let output = command.output().unwrap();
-        assert!(output.status.success(), "{} {}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
         return;
     }
-    let root = scratch(); let workspace = root.path().join("repo");
-    std::fs::create_dir(&workspace).unwrap(); repo(&workspace);
+    let root = scratch();
+    let workspace = root.path().join("repo");
+    std::fs::create_dir(&workspace).unwrap();
+    repo(&workspace);
     let mut adapter = adapters(root.path());
-    adapter.freeze = PathBuf::from(std::env::var_os("WF05_IDENTITY_CHILD").unwrap()).join("BUILD_FREEZE");
-    adapter.build_slot = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/workflows/command/fixtures/build-slot.sh");
+    adapter.freeze =
+        PathBuf::from(std::env::var_os("WF05_IDENTITY_CHILD").unwrap()).join("BUILD_FREEZE");
+    adapter.build_slot = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("src/workflows/command/fixtures/build/build-slot.sh");
     let mut spec = definition("print('allowed identity')");
-    spec.resources = vec![CommandResource::Mutation]; spec.timeout_secs = 3;
-    let db = root.path().join("runs.db"); let journal = CommandJournal::for_runs(&db);
-    let receipt = journal.execute(&spec, &identity("allowed"), &workspace, &db, &adapter).unwrap();
+    spec.resources = vec![CommandResource::Mutation];
+    spec.timeout_secs = 3;
+    let db = root.path().join("runs.db");
+    let journal = CommandJournal::for_runs(&db);
+    let receipt = journal
+        .execute(&spec, &identity("allowed"), &workspace, &db, &adapter)
+        .unwrap();
     assert!(receipt.succeeded, "{} {}", receipt.reason, receipt.stderr);
     adapter.agent_name = "other".into();
-    assert!(journal.execute(&spec, &identity("denied"), &workspace, &db, &adapter).is_err());
-    assert_eq!(journal.observations("run").unwrap().last().unwrap().state, "queued");
+    assert!(
+        journal
+            .execute(&spec, &identity("denied"), &workspace, &db, &adapter)
+            .is_err()
+    );
+    assert_eq!(
+        journal.observations("run").unwrap().last().unwrap().state,
+        "queued"
+    );
 }

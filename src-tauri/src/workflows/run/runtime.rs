@@ -275,6 +275,34 @@ async fn run_actor(
                 _ = notify.notified() => {},
                 _ = tokio::time::sleep(std::time::Duration::from_millis(remaining)) => {},
             }
+        } else if snapshot.status == RunStatus::Paused
+            && effects::has_pending_command_recovery(&snapshot)
+        {
+            let Some(current) = owner.upgrade() else {
+                break;
+            };
+            let recovery_store = current.store.clone();
+            let recovery_snapshot = snapshot.clone();
+            match tokio::task::spawn_blocking(move || {
+                effects::reconcile_command_effects(&recovery_store, &recovery_snapshot)
+            })
+            .await
+            {
+                Ok(Ok(true)) => continue,
+                Ok(Err(error)) => {
+                    tracing::debug!(source = "workflows", %run_id, %error, "Command recovery still pending")
+                }
+                Err(error) => {
+                    tracing::warn!(source = "workflows", %run_id, %error, "Command recovery task interrupted")
+                }
+                Ok(Ok(false)) => {}
+            }
+            // Reuse this run's actor/wake loop for external stop observations. This
+            // never resumes the graph or re-admits the interrupted command.
+            tokio::select! {
+                _ = notify.notified() => {},
+                _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {},
+            }
         } else {
             notify.notified().await;
         }

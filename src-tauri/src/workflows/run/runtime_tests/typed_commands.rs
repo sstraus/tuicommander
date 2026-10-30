@@ -132,9 +132,18 @@ async fn confirmed_spawn_failure_releases_resource_for_next_run() {
     let mut spec = command("print('unexpected')");
     spec["invocation"]["argv"] = json!([config.path().join("absent-executor").to_str().unwrap()]);
     spec["resources"] = json!([{"type":"gui","key":"wf05-exclusive"}]);
-    let (store, run) = start(config.path(), project.path(), &story, &workspace_a, spec, "no-start");
+    let (store, run) = start(
+        config.path(),
+        project.path(),
+        &story,
+        &workspace_a,
+        spec,
+        "no-start",
+    );
     let state = state(config.path());
-    super::super::runtime::effects::drive_effect(&state, &store, &run).await.expect("known no-start yields failed receipt");
+    super::super::runtime::effects::drive_effect(&state, &store, &run)
+        .await
+        .expect("known no-start yields failed receipt");
     let first = observations(project.path(), &run.id);
     let receipt = &first.as_array().unwrap().last().unwrap()["receipt"];
     assert_eq!(receipt["succeeded"], false);
@@ -144,9 +153,25 @@ async fn confirmed_spawn_failure_releases_resource_for_next_run() {
     let workspace_b = workspace(project.path(), config.path(), "replacement");
     let mut second = command("print('replacement started')");
     second["resources"] = json!([{"type":"gui","key":"wf05-exclusive"}]);
-    let (store, replacement) = start(config.path(), project.path(), &second_story, &workspace_b, second, "replacement");
-    super::super::runtime::effects::drive_effect(&state, &store, &replacement).await.unwrap();
-    assert_eq!(observations(project.path(), &replacement.id).as_array().unwrap().last().unwrap()["receipt"]["succeeded"], true);
+    let (store, replacement) = start(
+        config.path(),
+        project.path(),
+        &second_story,
+        &workspace_b,
+        second,
+        "replacement",
+    );
+    super::super::runtime::effects::drive_effect(&state, &store, &replacement)
+        .await
+        .unwrap();
+    assert_eq!(
+        observations(project.path(), &replacement.id)
+            .as_array()
+            .unwrap()
+            .last()
+            .unwrap()["receipt"]["succeeded"],
+        true
+    );
 }
 
 #[tokio::test]
@@ -267,51 +292,212 @@ async fn restarted_paused_remote_command_reconciles_without_replay_or_clean_work
     if std::env::var_os("WF05_RECOVERY_CHILD").is_none() {
         let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let adapters = root.path().join("adapters");
-        for directory in ["build", "remote"] { std::fs::create_dir_all(adapters.join(directory)).unwrap(); }
-        let mut lookup: Value = serde_json::from_str(include_str!("../../command/fixtures/rb-lookup.json")).unwrap();
+        for directory in ["build", "remote"] {
+            std::fs::create_dir_all(adapters.join(directory)).unwrap();
+        }
+        let mut lookup: Value =
+            serde_json::from_str(include_str!("../../command/fixtures/rb-lookup.json")).unwrap();
         lookup["run_dir"] = json!(root.path().to_str().unwrap());
-        std::fs::write(root.path().join("lookup.json"), serde_json::to_vec(&lookup).unwrap()).unwrap();
+        std::fs::write(
+            root.path().join("lookup.json"),
+            serde_json::to_vec(&lookup).unwrap(),
+        )
+        .unwrap();
         std::fs::write(root.path().join("manifest.z"), b"retained source manifest").unwrap();
         // Replay only the recorded lookup boundary; the executor admission/start boundary is real.
         let wrapper = "#!/usr/bin/env python3\nimport os,pathlib\nr=pathlib.Path(os.environ['WF05_RECOVERY_CHILD'])\nwith open(r/'starts','a') as f: f.write('start\\n')\npathlib.Path(os.environ['RB_HANDLE_FILE']).write_text('{}')\n";
         let rb = "#!/usr/bin/env python3\nimport os,pathlib\nprint((pathlib.Path(os.environ['WF05_RECOVERY_CHILD'])/'lookup.json').read_text())\n";
         use std::os::unix::fs::PermissionsExt;
-        for (path, text) in [(adapters.join("build/build-slot.sh"), wrapper), (adapters.join("remote/rb"), rb)] {
-            std::fs::write(&path, text).unwrap(); std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        for (path, text) in [
+            (adapters.join("build/build-slot.sh"), wrapper),
+            (adapters.join("remote/rb"), rb),
+        ] {
+            std::fs::write(&path, text).unwrap();
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
         }
         let output = std::process::Command::new(std::env::current_exe().unwrap())
             .args(["--exact", "workflows::run::runtime_tests::typed_commands::restarted_paused_remote_command_reconciles_without_replay_or_clean_workspace", "--nocapture"])
             .env("WF05_RECOVERY_CHILD", root.path()).env("TUIC_WORKFLOW_ADAPTER_ROOT", adapters)
             .env("RB_BUILD_FREEZE", root.path().join("no-freeze")).output().unwrap();
-        assert!(output.status.success(), "{} {}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        assert!(
+            output.status.success(),
+            "{} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
         return;
     }
     let (config, project, plan, story, _template, _guard) = fixture();
     let path = workspace(project.path(), config.path(), "remote-recovery");
-    let mut spec = command("print('not replayed')"); spec["target"] = json!({"type":"rb"});
+    let mut spec = command("print('not replayed')");
+    spec["target"] = json!({"type":"rb"});
     spec["resources"] = json!([{"type":"gui","key":"recovery-exclusive"}]);
-    let (store, run) = start(config.path(), project.path(), &story, &path, spec, "recover");
+    let (store, run) = start(
+        config.path(),
+        project.path(),
+        &story,
+        &path,
+        spec,
+        "recover",
+    );
     let state = state(config.path());
-    assert!(super::super::runtime::effects::drive_effect(&state, &store, &run).await.is_err());
+    assert!(
+        super::super::runtime::effects::drive_effect(&state, &store, &run)
+            .await
+            .is_err()
+    );
     drop(store);
     let store = RunStore::open_at(&config.path().join("workflow_runs.sqlite3")).unwrap();
     let paused = store.reconcile_after_restart(&run.id).unwrap();
     assert_eq!(paused.status, RunStatus::Paused);
-    assert!(paused.effects.iter().any(|e| e.state == EffectState::Uncertain));
+    assert!(
+        paused
+            .effects
+            .iter()
+            .any(|e| e.state == EffectState::Uncertain)
+    );
     std::fs::write(Path::new(&path).join("dirty-after-restart"), "source moved").unwrap();
-    assert!(super::super::runtime::effects::drive_effect(&state, &store, &paused).await.unwrap(), "paused recovery must make durable progress");
+    let evidence = std::path::PathBuf::from(std::env::var_os("WF05_RECOVERY_CHILD").unwrap());
+    let original = std::fs::read(evidence.join("lookup.json")).unwrap();
+    let recorded: Value = serde_json::from_slice(&original).unwrap();
+    for fault in ["busy", "wrong-fence"] {
+        let mut lookup = recorded.clone();
+        if fault == "busy" {
+            lookup["observation"]["state"] = json!("busy");
+        } else {
+            lookup["observation"]["fence"] = json!("wrong");
+        }
+        std::fs::write(
+            evidence.join("lookup.json"),
+            serde_json::to_vec(&lookup).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            super::super::runtime::effects::drive_effect(&state, &store, &paused)
+                .await
+                .is_err(),
+            "{fault} must not settle uncertain effect"
+        );
+        assert!(
+            store
+                .command_journal()
+                .receipt(&paused.effects[0].key)
+                .unwrap()
+                .is_none()
+        );
+    }
+    std::fs::write(evidence.join("lookup.json"), original).unwrap();
+    std::fs::remove_file(evidence.join("manifest.z")).unwrap();
+
+    assert!(
+        super::super::runtime::effects::drive_effect(&state, &store, &paused)
+            .await
+            .unwrap(),
+        "paused recovery must make durable progress"
+    );
     let recovered = store.snapshot(&run.id).unwrap();
-    assert!(recovered.effects.iter().all(|e| e.state != EffectState::Uncertain));
+    assert!(
+        recovered
+            .effects
+            .iter()
+            .all(|e| e.state != EffectState::Uncertain)
+    );
     let rows = observations(project.path(), &run.id);
     let receipt = &rows.as_array().unwrap().last().unwrap()["receipt"];
-    assert_eq!(receipt["succeeded"], false); assert_eq!(receipt["stopped"], true); assert_eq!(receipt["released"], true);
-    assert!(receipt["reason"].as_str().unwrap().contains("lost command output"));
+    assert_eq!(receipt["succeeded"], false);
+    assert_eq!(receipt["stopped"], true);
+    assert_eq!(receipt["released"], true);
+    assert!(
+        receipt["reason"]
+            .as_str()
+            .unwrap()
+            .contains("lost command output")
+    );
     let root = std::path::PathBuf::from(std::env::var_os("WF05_RECOVERY_CHILD").unwrap());
-    assert_eq!(std::fs::read_to_string(root.join("starts")).unwrap(), "start\n");
+    assert_eq!(
+        std::fs::read_to_string(root.join("starts")).unwrap(),
+        "start\n"
+    );
     // A subsequent effect can acquire the same named resource without replaying the first.
     let second_story = sibling(&plan, "After recovery");
     let second_path = workspace(project.path(), config.path(), "after-recovery");
-    let mut spec = command("print('released')"); spec["resources"] = json!([{"type":"gui","key":"recovery-exclusive"}]);
-    let (store, next) = start(config.path(), project.path(), &second_story, &second_path, spec, "after-recovery");
-    assert!(super::super::runtime::effects::drive_effect(&state, &store, &next).await.unwrap());
+    let mut spec = command("print('released')");
+    spec["resources"] = json!([{"type":"gui","key":"recovery-exclusive"}]);
+    let (store, next) = start(
+        config.path(),
+        project.path(),
+        &second_story,
+        &second_path,
+        spec,
+        "after-recovery",
+    );
+    assert!(
+        super::super::runtime::effects::drive_effect(&state, &store, &next)
+            .await
+            .unwrap()
+    );
+}
+
+#[tokio::test]
+async fn restart_uses_committed_receipt_to_settle_uncertain_effect() {
+    // catches F1: ignoring an already immutable receipt behind the generic restart fence.
+    let (config, project, _plan, story, _template, _guard) = fixture();
+    let path = workspace(project.path(), config.path(), "receipt-recovery");
+    let spec = command("print('committed before daemon loss')");
+    let (store, run) = start(
+        config.path(),
+        project.path(),
+        &story,
+        &path,
+        spec.clone(),
+        "receipt-recovery",
+    );
+    let graph = &run.graph_executions[0];
+    let activation = graph
+        .activations
+        .iter()
+        .find(|a| a.state == ActivationState::Running)
+        .unwrap();
+    let identity = super::super::runtime::effects::command_identity(&run, graph, activation);
+    store
+        .command(
+            &run.id,
+            "reserve-before-client-loss",
+            RunCommand::ReserveEffect {
+                key: identity.effect.clone(),
+                kind: EffectKind::RunCommand,
+            },
+        )
+        .unwrap();
+    let spec: crate::workflows::command::CommandDefinition = serde_json::from_value(spec).unwrap();
+    let receipt = store
+        .command_journal()
+        .execute(
+            &spec,
+            &identity,
+            Path::new(&path),
+            store.database_path(),
+            &crate::workflows::command::executor::CommandAdapters::installed(),
+        )
+        .unwrap();
+    assert!(receipt.succeeded);
+    let paused = store.reconcile_after_restart(&run.id).unwrap();
+    std::fs::write(Path::new(&path).join("dirty"), "not a fresh source check").unwrap();
+    assert!(
+        super::super::runtime::effects::drive_effect(&state(config.path()), &store, &paused)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        store.snapshot(&run.id).unwrap().effects[0].state,
+        EffectState::Succeeded
+    );
+    assert_eq!(
+        store
+            .command_journal()
+            .receipt(&identity.effect)
+            .unwrap()
+            .unwrap(),
+        receipt
+    );
 }

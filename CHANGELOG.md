@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Reconcile paused typed workflow commands after restart without replay; stop local gate child groups, redact JSON-escaped secrets, bound remote result envelopes, release known no-start failures, and pass the wrapper freeze identity (#2512-5a42).
+
 - Preserve the beginning of long Claude CLI dictation by framing it as a bracketed paste, including review-only delivery (#2502-571c).
 
 - Open local `tuic://open` links from Markdown in desktop and mobile/browser views. Route Markdown, images, HTML and directories to their proper views, including cross-worktree targets; keep network external-text reads restricted to registered repositories (#2497-ec72).

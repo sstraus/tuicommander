@@ -110,12 +110,17 @@ struct CheckProcess {
     child: std::process::Child,
     tree: Option<crate::agent::ScreenProbeTree>,
     cancelled: bool,
+    stop_error: Option<String>,
 }
 
 impl CheckProcess {
     fn stop(&mut self, cancelled: bool) {
         self.cancelled |= cancelled;
         if let Some(tree) = self.tree.take() {
+            #[cfg(unix)]
+            if let Err(error) = stop_owned_descendants(self.child.id()) {
+                self.stop_error = Some(error);
+            }
             tree.terminate(self.child.id());
             // The owned tree was signalled first. Reap the direct child even
             // when it exited just before the termination request.
@@ -126,13 +131,56 @@ impl CheckProcess {
     }
 }
 
+/// A wrapper such as build-slot --gate owns child groups outside its own PGID.
+/// Freeze the owned tree before walking it, so stopping its root cannot orphan a
+/// still-forking child group. Only descendants of our recorded child are signalled.
+#[cfg(unix)]
+fn stop_owned_descendants(root: u32) -> Result<(), String> {
+    let mut owned = HashSet::from([root]);
+    unsafe {
+        libc::kill(-(root as libc::pid_t), libc::SIGSTOP);
+    }
+    loop {
+        let map = crate::pty::process_parent_map()
+            .ok_or("cannot inspect owned process tree; stop uncertain")?;
+        let mut pending = vec![root];
+        let mut added = false;
+        let mut visited = HashSet::new();
+        while let Some(pid) = pending.pop() {
+            if !visited.insert(pid) {
+                continue;
+            }
+            if let Some(children) = map.get(&pid) {
+                for &child in children {
+                    pending.push(child);
+                    if owned.insert(child) {
+                        unsafe {
+                            libc::kill(child as libc::pid_t, libc::SIGSTOP);
+                        }
+                        added = true;
+                    }
+                }
+            }
+        }
+        if !added {
+            break;
+        }
+    }
+    for pid in owned.into_iter().filter(|pid| *pid != root) {
+        unsafe {
+            libc::kill(pid as libc::pid_t, libc::SIGKILL);
+        }
+    }
+    Ok(())
+}
+
 impl Drop for CheckProcess {
     fn drop(&mut self) {
         self.stop(false);
     }
 }
 
-pub(super) fn cancel_checks(db_path: &Path, run_id: &str) {
+pub(in crate::workflows) fn cancel_checks(db_path: &Path, run_id: &str) {
     let owner = (db_path.to_owned(), run_id.to_owned());
     let mut registry = CHECKS.lock().unwrap_or_else(|error| error.into_inner());
     registry.cancelled.insert(owner.clone());
@@ -251,13 +299,27 @@ fn drain_output(
     })
 }
 
+#[derive(Debug)]
+pub(in crate::workflows) enum ProcessError {
+    NotStarted(String),
+    Uncertain(String),
+}
+
+impl From<ProcessError> for String {
+    fn from(error: ProcessError) -> Self {
+        match error {
+            ProcessError::NotStarted(reason) | ProcessError::Uncertain(reason) => reason,
+        }
+    }
+}
+
 /// One cancellation registry for legacy checks and positioned command nodes.
 pub(in crate::workflows) fn execute_process(
     mut command: Command,
     timeout: Duration,
     owner: Option<(PathBuf, String)>,
     allow_cancelled: bool,
-) -> Result<ProcessOutput, String> {
+) -> Result<ProcessOutput, ProcessError> {
     let start = Instant::now();
     // Registration and spawn share the cancellation lock: cancellation also
     // fences workers which were reading Git when the run was cancelled.
@@ -268,18 +330,21 @@ pub(in crate::workflows) fn execute_process(
                 .as_ref()
                 .is_some_and(|owner| registry.cancelled.contains(owner)))
     {
-        return Err("workflow check cancelled".into());
+        return Err(ProcessError::NotStarted("workflow check cancelled".into()));
     }
-    let tree_owner = crate::agent::ScreenProbeTree::prepare(&mut command)
-        .map_err(|error| format!("prepare workflow check tree: {error}"))?;
+    let tree_owner = crate::agent::ScreenProbeTree::prepare(&mut command).map_err(|error| {
+        ProcessError::NotStarted(format!("prepare workflow check tree: {error}"))
+    })?;
     let mut child = command
         .spawn()
-        .map_err(|error| format!("start workflow command: {error}"))?;
+        .map_err(|error| ProcessError::NotStarted(format!("start workflow command: {error}")))?;
     if let Err(error) = tree_owner.assign(&child) {
         tree_owner.terminate(child.id());
         let _ = child.kill();
         let _ = child.wait();
-        return Err(format!("assign workflow check tree: {error}"));
+        return Err(ProcessError::Uncertain(format!(
+            "assign workflow check tree: {error}"
+        )));
     }
     let stdout = drain_output(child.stdout.take());
     let stderr = drain_output(child.stderr.take());
@@ -287,6 +352,7 @@ pub(in crate::workflows) fn execute_process(
         child,
         tree: Some(tree_owner),
         cancelled: false,
+        stop_error: None,
     }));
     let key = owner.unwrap_or_else(|| (PathBuf::new(), uuid::Uuid::new_v4().to_string()));
     registry
@@ -318,6 +384,11 @@ pub(in crate::workflows) fn execute_process(
             std::thread::sleep(Duration::from_millis(10));
         }
     })();
+    let stop_error = process
+        .lock()
+        .unwrap_or_else(|error| error.into_inner())
+        .stop_error
+        .clone();
     // Never take the registry lock while holding the process lock.
     drop(process);
     let mut registry = CHECKS.lock().unwrap_or_else(|error| error.into_inner());
@@ -328,7 +399,10 @@ pub(in crate::workflows) fn execute_process(
         }
     }
     drop(registry);
-    let exit_code = result?;
+    if let Some(error) = stop_error {
+        return Err(ProcessError::Uncertain(error));
+    }
+    let exit_code = result.map_err(ProcessError::Uncertain)?;
     let duration_ms = start.elapsed().as_millis().min(u64::MAX as u128) as u64;
     Ok(ProcessOutput {
         exit_code,

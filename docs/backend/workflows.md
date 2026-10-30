@@ -158,7 +158,10 @@ Resources are Build (capacity/fairness owned by the wrapper), canonical Git
 (resolved from the actual Git common directory), Mutation, GUI and Device.
 The durable sidecar `workflow_runs.commands.sqlite3` records ready, queued,
 admitted, uncertain and completed observations and named-resource ownership.
-The command intent commits before starting a process. Duplicate identical effects
+Secret/platform/native-proof checks and private input preparation finish before
+admission. A confirmed spawn failure produces a failed, stopped/released receipt;
+it is not an uncertain remote lease and cannot strand named resources.
+The command intent pins its source subject and commits before starting a process. Duplicate identical effects
 return their immutable receipt; conflicting payloads refuse. Freeze prevents new
 admission but not history reads. A queued node pauses with its reason; explicitly
 resume it after the recorded blocker changes. There is no busy polling loop.
@@ -166,17 +169,27 @@ resume it after the recorded blocker changes. There is no busy polling loop.
 `secretRefs` maps command environment names to daemon environment references.
 Resolved values go only into the child environment or temporary private rb input
 transport, never into definitions, argv or receipts. Local captured output is
-redacted; remote output is redacted inside the admitted task before rb records
-it. Capture is bounded. Exit-status output checks the exit code. `test_summary`
+redacted, including raw and JSON-escaped secret spellings; remote output is
+redacted inside the admitted task before rb records it. Capture is bounded by
+the serialized JSON envelope, not only by each source stream. Oversized output
+ends with `[TRUNCATED]` and still produces a complete terminal receipt. Exit-status output checks the exit code. `test_summary`
 requires JSON `{matched,passed,failed}` with a positive `minimum_matched`, every
 matched test passing and no failures. `json_object` requires named fields. A zero
 exit with no matching tests cannot pass a declared test-summary requirement.
 
 Local commands use the same process-tree cancellation owner as pinned checks.
+On Unix, shutdown stops and walks the owned descendants before killing the
+wrapper, including the separate child groups created by local `--gate` commands.
+Journal admission and local wrappers both use the same agent identity for
+`BUILD_FREEZE` (`RB_AGENT_NAME` and `BUILD_SLOT_AGENT`).
 A lost remote client or lease never releases a named resource. Reconciliation
 uses the rb task/generation/fence and observed stop/release, not `result.txt`
 alone. A recovered stop without retained command output is failed proof, not
-success or permission to replay. Failed/unknown lookup retains the reservation
+success or permission to replay. Restart recovery also runs while paused. The
+existing run actor rechecks pending stop proof every 30 seconds or on a wake,
+using the admitted subject/handle without requiring clean source or current
+secret references. An immutable receipt settles the existing uncertain effect;
+it does not resume the graph. Failed/unknown lookup retains the reservation
 and workspace. A completed receipt records source commit/tree, command and
 output digests, target, toolchain, stop/release and remote manifest references.
 Explicit Tool effects can change their assigned workspace; their receipts distinguish the starting subject from a clean result artifact, or disclose a dirty/unresolved result. Such a receipt cannot satisfy unchanged-artifact/native proof. A source-changing Run command fails proof but still releases its slot after observed stop. The graph follows only a committed terminal receipt. Old serial replay and
