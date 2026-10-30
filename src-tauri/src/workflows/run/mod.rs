@@ -1,6 +1,7 @@
 mod api;
 pub(super) mod check;
 mod contracts;
+pub mod evidence;
 pub mod graph;
 mod incidents;
 mod model;
@@ -245,6 +246,7 @@ mod tests {
             timeout_secs: 30,
         };
         let mut receipt = CheckReceipt {
+            requirements_digest: None,
             check_id: "unit".into(),
             argv: check.argv.clone(),
             exit_code: 1,
@@ -345,6 +347,7 @@ mod tests {
             )
             .expect("accept");
         let receipt = CheckReceipt {
+            requirements_digest: None,
             check_id: "unit".into(),
             argv: vec!["git".into(), "status".into()],
             exit_code: 0,
