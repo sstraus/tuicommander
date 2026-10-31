@@ -270,6 +270,7 @@ Expanded tool rows use theme colours for Bash/execute commands, flags, strings a
 - Overflow menu on scroll arrows (right-click) shows clipped tabs; the `+` button always stays visible regardless of scroll position
 - `+` button: click opens a terminal in the active branch; right-click or long press (500 ms) lists the enabled agents (with a submenu per run config) and opens a new tab running the chosen one
 - Tab pinning: pinned tabs are visible across all branches (not scoped to branch key)
+- Right-click a sidebar session row to add it to the Global Workspace, or remove it when already included. This uses the same membership action as the tab context menu.
 
 ### 1.3 Split Panes
 - Vertical split: `Cmd+\` (side by side)
