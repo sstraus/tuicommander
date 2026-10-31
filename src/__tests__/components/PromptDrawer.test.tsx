@@ -59,11 +59,14 @@ function createPromptThroughEditor(
 	fireEvent.input(contentInput, { target: { value: content } });
 
 	if (autoExecute) {
-		const checkbox = Array.from(container.querySelectorAll('input[type="checkbox"]')).find((candidate) =>
-			candidate.closest("label")?.textContent?.includes("Send immediately"),
-		) as HTMLInputElement | undefined;
+		const target = Array.from(container.querySelectorAll("select")).find((select) =>
+			Array.from(select.options).some((option) => option.value === "terminal"),
+		)!;
+		fireEvent.change(target, { target: { value: "terminal" } });
+		const checkbox = container.querySelector('[role="switch"]') as HTMLInputElement;
 		expect(checkbox).toBeTruthy();
-		fireEvent.click(checkbox!);
+		fireEvent.click(checkbox);
+		fireEvent.change(target, { target: { value: "compose" } });
 	}
 
 	fireEvent.click(buttonByText(container, "Save"));
@@ -75,10 +78,12 @@ function createPromptThroughEditor(
 }
 
 describe("PromptDrawer auto-execute", () => {
-	beforeEach(() => {
+	beforeEach(async () => {
 		vi.useFakeTimers();
 		vi.clearAllMocks();
 		mockInvoke.mockImplementation(async (command: string, args?: Record<string, unknown>) => {
+			if (command === "detect_all_agent_binaries") return {};
+			if (command === "load_prompt_library") return { prompts: [] };
 			if (command === "extract_prompt_variables") {
 				const content = String(args?.content ?? "");
 				return Array.from(content.matchAll(/\{([^{}]+)\}/g), (match) => match[1]);
@@ -89,6 +94,7 @@ describe("PromptDrawer auto-execute", () => {
 			}
 			return undefined;
 		});
+		await promptLibraryStore.hydrate();
 		for (const prompt of promptLibraryStore.getAllPrompts()) {
 			promptLibraryStore.deletePrompt(prompt.id);
 		}
@@ -119,7 +125,7 @@ describe("PromptDrawer auto-execute", () => {
 	it("renders prompt controls without invented guidance", () => {
 		const view = render(() => <PromptDrawer />);
 		fireEvent.click(buttonByText(view.container, "+ New Prompt"));
-		expect(view.container.textContent).toContain("Send immediately");
+		expect(view.getByLabelText("Target")).toHaveValue("compose");
 		expect(view.container.textContent).not.toContain("Uncheck to review before sending");
 		const mode = Array.from(view.container.querySelectorAll("select")).find((select) =>
 			Array.from(select.options).some((option) => option.value === "api"),
@@ -127,6 +133,67 @@ describe("PromptDrawer auto-execute", () => {
 		fireEvent.change(mode, { target: { value: "api" } });
 		expect(view.container.textContent).toContain("System Prompt");
 		expect(view.container.textContent).not.toContain("Sent as the system message to the LLM");
+	});
+
+	// Catches: the drawer retaining a second legacy editor with raw ids and no inject target.
+	it("shares readable placements and target controls with Settings", () => {
+		const view = render(() => <PromptDrawer />);
+		fireEvent.click(buttonByText(view.container, "+ New Prompt"));
+		for (const label of [
+			"Toolbar",
+			"Command palette",
+			"Git · Changes",
+			"Git · Branches",
+			"PR popover",
+			"Issue popover",
+			"Terminal menu",
+			"File menu",
+		]) {
+			expect(view.getByLabelText(label)).toHaveAttribute("type", "checkbox");
+		}
+		expect(view.getByLabelText("Target")).toHaveValue("compose");
+		fireEvent.change(view.getByLabelText("Target"), { target: { value: "terminal" } });
+		expect(view.getByRole("switch", { name: "Send immediately" })).toBeTruthy();
+	});
+
+	// Catches: reopening a stored API prompt showing shell or saving a different mode.
+	it.each(["api", "shell", "headless"] as const)("preserves stored %s mode across edit and save", (executionMode) => {
+		const prompt = promptLibraryStore.createPrompt({
+			name: "Merge in main",
+			content: "Merge main into this branch",
+			category: "custom",
+			isFavorite: false,
+			executionMode,
+		});
+		const view = render(() => <PromptDrawer />);
+		fireEvent.click(view.getByTitle("Edit"));
+		const mode = Array.from(view.container.querySelectorAll("select")).find((select) =>
+			Array.from(select.options).some((option) => option.value === "shell"),
+		)!;
+		expect(mode.value).toBe(executionMode);
+		fireEvent.click(buttonByText(view.container, "Save"));
+		expect(promptLibraryStore.getAllPrompts().find((candidate) => candidate.id === prompt.id)?.executionMode).toBe(
+			executionMode,
+		);
+	});
+
+	// Catches: the shared fields bypassing the drawer draft and persisting a cancelled edit.
+	it("cancels draft changes without changing the stored prompt", () => {
+		const prompt = promptLibraryStore.createPrompt({
+			name: "Review merge",
+			content: "Review main",
+			category: "custom",
+			isFavorite: false,
+			executionMode: "api",
+		});
+		const view = render(() => <PromptDrawer />);
+		fireEvent.click(view.getByTitle("Edit"));
+		fireEvent.input(view.getByLabelText("Content *"), { target: { value: "Changed draft" } });
+		fireEvent.change(view.getByLabelText("Execution"), { target: { value: "shell" } });
+		fireEvent.click(buttonByText(view.container, "Cancel"));
+		const stored = promptLibraryStore.getAllPrompts().find((candidate) => candidate.id === prompt.id)!;
+		expect(stored.content).toBe("Review main");
+		expect(stored.executionMode).toBe("api");
 	});
 
 	it("submits an editor-created prompt with autoExecute enabled exactly once", async () => {

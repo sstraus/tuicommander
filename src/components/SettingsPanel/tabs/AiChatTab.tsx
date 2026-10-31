@@ -125,6 +125,13 @@ export const AiChatTab: Component<{
 				breadcrumb="AI / AI Chat"
 			/>
 			<SectionCard title="Agent and model">
+				<Show when={data()?.diagnostic}>
+					{(message) => (
+						<p class={s.warning} role="status">
+							{message()}
+						</p>
+					)}
+				</Show>
 				<Switch>
 					{/* No ego binary is named at all. The fix is on another page, so say
 					    which one rather than leaving an empty list on screen. */}

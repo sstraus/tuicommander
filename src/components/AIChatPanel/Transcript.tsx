@@ -928,14 +928,14 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 																	variant="ghost"
 																	size="compact"
 																	class={s.copyAction}
-																	aria-label="Fork from here"
+																	aria-label="Fork"
 																	disabled={props.busy()}
 																	onClick={() => {
 																		const id = agent().messageId;
 																		if (id) props.onFork?.(id);
 																	}}
 																>
-																	Fork from here
+																	Fork
 																</Button>
 															</Show>
 														</div>

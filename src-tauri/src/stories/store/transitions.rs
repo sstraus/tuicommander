@@ -32,7 +32,251 @@ fn wrong_status(story: &Story, required: &str) -> String {
     )
 }
 
+/// Shared evaluator for preview and commit. It changes only the supplied snapshot.
+fn apply_command(
+    conn: &Connection,
+    story: &mut Story,
+    command: StoryCommand,
+    preflight: &DependencyPreflight,
+) -> Result<(), String> {
+    match command {
+        StoryCommand::StartManual => {
+            if story.status != StoryStatus::Ready {
+                return Err(wrong_status(story, "ready"));
+            }
+            if !dependencies_integrated(conn, story, preflight)? {
+                return Err("story dependency lacks a current integration receipt".into());
+            }
+            story.status = StoryStatus::InProgress;
+        }
+        StoryCommand::CheckCriterion(index) | StoryCommand::UncheckCriterion(index) => {
+            if !matches!(story.status, StoryStatus::InProgress | StoryStatus::Qa) {
+                return Err(wrong_status(story, "in_progress or qa"));
+            }
+            let checked = story.checked.get_mut(index).ok_or_else(|| {
+                format!(
+                    "criterion index {index} out of range: story has {} criteria",
+                    story.criteria.len()
+                )
+            })?;
+            *checked = matches!(command, StoryCommand::CheckCriterion(_));
+        }
+        StoryCommand::SetCriterionManual { index, manual } => {
+            if matches!(story.status, StoryStatus::Done | StoryStatus::WontFix) {
+                return Err(wrong_status(story, "unfinished"));
+            }
+            let criterion = story
+                .criteria
+                .get_mut(index)
+                .ok_or_else(|| format!("criterion index {index} out of range"))?;
+            if manual && !is_manual(criterion) {
+                let marked = format!("[MANUAL] {}", criterion.trim_start());
+                validate_text("criterion", &marked, 2000)?;
+                *criterion = marked;
+            } else if !manual && is_manual(criterion) {
+                *criterion = criterion
+                    .trim_start()
+                    .strip_prefix("[MANUAL]")
+                    .expect("manual prefix")
+                    .trim_start()
+                    .into();
+                validate_text("criterion", criterion, 2000)?;
+            }
+        }
+        StoryCommand::SubmitQa => {
+            if !matches!(story.status, StoryStatus::InProgress | StoryStatus::Review) {
+                return Err(wrong_status(story, "in_progress or review"));
+            }
+            if !story.criteria.iter().any(|criterion| is_manual(criterion))
+                || story
+                    .criteria
+                    .iter()
+                    .zip(&story.checked)
+                    .any(|(criterion, checked)| !checked && !is_manual(criterion))
+            {
+                return Err("QA requires manual criteria and no open non-manual criteria".into());
+            }
+            story.status = StoryStatus::Qa;
+        }
+        StoryCommand::RejectQa => {
+            if story.status != StoryStatus::Qa {
+                return Err(wrong_status(story, "qa"));
+            }
+            story.status = StoryStatus::InProgress;
+        }
+        StoryCommand::SubmitReview => {
+            if story.status != StoryStatus::InProgress {
+                return Err(wrong_status(story, "in_progress"));
+            }
+            if !story.checked.iter().all(|checked| *checked) && !only_manual_pending(story) {
+                return Err(incomplete_criteria(story));
+            }
+            story.status = StoryStatus::Review;
+        }
+        StoryCommand::Approve => {
+            if !matches!(story.status, StoryStatus::Review | StoryStatus::Qa) {
+                return Err(wrong_status(story, "review or qa"));
+            }
+            if !story.checked.iter().all(|checked| *checked) {
+                return Err(incomplete_criteria(story));
+            }
+            story.status = StoryStatus::Done;
+            story.claim_session = None;
+        }
+        StoryCommand::RejectReview => {
+            if story.status != StoryStatus::Review {
+                return Err(wrong_status(story, "review"));
+            }
+            story.status = if story.claim_session.is_some() {
+                StoryStatus::InProgress
+            } else {
+                StoryStatus::Ready
+            };
+        }
+        StoryCommand::Block => {
+            if !matches!(
+                story.status,
+                StoryStatus::Ready
+                    | StoryStatus::InProgress
+                    | StoryStatus::Review
+                    | StoryStatus::Qa
+            ) {
+                return Err(format!(
+                    "story can be blocked only from ready, in_progress, review or qa (status: {})",
+                    story.status.as_str()
+                ));
+            }
+            story.status = StoryStatus::Blocked;
+            story.claim_session = None;
+        }
+        StoryCommand::Unblock => {
+            if story.status != StoryStatus::Blocked {
+                return Err(wrong_status(story, "blocked"));
+            }
+            story.status = if dependencies_integrated(conn, story, preflight)? {
+                StoryStatus::Ready
+            } else {
+                StoryStatus::Backlog
+            };
+        }
+        StoryCommand::WontFix => {
+            if story.status == StoryStatus::Done {
+                return Err("completed story cannot be discarded".into());
+            }
+            if story.status == StoryStatus::WontFix {
+                return Err("story is already cancelled".into());
+            }
+            story.status = StoryStatus::WontFix;
+            story.claim_session = None;
+        }
+    }
+    if matches!(
+        command,
+        StoryCommand::StartManual
+            | StoryCommand::CheckCriterion(_)
+            | StoryCommand::UncheckCriterion(_)
+            | StoryCommand::SetCriterionManual { .. }
+            | StoryCommand::SubmitReview
+    ) {
+        if matches!(story.status, StoryStatus::InProgress | StoryStatus::Review)
+            && only_manual_pending(story)
+        {
+            story.status = StoryStatus::Qa;
+        } else if story.status == StoryStatus::Qa
+            && story
+                .criteria
+                .iter()
+                .zip(&story.checked)
+                .any(|(criterion, checked)| !checked && !is_manual(criterion))
+        {
+            story.status = StoryStatus::InProgress;
+        }
+    }
+    if story.status == StoryStatus::Qa {
+        story.claim_session = None;
+    }
+    Ok(())
+}
+
 impl StoryStore {
+    fn check_transition_actor(
+        &self,
+        story_id: &str,
+        command: &StoryCommand,
+        actor: &StoryTransitionActor,
+    ) -> Result<(), String> {
+        let run_path = self.db_path.with_file_name("workflow_runs.sqlite3");
+        if *command == StoryCommand::Approve
+            && run_path.exists()
+            && let StoryTransitionActor::ManagedSession { session_id } = actor
+            && crate::workflows::RunStore::open_at(&run_path)?
+                .is_story_implementer(story_id, session_id)?
+        {
+            return Err("a story cannot be approved by its workflow implementer".into());
+        }
+        Ok(())
+    }
+
+    /// Preview actual destinations without writes, using the commit evaluator.
+    pub fn available_transitions(
+        &self,
+        story_id: &str,
+        expected_revision: i64,
+        actor: StoryTransitionActor,
+    ) -> Result<super::super::AvailableTransitions, String> {
+        let plan = self.require_unarchived_story(story_id)?.plan_id;
+        let preflight = DependencyPreflight::prepare(self, &plan)?;
+        let project = self.get_plan(&plan)?.project;
+        let can_approve = self
+            .check_transition_actor(story_id, &StoryCommand::Approve, &actor)
+            .is_ok();
+        // Keep an accepted reservation guard alive through the snapshot read.
+        let start_guard = crate::workflows::guard_manual_story_start(&project, story_id);
+        let can_start = start_guard.is_ok();
+        let mut conn = self.connect()?;
+        let tx = conn
+            .transaction()
+            .map_err(|error| format!("read transition snapshot: {error}"))?;
+        preflight.validate(&tx)?;
+        let story = read_story(&tx, story_id)?;
+        check_revision(&story, expected_revision)?;
+        require_active_story(&tx, &story)?;
+        let mut moves = Vec::new();
+        for command in [
+            StoryCommand::StartManual,
+            StoryCommand::SubmitReview,
+            StoryCommand::SubmitQa,
+            StoryCommand::Approve,
+            StoryCommand::RejectReview,
+            StoryCommand::RejectQa,
+            StoryCommand::Block,
+            StoryCommand::Unblock,
+            StoryCommand::WontFix,
+        ] {
+            if (command == StoryCommand::StartManual && !can_start)
+                || (command == StoryCommand::Approve && !can_approve)
+            {
+                continue;
+            }
+            let mut candidate = story.clone();
+            if apply_command(&tx, &mut candidate, command.clone(), &preflight).is_ok()
+                && candidate.status != story.status
+                && !moves
+                    .iter()
+                    .any(|item: &super::super::StoryPhaseMove| item.status == candidate.status)
+            {
+                moves.push(super::super::StoryPhaseMove {
+                    status: candidate.status,
+                    command,
+                });
+            }
+        }
+        Ok(super::super::AvailableTransitions {
+            revision: story.revision,
+            moves,
+        })
+    }
+
     /// Rebuild dependent readiness from durable integration receipts. Safe to
     /// repeat after a crash between the run event and the story projection.
     pub fn reconcile_integrated_dependencies(&self, plan_id: &str) -> Result<(), String> {
@@ -241,15 +485,7 @@ impl StoryStore {
         actor: StoryTransitionActor,
         workflow_start: bool,
     ) -> Result<Story, String> {
-        let run_path = self.db_path.with_file_name("workflow_runs.sqlite3");
-        if command == StoryCommand::Approve
-            && run_path.exists()
-            && let StoryTransitionActor::ManagedSession { session_id } = &actor
-            && crate::workflows::RunStore::open_at(&run_path)?
-                .is_story_implementer(story_id, session_id)?
-        {
-            return Err("a story cannot be approved by its workflow implementer".into());
-        }
+        self.check_transition_actor(story_id, &command, &actor)?;
         let preflight_plan = self.require_unarchived_story(story_id)?.plan_id;
         let preflight = DependencyPreflight::prepare(self, &preflight_plan)?;
         let _reservation_guard = if !workflow_start && matches!(command, StoryCommand::StartManual)
@@ -265,164 +501,7 @@ impl StoryStore {
         let mut story = read_story(&tx, story_id)?;
         check_revision(&story, expected_revision)?;
         require_active_story(&tx, &story)?;
-        match command {
-            StoryCommand::StartManual => {
-                if story.status != StoryStatus::Ready {
-                    return Err(wrong_status(&story, "ready"));
-                }
-                if !dependencies_integrated(&tx, &story, &preflight)? {
-                    return Err("story dependency lacks a current integration receipt".into());
-                }
-                story.status = StoryStatus::InProgress;
-            }
-            StoryCommand::CheckCriterion(index) | StoryCommand::UncheckCriterion(index) => {
-                if !matches!(story.status, StoryStatus::InProgress | StoryStatus::Qa) {
-                    return Err(wrong_status(&story, "in_progress or qa"));
-                }
-                let checked = story.checked.get_mut(index).ok_or_else(|| {
-                    format!(
-                        "criterion index {index} out of range: story has {} criteria",
-                        story.criteria.len()
-                    )
-                })?;
-                *checked = matches!(command, StoryCommand::CheckCriterion(_));
-            }
-            StoryCommand::SetCriterionManual { index, manual } => {
-                if matches!(story.status, StoryStatus::Done | StoryStatus::WontFix) {
-                    return Err(wrong_status(&story, "unfinished"));
-                }
-                let criterion = story
-                    .criteria
-                    .get_mut(index)
-                    .ok_or_else(|| format!("criterion index {index} out of range"))?;
-                if manual && !is_manual(criterion) {
-                    let marked = format!("[MANUAL] {}", criterion.trim_start());
-                    validate_text("criterion", &marked, 2000)?;
-                    *criterion = marked;
-                } else if !manual && is_manual(criterion) {
-                    *criterion = criterion
-                        .trim_start()
-                        .strip_prefix("[MANUAL]")
-                        .expect("manual prefix")
-                        .trim_start()
-                        .into();
-                    validate_text("criterion", criterion, 2000)?;
-                }
-            }
-            StoryCommand::SubmitQa => {
-                if !matches!(story.status, StoryStatus::InProgress | StoryStatus::Review) {
-                    return Err(wrong_status(&story, "in_progress or review"));
-                }
-                if !story.criteria.iter().any(|criterion| is_manual(criterion))
-                    || story
-                        .criteria
-                        .iter()
-                        .zip(&story.checked)
-                        .any(|(criterion, checked)| !checked && !is_manual(criterion))
-                {
-                    return Err(
-                        "QA requires manual criteria and no open non-manual criteria".into(),
-                    );
-                }
-                story.status = StoryStatus::Qa;
-            }
-            StoryCommand::RejectQa => {
-                if story.status != StoryStatus::Qa {
-                    return Err(wrong_status(&story, "qa"));
-                }
-                story.status = StoryStatus::InProgress;
-            }
-            StoryCommand::SubmitReview => {
-                if story.status != StoryStatus::InProgress {
-                    return Err(wrong_status(&story, "in_progress"));
-                }
-                if !story.checked.iter().all(|checked| *checked) && !only_manual_pending(&story) {
-                    return Err(incomplete_criteria(&story));
-                }
-                story.status = StoryStatus::Review;
-            }
-            StoryCommand::Approve => {
-                if !matches!(story.status, StoryStatus::Review | StoryStatus::Qa) {
-                    return Err(wrong_status(&story, "review or qa"));
-                }
-                if !story.checked.iter().all(|checked| *checked) {
-                    return Err(incomplete_criteria(&story));
-                }
-                story.status = StoryStatus::Done;
-                story.claim_session = None;
-            }
-            StoryCommand::RejectReview => {
-                if story.status != StoryStatus::Review {
-                    return Err(wrong_status(&story, "review"));
-                }
-                story.status = if story.claim_session.is_some() {
-                    StoryStatus::InProgress
-                } else {
-                    StoryStatus::Ready
-                };
-            }
-            StoryCommand::Block => {
-                if !matches!(
-                    story.status,
-                    StoryStatus::Ready
-                        | StoryStatus::InProgress
-                        | StoryStatus::Review
-                        | StoryStatus::Qa
-                ) {
-                    return Err(format!(
-                        "story can be blocked only from ready, in_progress, review or qa (status: {})",
-                        story.status.as_str()
-                    ));
-                }
-                story.status = StoryStatus::Blocked;
-                story.claim_session = None;
-            }
-            StoryCommand::Unblock => {
-                if story.status != StoryStatus::Blocked {
-                    return Err(wrong_status(&story, "blocked"));
-                }
-                story.status = if dependencies_integrated(&tx, &story, &preflight)? {
-                    StoryStatus::Ready
-                } else {
-                    StoryStatus::Backlog
-                };
-            }
-            StoryCommand::WontFix => {
-                if story.status == StoryStatus::Done {
-                    return Err("completed story cannot be discarded".into());
-                }
-                if story.status == StoryStatus::WontFix {
-                    return Err("story is already cancelled".into());
-                }
-                story.status = StoryStatus::WontFix;
-                story.claim_session = None;
-            }
-        }
-        if matches!(
-            command,
-            StoryCommand::StartManual
-                | StoryCommand::CheckCriterion(_)
-                | StoryCommand::UncheckCriterion(_)
-                | StoryCommand::SetCriterionManual { .. }
-                | StoryCommand::SubmitReview
-        ) {
-            if matches!(story.status, StoryStatus::InProgress | StoryStatus::Review)
-                && only_manual_pending(&story)
-            {
-                story.status = StoryStatus::Qa;
-            } else if story.status == StoryStatus::Qa
-                && story
-                    .criteria
-                    .iter()
-                    .zip(&story.checked)
-                    .any(|(criterion, checked)| !checked && !is_manual(criterion))
-            {
-                story.status = StoryStatus::InProgress;
-            }
-        }
-        if story.status == StoryStatus::Qa {
-            story.claim_session = None;
-        }
+        apply_command(&tx, &mut story, command.clone(), &preflight)?;
         save_story(&tx, &mut story, expected_revision)?;
         tx.execute(
             "INSERT INTO story_transitions(story_id,revision,command_json,actor_json) VALUES (?1,?2,?3,?4)",
@@ -467,6 +546,121 @@ mod tests {
             })
             .expect("story");
         (store, story)
+    }
+
+    /// Catches: a phase preview writes a revision/history or offers an illegal target.
+    #[test]
+    fn phase_moves_preview_is_read_only_and_matches_committed_destinations() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).expect("dir");
+        let _guard = crate::config::set_config_dir_override(dir.path().into());
+        let (store, story) = store_with_story(dir.path(), 1);
+        let choices = store
+            .available_transitions(&story.id, story.revision, StoryTransitionActor::Human)
+            .expect("preview");
+        assert_eq!(choices.revision, story.revision);
+        assert_eq!(
+            choices
+                .moves
+                .iter()
+                .map(|item| item.status)
+                .collect::<Vec<_>>(),
+            vec![
+                StoryStatus::InProgress,
+                StoryStatus::Blocked,
+                StoryStatus::WontFix
+            ]
+        );
+        assert_eq!(store.get_story(&story.id).unwrap(), story);
+        assert_eq!(
+            store.transition_history(&story.id).unwrap(),
+            Vec::<StoryTransition>::new()
+        );
+        let moved = store
+            .transition(
+                &story.id,
+                choices.revision,
+                choices.moves[0].command.clone(),
+            )
+            .unwrap();
+        assert_eq!(moved.status, choices.moves[0].status);
+        assert_eq!(moved.revision, story.revision + 1);
+        assert!(
+            store
+                .available_transitions(&story.id, story.revision, StoryTransitionActor::Human)
+                .unwrap_err()
+                .contains("stale")
+        );
+        assert_eq!(store.get_story(&story.id).unwrap(), moved);
+    }
+
+    /// Catches: a status-only UI mapping offers development when manual-only work actually enters QA.
+    #[test]
+    fn phase_moves_preview_uses_automatic_qa_and_checked_criteria() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).expect("dir");
+        let _guard = crate::config::set_config_dir_override(dir.path().into());
+        let (store, story) = store_with_story(dir.path(), 1);
+        let marked = store
+            .transition(
+                &story.id,
+                story.revision,
+                StoryCommand::SetCriterionManual {
+                    index: 0,
+                    manual: true,
+                },
+            )
+            .unwrap();
+        let choices = store
+            .available_transitions(&story.id, marked.revision, StoryTransitionActor::Human)
+            .unwrap();
+        let start = choices
+            .moves
+            .iter()
+            .find(|item| item.command == StoryCommand::StartManual)
+            .unwrap();
+        assert_eq!(start.status, StoryStatus::Qa);
+        let qa = store
+            .transition(&story.id, marked.revision, start.command.clone())
+            .unwrap();
+        let choices = store
+            .available_transitions(&story.id, qa.revision, StoryTransitionActor::Human)
+            .unwrap();
+        assert!(
+            !choices
+                .moves
+                .iter()
+                .any(|item| item.status == StoryStatus::Done)
+        );
+        let checked = store
+            .transition(&story.id, qa.revision, StoryCommand::CheckCriterion(0))
+            .unwrap();
+        let choices = store
+            .available_transitions(&story.id, checked.revision, StoryTransitionActor::Human)
+            .unwrap();
+        assert!(
+            choices
+                .moves
+                .iter()
+                .any(|item| item.command == StoryCommand::Approve
+                    && item.status == StoryStatus::Done)
+        );
+    }
+
+    /// Catches: archived records still advertising executable phase moves.
+    #[test]
+    fn phase_moves_preview_refuses_archived_stories() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).expect("dir");
+        let _guard = crate::config::set_config_dir_override(dir.path().into());
+        let (store, story) = store_with_story(dir.path(), 1);
+        let archived = store
+            .set_story_archived(&story.id, story.revision, true, StoryTransitionActor::Human)
+            .unwrap();
+        assert!(
+            store
+                .available_transitions(&story.id, archived.revision, StoryTransitionActor::Human)
+                .unwrap_err()
+                .contains("archived")
+        );
+        assert_eq!(store.get_story(&story.id).unwrap(), archived);
     }
 
     /// Catches: the last automated check leaving manual-only work in progress.
