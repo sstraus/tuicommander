@@ -9,7 +9,7 @@
 //! | Agent  | Path                                        | ID format         |
 //! |--------|---------------------------------------------|-------------------|
 //! | claude | `~/.claude/sessions/<pid>.json` (exact), else `~/.claude/projects/<cwd-slug>/<UUID>.jsonl` | `sessionId` field / UUID filename stem |
-//! | gemini | `~/.gemini/tmp/<hash>/chats/session-*.json` | JSON `sessionId` field |
+//! | gemini | `~/.gemini/tmp/<project>/chats/session-*.{jsonl,json}` | metadata `sessionId` / `projectHash` fields |
 //! | codex  | `~/.codex/sessions/YYYY/MM/DD/rollout-*-<UUID>.jsonl` | UUID in filename |
 //! | goose  | SQLite `~/Library/Application Support/Block/goose/sessions/sessions.db` | name field (TUIC_SESSION) |
 //! | ego    | `$EGO_HOME/sessions/<UUID>/lease` (`{"pid","heartbeat"}`, exact pid binding), default `~/.ego/sessions` | UUID directory name |
@@ -474,51 +474,20 @@ fn gemini_tmp_dir(cli_home: Option<&str>) -> Option<PathBuf> {
     }
 }
 
-/// Gemini CLI stores sessions under `~/.gemini/tmp/<project-hash>/chats/`.
-/// The hash is a SHA-256 of the absolute project path. Rather than recomputing
-/// the hash (which would require adding sha2 as a dependency), we scan ALL
-/// project directories under `~/.gemini/tmp/` and take the newest session file
-/// across all of them.
+/// Gemini 0.64 uses project slug directories; older versions used path hashes.
+/// Both record SHA-256(projectRoot) as `projectHash` in session metadata, so filter
+/// that metadata rather than guessing a directory name. Verified against the
+/// installed 0.64 bundle and fixtures/gemini/session-0.64.jsonl.
 ///
-/// DEFERRED (2026-09-06) — that scan is NOT project-scoped, contrary to what this
-/// comment claimed until issue #119: every project's `chats/` dir is visited, so a
-/// gemini tab can bind to a session started in a different project, which Claude
-/// (slug dir) and Codex (recorded cwd) both reject. Nor does gemini publish a
-/// pid→session registry the way Claude and grok do, so the within-a-folder
-/// ambiguity fixed for those two also remains here. Fixing it needs ground truth
-/// on gemini's on-disk format — either the hash input (to scope the scan) or a cwd
-/// field in the session JSON — and gemini is not installed on this machine, so the
-/// alternative was to guess. Do not "fix" this by assuming SHA-256 of the path:
-/// verify against a real install first.
-///
-/// When `cli_home` is set (from `GEMINI_CLI_HOME` in the agent's process env),
-/// uses `<cli_home>/.gemini/tmp/`. Otherwise defaults to `~/.gemini/tmp/`.
+/// DEFERRED (2026-10-30) — this remains newest-unclaimed discovery within one
+/// project, not exact PID binding. Multiple tabs in the same project remain
+/// ambiguous until a native session hook or registry supplies exact identity.
 fn discover_gemini_session(
-    _cwd: &str,
+    cwd: &str,
     claimed_ids: &[String],
     cli_home: Option<&str>,
 ) -> Option<String> {
-    let tmp_dir = gemini_tmp_dir(cli_home)?;
-    if !tmp_dir.exists() {
-        return None;
-    }
-
-    // Collect (mtime, sessionId) from all session-*.json files across all project dirs
-    let now = SystemTime::now();
-    let mut candidates: Vec<(SystemTime, String)> = Vec::new();
-
-    let Ok(project_entries) = std::fs::read_dir(&tmp_dir) else {
-        return None;
-    };
-    for proj in project_entries.filter_map(|e| e.ok()) {
-        let chats_dir = proj.path().join("chats");
-        if !chats_dir.is_dir() {
-            continue;
-        }
-        collect_gemini_session_files(&chats_dir, now, &mut candidates);
-    }
-
-    // Sort newest first, return first unclaimed
+    let mut candidates = gemini_session_files(cwd, cli_home, Some(SystemTime::now()));
     candidates.sort_by_key(|a| std::cmp::Reverse(a.0));
     candidates
         .into_iter()
@@ -526,44 +495,78 @@ fn discover_gemini_session(
         .map(|(_, id)| id)
 }
 
-fn collect_gemini_session_files(
-    chats_dir: &PathBuf,
-    now: SystemTime,
-    out: &mut Vec<(SystemTime, String)>,
-) {
-    let Ok(entries) = std::fs::read_dir(chats_dir) else {
-        return;
+/// Shared identity reader for discovery and restore. Restore deliberately has
+/// no age bound: an old saved session can still be resumed.
+fn gemini_session_files(
+    cwd: &str,
+    cli_home: Option<&str>,
+    now: Option<SystemTime>,
+) -> Vec<(SystemTime, String)> {
+    use sha2::{Digest, Sha256};
+
+    let mut candidates = Vec::new();
+    let Some(tmp_dir) = gemini_tmp_dir(cli_home) else {
+        return candidates;
     };
-    for entry in entries.filter_map(|e| e.ok()) {
-        let name = entry.file_name().to_string_lossy().to_string();
-        if !name.starts_with("session-") || !name.ends_with(".json") {
+    let Ok(projects) = std::fs::read_dir(tmp_dir) else {
+        return candidates;
+    };
+    // Gemini hashes the exact absolute project root, not its canonicalized path.
+    let project_hash = hex::encode(Sha256::digest(cwd.as_bytes()));
+    for project in projects.filter_map(Result::ok) {
+        let Ok(entries) = std::fs::read_dir(project.path().join("chats")) else {
             continue;
-        }
-        let Ok(meta) = entry.metadata() else { continue };
-        let Ok(mtime) = meta.modified() else { continue };
-        // Skip stale files by mtime BEFORE reading/parsing their JSON — discovery
-        // fires ~every agent turn, so this caps I/O to recently-touched sessions
-        // instead of the user's full history.
-        if now.duration_since(mtime).unwrap_or_default() > SESSION_MAX_AGE {
-            continue;
-        }
-        // Read the sessionId from the JSON content
-        if let Ok(contents) = std::fs::read_to_string(entry.path())
-            && let Some(session_id) = extract_json_string_field(&contents, "sessionId")
-            && is_uuid(&session_id)
-        {
-            out.push((mtime, session_id));
+        };
+        // Only root sessions: nested subagent transcripts are not resume targets.
+        for entry in entries.filter_map(Result::ok) {
+            let path = entry.path();
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.starts_with("session-")
+                || !(name.ends_with(".jsonl") || name.ends_with(".json"))
+            {
+                continue;
+            }
+            let Ok(meta) = entry.metadata() else { continue };
+            if !meta.is_file() {
+                continue;
+            }
+            let Ok(mtime) = meta.modified() else { continue };
+            if now
+                .is_some_and(|now| now.duration_since(mtime).unwrap_or_default() > SESSION_MAX_AGE)
+            {
+                continue;
+            }
+            if let Some(id) = read_gemini_session_id(&path, &project_hash) {
+                candidates.push((mtime, id));
+            }
         }
     }
+    candidates
 }
 
-/// Extract a top-level string field from JSON.
-fn extract_json_string_field(json: &str, field: &str) -> Option<String> {
-    serde_json::from_str::<serde_json::Value>(json)
-        .ok()?
-        .get(field)?
-        .as_str()
-        .map(str::to_string)
+fn read_gemini_session_id(path: &Path, project_hash: &str) -> Option<String> {
+    use std::io::{BufRead, BufReader, Read};
+
+    let contents = if path.extension()?.to_str()? == "jsonl" {
+        let file = std::fs::File::open(path).ok()?;
+        let mut header = String::new();
+        // Only identity metadata is needed. Bound corrupt headers and ignore all
+        // message/upsert/$set rows, including an incomplete concurrent append.
+        BufReader::new(file.take(256 * 1024))
+            .read_line(&mut header)
+            .ok()?;
+        header
+    } else {
+        // Gemini 0.64 still loads legacy JSON, migrating it on resume.
+        std::fs::read_to_string(path).ok()?
+    };
+    let metadata: serde_json::Value = serde_json::from_str(&contents).ok()?;
+    if metadata.get("projectHash")?.as_str()? != project_hash {
+        return None;
+    }
+    let id = metadata.get("sessionId")?.as_str()?;
+    is_uuid(id).then(|| id.to_string())
 }
 
 // ─── Codex ───────────────────────────────────────────────────────────────────
@@ -1036,38 +1039,13 @@ fn verify_claude_session(session_id: &str, cwd: &str, config_dir: Option<&str>) 
     project_dir.join(format!("{session_id}.jsonl")).exists()
 }
 
-/// Check if any session file under `~/.gemini/tmp/*/chats/` contains this sessionId.
-fn verify_gemini_session(session_id: &str, _cwd: &str, cli_home: Option<&str>) -> bool {
-    if !is_uuid(session_id) {
-        return false;
-    }
-    let Some(tmp_dir) = gemini_tmp_dir(cli_home) else {
-        return false;
-    };
-    if !tmp_dir.exists() {
-        return false;
-    }
-    let Ok(entries) = std::fs::read_dir(&tmp_dir) else {
-        return false;
-    };
-    for proj in entries.filter_map(|e| e.ok()) {
-        let chats_dir = proj.path().join("chats");
-        if !chats_dir.is_dir() {
-            continue;
-        }
-        let Ok(files) = std::fs::read_dir(&chats_dir) else {
-            continue;
-        };
-        for f in files.filter_map(|e| e.ok()) {
-            if let Ok(contents) = std::fs::read_to_string(f.path())
-                && let Some(found_id) = extract_json_string_field(&contents, "sessionId")
-                && found_id == session_id
-            {
-                return true;
-            }
-        }
-    }
-    false
+/// Check both supported Gemini formats within this session's project, without
+/// discovery's recency filter.
+fn verify_gemini_session(session_id: &str, cwd: &str, cli_home: Option<&str>) -> bool {
+    is_uuid(session_id)
+        && gemini_session_files(cwd, cli_home, None)
+            .iter()
+            .any(|(_, id)| id == session_id)
 }
 
 /// Check if any Codex session file has this UUID in its filename.
@@ -2620,6 +2598,113 @@ mod tests {
         assert!(result.is_none());
     }
 
+    // Catches the legacy-only extension filter using a real Gemini 0.64 transcript.
+    #[test]
+    fn gemini_jsonl_recorded_session_is_discovered_and_verified() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let chats = dir.path().join(".gemini/tmp/repo/chats");
+        fs::create_dir_all(&chats).unwrap();
+        fs::write(
+            chats.join("session-recorded.jsonl"),
+            include_str!("fixtures/gemini/session-0.64.jsonl"),
+        )
+        .unwrap();
+        let cwd = "/Users/stefano.straus/Gits/.tmp/live-tuic/repo";
+        let id = "1c1a1f22-6455-4886-9644-ccf7bdd191f2";
+        let home = dir.path().to_str().unwrap();
+        let env = HashMap::from([("GEMINI_CLI_HOME".to_string(), home.to_string())]);
+        assert_eq!(
+            discover_session_id("gemini", cwd, &[], None, &env),
+            Some(id.to_string())
+        );
+        assert!(verify_agent_session(
+            "gemini".into(),
+            id.into(),
+            cwd.into(),
+            None,
+            env
+        ));
+    }
+
+    // Catches cross-project binding in discovery AND restore, even in a shared store.
+    #[test]
+    fn gemini_rejects_recorded_session_from_other_project() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let chats = dir.path().join(".gemini/tmp/repo/chats");
+        fs::create_dir_all(&chats).unwrap();
+        fs::write(
+            chats.join("session-recorded.jsonl"),
+            include_str!("fixtures/gemini/session-0.64.jsonl"),
+        )
+        .unwrap();
+        let home = dir.path().to_str().unwrap();
+        let id = "1c1a1f22-6455-4886-9644-ccf7bdd191f2";
+        assert_eq!(
+            discover_gemini_session("/other/project", &[], Some(home)),
+            None
+        );
+        assert!(!verify_gemini_session(id, "/other/project", Some(home)));
+    }
+
+    // Catches whole-file JSONL parsing and lost claimed-ID exclusion.
+    #[test]
+    fn gemini_claims_and_partial_append_preserve_header_identity() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let chats = dir.path().join(".gemini/tmp/repo/chats");
+        fs::create_dir_all(&chats).unwrap();
+        let fixture = include_str!("fixtures/gemini/session-0.64.jsonl");
+        fs::write(
+            chats.join("session-partial.jsonl"),
+            format!("{fixture}{{\"id\":"),
+        )
+        .unwrap();
+        let cwd = "/Users/stefano.straus/Gits/.tmp/live-tuic/repo";
+        let id = "1c1a1f22-6455-4886-9644-ccf7bdd191f2";
+        let home = dir.path().to_str().unwrap();
+        assert_eq!(
+            discover_gemini_session(cwd, &[], Some(home)),
+            Some(id.into())
+        );
+        assert_eq!(discover_gemini_session(cwd, &[id.into()], Some(home)), None);
+        assert!(verify_gemini_session(id, cwd, Some(home)));
+    }
+
+    // Catches accepting arbitrary files, malformed identity, or a message's ID
+    // instead of the metadata header. Corrupt inputs are derived from the fixture.
+    #[test]
+    fn gemini_invalid_metadata_and_non_session_files_are_not_resume_targets() {
+        let fixture = include_str!("fixtures/gemini/session-0.64.jsonl");
+        let id = "1c1a1f22-6455-4886-9644-ccf7bdd191f2";
+        let cases = [
+            ("session-bad.jsonl", fixture.replacen(id, "not-a-uuid", 1)),
+            ("session-bad.jsonl", format!("not json\n{fixture}")),
+            (
+                "session-bad.jsonl",
+                fixture.lines().skip(1).collect::<Vec<_>>().join("\n"),
+            ),
+            (
+                "session-bad.jsonl",
+                fixture.replace("projectHash", "missingHash"),
+            ),
+            ("session-backup.jsonl.bak", fixture.into()),
+            ("unrelated.jsonl", fixture.into()),
+        ];
+        for (name, content) in cases {
+            let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+            let chats = dir.path().join(".gemini/tmp/repo/chats");
+            fs::create_dir_all(&chats).unwrap();
+            fs::write(chats.join(name), content).unwrap();
+            let home = dir.path().to_str().unwrap();
+            let cwd = "/Users/stefano.straus/Gits/.tmp/live-tuic/repo";
+            assert_eq!(
+                discover_gemini_session(cwd, &[], Some(home)),
+                None,
+                "{name}"
+            );
+            assert!(!verify_gemini_session(id, cwd, Some(home)), "{name}");
+        }
+    }
+
     // ── gemini discovery mtime bound ──
 
     #[test]
@@ -2634,9 +2719,14 @@ mod tests {
         fs::create_dir_all(&chats).unwrap();
         let cli_home = dir.path().to_str().unwrap();
 
+        let project_hash = "be7b2e02c1f5c85794ac2bec544a84e413d478e171af2024b281a80ba59d0d0f";
         let stale_uuid = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa";
         let stale = chats.join("session-stale.json");
-        fs::write(&stale, format!(r#"{{"sessionId":"{stale_uuid}"}}"#)).unwrap();
+        fs::write(
+            &stale,
+            format!(r#"{{"sessionId":"{stale_uuid}","projectHash":"{project_hash}"}}"#),
+        )
+        .unwrap();
         // Backdate well beyond the 300s bound.
         let old = SystemTime::now() - Duration::from_secs(10 * 60);
         fs::File::options()
@@ -2651,12 +2741,17 @@ mod tests {
             discover_gemini_session("/whatever", &[], Some(cli_home)).is_none(),
             "stale gemini session must be filtered by mtime"
         );
+        assert!(verify_gemini_session(
+            stale_uuid,
+            "/whatever",
+            Some(cli_home)
+        ));
 
         // Add a fresh file → it (and only it) is discovered.
         let fresh_uuid = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb";
         fs::write(
             chats.join("session-fresh.json"),
-            format!(r#"{{"sessionId":"{fresh_uuid}"}}"#),
+            format!(r#"{{"sessionId":"{fresh_uuid}","projectHash":"{project_hash}"}}"#),
         )
         .unwrap();
         assert_eq!(
@@ -3126,29 +3221,6 @@ mod tests {
         assert!(
             extract_codex_uuid("rollout-2026-af467730-5e79-49d9-8a17-ebd94c99f262.txt").is_none()
         );
-    }
-
-    // ── extract_json_string_field ──
-
-    #[test]
-    fn test_extract_json_string_field_present() {
-        let json = r#"{"sessionId": "af467730-5e79-49d9-8a17-ebd94c99f262", "messages": []}"#;
-        assert_eq!(
-            extract_json_string_field(json, "sessionId"),
-            Some("af467730-5e79-49d9-8a17-ebd94c99f262".to_string())
-        );
-    }
-
-    #[test]
-    fn test_extract_json_string_field_missing() {
-        let json = r#"{"messages": []}"#;
-        assert!(extract_json_string_field(json, "sessionId").is_none());
-    }
-
-    #[test]
-    fn test_extract_json_string_field_non_string_value() {
-        let json = r#"{"count": 42}"#;
-        assert!(extract_json_string_field(json, "count").is_none());
     }
 
     // ── verify_claude_session ──

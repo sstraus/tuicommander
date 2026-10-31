@@ -165,7 +165,12 @@ describe("chatViewStore.refresh", () => {
 		await chatViewStore.refresh(SID);
 		invokeMock.mockResolvedValueOnce(snapshot({ epoch: 3, nextSeq: 9, reset: false }));
 		await chatViewStore.refresh(SID);
-		expect(invokeMock).toHaveBeenLastCalledWith("chat_view_snapshot", { sessionId: SID, epoch: 3, fromSeq: 9 });
+		expect(invokeMock).toHaveBeenLastCalledWith("chat_view_snapshot", {
+			sessionId: SID,
+			epoch: 3,
+			fromSeq: 9,
+			pendingTexts: [],
+		});
 	});
 
 	// Catches: after /clear the new conversation is drawn under the old one.

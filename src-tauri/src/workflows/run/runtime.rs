@@ -1,5 +1,6 @@
 //! Daemon-owned serial scheduling. Mailboxes wake actors; SQLite owns the work.
 use super::graph::{ActivationState, DecisionEvidence, GraphTransition};
+mod continuation;
 pub(super) mod effects;
 pub(super) mod judge;
 pub(super) mod plan;
@@ -193,6 +194,11 @@ fn require_supported_nodes(definition: &crate::workflows::PublishedWorkflow) -> 
     crate::workflows::definition::validate_runtime_nodes(&definition.graph, definition.kind)
 }
 
+/// Cursor and preflight movement asks the actor to re-evaluate current state.
+fn is_contention(error: &str) -> bool {
+    error.contains("sequence") || error.contains("preflight; retry")
+}
+
 async fn run_actor(
     state: Weak<AppState>,
     owner: Weak<RuntimeOwner>,
@@ -215,7 +221,7 @@ async fn run_actor(
             Ok(Ok(snapshot)) => snapshot,
             Ok(Err(error)) => {
                 tracing::warn!(source = "workflows", %run_id, %error, "Workflow scheduling turn failed");
-                if error.contains("sequence") || error.contains("preflight; retry") {
+                if is_contention(&error) {
                     tokio::task::yield_now().await;
                     continue;
                 }
@@ -239,18 +245,66 @@ async fn run_actor(
         if matches!(snapshot.status, RunStatus::Completed | RunStatus::Cancelled) {
             break;
         }
-        if snapshot.status == RunStatus::Running {
+        if snapshot.status == RunStatus::Running || effects::has_pending_command_recovery(&snapshot)
+        {
             let Some(state) = state.upgrade() else {
                 break;
             };
             let Some(current) = owner.upgrade() else {
                 break;
             };
-            let remaining = deadline_ms(&snapshot).saturating_sub(now_ms()).max(0) as u64;
-            let result = tokio::select! {
-                result = effects::drive_effect(&state, &current.store, &snapshot) => result,
-                _ = tokio::time::sleep(std::time::Duration::from_millis(remaining)) => {
-                    current.store.command(&run_id, &format!("daemon:effect-deadline:{}", snapshot.sequence), RunCommand::ExpireDeadline).map(|_| true)
+            // A timer wake must not drop an in-flight adapter future. Keep it pinned
+            // while independently committing due timer receipts.
+            let effect = effects::drive_effect(&state, &current.store, &snapshot);
+            tokio::pin!(effect);
+            let mut timer_snapshot = snapshot.clone();
+            let mut timer_changed = false;
+            let result = loop {
+                let next_wake = if timer_snapshot.status == RunStatus::Running {
+                    Some(next_wake_ms(&timer_snapshot))
+                } else {
+                    super::timer::next_due(&timer_snapshot)
+                };
+                let remaining =
+                    next_wake.map_or(0, |due| due.saturating_sub(now_ms()).max(0) as u64);
+                tokio::select! {
+                    result = &mut effect => break result.map(|changed| changed || timer_changed),
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(remaining)),
+                        if next_wake.is_some() => {},
+                    _ = notify.notified() => {},
+                }
+                // New schedule/cancel hints also recompute the earliest deadline,
+                // without restarting the already-running adapter.
+                let store = current.store.clone();
+                let id = run_id.clone();
+                let fired = tokio::task::spawn_blocking(move || {
+                    let latest = store.snapshot(&id)?;
+                    if latest.status == RunStatus::Running && now_ms() >= deadline_ms(&latest) {
+                        return store
+                            .command(
+                                &id,
+                                &format!("daemon:effect-deadline:{}", latest.sequence),
+                                RunCommand::ExpireDeadline,
+                            )
+                            .map(|receipt| receipt.snapshot);
+                    }
+                    super::timer::fire_due(&store, &latest, now_ms())?;
+                    store.snapshot(&id)
+                })
+                .await;
+                match fired {
+                    Ok(Ok(latest)) => {
+                        timer_changed |= latest.sequence != timer_snapshot.sequence;
+                        super::api::emit_run_cursor(
+                            &state,
+                            &latest.project,
+                            &latest.id,
+                            latest.sequence,
+                        );
+                        timer_snapshot = latest;
+                    }
+                    Ok(Err(error)) => break Err(error),
+                    Err(error) => break Err(format!("timer task failed: {error}")),
                 }
             };
             match result {
@@ -259,49 +313,45 @@ async fn run_actor(
                     continue;
                 }
                 Ok(false) => {}
+                Err(error) if is_contention(&error) => {
+                    tokio::task::yield_now().await;
+                    continue;
+                }
                 Err(error) => {
                     tracing::warn!(source = "workflows", %run_id, %error, "Workflow effect paused");
                     pause_failure(&state, &current.store, &run_id, &error);
+                    if snapshot.status != RunStatus::Running {
+                        tokio::select! {
+                            _ = notify.notified() => {},
+                            _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {},
+                        }
+                    }
                     continue;
                 }
+            }
+            // Keep pending ownership inspectable without replaying a paused command.
+            if snapshot.status != RunStatus::Running {
+                tokio::select! {
+                    _ = notify.notified() => {},
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {},
+                }
+                continue;
             }
             // Yielding the deterministic turn never strands remaining runnable nodes.
             if deterministic_work_pending(&snapshot) {
                 tokio::task::yield_now().await;
                 continue;
             }
-            let remaining = deadline_ms(&snapshot).saturating_sub(now_ms()).max(0) as u64;
+            let remaining = next_wake_ms(&snapshot).saturating_sub(now_ms()).max(0) as u64;
             tokio::select! {
                 _ = notify.notified() => {},
                 _ = tokio::time::sleep(std::time::Duration::from_millis(remaining)) => {},
             }
-        } else if snapshot.status == RunStatus::Paused
-            && effects::has_pending_command_recovery(&snapshot)
-        {
-            let Some(current) = owner.upgrade() else {
-                break;
-            };
-            let recovery_store = current.store.clone();
-            let recovery_snapshot = snapshot.clone();
-            match tokio::task::spawn_blocking(move || {
-                effects::reconcile_command_effects(&recovery_store, &recovery_snapshot)
-            })
-            .await
-            {
-                Ok(Ok(true)) => continue,
-                Ok(Err(error)) => {
-                    tracing::debug!(source = "workflows", %run_id, %error, "Command recovery still pending")
-                }
-                Err(error) => {
-                    tracing::warn!(source = "workflows", %run_id, %error, "Command recovery task interrupted")
-                }
-                Ok(Ok(false)) => {}
-            }
-            // Reuse this run's actor/wake loop for external stop observations. This
-            // never resumes the graph or re-admits the interrupted command.
+        } else if let Some(due) = super::timer::next_due(&snapshot) {
+            let remaining = due.saturating_sub(now_ms()).max(0) as u64;
             tokio::select! {
                 _ = notify.notified() => {},
-                _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {},
+                _ = tokio::time::sleep(std::time::Duration::from_millis(remaining)) => {},
             }
         } else {
             notify.notified().await;
@@ -310,6 +360,13 @@ async fn run_actor(
     if let Some(owner) = owner.upgrade() {
         owner.actors.lock().remove(&run_id);
     }
+}
+
+fn next_wake_ms(snapshot: &RunSnapshot) -> i64 {
+    super::timer::next_due(snapshot).map_or_else(
+        || deadline_ms(snapshot),
+        |due| due.min(deadline_ms(snapshot)),
+    )
 }
 
 pub(super) fn deadline_ms(snapshot: &RunSnapshot) -> i64 {
@@ -343,6 +400,9 @@ fn deterministic_work_pending(snapshot: &RunSnapshot) -> bool {
 pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, String> {
     'turn: for _ in 0..TRANSITIONS_PER_TURN {
         let snapshot = store.snapshot(run_id)?;
+        if super::timer::fire_due(store, &snapshot, now_ms())? {
+            continue;
+        }
         if snapshot.status != RunStatus::Running {
             return Ok(snapshot);
         }
@@ -368,249 +428,441 @@ pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, 
                 )?
                 .snapshot);
         }
-        'graphs: for graph in snapshot.graph_executions.iter().filter(|g| !g.completed) {
-            let Some(activation) = graph
+        for graph in snapshot.graph_executions.iter().filter(|g| !g.completed) {
+            'activations: for activation in graph
                 .activations
                 .iter()
-                .find(|a| matches!(a.state, ActivationState::Ready | ActivationState::Running))
-            else {
-                continue;
-            };
-            let node = graph
-                .definition
-                .graph
-                .nodes
-                .iter()
-                .find(|node| node.id == activation.node_id)
-                .ok_or("activation node missing")?;
-            let transition = if activation.state == ActivationState::Ready {
-                GraphTransition::Activate {
-                    execution_id: graph.id.clone(),
-                    activation_id: activation.id.clone(),
-                }
-            } else {
-                let mut outcome = None;
-                let mut evidence = None;
-                match &node.kind {
-                    NodeKind::Agent { .. } | NodeKind::CreateStories => {
-                        let Some(attempt) =
-                            effects::activation_attempt(&snapshot, graph, activation)
-                        else {
-                            store.command_expected(
-                                run_id,
-                                &format!(
-                                    "daemon:{}:{}:attempt:{}",
-                                    graph.id, activation.id, snapshot.sequence
-                                ),
-                                snapshot.sequence,
-                                RunCommand::StartGraphAgent {
-                                    execution_id: graph.id.clone(),
-                                    activation_id: activation.id.clone(),
-                                },
-                            )?;
-                            continue 'turn;
-                        };
-                        let native_approval = if matches!(
-                            node.kind,
-                            NodeKind::Agent {
-                                role: crate::workflows::AgentRole::Implementer,
-                                ..
+                .filter(|a| matches!(a.state, ActivationState::Ready | ActivationState::Running))
+            {
+                let node = graph
+                    .definition
+                    .graph
+                    .nodes
+                    .iter()
+                    .find(|node| node.id == activation.node_id)
+                    .ok_or("activation node missing")?;
+                let transition = if activation.state == ActivationState::Ready {
+                    GraphTransition::Activate {
+                        execution_id: graph.id.clone(),
+                        activation_id: activation.id.clone(),
+                    }
+                } else {
+                    let mut outcome = None;
+                    let mut evidence = None;
+                    match &node.kind {
+                        NodeKind::CreateStories if snapshot.event_contract_version >= 3 => {
+                            let Some(batch) =
+                                super::proposals::batch_for(&snapshot, graph, activation)
+                            else {
+                                continue 'activations;
+                            };
+                            if crate::stories::StoryStore::open()?
+                                .get_plan(&snapshot.plan_id)?
+                                .revision
+                                != batch.plan_revision
+                            {
+                                return Err("story proposal input has a stale plan revision".into());
                             }
-                        ) && attempt.agent.is_none()
-                            && attempt.report.is_none()
-                            && !snapshot
-                                .effects
-                                .iter()
-                                .any(|effect| effect.key == format!("spawn:{}", attempt.id))
-                        {
-                            let story =
-                                crate::stories::StoryStore::open()?.get_story(&graph.target_id)?;
-                            (story.status == crate::stories::StoryStatus::Done)
-                                .then_some(story.revision)
-                        } else {
-                            None
-                        };
-                        if let Some(revision) = native_approval {
-                            if attempt.state != super::AttemptState::Reported {
+                            if !super::proposals::complete(&snapshot, batch)? {
+                                continue 'activations;
+                            }
+                            if snapshot.planning_fingerprint.is_none() {
                                 store.command_expected(
                                     run_id,
-                                    &format!("daemon:native-approval:{}:{revision}", attempt.id),
+                                    &format!(
+                                        "daemon:close-plan:{}:{}",
+                                        activation.id, snapshot.sequence
+                                    ),
                                     snapshot.sequence,
-                                    RunCommand::AcceptUnspawnedStory {
-                                        attempt_id: attempt.id.clone(),
-                                    },
+                                    RunCommand::ClosePlanning,
                                 )?;
                                 continue 'turn;
                             }
-                            if !snapshot.stories.iter().any(|story| {
-                                story.story_id == graph.target_id
-                                    && story.accepted
-                                    && story.accepted_revision == Some(revision)
-                            }) {
-                                return Err(
-                                    "unspawned completion lacks native approval receipt".into()
-                                );
-                            }
                         }
-                        if attempt.state == super::AttemptState::Running {
-                            continue 'graphs;
-                        }
-                        if (attempt.report.is_none() && native_approval.is_none())
-                            || attempt.outcome != Some(super::AttemptOutcome::Completed)
-                        {
-                            return Ok(store
-                                .command_expected(
-                                    run_id,
-                                    &format!(
-                                        "daemon:{}:{}:incomplete-report:{}",
-                                        graph.id, activation.id, snapshot.sequence
-                                    ),
-                                    snapshot.sequence,
-                                    RunCommand::Pause,
-                                )?
-                                .snapshot);
-                        }
-                        if matches!(node.kind, NodeKind::CreateStories)
-                            && snapshot.planning_fingerprint.is_none()
-                        {
+                        NodeKind::ForEach {
+                            receipt_evidence: Some(source),
+                            ..
+                        } => {
+                            let source = graph
+                                .activations
+                                .iter()
+                                .rev()
+                                .find(|a| {
+                                    a.node_id == *source
+                                        && a.state == ActivationState::Completed
+                                        && activation.tokens.starts_with(&a.tokens)
+                                })
+                                .ok_or("For each source receipt is not complete in this branch")?;
+                            let report = effects::activation_attempt(&snapshot, graph, source)
+                                .and_then(|a| a.report.as_ref())
+                                .filter(|r| r.outcome == super::AttemptOutcome::Completed)
+                                .ok_or("For each requires a completed typed source report")?;
                             store.command_expected(
                                 run_id,
-                                &format!(
-                                    "daemon:close-plan:{}:{}",
-                                    activation.id, snapshot.sequence
-                                ),
+                                &format!("expand:{}:{}", activation.id, snapshot.sequence),
                                 snapshot.sequence,
-                                RunCommand::ClosePlanning,
+                                RunCommand::Graph {
+                                    transition: GraphTransition::Expand {
+                                        execution_id: graph.id.clone(),
+                                        activation_id: activation.id.clone(),
+                                        source_activation_id: source.id.clone(),
+                                        items: report.evidence.clone(),
+                                    },
+                                },
                             )?;
                             continue 'turn;
                         }
-                    }
-                    NodeKind::Judge | NodeKind::Gate
-                        if graph.definition.kind == crate::workflows::WorkflowKind::Plan =>
-                    {
-                        let decision = plan::judge(&snapshot, graph)?;
-                        let Some(decision) = decision else {
-                            continue 'graphs;
-                        };
-                        outcome = Some(if matches!(node.kind, NodeKind::Gate) {
-                            if decision.0 == super::graph::EdgeOutcome::Yes {
-                                super::graph::EdgeOutcome::Pass
+                        NodeKind::Agent { .. } | NodeKind::CreateStories => {
+                            let Some(attempt) =
+                                effects::activation_attempt(&snapshot, graph, activation)
+                            else {
+                                if !activation.tokens.is_empty() {
+                                    let waiting = snapshot
+                                        .attempts
+                                        .iter()
+                                        .filter(|a| effects::attempt_holds_slot(&snapshot, a))
+                                        .count()
+                                        + snapshot
+                                            .graph_executions
+                                            .iter()
+                                            .flat_map(|g| &g.activations)
+                                            .filter(|a| a.resource_claim.is_some())
+                                            .count()
+                                        >= usize::from(snapshot.limits.max_parallel_stories);
+                                    if waiting {
+                                        if activation.resource_wait.is_none() {
+                                            store.command_expected(run_id, &format!("resource-wait:{}:{}", activation.id, snapshot.sequence), snapshot.sequence,
+                                            RunCommand::Graph { transition: GraphTransition::ResourceWait { execution_id: graph.id.clone(), activation_id: activation.id.clone(), reason: Some("Parallel activity capacity is occupied".into()) } })?;
+                                            continue 'turn;
+                                        }
+                                        continue 'activations;
+                                    }
+                                    if activation.resource_wait.is_some() {
+                                        store.command_expected(
+                                            run_id,
+                                            &format!(
+                                                "resource-admitted:{}:{}",
+                                                activation.id, snapshot.sequence
+                                            ),
+                                            snapshot.sequence,
+                                            RunCommand::Graph {
+                                                transition: GraphTransition::ResourceWait {
+                                                    execution_id: graph.id.clone(),
+                                                    activation_id: activation.id.clone(),
+                                                    reason: None,
+                                                },
+                                            },
+                                        )?;
+                                        continue 'turn;
+                                    }
+                                }
+                                store.command_expected(
+                                    run_id,
+                                    &format!(
+                                        "daemon:{}:{}:attempt:{}",
+                                        graph.id, activation.id, snapshot.sequence
+                                    ),
+                                    snapshot.sequence,
+                                    RunCommand::StartGraphAgent {
+                                        execution_id: graph.id.clone(),
+                                        activation_id: activation.id.clone(),
+                                    },
+                                )?;
+                                continue 'turn;
+                            };
+                            let native_approval = if matches!(
+                                node.kind,
+                                NodeKind::Agent {
+                                    role: crate::workflows::AgentRole::Implementer,
+                                    ..
+                                }
+                            ) && attempt.agent.is_none()
+                                && attempt.report.is_none()
+                                && !snapshot
+                                    .effects
+                                    .iter()
+                                    .any(|effect| effect.key == format!("spawn:{}", attempt.id))
+                            {
+                                let story = crate::stories::StoryStore::open()?
+                                    .get_story(&graph.target_id)?;
+                                (story.status == crate::stories::StoryStatus::Done)
+                                    .then_some(story.revision)
                             } else {
-                                super::graph::EdgeOutcome::Fail
+                                None
+                            };
+                            if let Some(revision) = native_approval {
+                                if attempt.state != super::AttemptState::Reported {
+                                    store.command_expected(
+                                        run_id,
+                                        &format!(
+                                            "daemon:native-approval:{}:{revision}",
+                                            attempt.id
+                                        ),
+                                        snapshot.sequence,
+                                        RunCommand::AcceptUnspawnedStory {
+                                            attempt_id: attempt.id.clone(),
+                                        },
+                                    )?;
+                                    continue 'turn;
+                                }
+                                if !snapshot.stories.iter().any(|story| {
+                                    story.story_id == graph.target_id
+                                        && story.accepted
+                                        && story.accepted_revision == Some(revision)
+                                }) {
+                                    return Err(
+                                        "unspawned completion lacks native approval receipt".into(),
+                                    );
+                                }
                             }
-                        } else {
-                            decision.0
-                        });
-                        evidence = Some(decision.1);
-                    }
-                    NodeKind::StoryDispatch { .. } => {
-                        match plan::dispatch(store, &snapshot, graph, activation)? {
-                            plan::Dispatch::Advanced => continue 'turn,
-                            plan::Dispatch::Waiting => continue 'graphs,
-                            plan::Dispatch::Decided(decision) => {
+                            if attempt.state == super::AttemptState::Running {
+                                continue 'activations;
+                            }
+                            if let Some(token) = activation.tokens.last() {
+                                if matches!(
+                                    node.kind,
+                                    NodeKind::Agent {
+                                        role: crate::workflows::AgentRole::Reviewer,
+                                        ..
+                                    }
+                                ) && judge::judge(&snapshot, graph, activation)?.0
+                                    == super::graph::EdgeOutcome::No
+                                {
+                                    let token = activation
+                                        .tokens
+                                        .iter()
+                                        .rev()
+                                        .find(|token| {
+                                            graph.forks.iter().any(|f| {
+                                                f.id == token.fork_id && f.repair_to.is_some()
+                                            })
+                                        })
+                                        .ok_or(
+                                            "critic FIX has no published owning repair region",
+                                        )?;
+                                    store.command_expected(
+                                        run_id,
+                                        &format!(
+                                            "supersede:{}:{}",
+                                            token.fork_id, token.generation
+                                        ),
+                                        snapshot.sequence,
+                                        RunCommand::Graph {
+                                            transition: GraphTransition::SupersedeFork {
+                                                execution_id: graph.id.clone(),
+                                                fork_id: token.fork_id.clone(),
+                                                generation: token.generation,
+                                            },
+                                        },
+                                    )?;
+                                    continue 'turn;
+                                }
+                                if matches!(
+                                    attempt.outcome,
+                                    Some(
+                                        super::AttemptOutcome::Failed
+                                            | super::AttemptOutcome::Interrupted
+                                    )
+                                ) {
+                                    store.command_expected(
+                                        run_id,
+                                        &format!(
+                                            "branch-failed:{}:{}",
+                                            activation.id, snapshot.sequence
+                                        ),
+                                        snapshot.sequence,
+                                        RunCommand::Graph {
+                                            transition: GraphTransition::Arrive {
+                                                execution_id: graph.id.clone(),
+                                                activation_id: activation.id.clone(),
+                                                token: token.clone(),
+                                                outcome: super::parallel::ArrivalOutcome::Failed,
+                                            },
+                                        },
+                                    )?;
+                                    continue 'turn;
+                                }
+                            }
+                            if (attempt.report.is_none() && native_approval.is_none())
+                                || attempt.outcome != Some(super::AttemptOutcome::Completed)
+                            {
+                                return Ok(store
+                                    .command_expected(
+                                        run_id,
+                                        &format!(
+                                            "daemon:{}:{}:incomplete-report:{}",
+                                            graph.id, activation.id, snapshot.sequence
+                                        ),
+                                        snapshot.sequence,
+                                        RunCommand::Pause,
+                                    )?
+                                    .snapshot);
+                            }
+                            if matches!(node.kind, NodeKind::CreateStories)
+                                && snapshot.planning_fingerprint.is_none()
+                            {
+                                store.command_expected(
+                                    run_id,
+                                    &format!(
+                                        "daemon:close-plan:{}:{}",
+                                        activation.id, snapshot.sequence
+                                    ),
+                                    snapshot.sequence,
+                                    RunCommand::ClosePlanning,
+                                )?;
+                                continue 'turn;
+                            }
+                        }
+                        NodeKind::Judge | NodeKind::Gate
+                            if graph.definition.kind == crate::workflows::WorkflowKind::Plan =>
+                        {
+                            let decision = plan::judge(&snapshot, graph)?;
+                            let Some(decision) = decision else {
+                                continue 'activations;
+                            };
+                            outcome = Some(if matches!(node.kind, NodeKind::Gate) {
+                                if decision.0 == super::graph::EdgeOutcome::Yes {
+                                    super::graph::EdgeOutcome::Pass
+                                } else {
+                                    super::graph::EdgeOutcome::Fail
+                                }
+                            } else {
+                                decision.0
+                            });
+                            evidence = Some(decision.1);
+                        }
+                        NodeKind::StoryDispatch { .. } => {
+                            match plan::dispatch(store, &snapshot, graph, activation)? {
+                                plan::Dispatch::Advanced => continue 'turn,
+                                plan::Dispatch::Waiting => continue 'activations,
+                                plan::Dispatch::Decided(decision) => {
+                                    outcome = Some(decision.0);
+                                    evidence = Some(decision.1);
+                                }
+                            }
+                        }
+                        NodeKind::Judge => {
+                            if graph.definition.graph.evidence_policy.is_some()
+                                && policy::gate_for_activation(&snapshot, graph, Some(activation))?
+                                    .is_none()
+                            {
+                                continue 'activations;
+                            }
+                            let decision = judge::judge(&snapshot, graph, activation)?;
+                            if decision.0 == super::graph::EdgeOutcome::Yes
+                                && !policy::approved(&snapshot, graph)?
+                            {
+                                if policy::gate(&snapshot, graph)?
+                                    .is_some_and(|d| d.0 == super::graph::EdgeOutcome::Fail)
+                                {
+                                    outcome = Some(super::graph::EdgeOutcome::Uncertain);
+                                    evidence = Some(DecisionEvidence {
+                                        actor: "daemon".into(),
+                                        reason: "Pre-approval checks failed".into(),
+                                        references: decision.1.references,
+                                    });
+                                } else {
+                                    continue 'activations;
+                                }
+                            } else {
                                 outcome = Some(decision.0);
                                 evidence = Some(decision.1);
                             }
                         }
-                    }
-                    NodeKind::Judge => {
-                        let decision = judge::judge(&snapshot, graph, activation)?;
-                        if decision.0 == super::graph::EdgeOutcome::Yes
-                            && !policy::approved(&snapshot, graph)?
-                        {
-                            if policy::gate(&snapshot, graph)?
-                                .is_some_and(|d| d.0 == super::graph::EdgeOutcome::Fail)
-                            {
-                                outcome = Some(super::graph::EdgeOutcome::Uncertain);
-                                evidence = Some(DecisionEvidence {
-                                    actor: "daemon".into(),
-                                    reason: "Pre-approval checks failed".into(),
-                                    references: decision.1.references,
-                                });
-                            } else {
-                                continue 'graphs;
-                            }
-                        } else {
+                        NodeKind::Gate => {
+                            let Some(decision) =
+                                policy::gate_for_activation(&snapshot, graph, Some(activation))?
+                            else {
+                                continue 'activations;
+                            };
                             outcome = Some(decision.0);
                             evidence = Some(decision.1);
                         }
-                    }
-                    NodeKind::Gate => {
-                        let Some(decision) = policy::gate(&snapshot, graph)? else {
-                            continue 'graphs;
-                        };
-                        outcome = Some(decision.0);
-                        evidence = Some(decision.1);
-                    }
-                    NodeKind::Pause { .. } => {
-                        evidence = Some(DecisionEvidence {
-                            actor: "daemon".into(),
-                            reason: graph
-                                .decisions
-                                .last()
-                                .map(|d| d.evidence.reason.clone())
-                                .unwrap_or_else(|| {
-                                    "Published graph pause requires an explicit resolution".into()
-                                }),
-                            references: vec![format!("activation:{}:{}", graph.id, activation.id)],
-                        });
-                    }
-                    NodeKind::RunCommand { .. } | NodeKind::Tool { .. } => {
-                        let key = effects::command_identity(&snapshot, graph, activation).effect;
-                        if !snapshot.effects.iter().any(|effect| {
-                            effect.key == key
-                                && matches!(
-                                    effect.state,
-                                    super::EffectState::Succeeded | super::EffectState::Failed
-                                )
-                        }) {
-                            continue 'graphs;
+                        NodeKind::Pause { .. } => {
+                            evidence = Some(DecisionEvidence {
+                                actor: "daemon".into(),
+                                reason: graph
+                                    .decisions
+                                    .last()
+                                    .map(|d| d.evidence.reason.clone())
+                                    .unwrap_or_else(|| {
+                                        "Published graph pause requires an explicit resolution"
+                                            .into()
+                                    }),
+                                references: vec![format!(
+                                    "activation:{}:{}",
+                                    graph.id, activation.id
+                                )],
+                            });
                         }
-                        let Some(receipt) = store.command_journal().receipt(&key)? else {
-                            continue 'graphs;
-                        };
-                        outcome = Some(if receipt.succeeded {
-                            super::graph::EdgeOutcome::Pass
-                        } else {
-                            super::graph::EdgeOutcome::Fail
-                        });
-                        evidence = Some(DecisionEvidence {
-                            actor: "daemon:typed-command".into(),
-                            reason: receipt.reason.clone(),
-                            references: vec![format!("command:{}:{}", key, receipt.output_sha256)],
-                        });
-                    }
-                    NodeKind::Notify => {
-                        let key = format!("notify:{}:{}", graph.id, activation.id);
-                        let Some(effect) = snapshot.effects.iter().find(|e| e.key == key) else {
-                            continue 'graphs;
-                        };
-                        if effect.state != super::EffectState::Succeeded {
-                            continue 'graphs;
+                        NodeKind::RunCommand { .. } | NodeKind::Tool { .. } => {
+                            let key =
+                                effects::command_identity(&snapshot, graph, activation).effect;
+                            if !snapshot.effects.iter().any(|effect| {
+                                effect.key == key
+                                    && matches!(
+                                        effect.state,
+                                        super::EffectState::Succeeded | super::EffectState::Failed
+                                    )
+                            }) {
+                                continue 'activations;
+                            }
+                            let Some(receipt) = store.command_journal().receipt(&key)? else {
+                                continue 'activations;
+                            };
+                            outcome = Some(if receipt.succeeded {
+                                super::graph::EdgeOutcome::Pass
+                            } else {
+                                super::graph::EdgeOutcome::Fail
+                            });
+                            evidence = Some(DecisionEvidence {
+                                actor: "daemon:typed-command".into(),
+                                reason: receipt.reason.clone(),
+                                references: vec![format!(
+                                    "command:{}:{}",
+                                    key, receipt.output_sha256
+                                )],
+                            });
                         }
+                        NodeKind::Notify => {
+                            let key = format!("notify:{}:{}", graph.id, activation.id);
+                            let Some(effect) = snapshot.effects.iter().find(|e| e.key == key)
+                            else {
+                                continue 'activations;
+                            };
+                            if effect.state != super::EffectState::Succeeded {
+                                continue 'activations;
+                            }
+                        }
+                        // End marks graph completion only; approval/integration policy still owns story delivery.
+                        NodeKind::Start
+                        | NodeKind::Loop { .. }
+                        | NodeKind::Join {}
+                        | NodeKind::End
+                        | NodeKind::Fork { .. }
+                        | NodeKind::ForEach { .. }
+                        | NodeKind::AllJoin { .. }
+                        | NodeKind::IfElse { .. } => {}
                     }
-                    // End marks graph completion only; approval/integration policy still owns story delivery.
-                    NodeKind::Start | NodeKind::Loop { .. } | NodeKind::Join {} | NodeKind::End => {
+                    GraphTransition::Complete {
+                        execution_id: graph.id.clone(),
+                        activation_id: activation.id.clone(),
+                        outcome,
+                        evidence,
                     }
-                }
-                GraphTransition::Complete {
-                    execution_id: graph.id.clone(),
-                    activation_id: activation.id.clone(),
-                    outcome,
-                    evidence,
-                }
-            };
-            let key = format!(
-                "daemon:{}:{}:{:?}:{}",
-                graph.id, activation.id, activation.state, snapshot.sequence
-            );
-            store.command_expected(
-                run_id,
-                &key,
-                snapshot.sequence,
-                RunCommand::Graph { transition },
-            )?;
-            continue 'turn;
+                };
+                let key = format!(
+                    "daemon:{}:{}:{:?}:{}",
+                    graph.id, activation.id, activation.state, snapshot.sequence
+                );
+                store.command_expected(
+                    run_id,
+                    &key,
+                    snapshot.sequence,
+                    RunCommand::Graph { transition },
+                )?;
+                continue 'turn;
+            }
         }
         return Ok(snapshot);
     }

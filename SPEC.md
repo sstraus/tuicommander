@@ -1,5 +1,7 @@
 # TUICommander Specification
 
+- [x] Desktop and mobile AI Chat and Session Chat use one theme-accent breathing orb while working, with accessible Working text and a static dot under reduced motion (#2535-8b6b).
+
 - [x] Mobile terminal and AI Chat composers add one space after a pasted HTTP(S) URL when neither the paste nor the following draft character supplies whitespace (#2494-921f).
 - [x] Mobile list identities stay inside their rows; long session and file names use ellipsis, badges and actions remain visible, and Progress text wraps (#2493-061e).
 
@@ -967,7 +969,7 @@ The headless daemon provides native Telegram mail, correlated drafts, exact fina
 
 Workflow safety: pinned checks own process trees and stop on timeout, run cancellation, and shutdown. Operator decisions and workflow policy mutations require host Human authority (desktop IPC or credential-authenticated HTTP). Workflow plan Done requires current integration evidence for every approved story; stale canonical refs reopen its derived state until recertification.
 
-Graph runtime slice A adds version-2 serial activation/predecessor/decision history and executable start validation with pinned Pause targets and deterministic final checks. History is bounded to 4096 activations per execution. Fork/all-Join schema and execution are deferred to slice G. Pre-contract runs support inspect/cancel only. Autonomous scheduling remains disabled pending slice B and authorization story 956-9745.
+Graph runtime slice A adds version-2 serial activation/predecessor/decision history and executable start validation with pinned Pause targets and deterministic final checks. History is bounded to 4096 activations per execution. That historical slice retained exclusive Join; WF02 below adds correlated parallel regions without changing old replay. Pre-contract runs support inspect/cancel only. Autonomous scheduling remains disabled pending slice B and authorization story 956-9745.
 
 Native stories expose `qa` for work that waits on manual checks. A criterion starts with `[MANUAL]`, or is marked through `set_criterion_manual {index,manual}`. Active work automatically enters QA when all unchecked criteria are manual; `submit_qa` explicitly requests that state. `reject_qa` returns QA to In progress; `approve` requires every criterion checked. QA keeps plans Active and dependencies blocked. All transitions retain expected-revision checks. See the [native stories guide](docs/user-guide/native-stories.md#manual-qa).
 
@@ -1538,3 +1540,54 @@ Deterministic checks and check-result publication are not part of this executor.
 ### Typed workflow commands (WF05)
 
 Published Run command and versioned Tool nodes execute argv or explicit shell contracts in assigned workspaces. Durable resource waits and immutable source/target receipts reuse build-slot/rb admission; unknown effects retain resources until observed stop/release. Secret references and declared output schemas keep secrets out of receipts and refuse zero-match test proof. Native proof remains distinct from Linux execution. See `docs/backend/workflows.md` for the backend contract; Designer controls are not added by WF05.
+### Typed workflow plan proposals (WF04 foundation)
+
+Contract-3 and newer Create Stories visits accept a durable, activation- and plan-revision-
+bound proposal batch through the shared run command API. The daemon consumes
+native keyed story effects without a Coordinator node or session. Missing input
+is an incident, not a request to spawn an author. Contract-2 replay and the
+plan-only Create Stories boundary remain unchanged. ACP launch and lifecycle
+handover/closure are not part of this foundation.
+
+WF04 attribution increment: new daemon workflow launches retain the original
+workspace baseline and managed launch reference before spawning. Retries do not
+replace the baseline with child edits. Bound typed reports also retain durable
+accepted/refused decisions, with accepted decisions atomic with their report
+event and read-only inspection through the shared run action. This is receipt
+disposition, not artifact approval. ACP/policy/continuation/successor/owned-close
+lifecycle remains incomplete; attribution and report receipt permit no cleanup.
+
+
+### Correlated workflow regions (WF02)
+
+The backend publishes Fork/all-Join, bounded literal or receipt-driven For each,
+and typed If/else nodes. Event contract 4 adds branch-token stacks, exact
+fork-instance/generation arrivals, durable resource waits/check claims and
+whole-generation repair supersession. Run-store layout 7 prevents an older
+binary from reinterpreting these events; layout 8 adds WF04 lifecycle bindings
+and continuation fences. Contracts 2 and 3 remain serial.
+Critic FIX fences old attempts, stops owned work, traverses Implement once and
+opens a fresh critic/check generation. Unknown effects or unproven stops block
+repair. Existing definition/run services own both IPC and HTTP; no frontend
+scheduler or new transport surface is added. See the WF02 section of
+`docs/backend/workflows.md` for publication, fan-out and recovery rules.
+### Workflow evidence policy (WF06)
+
+Opt-in graph `evidencePolicy` is immutable with its publication and run pin.
+Typed subjects bind clean source and requirements. The native Judge enforces
+independent review, ordered FIX/STORY/ACCEPT triage, bounded total reviews and
+repairs, and typed proof requirements without weakening deterministic checks.
+Generic PR subjects remain evidence contracts, not native story completion.
+Old graph publications and serial event replay retain their existing semantics.
+See [backend evidence contract](docs/backend/workflows.md#typed-evidence-policy-wf06).
+
+### Durable workflow timer foundation (WF19)
+
+Contract-3 and contract-4 runs retain typed Timer schedule/fire/retry/cancel events.
+Layout 6 introduced timers; layout 7 adds parallel regions. The daemon actor sleeps until eligible absolute deadlines and records
+one wake receipt per stable timer key/attempt. Activation timers suspend delivery
+during pauses without resetting time; independent service timers continue across
+recovery pauses. Cancellation fences all timers. Retry hints respect declared
+attempt, expiry and backoff caps. A question expiry is only timed-out/incomplete,
+never consent. WF08 cohort collection, WF13 provider observation and WF03 inbox
+consumers build on this internal primitive; they are not installed by WF19.

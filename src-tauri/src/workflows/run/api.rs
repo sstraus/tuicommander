@@ -30,6 +30,20 @@ pub enum RunAction {
     Incidents {
         run_id: String,
     },
+    ReportDispositions {
+        run_id: String,
+    },
+    AgentCloses {
+        run_id: String,
+    },
+    /// Stop an owned reported worker; never remove its workspace.
+    CloseAgent {
+        run_id: String,
+        attempt_id: String,
+        request_id: String,
+        expected_sequence: i64,
+        successor_attempt_id: Option<String>,
+    },
     /// Say before a start what would stop the first Agent step.
     StartReadiness {
         definition_id: String,
@@ -82,7 +96,9 @@ pub enum RunReply {
     Receipt(Box<RunReceipt>),
     Incidents(Vec<super::RunIncident>),
     CommandExecutions(Vec<crate::workflows::command::CommandObservation>),
+    ReportDispositions(Vec<super::ReportDisposition>),
     Readiness(Vec<String>),
+    AgentClose(serde_json::Value),
 }
 
 /// The live coordinator is the only inbox recipient for story-worker results.
@@ -133,6 +149,9 @@ pub fn run_action(project: &str, action: RunAction) -> Result<RunReply, String> 
         .to_string();
     let store = RunStore::open()?;
     match action {
+        RunAction::AgentCloses { .. } | RunAction::CloseAgent { .. } => {
+            Err("owned agent close requires the owning daemon service".into())
+        }
         RunAction::StartGraph { .. } => {
             Err("graph start requires the owning daemon service".into())
         }
@@ -173,6 +192,12 @@ pub fn run_action(project: &str, action: RunAction) -> Result<RunReply, String> 
                 &run, None,
             )?))
         }
+        RunAction::ReportDispositions { run_id } => {
+            scoped_snapshot(&store, &owner, &run_id)?;
+            Ok(RunReply::ReportDispositions(
+                store.report_dispositions(&run_id)?,
+            ))
+        }
         RunAction::Get { run_id } => Ok(RunReply::Snapshot(Box::new(scoped_snapshot(
             &store, &owner, &run_id,
         )?))),
@@ -207,7 +232,8 @@ pub fn run_action(project: &str, action: RunAction) -> Result<RunReply, String> 
             scoped_snapshot(&store, &owner, &run_id)?;
             if matches!(
                 command,
-                RunCommand::ExpireDeadline
+                RunCommand::Timer { .. }
+                    | RunCommand::ExpireDeadline
                     | RunCommand::StartGraphAgent { .. }
                     | RunCommand::AcceptUnspawnedStory { .. }
                     | RunCommand::CompleteReviewedStory { .. }
@@ -283,6 +309,48 @@ pub fn run_action_with_events(
     project: &str,
     action: RunAction,
 ) -> Result<RunReply, String> {
+    if let RunAction::AgentCloses { run_id } = &action {
+        let RunReply::Snapshot(run) = run_action(
+            project,
+            RunAction::Get {
+                run_id: run_id.clone(),
+            },
+        )?
+        else {
+            unreachable!("get returns a snapshot")
+        };
+        return Ok(RunReply::AgentClose(
+            crate::mcp_http::launch_transaction::workflow_agent_closes(state, &run)?,
+        ));
+    }
+    if let RunAction::CloseAgent {
+        run_id,
+        attempt_id,
+        request_id,
+        expected_sequence,
+        successor_attempt_id,
+    } = &action
+    {
+        let RunReply::Snapshot(run) = run_action(
+            project,
+            RunAction::Get {
+                run_id: run_id.clone(),
+            },
+        )?
+        else {
+            unreachable!("get returns a snapshot")
+        };
+        return Ok(RunReply::AgentClose(
+            crate::mcp_http::launch_transaction::close_workflow_agent(
+                state,
+                &run,
+                attempt_id,
+                request_id,
+                *expected_sequence,
+                successor_attempt_id.as_deref(),
+            )?,
+        ));
+    }
     if let RunAction::Incidents { run_id } = &action {
         let RunReply::Snapshot(run) = run_action(
             project,
@@ -350,7 +418,9 @@ pub fn run_action_with_events(
             | RunReply::Events(_)
             | RunReply::Runs(_)
             | RunReply::Incidents(_)
-            | RunReply::Readiness(_) => {
+            | RunReply::ReportDispositions(_)
+            | RunReply::Readiness(_)
+            | RunReply::AgentClose(_) => {
                 unreachable!("mutations return a snapshot or receipt")
             }
         };

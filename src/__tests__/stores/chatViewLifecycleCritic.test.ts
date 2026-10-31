@@ -88,6 +88,7 @@ describe("Chat view listener registration across CLI/Chat remount", () => {
 			sessionId: "terminal",
 			epoch: null,
 			fromSeq: 0,
+			pendingTexts: [],
 		});
 		expect(acpTranscript.entries(chatViewKey("terminal"))).toEqual([]);
 		closeNew();

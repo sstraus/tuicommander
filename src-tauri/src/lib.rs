@@ -538,12 +538,14 @@ async fn chat_view_snapshot(
     session_id: String,
     epoch: Option<u64>,
     from_seq: Option<u64>,
+    pending_texts: Option<Vec<String>>,
 ) -> Result<chat_view::ChatViewSnapshot, String> {
     chat_view::chat_view_snapshot_blocking(
         state.inner().clone(),
         session_id,
         epoch,
         from_seq.unwrap_or(0),
+        pending_texts.unwrap_or_default(),
     )
     .await
 }

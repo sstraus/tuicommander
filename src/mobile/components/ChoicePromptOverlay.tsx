@@ -31,7 +31,11 @@ export function ChoicePromptOverlay(props: ChoicePromptOverlayProps) {
 					>
 						<span class={styles.key}>{option.key}</span>
 						<span class={styles.label}>{option.label}</span>
-						{option.hint && <span class={styles.hint}>{option.hint}</span>}
+						<Show when={option.hint}>
+							<Show when={option.hint?.includes("\n")} fallback={<span class={styles.hint}>{option.hint}</span>}>
+								<pre class={styles.preview}>{option.hint}</pre>
+							</Show>
+						</Show>
 					</button>
 				)}
 			</For>

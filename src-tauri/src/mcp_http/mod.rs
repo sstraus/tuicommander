@@ -15,9 +15,11 @@ mod github_pr_action_routes;
 mod github_review_routes;
 mod github_routes;
 mod guards;
+mod launch_baseline;
 pub(crate) mod launch_transaction;
 mod log_routes;
 pub(crate) mod managed_launch;
+mod managed_launch_acp;
 pub(crate) mod mcp_call_audit;
 mod mcp_input_contract;
 pub(crate) mod mcp_transport;
@@ -1240,7 +1242,10 @@ fn shared_routes() -> Router<Arc<AppState>> {
             "/sessions/{id}/terminal/lines",
             get(session::terminal_get_lines),
         )
-        .route("/sessions/{id}/chat-view", get(session::chat_view))
+        .route(
+            "/sessions/{id}/chat-view",
+            get(session::chat_view).post(session::chat_view_with_pending),
+        )
         .route(
             "/sessions/{id}/terminal/styled-rows",
             get(session::terminal_styled_rows),

@@ -31,6 +31,7 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
     ) && !matches!(
         snapshot.event_contract_version,
         super::contracts::SERIAL_EVENT_CONTRACT_VERSION
+            | super::contracts::PINNED_SERIAL_EVENT_CONTRACT_VERSION
             | super::contracts::CURRENT_EVENT_CONTRACT_VERSION
     ) {
         return Err("unsupported workflow graph event contract".into());
@@ -38,6 +39,9 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
     let previous_status = snapshot.status;
     match &event.kind {
         RunEventKind::Started { .. } => unreachable!(),
+        RunEventKind::Timer { event: timer } => {
+            super::timer::apply(&mut snapshot, timer, event.at_ms)?
+        }
         RunEventKind::Graph { event } => match event {
             super::graph::GraphEvent::Started { execution } => {
                 if snapshot.graph_executions.iter().any(|existing| {
@@ -65,11 +69,18 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                     execution.definition.clone(),
                 )?;
                 if snapshot.event_contract_version
-                    == super::contracts::CURRENT_EVENT_CONTRACT_VERSION
+                    >= super::contracts::PINNED_SERIAL_EVENT_CONTRACT_VERSION
                 {
-                    initial.contract = Some(super::contracts::GraphContract::serial(
+                    let policy = execution
+                        .contract
+                        .as_ref()
+                        .and_then(|contract| contract.agent_policy.clone());
+                    initial.contract = Some(super::contracts::GraphContract::with_agent_policy(
                         &execution.definition,
+                        policy,
                     )?);
+                    initial.contract.as_mut().expect("pinned contract").version =
+                        snapshot.event_contract_version;
                 }
                 if **execution != initial {
                     return Err("graph start state is not pristine".into());
@@ -108,6 +119,90 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                 ) {
                     validate_resume(&snapshot)?;
                 }
+                if let super::graph::GraphTransition::Expand {
+                    execution_id,
+                    activation_id,
+                    source_activation_id,
+                    items,
+                } = transition
+                {
+                    let graph = snapshot
+                        .graph_executions
+                        .iter()
+                        .find(|g| g.id == *execution_id)
+                        .ok_or("expansion graph missing")?;
+                    let activation = graph
+                        .activations
+                        .iter()
+                        .find(|a| a.id == *activation_id)
+                        .ok_or("expansion activation missing")?;
+                    let crate::workflows::NodeKind::ForEach {
+                        receipt_evidence: Some(source_node),
+                        ..
+                    } = &graph
+                        .definition
+                        .graph
+                        .nodes
+                        .iter()
+                        .find(|n| n.id == activation.node_id)
+                        .ok_or("expansion node missing")?
+                        .kind
+                    else {
+                        return Err("expansion has no declared receipt source".into());
+                    };
+                    let current = graph
+                        .activations
+                        .iter()
+                        .position(|a| a.id == activation.id)
+                        .ok_or("expansion position missing")?;
+                    let source = graph.activations[..current]
+                        .iter()
+                        .rev()
+                        .find(|a| {
+                            a.node_id == *source_node
+                                && a.state == super::graph::ActivationState::Completed
+                                && activation.tokens.starts_with(&a.tokens)
+                        })
+                        .filter(|a| a.id == *source_activation_id)
+                        .ok_or("expansion source is not the current completed receipt")?;
+                    let report =
+                        super::runtime::effects::activation_attempt(&snapshot, graph, source)
+                            .and_then(|a| a.report.as_ref())
+                            .filter(|r| r.outcome == AttemptOutcome::Completed)
+                            .ok_or("expansion source has no completed typed report")?;
+                    if report.evidence != *items {
+                        return Err("expansion items differ from the committed receipt".into());
+                    }
+                }
+                let superseded_attempts: Vec<String> =
+                    if let super::graph::GraphTransition::SupersedeFork {
+                        execution_id,
+                        fork_id,
+                        generation,
+                    } = transition
+                    {
+                        snapshot
+                            .graph_executions
+                            .iter()
+                            .find(|g| g.id == *execution_id)
+                            .into_iter()
+                            .flat_map(|g| {
+                                g.activations
+                                    .iter()
+                                    .filter(|a| {
+                                        a.tokens.iter().any(|t| {
+                                            t.fork_id == *fork_id && t.generation == *generation
+                                        })
+                                    })
+                                    .filter_map(|a| {
+                                        super::runtime::effects::activation_attempt(&snapshot, g, a)
+                                            .map(|attempt| attempt.id.clone())
+                                    })
+                            })
+                            .collect()
+                    } else {
+                        vec![]
+                    };
                 let execution = snapshot
                     .graph_executions
                     .iter_mut()
@@ -126,6 +221,14 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                         snapshot.event_contract_version,
                     )?)
                     .ok_or("loop counter overflow")?;
+                for attempt in &mut snapshot.attempts {
+                    if superseded_attempts.contains(&attempt.id)
+                        && attempt.state == AttemptState::Running
+                    {
+                        attempt.state = AttemptState::Interrupted;
+                        attempt.outcome = Some(AttemptOutcome::Interrupted);
+                    }
+                }
                 if snapshot
                     .graph_executions
                     .iter()
@@ -140,6 +243,10 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                 }
             }
         },
+        RunEventKind::StoryProposalsSubmitted { batch } => {
+            super::proposals::validate_batch(&snapshot, batch)?;
+            snapshot.proposal_batches.push(batch.clone());
+        }
         RunEventKind::PlanningClosed { fingerprint } => {
             snapshot.planning_fingerprint = Some(fingerprint.clone());
             snapshot.verification_fingerprint = None;
@@ -149,6 +256,28 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
             snapshot.verification_fingerprint = None;
         }
         RunEventKind::AttemptStarted { attempt } => {
+            if let Some(binding) = &attempt.graph_binding {
+                let graph = snapshot
+                    .graph_executions
+                    .iter()
+                    .find(|g| g.id == binding.execution_id)
+                    .ok_or("attempt graph binding is foreign")?;
+                if snapshot.event_contract_version < 4
+                    || attempt.story_id != graph.target_id
+                    || !graph.activations.iter().any(|a| {
+                        a.id == binding.activation_id
+                            && super::runtime::effects::agent_node_id(graph, a).ok()
+                                == Some(attempt.node_id.as_str())
+                            && a.state == super::graph::ActivationState::Running
+                    })
+                    || snapshot
+                        .attempts
+                        .iter()
+                        .any(|a| a.graph_binding.as_ref() == Some(binding))
+                {
+                    return Err("attempt activation binding is stale or duplicated".into());
+                }
+            }
             if snapshot
                 .attempts
                 .iter()
@@ -206,6 +335,7 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
             attempt.outcome = Some(*outcome);
             attempt.report = report.clone();
             if *outcome == AttemptOutcome::NeedsInput {
+                attempt.input_answer = None;
                 snapshot.status = RunStatus::Paused;
             }
         }
@@ -220,6 +350,39 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                 return Err("attempt has no pending input request".into());
             }
             attempt.input_answer = Some(answer.clone());
+            if snapshot.event_contract_version >= 3 && attempt.agent.is_some() {
+                attempt.generation = attempt
+                    .generation
+                    .checked_add(1)
+                    .ok_or("attempt generation exhausted")?;
+                attempt.state = AttemptState::Running;
+                attempt.outcome = None;
+                attempt.report = None;
+                attempt.continuation = Some(super::model::AgentContinuation {
+                    generation: attempt.generation,
+                    answer: answer.clone(),
+                    delivery: super::model::ContinuationDelivery::Pending,
+                    delivery_reference: None,
+                });
+            }
+        }
+        RunEventKind::ContinuationDeliveryChanged {
+            attempt_id,
+            generation,
+            delivery,
+            reference,
+        } => {
+            let continuation = snapshot
+                .attempts
+                .iter_mut()
+                .find(|a| a.id == *attempt_id)
+                .and_then(|a| a.continuation.as_mut())
+                .ok_or("continuation missing")?;
+            if continuation.generation != *generation {
+                return Err("continuation generation changed".into());
+            }
+            continuation.delivery = *delivery;
+            continuation.delivery_reference = reference.clone();
         }
         RunEventKind::AgentBound {
             attempt_id,
@@ -454,9 +617,49 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                     attempt.outcome = Some(AttemptOutcome::Interrupted);
                 }
             }
+            for timer in &mut snapshot.timers {
+                timer.state = super::timer::TimerState::Cancelled;
+            }
             snapshot.status = RunStatus::Cancelled;
         }
-        RunEventKind::Completed => snapshot.status = RunStatus::Completed,
+        RunEventKind::Completed => {
+            if snapshot
+                .timers
+                .iter()
+                .any(|t| t.state == super::timer::TimerState::Pending)
+            {
+                return Err(
+                    "pending timers must fire or be explicitly cancelled before completion".into(),
+                );
+            }
+            snapshot.status = RunStatus::Completed;
+        }
+    }
+    // The owning graph event also retires timers belonging to a departed activation.
+    // A paused activation keeps its absolute deadline for an explicit resume.
+    for timer in &mut snapshot.timers {
+        if let super::timer::TimerScope::Activation {
+            execution_id,
+            activation_id,
+        } = &timer.scope
+        {
+            let departed = !snapshot.graph_executions.iter().any(|graph| {
+                graph.id == *execution_id
+                    && !graph.completed
+                    && graph.activations.iter().any(|a| {
+                        a.id == *activation_id
+                            && matches!(
+                                a.state,
+                                super::graph::ActivationState::Ready
+                                    | super::graph::ActivationState::Running
+                                    | super::graph::ActivationState::Paused
+                            )
+                    })
+            });
+            if departed {
+                timer.state = super::timer::TimerState::Cancelled;
+            }
+        }
     }
     if snapshot.status != RunStatus::Paused {
         snapshot.pause_cause = None;

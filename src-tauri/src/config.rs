@@ -2951,11 +2951,32 @@ where
         Ok(result)
     }
 
+    /// Strict transaction for externally edited documents. An invalid read aborts
+    /// without moving the file an editor may still have open for an in-place save.
+    pub(crate) fn update_preserving_invalid<R, F>(&self, mutate: F) -> Result<R, String>
+    where
+        F: FnOnce(&mut T) -> Result<(R, bool), String>,
+    {
+        let _guard = CONFIG_WRITE_LOCK.lock();
+        let _file_lock = self.acquire_file_lock()?;
+        let mut value = self.load_preserving_invalid()?;
+        let (result, changed) = mutate(&mut value)?;
+        if changed {
+            self.write_atomic(&value)?;
+        }
+        Ok(result)
+    }
+
     /// Read authoritative safety state without quarantining malformed input. Repeated
     /// ownership checks must not turn the first read error into an empty default.
     pub(crate) fn read_preserving_invalid(&self) -> Result<T, String> {
         let _guard = CONFIG_WRITE_LOCK.lock();
         let _file_lock = self.acquire_file_lock()?;
+        self.load_preserving_invalid()
+    }
+
+    /// Call only while holding both configuration locks.
+    fn load_preserving_invalid(&self) -> Result<T, String> {
         match std::fs::read_to_string(&self.path) {
             Ok(content) => serde_json::from_str(&content)
                 .map_err(|error| format!("Invalid {}: {error}", self.path.display())),

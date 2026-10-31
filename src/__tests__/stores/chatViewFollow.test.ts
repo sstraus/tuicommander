@@ -62,7 +62,12 @@ describe("chat view follow boundaries", () => {
 		await pending;
 		expect(texts("one")).toEqual(["first", "second"]);
 		expect(invokeMock).toHaveBeenCalledTimes(2);
-		expect(invokeMock).toHaveBeenLastCalledWith("chat_view_snapshot", { sessionId: "one", epoch: 0, fromSeq: 1 });
+		expect(invokeMock).toHaveBeenLastCalledWith("chat_view_snapshot", {
+			sessionId: "one",
+			epoch: 0,
+			fromSeq: 1,
+			pendingTexts: [],
+		});
 		dispose();
 	});
 
@@ -78,7 +83,12 @@ describe("chat view follow boundaries", () => {
 		invokeMock.mockResolvedValueOnce(snapshot("while in CLI", 2, true));
 		wake("one");
 		await vi.waitFor(() => expect(texts("one")).toEqual(["while in CLI"]));
-		expect(invokeMock).toHaveBeenLastCalledWith("chat_view_snapshot", { sessionId: "one", epoch: null, fromSeq: 0 });
+		expect(invokeMock).toHaveBeenLastCalledWith("chat_view_snapshot", {
+			sessionId: "one",
+			epoch: null,
+			fromSeq: 0,
+			pendingTexts: [],
+		});
 		dispose();
 	});
 

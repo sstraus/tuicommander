@@ -63,6 +63,7 @@ pub fn render_story_prompt(
         role,
         capabilities,
         prompt_template,
+        ..
     } = &node.kind
     else {
         return Err("attempt node is not an agent".into());
@@ -94,6 +95,8 @@ pub fn render_story_prompt(
                 Ok::<_, String>(serde_json::json!({
                     "artifactDigest": review_artifact_digest(&commit, &tree),
                     "commit": commit, "tree": tree,
+                    "requirements": super::run::evidence::requirements_digest(story),
+                    "evidencePolicy": definition.graph.evidence_policy,
                 }))
             })
             .transpose()?
@@ -121,7 +124,10 @@ pub fn render_story_prompt(
         "storyType": story.story_type,
         "skills": skills,
         "feedback": feedback,
+        "legacyProofNotes": feedback.map(super::run::evidence::LegacyProofNotes::parse),
         "artifactSubject": artifact_subject,
+        "reviewCounters": run.graph_executions.iter().find(|g| g.target_id == story.id)
+            .map(|g| super::run::evidence::review_counters(run, g)),
     });
     let context = serde_json::to_string_pretty(&context)
         .map_err(|error| format!("encode story prompt context: {error}"))?;
@@ -131,6 +137,9 @@ pub fn render_story_prompt(
          runId, storyId, storyRevision, attemptId, generation, outcome, summary, criterionResults and evidence. \
          For needs_input include inputRequest with a concrete question and optional options. \
          Reviewer completed reports must include review with decision, artifactDigest (the supplied artifactSubject digest, SHA-256 of UTF-8 commit:tree), and findings tied to criterionIndex. \
+         When artifactSubject.evidencePolicy is present, include review.evidence with its exact typed subject (type=story, id, commit, tree, requirements), scored findings (id, risk/value/effort 1-5, addsMechanism, deletesOnly, scope, acceptedRisk, proposal), resolvedFixes and typed proof. \
+         Proof includes realityEffect/State/Assumptions/Radius, symptom, red (preFixCommit, test, catches, check), testChanges (test, oldExpectationWrongBecause), checks and explicit omissions. Each proof check binds id, subject, target, native, toolchain, argv, configDigest, scope, matchedTests, exitCode and logDigest. \
+         Only FIX findings authorize current repair; STORY is a separate scoped proposal and ACCEPT names the retained risk. No review may skip a required deterministic check. \
          Review is advisory; it never changes story status by itself. A terminal exit or an inbox message is not a report. \
          The workflow engine decides the next transition."
     );
@@ -223,6 +232,7 @@ pub fn render_plan_prompt(
         role,
         capabilities,
         prompt_template,
+        ..
     } = &node.kind
     else {
         return Err("plan attempt node is not an agent".into());
@@ -296,6 +306,7 @@ mod tests {
 
     fn fixture() -> (RunSnapshot, Plan, Story, NodeAttempt, PublishedWorkflow) {
         let mut run = RunSnapshot {
+            proposal_batches: vec![],
             event_contract_version: 2,
             canonical_ref: None,
             id: "run-1".into(),
@@ -322,6 +333,7 @@ mod tests {
             canonical_recertification: None,
             attempts: vec![],
             effects: vec![],
+            timers: vec![],
             graph_executions: vec![],
         };
         let plan = Plan {
@@ -351,6 +363,7 @@ mod tests {
             risk: None,
         };
         let attempt = NodeAttempt {
+            graph_binding: None,
             id: "attempt-1".into(),
             story_id: story.id.clone(),
             node_id: "implement".into(),
@@ -360,6 +373,7 @@ mod tests {
             agent: None,
             report: None,
             input_answer: None,
+            continuation: None,
         };
         run.attempts.push(attempt.clone());
         let definition = PublishedWorkflow {
@@ -370,9 +384,11 @@ mod tests {
             closure: WorkflowClosure::Human,
             required_checks: vec![],
             graph: WorkflowGraph {
+                evidence_policy: None,
                 nodes: vec![Node {
                     id: "implement".into(),
                     kind: NodeKind::Agent {
+                        execution: None,
                         role: AgentRole::Implementer,
                         capabilities: vec!["story_read".into(), "story_report".into()],
                         prompt_template: "Implement {{story.title}}".into(),
@@ -496,6 +512,7 @@ mod tests {
     fn plan_prompt_is_pinned_and_carries_story_summary_and_event_cursor() {
         let (mut run, plan, story, _story_attempt, _story_definition) = fixture();
         let attempt = NodeAttempt {
+            graph_binding: None,
             id: "plan-attempt".into(),
             story_id: plan.id.clone(),
             node_id: "coordinate".into(),
@@ -505,6 +522,7 @@ mod tests {
             agent: None,
             report: None,
             input_answer: None,
+            continuation: None,
         };
         run.attempts.push(attempt.clone());
         let definition = PublishedWorkflow {
@@ -515,9 +533,11 @@ mod tests {
             closure: WorkflowClosure::Human,
             required_checks: vec![],
             graph: WorkflowGraph {
+                evidence_policy: None,
                 nodes: vec![Node {
                     id: "coordinate".into(),
                     kind: NodeKind::Agent {
+                        execution: None,
                         role: AgentRole::Coordinator,
                         capabilities: vec!["story_create".into()],
                         prompt_template: "Coordinate {{plan.title}}".into(),

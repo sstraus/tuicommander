@@ -101,9 +101,10 @@ impl RunStore {
         };
         // DEFERRED (2026-10-05) — dependency preflight: graph start skips the preflight that
         // manual start runs (`validate_preflight`); needed before Agent effects in slice C.
-        let execution =
+        let mut execution =
             GraphExecution::start("root".into(), target_id.clone(), definition.clone())?;
         let initial = RunSnapshot {
+            proposal_batches: vec![],
             event_contract_version: super::super::graph::RUN_EVENT_CONTRACT_VERSION,
             id: Uuid::now_v7().to_string(),
             canonical_ref: git_output(Path::new(&owner), &["symbolic-ref", "HEAD"]).ok(),
@@ -130,6 +131,7 @@ impl RunStore {
             canonical_recertification: None,
             attempts: vec![],
             effects: vec![],
+            timers: vec![],
             graph_executions: vec![],
         };
         let mut conn = self.connect()?;
@@ -139,6 +141,10 @@ impl RunStore {
         if let Some(snapshot) = start_retry(&tx, &owner, &key, &hash)? {
             return Ok(snapshot);
         }
+        execution.contract = Some(super::super::contracts::GraphContract::with_agent_policy(
+            &execution.definition,
+            definitions.agent_policy()?,
+        )?);
         if kind == WorkflowKind::Story {
             require_available_story(&tx, &owner, &target_id)?;
         }

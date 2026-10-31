@@ -7,6 +7,11 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum WorkflowAction {
+    GetAgentPolicy,
+    ImportAgentPolicy {
+        expected_revision: i64,
+        policy: super::AgentPolicyInput,
+    },
     SeedTemplates,
     CreateDraft {
         name: String,
@@ -45,6 +50,7 @@ pub enum WorkflowAction {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum WorkflowReply {
+    AgentPolicy(Option<super::AgentPolicy>),
     Draft(WorkflowDraft),
     Drafts(Vec<WorkflowDraft>),
     Published(PublishedWorkflow),
@@ -98,6 +104,13 @@ pub fn definition_action(project: &str, action: WorkflowAction) -> Result<Workfl
         .to_string();
     let store = WorkflowStore::open()?;
     match action {
+        WorkflowAction::GetAgentPolicy => Ok(WorkflowReply::AgentPolicy(store.agent_policy()?)),
+        WorkflowAction::ImportAgentPolicy {
+            expected_revision,
+            policy,
+        } => Ok(WorkflowReply::AgentPolicy(Some(
+            store.import_agent_policy(expected_revision, policy)?,
+        ))),
         WorkflowAction::SeedTemplates => Ok(WorkflowReply::Drafts(store.seed_templates(&project)?)),
         WorkflowAction::CreateDraft { name, kind, graph } => {
             check_draft_size(&graph)?;
@@ -230,6 +243,7 @@ mod validation_tests {
                 name: "draft".into(),
                 kind: WorkflowKind::Plan,
                 graph: WorkflowGraph {
+                    evidence_policy: None,
                     nodes: vec![],
                     edges: vec![],
                 },

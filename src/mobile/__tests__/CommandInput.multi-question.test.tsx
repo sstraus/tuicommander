@@ -159,3 +159,17 @@ it("navigates a clipped Claude form without answering until explicit selection",
 	await waitFor(() => expect(writes).toEqual(["\x1b[B", "\x1b[B", "\r"]));
 	expect(buttonFor(container, "Select highlighted option").disabled).toBe(true);
 });
+
+// Catches: restoring the unnumbered preview Chat action as a numeric answer instead of native navigation.
+it("opens the preview form Chat action with its recorded Down Down Enter keys", async () => {
+	const prompt = form(
+		"Posizione UI · Accesso root · Endpoint Sec\nDove mettiamo l’ispezione profonda nell’interfaccia?",
+		["Schede nel dettaglio processo (Recommended)", "Nuova scheda Inspect", "Chat about this"],
+	);
+	prompt.options[0].hint = "Overview | Files | Network\n/usr/bin/example 1234";
+	const { container } = render(() => (
+		<CommandInput sessionId="preview-dialog" agentType="claude" choicePrompt={prompt} />
+	));
+	fireEvent.click(buttonFor(container, "Chat about this"));
+	await waitFor(() => expect(writes).toEqual(["\x1b[B", "\x1b[B", "\r"]));
+});

@@ -177,29 +177,52 @@ fn invalid_edits_leave_the_existing_document_byte_identical() {
     assert_eq!(std::fs::read(path).unwrap(), original);
 }
 
+// Catches: a strict read/edit renaming the inode an external editor is still writing.
+#[test]
+fn automations_survive_in_place_external_rewrite() {
+    use std::io::Write;
+
+    for (prefix, mutate) in [(0, false), (12, false), (0, true), (12, true)] {
+        let (dir, store) = store();
+        store.create(definition("original")).unwrap();
+        let path = dir.path().join("automations.json");
+        let replacement = serde_json::to_vec(&json!({
+            "version": 1, "max_concurrent_runs": 4,
+            "definitions": [definition("replacement")]
+        }))
+        .unwrap();
+        let mut writer = std::fs::File::create(&path).unwrap();
+        writer.write_all(&replacement[..prefix]).unwrap();
+        // The editor has truncated/written a prefix, but has not finished its save.
+        if mutate {
+            assert!(store.set_concurrency(7).is_err());
+        } else {
+            assert!(store.load().is_err());
+        }
+        writer.write_all(&replacement[prefix..]).unwrap();
+        drop(writer);
+        let loaded = DefinitionStore::at_path(path.clone()).load().unwrap();
+        assert_eq!(loaded.definitions, vec![definition("replacement")]);
+        assert_eq!(loaded.max_concurrent_runs, 4);
+        assert_eq!(std::fs::read(path).unwrap(), replacement);
+    }
+}
+
 // Catches: a failed corrupt load followed by a save overwriting recovery bytes.
 #[test]
 fn malformed_json_is_preserved_and_the_failing_mutation_does_not_write_defaults() {
     let (dir, store) = store();
     let path = dir.path().join("automations.json");
     std::fs::write(&path, b"{broken automation data").unwrap();
-    assert!(store.create(definition("alpha")).is_err());
-    assert!(!path.exists());
-    let recovery: Vec<_> = std::fs::read_dir(dir.path())
-        .unwrap()
-        .map(|e| e.unwrap().path())
-        .filter(|p| {
-            p.file_name()
-                .unwrap()
-                .to_string_lossy()
-                .contains(".corrupt-")
-        })
-        .collect();
-    assert_eq!(recovery.len(), 1);
-    assert_eq!(
-        std::fs::read(&recovery[0]).unwrap(),
-        b"{broken automation data"
-    );
+    for _ in 0..2 {
+        let error = store.load().unwrap_err();
+        assert!(error.contains("Invalid"), "{error}");
+        assert!(error.contains("automations.json"), "{error}");
+        assert!(store.create(definition("alpha")).is_err());
+        assert!(store.set_enabled("alpha", true).is_err());
+        assert!(store.remove("alpha").is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"{broken automation data");
+    }
 }
 
 // Catches: schema downgrade, duplicate identities or invalid disk data being overwritten.

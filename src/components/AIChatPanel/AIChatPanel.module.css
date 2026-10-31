@@ -787,20 +787,6 @@
   text-align: center;
 }
 
-/* ── Thinking pulse animation ──────────────────────────── */
-.thinkingPulse {
-  animation: thinkingPulse 1.2s ease-in-out infinite;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .thinkingPulse { animation: none; }
-}
-
-@keyframes thinkingPulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
 /* ── Input queue badge ─────────────────────────────────── */
 .queueBadge {
   display: inline-flex;
@@ -1272,6 +1258,15 @@
   gap: 6px;
   min-width: 0;
 }
+/* The editor and edge actions share one row; attachments stay above that row. */
+.composerCard .composerActions {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.composerCard .composerActions .textarea {
+  flex: 1;
+}
 .composerHeader {
   composes: toolbar from "../ui/FormControls.module.css";
   display: flex;
@@ -1417,4 +1412,16 @@ button[data-control-layout="row"].slashCommand:hover {
   color: var(--fg-secondary);
   font-size: 11px;
   overflow-wrap: anywhere;
+}
+
+/* Same muted palette as the ACP composer queue; no cancellation claim for a CLI-owned queue. */
+.userMsg[data-pending] {
+  color: var(--fg-muted);
+  background: var(--bg-tertiary);
+}
+
+.pendingLabel {
+  display: block;
+  font-size: var(--font-xs);
+  color: var(--fg-muted);
 }

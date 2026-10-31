@@ -6,17 +6,48 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Retire Terminal Chat pending bubbles when native receipts truncate or redact the submitted prompt (#2542-49c3).
+
+- Fix workflow routing pins so unrelated profile and idle-close edits do not block an unchanged route. Keep contract-3 graph launches daemon-owned.
+
+- Workflow daemon launches now retain a pre-spawn workspace baseline and managed launch reference for attribution after retry/restart. This is not safe-close or complete WF04 lifecycle support.
+
 - Keep mobile Markdown images, review saves and Back navigation in the destination folder after opening a local link.
 
 ### Added
 
 - Add backend typed workflow command/Tool nodes with durable resource waits, source/target receipts, secret-reference transport and fenced rb reconciliation (#2512-5a42).
+- Add explicit workflow PTY/ACP execution routes and genuine ACP launch/conversation references, with binding-before-prompt journaling and channel-generation report fences (#2511-37f0, policy/handover/close still incomplete).
+
+- Retain workflow bound-report acceptance/refusal decisions across retry and restart, with atomic accepted-event recording and a read-only `report_dispositions` run action (#2511-37f0, lifecycle increment only).
+
+- Accept typed, revision-bound plan story proposals without requiring a Coordinator Agent node; retain contract-2 behavior (#2511-37f0, foundation only).
+- Add bounded, correlated workflow Fork/all-Join, For each and typed If/else execution, generation-fenced repair, and replay-safe branch readiness (#2509-0e2f).
+- Use a theme-accent breathing orb for working feedback in desktop and mobile Chat. Reduced motion shows a static dot; accessible Working text and provider retry status remain unchanged (#2535-8b6b).
+
+- Add opt-in pinned workflow evidence policy with source-bound proof, independent review, ordered FIX/STORY/ACCEPT triage and bounded review/repair budgets (#2513-c433).
+- Persist workflow timer wake receipts, bounded provider backoff, one-row cohort deadlines and fail-closed question expiry across daemon restart (#2529-844b).
 
 - Add a separating space after web URLs pasted into mobile terminal and AI Chat composers, unless whitespace already follows (#2494-921f).
 
 ### Fixed
 
 - Reconcile paused typed workflow commands after restart without replay; stop local gate child groups, redact JSON-escaped secrets, bound remote result envelopes, release known no-start failures, and pass the wrapper freeze identity (#2512-5a42).
+- Restore the collapsed Compose handle’s transparent idle chrome and muted label. Hover and keyboard focus reveal the button without fading its queue count (#2551-7a80).
+
+- Preserve `automations.json` during external in-place saves. Incomplete or invalid reads report errors without quarantining the live file or losing the completed edit (#2548-0bc7).
+
+- Restore session quota for Codex profiles with Codex 0.166 by loading the selected profile file through supported App Server configuration overrides. Preserve profile-relative paths, and reject App Server's invalid-configuration defaults fallback (#2541-18a3).
+- Discover and verify Gemini CLI JSONL sessions for the matching project, with legacy JSON resume support (#2543-4bbf).
+- Stop superseded ACP workflow reviewers through their managed connection and require OS process absence before repair (#2511-37f0).
+- Retire older unmatched terminal Chat prompt bubbles when a later send reaches the transcript, so local slash commands cannot block subsequent receipts (#2540-b929).
+
+- Keep terminal search below the Context and CLI/Chat switch row so navigation and close controls stay reachable in narrow panes (#2538-c082).
+
+- Keep Claude native question previews out of wrapped answer labels in desktop Chat and mobile; show the selected preview, question tabs and Chat about this action (#2536-8e18).
+- Preserve current-generation checks after workflow all-Join, honor each bound critic FIX, route typed join failures correctly, and re-evaluate concurrent check admission without pausing valid sibling work (#2509-0e2f).
+
+- Raise built-in secondary and muted text contrast on all neutral chrome surfaces, share desktop/mobile startup foregrounds, and remove the collapsed Compose label and queue-count fade (#2506-22b0).
 
 - Preserve the beginning of long Claude CLI dictation by framing it as a bracketed paste, including review-only delivery (#2502-571c).
 

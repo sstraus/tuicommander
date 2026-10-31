@@ -74,7 +74,27 @@ pub(crate) fn publication_review(
         "Independent review by `{}` on `{commit}`\n\n{}",
         evidence.actor, report.summary
     );
-    if review.findings.is_empty() {
+    if let Some(typed) = &review.evidence {
+        for finding in &typed.findings {
+            findings.push_str(&format!(
+                "\n\n- {:?} {}: risk={:?}; proposal={:?}; scope={:?}",
+                finding.decision(),
+                finding.id,
+                finding.accepted_risk,
+                finding.proposal,
+                finding.scope
+            ));
+        }
+        for omission in &typed.proof.omissions {
+            findings.push_str(&format!("\n\nOmission: {omission}"));
+        }
+    }
+    if review.findings.is_empty()
+        && review
+            .evidence
+            .as_ref()
+            .is_none_or(|e| e.findings.is_empty())
+    {
         findings.push_str("\n\nNo review findings.");
     } else {
         for finding in &review.findings {

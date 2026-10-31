@@ -1,6 +1,59 @@
 ## Typed workflow commands (2512-5a42) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a backend Run command graph in a throwaway project with an assigned workspace and inspect `command_executions`. Verify admission, target and immutable receipt; the daily instance was not restarted. Rust changes do not hot-reload.
+## AI Chat desktop composer alignment (2550-e756)
+
+- [x] Empty, one-line and four-line drafts share the editor/Send top and bottom edges, with and without focus. Header, editor row and footer share content edges. Mobile editor and Send bounds match the recorded pre-fix baseline. _(verified: `src/__tests__/browser/AIChatComposerGeometry.test.ts`, mounted Chromium at 1400px/390px; screenshots and measurements in orchestrator `reports/tuicommander/img/2026-10-31-chat-composer-align/`)_
+
+## Terminal Chat transformed receipts (2542-49c3) — Rust rebuild/restart required
+
+- [ ] After Boss restarts a rebuilt `make dev` or installs `make build`, send a prompt longer than 20000 characters or containing a redacted secret pattern in Terminal Chat. Its pending bubble must disappear after the native transcript receipt arrives. Automated store and native-adapter tests cover the comparison contract. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+## Automation external edits (2548-0bc7) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, save `automations.json` in place in a throwaway instance and confirm the completed definitions remain visible. Invalid JSON must report an error without moving the live file. Deterministic rb regression covers the truncate/read/write ordering; the daily app was not restarted. Rust does not hot-reload; restart only when losing current sessions is acceptable.
+
+## Codex profile session quota (2541-18a3) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a Codex session with an existing `--profile` and check its mobile session quota. Include a profile with `model_instructions_file = "instructions.md"` beside the profile file. The installed Codex 0.166 App Server accepted the rebased profile path without a defaults warning in the isolated CLI probe; the earlier probe returned live quota. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
+## Gemini JSONL discovery (2543-4bbf) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, start Gemini 0.64 in a throwaway project. Confirm the native session ID is discovered and resumes after restore; a session from another project must not be selected. Recorded owner-transcript regression covers JSONL metadata; no owner login, settings or running app was changed. Rust does not hot-reload; restart only when losing current sessions is acceptable.
+
+## Workflow ACP fork repair (2511-37f0 M1) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, run a fork with ACP reviewers and a critic FIX. Confirm old reviewers stop before one repair activation starts, without creating terminals. The recorded ACP regression covers process absence; the daily app was not restarted. Rust does not hot-reload; restart only when losing current sessions is acceptable.
+
+## Workflow ACP workers (2511-37f0) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use an explicit published ACP Agent route. Confirm no terminal is created, the managed receipt names the actual peer/conversation, and unobserved delivery is retained rather than resent. Imported policy pins, answer continuation, durable close decisions and owned ACP stop proof have targeted automated evidence. The daily app was not restarted.
+
+## Workflow report disposition (2511-37f0 increment) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, inspect `report_dispositions` for a bound typed report, an identical retry and a conflicting payload. Confirm the original decision remains and no report receipt grants artifact approval or cleanup. Automated report-disposition and real launch/close seam tests passed on rb. The daily app was not restarted.
+
+## Typed workflow proposals (2511-37f0 foundation) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, submit a typed proposal batch to a plan Create Stories activation without a Coordinator node. Confirm one native story per proposal and no author PTY. Rust does not hot-reload; the daily app was not restarted. Typed proposal, routing and lifecycle regressions passed on rb; this check loads the Rust change into the daily app.
+## Terminal search clearance (2538-c082)
+
+- [x] Browser component geometry covers Context on/off, 1000px/400px panes and desktop/touch viewports. Search and view-switch bounds are disjoint; button centres are hit-testable; close/reopen works. _(verified: `src/__tests__/browser/TerminalSearchGeometry.test.ts`; before/after evidence under `~/Gits/.tmp/search-overlap/`.)_
+## Claude question previews (2536-8e18) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a multi-question Claude AskUserQuestion with option previews. Check desktop Chat and mobile: full recommended labels, separate monospace preview, question tabs and Chat about this. Real wide/narrow Claude captures and shared-component regressions cover the contract; the installed app was not restarted. Rust does not hot-reload; restart only when losing current sessions is acceptable.
+
+## Workflow Fork/all-Join (2509-0e2f) — Rust rebuild/restart required
+
+- [ ] After a manual Rust rebuild/restart, verify a post-all-Join Gate or approval Judge uses current fork checks, a primary critic FIX wins over an approving advisor, and concurrent check admission does not pause on sibling progress. Automated rb regressions cover these paths; this item checks the restarted daemon integration.
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a story graph with critic/check Fork branches and inspect the ordered branch arrivals, non-success all-Join edges and generation replacement after critic FIX. This assignment does not restart the daily daemon. Dedicated Designer controls belong to WF11; use the existing definition API for these graph records.
+## Durable workflow timers (2529-844b) — Rust rebuild/restart required
+
+- [ ] Load the new timer ledger/actor only after Boss manually restarts a rebuilt `make dev` or installs `make build`, when losing current sessions is acceptable. Rust does not hot-reload. Automated reducer/store/owner and paused-actor tests cover timer delivery, including a duration-expired run waiting for its pinned check without repeated deadline polling; no new UI or provider consumer is installed by this foundation. The daily app was not restarted.
+## Readable secondary and muted text (2506-22b0) — backend rebuild/restart required
+
+- [x] Worktree browser verification: collapsed Compose with one queued item, sidebar, tabs, status bar and mobile session list have before/after screenshots and computed colors; all built-in secondary/muted foregrounds exceed 4.5:1 on all four neutral surfaces. _(verified: `src/__tests__/themeContrast.test.ts`; browser evidence in orchestrator `reports/tuicommander/img/2026-10-30-grey-contrast/contrast-report.md`.)_
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm a previously seeded Commander profile loads the brighter foregrounds and Compose count without fading. The backend corrects only the exact legacy built-in foreground triplet in memory; custom foregrounds and theme files remain unchanged. The daily app was not restarted. Rust does not hot-reload; restart only when Boss is ready to lose current sessions.
 
 ## Long Claude dictation (2502-571c) — Rust rebuild/restart required
 
@@ -3098,3 +3151,20 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 ## WF05 critic fixes — load after a manual Rust rebuild (2512-5a42)
 
 - [ ] After Boss chooses to restart `make dev` (or rebuild release), inspect a paused remote typed command interrupted by daemon restart. Fenced stop/release must create a failed-proof receipt, release its named resources, and settle its uncertain effect without replay or automatic graph resume. Automated regression covers dirty-source recovery and lost output; the current live daemon does not contain this Rust change.
+- [ ] After a manual Rust restart (`make dev` or release rebuild), inspect a new daemon workflow launch: its `workspace_baseline` must retain pre-existing dirt and its attempt binding must retain `launchId` across retry. Do not restart an active daily instance for this check. Automated baseline, ACP and owned-close regressions passed on rb; the daily process still requires a rebuild/restart.
+
+- [ ] WF04 owned close: after a backend rebuild, inspect `close_agent` refusal/stop receipts and confirm dirty work, pending input, background receipts and test apps prevent closure. Workspaces must remain. Automated ACP stop-proof and real background-receipt refusal tests passed on rb. The daily app was not restarted.
+- [ ] WF02/WF19 integration after rebuild: confirm parallel repair cancels old activation timers without cancelling independent service timers. Rust changes require a manual restart; no live-app validation was performed.
+- [ ] After the next backend rebuild/restart, verify a WF02 fork with pinned WF06 evidence policy starts repair for a typed FIX even if the retained legacy label says approved. Targeted RunStore automation covers generation fencing and replay; this Rust change does not hot-reload (#2509-0e2f).
+- [ ] In a real agent turn after loading the updated frontend, confirm the Chat breathing orb appears while working and disappears when done on desktop and phone. Real-component browser captures cover dark/light themes and reduced motion (#2535-8b6b).
+## WF06 — typed workflow evidence policy (2513-c433)
+
+- [ ] After the next authorized Rust rebuild/restart, opt a throwaway workflow
+  draft into `evidencePolicy`, publish it, and inspect the pinned policy and
+  review counters in the reviewer prompt. Verify that a stale artifact or
+  failed required check cannot approve the story. This Rust change does not
+  hot-reload into the current app. Targeted native-store automation covers the
+  policy; no desktop instance was launched for this story.
+
+- [ ] WF04 routing correction: after a manual Rust restart, confirm that unrelated profile and idle-close changes do not pause a pinned workflow. Contract-3 MCP launch must refuse caller-profile substitution; use the daemon run controls. Automated rb regressions cover both paths.
+- [ ] Terminal Chat queued prompt feedback: while Claude or Codex works, send two follow-ups from Chat; confirm muted Pending bubbles stay in send order and each disappears when its normal native transcript message arrives, without duplication. Repeat after a failed send and on mobile. Automated shared-host contracts and a worktree Vite appearance screenshot cover presentation; native busy-agent delivery remains owned by the CLI.

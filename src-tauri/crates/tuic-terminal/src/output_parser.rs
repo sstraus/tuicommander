@@ -243,7 +243,7 @@ pub struct ChoiceOption {
     pub highlighted: bool,
     /// Best-effort flag: label contains a "reject/cancel/no" verb.
     pub destructive: bool,
-    /// Optional parenthetical hint (e.g. "(shift+tab)"), stripped from label.
+    /// Optional hint or multiline native option preview, separate from the label.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hint: Option<String>,
 }
@@ -2706,6 +2706,63 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
         static ref OPTION_RE: regex::Regex =
             regex::Regex::new(r"^\s*([❯›>]\s*)?(\d+)[.)]\s+(.+?)\s*$").unwrap();
     }
+    let active_first = screen_rows[..footer]
+        .iter()
+        .rposition(|row| OPTION_RE.captures(row).is_some_and(|caps| &caps[2] == "1"));
+    // A preview is a separate Ink column, not part of the option text. Use
+    // its native rectangle before matching rows, including when it is stacked
+    // below the answers. Never split on table pipes inside an answer label.
+    // DEFERRED (2026-10-30) — at 40 columns Claude 2.1.314 still uses side-by-side
+    // panes, wraps the option number below its label and truncates the pane.
+    // That clipped native shape needs separate capture-driven handling; this
+    // path handles complete preview rectangles (live narrow capture: 65 columns).
+    let mut answer_rows: std::borrow::Cow<'_, [String]> = std::borrow::Cow::Borrowed(screen_rows);
+    let mut preview = None;
+    if let Some((top, column)) =
+        screen_rows[..footer]
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(idx, row)| {
+                if idx < active_first? {
+                    return None;
+                }
+                let column = row.chars().position(|ch| ch == '┌')?;
+                let border: String = row.chars().skip(column).collect();
+                (border.starts_with("┌─") && border.trim_end().ends_with('┐'))
+                    .then_some((idx, column))
+            })
+    {
+        let bottom = (top + 1..footer).find(|&idx| {
+            let border: String = screen_rows[idx].chars().skip(column).collect();
+            border.starts_with("└─") && border.trim_end().ends_with('┘')
+        });
+        if let Some(bottom) = bottom {
+            let text = screen_rows[top + 1..bottom]
+                .iter()
+                .map(|row| {
+                    let pane: String = row.chars().skip(column).collect();
+                    pane.trim_end()
+                        .strip_prefix('│')
+                        .and_then(|line| line.strip_suffix('│'))
+                        .unwrap_or("")
+                        .trim_end()
+                        .to_string()
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            preview = Some(text);
+            for row in &mut answer_rows.to_mut()[top..=bottom] {
+                *row = row
+                    .chars()
+                    .take(column)
+                    .collect::<String>()
+                    .trim_end()
+                    .to_string();
+            }
+        }
+    }
+    let screen_rows = answer_rows.as_ref();
     // Claude replaces a clipped option's cursor with a column-zero scroll
     // arrow. Hidden rows are not an ordered choice list: expose only the
     // footer's native navigation instead of guessing labels or cursor offsets.
@@ -2740,9 +2797,31 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
     let title = (0..first_option)
         .rev()
         .find(|&idx| !screen_rows[idx].trim().is_empty())?;
-    let title_text = screen_rows[title].trim();
+    let mut title_start = title;
+    while title_start > 0
+        && !screen_rows[title_start - 1].trim().is_empty()
+        && !screen_rows[title_start - 1].starts_with('←')
+        && !screen_rows[title_start - 1].starts_with("──")
+    {
+        title_start -= 1;
+    }
+    let mut title_text = screen_rows[title_start..=title]
+        .iter()
+        .map(|row| row.trim())
+        .collect::<Vec<_>>()
+        .join(" ");
     if title_text.starts_with("──") || title_text.starts_with('←') {
         return None;
+    }
+    if let Some(tabs) = screen_rows[..title_start]
+        .iter()
+        .rev()
+        // The Submit review places its answer summary between the tabs and
+        // the title. Stay inside this dialog's full-bleed separator boundary.
+        .take_while(|row| !row.starts_with("──"))
+        .find(|row| row.starts_with('←') && row.contains("✔ Submit"))
+    {
+        title_text = format!("{}\n{title_text}", tabs.trim());
     }
     let navigation = || ParsedEvent::ChoicePrompt {
         title: title_text.to_string(),
@@ -2767,11 +2846,59 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
     if clipped.is_some() {
         return Some(navigation());
     }
-    let mut options = Vec::new();
+    let mut options: Vec<ChoiceOption> = Vec::new();
+    let mut label_column = None;
     for row in &screen_rows[title + 1..footer] {
         let Some(caps) = OPTION_RE.captures(row) else {
+            let native_chat = row.trim().trim_start_matches(['❯', '›', '>']).trim();
+            if native_chat == "Chat about this"
+                && !options.is_empty()
+                && !options
+                    .iter()
+                    .any(|option| option.label == "Chat about this")
+            {
+                let highlighted = row.trim_start().starts_with(['❯', '›', '>']);
+                if highlighted {
+                    // Claude retains the last preview option's arrow while
+                    // focus moves to the separate native Chat action.
+                    for option in &mut options {
+                        option.highlighted = false;
+                    }
+                }
+                options.push(ChoiceOption {
+                    key: (options.len() + 1).to_string(),
+                    label: "Chat about this".to_string(),
+                    highlighted,
+                    destructive: false,
+                    hint: None,
+                });
+                label_column = None;
+            } else if preview.is_some()
+                && let Some(column) = label_column
+            {
+                // Preview forms wrap labels in the left column. A blank row
+                // ends that label; notes, separators and the pane stay outside.
+                if row.trim().is_empty() {
+                    label_column = None;
+                } else if row.chars().take(column).all(char::is_whitespace)
+                    && let Some(option) = options.last_mut()
+                {
+                    option.label.push(' ');
+                    option.label.push_str(row.trim());
+                } else {
+                    label_column = None;
+                }
+            }
             continue;
         };
+        // Ink hangs wrapped labels under the number's punctuation, one cell
+        // before the first label character ("❯ 1. Label" / "    wrap").
+        label_column = Some(
+            row[..caps.get(3)?.start()]
+                .chars()
+                .count()
+                .saturating_sub(1),
+        );
         let key = caps[2].to_string();
         if key.parse::<usize>().ok() != Some(options.len() + 1) {
             // At the last visible option Claude can omit the scroll arrow while
@@ -2804,8 +2931,15 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
     if !options.iter().any(|option| option.highlighted) {
         options[0].highlighted = true;
     }
+    if let Some(preview) = preview
+        && let Some(selected) = options
+            .iter_mut()
+            .find(|option| option.highlighted && option.label != "Chat about this")
+    {
+        selected.hint = Some(preview);
+    }
     Some(ParsedEvent::ChoicePrompt {
-        title: screen_rows[title].trim().to_string(),
+        title: title_text,
         options,
         selection_mode: Some(ChoiceSelectionMode::NavigateEnter),
         dismiss_key: Some("cancel".to_string()),
@@ -7492,6 +7626,122 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         // A nonblank prefix before the answer column is not a native wrap.
         continuation.replace_range(..1, "x");
         assert!(parse_choice_prompt(&rows).is_none());
+    }
+
+    fn recorded_preview_rows(name: &str) -> Vec<String> {
+        let bytes = std::fs::read(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(
+            format!("../../src/fixtures/agent_prompts/claude-preview-{name}-2536.tcap"),
+        ))
+        .unwrap();
+        let capture = crate::pty_capture::decode_capture(&bytes).unwrap();
+        let (rows, cols) = capture.geometry.unwrap();
+        let mut grid = crate::terminal_grid::TerminalGrid::new(rows, cols, 2000);
+        let mut dialog = None;
+        for record in capture.records {
+            if record.direction == crate::pty_capture::CaptureDirection::Output {
+                grid.process(&record.data);
+                let rows = grid.screen_text_rows();
+                if rows.iter().any(|row| is_ink_dialog_footer_row(row)) {
+                    dialog = Some(rows);
+                }
+            }
+        }
+        dialog.expect("real capture must contain the native question")
+    }
+
+    fn assert_preview_question(rows: &[String]) {
+        let Some(ParsedEvent::ChoicePrompt {
+            title,
+            options,
+            selection_mode,
+            ..
+        }) = parse_claude_ask_user_question(rows)
+        else {
+            panic!("recorded preview question must remain answerable: {rows:#?}")
+        };
+        assert_eq!(
+            options.iter().map(|o| o.label.as_str()).collect::<Vec<_>>(),
+            vec![
+                "Schede nel dettaglio processo (Recommended)",
+                "Nuova scheda Inspect",
+                "Chat about this"
+            ],
+            "recorded rows: {rows:#?}"
+        );
+        assert!(
+            title.contains("Posizione UI")
+                && title.contains("Accesso root")
+                && title.contains("Endpoint Sec")
+                && title.contains("Submit"),
+            "missing question progress: {title}"
+        );
+        assert!(title.contains("Dove mettiamo l’ispezione profonda nell’interfaccia?"));
+        assert_eq!(selection_mode, Some(ChoiceSelectionMode::NavigateEnter));
+        assert!(
+            options[0]
+                .hint
+                .as_deref()
+                .is_some_and(|hint| hint.contains("Files") && hint.contains("/usr/bin/example")),
+            "missing selected preview: {options:#?}"
+        );
+        assert!(options[0].highlighted);
+        assert!(!options[1].highlighted);
+        assert_eq!(options[2].key, "3");
+    }
+
+    // Catches: right preview borders replace the wrapped recommended label, and the unnumbered chat action vanishes.
+    #[test]
+    fn claude_preview_question_preserves_native_columns() {
+        assert_preview_question(&recorded_preview_rows("wide"));
+    }
+
+    // Catches: a narrow preview's wrapped table is mistaken for option continuation text.
+    #[test]
+    fn claude_preview_question_keeps_narrow_columns_separate() {
+        assert_preview_question(&recorded_preview_rows("narrow"));
+    }
+
+    // Catches: a preview below the options gets appended to the last answer label.
+    #[test]
+    fn claude_preview_question_stacked_pane_stays_out_of_labels() {
+        let rows = recorded_preview_rows("narrow");
+        let top = rows.iter().position(|row| row.contains('┌')).unwrap();
+        let bottom = rows.iter().rposition(|row| row.contains('└')).unwrap();
+        let column = rows[top].chars().position(|ch| ch == '┌').unwrap();
+        let mut stacked = rows[..top].to_vec();
+        for row in &rows[top..=bottom] {
+            let label: String = row.chars().take(column).collect();
+            if !label.trim().is_empty() {
+                stacked.push(label);
+            }
+        }
+        stacked.push(String::new());
+        stacked.extend(
+            rows[top..=bottom]
+                .iter()
+                .map(|row| row.chars().skip(column).collect()),
+        );
+        stacked.extend_from_slice(&rows[bottom + 1..]);
+        assert_preview_question(&stacked);
+    }
+
+    // Catches: moving the native cursor to Chat loses its highlight and later clicks navigate from the wrong answer.
+    #[test]
+    fn claude_preview_question_keeps_native_chat_selection() {
+        let rows = recorded_preview_rows("chat");
+        let Some(ParsedEvent::ChoicePrompt { options, .. }) = parse_claude_ask_user_question(&rows)
+        else {
+            panic!("recorded Chat action must remain answerable: {rows:#?}")
+        };
+        assert_eq!(
+            options
+                .iter()
+                .filter(|option| option.highlighted)
+                .map(|option| option.label.as_str())
+                .collect::<Vec<_>>(),
+            ["Chat about this"],
+            "the native Chat focus supersedes the retained option arrow: {options:#?}"
+        );
     }
 
     fn recorded_claude_question_rows() -> Vec<String> {

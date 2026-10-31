@@ -8,6 +8,8 @@ Consolidated reference for all terminal behaviors, keyboard shortcuts, and confi
 
 The desktop CLI | Chat switch uses shared toolbar density. In both modes it is centred on the Context header and stays above its bottom divider, without adding a separate row. Without Context, both modes reserve one shared control row so content cannot run beneath the switch. Switching modes keeps the switch and content at the same height. At touch widths up to 600px, the Context header and collapsed bar reserve a 48px row for the shared 44px switch; expanded Context keeps the same header clearance.
 
+Terminal Find overlays the grid below the Context and CLI/Chat switch row. Search controls wrap within narrow panes without covering the view switch.
+
 ## Mobile composer focus
 
 The composer border highlights only while its textarea has focus. Tapping the mic releases editor focus without changing the insertion range. Recording uses the red mic icon, not an extra accent border. Keyboard navigation retains the mic focus ring. The blue slash key marks an available action, not retained focus.
@@ -165,6 +167,8 @@ Clickable file paths in terminal output resolve against the terminal working dir
 
 ### Collapsed Compose queue count
 
+The collapsed handle has transparent chrome and muted text at rest. Hover or keyboard focus reveals its background and border. The label and queue count stay fully opaque.
+
 The CLI Compose button shows a muted count pill for all pending FIFO entries,
 including user commands and TUIC messages. It hides at zero and follows the
 backend session state without opening the editor. Hover or keyboard focus loads
@@ -194,3 +198,12 @@ Restored PTY sessions attach their event listeners before the first layout pass.
 The reconnect resize waits for that attachment and reuses successful listeners
 instead of adding another API-error consumer. If the initial handshake failed,
 reconnect retries the attachment once. Suspend detaches them; resume attaches the replacement PTY once.
+
+Claude native question cards in desktop PTY Chat and mobile keep wrapped answer
+labels separate from the selected option's monospace preview. They retain the
+question tabs and the native Chat about this action. Hidden options still use
+explicit previous/next/select controls rather than guessed labels.
+
+### Pending Chat prompts
+
+In an open terminal Chat view, a submitted composer prompt appears immediately as a muted **Pending** bubble. Several prompts stay in send order while the agent works. A matching new user message from the native transcript replaces its bubble and removes older unmatched bubbles, since the CLI handles sends in order. A local slash command or rewritten prompt therefore cannot block later receipts. Adapter-redacted or truncated text can remain pending until a later matching prompt arrives or Chat closes. Failed sends remove their own feedback; ordinary activity and idle signals do not. This applies to the shared Claude, Codex, Grok and ego transcript presentation, but does not add queueing support to a CLI that lacks it. TUIC cannot preview prompts typed in the hidden CLI or sent outside this client. The CLI owns its queue; pending bubbles have no Cancel action and are not persisted when Chat closes.

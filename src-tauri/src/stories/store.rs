@@ -641,7 +641,7 @@ impl StoryStore {
     }
 }
 
-pub(super) fn validate_new_story(input: &NewStory) -> Result<(), String> {
+pub(crate) fn validate_new_story(input: &NewStory) -> Result<(), String> {
     validate_text("story title", &input.title, 200)?;
     if let StoryOrigin::PlanStep { step } = &input.origin {
         validate_text("plan step", step, 200)?;

@@ -1376,15 +1376,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
 			onDragOver={handleFileDragOver}
 			onDrop={handleFileDrop}
 		>
-			<TerminalSearch
-				visible={searchVisible()}
-				focusToken={searchFocusToken()}
-				canvasRef={canvasTerminalRef()}
-				onClose={() => {
-					closeSearchBar();
-					canvasTerminalRef()?.focus();
-				}}
-			/>
 			<ViewModeToggle terminalId={props.id} onWheel={handleToggleWheel} />
 			<ChatViewFallbackBanner terminalId={props.id} />
 			<Show
@@ -1433,6 +1424,16 @@ export const Terminal: Component<TerminalProps> = (props) => {
 			{/* Chat mode HIDES the grid (display:none, the background-tab path) and never
 			    unmounts it: a disposed CanvasTerminal under a queued frame event froze the UI. */}
 			<div ref={containerRef} class={s.content} classList={{ [s.contentHidden]: chatActive() }}>
+				{/* Anchor search below the Context/view-switch row, not over its controls. */}
+				<TerminalSearch
+					visible={searchVisible()}
+					focusToken={searchFocusToken()}
+					canvasRef={canvasTerminalRef()}
+					onClose={() => {
+						closeSearchBar();
+						canvasTerminalRef()?.focus();
+					}}
+				/>
 				{/* keyed: pass sessionId as a stable string value, NOT the Show's reactive
 				    accessor. CanvasTerminal's onFrame (and ~35 other async IPC handlers) re-read
 				    props.sessionId on every backend frame. With a non-keyed Show, props.sessionId
@@ -1610,7 +1611,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 							}
 						}}
 						onSend={async (text) => {
-							const rollback = sessionId ? chatViewStore.beginSubmission(sessionId) : () => {};
+							const rollback = sessionId ? chatViewStore.beginSubmission(sessionId, text) : () => {};
 							try {
 								await submitCompose("send", sessionId, (id) =>
 									pty.sendCommand(id, text, terminalsStore.get(props.id)?.agentType),

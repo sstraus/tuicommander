@@ -998,6 +998,15 @@ pub(super) struct ChatViewQuery {
 }
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(super) struct ChatViewRequest {
+    pub epoch: Option<u64>,
+    pub from_seq: Option<u64>,
+    #[serde(default)]
+    pub pending_texts: Vec<String>,
+}
+
+#[derive(Deserialize)]
 pub(super) struct TerminalStyledRowsQuery {
     pub start: usize,
     pub count: usize,

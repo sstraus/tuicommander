@@ -1921,6 +1921,8 @@ pub struct McpState {
     /// MCP session → PTY session mapping for caller identity resolution.
     /// Populated at agent spawn time; used by self-close guard in session(close).
     pub to_session: DashMap<String, String>,
+    /// Immutable ACP channel fence; never reconstructed from a peer's latest process.
+    pub(crate) acp_origins: DashMap<String, crate::acp::AcpMcpOrigin>,
     /// Reverse index of `to_session`: tuic_session → list of mcp_session_ids.
     /// Populated alongside `to_session` at agent(register). Lets
     /// `tombstone_transient_cleanup` remove entries in O(1) instead of scanning
@@ -1944,6 +1946,7 @@ impl Default for McpState {
             oauth_flow_manager: Arc::new(crate::mcp_oauth::flow::OAuthFlowManager::new()),
             tools_changed: tokio::sync::broadcast::channel(16).0,
             to_session: DashMap::new(),
+            acp_origins: DashMap::new(),
             session_to_mcp: DashMap::new(),
             // Empty until the updater task builds the real corpus.
             tool_search_index: Arc::new(parking_lot::RwLock::new(

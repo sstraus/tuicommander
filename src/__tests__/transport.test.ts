@@ -1215,12 +1215,20 @@ describe("transport", () => {
 			expect(result.path).toBe("/sessions/s1/terminal/scroll-info");
 		});
 
-		it("maps chat_view_snapshot to GET /sessions/{id}/chat-view with the cursor", () => {
+		// Catches: browser clients omitting backend comparison candidates or placing secrets in URLs.
+		it("maps chat_view_snapshot to POST with cursor and pending texts in the body", () => {
 			const first = mapCommandToHttp("chat_view_snapshot", { sessionId: "s1", epoch: null, fromSeq: 0 });
-			expect(first.method).toBe("GET");
-			expect(first.path).toBe("/sessions/s1/chat-view?from_seq=0");
-			const next = mapCommandToHttp("chat_view_snapshot", { sessionId: "s1", epoch: 2, fromSeq: 17 });
-			expect(next.path).toBe("/sessions/s1/chat-view?from_seq=17&epoch=2");
+			expect(first.method).toBe("POST");
+			expect(first.path).toBe("/sessions/s1/chat-view");
+			expect(first.body).toEqual({ epoch: null, fromSeq: 0, pendingTexts: [] });
+			const next = mapCommandToHttp("chat_view_snapshot", {
+				sessionId: "s1",
+				epoch: 2,
+				fromSeq: 17,
+				pendingTexts: ["secret prompt"],
+			});
+			expect(next.path).toBe("/sessions/s1/chat-view");
+			expect(next.body).toEqual({ epoch: 2, fromSeq: 17, pendingTexts: ["secret prompt"] });
 		});
 
 		it("maps terminal_search to POST with transform", () => {

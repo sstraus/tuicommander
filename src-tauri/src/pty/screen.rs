@@ -20,6 +20,78 @@ pub(crate) struct ProcessTreeEntry {
     pub(super) age_seconds: Option<u64>,
 }
 
+/// Destructive workflow closure uses the complete tree, not the busy/idle
+/// detector's startup-age exemption. A young build is still live work.
+pub(crate) fn workflow_close_tree_quiet(
+    state: &AppState,
+    session_id: &str,
+    processes: &[ProcessTreeEntry],
+) -> bool {
+    let Some(pid) = state
+        .session_maps
+        .sessions
+        .get(session_id)
+        .and_then(|session| session.lock()._child.process_id())
+    else {
+        return false;
+    };
+    let Some(kind) = state
+        .session_state_with_shell(session_id)
+        .and_then(|s| s.agent_type)
+    else {
+        return false;
+    };
+    let Some(agent) = agent_process_root(pid, &kind, processes) else {
+        return false;
+    };
+    let mut pending = vec![pid];
+    let mut seen = std::collections::HashSet::new();
+    while let Some(parent) = pending.pop() {
+        if !seen.insert(parent) {
+            return false;
+        }
+        for child in processes.iter().filter(|p| p.parent_pid == parent) {
+            if child.pid != agent && !is_persistent_agent_helper(child) {
+                return false;
+            }
+            pending.push(child.pid);
+        }
+    }
+    true
+}
+
+/// Resolve only a direct ACP child carrying the host-issued peer identity.
+/// An absent or ambiguous observation is unknown, never authorization to stop.
+pub(crate) fn workflow_acp_process(
+    peer: &str,
+    processes: &[ProcessTreeEntry],
+) -> Result<u32, String> {
+    let owned = processes
+        .iter()
+        .filter(|p| p.parent_pid == std::process::id())
+        .filter(|p| {
+            tuic_core::process_env::read_process_env_var(p.pid, "TUIC_SESSION").as_deref()
+                == Some(peer)
+        })
+        .map(|p| p.pid)
+        .collect::<Vec<_>>();
+    match owned.as_slice() {
+        [pid] => Ok(*pid),
+        _ => Err("ACP owned process identity is unavailable or ambiguous".into()),
+    }
+}
+
+pub(crate) fn workflow_acp_tree_quiet(processes: &[ProcessTreeEntry], pid: u32) -> bool {
+    processes
+        .iter()
+        .any(|p| p.pid == pid && p.parent_pid == std::process::id())
+        && !processes.iter().any(|p| p.parent_pid == pid)
+}
+
+pub(crate) fn workflow_process_observed(processes: &[ProcessTreeEntry], pid: u32) -> bool {
+    processes.iter().any(|p| p.pid == pid)
+}
+
 #[derive(Default)]
 struct ProcessSnapshotState {
     generation: u64,

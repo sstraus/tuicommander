@@ -39,7 +39,7 @@ export type AcpNoticeAction =
 	| { kind: "approve"; requestId: string };
 
 export type AcpTranscriptEntry = { messageId?: string; inherited?: boolean } & (
-	| { id: string; kind: "user"; text: string }
+	| { id: string; kind: "user"; text: string; pending?: boolean }
 	| { id: string; kind: "agent"; text: string }
 	| { id: string; kind: "thought"; text: string }
 	| { id: string; kind: "tool"; call: AcpToolCall }

@@ -8,9 +8,15 @@ use crate::workflows::{
 };
 use std::sync::Arc;
 
+#[cfg(unix)]
+mod acp_close;
 mod critic_c;
 mod default_install;
+#[cfg(unix)]
+mod lifecycle;
 mod parity;
+mod proposals;
+mod routing;
 mod typed_commands;
 
 fn fixture() -> (
@@ -82,6 +88,7 @@ fn definition(project: &str, pause: bool, agent: bool) -> crate::workflows::Publ
         nodes.push(Node {
             id: "implement".into(),
             kind: NodeKind::Agent {
+                execution: None,
                 role: AgentRole::Implementer,
                 capabilities: vec!["story_read".into(), "story_report".into()],
                 prompt_template: "Implement the native criteria".into(),
@@ -100,7 +107,11 @@ fn definition(project: &str, pause: bool, agent: bool) -> crate::workflows::Publ
             project,
             "Runtime contract",
             WorkflowKind::Story,
-            WorkflowGraph { nodes, edges },
+            WorkflowGraph {
+                evidence_policy: None,
+                nodes,
+                edges,
+            },
         )
         .unwrap();
     let draft = store
@@ -934,3 +945,75 @@ async fn deadline_pauses_idle_run_and_bounds_check() {
 mod ownership;
 
 mod semantics;
+
+#[tokio::test]
+async fn durable_timer_actor_wakes_paused_cohort_without_operator_polling() {
+    // catches: persisted timers never reaching the actor sleep deadline while paused.
+    let (config, project, plan, _, definition, _guard) = fixture();
+    let state = state(config.path());
+    WorkflowRuntime::spawn(&state);
+    owner_ready(&state).await;
+    let store = RunStore::open().unwrap();
+    let run = store
+        .start_plan(
+            project.path().to_str().unwrap(),
+            &plan,
+            &definition,
+            1,
+            RunLimits::default(),
+        )
+        .unwrap();
+    store.command(&run.id, "pause", RunCommand::Pause).unwrap();
+    let due = super::store::now_ms() + 100;
+    let timer = super::timer::DurableTimer {
+        key: "independent-cohort".into(),
+        scope: super::timer::TimerScope::Service {
+            owner: "proof".into(),
+        },
+        purpose: super::timer::TimerPurpose::CohortFlush {
+            cohort_id: "one-row".into(),
+            rows: 1,
+        },
+        due_ms: due,
+        expires_ms: due + 10000,
+        max_attempts: 2,
+        base_backoff_ms: 1000,
+        max_backoff_ms: 5000,
+        expiry_outcome: super::timer::TimerOutcome::Incomplete,
+        attempt: 1,
+        state: super::timer::TimerState::Pending,
+        outcome: None,
+    };
+    store
+        .command(
+            &run.id,
+            "timer",
+            RunCommand::Timer {
+                command: super::timer::TimerCommand::Schedule { timer },
+            },
+        )
+        .unwrap();
+    let mut hints = state.event_bus.subscribe();
+    state.workflow_runtime.wake(&run.id);
+    tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            hints.recv().await.unwrap();
+            let current = store.snapshot(&run.id).unwrap();
+            if current.timers[0].state == super::timer::TimerState::Fired {
+                assert_eq!(
+                    current.timers[0].outcome,
+                    Some(super::timer::TimerOutcome::Wake)
+                );
+                assert_eq!(current.status, RunStatus::Paused);
+                assert_eq!(store.replay(&run.id).unwrap(), current);
+                break;
+            }
+        }
+    })
+    .await
+    .expect("paused cohort did not receive its durable timer wake");
+    store
+        .command(&run.id, "cancel", RunCommand::Cancel)
+        .unwrap();
+    state.workflow_runtime.wake(&run.id);
+}

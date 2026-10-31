@@ -92,6 +92,16 @@ impl AcpEventJournal {
         }
     }
 
+    /// Positive protocol handoff proof only. A retained journal miss is unknown,
+    /// not proof that a prompt was never sent.
+    pub(super) fn has_sent_prompt(&self, turn: super::AcpTurnId, expected: &str) -> bool {
+        self.state.lock().retained.iter().any(|event| {
+            event.turn_id == Some(turn)
+                && matches!(&event.event,
+                super::AcpClientEvent::PromptSent { text } if text == expected)
+        })
+    }
+
     /// Stamp one event, retain it, and hand it to whoever is listening.
     ///
     /// Returns the envelope so a caller that also has to act on the event

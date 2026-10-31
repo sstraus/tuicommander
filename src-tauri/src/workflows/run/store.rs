@@ -72,10 +72,14 @@ impl From<RunStartError> for String {
 /// records explicit graph-root targets; older binaries must refuse that contract.
 // 4: paused_for events; a build that supports 3 refuses the store instead of failing to decode them.
 // 5: contract-3 graph pins; older builds must refuse rather than reinterpret new runs.
-// 6: typed command/Tool definitions and command/workspace effect kinds.
-const RUN_STORE_SCHEMA_VERSION: i64 = 6;
+// 6: durable Timer events; older builds cannot decode their ledger.
+// 7: contract-4 parallel tokens and generation-scoped check/cancellation events.
+// 8: explicit worker transport/conversation bindings, input continuation and report disposition.
+// 9: WF05 typed command/Tool and workspace effect kinds.
+const RUN_STORE_SCHEMA_VERSION: i64 = 9;
 
 mod approval;
+mod report_disposition;
 mod runtime_start;
 pub(crate) use runtime_start::GraphStartRequest;
 
@@ -309,6 +313,10 @@ impl RunStore {
                 run_id TEXT NOT NULL REFERENCES workflow_runs(id), effect_id TEXT NOT NULL,
                 effect_key TEXT NOT NULL, document_json TEXT NOT NULL,
                 PRIMARY KEY(run_id,effect_id), UNIQUE(run_id,effect_key)
+            );
+            CREATE TABLE IF NOT EXISTS workflow_report_dispositions (
+                run_id TEXT NOT NULL REFERENCES workflow_runs(id), decision_key TEXT NOT NULL,
+                document_json TEXT NOT NULL, PRIMARY KEY(run_id,decision_key)
             );",
         )
         .map_err(|e| format!("prepare workflow run schema: {e}"))?;
@@ -408,6 +416,7 @@ impl RunStore {
             require_nonempty_policy(&story_definition)?;
         }
         let initial = RunSnapshot {
+            proposal_batches: vec![],
             event_contract_version: super::graph::RUN_EVENT_CONTRACT_VERSION,
             id: Uuid::now_v7().to_string(),
             canonical_ref: git_output(Path::new(&owner), &["symbolic-ref", "HEAD"]).ok(),
@@ -434,6 +443,7 @@ impl RunStore {
             canonical_recertification: None,
             attempts: vec![],
             effects: vec![],
+            timers: vec![],
             graph_executions: vec![],
         };
         let event = RunEvent {
@@ -602,15 +612,76 @@ impl RunStore {
         report: AttemptReport,
         caller_session: &str,
     ) -> Result<RunReceipt, String> {
+        self.report_agent_from(report, caller_session, None)
+    }
+
+    /// The ACP adapter derives this fence from its immutable MCP channel and
+    /// the matching attached conversation, never from report-supplied fields.
+    pub(crate) fn report_acp_agent(
+        &self,
+        report: AttemptReport,
+        caller_session: &str,
+        caller_acp: AcpAgentBinding,
+    ) -> Result<RunReceipt, String> {
+        self.report_agent_from(report, caller_session, Some(caller_acp))
+    }
+
+    fn report_agent_from(
+        &self,
+        report: AttemptReport,
+        caller_session: &str,
+        caller_acp: Option<AcpAgentBinding>,
+    ) -> Result<RunReceipt, String> {
         let run_id = report.run_id.clone();
-        let command_id = format!("agent-report:{}", report.attempt_id);
-        self.command(
+        let snapshot = self.snapshot(&run_id)?;
+        // A continuation reuses the attempt and conversation, but requires a
+        // fresh report. Keep legacy/first-generation keys for replay and retries.
+        let command_id = if snapshot.event_contract_version >= 3 && report.generation > 1 {
+            format!(
+                "agent-report:{}:generation:{}",
+                report.attempt_id, report.generation
+            )
+        } else {
+            format!("agent-report:{}", report.attempt_id)
+        };
+        let result = self.command(
             &run_id,
             &command_id,
             RunCommand::ReportBoundAttempt {
                 caller_session: caller_session.into(),
-                report,
+                caller_acp: caller_acp.clone(),
+                report: report.clone(),
             },
+        );
+        report_disposition::persist(
+            &self.connect()?,
+            &report,
+            caller_session,
+            caller_acp.as_ref(),
+            result
+                .as_ref()
+                .map(|receipt| receipt.sequence)
+                .map_err(String::as_str),
+            now_ms(),
+        )?;
+        result
+    }
+
+    pub(crate) fn record_report_refusal(
+        &self,
+        report: &AttemptReport,
+        caller: &str,
+        origin: Option<&AcpAgentBinding>,
+        reason: &str,
+    ) -> Result<(), String> {
+        self.snapshot(&report.run_id)?;
+        report_disposition::persist(
+            &self.connect()?,
+            report,
+            caller,
+            origin,
+            Err(reason),
+            now_ms(),
         )
     }
 
@@ -645,6 +716,34 @@ impl RunStore {
         {
             return Err("only the active run coordinator may create plan stories".into());
         }
+        self.create_story_from_authority(run_id, proposal_key, input, Some(caller_session), None)
+    }
+
+    pub(super) fn create_story_from_proposal(
+        &self,
+        run_id: &str,
+        batch: &super::StoryProposalBatch,
+        index: usize,
+    ) -> Result<Story, String> {
+        let input = batch
+            .proposals
+            .get(index)
+            .ok_or("proposal index missing")?
+            .clone();
+        let key = super::proposals::proposal_key(batch, index);
+        self.create_story_from_authority(run_id, &key, input, None, Some(batch))
+    }
+
+    fn create_story_from_authority(
+        &self,
+        run_id: &str,
+        proposal_key: &str,
+        input: NewStory,
+        caller_session: Option<&str>,
+        batch: Option<&super::StoryProposalBatch>,
+    ) -> Result<Story, String> {
+        let snapshot = self.snapshot(run_id)?;
+        super::proposals::require_creation_authority(&snapshot, caller_session, batch)?;
         let effect_key = format!("create-story:{proposal_key}");
         let effect = if let Some(effect) = snapshot
             .effects
@@ -688,14 +787,8 @@ impl RunStore {
                         .effects
                         .iter()
                         .any(|entry| entry.id == effect.id && entry.state == EffectState::Intended)
-                    || !current.attempts.iter().any(|attempt| {
-                        attempt.story_id == current.plan_id
-                            && attempt.state == AttemptState::Running
-                            && attempt
-                                .agent
-                                .as_ref()
-                                .is_some_and(|agent| agent.session_id == caller_session)
-                    })
+                    || super::proposals::require_creation_authority(&current, caller_session, batch)
+                        .is_err()
                 {
                     return Err("workflow stopped before story creation".into());
                 }
@@ -1092,6 +1185,25 @@ impl RunStore {
         command_id: &str,
         expected_sequence: i64,
     ) -> Result<RunReceipt, String> {
+        self.execute_check_owned(
+            run_id,
+            story_id,
+            check_id,
+            command_id,
+            expected_sequence,
+            run_id,
+        )
+    }
+
+    pub(super) fn execute_check_owned(
+        &self,
+        run_id: &str,
+        story_id: &str,
+        check_id: &str,
+        command_id: &str,
+        expected_sequence: i64,
+        owner: &str,
+    ) -> Result<RunReceipt, String> {
         if expected_sequence < 1 {
             return Err("invalid expected workflow sequence".into());
         }
@@ -1125,7 +1237,24 @@ impl RunStore {
             .iter()
             .find(|check| check.id == check_id)
             .ok_or("check is not pinned by the story definition")?;
-        let receipt = execute_run_check(check, Path::new(path), &self.db_path, run_id, false)?;
+        let requirements = definition
+            .graph
+            .evidence_policy
+            .as_ref()
+            .map(|_| {
+                StoryStore::open()?
+                    .get_story(story_id)
+                    .map(|story| super::evidence::requirements_digest(&story))
+            })
+            .transpose()?;
+        let mut receipt = execute_run_check(check, Path::new(path), &self.db_path, owner, false)?;
+        if let Some(requirements) = requirements {
+            let current = StoryStore::open()?.get_story(story_id)?;
+            if super::evidence::requirements_digest(&current) != requirements {
+                return Err("requirements changed while check was running".into());
+            }
+            receipt.requirements_digest = Some(requirements);
+        }
         self.commit_completed_check(run_id, execution, command_id, expected_sequence, receipt)
     }
 
@@ -1205,6 +1334,10 @@ impl RunStore {
         Ok(result)
     }
 
+    pub(super) fn cancel_owned_checks(&self, owner: &str) {
+        cancel_checks(&self.db_path, owner);
+    }
+
     fn existing_service_receipt(
         &self,
         run_id: &str,
@@ -1276,6 +1409,14 @@ impl RunStore {
             return Err("reserved workflow command id".into());
         }
         let command_hash = command_hash(expected_sequence, &command)?;
+        let report_submission = match &command {
+            RunCommand::ReportBoundAttempt {
+                caller_session,
+                caller_acp,
+                report,
+            } => Some((caller_session.clone(), caller_acp.clone(), report.clone())),
+            _ => None,
+        };
         let conn = self.connect()?;
         if let Some(receipt) = read_command_receipt(&conn, run_id, command_id)? {
             return command_retry(receipt, &command_hash);
@@ -1322,6 +1463,16 @@ impl RunStore {
             require_dispatch_slot(&tx, &snapshot, &story)?;
         }
         let receipt = persist_event(&tx, snapshot, command_id, Some(command_hash), at_ms, kind)?;
+        if let Some((caller, caller_acp, report)) = &report_submission {
+            report_disposition::persist(
+                &tx,
+                report,
+                caller,
+                caller_acp.as_ref(),
+                Ok(receipt.sequence),
+                at_ms,
+            )?;
+        }
         tx.commit()
             .map_err(|e| format!("commit workflow command: {e}"))?;
         if cancelled {
@@ -2020,6 +2171,10 @@ fn choose_event(
     {
         return Err("graph runs require an eligible typed activation transition".into());
     }
+    if let RunCommand::Timer { command } = command {
+        return super::timer::choose(snapshot, command, at_ms)
+            .map(|event| RunEventKind::Timer { event });
+    }
     let expired = at_ms >= super::runtime::deadline_at(snapshot, at_ms);
     if matches!(command, RunCommand::ExpireDeadline) {
         if !expired || snapshot.status != RunStatus::Running {
@@ -2101,6 +2256,7 @@ fn choose_event(
         return Err("workflow is paused".into());
     }
     match command {
+        RunCommand::Timer { .. } => unreachable!("timer command handled before run timing"),
         RunCommand::Graph { transition } => {
             if matches!(
                 transition,
@@ -2151,18 +2307,40 @@ fn choose_event(
                 if definition.project != snapshot.project {
                     return Err("graph definition does not belong to run project".into());
                 }
+                let mut execution = super::graph::GraphExecution::start_for_contract(
+                    execution_id.clone(),
+                    target_id.clone(),
+                    definition.clone(),
+                    snapshot.event_contract_version,
+                )?;
+                if snapshot.event_contract_version >= 3 {
+                    // A dispatched child inherits its root's exact routing policy,
+                    // not whichever policy was edited before this later dispatch.
+                    let policy = snapshot
+                        .graph_executions
+                        .first()
+                        .and_then(|graph| graph.contract.as_ref())
+                        .and_then(|contract| contract.agent_policy.clone());
+                    execution.contract = Some(super::contracts::GraphContract::with_agent_policy(
+                        &definition,
+                        policy,
+                    )?);
+                }
                 super::graph::GraphEvent::Started {
-                    execution: Box::new(super::graph::GraphExecution::start_for_contract(
-                        execution_id.clone(),
-                        target_id.clone(),
-                        definition,
-                        snapshot.event_contract_version,
-                    )?),
+                    execution: Box::new(execution),
                 }
             } else {
                 super::graph::GraphEvent::Transition { transition }
             };
             Ok(RunEventKind::Graph { event })
+        }
+        RunCommand::SubmitStoryProposals { batch } => {
+            super::proposals::validate_batch(snapshot, &batch)?;
+            let plan = StoryStore::open()?.get_plan(&snapshot.plan_id)?;
+            if plan.revision != batch.plan_revision {
+                return Err("story proposal input has a stale plan revision".into());
+            }
+            Ok(RunEventKind::StoryProposalsSubmitted { batch })
         }
         RunCommand::ClosePlanning => Ok(RunEventKind::PlanningClosed {
             fingerprint: current_plan,
@@ -2223,7 +2401,7 @@ fn choose_event(
         }
         RunCommand::StartPlanAgent { node_id } => choose_plan_attempt(snapshot, node_id),
         RunCommand::StartAttempt { story_id, node_id } => {
-            choose_story_attempt(snapshot, &stories, story_id, node_id)
+            choose_story_attempt(snapshot, &stories, story_id, node_id, false)
         }
         RunCommand::StartGraphAgent {
             execution_id,
@@ -2248,27 +2426,49 @@ fn choose_event(
                 {
                     return Err("plan activation already has an attempt".into());
                 }
-                return choose_plan_attempt(snapshot, node_id.to_owned());
+                let event = choose_plan_attempt(snapshot, node_id.to_owned())?;
+                return bind_graph_attempt(
+                    event,
+                    snapshot.event_contract_version,
+                    &execution_id,
+                    &activation_id,
+                );
             }
-            let reached = graph
-                .activations
-                .iter()
-                .take_while(|a| a.id != activation.id)
-                .filter(|a| a.node_id == activation.node_id)
-                .count();
-            let attempts = snapshot
-                .attempts
-                .iter()
-                .filter(|a| a.story_id == graph.target_id && a.node_id == activation.node_id)
-                .count();
-            if attempts != reached {
-                return Err("Agent activation already has an attempt".into());
+            if snapshot.event_contract_version >= 4 {
+                if super::runtime::effects::activation_attempt(snapshot, graph, activation)
+                    .is_some()
+                {
+                    return Err("Agent activation already has an attempt".into());
+                }
+            } else {
+                let reached = graph
+                    .activations
+                    .iter()
+                    .take_while(|a| a.id != activation.id)
+                    .filter(|a| a.node_id == activation.node_id)
+                    .count();
+                let attempts = snapshot
+                    .attempts
+                    .iter()
+                    .filter(|a| a.story_id == graph.target_id && a.node_id == activation.node_id)
+                    .count();
+                if attempts != reached {
+                    return Err("Agent activation already has an attempt".into());
+                }
             }
-            choose_story_attempt(
+            super::evidence::check_attempt_budget(snapshot, graph, &activation.node_id)?;
+            let event = choose_story_attempt(
                 snapshot,
                 &stories,
                 graph.target_id.clone(),
                 activation.node_id.clone(),
+                !activation.tokens.is_empty(),
+            )?;
+            bind_graph_attempt(
+                event,
+                snapshot.event_contract_version,
+                &execution_id,
+                &activation_id,
             )
         }
         RunCommand::ReportAttempt {
@@ -2305,6 +2505,16 @@ fn choose_event(
         } => {
             validate_key("agent session", &binding.session_id)?;
             validate_key("spawn effect", &binding.effect_id)?;
+            if let Some(acp) = &binding.acp {
+                validate_key("ACP conversation", &acp.conversation_id)?;
+                if !crate::acp::valid_peer_id(&binding.session_id)
+                    || acp.generation == 0
+                    || binding.task_id.is_some()
+                    || binding.launch_id.is_none()
+                {
+                    return Err("ACP binding requires its genuine managed peer/conversation and launch references".into());
+                }
+            }
             if binding.prompt_contract_version != crate::workflows::PROMPT_CONTRACT_VERSION
                 || binding.prompt_sha256.len() != 64
                 || !binding
@@ -2353,6 +2563,7 @@ fn choose_event(
         }
         RunCommand::ReportBoundAttempt {
             caller_session,
+            caller_acp,
             report,
         } => {
             validate_key("agent session", &caller_session)?;
@@ -2401,6 +2612,11 @@ fn choose_event(
                     != Some(caller_session.as_str())
             {
                 return Err("agent does not own the attempt".into());
+            }
+            if attempt.agent.as_ref().and_then(|agent| agent.acp.as_ref()) != caller_acp.as_ref() {
+                return Err(
+                    "report caller transport or ACP conversation generation is superseded".into(),
+                );
             }
             let definition = if report.story_id == snapshot.plan_id {
                 WorkflowStore::open()?
@@ -2467,6 +2683,14 @@ fn choose_event(
                     return Err("invalid review evidence".into());
                 }
             }
+            if attempt.generation == report.generation
+                && attempt
+                    .continuation
+                    .as_ref()
+                    .is_some_and(|c| c.delivery != super::model::ContinuationDelivery::Delivered)
+            {
+                return Err("continued input has no confirmed delivery receipt".into());
+            }
             if expired
                 || attempt.generation != report.generation
                 || attempt.state != AttemptState::Running
@@ -2501,6 +2725,43 @@ fn choose_event(
                     kind,
                     state: EffectState::Intended,
                 },
+            })
+        }
+        RunCommand::ContinuationDeliveryChanged {
+            attempt_id,
+            generation,
+            delivery,
+            reference,
+        } => {
+            let attempt = snapshot
+                .attempts
+                .iter()
+                .find(|a| a.id == attempt_id)
+                .ok_or("attempt missing")?;
+            let continuation = attempt
+                .continuation
+                .as_ref()
+                .ok_or("continuation missing")?;
+            use super::model::ContinuationDelivery::{Delivered, HandoffStarted, Pending};
+            if snapshot.event_contract_version < 3
+                || snapshot.status != RunStatus::Running
+                || attempt.state != AttemptState::Running
+                || attempt.generation != generation
+                || !matches!(
+                    (continuation.delivery, delivery),
+                    (Pending, HandoffStarted) | (HandoffStarted, Delivered)
+                )
+                || reference
+                    .as_ref()
+                    .is_none_or(|r| r.is_empty() || r.len() > 256)
+            {
+                return Err("invalid continuation delivery transition".into());
+            }
+            Ok(RunEventKind::ContinuationDeliveryChanged {
+                attempt_id,
+                generation,
+                delivery,
+                reference,
             })
         }
         RunCommand::AnswerInput { attempt_id, answer } => {
@@ -2961,11 +3222,30 @@ pub(super) fn validate_graph_recovery(
     Ok(())
 }
 
+fn bind_graph_attempt(
+    mut event: RunEventKind,
+    version: u16,
+    execution_id: &str,
+    activation_id: &str,
+) -> Result<RunEventKind, String> {
+    if version >= 4 {
+        let RunEventKind::AttemptStarted { attempt } = &mut event else {
+            return Err("graph agent did not start an attempt".into());
+        };
+        attempt.graph_binding = Some(GraphAttemptBinding {
+            execution_id: execution_id.into(),
+            activation_id: activation_id.into(),
+        });
+    }
+    Ok(event)
+}
+
 fn choose_story_attempt(
     snapshot: &RunSnapshot,
     stories: &[Story],
     story_id: String,
     node_id: String,
+    parallel: bool,
 ) -> Result<RunEventKind, String> {
     let story = stories
         .iter()
@@ -2990,21 +3270,26 @@ fn choose_story_attempt(
         .attempts
         .iter()
         .filter(|attempt| {
-            attempt.story_id != snapshot.plan_id && attempt.state == AttemptState::Running
+            attempt.story_id != snapshot.plan_id
+                && super::runtime::effects::attempt_holds_slot(snapshot, attempt)
         })
         .collect();
-    if active.iter().any(|attempt| attempt.story_id == story_id) {
+    if !parallel && active.iter().any(|attempt| attempt.story_id == story_id) {
         return Err("story already has a running attempt".into());
     }
     if active.len() >= usize::from(snapshot.limits.max_parallel_stories) {
         return Err("parallel story limit reached".into());
     }
-    if active.iter().any(|attempt| {
-        stories
-            .iter()
-            .find(|other| other.id == attempt.story_id)
-            .is_none_or(|other| scopes_may_overlap(&story.file_scope, &other.file_scope))
-    }) {
+    if active
+        .iter()
+        .filter(|attempt| attempt.story_id != story_id)
+        .any(|attempt| {
+            stories
+                .iter()
+                .find(|other| other.id == attempt.story_id)
+                .is_none_or(|other| scopes_may_overlap(&story.file_scope, &other.file_scope))
+        })
+    {
         return Err("story file scope overlaps active or unknown work".into());
     }
     if snapshot.attempts.len() >= 512 {
@@ -3014,6 +3299,21 @@ fn choose_story_attempt(
         &snapshot.story_definition_id,
         snapshot.story_definition_revision,
     )?;
+    if parallel
+        && !definition.graph.nodes.iter().any(|n| {
+            n.id == node_id
+                && matches!(
+                    n.kind,
+                    NodeKind::Agent {
+                        role: crate::workflows::AgentRole::Reviewer
+                            | crate::workflows::AgentRole::Validator,
+                        ..
+                    }
+                )
+        })
+    {
+        return Err("parallel agents must be read-only Reviewer or Validator roles".into());
+    }
     if !definition
         .graph
         .nodes
@@ -3022,11 +3322,13 @@ fn choose_story_attempt(
     {
         return Err("node is not an agent in the pinned story template".into());
     }
-    if snapshot.attempts.iter().any(|attempt| {
-        attempt.story_id == story_id
-            && attempt.node_id == node_id
-            && attempt.state == AttemptState::Running
-    }) {
+    if !parallel
+        && snapshot.attempts.iter().any(|attempt| {
+            attempt.story_id == story_id
+                && attempt.node_id == node_id
+                && attempt.state == AttemptState::Running
+        })
+    {
         return Err("story node already has a running attempt".into());
     }
     let generation = snapshot
@@ -3039,6 +3341,7 @@ fn choose_story_attempt(
         + 1;
     Ok(RunEventKind::AttemptStarted {
         attempt: Box::new(NodeAttempt {
+            graph_binding: None,
             id: Uuid::now_v7().to_string(),
             story_id,
             node_id,
@@ -3048,6 +3351,7 @@ fn choose_story_attempt(
             agent: None,
             report: None,
             input_answer: None,
+            continuation: None,
         }),
     })
 }
@@ -3103,6 +3407,7 @@ fn choose_plan_attempt(snapshot: &RunSnapshot, node_id: String) -> Result<RunEve
         + 1;
     Ok(RunEventKind::AttemptStarted {
         attempt: Box::new(NodeAttempt {
+            graph_binding: None,
             id: Uuid::now_v7().to_string(),
             story_id: snapshot.plan_id.clone(),
             node_id,
@@ -3112,6 +3417,7 @@ fn choose_plan_attempt(snapshot: &RunSnapshot, node_id: String) -> Result<RunEve
             agent: None,
             report: None,
             input_answer: None,
+            continuation: None,
         }),
     })
 }

@@ -1,5 +1,7 @@
+mod agent_policy;
 mod api;
 pub mod command;
+pub use agent_policy::*;
 mod definition;
 mod prompt;
 mod run;
@@ -20,6 +22,7 @@ mod tests {
 
     fn story_graph() -> WorkflowGraph {
         WorkflowGraph {
+            evidence_policy: None,
             nodes: vec![
                 Node {
                     id: "start".into(),
@@ -28,6 +31,7 @@ mod tests {
                 Node {
                     id: "work".into(),
                     kind: NodeKind::Agent {
+                        execution: None,
                         role: AgentRole::Implementer,
                         capabilities: vec!["story_read".into(), "story_report".into()],
                         prompt_template: "Implement {{story.title}}".into(),
@@ -476,5 +480,56 @@ mod tests {
                 .revision,
             1
         );
+    }
+}
+
+#[cfg(test)]
+mod daemon_lifecycle_tests {
+    use super::*;
+
+    fn proposal_graph() -> WorkflowGraph {
+        WorkflowGraph {
+            evidence_policy: None,
+            nodes: vec![
+                Node {
+                    id: "start".into(),
+                    kind: NodeKind::Start,
+                },
+                Node {
+                    id: "create".into(),
+                    kind: NodeKind::CreateStories,
+                },
+                Node {
+                    id: "end".into(),
+                    kind: NodeKind::End,
+                },
+            ],
+            edges: vec![
+                Edge {
+                    from: "start".into(),
+                    to: "create".into(),
+                    outcome: None,
+                },
+                Edge {
+                    from: "create".into(),
+                    to: "end".into(),
+                    outcome: None,
+                },
+            ],
+        }
+    }
+
+    // Catches: publication still requires a Coordinator even after removing the PTY check.
+    #[test]
+    fn create_stories_without_coordinator_node_uses_typed_proposal() {
+        let graph = proposal_graph();
+        validate_executable_graph(&graph, WorkflowKind::Plan, true).unwrap();
+        super::definition::validate_runtime_nodes(&graph, WorkflowKind::Plan).unwrap();
+    }
+
+    // Catches: removing Coordinator validation also accidentally permits story-local creation.
+    #[test]
+    fn story_graph_still_refuses_create_stories() {
+        assert!(validate_graph(&proposal_graph(), WorkflowKind::Story).is_err());
     }
 }

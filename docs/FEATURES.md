@@ -6,7 +6,7 @@
 AI Chat shares the active conversation across desktop and mobile for the configured host workspace. The last saved selection wins; reconnect catches up. Open-tab layout, drafts and the session CLI | Chat switch remain per device.
 
 - **Mobile Chat queue** — Terminal CLI and Chat show pending prompt text and a Queued count above the input, including CLI/desktop additions. Cancel one prompt or clear the queue; delivered entries disappear (#2463-ad1c).
-- **Session Chat working feedback** — Desktop and mobile show **Working…** from Send through existing terminal busy state; native questions and permissions take precedence (#2397-06b6).
+- **Chat working feedback** — Desktop and mobile AI Chat and Session Chat show a theme-accent breathing orb with accessible **Working…** text. Reduced motion shows a static dot. Existing busy state controls its lifetime; provider retry status, native questions and permissions take precedence (#2535-8b6b).
 
 AI Chat automatically connects on opening, restores the selected conversation, and keeps its transcript visible when stopped. Retry after a failed initial connection starts connecting without Send (#2407-84f5). Session model changes keep the same conversation; the global default affects new ego runs only (#2404-e946).
 
@@ -55,6 +55,8 @@ publication remains a separate integration step.
 Mobile terminal Send supports long-press Queue for the next agent ready window.
 
 Published story workflows can start in Plans and Stories through the owning daemon. Run history renders graph positions, decisions, evidence and paged event payloads, with explicit graph recovery and cancellation. IPC/HTTP and the generated `workflow action=run` MCP schema share the native run service. Plan start remains visibly unavailable pending plan dispatch. The grouped `workflow` MCP tool exposes typed story, run, proposal_create, report and launch actions through existing service owners. Proposal retries preserve coordinator ownership and proposal-key idempotency. Legacy workflow tools remain until cutover; scheduled automations stay separate. `tuic workflow` forwards the same envelope.
+
+Native workflow backend definitions support bounded Fork/all-Join regions, nested and collection branches, typed If/else outcomes, persisted resource waits and generation-fenced critic repair. Exclusive Join and old serial replay remain unchanged. Dedicated Designer controls are a separate delivery.
 
 > Canonical capability inventory. Update this file when adding, changing, or removing user-visible features.
 > See [AGENTS.md](../AGENTS.md) for the maintenance requirement.
@@ -175,6 +177,8 @@ Durable workflow run storage records event history, pinned graph revisions, node
 
 ## 1. Terminal Management
 
+- **Unobstructed terminal Find** — Search opens below the Context and CLI/Chat switch row. Search controls wrap inside narrow panes while the view switch remains reachable.
+
 - **Bounded input frame priority** — Desktop and browser/PWA input can wake the existing grid ticker after reader-applied output, without waiting for animation rate floors. A rolling send budget preserves output coalescing; newer reader work retains its bounded retry across a send. Desktop receipt gates and synchronized output remain in force.
 
 On desktop and mobile CLI views, adjacent `💬` answer paragraphs share one continuous green left bar without a background tint (Paper uses its darker success green for contrast), including blank rows between them. Mobile places this bar in a separate gutter outside the text box, so column-zero text stays clear and existing agent indentation stays unchanged. An unmarked prose paragraph after a blank row ends the answer; an uninterrupted indented continuation stays inside. The CLI gutter joins separate marked answer sections across internal blank rows and indented section headings when a later marked answer closes the gap. Trailing unmarked prose, unmarked list siblings, tools, prompts and status rows stay outside that gutter; extracted Answers and Chat keep their semantic paragraph boundaries. Lists, tables, quotations and fenced code remain attached to the answer. Fenced blocks keep a separate Copy row above the code on desktop and mobile, without covering wrapped text. A non-answer output row or prompt ends the region. The CLI blanks only the marker glyph cells; selection and search retain their grid coordinates. Clipboard copy removes answer-prefix markers through the same helper used by AI Chat answer buttons (including mobile) and selectable Answers text. Inline emoji and fenced examples stay literal. Chat uses the same answer extent and strips every paragraph marker.
@@ -226,6 +230,7 @@ Right-click an HTTP(S) terminal link (including localhost) and choose **Start in
 
 - **Readable session edits** — Expand a Chat tool card to read structured old/new edit blocks with aligned four-space tab stops and horizontal scrolling.
 - **Native terminal Chat questions** — Desktop and mobile expose exported native question titles and choices. Answers use agent-specific PTY keys, not Compose submission or ACP replies. Desktop preserves transcript binding and returns to CLI for unexported or free-form prompts.
+- **Pending terminal Chat prompts** — Prompts submitted through the open desktop or mobile Chat composer appear immediately as muted Pending bubbles in send order, including sends while Claude or Codex is busy. Matching new native transcript messages replace them without a duplicate bubble and retire older unmatched sends, so a local slash command cannot block later receipts. This is local send feedback, not a cancellable CLI queue; prompts typed directly into the CLI or sent by another client cannot be shown before the native transcript records them.
 - **Mobile session Chat appearance** — The session detail CLI/Chat view shares desktop prompt/answer theme tokens and transcript typography. Mobile keeps its existing touch-sized switch and native input; AI Chat is a separate surface.
 - **Deferred update restart** — After an in-app update installs, TUICommander restarts only when no session is busy or awaiting input; the APP UPDATE notification shows how many are busy and offers **Restart now** (with confirmation). Turn off in **Settings → General → Updates → Wait for agents before restarting** (`defer_update_relaunch`, default on).
 - **Eager resume after an update** — When the app restarts to apply an update, every agent tab with a confirmed session id resumes by itself on every branch, without selecting the branch first. Tabs without a confirmed id keep the click-to-resume banner. Turn off in **Settings → General → Updates → Resume all agents after an update** (`eager_resume_after_update`, default on).
@@ -408,6 +413,7 @@ A multi-line editor docked under the terminal for writing a prompt without fight
 - **Shortcut hints** — the newline legend shows only `Ctrl+Enter`. Panels up to 640px wide hide the legend instead of wrapping; all keyboard bindings remain available
 - **New line** — `Ctrl+Enter` or `Shift+Enter` inserts a line break without sending. Enter used to confirm an IME candidate does not send
 - **Queue for the next idle window** — `Shift+Ctrl+Enter` (or the ☰ button) hands the text to the backend's idle gate instead: it is submitted at once if the agent is already idle, otherwise parked until the agent's next busy→idle transition. This is the way to leave follow-up work for an agent mid-turn without interrupting it
+- **Collapsed handle** — transparent chrome and a muted label at rest; hover or keyboard focus reveals the background and border. Label and count remain fully opaque
 - **Queue count** — the collapsed Compose button shows a muted pill for every waiting FIFO item, including commands and peer/orchestrator notices, hidden at zero. Hover or focus shows the command/message breakdown. The open panel shows `N queued`; click it to inspect and remove entries, or clear the queue. Counts come from the backend (`state.queued_commands`), including across reloads and remote clients
 - **Order** — queued commands are typed one per idle window, in the order they were composed; a new one never overtakes one already waiting. Hands-free speech does not use this queue at all — see 9.9
 - **Progress replies** — a queued user command can resume an idle agent waiting on a blocked progress report. Native questions and approval dialogs still block queued delivery; server notices cannot use this exception or be overtaken
@@ -912,7 +918,7 @@ The per-agent **Prevent alternate screen** setting defaults on. New TUIC shells 
 When an agent is detected running in a terminal, TUICommander automatically discovers its session ID from the filesystem and stores it per-terminal (`agentSessionId`). On restore, this enables session-specific resume instead of generic fallback commands.
 
 - **Claude Code** — Sessions stored as `~/.claude/projects/<slug>/<uuid>.jsonl`; UUID from filename. Windows drive colons become dashes in the project slug (`C:\Users\foo\bar` → `C--Users-foo-bar`).
-- **Gemini CLI** — Sessions stored in `~/.gemini/tmp/<hash>/chats/session-*.json`; `sessionId` field from JSON
+- **Gemini CLI** — Sessions stored in `~/.gemini/tmp/<project>/chats/session-*.jsonl` (legacy `.json` also supported). Discovery and restore match the recorded `projectHash` to the session project and read `sessionId` from metadata. Discovery selects the newest unclaimed recent session; multiple tabs in the same project remain heuristic.
 - **Codex CLI** — Sessions stored in `~/.codex/sessions/YYYY/MM/DD/rollout-*-<UUID>.jsonl`; UUID from filename. Codex does *not* partition by project, so candidates are filtered on the working directory recorded in the rollout's first `session_meta` record — otherwise a terminal in one project would bind to another project's session. A rollout whose `cwd` can't be read is rejected rather than accepted
 - **Goose turn completion** — A reply followed by the ready composer returns the tab to idle and allows the next submission, without the five-minute stale recovery (#1812-022d).
 - **Goose** — Sessions stored in SQLite (`~/Library/Application Support/Block/goose/sessions/sessions.db`); shell wrapper injects `--name $TUIC_SESSION` for deterministic binding on normal `session`/`run` launches, preserving explicit names, paths, resume and stateless arguments; resume by name
@@ -3579,3 +3585,37 @@ Opt-in global and per-repository retention in days (0/Off by default). Repositor
 ### Typed workflow commands (WF05)
 
 Published Run command and versioned Tool nodes execute argv or explicit shell contracts in assigned workspaces. Durable resource waits and immutable source/target receipts reuse build-slot/rb admission; unknown effects retain resources until observed stop/release. Secret references and declared output schemas keep secrets out of receipts and refuse zero-match test proof. Native proof remains distinct from Linux execution. See `docs/backend/workflows.md` for the backend contract; Designer controls are not added by WF05.
+### Typed workflow plan proposals (WF04 foundation)
+
+Contract-3 Create Stories visits accept a durable, activation- and plan-revision-
+bound proposal batch through the shared run command API. The daemon consumes
+native keyed story effects without a Coordinator node or session. Missing input
+is an incident, not a request to spawn an author. Contract-2 replay and the
+plan-only Create Stories boundary remain unchanged. ACP launch and lifecycle
+handover/closure are not part of this foundation.
+
+WF04 attribution increment: new daemon workflow launches retain the original
+workspace baseline and managed launch reference before spawning. Retries do not
+replace the baseline with child edits. Bound typed reports also retain durable
+accepted/refused decisions, with accepted decisions atomic with their report
+event and read-only inspection through the shared run action. This is receipt
+disposition, not artifact approval. ACP/policy/continuation/successor/owned-close
+lifecycle remains incomplete; attribution and report receipt permit no cleanup.
+
+### Pinned workflow evidence policy
+
+Workflow graph drafts can pin typed, source-and-requirement-bound review proof,
+seven-rule FIX/STORY/ACCEPT triage and separate review/repair budgets. The default
+policy permits two reviews and one repair. Native independent approval and
+required deterministic checks remain mandatory. PR review subjects do not mark
+native stories Done. Old publications and runs keep their prior policy. See
+[workflow evidence policy](backend/workflows.md#typed-evidence-policy-wf06).
+
+### Durable workflow timer receipts
+
+Workflow contract-3 runs persist absolute deadlines, stable owner/effect keys,
+bounded retry/backoff and explicit expiry outcomes. Independent service timers
+can flush a one-row cohort through a recovery pause. Activation pauses retain
+their deadlines; cancellation fences delivery. Question expiry never implies
+approval. This is internal infrastructure for later proof, provider and inbox
+consumers, not a new Designer control. See [workflows](backend/workflows.md#durable-timers-wf19).

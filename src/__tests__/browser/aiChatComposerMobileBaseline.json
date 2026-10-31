@@ -1,0 +1,122 @@
+[
+  {
+    "text": "",
+    "focus": false,
+    "editor": {
+      "bottom": 652,
+      "height": 44,
+      "left": 65,
+      "right": 311,
+      "top": 608,
+      "width": 246
+    },
+    "send": {
+      "bottom": 653,
+      "height": 44,
+      "left": 360,
+      "right": 404,
+      "top": 609,
+      "width": 44
+    }
+  },
+  {
+    "text": "",
+    "focus": true,
+    "editor": {
+      "bottom": 652,
+      "height": 44,
+      "left": 65,
+      "right": 311,
+      "top": 608,
+      "width": 246
+    },
+    "send": {
+      "bottom": 653,
+      "height": 44,
+      "left": 360,
+      "right": 404,
+      "top": 609,
+      "width": 44
+    }
+  },
+  {
+    "text": "il mio goal \u00e8 di",
+    "focus": false,
+    "editor": {
+      "bottom": 652,
+      "height": 44,
+      "left": 65,
+      "right": 311,
+      "top": 608,
+      "width": 246
+    },
+    "send": {
+      "bottom": 653,
+      "height": 44,
+      "left": 360,
+      "right": 404,
+      "top": 609,
+      "width": 44
+    }
+  },
+  {
+    "text": "il mio goal \u00e8 di",
+    "focus": true,
+    "editor": {
+      "bottom": 652,
+      "height": 44,
+      "left": 65,
+      "right": 311,
+      "top": 608,
+      "width": 246
+    },
+    "send": {
+      "bottom": 653,
+      "height": 44,
+      "left": 360,
+      "right": 404,
+      "top": 609,
+      "width": 44
+    }
+  },
+  {
+    "text": "First line\nSecond line\nThird line\nFourth line",
+    "focus": false,
+    "editor": {
+      "bottom": 652,
+      "height": 102,
+      "left": 65,
+      "right": 311,
+      "top": 550,
+      "width": 246
+    },
+    "send": {
+      "bottom": 653,
+      "height": 44,
+      "left": 360,
+      "right": 404,
+      "top": 609,
+      "width": 44
+    }
+  },
+  {
+    "text": "First line\nSecond line\nThird line\nFourth line",
+    "focus": true,
+    "editor": {
+      "bottom": 652,
+      "height": 102,
+      "left": 65,
+      "right": 311,
+      "top": 550,
+      "width": 246
+    },
+    "send": {
+      "bottom": 653,
+      "height": 44,
+      "left": 360,
+      "right": 404,
+      "top": 609,
+      "width": 44
+    }
+  }
+]

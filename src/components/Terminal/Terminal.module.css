@@ -8,6 +8,7 @@
 }
 
 .content {
+  position: relative;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -105,20 +106,23 @@
 }
 
 /* Compose panel tab — bottom edge handle that pulls up the compose panel */
-.composeHint {
+button.composeHint {
+  background: transparent;
+  border-color: transparent;
+  color: var(--fg-muted);
   position: absolute;
   bottom: 0;
   left: 12px;
   z-index: 10;
   gap: 4px;
   font-family: var(--font-ui);
-  opacity: 0.5;
-  transition: opacity 0.15s ease;
 }
 
-.composeHint:hover,
-.composeHint:focus-visible {
-  opacity: 1;
+button.composeHint:hover,
+button.composeHint:focus-visible {
+  background: var(--bg-highlight);
+  border-color: var(--border);
+  color: var(--fg-primary);
 }
 
 .composeQueueCount {

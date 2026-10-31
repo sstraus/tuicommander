@@ -1,10 +1,16 @@
 mod api;
 pub(super) mod check;
 mod contracts;
+pub mod evidence;
 pub mod graph;
 mod incidents;
 mod model;
+pub mod parallel;
+pub mod timer;
+#[cfg(test)]
+mod timer_tests;
 pub use incidents::RunIncident;
+mod proposals;
 mod publication;
 mod reducer;
 mod runtime;
@@ -28,6 +34,8 @@ mod critic_tests;
 mod graph_critic_1446a_tests;
 #[cfg(test)]
 mod graph_tests;
+#[cfg(test)]
+mod wf02_tests;
 
 #[cfg(test)]
 mod critic_957_tests;
@@ -242,6 +250,7 @@ mod tests {
             timeout_secs: 30,
         };
         let mut receipt = CheckReceipt {
+            requirements_digest: None,
             check_id: "unit".into(),
             argv: check.argv.clone(),
             exit_code: 1,
@@ -342,6 +351,7 @@ mod tests {
             )
             .expect("accept");
         let receipt = CheckReceipt {
+            requirements_digest: None,
             check_id: "unit".into(),
             argv: vec!["git".into(), "status".into()],
             exit_code: 0,
@@ -1189,6 +1199,8 @@ mod tests {
             )
             .expect("reserve spawn");
         let binding = AgentBinding {
+            acp: None,
+            launch_id: None,
             session_id: "managed-session".into(),
             task_id: Some("task-1".into()),
             effect_id: reserved.snapshot.effects[0].id.clone(),
@@ -1288,6 +1300,8 @@ mod tests {
                 &run.id,
                 &next_attempt.id,
                 AgentBinding {
+                    acp: None,
+                    launch_id: None,
                     session_id: "managed-exit".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -1362,6 +1376,8 @@ mod tests {
                 &run.id,
                 &attempt.id,
                 AgentBinding {
+                    acp: None,
+                    launch_id: None,
                     session_id: "input-worker".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -1504,6 +1520,8 @@ mod tests {
                     &run.id,
                     &attempt.id,
                     AgentBinding {
+                        acp: None,
+                        launch_id: None,
                         session_id: session_id.into(),
                         task_id: None,
                         effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -1641,6 +1659,8 @@ mod tests {
                 &run.id,
                 &attempt.id,
                 AgentBinding {
+                    acp: None,
+                    launch_id: None,
                     session_id: "review-worker".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -1737,6 +1757,8 @@ mod tests {
                 &run.id,
                 &attempt.id,
                 AgentBinding {
+                    acp: None,
+                    launch_id: None,
                     session_id: "coordinator-pty".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects.last().unwrap().id.clone(),
@@ -2006,8 +2028,8 @@ mod tests {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
-        // 6: typed command/workspace effects require older binaries to refuse.
-        assert_eq!(stored_schema_version(&db), 6, "fresh store records version");
+        // 9: WF05 command effects extend the WF04 lifecycle layout.
+        assert_eq!(stored_schema_version(&db), 9, "fresh store records version");
         let run = store
             .start_plan(
                 project.path().to_str().unwrap(),
@@ -2017,18 +2039,21 @@ mod tests {
                 RunLimits::default(),
             )
             .unwrap();
-        // A store written before the version existed reports 0 with data in it.
-        rusqlite::Connection::open(&db)
-            .unwrap()
-            .pragma_update(None, "user_version", 0)
-            .unwrap();
-        let upgraded = RunStore::open_at(&db).unwrap();
-        assert_eq!(stored_schema_version(&db), 6);
-        assert_eq!(
-            upgraded.snapshot(&run.id).unwrap().sequence,
-            run.sequence,
-            "the pre-version run survives the upgrade"
-        );
+        // Catches: WF04 and WF02 reusing layout 7 without upgrading main's
+        // store, or an additive upgrade rewriting retained events/snapshots.
+        for old_version in [0, 6, 7, 8] {
+            let conn = rusqlite::Connection::open(&db).unwrap();
+            conn.pragma_update(None, "user_version", old_version)
+                .unwrap();
+            conn.execute_batch("DROP TABLE workflow_report_dispositions")
+                .unwrap();
+            drop(conn);
+            let upgraded = RunStore::open_at(&db).unwrap();
+            assert_eq!(stored_schema_version(&db), 9);
+            assert_eq!(upgraded.snapshot(&run.id).unwrap(), run);
+            assert_eq!(upgraded.replay(&run.id).unwrap(), run);
+            assert_eq!(upgraded.report_dispositions(&run.id).unwrap(), vec![]);
+        }
     }
 
     #[test]
@@ -2351,6 +2376,8 @@ mod tests {
                     &run.id,
                     &attempt_id,
                     AgentBinding {
+                        acp: None,
+                        launch_id: None,
                         session_id: "late-agent".into(),
                         task_id: None,
                         effect_id: reserved.snapshot.effects[0].id.clone(),
@@ -2447,6 +2474,8 @@ mod tests {
                 &run.id,
                 &attempt_id,
                 AgentBinding {
+                    acp: None,
+                    launch_id: None,
                     session_id: "coordinator".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects[0].id.clone(),
@@ -2658,6 +2687,8 @@ mod tests {
                 &run.id,
                 &attempt_id,
                 AgentBinding {
+                    acp: None,
+                    launch_id: None,
                     session_id: "coordinator".into(),
                     task_id: None,
                     effect_id: reserved.snapshot.effects[0].id.clone(),

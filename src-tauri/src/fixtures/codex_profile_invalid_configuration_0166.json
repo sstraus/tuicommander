@@ -1,0 +1,1 @@
+{"method":"configWarning","params":{"summary":"Invalid configuration; using defaults.","details":"failed to read model instructions file /Users/stefano.straus/Gits/.tmp/results/critic-2541-probes/instructions.md: No such file or directory (os error 2)"},"emittedAtMs":1793389222040}
