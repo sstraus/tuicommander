@@ -1,5 +1,7 @@
 # TUICommander — Complete Feature Reference
 
+- **Terminal Ctrl+Enter** — Desktop and browser/remote CLI grids use CSI u for negotiated Kitty reporting and identified ego sessions, enabling ego busy-turn steering. Legacy shells and other nonnegotiating agents receive CR. Plain Enter and Compose shortcuts stay unchanged (#2599-0a6b).
+
 - **Native integration trial (WF07)** — Disabled-by-default typed workflow integration checks and publishes one pinned no-ff merge, retains proof debt across restart, and keeps cleanup independent. Only isolated trial clones may enable it before repository parity approval; WF08 proof batching is not included (#2514-3d1e).
 
 - Mobile terminal and AI Chat composers add one space after a pasted HTTP(S) URL when neither the paste nor the following draft character supplies whitespace (#2494-921f).
@@ -167,7 +169,7 @@ Story details show the persisted origin, plan step, revision and claiming sessio
 
 New story and Edit plan keep the primary action, then Cancel, together at the bottom-left. New story has no permanent manual-prefix hint below acceptance criteria; `[MANUAL]` criteria remain supported. Story Edit stays in the story header. Disabled Add dependency exposes its reason as a native tooltip and accessible description.
 
-Plans and Stories combines open/closed and optional story-type filters, including untyped historical stories, with a session-retained List/Kanban switch that also survives detach and reattach. Rust supplies the shared display projection; the native read-only board follows the Wiz Kanban layout without importing plugin code.
+Plans and Stories combines open/closed and optional story-type filters, including untyped historical stories, with a session-retained List/Kanban switch that also survives detach and reattach. Rust supplies the shared display projection; the native board follows the Wiz Kanban layout without importing plugin code. Cards support pointer-based phase moves to backend-provided legal destinations; List rows and story detail share revision-checked Phase selectors. Illegal or rejected drops retain placement and show the reason.
 
 Native stories support one revision-checked `update_story` patch through MCP, CLI, IPC and HTTP. It amends metadata including nullable story type, optional problem/risk, ordered criteria and dependencies on unclaimed Backlog/Ready stories without active run ownership. Changed requirements lose checks; priority-only edits keep them, and workflow evidence follows existing fingerprints. StoriesDialog provides one revision-checked Edit form with Save/Cancel, retained conflict drafts, and metadata, criteria and dependency fields. QA and other started work are not editable. Criteria use separate ordered entries so multiline requirement text is preserved during edits. Edited titles must contain 1 to 200 Unicode characters after trimming. Invalid titles disable Save without truncating the draft.
 
@@ -270,6 +272,7 @@ Expanded tool rows use theme colours for Bash/execute commands, flags, strings a
 - Overflow menu on scroll arrows (right-click) shows clipped tabs; the `+` button always stays visible regardless of scroll position
 - `+` button: click opens a terminal in the active branch; right-click or long press (500 ms) lists the enabled agents (with a submenu per run config) and opens a new tab running the chosen one
 - Tab pinning: pinned tabs are visible across all branches (not scoped to branch key)
+- Right-click a sidebar session row to add it to the Global Workspace, or remove it when already included. This uses the same membership action as the tab context menu.
 
 ### 1.3 Split Panes
 - Vertical split: `Cmd+\` (side by side)
@@ -311,6 +314,7 @@ Expanded tool rows use theme colours for Bash/execute commands, flags, strings a
 - Paths validated against filesystem before activation (Rust `resolve_terminal_path`)
 - `.md`/`.mdx` → opens in Markdown panel; preview-capable files (HTML, PDF, images, video, audio, plain text/data) → open in the Preview tab (section 3.15); all other code files → open in the built-in code editor
 - `file://` URLs are recognized in addition to plain paths — the prefix is stripped and the path resolved like any other
+- Verified terminal link underlines remain visible during unrelated spinner redraws, including wrapped links and file paths beside a changing tool indicator.
 - OSC 8 hyperlinks: programs that emit hyperlink escape sequences (e.g. Claude Code, modern `ls`) produce clickable links; hover underline spans the full link text (via `terminal_hyperlink_span` backend API)
 - Supports `:line` and `:line:col` suffixes; the built-in editor moves to that position even when the file is already open
 - Single left-click opens the link instantly (UI-first — opening is a primary action, not gated behind a modifier); drag-select over a link still copies text without opening
@@ -1027,6 +1031,10 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
   account dashboard because Gemini CLI has no stable machine-readable account
   quota interface. Session-local `/stats` is not treated as account headroom.
 
+### Coordinator mail address
+
+- `agent action=send to=orchestrator` reaches the registered coordinator in the caller parent chain, or the unique role in its registered repository path, without peer discovery. Missing or ambiguous roles fail explicitly.
+
 ### 6.7 Intent Event Tracking
 - Agents declare work phases via `intent: text (Title)` tokens at the start of a row. The canvas tints intent rows and their soft-wrapped or indented hard-wrapped tails, preserving row coordinates. Blank rows and new output, answer, prompt or marker blocks end an indented tail. The token is also read when it follows the ack sentence on one row, and when the agent's own wrapping split it across many rows; terminal width distinguishes wrapped text from adjacent indented prose, and input-box chrome is excluded. A long intent keeps its full tab-title event while the Progress journal stores a redacted, capped copy
 - MCP instructions request an intent on its own line, at the start of every task and on each material phase change; the terminal Context bar shows it separately from the orchestrator assignment and user prompt
@@ -1480,7 +1488,7 @@ The `tuic-dictation` Rust crate implements audio, transcription and speech; the 
 - Default hotkey: `F5` (configurable, registered globally)
 - Mic button in status bar: hold to record, release to transcribe
 - On macOS, releasing Fn stops microphone capture in Rust before the WebView handles the event. A late Fn start is refused. DOM hotkeys release on blur if key-up was lost; native Fn follows physical key state. The file log records release-to-stop latency without storing spoken text.
-- The destination and selection are captured at key-press time, before asynchronous work. Explicit editors take priority. In terminal Chat, transcript or BODY focus delivers to Compose through a CodeMirror transaction; CLI uses the captured PTY session with existing auto-send behavior. Focus and tab changes do not redirect the text.
+- The destination and selection are captured at key-press time, before asynchronous work. Explicit editors take priority. In terminal Chat, Compose, transcript or BODY focus delivers to Compose through a CodeMirror transaction; Auto-send then uses its normal Send action once, while disabled Auto-send leaves an editable draft. Other fields stay review-only. CLI uses the captured PTY session with existing auto-send behavior. Focus and tab changes do not redirect the text.
 - Long Claude CLI dictation uses bracketed paste to preserve its beginning, with or without Auto-send. Short dialog answers remain key events.
 - If the target disappears or the draft changes before delivery, the transcript stays in a sticky error message and the Messages bell for recovery. Delivery logs contain metadata without spoken text.
 
@@ -1679,9 +1687,9 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 
 ### 10.10 Smart Prompts Management (Cmd+Shift+K Drawer)
 
-- All prompt management consolidated in the Cmd+Shift+K drawer (Settings tab removed)
+- Settings → Smart Prompts and the Cmd+Shift+K drawer use one shared aligned editor. Settings saves changes immediately; the drawer uses explicit Save and Cancel.
 - Enable/disable individual prompts via toggle button on each row
-- Edit prompt: opens modal with name, description, content, variable dropdown, placement, execution mode, auto-execute, keyboard shortcut
+- Edit prompt: opens a modal with name, description, content, variable dropdown, eight readable placement choices, execution mode and its conditional target/agent/output fields, plus keyboard shortcut. Placement choices use two columns on the shared label/control grid.
 - A normal click or Enter follows the saved auto-execute setting; double-click and **Insert & Run** force one submission, while **Insert** always keeps the result editable
 - Variable insertion dropdown below content textarea: grouped by Git/GitHub/Terminal, click to insert `{variable}` at cursor
 - Create custom smart prompts with `+ New Prompt` button
@@ -1697,6 +1705,8 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 ---
 
 ## 11. Settings
+
+AI Chat settings retain model controls when ego health diagnostics fail, with a non-blocking explanation and preserved credential evidence.
 
 Malformed config fields recover independently, retaining valid preferences. A startup warning names reset fields and the original backup path. Legacy scrollback reflow is enabled once, without overriding later user choices.
 
@@ -2321,7 +2331,7 @@ Unsupported actions are hidden. Menus close on outside tap or Escape and use
 - Slash menu overlay: the keybar `/` inserts at the composer selection through the same input path as typing; both sync to the PTY and show only detected agent menu entries with navigation. Surrounding draft text is preserved. Removed commands are hidden, and the close button dismisses the menu. Picking a command fills the input; submitting waits for the agent's Enter gap
 - Quick-action chips: Yes, No, y, n, Enter, Ctrl-C
 - **Mobile terminal queue:** CLI and Chat share the pending prompt list. An older host without the queue-read endpoint does not show an error when there is no pending count or accepted local enqueue. Other queue-read failures remain visible and retryable.
-- **TerminalKeybar:** 44 px tall, horizontally scrollable row of `/`, Ctrl, Tab, Esc, arrow and Enter keys above the main input, with no visible scrollbar. Ctrl opens a menu for Ctrl+C, Ctrl+B, Ctrl+D and Ctrl+Enter; Ctrl+C and Ctrl+D are danger-coloured. A choice sends once and closes the menu; an outside tap or Escape dismisses without sending. Ctrl+Enter follows the agent registry: CSI-u submits in Claude Code and inserts a newline in OpenCode; LF supplies the newline fallback for Codex, Goose, Grok and pi, and submits in ego. Uninstalled agents use documented newline fallbacks or conservative CSI-u; see `docs/evidence/ctrl-menu-1660/README.md`. When the agent is awaiting input without native choices or suggested actions, it adds Yes/No quick-reply buttons. Current suggested actions take priority over these generic confirmations without clearing the Input state. Tab and Up/Down still reach a waiting terminal picker when no parsed choices exist, without importing picker text into a local answer draft. The composer input and Send button also have 44 px touch targets. After the session ends, the keybar and composer are disabled and the stale status badge is hidden
+- **TerminalKeybar:** 44 px tall, horizontally scrollable row of `/`, Ctrl, Tab, Esc, arrow and Enter keys above the main input, with no visible scrollbar. Ctrl opens a menu for Ctrl+C, Ctrl+B, Ctrl+D and Ctrl+Enter; Ctrl+C and Ctrl+D are danger-coloured. A choice sends once and closes the menu; an outside tap or Escape dismisses without sending. Ctrl+Enter follows the agent registry: CSI-u submits in Claude Code and inserts a newline in OpenCode; LF supplies the newline fallback for Codex, Goose, Grok and pi; CSI-u steers a busy turn in current ego. Uninstalled agents use documented newline fallbacks or conservative CSI-u; see `docs/evidence/ctrl-menu-1660/README.md`. When the agent is awaiting input without native choices or suggested actions, it adds Yes/No quick-reply buttons. Current suggested actions take priority over these generic confirmations without clearing the Input state. Tab and Up/Down still reach a waiting terminal picker when no parsed choices exist, without importing picker text into a local answer draft. The composer input and Send button also have 44 px touch targets. After the session ends, the keybar and composer are disabled and the stale status badge is hidden
 - **CLI command widget:** agent-specific quick commands (e.g., `/compact` for Claude Code and `/status` for Codex) accessible via expandable button
 - Text command input with 16px font (prevents iOS auto-zoom), `inputmode="text"`
 - **Offline retry queue:** `write_pty` calls that fail due to network disconnection are queued and retried when connectivity resumes
@@ -3049,7 +3059,9 @@ Connected daemon notices carry their host identity. MCP confirmation responses a
 
 The graph runtime foundation now persists and replays pinned activations, serial predecessor history, edge decisions and repair counters. Executable validation requires Pause resume targets and deterministic final checks. Fork/all-Join schema and execution wait for slice G; scheduling and designer controls for these settings remain in development. Pause resolution respects uncertain-effect and pending-input fences, and serial history is bounded. Old pre-contract runs support inspect/cancel only.
 
-AI Chat offers **Fork from here** beside a reply when ego advertises message-point forks. The new tab keeps history through that reply’s completed turn; the parent remains open.
+Detached AI Chat owns its push-to-talk lifecycle and captured composer. Native Fn starts in the focused supported window; releasing it after a focus change still completes that recording. AI Chat dictation remains a draft for review.
+
+AI Chat offers **Fork** beside a reply when ego advertises message-point forks. The new tab keeps history through that reply’s completed turn; the parent remains open.
 
 Forked AI Chat tabs label inherited history. A separator marks where the child’s own conversation begins, including after loading saved history.
 
@@ -3654,3 +3666,5 @@ subject fences, actor provenance and restart-safe deadlines. An unanswered quest
 suspends its activation, not disjoint delivery. The project inbox counts pending
 and expired questions without a coordinator; all transports use the same service.
 No timeout grants consent. See [workflow decisions](backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).
+
+The Plans and Stories toolbar pill shows active-plan, Ready and In progress counts with distinct glyphs and a tooltip line for each number. Ready comes from the Rust `summary` action, not a frontend subtraction; Done/total remains the progress bar tooltip. Ready-only work therefore remains visible when no story is running.

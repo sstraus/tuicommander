@@ -80,3 +80,36 @@ Validation: the requested full Vitest run passed 8,722 tests and failed one
 new CSS-loading test. After fixing that test harness, the targeted Ctrl menu
 file passed 27/27; the other two keybar files passed 13/13 in the correction
 run. No full suite was repeated. The worktree headless build passed.
+
+## Current ego contract (2026-10-31)
+
+The ego 0.1.0 observations and fixture remain historical evidence. Current ego
+handles CSI u `ESC [ 13 ; 5 u` as Ctrl+Enter for busy-turn steering. Its
+`crates/ego-cli/src/repl/keys.rs` maps Enter with Control to `SteerBusy`, and
+`live_surface_ctrl_enter_steers_a_busy_turn_once` sends these exact bytes.
+The mobile ego control now uses this contract instead of the old LF fallback.
+Other agent mappings still use the recorded observations above.
+
+
+### Legacy compatibility and native steering check (#2599-0a6b)
+
+Do not send CSI u to all legacy programs. Native bash and zsh probes in critic
+round 1 showed pending-command corruption (`5uAFTER: command not found`). Grid
+Ctrl+Enter therefore stays CR unless Kitty flag 1 is active or the current
+foreground identity is ego. The exception uses the existing Kitty encoder;
+it ends as soon as the session identity returns to a shell. No new detection
+or protocol state is added. The mobile ego mapping stays CSI u.
+
+An isolated native PTY check with installed ego 0.4.1, a local streaming provider,
+and no credentials showed `interrupt=yes`, `Interrupted by user`, and
+`STEER-RECEIVED`. The provider received two requests: the initial request contained
+no steer text, and the second contained the exact steer once. No Kitty push was
+observed. Retained raw evidence is in
+`~/Gits/.tmp/tuic-2599-f1-live-1793470215/{terminal.ansi,requests.json}`.
+This is native ego evidence, not a rebuilt TUIC desktop end-to-end check.
+
+Ego currently enables raw mode and bracketed paste in `repl/seat.rs`, but does
+not call Reedline's `use_kitty_keyboard_enhancement(true)`. Its vendored Reedline
+already provides negotiation and balanced push/pop in `read_line` and Drop.
+Enable that builder option in ego, then verify startup, busy steering, modal
+input, Ctrl+Z/fg, and exit restoration before removing TUIC's narrow exception.

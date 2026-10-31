@@ -2785,3 +2785,74 @@ async fn repo_status_matches_registered_path_through_slash_and_symlink() {
         assert_eq!(rows[0]["path"], first, "{spelling}");
     }
 }
+
+/// Catches: child done/blocked reports persisting or notifying the user instead of the parent.
+#[tokio::test]
+async fn managed_child_progress_refuses_done_and_blocked_without_user_events() {
+    let config = tempfile::tempdir().unwrap();
+    let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+    let project = tempfile::tempdir().unwrap();
+    let state = test_state();
+    let child = "22222222-2222-4222-8222-222222222222";
+    let parent = "11111111-1111-4111-8111-111111111111";
+    state
+        .mcp
+        .to_session
+        .insert("child-progress".into(), child.into());
+    state.peer_agents.insert(
+        child.into(),
+        crate::state::PeerAgent {
+            tuic_session: child.into(),
+            mcp_session_id: "child-progress".into(),
+            name: "worker".into(),
+            project: Some(project.path().to_string_lossy().into_owned()),
+            registered_at: 0,
+        },
+    );
+    state
+        .session_maps
+        .session_parent
+        .insert(child.into(), parent.into());
+    let mut events = state.event_bus.subscribe();
+    for kind in ["done", "blocked"] {
+        let result = handle_progress(
+            &state,
+            &serde_json::json!({"type":kind,"text":"Child result."}),
+            Some("child-progress"),
+        )
+        .await;
+        let error = result["error"].as_str().unwrap_or_default();
+        assert!(
+            error.contains(&format!("agent action=send to={parent}")),
+            "missing parent guidance: {result}"
+        );
+        assert!(
+            events.try_recv().is_err(),
+            "child report emitted a user event"
+        );
+    }
+    let stored = crate::progress::ProgressStore::open()
+        .unwrap()
+        .list(
+            &project.path().canonicalize().unwrap().to_string_lossy(),
+            &Default::default(),
+        )
+        .unwrap();
+    assert!(
+        stored.entries.is_empty(),
+        "child reports must not enter the user journal"
+    );
+    // The same bound peer becomes a root when its parent relation is absent.
+    state.session_maps.session_parent.remove(child);
+    let root = handle_progress(
+        &state,
+        &serde_json::json!({"type":"done","text":"Root result."}),
+        Some("child-progress"),
+    )
+    .await;
+    assert!(root["id"].is_i64(), "root progress must still work: {root}");
+    assert!(matches!(
+        events.try_recv().unwrap(),
+        crate::state::AppEvent::ProgressRecorded { .. }
+    ));
+}

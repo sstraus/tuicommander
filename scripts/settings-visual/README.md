@@ -34,3 +34,10 @@ For Settings catalogue parity, use `VISUAL_PAGES=general,all-settings VISUAL_BRO
 The fixture loads Commander and Paper from the shipped palette JSON through the same `loadThemes()` startup boundary as the app. Browser-mode captures must retain `isTauri=false`; Local tools is desktop-only and does not render an empty card. Theme options are synthetic catalogue responses, not live backend evidence.
 
 The contrast oracle rasterizes CSS colors to resolve `color(srgb ...)` and composites translucent ancestor backgrounds. It uses raw ratios for the threshold, not the rounded report value. Help question buttons have a 3:1 non-text threshold; semantic question text has a 4.5:1 threshold. Reduced motion makes marker captures deterministic. It does not claim native WebKit rendering or subjective design approval. The Actions table's screen-reader-only heading is intentionally clipped.
+
+Voice consistency evidence uses the opt-in `voice-audit=1` query parameter on the
+real Dictation page. Its synthetic catalogue includes installed and missing
+Whisper models plus a Pocket runtime, language and voice. The optional `engine`
+query selects Pocket, Edge or an external command. This fixture does not contact
+speech services, use the microphone or write user configuration. Without the
+query parameter, the existing empty voice catalogue is unchanged.

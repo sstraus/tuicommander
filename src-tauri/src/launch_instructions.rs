@@ -122,7 +122,7 @@ pub(crate) const MODULES: [(&str, &str); 5] = [
     ),
     (
         "waiting",
-        "## Waiting and long work\nRun long work in the background and end the turn; TUIC wakes you on completion. Never poll or use `sleep` to wait. Submit terminal commands with `session action=submit session_id=<id> input=<text>` once: text and Enter together, never split calls or poll afterward.\n",
+        "## Waiting and long work\nRun long work in the background. Continue ready, non-overlapping work while it runs. End the turn only when a background result blocks the next useful action and no independent work remains, or you need the user's answer. When yielding, state what runs and what it unblocks; do not claim completion or offer suggestions. Use the launched mechanism's completion wake. Never poll or use `sleep` to wait. Submit terminal commands with `session action=submit session_id=<id> input=<text>` once: text and Enter together, never split calls or poll afterward.\n",
     ),
     (
         "git_worktree",
@@ -134,7 +134,7 @@ pub(crate) const MODULES: [(&str, &str); 5] = [
     ),
     (
         "children",
-        "## Child agents\nStay within the assigned scope; do not delegate. Report out-of-scope defects rather than fixing them. Send exactly one final `RESULT` or `BLOCKED` to the parent with `agent action=send to=<parent> message=<report>`: changes, commands, evidence and remaining gaps. Do not send heartbeats.\n",
+        "## Child agents\nStay within the assigned scope; do not delegate. Report out-of-scope defects rather than fixing them. Send exactly one final `RESULT` or `BLOCKED` to the parent with `agent action=send to=<parent> message=<report>`: changes, commands, evidence and remaining gaps. Do not send heartbeats. Do not call `progress`: child reports belong to the parent, not the user.\n",
     ),
 ];
 
@@ -227,6 +227,7 @@ fn effective_text_with(
             }
             text.push_str(module);
             if id == "working_with_user"
+                && !spawned_child
                 && app.progress_tracking
                 && settings.and_then(|s| s.progress_tracking).unwrap_or(true)
             {

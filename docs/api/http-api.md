@@ -102,7 +102,7 @@ Story transition provenance comes from host-validated credentials: desktop IPC a
 
 `update_story` takes `story_id`, `expected_revision`, and a camel-case `patch`. Omitted fields stay unchanged. The patch accepts `title`, `priority` (1–3), `fileScope`, `origin` (including a plan step), nullable `storyType` (`feature`, `fix`, `refactor`, `chore`, `task`), optional `problem` and `risk` (`low`, `medium`, `high`), ordered `criteria`, and the final `dependencies` set. Null clears `storyType`, `problem` or `risk`; old story records default both to absent. Unknown fields, invalid values, cross-plan dependencies, duplicates, cycles and stale revisions are rejected without partial story writes. Only unclaimed Backlog/Ready stories without active or paused workflow ownership can be amended. Unique byte-identical criteria retain their checks after reorder; changed, new or ambiguous duplicate criteria become unchecked. A priority-only patch preserves all checks. Dependency changes recompute readiness. Planning and execution fingerprints include the amended requirements/revision, so existing evidence cannot certify changed work.
 
-`summary` returns `{type:"summary",value:{activePlans,inProgress,qa,done,total}}` for the project: plans whose derived state is active, and over their stories those `in_progress`, those waiting in `qa`, those `done`, and all except `wont_fix` and abandoned ones. The Plans and Stories toolbar button reads it; it is also available over IPC through `story_action_command`.
+`summary` returns `{type:"summary",value:{activePlans,ready,inProgress,qa,done,total}}` for the project: plans whose derived state is active, and over their stories those `in_progress`, those waiting in `qa`, those `done`, and all except `wont_fix` and abandoned ones. The Plans and Stories toolbar button reads it; it is also available over IPC through `story_action_command`.
 
 The project path is resolved to its canonical owner, so a managed worktree shares its parent project's plans. Unknown action and create-story fields are rejected. Claim requires a live PTY session in that project. `transition` accepts the `start_manual` command to begin a Ready story without a terminal. Actor identity is tracking only; managed, local API and human callers use the same transition rules. `remove_dependency` accepts only a Backlog dependent with a direct WontFix prerequisite; it returns the revised story, Ready only when all remaining prerequisites are Done. WontFix never satisfies dependencies. A nonempty plan with only Done/WontFix stories has `plan_state: done`, while an empty plan is `draft`. Reads and writes verify the stored plan's project; a story ID alone grants no cross-project access. Revisions are required for mutations to detect stale clients. The same service backs desktop IPC and MCP. There is no import or export endpoint.
 
@@ -2944,6 +2944,8 @@ session and request it is about.
 
 ## ego Command Line (`mcp_http/ego_routes.rs`)
 
+`EgoProviders` from `/ego/providers` and `/ego/providers/model` can include an optional `diagnostic` string. Health failures do not turn successful config/model reads into HTTP errors; valid doctor exit-1 JSON is still consumed. Without usable credential evidence, provider credentials are `unknown`.
+
 The browser half of the dedicated ego configuration commands — what the Settings →
 AI Chat page reads and writes. Same field names, same response body, same error
 body: an `EgoCliError` serialized whole (`code`, `message`, `command`, `stdout`,
@@ -3842,3 +3844,7 @@ requires `run_id`, `command_id` and `expected_sequence`. IPC
 `workflow action=run input=<RunAction>` use the same service. The inbox needs no
 coordinator. See the backend workflow decision contract for shapes, deadline
 outcomes, retained legacy replay and continuation semantics.
+
+Native story phase previews use the existing story action envelope: `available_transitions {story_id,expected_revision}` returns `{type:"available_transitions",value:{revision,moves:[{status,command}]}}`. It uses the committed-transition evaluator without saving the story or history. Destinations include automatic QA and dependency-derived outcomes, with archived records and actor/workflow restrictions enforced. Previews do not reserve a move; the caller submits `transition` with the returned revision and command, and refreshes after any conflict. IPC, HTTP, CLI and managed MCP share this action.
+
+The Plans and Stories toolbar pill shows active-plan, Ready and In progress counts with distinct glyphs and a tooltip line for each number. Ready comes from the Rust `summary` action, not a frontend subtraction; Done/total remains the progress bar tooltip. Ready-only work therefore remains visible when no story is running.
