@@ -3630,6 +3630,18 @@ their deadlines; cancellation fences delivery. Question expiry never implies
 approval. This is internal infrastructure for later proof, provider and inbox
 consumers, not a new Designer control. See [workflows](backend/workflows.md#durable-timers-wf19).
 
+## Pending prompt recall and transcript cleanup
+
+ArrowUp in an empty desktop Compose or AI Chat composer recalls the latest
+host-owned user prompt after successful withdrawal. AI Chat supports text-only
+ACP prompts; desktop Compose supports the PTY idle-gate FIFO for every detected
+agent. Native CLI Pending receipts are not cancellation handles. Slash menus,
+nonempty drafts, and modified arrow keys retain their normal behavior. See
+[coverage and evidence](frontend/chat-wrap-recall-evidence.md).
+
+Terminal Chat keeps short inline code chips together. Empty ACP plan snapshots
+clear the prior steps without drawing a blank Plan card.
+
 
 ### Branch-local workflow decisions
 

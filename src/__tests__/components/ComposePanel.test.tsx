@@ -472,3 +472,44 @@ describe("ComposePanel", () => {
 		await waitFor(() => expect(editorText(container)).toBe("[image: /data/note-images/n1/shot.png]"));
 	});
 });
+
+describe("Compose pending recall", () => {
+	it("withdraws before restoring text and keeps later typing — catches duplicate recall or a replaced draft", async () => {
+		let acknowledge!: (text: string | null) => void;
+		const recall = vi.fn(
+			() =>
+				new Promise<string | null>((resolve) => {
+					acknowledge = resolve;
+				}),
+		);
+		const { container } = renderPanel({ queuedCount: () => 2, onRecallQueued: recall, pinned: () => true });
+		await waitFor(() => expect(container.querySelector(".cm-content")).not.toBeNull());
+		const content = container.querySelector(".cm-content") as HTMLElement;
+		fireEvent.keyDown(content, { key: "ArrowUp" });
+		fireEvent.keyDown(content, { key: "ArrowUp" });
+		expect(recall).toHaveBeenCalledTimes(1);
+		expect(editorText(container)).toBe("");
+		typeIntoEditor(container, "new typing");
+		acknowledge("pending prompt");
+		await waitFor(() => expect(editorText(container)).toBe("pending prompt\n\nnew typing"));
+	});
+
+	it("keeps native ArrowUp in a nonempty editor — catches recall stealing normal caret movement", async () => {
+		const recall = vi.fn().mockResolvedValue("pending prompt");
+		const { container } = renderPanel({ queuedCount: () => 1, onRecallQueued: recall });
+		await waitFor(() => expect(container.querySelector(".cm-content")).not.toBeNull());
+		typeIntoEditor(container, "already typing");
+		fireEvent.keyDown(container.querySelector(".cm-content") as HTMLElement, { key: "ArrowUp" });
+		expect(recall).not.toHaveBeenCalled();
+		expect(editorText(container)).toBe("already typing");
+	});
+
+	it("does not restore a lost withdrawal race — catches a prompt being edited after it already reached the CLI", async () => {
+		const recall = vi.fn().mockResolvedValue(null);
+		const { container } = renderPanel({ queuedCount: () => 1, onRecallQueued: recall });
+		await waitFor(() => expect(container.querySelector(".cm-content")).not.toBeNull());
+		fireEvent.keyDown(container.querySelector(".cm-content") as HTMLElement, { key: "ArrowUp" });
+		await waitFor(() => expect(recall).toHaveBeenCalledTimes(1));
+		expect(editorText(container)).toBe("");
+	});
+});

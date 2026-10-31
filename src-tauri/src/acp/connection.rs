@@ -104,6 +104,11 @@ pub(super) enum Command {
         turn_id: AcpTurnId,
         reply: Reply<()>,
     },
+    RecallQueued {
+        session_id: v1::SessionId,
+        turn_id: AcpTurnId,
+        reply: Reply<String>,
+    },
     /// Answer a request the agent is waiting on a person for.
     ///
     /// One command for both seats because everything about them is the same
@@ -579,6 +584,13 @@ impl ConnectionActor {
                 reply,
             } => {
                 let _ = reply.send(self.cancel_queued(&session_id, turn_id));
+            }
+            Command::RecallQueued {
+                session_id,
+                turn_id,
+                reply,
+            } => {
+                let _ = reply.send(self.recall_queued(&session_id, turn_id));
             }
             Command::Respond {
                 request_id,
@@ -1620,6 +1632,31 @@ impl ConnectionActor {
             },
         );
         Ok(())
+    }
+
+    fn recall_queued(
+        &mut self,
+        session_id: &v1::SessionId,
+        turn_id: AcpTurnId,
+    ) -> Result<String, AcpClientError> {
+        let content = self
+            .queued_contents
+            .get(&turn_id)
+            .ok_or_else(|| AcpClientError::invalid_input("queued prompt not found"))?;
+        let mut parts = Vec::new();
+        for block in &content.prompt {
+            let v1::ContentBlock::Text(text) = block else {
+                // DEFERRED (2026-10-31) — the composer needs a lossless multimodal
+                // draft contract before attachment-bearing prompts can be recalled.
+                return Err(AcpClientError::invalid_input(
+                    "only text-only queued prompts can be recalled",
+                ));
+            };
+            parts.push(text.text.clone());
+        }
+        let text = parts.join("\n\n");
+        self.cancel_queued(session_id, turn_id)?;
+        Ok(text)
     }
 
     fn cancel_queued(

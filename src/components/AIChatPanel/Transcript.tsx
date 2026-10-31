@@ -996,7 +996,7 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 											/>
 										)}
 									</Match>
-									<Match when={entry.kind === "plan" && entry}>
+									<Match when={entry.kind === "plan" && entry.entries.length > 0 && entry}>
 										{(plan) => (
 											<div class={s.toolCallCard}>
 												<div class={s.toolCallHeader}>

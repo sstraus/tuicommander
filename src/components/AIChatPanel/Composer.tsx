@@ -329,6 +329,7 @@ export const Composer: Component<{
 		});
 	};
 
+	let recalling = false;
 	const onKeyDown = (event: KeyboardEvent) => {
 		if (event.isComposing) return;
 		if (commandMenuOpen()) {
@@ -356,6 +357,31 @@ export const Composer: Component<{
 				chooseCommand(selected);
 				return;
 			}
+		}
+		if (
+			event.key === "ArrowUp" &&
+			!event.altKey &&
+			!event.ctrlKey &&
+			!event.metaKey &&
+			!event.shiftKey &&
+			!aiChatDraft.text() &&
+			!hasContent() &&
+			textarea?.selectionStart === 0 &&
+			textarea.selectionEnd === 0 &&
+			props.chat.queuedPrompts().length > 0
+		) {
+			event.preventDefault();
+			if (recalling || event.repeat) return;
+			recalling = true;
+			void props.chat
+				.recallQueued()
+				.then((recalled) => {
+					if (recalled) aiChatDraft.restoreRecalled(recalled.sessionId, recalled.text);
+				})
+				.finally(() => {
+					recalling = false;
+				});
+			return;
 		}
 		if (event.key.toLowerCase() === "s" && event.ctrlKey && !event.metaKey && !event.altKey) {
 			event.preventDefault();

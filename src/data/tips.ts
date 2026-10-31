@@ -31,6 +31,12 @@ export const CONTEXTUAL_TIPS = {
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Recall a queued prompt",
+		description:
+			"In an empty desktop Compose or AI Chat editor, press ArrowUp to withdraw the latest host-owned text prompt for editing. Native CLI Pending bubbles cannot be recalled this way.",
+		shortcut: "ArrowUp",
+	},
+	{
 		feature: "Confirm a detected ego executable",
 		description:
 			"Open AI Chat to see a detected ego path when none is configured. Choose Use this to save it, or Configure ego to choose a different binary. Detection never changes your settings automatically.",

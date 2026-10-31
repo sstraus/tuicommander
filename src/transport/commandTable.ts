@@ -303,6 +303,12 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			path: `/acp/connections/${p("connectionId")}/sessions/${p("sessionId")}/queue/${p("turnId")}`,
 		}),
 	},
+	acp_queued_prompt_recall: {
+		map: (_args, p) => ({
+			method: "POST",
+			path: `/acp/connections/${p("connectionId")}/sessions/${p("sessionId")}/queue/${p("turnId")}/recall`,
+		}),
+	},
 	acp_session_set_config_option: {
 		map: (args, p) => ({
 			method: "POST",
