@@ -327,7 +327,7 @@ The bell behavior when receiving BEL character (\x07) is set by `bell_style` in 
 
 ## Clickable File Paths
 
-File paths appearing in terminal output are automatically detected and become clickable links. Hover over a path to see the link underline, then click to open it.
+File paths appearing in terminal output are automatically detected and become clickable links. Hover over a path to see the link underline, then click to open it. Verified link underlines stay visible while unrelated tool indicators animate, including links that wrap across terminal rows.
 
 - `.md` / `.mdx` files open in the Markdown viewer panel
 - Other source files open in the built-in editor

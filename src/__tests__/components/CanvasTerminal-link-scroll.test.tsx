@@ -36,13 +36,19 @@ const URL = "https://example.com";
 const FILE = "file:///workspace/very-long-directory/example-report.md";
 let linkAbs = 102;
 let wrapped = false;
+let spinner = "*";
+let linkRemoved = false;
+let singleFile = false;
 function textAt(abs: number): string {
+	if (linkRemoved && (abs === linkAbs || abs === linkAbs + 1)) return "gone".padEnd(COLS);
+	if (abs === 100) return `Bash ${spinner}`.padEnd(COLS);
+	if (singleFile && abs === linkAbs) return `Bash ${spinner} src/report.md`.padEnd(COLS);
 	if (wrapped && abs === linkAbs) return FILE.slice(0, COLS);
 	if (wrapped && abs === linkAbs + 1) return FILE.slice(COLS).padEnd(COLS);
 	return (abs === linkAbs ? `link ${URL}` : `line ${abs}`).padEnd(COLS);
 }
 // Owned grid wire protocol, not a fixture that imitates an external CLI.
-function wire(start: number, count: number, styled = false) {
+function wire(start: number, count: number, styled = false, onlyRow?: number) {
 	const header = styled ? 12 : 26;
 	const prefix = styled ? 6 : 4;
 	const buffer = new ArrayBuffer(header + count * (prefix + COLS * 11));
@@ -61,7 +67,8 @@ function wire(start: number, count: number, styled = false) {
 		view.setUint16(20, COLS, true);
 	}
 	let at = header;
-	for (let i = 0; i < count; i++) {
+	for (let ordinal = 0; ordinal < count; ordinal++) {
+		const i = onlyRow ?? ordinal;
 		if (styled) {
 			view.setUint32(at, start + i, true);
 			view.setUint16(at + 4, COLS | (wrapped && start + i === linkAbs ? 0x8000 : 0), true);
@@ -116,6 +123,9 @@ beforeEach(() => {
 	paints.mockClear();
 	linkAbs = 102;
 	wrapped = false;
+	spinner = "*";
+	linkRemoved = false;
+	singleFile = false;
 	wasPerfDebug = isPerfDebug();
 	setPerfDebug(false);
 	vi.spyOn(appLogger, "debug").mockImplementation(() => {});
@@ -132,7 +142,9 @@ beforeEach(() => {
 				if (cmd === "terminal_get_logical_line") return [linkAbs - 100, FILE];
 				if (cmd === "resolve_terminal_paths")
 					return args.candidates.map((candidate) =>
-						candidate === FILE.slice(7) ? { absolute_path: FILE.slice(7), is_directory: false } : null,
+						candidate === FILE.slice(7) || candidate === "src/report.md"
+							? { absolute_path: candidate, is_directory: false }
+							: null,
 					);
 				if (cmd === "resolve_terminal_path")
 					return args.candidate === FILE.slice(7) ? { absolute_path: FILE.slice(7), is_directory: false } : null;
@@ -250,4 +262,98 @@ describe("link overlay during cached smooth scroll", () => {
 			terminalsStore.remove(terminalId);
 		}
 	});
+});
+
+// Catches: full-frame spinner damage clears verified wrapped underlines for the 150 ms verifier gap.
+it("retains wrapped link underlines across unrelated full-frame spinner redraws", async () => {
+	wrapped = true;
+	const terminalId = terminalsStore.add({
+		name: "link redraw",
+		sessionId: "link-scroll",
+		fontSize: 14,
+		cwd: "/workspace",
+		awaitingInput: null,
+	});
+	const view = render(() => <CanvasTerminal sessionId="link-scroll" terminalId={terminalId} />);
+	try {
+		await waitFor(() => expect(sink.current).not.toBeNull());
+		vi.useFakeTimers();
+		sink.current?.(wire(100, ROWS));
+		await vi.advanceTimersByTimeAsync(192);
+		const overlay = contexts.get(view.container.querySelectorAll("canvas").item(2));
+		const underlines = () => overlay?.lines.filter((line) => line.dashed);
+		const verified = [...(underlines() ?? [])];
+		expect(new Set(verified.map((line) => line.y)).size).toBe(2);
+		for (const tick of ["o", ".", "*"]) {
+			spinner = tick;
+			sink.current?.(wire(100, ROWS));
+			await vi.advanceTimersByTimeAsync(32);
+			expect(underlines()).toEqual(verified);
+		}
+		// Catches the mirror bug: keeping the old overlay after the link is erased.
+		linkRemoved = true;
+		sink.current?.(wire(100, ROWS));
+		await vi.advanceTimersByTimeAsync(32);
+		expect(underlines()).toEqual([]);
+	} finally {
+		view.unmount();
+		terminalsStore.remove(terminalId);
+	}
+});
+
+// Catches: a changed continuation row leaves its sibling's old wrapped underline standing.
+it.each([2, 3])("withdraws all wrapped spans when only row %s is rewritten", async (row) => {
+	wrapped = true;
+	const terminalId = terminalsStore.add({
+		name: "link rewrite",
+		sessionId: "link-scroll",
+		fontSize: 14,
+		cwd: "/workspace",
+		awaitingInput: null,
+	});
+	const view = render(() => <CanvasTerminal sessionId="link-scroll" terminalId={terminalId} />);
+	try {
+		await waitFor(() => expect(sink.current).not.toBeNull());
+		vi.useFakeTimers();
+		sink.current?.(wire(100, ROWS));
+		await vi.advanceTimersByTimeAsync(192);
+		const overlay = contexts.get(view.container.querySelectorAll("canvas").item(2));
+		expect(overlay?.lines.filter((line) => line.dashed)).toHaveLength(2);
+		linkRemoved = true;
+		sink.current?.(wire(100, 1, false, row));
+		await vi.advanceTimersByTimeAsync(32);
+		expect(overlay?.lines.filter((line) => line.dashed)).toEqual([]);
+	} finally {
+		view.unmount();
+		terminalsStore.remove(terminalId);
+	}
+});
+
+// Catches: whole-row file-verification keys blink an unchanged file when its Bash bullet changes.
+it("retains a verified file underline when another cell on the same row changes", async () => {
+	singleFile = true;
+	const terminalId = terminalsStore.add({
+		name: "file spinner",
+		sessionId: "link-scroll",
+		fontSize: 14,
+		cwd: "/workspace",
+		awaitingInput: null,
+	});
+	const view = render(() => <CanvasTerminal sessionId="link-scroll" terminalId={terminalId} />);
+	try {
+		await waitFor(() => expect(sink.current).not.toBeNull());
+		vi.useFakeTimers();
+		sink.current?.(wire(100, ROWS));
+		await vi.advanceTimersByTimeAsync(192);
+		const overlay = contexts.get(view.container.querySelectorAll("canvas").item(2));
+		const verified = [...(overlay?.lines.filter((line) => line.dashed) ?? [])];
+		expect(verified).toHaveLength(1);
+		spinner = "o";
+		sink.current?.(wire(100, 1, false, 2));
+		await vi.advanceTimersByTimeAsync(32);
+		expect(overlay?.lines.filter((line) => line.dashed)).toEqual(verified);
+	} finally {
+		view.unmount();
+		terminalsStore.remove(terminalId);
+	}
 });

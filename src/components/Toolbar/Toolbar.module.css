@@ -558,10 +558,12 @@ button.filterToggle.filterToggleActive:hover {
   gap: 6px;
 }
 
+.storiesMetric { display: inline-flex; align-items: center; gap: 3px; }
+
 .storiesPill {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 8px;
   font-size: var(--font-xs);
   font-weight: 600;
   font-variant-numeric: tabular-nums;
