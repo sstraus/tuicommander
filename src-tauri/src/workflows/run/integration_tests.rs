@@ -796,3 +796,299 @@ fn integration_cleanup_preserves_a_successor_workspace_even_without_a_live_pty()
     assert!(pending.reason.unwrap().contains("successor"));
     assert!(t.workspace.join("work.txt").exists());
 }
+
+fn enable(t: &Trial) {
+    t.store
+        .set_native_integration_policy(&t.project, true)
+        .unwrap();
+}
+
+fn save_crash_progress(t: &Trial, progress: &super::store::integration::IntegrationProgress) {
+    // Model a process stopping between durable saga writes; refs are produced by real Git.
+    rusqlite::Connection::open(t.store.database_path()).unwrap().execute(
+        "INSERT OR REPLACE INTO workflow_integrations(run_id,story_id,repository,document) VALUES (?1,?2,?3,?4)",
+        rusqlite::params![progress.request.run_id, progress.request.story_id, progress.repository, serde_json::to_string(progress).unwrap()],
+    ).unwrap();
+}
+
+fn prepared_before_publication(t: &Trial) -> super::store::integration::IntegrationProgress {
+    enable(t);
+    let workspace = t.workspace.clone();
+    super::store::integration::before_publish(move || {
+        std::fs::write(workspace.join("interruption.txt"), "stop publication").unwrap();
+    });
+    assert!(t.store.integrate(&t.request).is_err());
+    std::fs::remove_file(t.workspace.join("interruption.txt")).unwrap();
+    t.store
+        .integration_progress(&t.request.run_id, &t.request.story_id)
+        .unwrap()
+        .unwrap()
+}
+
+#[test]
+fn canonical_ignored_work_is_not_overwritten_by_native_publication() {
+    let mut t = trial();
+    enable(&t);
+    std::fs::write(t.project.join(".git/info/exclude"), "*.local\n").unwrap();
+    std::fs::write(
+        t.project.join("valuable.local"),
+        "unattributed local work\n",
+    )
+    .unwrap();
+    std::fs::write(
+        t.workspace.join("valuable.local"),
+        "incoming tracked artifact\n",
+    )
+    .unwrap();
+    git(&t.workspace, &["add", "-f", "valuable.local"]);
+    git(&t.workspace, &["commit", "-qm", "track ignored path"]);
+    t.request.expected_source = git(&t.workspace, &["rev-parse", "HEAD"]);
+    let checked = t
+        .store
+        .execute_check(
+            &t.request.run_id,
+            &t.request.story_id,
+            "git",
+            "changed-source",
+            t.request.expected_sequence,
+        )
+        .unwrap();
+    t.request.expected_sequence = checked.sequence;
+    let result = t.store.integrate(&t.request);
+    assert_eq!(
+        std::fs::read_to_string(t.project.join("valuable.local")).unwrap(),
+        "unattributed local work\n",
+        "ignored local bytes must survive: {result:?}"
+    );
+    assert!(result.is_err());
+    assert_eq!(
+        git(&t.project, &["rev-parse", "HEAD"]),
+        t.request.expected_base
+    );
+}
+
+#[test]
+fn receipt_recovery_after_saved_cursor_and_unrelated_run_event() {
+    let t = trial();
+    enable(&t);
+    super::store::integration::fault(IntegrationFault::Outbox);
+    t.store.integrate(&t.request).unwrap();
+    let mut progress = t
+        .store
+        .integration_progress(&t.request.run_id, &t.request.story_id)
+        .unwrap()
+        .unwrap();
+    progress.receipt_sequence = Some(t.store.snapshot(&t.request.run_id).unwrap().sequence);
+    save_crash_progress(&t, &progress);
+    t.store
+        .command(&t.request.run_id, "operator-pause", RunCommand::Pause)
+        .unwrap();
+    // Pause blocks receipts by design; resume leaves only the stale-cursor hazard.
+    t.store
+        .command(&t.request.run_id, "operator-resume", RunCommand::Resume)
+        .unwrap();
+    let recovered = t.store.integrate(&t.request).unwrap();
+    assert!(recovered.receipt_recorded, "{recovered:?}");
+    assert!(t.store.integrate(&t.request).unwrap().receipt_recorded);
+    assert_eq!(
+        git(&t.project, &["rev-list", "--count", "--merges", "HEAD"]),
+        "1"
+    );
+}
+
+#[test]
+fn cleanup_resumes_after_worktree_removal_before_branch_retirement() {
+    let t = trial();
+    enable(&t);
+    t.store.integrate(&t.request).unwrap();
+    git(
+        &t.project,
+        &[
+            "update-ref",
+            "refs/archive/story",
+            &t.request.expected_source,
+        ],
+    );
+    git(
+        &t.project,
+        &["worktree", "remove", t.workspace.to_str().unwrap()],
+    );
+    let cleaned = t
+        .store
+        .cleanup_integration(&t.request.run_id, &t.request.story_id, None)
+        .unwrap();
+    assert!(cleaned.cleanup_complete, "{cleaned:?}");
+    assert_eq!(git(&t.project, &["for-each-ref", "refs/heads/story"]), "");
+    assert_eq!(
+        git(&t.project, &["rev-parse", "refs/archive/story"]),
+        t.request.expected_source
+    );
+    assert!(
+        t.store
+            .cleanup_integration(&t.request.run_id, &t.request.story_id, None)
+            .unwrap()
+            .cleanup_complete
+    );
+}
+
+#[test]
+fn synthetic_validation_retries_after_checkout_removed_before_ref_deleted() {
+    let t = trial();
+    let progress = prepared_before_publication(&t);
+    git(
+        &t.project,
+        &["update-ref", &progress.validation_ref, &progress.candidate],
+    );
+    let recovered = t.store.integrate(&t.request).unwrap();
+    assert!(recovered.receipt_recorded);
+    assert!(!Path::new(&progress.validation_workspace).exists());
+    assert_eq!(
+        git(&t.project, &["for-each-ref", &progress.validation_ref]),
+        ""
+    );
+}
+
+#[test]
+fn repair_only_record_does_not_reserve_canonical_repository() {
+    let t = trial();
+    let mut progress = prepared_before_publication(&t);
+    rusqlite::Connection::open(t.store.database_path())
+        .unwrap()
+        .execute("DELETE FROM workflow_integrations", [])
+        .unwrap();
+    progress.request.run_id = "repair-only-run".into();
+    progress.candidate.clear();
+    progress.receipt = None;
+    progress.outcome = IntegrationOutcome::RepairRequired;
+    save_crash_progress(&t, &progress);
+    let integrated = t.store.integrate(&t.request).unwrap();
+    assert!(integrated.receipt_recorded);
+}
+
+#[test]
+fn unavailable_trial_repository_does_not_block_other_outbox_recovery() {
+    let t = trial();
+    enable(&t);
+    super::store::integration::fault(IntegrationFault::AfterMerge);
+    assert!(t.store.integrate(&t.request).is_err());
+    let progress = t
+        .store
+        .integration_progress(&t.request.run_id, &t.request.story_id)
+        .unwrap()
+        .unwrap();
+    rusqlite::Connection::open(t.store.database_path())
+        .unwrap()
+        .execute("DELETE FROM workflow_integrations", [])
+        .unwrap();
+    let mut missing = progress.clone();
+    missing.request.run_id = "missing-trial".into();
+    missing.project = t
+        ._config
+        .path()
+        .join("removed-trial")
+        .to_string_lossy()
+        .into_owned();
+    save_crash_progress(&t, &missing);
+    save_crash_progress(&t, &progress);
+    assert_eq!(t.store.recover_integration_outbox().unwrap(), 1);
+    assert_eq!(
+        t.store.integration_obligations(&t.project).unwrap().len(),
+        1
+    );
+    assert!(
+        t.store
+            .integration_progress(&t.request.run_id, &t.request.story_id)
+            .unwrap()
+            .unwrap()
+            .receipt_recorded
+    );
+}
+
+#[test]
+fn post_merge_check_setup_error_reports_integrated_obligation_pending() {
+    let t = trial();
+    enable(&t);
+    super::store::integration::fault(IntegrationFault::AfterMerge);
+    assert!(t.store.integrate(&t.request).is_err());
+    std::fs::write(t.project.join("operator.txt"), "canonical local work\n").unwrap();
+    let pending = t.store.integrate(&t.request).unwrap();
+    assert_eq!(
+        pending.outcome,
+        IntegrationOutcome::IntegratedObligationPending
+    );
+    assert!(pending.merged && pending.obligation_published);
+    assert!(pending.reason.is_some());
+    assert_eq!(
+        std::fs::read_to_string(t.project.join("operator.txt")).unwrap(),
+        "canonical local work\n"
+    );
+    std::fs::remove_file(t.project.join("operator.txt")).unwrap();
+    assert!(t.store.integrate(&t.request).unwrap().receipt_recorded);
+    assert_eq!(
+        git(&t.project, &["rev-list", "--count", "--merges", "HEAD"]),
+        "1"
+    );
+}
+
+#[test]
+fn interrupted_cleanup_refuses_changed_tip_or_missing_exact_archive() {
+    // catches: branch-only replay deleting work without its exact pinned archive.
+    for case in ["missing-archive", "wrong-archive", "changed-tip"] {
+        let t = trial();
+        enable(&t);
+        t.store.integrate(&t.request).unwrap();
+        git(
+            &t.project,
+            &["worktree", "remove", t.workspace.to_str().unwrap()],
+        );
+        if case != "missing-archive" {
+            let archived = if case == "wrong-archive" {
+                &t.request.expected_base
+            } else {
+                &t.request.expected_source
+            };
+            git(&t.project, &["update-ref", "refs/archive/story", archived]);
+        }
+        if case == "changed-tip" {
+            git(
+                &t.project,
+                &["update-ref", "refs/heads/story", &t.request.expected_base],
+            );
+        }
+        let before = git(&t.project, &["rev-parse", "refs/heads/story"]);
+        let pending = t
+            .store
+            .cleanup_integration(&t.request.run_id, &t.request.story_id, None)
+            .unwrap();
+        assert!(!pending.cleanup_complete, "{case}: {pending:?}");
+        assert_eq!(
+            git(&t.project, &["rev-parse", "refs/heads/story"]),
+            before,
+            "{case}"
+        );
+    }
+}
+
+#[test]
+fn synthetic_validation_preserves_a_mismatching_surviving_ref() {
+    // catches: recreating scratch by resetting an unrelated ref to the candidate.
+    let t = trial();
+    let progress = prepared_before_publication(&t);
+    git(
+        &t.project,
+        &[
+            "update-ref",
+            &progress.validation_ref,
+            &t.request.expected_base,
+        ],
+    );
+    assert!(t.store.integrate(&t.request).is_err());
+    assert_eq!(
+        git(&t.project, &["rev-parse", &progress.validation_ref]),
+        t.request.expected_base
+    );
+    assert_eq!(
+        git(&t.project, &["rev-parse", "HEAD"]),
+        t.request.expected_base
+    );
+}

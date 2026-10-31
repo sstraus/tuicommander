@@ -366,7 +366,13 @@ impl RunStore {
             {
                 continue;
             }
-            let _lock = lock_repository(Path::new(&progress.project))?;
+            let _lock = match lock_repository(Path::new(&progress.project)) {
+                Ok(lock) => lock,
+                Err(error) => {
+                    tracing::warn!(run_id=%progress.request.run_id, %error, "Native integration recovery cannot open repository");
+                    continue;
+                }
+            };
             // Refresh after the OS lock: a simultaneous retry may have completed.
             progress = self
                 .integration_progress(&progress.request.run_id, &progress.request.story_id)?
@@ -404,7 +410,7 @@ impl RunStore {
             .to_string_lossy()
             .into_owned();
         let conn = self.integration_db()?;
-        let unfinished: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM workflow_integrations WHERE repository=?1 AND json_extract(document,'$.merged')=0 AND NOT(run_id=?2 AND story_id=?3))", params![repo, request.run_id, request.story_id], |r| r.get(0)).map_err(sql)?;
+        let unfinished: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM workflow_integrations WHERE repository=?1 AND json_extract(document,'$.merged')=0 AND json_extract(document,'$.candidate')<>'' AND NOT(run_id=?2 AND story_id=?3))", params![repo, request.run_id, request.story_id], |r| r.get(0)).map_err(sql)?;
         if unfinished {
             return Err(
                 "canonical repository has an unfinished integration; recover it first".into(),
@@ -575,7 +581,13 @@ impl RunStore {
             // the index/worktree/ref transaction; no reset/force can discard dirt.
             git_output(
                 &project,
-                &["merge", "--ff-only", "--no-edit", &progress.candidate],
+                &[
+                    "merge",
+                    "--ff-only",
+                    "--no-overwrite-ignore",
+                    "--no-edit",
+                    &progress.candidate,
+                ],
             )?;
             #[cfg(test)]
             crash(IntegrationFault::AfterMerge)?;
@@ -601,30 +613,35 @@ impl RunStore {
                 .as_ref()
                 .is_none_or(|r| r.post_checks.is_empty())
             {
-                if clean_artifact(&project)?
-                    != (receipt.merge_commit.clone(), receipt.merge_tree.clone())
-                {
-                    progress.outcome = IntegrationOutcome::IntegratedObligationPending;
-                    progress.reason = Some("canonical ref moved before post-integration checks; explicit recertification required".into());
-                    self.save_integration(progress)?;
-                    return Ok(());
-                }
-                let run = self.snapshot(&progress.request.run_id)?;
-                let definition = WorkflowStore::open()?
-                    .get_published(&run.story_definition_id, run.story_definition_revision)?;
-                let mut checks = Vec::new();
-                for check in &definition.required_checks {
-                    let checked =
-                        execute_run_check(check, &project, &self.db_path, &run.id, false)?;
-                    if checked.exit_code != 0 {
+                let post_checks = (|| -> Result<Vec<CheckReceipt>, String> {
+                    if clean_artifact(&project)?
+                        != (receipt.merge_commit.clone(), receipt.merge_tree.clone())
+                    {
+                        return Err("canonical ref moved before post-integration checks; explicit recertification required".into());
+                    }
+                    let run = self.snapshot(&progress.request.run_id)?;
+                    let definition = WorkflowStore::open()?
+                        .get_published(&run.story_definition_id, run.story_definition_revision)?;
+                    let mut checks = Vec::new();
+                    for check in &definition.required_checks {
+                        let checked =
+                            execute_run_check(check, &project, &self.db_path, &run.id, false)?;
+                        if checked.exit_code != 0 {
+                            return Err(format!("post-integration check {} failed", check.id));
+                        }
+                        checks.push(checked);
+                    }
+                    Ok(checks)
+                })();
+                let checks = match post_checks {
+                    Ok(checks) => checks,
+                    Err(error) => {
                         progress.outcome = IntegrationOutcome::IntegratedObligationPending;
-                        progress.reason =
-                            Some(format!("post-integration check {} failed", check.id));
+                        progress.reason = Some(error);
                         self.save_integration(progress)?;
                         return Ok(());
                     }
-                    checks.push(checked);
-                }
+                };
                 progress
                     .receipt
                     .as_mut()
@@ -632,22 +649,16 @@ impl RunStore {
                     .post_checks = checks;
                 self.save_integration(progress)?;
             }
-            let sequence = match progress.receipt_sequence {
-                Some(sequence) => sequence,
-                None => {
-                    let sequence = self.snapshot(&progress.request.run_id)?.sequence;
-                    progress.receipt_sequence = Some(sequence);
-                    self.save_integration(progress)?;
-                    sequence
-                }
-            };
+            // This fixed internal payload is idempotent by command ID. Operator
+            // events must not permanently pin recovery to a pre-crash cursor.
             let command = format!("native-integration:{}", progress.request.command_id);
-            if let Err(error) = self.record_integration_receipt(
+            if let Err(error) = self.command(
                 &progress.request.run_id,
-                &progress.request.story_id,
                 &command,
-                sequence,
-                progress.receipt.clone().ok_or("receipt missing")?,
+                RunCommand::RecordIntegration {
+                    story_id: progress.request.story_id.clone(),
+                    receipt: progress.receipt.clone().ok_or("receipt missing")?,
+                },
             ) {
                 progress.outcome = IntegrationOutcome::IntegratedObligationPending;
                 progress.reason = Some(error);
@@ -798,20 +809,39 @@ impl RunStore {
         let project = Path::new(&progress.project);
         let check_path = Path::new(&progress.validation_workspace);
         if !check_path.exists() {
-            git_output(
+            let branch = progress
+                .validation_ref
+                .strip_prefix("refs/heads/")
+                .ok_or("invalid validation ref")?;
+            let existing = git_output(
                 project,
                 &[
-                    "worktree",
-                    "add",
-                    "-b",
-                    progress
-                        .validation_ref
-                        .strip_prefix("refs/heads/")
-                        .ok_or("invalid validation ref")?,
-                    &progress.validation_workspace,
-                    &progress.candidate,
+                    "for-each-ref",
+                    "--format=%(objectname)",
+                    &progress.validation_ref,
                 ],
             )?;
+            if existing.is_empty() {
+                git_output(
+                    project,
+                    &[
+                        "worktree",
+                        "add",
+                        "-b",
+                        branch,
+                        &progress.validation_workspace,
+                        &progress.candidate,
+                    ],
+                )?;
+            } else {
+                if existing != progress.candidate {
+                    return Err("synthetic validation ref changed; repair required".into());
+                }
+                git_output(
+                    project,
+                    &["worktree", "add", &progress.validation_workspace, branch],
+                )?;
+            }
         }
         if clean_artifact(check_path)?.0 != progress.candidate
             || git_output(check_path, &["symbolic-ref", "HEAD"])? != progress.validation_ref
@@ -1105,7 +1135,15 @@ impl RunStore {
                 });
             }
         } else if !source_tip.is_empty() {
-            return Err("workspace missing but branch remains; inspect interrupted cleanup".into());
+            let archive = format!("refs/archive/{branch}");
+            if git_output(project, &["rev-parse", "--verify", &archive])? != receipt.source_commit {
+                return Err("exact-tip archive does not preserve the source commit".into());
+            }
+            tuic_git::worktree::delete_integrated_local_branch_at_tip(
+                project.to_str().ok_or("project path encoding")?,
+                branch,
+                &receipt.source_commit,
+            )?;
         }
         Ok(())
     }

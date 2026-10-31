@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Preserve ignored canonical work during native integration and recover interrupted validation, receipts and branch retirement without blocking unrelated trial repositories (#2514-3d1e).
+
 - Retire Terminal Chat pending bubbles when native receipts truncate or redact the submitted prompt (#2542-49c3).
 
 - Fix workflow routing pins so unrelated profile and idle-close edits do not block an unchanged route. Keep contract-3 graph launches daemon-owned.

@@ -3788,6 +3788,27 @@ pub fn delete_integrated_local_branch_with_pr(
     branch_name: &str,
     pr_proves_tip: impl Fn(&Path, &str, &str) -> bool,
 ) -> Result<DeletedBranch, String> {
+    delete_integrated_local_branch_inner(repo_path, branch_name, None, pr_proves_tip)
+}
+
+/// Resume an authorized retirement without accepting a branch that moved since
+/// the owning workflow captured its archive and source receipt.
+pub fn delete_integrated_local_branch_at_tip(
+    repo_path: &str,
+    branch_name: &str,
+    expected_tip: &str,
+) -> Result<DeletedBranch, String> {
+    delete_integrated_local_branch_inner(repo_path, branch_name, Some(expected_tip), |_, _, _| {
+        false
+    })
+}
+
+fn delete_integrated_local_branch_inner(
+    repo_path: &str,
+    branch_name: &str,
+    expected_tip: Option<&str>,
+    pr_proves_tip: impl Fn(&Path, &str, &str) -> bool,
+) -> Result<DeletedBranch, String> {
     let repo = Path::new(repo_path);
     if branch_name.is_empty()
         || git_cmd(repo)
@@ -3828,6 +3849,11 @@ pub fn delete_integrated_local_branch_with_pr(
     let branch_ref = format!("refs/heads/{branch_name}");
     let tip = rev_at(repo, &branch_ref)
         .map_err(|_| format!("Local branch '{branch_name}' does not exist"))?;
+    if expected_tip.is_some_and(|expected| expected != tip) {
+        return Err(format!(
+            "Cannot delete '{branch_name}': local ref moved from the expected tip"
+        ));
+    }
     let (status, merge_proof) =
         classify_branch_merge(repo, branch_name, &tip, &default_branch, pr_proves_tip)?;
     let proof = match status {
@@ -3864,7 +3890,7 @@ pub fn delete_integrated_local_branch_with_pr(
         ));
     }
     git_cmd(repo)
-        .args(["update-ref", "-d", &branch_ref, &tip])
+        .args(["update-ref", "--no-deref", "-d", &branch_ref, &tip])
         .run()
         .map_err(|error| {
             format!("Cannot delete '{branch_name}': local ref moved or deletion failed: {error}")

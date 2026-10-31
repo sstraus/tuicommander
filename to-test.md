@@ -1,5 +1,7 @@
 ## Native integration trial (2514-3d1e) — Rust rebuild/restart required
 
+- [ ] After a manual Rust rebuild/restart, exercise an ignored canonical-file collision and inspect typed post-merge debt in a throwaway trial clone. Targeted real-Git regressions cover preservation and recovery; no live daily instance was restarted.
+
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use an isolated throwaway Git clone to inspect the default-disabled native integration policy, then enable only that clone and exercise the integration/debt/cleanup actions. The daily instance was not restarted. Rust changes do not hot-reload; restart only when losing current sessions is acceptable.
 
 ## Typed workflow commands (2512-5a42) — Rust rebuild/restart required

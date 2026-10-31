@@ -597,13 +597,13 @@ story revision, current source checks, clean checkouts and the pinned canonical
 branch. It constructs a two-parent no-ff merge object, runs the published checks
 in an isolated synthetic workspace, rechecks both parents, then fast-forwards
 the canonical branch to that exact object. It does not construct a second merge
-after validation. A moved base refuses publication. Revalidation uses a new
+after validation. Publication refuses to overwrite ignored canonical files that the source starts tracking. A moved base refuses publication. Revalidation uses a new
 command ID and fresh expected commits; the previous unmerged intent stays in
-history. A published intent must recover under its original request.
+history. Repair-only records do not reserve the repository. A surviving synthetic validation ref is reused only at the pinned candidate. A published intent must recover under its original request.
 
 The journal separates publication, proof-obligation outbox, canonical receipt,
 dependency refresh and cleanup. Restart recovery first inspects refs. It resumes
-only already-published candidates and never merges an unmerged intent by itself.
+only already-published candidates and never merges an unmerged intent by itself. An unavailable trial repository does not stop recovery for other repositories. Internal receipt replay is idempotent by command ID and does not depend on a saved operator-event cursor.
 The outbox pins both parents, merge commit and exact changed-file scope. It is
 WF07 debt, not WF08 proof completion or a release-ready result. Read it through
 `integration_obligations`; read one saga through `integration {run_id,story_id}`.
@@ -614,7 +614,7 @@ Partial success is typed: `integrated_cleanup_pending` corresponds to exit 2,
 post-integration receipt or outbox entry remains recoverable debt. A failed
 `pnpm install --offline --frozen-lockfile` keeps the merge and retries only the
 refresh phase. Post-integration checks bind the real canonical ref and commit;
-out-of-band ref or tree movement invalidates the existing freshness rules.
+out-of-band ref or tree movement invalidates the existing freshness rules. Artifact inspection and check-setup errors after publication return durable obligation-pending outcomes, not failed-merge results.
 
 `cleanup_integration {run_id,story_id}` is a separate owning-daemon action. It
 proves integration, the exact source tip, native run/successor ownership, durable
@@ -623,7 +623,7 @@ using TUIC's non-force worktree removal. The exact source tip is archived under
 `refs/archive/<branch>` before branch retirement. Dirty files, including
 managed-looking generated files and nested submodule dirt, keep the workspace;
 this action never restores, stashes or discards them. Ignored work also keeps the workspace until it has explicit disposal attribution.
-Native successor assignment and managed launch/close stay fenced through removal. Cleanup failure does not revoke integration.
+If checkout removal finishes before branch retirement, replay can retire the remaining branch only with the exact source tip and archive, through the same TUIC Git deletion boundary. Native successor assignment and managed launch/close stay fenced through removal. Cleanup failure does not revoke integration.
 
 Code conflicts return `repair_required`. Append-only union is allowed only for
 explicit repository-relative Markdown paths in `append_only_documents` on the
