@@ -1146,6 +1146,7 @@ mod tests {
                 &EgoAcpConfig {
                     executable: launcher,
                     profile: String::new(),
+                    master_prompt: String::new(),
                 },
                 AcpConnectRequest {
                     root: workspace.clone(),

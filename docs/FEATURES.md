@@ -3654,3 +3654,7 @@ subject fences, actor provenance and restart-safe deadlines. An unanswered quest
 suspends its activation, not disjoint delivery. The project inbox counts pending
 and expired questions without a coordinator; all transports use the same service.
 No timeout grants consent. See [workflow decisions](backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).
+
+AI Chat settings includes a persisted **Master prompt** textarea for additive behavior
+instructions on new conversations (8192 UTF-8 bytes maximum). Existing conversations
+keep their original launch instructions. Empty adds nothing.

@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- AI Chat master prompt in Settings: additive instructions for new conversations, with an 8192-byte limit.
 - Preserve ignored canonical work during native integration and recover interrupted validation, receipts and branch retirement without blocking unrelated trial repositories (#2514-3d1e).
 - Recover malformed config fields without resetting valid settings; preserve valid legacy service credentials and show reset field names and the original backup path once per recovery (#2564-8455).
 - Migrate legacy disabled scrollback reflow once; preserve later explicit choices (#2565-8b3c).

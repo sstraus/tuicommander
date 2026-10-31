@@ -959,6 +959,10 @@ pub(crate) struct AppConfig {
     #[serde(default)]
     #[schemars(extend("x-setting" = {"sensitivity":"private","apply":"next_session","effect":"Used when the next session or process starts; existing sessions retain their launch configuration.","operations":["get","set"],"confirmationClass":"ordinary"}))]
     pub(crate) ego_profile: String,
+    /// Additive instructions snapshotted when an AI Chat conversation is created.
+    #[serde(default, deserialize_with = "deserialize_ai_chat_master_prompt")]
+    #[schemars(extend("x-setting" = {"sensitivity":"private","apply":"next_session","effect":"Adds instructions to new AI Chat runs; existing conversations retain their launch instructions.","operations":["get","set"],"confirmationClass":"ordinary"}))]
+    pub(crate) ai_chat_master_prompt: String,
     /// Directory every AI Chat conversation runs in. Empty means the user's home
     /// directory. Must be absolute; a missing directory is created at connect.
     #[serde(default)]
@@ -1368,6 +1372,7 @@ impl Default for AppConfig {
             ide: String::new(),
             ego_executable: String::new(),
             ego_profile: String::new(),
+            ai_chat_master_prompt: String::new(),
             ai_chat_workspace: String::new(),
             ai_chat_sessions: HashMap::new(),
             ai_chat_peer_ids: HashMap::new(),
@@ -1688,6 +1693,15 @@ fn default_git_panel_width() -> u32 {
 }
 fn default_settings_nav_width() -> u32 {
     232
+}
+
+pub(crate) fn deserialize_ai_chat_master_prompt<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    crate::acp::validate_master_prompt(&value).map_err(serde::de::Error::custom)?;
+    Ok(value)
 }
 
 // ---------------------------------------------------------------------------
@@ -5998,6 +6012,7 @@ mod tests {
             ide: "cursor".to_string(),
             ego_executable: "/opt/ego/bin/ego".to_string(),
             ego_profile: "coordinator".to_string(),
+            ai_chat_master_prompt: "Delegate investigations".to_string(),
             ai_chat_workspace: "/srv/chat".to_string(),
             ai_chat_sessions: HashMap::from([(
                 "/repo/project".to_string(),
@@ -6012,6 +6027,7 @@ mod tests {
                 crate::acp_chat::ChatLaunch {
                     executable: "/opt/observer/ego".to_string(),
                     profile: "coordinator".to_string(),
+                    master_prompt: String::new(),
                     workspace: PathBuf::from("/srv/observer"),
                     peer_id: "550e8400-e29b-41d4-a716-446655440a02".to_string(),
                 },
@@ -6099,6 +6115,7 @@ mod tests {
         assert_eq!(loaded.ide, "cursor");
         assert_eq!(loaded.ego_executable, "/opt/ego/bin/ego");
         assert_eq!(loaded.ego_profile, "coordinator");
+        assert_eq!(loaded.ai_chat_master_prompt, "Delegate investigations");
         assert_eq!(loaded.ai_chat_workspace, "/srv/chat");
         assert_eq!(
             loaded.ai_chat_sessions.get("/repo/project"),

@@ -44,6 +44,7 @@ pub(crate) fn ego_config(state: &AppState) -> Result<EgoAcpConfig, AcpClientErro
     Ok(EgoAcpConfig {
         executable: PathBuf::from(executable),
         profile: settings.ego_profile.clone(),
+        master_prompt: settings.ai_chat_master_prompt.clone(),
     })
 }
 

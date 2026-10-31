@@ -3223,3 +3223,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   twelve plugins were subsequently loaded. No running app reload was performed.
 
 - [ ] After a Rust rebuild/restart, inspect the generated Waiting and long work launch preview: continue independent work, yield only for a needed result or user answer, report running work without completion/suggestions, and use the launched mechanism’s wake. Existing sessions do not receive the new launch text automatically. (#2581-4824)
+
+- [ ] AI Chat master prompt (#2587-88de): after the next backend rebuild/restart, save instructions in Settings → AI → AI Chat, create a new conversation, and confirm it follows them while an existing conversation is unchanged. Rust does not hot-reload; restart only when ready to lose current backend sessions.
