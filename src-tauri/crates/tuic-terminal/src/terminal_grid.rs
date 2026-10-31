@@ -5243,23 +5243,29 @@ mod tests {
     #[test]
     fn replacing_continuation_after_growth_clears_serialized_wrap() {
         for cols in [80, 200] {
-            let mut grid = TerminalGrid::new(24, 80, 100);
-            grid.reflow_history = false;
-            grid.process("💬 answer ".as_bytes());
-            grid.process("a".repeat(90).as_bytes());
-            assert!(first_row_header(&grid.serialize_full_frame(), 80).2);
-            grid.resize(24, cols);
+            for (action, input) in [
+                // Independently replace the next row, retaining the preceding answer.
+                ("repaint", &b"\x1b[2;1H\x1b[2Ksuggest: cargo check"[..]),
+                // Explicit line endings must clear an edge retained at the old margin.
+                ("CR", &b"\x1b[1;1H\r"[..]),
+                ("LF", &b"\x1b[1;1H\n"[..]),
+            ] {
+                let mut grid = TerminalGrid::new(24, 80, 100);
+                grid.reflow_history = false;
+                grid.process("💬 answer ".as_bytes());
+                grid.process("a".repeat(90).as_bytes());
+                assert!(first_row_header(&grid.serialize_full_frame(), 80).2);
+                grid.resize(24, cols);
 
-            // A TUI independently repaints the next row. Its new marker is no
-            // longer part of the preceding answer, even if that row is retained.
-            grid.process(b"\x1b[2;1H\x1b[2Ksuggest: cargo check");
-            let bytes = grid.serialize_styled_range(0, 2);
-            let count = u16::from_le_bytes([bytes[16], bytes[17]]);
-            assert_eq!(
-                count & ROW_WRAPPED_FLAG,
-                0,
-                "independent repaint must break answer continuation at width {cols}"
-            );
+                grid.process(input);
+                let bytes = grid.serialize_styled_range(0, 2);
+                let count = u16::from_le_bytes([bytes[16], bytes[17]]);
+                assert_eq!(
+                    count & ROW_WRAPPED_FLAG,
+                    0,
+                    "{action} must break answer continuation at width {cols}"
+                );
+            }
         }
     }
 

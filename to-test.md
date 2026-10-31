@@ -1,6 +1,6 @@
 ## Retained answer gutters (2560-b448) — Rust rebuild/restart required
 
-- [ ] After Boss installs a rebuilt app or restarts it when session loss is acceptable, create a throwaway 80-column terminal with reflow disabled, emit a long marked answer, and widen it to 200 columns. Existing fragments stay narrow by design; the green gutter must cover their continuation rows. The recorded-grid production renderer replay and targeted terminal regression cover the contract. The daily app was not restarted or reconfigured.
+- [ ] After Boss installs a rebuilt app or restarts it when session loss is acceptable, create a throwaway 80-column terminal with reflow disabled, emit a long marked answer, and widen it to 200 columns. Existing fragments stay narrow by design; the green gutter must cover their continuation rows. The recorded-grid production renderer replay and targeted terminal regression cover the contract. The daily app was not restarted or reconfigured. Independently repaint the next row after widening: it must not remain joined to the answer; explicit CR/LF must also break the retained edge.
 
 ## Session Chat transcript typing (2554-0ee4)
 

@@ -293,7 +293,10 @@ flag at the old margin. Blank columns added to the right do not cancel that
 edge. The styled-range and live-frame serializers inspect the full retained
 row for the wire wrap bit, even when a dirty frame ships only a partial span
 (#2560-b448). This keeps answer gutters on continuation rows without changing
-the configured reflow policy, cell positions, or copy semantics.
+the configured reflow policy, cell positions, or copy semantics. The fork's
+existing independent-row input, CR, and LF clearing paths remove wrap flags
+across the retained row, not only at the current margin. Repainting a former
+continuation therefore cannot join unrelated output to the preceding answer.
 
 ### Resize repaint reconciliation
 
