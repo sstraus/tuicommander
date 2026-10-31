@@ -1,3 +1,7 @@
+## Settings catalogue ledger coverage (2571-926a)
+
+- [x] Preserve generated settings descriptors while rejecting malformed and invalid owner ledgers, including pre-existing schema gaps. _(verified: rb `settings::catalogue::tests`, 13 passed; generated TypeScript matches the committed catalogue. This internal Rust refactor needs a rebuild to load, but changes no user-visible behavior. The daily app was not restarted.)_
+
 ## Native integration trial (2514-3d1e) — Rust rebuild/restart required
 
 - [ ] After a manual Rust rebuild/restart, exercise an ignored canonical-file collision and inspect typed post-merge debt in a throwaway trial clone. Targeted real-Git regressions cover preservation and recovery; no live daily instance was restarted.

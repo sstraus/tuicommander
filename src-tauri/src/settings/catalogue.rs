@@ -67,6 +67,18 @@ impl Catalogue {
         Ok(())
     }
 
+    /// Append the owner ledger and validate every gap, including schema-derived gaps.
+    pub(crate) fn register_gap_ledger(&mut self, source: &str) -> Result<(), CatalogueError> {
+        self.gaps.extend(
+            serde_json::from_str::<Vec<InventoryGap>>(source)
+                .map_err(|_| error("inventory", "/gaps", "invalid gap ledger"))?,
+        );
+        for gap in &self.gaps {
+            gap.validate()?;
+        }
+        Ok(())
+    }
+
     /// Gate for the later cutover: an owner gap must never become silent coverage.
     pub fn require_complete_inventory(&self) -> Result<(), CatalogueError> {
         for gap in &self.gaps {

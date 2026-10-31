@@ -154,17 +154,6 @@ pub(super) fn native_catalogue_for(dictation: bool) -> Result<Catalogue, Catalog
     super::layout::register(&mut catalogue);
     super::app_choices::register(&mut catalogue);
     super::registration::classify_runtime(&mut catalogue);
-    catalogue.gaps.extend(
-        serde_json::from_str::<Vec<InventoryGap>>(include_str!("inventory-gaps.json")).map_err(
-            |_| CatalogueError {
-                store: "inventory".into(),
-                path: "/gaps".into(),
-                reason: "invalid gap ledger".into(),
-            },
-        )?,
-    );
-    for gap in &catalogue.gaps {
-        gap.validate()?;
-    }
+    catalogue.register_gap_ledger(include_str!("inventory-gaps.json"))?;
     Ok(catalogue)
 }

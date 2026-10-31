@@ -288,3 +288,82 @@ fn tagged_union_choices_preserve_all_variants_and_metadata() {
             .is_err()
     );
 }
+
+// Catches: corrupt ledger JSON silently becoming an empty, complete inventory.
+#[test]
+fn gap_ledger_rejects_malformed_json_with_inventory_context() {
+    let mut catalogue = Catalogue::default();
+    for source in ["[", "{}", "null", r#"[{"store":"fixture"}]"#] {
+        let err = catalogue.register_gap_ledger(source).unwrap_err();
+        assert_eq!(err.store, "inventory", "{source}");
+        assert_eq!(err.path, "/gaps", "{source}");
+        assert_eq!(err.reason, "invalid gap ledger", "{source}");
+        assert!(catalogue.gaps.is_empty(), "{source}");
+    }
+}
+
+// Catches: checking only the first ledger entry and accepting a later ownerless gap.
+#[test]
+fn gap_ledger_validates_later_entries() {
+    let source = r#"[
+        {"store":"first","path":"/valid","ownerStep":"Step 3","reason":"Missing schema"},
+        {"store":"second","path":"/invalid","ownerStep":"","reason":"Missing schema"}
+    ]"#;
+    let err = Catalogue::default()
+        .register_gap_ledger(source)
+        .unwrap_err();
+    assert_eq!(err.store, "second");
+    assert_eq!(err.path, "/invalid");
+    assert_eq!(
+        err.reason,
+        "inventory gap needs a concrete owner step, path and reason"
+    );
+}
+
+// Catches: validating only ledger entries and overlooking invalid schema-derived gaps.
+#[test]
+fn gap_ledger_validates_existing_schema_gaps() {
+    let mut catalogue = Catalogue::default();
+    catalogue.gaps.push(InventoryGap {
+        store: "schema".into(),
+        path: "/unowned".into(),
+        owner_step: String::new(),
+        reason: "Missing schema".into(),
+    });
+    let err = catalogue.register_gap_ledger("[]").unwrap_err();
+    assert_eq!(err.store, "schema");
+    assert_eq!(err.path, "/unowned");
+    assert_eq!(
+        err.reason,
+        "inventory gap needs a concrete owner step, path and reason"
+    );
+}
+
+// Catches: replacing existing gaps or discarding valid owner records during registration.
+#[test]
+fn gap_ledger_preserves_existing_and_new_owner_records() {
+    let mut catalogue = Catalogue::default();
+    catalogue.register_gap_ledger("[]").unwrap();
+    catalogue.require_complete_inventory().unwrap();
+    catalogue.gaps.push(InventoryGap {
+        store: "schema".into(),
+        path: "/existing".into(),
+        owner_step: "Step 3".into(),
+        reason: "Existing gap".into(),
+    });
+    catalogue
+        .register_gap_ledger(
+            r#"[
+        {"store":"ledger","path":"/new","ownerStep":"Step 4","reason":"New gap"}
+    ]"#,
+        )
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&catalogue.gaps).unwrap(),
+        json!([
+            {"store":"schema","path":"/existing","ownerStep":"Step 3","reason":"Existing gap"},
+            {"store":"ledger","path":"/new","ownerStep":"Step 4","reason":"New gap"}
+        ])
+    );
+    assert!(catalogue.require_complete_inventory().is_err());
+}
