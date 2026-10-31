@@ -1,5 +1,6 @@
 mod api;
 pub use store::integration::{IntegrateRequest, IntegrationObligation, IntegrationProgress};
+pub mod calls;
 pub(super) mod check;
 mod contracts;
 pub mod evidence;

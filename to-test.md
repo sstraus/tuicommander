@@ -1,3 +1,7 @@
+## Pinned reusable workflow Calls (2516-8fd1) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a decision/check Call in a throwaway project. Inspect nested pins and typed outputs, republish the callee, and confirm the live run keeps its original revision. Cancel a live child and inspect its stop request plus retained integration obligations. No daily instance was restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
 ## Settings catalogue ledger coverage (2571-926a)
 
 - [x] Preserve generated settings descriptors while rejecting malformed and invalid owner ledgers, including pre-existing schema gaps. _(verified: rb `settings::catalogue::tests`, 13 passed; generated TypeScript matches the committed catalogue. This internal Rust refactor needs a rebuild to load, but changes no user-visible behavior. The daily app was not restarted.)_

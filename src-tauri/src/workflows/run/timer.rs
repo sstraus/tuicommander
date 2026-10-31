@@ -190,6 +190,7 @@ pub(super) fn choose(
         snapshot.event_contract_version,
         super::contracts::PINNED_SERIAL_EVENT_CONTRACT_VERSION
             | super::contracts::PARALLEL_EVENT_CONTRACT_VERSION
+            | super::contracts::BRANCH_INPUT_EVENT_CONTRACT_VERSION
             | super::contracts::CURRENT_EVENT_CONTRACT_VERSION
     ) || matches!(snapshot.status, RunStatus::Completed | RunStatus::Cancelled)
     {

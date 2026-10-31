@@ -1092,3 +1092,24 @@ fn synthetic_validation_preserves_a_mismatching_surviving_ref() {
         t.request.expected_base
     );
 }
+
+#[test]
+fn parent_cancel_does_not_erase_shared_proof_debt() {
+    // catches: cancelling a delivery run deletes independently owned post-merge obligations.
+    let t = trial();
+    t.store
+        .set_native_integration_policy(&t.project, true)
+        .unwrap();
+    t.store.integrate(&t.request).unwrap();
+    let debt = t.store.integration_obligations(&t.project).unwrap();
+    assert_eq!(debt.len(), 1);
+    t.store
+        .command(&t.request.run_id, "cancel-parent", RunCommand::Cancel)
+        .unwrap();
+    let reopened = RunStore::open().unwrap();
+    assert_eq!(reopened.integration_obligations(&t.project).unwrap(), debt);
+    assert_eq!(
+        reopened.replay(&t.request.run_id).unwrap().status,
+        RunStatus::Cancelled
+    );
+}
