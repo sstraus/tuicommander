@@ -563,5 +563,8 @@ The projection reads persisted runs, requires no coordinator or runtime actor, a
 is identical through IPC `workflow_run_action`, HTTP `/workflows/run/action` and
 MCP `workflow action=run`. Reconnect must reread the projection; run-change events
 remain cursor wake hints. The Stories answer form sends the revision and subject
-for new runs and retains the old input command for historical runs. Boolean and
-multiple-choice values can be entered as JSON in that existing form.
+for new runs and retains the old input command for historical runs. Expired
+questions remain read-only records and do not hide the next pending question.
+The form shows choices from the current structured schema; only historical
+requests use legacy option suggestions. Boolean and multiple-choice values can
+be entered as JSON in that existing form.

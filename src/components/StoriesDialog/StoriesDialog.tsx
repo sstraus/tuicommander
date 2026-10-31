@@ -101,15 +101,17 @@ interface RunGraph {
 	pauses: { activationId: string; resumeTo: string; evidence: { reason: string }; resolution: string | null }[];
 	completed: boolean;
 }
+interface RunQuestion {
+	id: string;
+	revision: number;
+	attemptId: string;
+	subjectDigest: string;
+	state: string;
+	schema: { type: string; options?: string[] };
+	request: { question: string; options: string[] };
+}
 interface RunSnapshot {
-	questions?: {
-		id: string;
-		revision: number;
-		attemptId: string;
-		subjectDigest: string;
-		state: string;
-		schema: { type: string };
-	}[];
+	questions?: RunQuestion[];
 	id: string;
 	planId: string;
 	status: string;
@@ -419,10 +421,21 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 	const storyPlan = () => plans().find((plan) => plan.id === selectedStory()?.planId);
 	const runPlanId = () => selectedPlan()?.id ?? storyPlan()?.id;
 	const planTitleFor = (story: Story) => plans().find((plan) => plan.id === story.planId)?.title ?? story.planId;
-	const pendingInput = () =>
-		run()?.attempts.find(
+	const pendingQuestion = () => run()?.questions?.find((question) => question.state === "pending");
+	const pendingInput = () => {
+		const selected = run();
+		if (selected?.questions) {
+			const question = pendingQuestion();
+			return selected.attempts.find((attempt) => attempt.id === question?.attemptId);
+		}
+		return selected?.attempts.find(
 			(attempt) => attempt.outcome === "needs_input" && !attempt.inputAnswer && attempt.report?.inputRequest,
 		);
+	};
+	const pendingOptions = () => {
+		const question = pendingQuestion();
+		return question ? (question.schema.options ?? []) : (pendingInput()?.report?.inputRequest?.options ?? []);
+	};
 
 	const fail = (cause: unknown): void => {
 		const message = String(cause);
@@ -524,7 +537,7 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 		setRunLoading(true);
 		setRunError("");
 		try {
-			const question = selected.questions?.findLast((item) => item.attemptId === attempt.id);
+			const question = pendingQuestion();
 			const reply = await callRun({
 				action: "command",
 				run_id: selected.id,
@@ -1193,6 +1206,17 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 											sequence {selected().sequence}
 										</p>
 										<RunIncidents project={props.project} runId={selected().id} sequence={selected().sequence} />
+										<For
+											each={selected().questions?.filter(
+												(question) => question.state === "timed_out" || question.state === "incomplete",
+											)}
+										>
+											{(question) => (
+												<p class={s.muted}>
+													{question.request.question} · {question.state.replaceAll("_", " ")}
+												</p>
+											)}
+										</For>
 										<Show when={pendingInput()}>
 											{(attempt) => (
 												<form class={s.form} onSubmit={(event) => void answerRunInput(event)}>
@@ -1204,8 +1228,8 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 															onInput={(event) => setInputAnswer(event.currentTarget.value)}
 														/>
 													</label>
-													<Show when={attempt().report?.inputRequest?.options.length}>
-														<small>Suggested: {attempt().report?.inputRequest?.options.join(", ")}</small>
+													<Show when={pendingOptions().length}>
+														<small>Suggested: {pendingOptions().join(", ")}</small>
 													</Show>
 													<Button variant="primary" type="submit" disabled={runLoading() || !inputAnswer().trim()}>
 														Record answer
