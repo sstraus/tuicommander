@@ -1,0 +1,4 @@
+body { margin: 0; }
+.pr-conversation-fixture { height: 100dvh; display: flex; flex-direction: column; }
+.pr-conversation-fixture > header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px; background: var(--bg-tertiary); color: var(--fg-primary); }
+.pr-conversation-fixture > main { flex: 1; min-height: 0; }

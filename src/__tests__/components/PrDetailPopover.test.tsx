@@ -72,6 +72,36 @@ describe("PrDetailPopover", () => {
 		await waitFor(() => expect(onReview).toHaveBeenCalledWith("/repo", "feature/x", expected));
 	});
 
+	// Catches: the sidebar popover exposing only a count with no usable conversation route.
+	it.each(["Comments on GitHub", "2 unresolved threads"])(
+		"opens the exact PR conversation from %s without a provider",
+		async (label) => {
+			vi.useRealTimers();
+			mockGetBranchPrData.mockReturnValue({
+				branch: "remote/feature",
+				number: 42,
+				title: "Remote-only change",
+				state: "OPEN",
+				url: "https://github.com/acme/remote/pull/42",
+				unresolved_threads: 2,
+				labels: [],
+				checks: { passed: 0, failed: 0, pending: 0, total: 0 },
+			});
+			const onClose = vi.fn();
+			const { getByRole } = render(() => (
+				<PrDetailPopover {...defaultProps} branch="remote/feature" onClose={onClose} />
+			));
+			fireEvent.click(getByRole("button", { name: label }));
+			await waitFor(() =>
+				expect(mockInvoke).toHaveBeenCalledWith("open_default_app", {
+					target: "https://github.com/acme/remote/pull/42",
+					kind: "url",
+				}),
+			);
+			expect(onClose).toHaveBeenCalledOnce();
+		},
+	);
+
 	it("renders PR metadata correctly", () => {
 		mockGetBranchPrData.mockReturnValue({
 			branch: "feature/x",

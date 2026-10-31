@@ -77,6 +77,10 @@ Mobile CLI and log snapshots use the active session identity when hiding agent
 chrome. Shell output remains visible after agent exit, and retained agent input
 does not become the shell composer draft (#2178-24da).
 
+## Connected PR conversations
+
+PR popovers, unresolved-thread counts and notifications open the exact account-scoped PR in Tasks at Comments, including its first review-thread page. Without a loaded provider they open the GitHub conversation. Tasks PR details return to a matching live sidebar branch/worktree through the normal branch-selection path (#2559-dc9e).
+
 ## Desktop close and quit
 
 PTY close and kill stop polling when child status is unavailable. A persistent OS status error does not keep the desktop quit cleanup waiting forever.

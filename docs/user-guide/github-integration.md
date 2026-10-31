@@ -115,8 +115,13 @@ Click a PR badge or CI ring to open the detail popover. Shows:
 - **Labels** — With GitHub-matching colors
 - **Line changes** — Total additions and deletions
 - **Commit count**
+- **Comments and review threads** — Opens this exact PR in Tasks, selects its provider account and scrolls to Comments. The unresolved-threads count is also a button for this route. Normal comments, review summaries and review threads stay in the existing Tasks detail. The first review-thread page loads automatically; use **Load more comments** for later pages.
+
+If GitHub Work is not loaded, **Comments on GitHub** opens the PR conversation in your browser instead. The thread-count button uses the same fallback. In a Tasks PR detail, **Open branch _name_** returns to its existing sidebar branch/worktree. This action is absent if no matching workspace exists.
 
 ## PR Notifications (Toolbar Bell)
+
+Click a PR notification to open that PR’s comments and review threads in Tasks. The notification keeps its PR URL, so a later PR on the same branch does not change the destination. Native OS PR notices use the same route. If the provider is unavailable, the PR conversation opens on GitHub.
 
 When any branch has a PR event that needs attention, a bell icon with a count badge appears in the toolbar.
 
@@ -321,7 +326,7 @@ lookup as proof that a branch was merged.
 
 ### Tasks notifications
 
-Settings → Notifications → Tasks has **OS notifications for Tasks**, off by default and independent of the existing PR notification preference. Failed checks on a linked GitHub PR use the existing PR notice once and name the linked Tasks item. Click the notice to open the PR.
+Settings → Notifications → Tasks has **OS notifications for Tasks**, off by default and independent of the existing PR notification preference. Failed checks on a linked GitHub PR use the existing PR notice once and name the linked Tasks item. Click the notice to open that PR’s Comments section in Tasks, or its GitHub conversation when the provider is not loaded.
 
 Use **Follow task** in an item detail to follow comments locally; use **Unfollow task** to stop. Follow state and the policy are saved in the existing Tasks UI preferences. A first observation establishes a silent baseline. Existing visible detail refreshes (including its 60-second refresh) and provider-bridge detail reads compare authoritative comments; there is no extra background poller. Your own comment action advances the baseline silently. Native notices recheck the Tasks policy after permission is granted and retain the existing background-window policy; browser clients do not send native OS notices.
 

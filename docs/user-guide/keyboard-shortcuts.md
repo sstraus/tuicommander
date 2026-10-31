@@ -343,3 +343,5 @@ Hold `Cmd` alone (`Ctrl` on Windows/Linux) for 450 ms to show shortcut badges on
 ## Plugin action discovery
 
 A connected frontend publishes its registered plugin command IDs for the shared settings owner. Explicit keybinding-choice refresh includes those IDs and built-in actions. Unloading removes the plugin IDs from later refreshes. Before any frontend publication, plugin choices report unavailable rather than an empty successful list. Publication does not change shortcut overrides.
+
+PR comments are also reachable without a shortcut: use **Comments and review threads** in the sidebar PR popover, its unresolved-threads count, or a PR notification. Each route opens that PR in Tasks; an unavailable provider falls back to GitHub.

@@ -10,6 +10,12 @@ const mod = isMacOS() ? "Cmd" : "Ctrl";
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Connected PR conversations",
+		description:
+			"Open comments from a PR popover, its unresolved-thread count or a PR notification. Tasks shows the conversation and a return action for an existing branch; without a provider, GitHub opens instead.",
+		shortcut: null,
+	},
+	{
 		feature: "Mobile URL paste",
 		description:
 			"Paste a web link into a mobile terminal or AI Chat draft. A space separates the URL from your next words unless whitespace already follows it.",
