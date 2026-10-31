@@ -10,7 +10,7 @@ import {
 	watch,
 	writeFileSync,
 } from "node:fs";
-import { join, relative } from "node:path";
+import { join, relative, sep } from "node:path";
 import { fireEvent, render, waitFor, within } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -54,6 +54,7 @@ const { uiStore } = await import("../../../stores/ui");
 const { mdTabsStore } = await import("../../../stores/mdTabs");
 const { editorTabsStore } = await import("../../../stores/editorTabs");
 const { repositoriesStore } = await import("../../../stores/repositories");
+const { appLogger } = await import("../../../stores/appLogger");
 
 const dir = (name: string, path = name): DirEntry => ({
 	name,
@@ -190,6 +191,19 @@ describe("FileBrowserPanel external filesystem refresh", () => {
 		writeFileSync(join(root, parent, "existing.md"), "existing");
 		const watchers = new Map<string, { watcher: FSWatcher; subscribers: number }>();
 		const observed = new Set<string>();
+		const notifications = new Map<string, () => void>();
+		const mutateAndWaitForNotification = async (path: string, mutate: () => void) => {
+			// Native delivery is setup, not the cache-refresh assertion. In a loaded
+			// suite fs.watch may deliver after waitFor's UI deadline has expired.
+			// A rendered row does not prove its watch is installed yet. Arm before
+			// mutating so fast delivery cannot be missed. Ancestor events also reload
+			// this subtree; native filenames are optional and are not required here.
+			// The test harness still catches a missing native notification.
+			await waitFor(() => expect(watchers.has(path)).toBe(true));
+			const notified = new Promise<void>((resolve) => notifications.set(path, resolve));
+			mutate();
+			await notified;
+		};
 		// Real disk and native nonrecursive watches implement the transport boundary.
 		// No test-sent dir-changed event or repository revision can repair the tree.
 		mockInvoke.mockImplementation(async (cmd, args) => {
@@ -202,6 +216,12 @@ describe("FileBrowserPanel external filesystem refresh", () => {
 						watcher: watch(path, { recursive: false }, () => {
 							observed.add(path);
 							emitEvent("dir-changed", { dir_path: path });
+							for (const [changedPath, notify] of notifications) {
+								if (changedPath === path || changedPath.startsWith(`${path}${sep}`)) {
+									notify();
+									notifications.delete(changedPath);
+								}
+							}
 						}),
 						subscribers: 1,
 					});
@@ -240,6 +260,9 @@ describe("FileBrowserPanel external filesystem refresh", () => {
 			<FileBrowserPanel visible={true} repoPath={root} onClose={() => {}} onFileOpen={() => {}} />
 		));
 		let secondView: ReturnType<typeof render> | undefined;
+		// A queued native event can briefly rewatch a descendant after its rename.
+		// Capture only these expected ENOENT warnings and reject any other warning.
+		const warnings = vi.spyOn(appLogger, "warn").mockImplementation(() => {});
 		try {
 			clickTreeViewButton(view.container);
 			for (const name of parent.split("/")) {
@@ -256,9 +279,16 @@ describe("FileBrowserPanel external filesystem refresh", () => {
 				clickRow(view.container, "v2");
 			}
 			if (scenario === "collapsed parent") clickRow(view.container, "v2");
-			mkdirSync(join(root, parent, "roles", "drafts"), { recursive: true });
-			writeFileSync(join(root, parent, "roles", "drafts", "architect.md"), "architect");
-			if (scenario === "collapsed parent") clickRow(view.container, "v2");
+			const createRoles = () => {
+				mkdirSync(join(root, parent, "roles", "drafts"), { recursive: true });
+				writeFileSync(join(root, parent, "roles", "drafts", "architect.md"), "architect");
+			};
+			if (scenario === "collapsed parent") {
+				createRoles();
+				clickRow(view.container, "v2");
+			} else {
+				await mutateAndWaitForNotification(join(root, parent), createRoles);
+			}
 			const targetContainer = (secondView ?? view).container;
 			const target = within(targetContainer);
 			await waitFor(() => expect(target.queryByText("roles")).not.toBeNull(), { timeout: 3000 });
@@ -266,7 +296,9 @@ describe("FileBrowserPanel external filesystem refresh", () => {
 			await waitFor(() => expect(target.queryByText("drafts")).not.toBeNull());
 			clickRow(targetContainer, "drafts");
 			await waitFor(() => expect(target.queryByText("architect.md")).not.toBeNull());
-			renameSync(join(root, parent, "roles"), join(root, parent, "team"));
+			await mutateAndWaitForNotification(join(root, parent), () => {
+				renameSync(join(root, parent, "roles"), join(root, parent, "team"));
+			});
 			await waitFor(
 				() => {
 					expect(target.queryByText("team")).not.toBeNull();
@@ -282,6 +314,17 @@ describe("FileBrowserPanel external filesystem refresh", () => {
 			const remainingWatches = watchers.size;
 			for (const shared of watchers.values()) shared.watcher.close();
 			rmSync(root, { recursive: true, force: true });
+			const capturedWarnings = [...warnings.mock.calls];
+			warnings.mockRestore();
+			for (const [source, message] of capturedWarnings) {
+				expect(source).toBe("app");
+				expect(message).toContain("Error: ENOENT:");
+				expect(
+					[join(root, parent, "roles"), join(root, parent, "roles", "drafts")].some((path) =>
+						message.startsWith(`Dir watcher failed for ${path}: `),
+					),
+				).toBe(true);
+			}
 			expect(remainingWatches).toBe(0);
 		}
 	});
