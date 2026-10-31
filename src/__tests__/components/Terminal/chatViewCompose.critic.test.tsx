@@ -69,6 +69,7 @@ vi.mock("../../../invoke", () => ({
 }));
 
 import { Terminal } from "../../../components/Terminal/Terminal";
+import { invoke } from "../../../invoke";
 import { appLogger } from "../../../stores/appLogger";
 import { paneLayoutStore } from "../../../stores/paneLayout";
 import { terminalsStore } from "../../../stores/terminals";
@@ -76,6 +77,7 @@ import { terminalsStore } from "../../../stores/terminals";
 beforeEach(() => {
 	vi.clearAllMocks();
 	canvasLifecycle.deferRef = false;
+	window.getSelection()?.removeAllRanges();
 	vi.spyOn(appLogger, "debug").mockImplementation(() => {});
 	for (const id of terminalsStore.getIds()) terminalsStore.remove(id);
 	vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(800);
@@ -121,6 +123,85 @@ function typeDraft(container: HTMLElement, text: string) {
 	const view = editor(container);
 	view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
 }
+
+describe("Chat transcript typing handoff", () => {
+	// Catches: clicking the transcript drops the first key or replaces the whole draft.
+	it("redirects_transcript_printable_keys_to_the_existing_compose_selection", async () => {
+		const id = addTerminal();
+		const view = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
+		fireEvent.click(view.getByRole("tab", { name: "Chat" }));
+		const cm = await readyEditor(view.container);
+		typeDraft(view.container, "Keep draft");
+		cm.contentDOM.blur();
+		cm.dispatch({ selection: { anchor: 5, head: 10 } });
+		const transcript = view.getByLabelText("Chat transcript");
+		fireEvent.click(transcript);
+		transcript.focus(); // The DOM harness does not apply the browser's click focus default.
+		fireEvent.keyDown(transcript, { key: "A", shiftKey: true });
+		expect(cm.state.doc.toString()).toBe("Keep A");
+		expect(cm.hasFocus).toBe(true);
+	});
+
+	// Catches: key forwarding steals native selection/copy or navigation from the transcript.
+	it("preserves_transcript_selection_and_shortcut_keys", async () => {
+		const id = addTerminal();
+		const view = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
+		fireEvent.click(view.getByRole("tab", { name: "Chat" }));
+		const cm = await readyEditor(view.container);
+		const transcript = view.getByLabelText("Chat transcript");
+		const text = document.createTextNode("Selected transcript text");
+		transcript.append(text);
+		transcript.focus();
+		const range = document.createRange();
+		range.selectNodeContents(text);
+		window.getSelection()?.removeAllRanges();
+		window.getSelection()?.addRange(range);
+		fireEvent.keyDown(transcript, { key: "x" });
+		fireEvent.keyDown(transcript, { key: "c", metaKey: true });
+		expect(invoke).toHaveBeenCalledWith("write_clipboard_text", { text: "Selected transcript text" });
+		expect(window.getSelection()?.toString()).toBe("Selected transcript text");
+		expect(document.activeElement).toBe(transcript);
+		window.getSelection()?.removeAllRanges();
+		for (const init of [
+			{ key: "ArrowDown" },
+			{ key: "Escape" },
+			{ key: "x", metaKey: true },
+			{ key: "x", ctrlKey: true },
+			{ key: "Dead" },
+			{ key: "a", isComposing: true },
+		]) {
+			const event = new KeyboardEvent("keydown", { ...init, bubbles: true, cancelable: true });
+			transcript.dispatchEvent(event);
+			expect(event.defaultPrevented).toBe(false);
+			expect(document.activeElement).toBe(transcript);
+		}
+		expect(cm.state.doc.toString()).toBe("");
+	});
+
+	// Catches: redirecting text from Find or a transcript button/link instead of its container.
+	it("leaves_search_and_interactive_transcript_descendants_alone", async () => {
+		const id = addTerminal();
+		const view = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
+		fireEvent.click(view.getByRole("tab", { name: "Chat" }));
+		const cm = await readyEditor(view.container);
+		const transcript = view.getByLabelText("Chat transcript");
+		transcript.focus();
+		fireEvent.keyDown(transcript, { key: "f", metaKey: true });
+		const search = view.getByLabelText("Find in chat");
+		search.focus();
+		fireEvent.keyDown(search, { key: "q" });
+		expect(document.activeElement).toBe(search);
+		for (const tag of ["button", "a"]) {
+			const control = document.createElement(tag);
+			control.tabIndex = 0;
+			transcript.append(control);
+			control.focus();
+			fireEvent.keyDown(control, { key: "q" });
+			expect(document.activeElement).toBe(control);
+		}
+		expect(cm.state.doc.toString()).toBe("");
+	});
+});
 
 describe("Chat Compose input", () => {
 	// Catches: the CLI switch reveals the grid but leaves keyboard focus on its tab.

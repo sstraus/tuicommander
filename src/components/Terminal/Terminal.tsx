@@ -228,6 +228,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 	const [composePinned, setComposePinned] = createSignal(false);
 	const [composeFocusRequest, setComposeFocusRequest] = createSignal(0);
 	const [composeTextRequest, setComposeTextRequest] = createSignal(0);
+	let insertComposeText: ((text: string) => boolean) | undefined;
 	// Chat owns its input slot without changing this tab's CLI Compose preferences.
 	const composeVisible = () => chatActive() || composeOpen();
 	const composeDocked = () => chatActive() || composePinned();
@@ -1368,11 +1369,33 @@ export const Terminal: Component<TerminalProps> = (props) => {
 		transcript?.scrollBy({ top: e.deltaY, left: e.deltaX });
 	};
 
+	// Keep transcript focus for selection, copy and scrolling. Only actual typing
+	// on its container returns to Compose; links, buttons and Find own their keys.
+	const handleChatTyping = (event: KeyboardEvent) => {
+		if (
+			!chatActive() ||
+			event.defaultPrevented ||
+			event.isComposing ||
+			event.metaKey ||
+			event.ctrlKey ||
+			event.altKey ||
+			event.key.length !== 1 ||
+			!(event.target instanceof HTMLElement) ||
+			!event.target.hasAttribute("data-terminal-chat") ||
+			!window.getSelection()?.isCollapsed
+		)
+			return;
+		if (!insertComposeText?.(event.key)) return;
+		event.preventDefault();
+		event.stopPropagation();
+	};
+
 	return (
 		<div
 			class={s.wrapper}
 			data-terminal-id={props.id}
 			data-focus-target="terminal"
+			onKeyDown={handleChatTyping}
 			onDragOver={handleFileDragOver}
 			onDrop={handleFileDrop}
 		>
@@ -1560,6 +1583,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
 							setComposePinned(false);
 							setComposeOpen(false);
 							canvasTerminalRef()?.focus();
+						}}
+						onInsertText={(insert) => {
+							insertComposeText = insert;
 						}}
 						focusRequest={composeFocusRequest}
 						textRequest={composeTextRequest}
