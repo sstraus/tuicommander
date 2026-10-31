@@ -1272,7 +1272,11 @@ export const BranchItem: Component<{
 							const lostFiles = () => status().dirtyFiles ?? 0;
 							const label = () => {
 								if (status().commitStatus === "unknown") return unknownLifecycleLabel(status());
-								if (status().commitStatus === "unrelated_history") return "Unrelated history";
+								if (status().commitStatus === "unrelated_history") {
+									const otherChip = props.branch.additions + props.branch.deletions > 0 || !!pr();
+									const verdict = t("sidebar.unrelatedHistory", "Unrelated history");
+									return lostFiles() > 0 && !otherChip ? `${lostFiles()} dirty · ${verdict}` : verdict;
+								}
 								// Uncommitted files outrank the commit verdict, which reads commits
 								// only: "Merged" over them claims nothing would be lost while removal
 								// discards every one. The count earns a chip only when the stats chip
@@ -1290,10 +1294,7 @@ export const BranchItem: Component<{
 							};
 							// Only the dirty count points at a diff; commit verdicts have none to show.
 							const opensChanges = () =>
-								!!props.onShowChanges &&
-								status().commitStatus !== "unknown" &&
-								status().commitStatus !== "unrelated_history" &&
-								lostFiles() > 0;
+								!!props.onShowChanges && status().commitStatus !== "unknown" && lostFiles() > 0;
 							const tooltip = () => lifecycleTooltip(status());
 							return (
 								<Show when={label()}>

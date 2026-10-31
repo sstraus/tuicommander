@@ -32,7 +32,7 @@ Worktree removal uses the same checkout identity as the sidebar. A symbolic bran
 
 ## Unrelated histories
 
-A branch with no common ancestor with the default branch shows **Unrelated history** in compact and rich sidebar rows. The repository and its other branches still load normally. This is not a failed refresh or merged work. Keep the branch when removing its checkout. Branch deletion requires an archive at the current tip so the independent history remains recoverable.
+A branch with no common ancestor with the default branch shows **Unrelated history** in compact and rich sidebar rows. The repository and its other branches still load normally. In compact rows, a dirty-file badge keeps its count and opens Changes, including when the only changes are untracked files. This is not a failed refresh or merged work. Keep the branch when removing its checkout. Branch deletion requires an archive at the current tip so the independent history remains recoverable.
 
 ## Worktree Storage Strategies
 

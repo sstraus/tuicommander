@@ -727,6 +727,35 @@ describe("Sidebar", () => {
 			expect(badge?.getAttribute("data-tooltip")).toContain("archive");
 		});
 
+		// Catches: unrelated history replaces the only changes control for untracked-only worktrees.
+		it.each([0, 12])("keeps unrelated dirty rows actionable with %i tracked additions", (additions) => {
+			densityMode("compact");
+			withBranch(
+				richBranch({
+					additions,
+					deletions: 0,
+					lifecycleStatus: { dirtyFiles: 1, commitStatus: "unrelated_history", removalSafety: "requires_force" },
+				}),
+			);
+			const onBranchSelect = vi.fn();
+			const openChanges = vi.spyOn(uiStore, "openGitPanelOnTab").mockImplementation(() => {});
+			try {
+				const { container } = render(() => <Sidebar {...defaultProps({ onBranchSelect })} />);
+				const row = container.querySelector(".branchItem") as HTMLElement;
+				expect(row.textContent).toContain("Unrelated history");
+				const changes = Array.from(row.querySelectorAll('[role="button"]')).find((node) =>
+					node.textContent?.includes(additions ? "+12" : "1 dirty"),
+				);
+				expect(changes, "dirty worktree must retain a changes control").toBeDefined();
+				fireEvent.click(changes!);
+				expect(onBranchSelect).toHaveBeenCalledExactlyOnceWith("/repo1", "feat");
+				expect(openChanges).toHaveBeenCalledExactlyOnceWith("changes");
+				expect(onBranchSelect.mock.invocationCallOrder[0]).toBeLessThan(openChanges.mock.invocationCallOrder[0]);
+			} finally {
+				openChanges.mockRestore();
+			}
+		});
+
 		// Catches: the rich row printing nothing beyond the name (the bare list Boss rejected).
 		it("prints the PR title, commit age, diff stats and dirty count under the branch name", () => {
 			mockGetPrStatus.mockReturnValue({ state: "OPEN", number: 77, title: "Add the thing", url: "u" });
