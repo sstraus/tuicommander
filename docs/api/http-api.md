@@ -2343,7 +2343,11 @@ With an activation phrase, `holdBackMs` reports the effective minimum of 5000
 ms, even when the saved hold-back setting is shorter. A continuation that
 starts before that deadline joins the same pending turn.
 
-`phase` is one of `disarmed`, `waiting`, `capturing`, `transcribing`,
+`wake_confirmed` acknowledges a recognized leading activation phrase during open
+capture; it does not admit or submit the final transcript. VAD alone remains
+`capturing`. Both capture sources use the same bounded prefix recognition.
+
+`phase` is one of `disarmed`, `waiting`, `capturing`, `wake_confirmed`, `transcribing`,
 `holding_back`, `delivered`, `error`.
 
 `deliveredTurns` counts spoken turns typed into the composer and

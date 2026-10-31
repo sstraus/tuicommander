@@ -1,3 +1,6 @@
+## Early wake acknowledgement (2610-9b43) — Rust rebuild/restart required
+
+- [ ] After a manual rebuild/restart when losing current sessions is acceptable, use an isolated voice conversation with a configured phrase. Unrelated speech must stay **Listening**. Say the phrase and continue speaking: a recognized prefix should show **Go ahead** before final **Transcribing**. Repeat from a browser-owned microphone. Record real wake-to-display latency and the matching `prefix_ms`/`inference_ms` log; deterministic tests do not establish acoustic accuracy or native latency. The daily instance was not restarted; Rust does not hot-reload.
 ## Agent shim canonicalisation (2584-fdaa) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a new shell and run `ego models --help` through a canonicalising launcher. It must reach ego rather than exit 127 as `tuic-agent-shim`. Existing symlinks upgrade on new shell injection. The running app and installed shim directory were not changed during implementation; Rust does not hot-reload. Restart only when losing current sessions is acceptable.

@@ -24,6 +24,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Show “Go ahead” only after a recognized activation phrase during hands-free capture; keep unrelated voice activity at “Listening” and final recognition at “Transcribing”. Desktop and browser capture share bounded prefix checks with the existing model (#2610-9b43).
+
 - Preserve agent shim names when launchers canonicalise executable paths; upgrade legacy Unix symlinks to atomic hard links (#2584-fdaa).
 
 - Let Design Mode start after a stale browser profile lock PID is reused by an unrelated process; preserve live profile ownership (#2591-937a).
