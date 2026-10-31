@@ -177,7 +177,10 @@ repositories** — no `.tuic` directory, nothing for Git to ignore, nothing for 
 file watcher to react to.
 
 A worktree's entries are filed under its parent project, so switching between a
-repository and its worktrees shows one history rather than several.
+repository and its worktrees shows one history rather than several. A linked
+checkout registered as a separate repository still shares that history when its
+workspace has no explicit parent project. A registered submodule keeps its own
+checkout's history; its Git administration directory is not a project owner.
 
 An agent running in a directory that belongs to no registered repository writes
 nothing. There is no project to file the entry under, and the repository you

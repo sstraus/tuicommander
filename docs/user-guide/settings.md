@@ -300,6 +300,8 @@ See [AI Agents](ai-agents.md) for details on agent detection, rate limits, and t
 
 ### AI Chat
 
+AI Chat model selection remains available when `ego doctor` reports a health problem. The page shows the affected health section and its detail. If doctor cannot return readable JSON, credential status is unknown, not missing; run `ego doctor --json` in a terminal to inspect it.
+
 Shows the configuration of `ego`, the engine behind the AI Chat panel. Offered
 only while **Experimental Features** (General page) is on, because that is what
 offers the AI Chat panel — the one place ego is reachable from.
@@ -636,7 +638,14 @@ navigation entry; it does not create a second settings service.
 
 AI Chat groups provider details in **Other providers and available models**. Workspace access shows the effective folders first. **Add folder** and **Edit** reveal the existing ego roots draft; **Save roots in ego** keeps its explicit save boundary. The network selector writes through ego. **How to verify** explains command-isolation evidence without running a probe.
 
-Voice keeps downloadable models and voice management in **Speech assets**. Remote Access separates connection status, Tailscale HTTPS and token revocation. Plugin rows keep secondary controls in **Manage plugin**; plugin pages identify their source and plugin-owned scope.
+Voice keeps downloadable models and voice management in **Speech assets**.
+**Speech assets** and **Spoken replies** use the same aligned label/control rows.
+Choose an installed Whisper model or reply voice with the shared dropdowns;
+unavailable Whisper models remain disabled until downloaded. The configured model
+stays selected while the model catalogue loads, even if it is not downloaded. Both asset lists
+use named Download, Repair, Cancel and Remove actions where supported, shared
+status badges and the same progress display. Voice processing and save rules do
+not change. Remote Access separates connection status, Tailscale HTTPS and token revocation. Plugin rows keep secondary controls in **Manage plugin**; plugin pages identify their source and plugin-owned scope.
 Native MCP tool help stays anchored during status refreshes. Focus a `?` badge
 with the keyboard or hover over it to read the full tool description. Help
 placement follows panel scrolling, window resizing, and description size changes.
@@ -645,7 +654,7 @@ placement follows panel scrolling, window resizing, and description size changes
 
 Selected settings show a `?` only when the approved explanation adds decision guidance, requirements, consequences or owner-dependent defaults. Hover or focus the badge to read it. Click or press Enter/Space to pin it; click again, press Escape or click outside to dismiss it. Help does not save a setting, contact a service or run a sandbox probe. Long help scrolls inside the viewport and follows panel scroll/resize. Native MCP help retains tool-name identity while descriptions update during status polls (1928-e282).
 
-AI Chat places provider refresh beside the default model and lists effective roots with their source, access and Edit action. Reload from ego is in Advanced and diagnostics. Voice lists Whisper downloads below the active-model summary and keeps correction import/export in the card actions. Smart Prompts uses Edit to open a separate editor card; the enable switch stays visible on each library row. Custom prompt deletion remains confirmed in the final danger section.
+AI Chat places provider refresh beside the default model and lists effective roots with their source, access and Edit action. Reload from ego is in Advanced and diagnostics. Voice lists Whisper downloads below the active-model selector and keeps correction import/export in the card actions. Smart Prompts uses Edit to open a separate editor card; the enable switch stays visible on each library row. Custom prompt deletion remains confirmed in the final danger section.
 
 Loaded plugin pages use the same title-icon slot as other Settings pages. The
 source line identifies bundled or installed ownership without changing the

@@ -21,7 +21,7 @@ import { Toolbar } from "../../components/Toolbar/Toolbar";
 import { invoke } from "../../invoke";
 import { storiesUi } from "../../stores/storiesUi";
 
-type Summary = { activePlans: number; inProgress: number; done: number; total: number };
+type Summary = { activePlans: number; ready: number; inProgress: number; done: number; total: number };
 const summaryCalls = () =>
 	vi
 		.mocked(invoke)
@@ -30,8 +30,8 @@ const summaryCalls = () =>
 				cmd === "story_action_command" && (args as { action: { action: string } }).action.action === "summary",
 		);
 const reply = (value: Summary) => ({ type: "summary", value });
-const idle: Summary = { activePlans: 0, inProgress: 0, done: 0, total: 0 };
-const busy: Summary = { activePlans: 2, inProgress: 3, done: 5, total: 8 };
+const idle: Summary = { activePlans: 0, ready: 0, inProgress: 0, done: 0, total: 0 };
+const busy: Summary = { activePlans: 2, ready: 4, inProgress: 3, done: 5, total: 8 };
 
 function mockSummary(...values: Array<Summary | Promise<Summary>>) {
 	const queue = [...values];
@@ -48,6 +48,17 @@ describe("Plans and Stories toolbar button", () => {
 		storiesUi.close();
 	});
 
+	it("catches three Ready stories disappearing behind zero in-progress and an empty bar", async () => {
+		mockSummary({ activePlans: 1, ready: 3, inProgress: 0, done: 0, total: 3 });
+		render(() => <Toolbar repoPath="/repo" />);
+		const ready = await screen.findByTitle("3 ready stories");
+		expect(ready.textContent).toBe("3");
+		expect(ready.querySelector("svg")).not.toBeNull();
+		expect(screen.getByTitle("0 stories in progress").textContent).toBe("0");
+		const button = ready.closest("button")!;
+		expect(button.title).toContain("Ready: 3\nIn progress: 0");
+	});
+
 	it("stays the bare icon when no plan is active", async () => {
 		mockSummary(idle);
 		render(() => <Toolbar repoPath="/repo" />);
@@ -61,10 +72,12 @@ describe("Plans and Stories toolbar button", () => {
 		mockSummary(busy);
 		render(() => <Toolbar repoPath="/repo" />);
 		const button = await screen.findByRole("button", {
-			name: "Plans and Stories: active plans 2, stories in progress 3, stories done 5 of 8",
+			name: "Plans and Stories: active plans 2, ready stories 4, stories in progress 3, stories done 5 of 8",
 		});
-		expect(button.getAttribute("title")).toBe(button.getAttribute("aria-label"));
-		expect(button.querySelector("[data-testid='stories-pill']")?.textContent).toBe("23");
+		expect(button.getAttribute("title")).toBe(
+			"Plans and Stories\nActive plans: 2\nReady: 4\nIn progress: 3\nDone: 5 of 8",
+		);
+		expect(button.querySelector("[data-testid='stories-pill']")?.textContent).toBe("243");
 		const bar = button.querySelector("[role='progressbar']");
 		expect(bar?.getAttribute("aria-valuenow")).toBe("5");
 		expect(bar?.getAttribute("aria-valuemax")).toBe("8");

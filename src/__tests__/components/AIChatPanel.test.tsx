@@ -51,6 +51,12 @@ vi.mock("@tauri-apps/api/event", () => ({
 	emitTo: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+	getCurrentWebviewWindow: () => ({ listen: (...args: Parameters<typeof listen>) => listen(...args) }),
+}));
+
+vi.mock("../../hooks/initPanelWindow", () => ({ initPanelWindow: vi.fn().mockResolvedValue(undefined) }));
+
 vi.mock("../../panelRouter", () => ({
 	detachPanel: mockDetachPanel,
 	reattachPanel: mockReattachPanel,
@@ -131,7 +137,7 @@ const client = vi.hoisted(() => ({
 vi.mock("../../services/acpClient", () => ({ acpClient: client }));
 
 import { invoke } from "@tauri-apps/api/core";
-import { emitTo } from "@tauri-apps/api/event";
+import { emitTo, listen } from "@tauri-apps/api/event";
 import { AIChatPanel } from "../../components/AIChatPanel/AIChatPanel";
 import { Composer } from "../../components/AIChatPanel/Composer";
 import { aiChatDraft } from "../../components/AIChatPanel/draft";
@@ -143,6 +149,7 @@ import { aiChatPanelAdapter } from "../../panelAdapters/aiChat";
 import { acpStore } from "../../stores/acp";
 import { acpTranscript } from "../../stores/acpTranscript";
 import { aiChatTabs } from "../../stores/aiChatTabs";
+import { dictationStore } from "../../stores/dictation";
 import { terminalsStore } from "../../stores/terminals";
 import { toastsStore } from "../../stores/toasts";
 import { subscribeEvents } from "../../transport";
@@ -4818,10 +4825,10 @@ describe("AIChatPanel: fork at message", () => {
 		await settle();
 		acpTranscript.restore(SESSION, [{ id: "reply", kind: "agent", text: "Answer", messageId: "reply-id" }]);
 		await settle();
-		expect(container.querySelector('[aria-label="Fork from here"]')).toBeNull();
+		expect(container.querySelector('[aria-label="Fork"]')).toBeNull();
 	});
 	// Catches: the selected reply ID lost between the rendered action and the shared client.
-	it("passes the selected reply ID from the per-message button", async () => {
+	it("Fork branches at the selected reply while Copy only copies its text", async () => {
 		const { container } = await renderPanel();
 		await settle();
 		acpStore.applySnapshot(
@@ -4833,8 +4840,16 @@ describe("AIChatPanel: fork at message", () => {
 		acpTranscript.restore(SESSION, [{ id: "reply", kind: "agent", text: "Answer", messageId: "reply-id" }]);
 		client.forkSession.mockResolvedValue(CHILD_SESSION);
 		await settle();
-		container.querySelector<HTMLButtonElement>('[aria-label="Fork from here"]')?.click();
+		const copy = container.querySelector<HTMLButtonElement>('[aria-label="Copy assistant message"]');
+		copy?.click();
 		await settle();
+		expect(mockWriteClipboard).toHaveBeenCalledWith("Answer");
+		expect(client.forkSession).not.toHaveBeenCalled();
+		const fork = container.querySelector<HTMLButtonElement>('[aria-label="Fork"]');
+		expect(fork?.textContent?.trim()).toBe("Fork");
+		fork?.click();
+		await settle();
+		expect(mockWriteClipboard).toHaveBeenCalledTimes(1);
 		expect(client.forkSession).toHaveBeenCalledWith(CONNECTION, SESSION, CHAT_ROOT, "reply-id");
 	});
 });
@@ -6147,4 +6162,91 @@ describe("queued prompt recall", () => {
 		expect(container.textContent).toContain("queued prompt not found");
 		expect(client.prompt).not.toHaveBeenCalled();
 	});
+});
+
+describe("detached AI Chat dictation", () => {
+	// Catches: detached bootstrap returns before dictation is wired, or delivers
+	// into the field focused at completion rather than the captured chat composer.
+	it.each([
+		{ hotkey: "F8", transcriptFocus: false },
+		{ hotkey: "Fn", transcriptFocus: false },
+		{ hotkey: "Fn", transcriptFocus: true },
+	])(
+		"delivers $hotkey dictation to the captured detached composer (transcript focus=$transcriptFocus)",
+		async ({ hotkey, transcriptFocus }) => {
+			window.history.replaceState(null, "", "/?mode=panel&panel=ai-chat");
+			const listeners = new Map<string, (event: { payload: unknown }) => void>();
+			vi.mocked(listen).mockImplementation(async (name, callback) => {
+				listeners.set(name, callback as (event: { payload: unknown }) => void);
+				return () => {
+					listeners.delete(name);
+				};
+			});
+			let recording = false;
+			vi.mocked(invoke).mockImplementation(async (command) => {
+				if (command === "load_config") return { ai_chat_sessions: {} };
+				if (command === "acp_workspace_root") return CHAT_ROOT;
+				if (command === "get_dictation_config")
+					return {
+						enabled: true,
+						hotkey,
+						long_press_ms: 0,
+						auto_send: false,
+					};
+				if (command === "get_dictation_status")
+					return {
+						model_status: "ready",
+						recording,
+						processing: false,
+						audio_level: 0,
+					};
+				if (command === "get_hands_free_status") return { armed: false };
+				if (command === "start_dictation") {
+					recording = true;
+					return;
+				}
+				if (command === "stop_dictation_and_transcribe") {
+					recording = false;
+					return { text: "dictated words", skip_reason: null, duration_s: 1, truncated_s: 0 };
+				}
+				return undefined;
+			});
+			const Detached = aiChatPanelAdapter.Component;
+			const view = render(() => <Detached params={new URLSearchParams({ repoPath: ROOT })} />);
+			await settle();
+			await settle();
+			const composer = view.container.querySelector<HTMLTextAreaElement>("textarea")!;
+			expect(composer).not.toBeNull();
+			composer.value = "draft ";
+			composer.dispatchEvent(new Event("input", { bubbles: true }));
+			composer.focus();
+			composer.setSelectionRange(6, 6);
+			if (transcriptFocus) {
+				const transcript = view.container.querySelector<HTMLElement>('[aria-label="Chat transcript"]')!;
+				transcript.tabIndex = 0;
+				transcript.focus();
+			}
+			if (hotkey === "Fn") listeners.get("fn-key-down")?.({ payload: null });
+			else window.dispatchEvent(new KeyboardEvent("keydown", { code: "F8" }));
+			await settle();
+			expect(invoke).toHaveBeenCalledWith("start_dictation", { source: hotkey === "Fn" ? "fn" : "hotkey" });
+			const other = document.createElement("textarea");
+			document.body.append(other);
+			other.focus();
+			if (hotkey === "Fn") {
+				window.dispatchEvent(new Event("blur"));
+				expect(invoke).not.toHaveBeenCalledWith("stop_dictation_and_transcribe");
+				listeners.get("fn-key-up")?.({ payload: null });
+			} else window.dispatchEvent(new KeyboardEvent("keyup", { code: "F8" }));
+			await settle();
+			expect(composer.value).toBe("draft dictated words");
+			expect(aiChatDraft.text()).toBe("draft dictated words");
+			expect(other.value).toBe("");
+			expect(client.prompt).not.toHaveBeenCalled();
+			expect(invoke).not.toHaveBeenCalledWith("write_pty", expect.anything());
+			other.remove();
+			view.unmount();
+			await dictationStore.refreshStatus();
+		},
+	);
 });
