@@ -4,6 +4,10 @@
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use an isolated throwaway Git clone to inspect the default-disabled native integration policy, then enable only that clone and exercise the integration/debt/cleanup actions. The daily instance was not restarted. Rust changes do not hot-reload; restart only when losing current sessions is acceptable.
 
+## Config recovery and reflow migration (2564-8455, 2565-8b3c) — Rust rebuild/restart required
+
+- [ ] After a manual rebuild/restart when losing current sessions is acceptable, use a throwaway instance config with one malformed field. Valid settings must remain, and the Settings recovered warning must name the reset field and original backup. Include a valid legacy service secret beside the malformed field: it must survive and migrate to the vault. Refocus a detached panel after six seconds: the recovery warning must not repeat. The installed app was not restarted; Rust does not hot-reload.
+- [ ] In a throwaway legacy config, set reflow false without its marker: first load enables it and writes the marker. Turn it off, restart, and confirm it remains off. Automated loader tests cover this persistence contract.
 ## Typed workflow commands (2512-5a42) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a backend Run command graph in a throwaway project with an assigned workspace and inspect `command_executions`. Verify admission, target and immutable receipt; the daily instance was not restarted. Rust changes do not hot-reload.

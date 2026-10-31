@@ -34,6 +34,7 @@ impl AppSettingsStore {
                 .clone()
         };
         migrate_legacy_session_token_duration(&mut config);
+        migrate_legacy_scrollback_reflow(&mut config);
         for (value, exists, secret) in [
             (
                 &mut config.services.auth.session_token,

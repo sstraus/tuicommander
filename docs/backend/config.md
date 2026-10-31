@@ -1,5 +1,28 @@
 # Configuration
 
+## App config recovery and scrollback migration
+
+`config.json` loads valid saved values even when another field has a wrong type
+or enum value. Missing font family, font size or theme uses its current default.
+Invalid nested service fields reset independently. Valid legacy service secrets
+survive sibling recovery and migrate to the credential vault. Invalid arrays and dynamic
+maps reset as one field. Existing serde missing-key migration and opt-in rules
+remain unchanged. Unknown keys stay ignored and may disappear on a typed save.
+
+Before recovered settings are written, the original file is moved to
+`config.corrupt-<uuid>` using the existing five-backup retention policy. The
+normal IPC and HTTP config response includes a read-only `config_recovery`
+diagnostic with `fields` and `backup_path`. Settings startup uses the existing
+warning toast and bell path to show these details once per recovery backup in
+each store instance. Focus hydration does not repeat the warning. This diagnostic is never
+persisted. Invalid JSON retains the whole-file corrupt backup/default behavior;
+unreadable files are not renamed.
+
+The `scrollback_reflow_migrated` marker enrolls old saved configurations once:
+without the marker, reflow is enabled and the marker is persisted. Fresh defaults
+and explicit saves already mark current intent. A later explicit `false` remains
+`false` on subsequent loads.
+
 ## Scoped plugin settings (#1785-c7a1)
 
 Loaded plugins expose `plugins.<id>` descriptors through the Rust settings owner.
