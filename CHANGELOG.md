@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Permit the native notification plugin's startup permission probe in every app-owned desktop window (#2568-a5d5).
+- Keep repository structure available when a local branch has unrelated history; retain that branch as unmerged (#2569-b40f).
+
 - Offer a detected ego executable in inactive AI Chat with an explicit Use this confirmation; preserve manual setup and existing paths (#2561-9861).
 - Add dismissible contextual tips for long-running agents, optional global hooks during agent setup and disabled temporary-server-error retries. Defaults stay unchanged (#2562-d363).
 

@@ -611,3 +611,11 @@ fingerprint-confirmed finalization path and retains dirty files and unmerged ref
 ## Archived checkout retention
 
 `tuic_git::worktree::archive_worktree` records archive Unix seconds and the exact canonical checkout path/branch/tip in the per-checkout Git admin `tuic-archive.json`, after the archive script and move. It also preserves the tip in `refs/archive/`. The app resolves `archive_retention_days` from repository override → `.tuic.json` → global default (0/Off), then calls the domain sweep during repository refresh. The sweep and recycling share the allocation lock. Only finished, registered immediate `__archived` children with matching metadata qualify; legacy records fail closed. A fake clock drives real Git boundary tests. Non-force `git worktree remove` rechecks safety and removes registration without pruning unrelated entries. Dirty files, live sessions, locks and changed recovery evidence prevent removal.
+
+### Unrelated branch histories
+
+The integration classifier checks for a common ancestor before computing a
+branch delta. A `git merge-base` exit status of 1 means that the two histories
+are unrelated. It supplies no content-integration proof, but does not fail the
+repository's merged-branch inventory. Other Git failures still propagate.
+An unrelated local branch remains visible and unmerged; it is not deleted.
