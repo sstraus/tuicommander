@@ -149,6 +149,106 @@ fn lost_call_receipt_reuses_child() {
 }
 
 #[test]
+fn committed_child_return_survives_reopen_before_parent_consumption() {
+    // catches: recovery respawns a completed child or loses its unconsumed typed receipt.
+    let (config, project, _, story, _, _guard) = fixture();
+    let owner = canonical_owner(project.path().to_str().unwrap());
+    let child = publish(&owner, returned("uncertain"));
+    let root = publish(&owner, caller(&child));
+    let path = config.path().join("runs.sqlite3");
+    let store = RunStore::open_at(&path).unwrap();
+    let run = store
+        .start_graph_run(&request(&owner, &story, &root, "terminal-recovery"))
+        .unwrap();
+    let started = store
+        .command(
+            &run.id,
+            "activate-call",
+            RunCommand::Graph {
+                transition: GraphTransition::Activate {
+                    execution_id: "root".into(),
+                    activation_id: "a1".into(),
+                },
+            },
+        )
+        .unwrap();
+    let started = store
+        .command(
+            &run.id,
+            "start-child",
+            RunCommand::Graph {
+                transition: GraphTransition::CallStart {
+                    execution_id: started.snapshot.graph_executions[0].id.clone(),
+                    activation_id: "a1".into(),
+                },
+            },
+        )
+        .unwrap();
+    let child_id = started.snapshot.graph_executions[1].id.clone();
+    for (key, transition) in [
+        (
+            "activate-start",
+            GraphTransition::Activate {
+                execution_id: child_id.clone(),
+                activation_id: "a0".into(),
+            },
+        ),
+        (
+            "complete-start",
+            GraphTransition::Complete {
+                execution_id: child_id.clone(),
+                activation_id: "a0".into(),
+                outcome: None,
+                evidence: None,
+            },
+        ),
+        (
+            "activate-return",
+            GraphTransition::Activate {
+                execution_id: child_id.clone(),
+                activation_id: "a1".into(),
+            },
+        ),
+        (
+            "complete-return",
+            GraphTransition::Complete {
+                execution_id: child_id.clone(),
+                activation_id: "a1".into(),
+                outcome: None,
+                evidence: None,
+            },
+        ),
+    ] {
+        store
+            .command(&run.id, key, RunCommand::Graph { transition })
+            .unwrap();
+    }
+    let committed = store.snapshot(&run.id).unwrap();
+    assert_eq!(
+        committed.graph_executions[0].activations[1].state,
+        ActivationState::Running
+    );
+    assert!(committed.graph_executions[1].completed);
+    let receipt = committed.graph_executions[1].call_receipt.clone().unwrap();
+    drop(store);
+    let reopened = RunStore::open_at(&path).unwrap();
+    let done = drive_turn(&reopened, &run.id).unwrap();
+    assert_eq!(done.graph_executions.len(), 2);
+    assert_eq!(done.graph_executions[1].id, child_id);
+    assert_eq!(
+        done.graph_executions[1].call_receipt.as_ref(),
+        Some(&receipt)
+    );
+    assert!(
+        done.graph_executions[0]
+            .activations
+            .iter()
+            .any(|a| a.node_id == "uncertain")
+    );
+    assert_eq!(reopened.replay(&run.id).unwrap(), done);
+}
+
+#[test]
 fn spawned_child_is_not_a_completion_receipt() {
     // catches: parent completes a call before the child's typed Return has committed.
     let (config, project, _, story, _, _guard) = fixture();
@@ -225,10 +325,13 @@ fn transitive_calls_roll_up_identity_once_and_keep_unknown_usage() {
     let receipt = &wire["graphExecutions"][1]["callReceipt"];
     assert_eq!(receipt["outcome"], "completed");
     assert_eq!(receipt["outputs"]["accepted"], true);
-    assert_eq!(
-        receipt["accountingExecutionIds"].as_array().unwrap().len(),
-        2
-    );
+    let expected_ids: std::collections::BTreeSet<_> = done.graph_executions[1..]
+        .iter()
+        .map(|execution| execution.id.clone())
+        .collect();
+    let actual_ids: std::collections::BTreeSet<String> =
+        serde_json::from_value(receipt["accountingExecutionIds"].clone()).unwrap();
+    assert_eq!(actual_ids, expected_ids);
     assert_eq!(receipt["usageCoverage"], "unknown");
     assert_eq!(store.replay(&run.id).unwrap(), done);
 }
