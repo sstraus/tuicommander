@@ -26,7 +26,9 @@ const TAB_SOURCES: Record<string, string[]> = {
 	"remote-access": ["tabs/services/RemoteAccessPanel.tsx"],
 	"remote-machines": ["tabs/RemoteMachinesTab.tsx", "tabs/services/RemoteMachinesPanel.tsx"],
 	plugins: ["tabs/PluginsTab.tsx"],
-	"smart-prompts": ["tabs/SmartPromptsTab.tsx"],
+	// The runtime-selected editor has no static scroll target. Read it first so
+	// its fields cannot inherit the library heading from the tab source.
+	"smart-prompts": ["../shared/SmartPromptEditor.tsx", "tabs/SmartPromptsTab.tsx"],
 	agents: ["tabs/AgentsTab.tsx", "tabs/LaunchModuleSettings.tsx"],
 	"ai-chat": ["tabs/EgoPerimeterSection.tsx", "tabs/AiChatTab.tsx"],
 };
@@ -61,7 +63,7 @@ const UNINDEXABLE: Record<string, { dynamic: number; orphans: number }> = {
 	// daemon alive" labels, whose text sits in a nested `<span>`.
 	"remote-machines": { dynamic: 1, orphans: 0 },
 	plugins: { dynamic: 1, orphans: 0 },
-	// 71433a07c8 (#2479-4866) removed the nested Auto-execute label wrapper.
+	// Shared editor: runtime title and placement captions, plus eleven per-prompt fields.
 	"smart-prompts": { dynamic: 3, orphans: 11 },
 	// The per-agent "Native status signals", "Prevent alternate screen", and
 	// "Accept workspace trust for managed spawns" toggles sit in runtime-rendered

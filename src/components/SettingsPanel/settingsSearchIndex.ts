@@ -469,8 +469,10 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 		expert: true,
 		configKey: "dictation.no_speech_threshold",
 	},
-	{ tab: "dictation", section: "Speech assets", label: "Whisper Model", labelKey: "dictation.modelLabel" },
+	{ tab: "dictation", section: "Speech assets", label: "Whisper model", labelKey: "dictation.modelLabel" },
+	{ tab: "dictation", section: "Speech assets", label: "Downloads", labelKey: "dictation.downloadsLabel" },
 	{ tab: "dictation", section: "Speech assets", label: "Voice tuning", labelKey: "dictation.tuningLabel" },
+	{ tab: "dictation", section: "Spoken replies", label: "Downloads", labelKey: "dictation.downloadsLabel" },
 	{
 		tab: "dictation",
 		section: "Spoken replies",
@@ -494,6 +496,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 		configKey: "dictation.speech_command",
 	},
 	{ tab: "dictation", section: "Spoken replies", label: "Voice", labelKey: "dictation.voiceLabel" },
+	{ tab: "dictation", section: "Spoken replies", label: "Voices", labelKey: "dictation.voicesLabel" },
 	{
 		tab: "dictation",
 		section: "Spoken replies",
@@ -510,7 +513,6 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 		expert: true,
 		configKey: "dictation.speech_levelling",
 	},
-	{ tab: "dictation", section: "Spoken replies", label: "Voices", labelKey: "dictation.voicesLabel" },
 	{ tab: "dictation", section: "Hands-free conversation", label: "Target" },
 	{
 		tab: "dictation",
