@@ -17,6 +17,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Keep verified terminal link underlines visible during unrelated spinner redraws, including full frames and same-row file paths (#01a19332-aa59-7025-9cb0-071b909bf871).
+
 - Align Speech assets and Spoken replies in Voice Settings, with shared rows, model/voice selectors, asset badges and named download actions. Keep the configured Whisper choice selected when its catalogue arrives (#2608-f1c4).
 
 - Align Design Mode sidebar sections and keep permission and error action buttons separated when they wrap (#2592-2a7f).

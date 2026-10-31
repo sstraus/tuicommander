@@ -311,6 +311,7 @@ Expanded tool rows use theme colours for Bash/execute commands, flags, strings a
 - Paths validated against filesystem before activation (Rust `resolve_terminal_path`)
 - `.md`/`.mdx` → opens in Markdown panel; preview-capable files (HTML, PDF, images, video, audio, plain text/data) → open in the Preview tab (section 3.15); all other code files → open in the built-in code editor
 - `file://` URLs are recognized in addition to plain paths — the prefix is stripped and the path resolved like any other
+- Verified terminal link underlines remain visible during unrelated spinner redraws, including wrapped links and file paths beside a changing tool indicator.
 - OSC 8 hyperlinks: programs that emit hyperlink escape sequences (e.g. Claude Code, modern `ls`) produce clickable links; hover underline spans the full link text (via `terminal_hyperlink_span` backend API)
 - Supports `:line` and `:line:col` suffixes; the built-in editor moves to that position even when the file is already open
 - Single left-click opens the link instantly (UI-first — opening is a primary action, not gated behind a modifier); drag-select over a link still copies text without opening
