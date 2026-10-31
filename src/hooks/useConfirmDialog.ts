@@ -167,7 +167,9 @@ export function useConfirmDialog() {
 					? "This branch has nothing of its own, not merged work"
 					: status.commitStatus === "pushed_unmerged"
 						? "This branch is not merged, but all its commits are pushed"
-						: "commits remain in the parent repository";
+						: status.commitStatus === "unrelated_history"
+							? "This branch has unrelated history: no common ancestor with the default branch; keep it or archive its current tip before deletion"
+							: "commits remain in the parent repository";
 		const untracked = status.untrackedFiles
 			? `\nUntracked files: ${status.untrackedFiles} untracked files will be discarded.`
 			: "";

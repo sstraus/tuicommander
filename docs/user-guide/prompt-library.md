@@ -49,6 +49,10 @@ Use the category tabs to narrow the list:
 
 ## Editing and Deleting
 
+The drawer and **Settings > Smart Prompts** use the same aligned editor. Placement choices have readable names and include **File menu**. Execution mode controls which target, agent and output fields appear. **Send immediately** appears only for injection directly into the terminal.
+
+In the drawer, **Save** applies your draft and **Cancel** discards it. Settings applies each edit immediately. Changing the execution mode does not convert prompt content: use **Shell script (direct run)** only for shell commands, not natural-language instructions.
+
 - Click the **pencil icon** on any prompt row, or select it and press `Ctrl+E`/`Cmd+E`
 - Click the **trash icon** to delete — a confirmation dialog appears before deletion
 

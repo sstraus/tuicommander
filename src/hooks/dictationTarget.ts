@@ -1,4 +1,5 @@
 import { EditorView } from "@codemirror/view";
+import { composeSubmit } from "../components/ComposePanel/composeSubmit";
 import { terminalsStore } from "../stores/terminals";
 import { agentInputPayload, getShellFamily, sendCommand } from "../utils/sendCommand";
 
@@ -14,8 +15,14 @@ export interface DictationTarget {
 }
 
 /** Resolve the operator's destination synchronously, before recording can yield. */
-export function captureDictationTarget(): DictationTarget {
-	const el = document.activeElement;
+export function captureDictationTarget(fallbackInput?: HTMLTextAreaElement | null): DictationTarget {
+	const focused = document.activeElement;
+	const el =
+		fallbackInput &&
+		!(focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement) &&
+		!focused?.closest('.cm-editor, [contenteditable="true"]')
+			? fallbackInput
+			: focused;
 	const ownerId = el?.closest<HTMLElement>("[data-terminal-id]")?.dataset.terminalId;
 	const terminal = ownerId ? terminalsStore.get(ownerId) : terminalsStore.getActive();
 	const terminalId = terminal?.id ?? null;
@@ -37,7 +44,7 @@ export function captureDictationTarget(): DictationTarget {
 		return {
 			kind,
 			...context,
-			async deliver(text) {
+			async deliver(text, _write, autoSend) {
 				if (ownerId || kind === "compose") checkSession();
 				if (
 					!view.contentDOM.isConnected ||
@@ -51,13 +58,20 @@ export function captureDictationTarget(): DictationTarget {
 				// focus. A concurrently edited draft is retained rather than overwritten.
 				const selected = view.state.update({ selection }).state;
 				view.dispatch({ ...selected.replaceSelection(text), userEvent: "input.dictation" });
+				// Only terminal Chat Compose opts into submit. Ordinary editors still
+				// need review, and Compose owns in-flight deduplication and cleanup.
+				if (kind === "compose" && autoSend) view.state.facet(composeSubmit)?.();
 			},
 		};
 	};
 	// findFromDOM searches descendants, so BODY would match any editor on the page.
 	const cmDom = el instanceof HTMLElement ? el.closest<HTMLElement>(".cm-editor") : null;
 	const view = cmDom ? EditorView.findFromDOM(cmDom) : null;
-	if (view) return editorTarget(view, "editor");
+	if (view)
+		return editorTarget(
+			view,
+			ownerId && terminal?.viewMode === "chat" && cmDom?.closest("[data-compose-editor]") ? "compose" : "editor",
+		);
 
 	// CanvasTerminal and xterm own hidden keyboard inputs; those are PTY focus,
 	// not ordinary editors. Explicit search/form inputs still take precedence.

@@ -1,5 +1,7 @@
 # Terminal Features
 
+With CLI terminal input focused, **Ctrl+Enter** sends a distinct modified Enter when the program has negotiated Kitty keyboard reporting. Identified ego sessions also receive this encoding to steer a busy turn, because current ego does not negotiate the mode. Legacy shells and other nonnegotiating agents receive ordinary Enter (CR). Plain Enter submits normally; Shift+Enter keeps its multiline behavior. Browser and remote grid terminals use the same encoding. The mobile Ctrl menu uses the same Ctrl+Enter bytes for ego. Compose shortcuts remain separate.
+
 Remote terminals replay their current viewport when attached or reconnected. A stream failure or stalled initial replay shows a persistent error toast; the client retries without requiring new terminal output. See [Remote Access](remote-access.md).
 
 On desktop and mobile CLI views, adjacent `💬` answer paragraphs share one continuous green left bar without a background tint (Paper uses its darker success green for contrast), including blank rows between them. Mobile places this bar in a separate gutter outside the text box, so column-zero text stays clear and existing agent indentation stays unchanged. An unmarked prose paragraph after a blank row ends the answer; an uninterrupted indented continuation stays inside. The CLI gutter joins separate marked answer sections across internal blank rows and indented section headings when a later marked answer closes the gap. Trailing unmarked prose, unmarked list siblings, tools, prompts and status rows stay outside that gutter; extracted Answers and Chat keep their semantic paragraph boundaries. Lists, tables, quotations and fenced code remain attached to the answer. Fenced code keeps its inset and a separate Copy row above the text on desktop and mobile; the control does not cover wrapped lines. A non-answer output row, prompt or Codex `Worked for` duration footer ends the region. The desktop CLI blanks only the marker glyph cells; copy, selection and search keep the original text. Mobile omits the same protocol glyphs from displayed text while retaining ANSI styles and links; search still uses the original log text. Chat uses the same answer extent and strips every paragraph marker. A list item whose text starts with `💬` also opens an answer: hard-wrapped continuation rows and nested sub-items belong to it, but an unmarked sibling or dedented prose does not. The list bullet stays visible; only the answer marker is hidden. Standalone fenced terminal examples keep protocol-looking answer, intent and suggestion text literal, even when no marked answer precedes the fence. User prompt echoes do not open answer regions. A quoted marker inside uninterrupted pasted prose stays in the prompt. An agent output bullet, a column-zero answer marker, or a blank-separated answer marker begins output; indentation alone does not decide ownership. The viewport uses tracked prompt starts even when a long prompt begins outside its marker lookback. If that prefix is not cached, answer markers wait for bounded prompt-boundary reads rather than being inferred from the visible fragment. CLI marker classification examines at most 128 rows above the visible window and reuses unchanged row generations; an answer anchor farther above that window is not inferred from continuation prose.
@@ -327,7 +329,7 @@ The bell behavior when receiving BEL character (\x07) is set by `bell_style` in 
 
 ## Clickable File Paths
 
-File paths appearing in terminal output are automatically detected and become clickable links. Hover over a path to see the link underline, then click to open it.
+File paths appearing in terminal output are automatically detected and become clickable links. Hover over a path to see the link underline, then click to open it. Verified link underlines stay visible while unrelated tool indicators animate, including links that wrap across terminal rows.
 
 - `.md` / `.mdx` files open in the Markdown viewer panel
 - Other source files open in the built-in editor
@@ -522,3 +524,7 @@ delivery. A normal Send's muted **Pending** bubble belongs to the native CLI and
 cannot be withdrawn by this action. AI Chat's shared ACP composer supports the
 same shortcut for text-only queued turns. Nonempty drafts and slash menus keep
 their normal arrow-key behavior. See [coverage and evidence](../frontend/chat-wrap-recall-evidence.md).
+
+### Global Workspace membership
+
+Right-click a terminal tab or a session row in the sidebar and select **Add to Global Workspace**. For an existing member, select **Remove from Global Workspace** instead. This changes workspace membership without closing the terminal.

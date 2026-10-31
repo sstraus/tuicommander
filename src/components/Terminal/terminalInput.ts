@@ -89,6 +89,7 @@ export function keyToSequence(e: KeyboardEvent): string | null {
 	// Simple named keys
 	switch (e.key) {
 		case "Enter":
+			// Legacy programs have not requested enhanced key reporting.
 			return "\r";
 		case "Tab":
 			return e.shiftKey ? "\x1b[Z" : "\t";

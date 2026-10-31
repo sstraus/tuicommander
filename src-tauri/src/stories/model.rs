@@ -290,6 +290,7 @@ pub struct StoryRead {
 #[serde(rename_all = "camelCase")]
 pub struct StorySummary {
     pub active_plans: usize,
+    pub ready: usize,
     pub in_progress: usize,
     pub qa: usize,
     pub done: usize,
@@ -321,6 +322,21 @@ pub const PLAN_SOURCE_IN_USE: &str = "plan source is in use by an active plan co
 pub const PLAN_DOCUMENT_NOT_FOUND: &str = "plan document not found: ";
 pub const CRITERIA_INCOMPLETE: &str = "criteria are incomplete: unchecked indexes ";
 pub const STORY_LIST_QUERY_INVALID: &str = "invalid story list query: ";
+
+/// Revision-bound destinations derived by the same evaluator as a committed transition.
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailableTransitions {
+    pub revision: i64,
+    pub moves: Vec<StoryPhaseMove>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryPhaseMove {
+    pub status: StoryStatus,
+    pub command: StoryCommand,
+}
 
 /// A status command. Unit commands are plain strings (`"submit_review"`); the criterion commands
 /// carry a zero-based index (`{"check_criterion":0}`).

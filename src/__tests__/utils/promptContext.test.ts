@@ -19,7 +19,12 @@ vi.mock("../../stores/promptLibrary", () => ({
 vi.mock("../../stores/toasts", () => ({ toastsStore: { add: mocks.toast } }));
 vi.mock("../../stores/appLogger", () => ({ appLogger: { error: mocks.error } }));
 
-import { fileContextSmartMenuItem, fileContextVariables, prContextVariables } from "../../utils/promptContext";
+import {
+	fileContextSmartMenuItem,
+	fileContextVariables,
+	prContextVariables,
+	runWithFeedback,
+} from "../../utils/promptContext";
 
 const prompt: SavedPrompt = {
 	id: "review-file",
@@ -32,6 +37,17 @@ const prompt: SavedPrompt = {
 };
 
 describe("promptContext helpers", () => {
+	// Catches: failures before mode dispatch still stringify structured errors.
+	it("shows structured dispatch rejections in the feedback toast", async () => {
+		mocks.toast.mockClear();
+		const failure = { code: "context_error", message: "Cannot resolve prompt context" };
+		await runWithFeedback(prompt, async () => {
+			throw failure;
+		});
+		expect(mocks.toast).toHaveBeenCalledWith("Review file", "context_error: Cannot resolve prompt context", "error");
+		expect(mocks.error).toHaveBeenCalledWith("prompts", 'Failed to execute "Review file"', failure);
+	});
+
 	beforeEach(() => {
 		mocks.getSmartByPlacement.mockReset();
 		mocks.markAsUsed.mockReset();
