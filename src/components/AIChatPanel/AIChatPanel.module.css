@@ -642,6 +642,16 @@
   color: var(--fg-primary);
 }
 
+/* Inline syntax roles reuse the current app theme; no row geometry changes. */
+.toolLabel,
+.shellCommand { color: var(--accent); }
+.toolPath,
+.shellString { color: var(--success); }
+.shellFlag { color: var(--warning); }
+.shellOperator { color: var(--attention); }
+.shellVariable { color: var(--fg-primary); }
+.shellComment { color: var(--fg-secondary); }
+
 .toolCallDuration {
   color: var(--fg-muted);
   font-size: var(--font-xs);
@@ -1257,6 +1267,15 @@
   flex-direction: column;
   gap: 6px;
   min-width: 0;
+}
+/* The editor and edge actions share one row; attachments stay above that row. */
+.composerCard .composerActions {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.composerCard .composerActions .textarea {
+  flex: 1;
 }
 .composerHeader {
   composes: toolbar from "../ui/FormControls.module.css";

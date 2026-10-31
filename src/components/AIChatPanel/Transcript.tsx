@@ -36,6 +36,7 @@ import { ANSWER_MARKER_RE, answerBlockRanges, type ChatBlock } from "../Terminal
 import { ContentRenderer } from "../ui/ContentRenderer";
 import s from "./AIChatPanel.module.css";
 import { projectChatProtocolText } from "./protocolText";
+import { ToolTitle } from "./ToolTitle";
 import { WorkingIndicator } from "./WorkingIndicator";
 
 /** Why a turn ended, for the turns that ended without an answer. */
@@ -156,7 +157,9 @@ const ToolActivity: Component<{
 								<Show when={STATUS_CLASS[call.status ?? "pending"]} keyed>
 									{(statusClass) => <span class={cx(s.toolCallStatusDot, statusClass)} />}
 								</Show>
-								<span class={s.toolCallName}>{call.title}</span>
+								<span class={s.toolCallName}>
+									<ToolTitle title={call.title} />
+								</span>
 								<span class={s.toolCallDuration}>
 									{call.kind ?? "other"} ·{" "}
 									{call.status === "failed" ? "Failed" : call.status === "completed" ? "Completed" : "Running"}

@@ -110,3 +110,41 @@ it("keeps the count and open action when queue details are unavailable", async (
 	fireEvent.click(button);
 	expect(open).toHaveBeenCalledOnce();
 });
+
+// Catches: readable Compose text accidentally exposes the compact Button chrome at rest.
+it.each(["idle", "hover", "focus"])(
+	"keeps the collapsed handle discreet in %s state without fading its count",
+	async (state) => {
+		const { readStylesheet } = await import("../fixtures/readStylesheet");
+		const style = document.createElement("style");
+		// happy-dom has no pointer/keyboard modality and does not match :enabled on native buttons.
+		// Map modality to attributes and spell enabled as the equivalent :not(:disabled).
+		style.textContent =
+			`${readStylesheet("src/components/ui/FormControls.module.css")}\n${readStylesheet("src/components/Terminal/Terminal.module.css")}`
+				.replaceAll(":hover", "[data-test-hover]")
+				.replaceAll(":focus-visible", "[data-test-focus]")
+				.replaceAll(":enabled", ":not(:disabled)");
+		document.head.append(style);
+		try {
+			const { getByRole, getByText } = render(() => (
+				<div style="--bg-tertiary: #2d2d2d; --bg-highlight: #3c3c3c; --border: #454545; --fg-primary: #d4d4d4; --fg-muted: #a6a6a6; --fg-secondary: #b5b5b5; --accent: #007acc">
+					<ComposeToggle shortcut="⌘I" queuedCount={() => 1} onOpen={() => {}} onLoadQueue={async () => []} />
+				</div>
+			));
+			const button = getByRole("button");
+			if (state === "hover") button.setAttribute("data-test-hover", "");
+			if (state === "focus") button.setAttribute("data-test-focus", "");
+			const computed = getComputedStyle(button);
+			expect(computed.backgroundColor).toBe(state === "idle" ? "transparent" : "#3c3c3c");
+			expect(computed.borderTopColor).toBe(state === "idle" ? "transparent" : "#454545");
+			expect(computed.color).toBe(state === "idle" ? "#a6a6a6" : "#d4d4d4");
+			expect(Number(computed.opacity || "1")).toBe(1);
+			const badge = getComputedStyle(getByText("1"));
+			expect(badge.color).toBe("#b5b5b5");
+			expect(badge.backgroundColor).toBe("#3c3c3c");
+			expect(Number(badge.opacity || "1")).toBe(1);
+		} finally {
+			style.remove();
+		}
+	},
+);

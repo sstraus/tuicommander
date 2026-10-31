@@ -231,6 +231,8 @@ Right-click an HTTP(S) terminal link (including localhost) and choose **Start in
 - **Readable session edits** — Expand a Chat tool card to read structured old/new edit blocks with aligned four-space tab stops and horizontal scrolling.
 - **Native terminal Chat questions** — Desktop and mobile expose exported native question titles and choices. Answers use agent-specific PTY keys, not Compose submission or ACP replies. Desktop preserves transcript binding and returns to CLI for unexported or free-form prompts.
 - **Pending terminal Chat prompts** — Prompts submitted through the open desktop or mobile Chat composer appear immediately as muted Pending bubbles in send order, including sends while Claude or Codex is busy. Matching new native transcript messages replace them without a duplicate bubble and retire older unmatched sends, so a local slash command cannot block later receipts. This is local send feedback, not a cancellable CLI queue; prompts typed directly into the CLI or sent by another client cannot be shown before the native transcript records them.
+Expanded tool rows use theme colours for Bash/execute commands, flags, strings and operators. Read, Edit and Write keep the tool name separate from the path; other tools retain readable text. The collapsed activity summary and row sizing are unchanged.
+
 - **Mobile session Chat appearance** — The session detail CLI/Chat view shares desktop prompt/answer theme tokens and transcript typography. Mobile keeps its existing touch-sized switch and native input; AI Chat is a separate surface.
 - **Deferred update restart** — After an in-app update installs, TUICommander restarts only when no session is busy or awaiting input; the APP UPDATE notification shows how many are busy and offers **Restart now** (with confirmation). Turn off in **Settings → General → Updates → Wait for agents before restarting** (`defer_update_relaunch`, default on).
 - **Eager resume after an update** — When the app restarts to apply an update, every agent tab with a confirmed session id resumes by itself on every branch, without selecting the branch first. Tabs without a confirmed id keep the click-to-resume banner. Turn off in **Settings → General → Updates → Resume all agents after an update** (`eager_resume_after_update`, default on).
@@ -413,6 +415,7 @@ A multi-line editor docked under the terminal for writing a prompt without fight
 - **Shortcut hints** — the newline legend shows only `Ctrl+Enter`. Panels up to 640px wide hide the legend instead of wrapping; all keyboard bindings remain available
 - **New line** — `Ctrl+Enter` or `Shift+Enter` inserts a line break without sending. Enter used to confirm an IME candidate does not send
 - **Queue for the next idle window** — `Shift+Ctrl+Enter` (or the ☰ button) hands the text to the backend's idle gate instead: it is submitted at once if the agent is already idle, otherwise parked until the agent's next busy→idle transition. This is the way to leave follow-up work for an agent mid-turn without interrupting it
+- **Collapsed handle** — transparent chrome and a muted label at rest; hover or keyboard focus reveals the background and border. Label and count remain fully opaque
 - **Queue count** — the collapsed Compose button shows a muted pill for every waiting FIFO item, including commands and peer/orchestrator notices, hidden at zero. Hover or focus shows the command/message breakdown. The open panel shows `N queued`; click it to inspect and remove entries, or clear the queue. Counts come from the backend (`state.queued_commands`), including across reloads and remote clients
 - **Order** — queued commands are typed one per idle window, in the order they were composed; a new one never overtakes one already waiting. Hands-free speech does not use this queue at all — see 9.9
 - **Progress replies** — a queued user command can resume an idle agent waiting on a blocked progress report. Native questions and approval dialogs still block queued delivery; server notices cannot use this exception or be overtaken
@@ -2953,6 +2956,8 @@ sandbox and perimeter. Its returned warnings appear as AI Chat warning notices.
 Missing machine selection or missing ego acknowledgement refuses attachment.
 
 ## 27. Terminal Progress
+
+- **Session-only popup mute:** select Mute on a completion popup, then Unmute in Terminal Progress to restore future popups. Existing and queued completion cards close, but journal entries, unread counts and blocked warning popups remain. Restart or browser reload restores popups; native notification settings do not change.
 
 - One append-only journal per project with each new entry attributed to its source PTY when known: entries are written once, then kept or deleted. No pause, clear, correction, revision, deduplication or Markdown export
 - Three kinds. Agents report `done` and `blocked`; TUICommander writes `intent` from the agent's own `intent:` marker, so an agent that never calls the tool still leaves a trail

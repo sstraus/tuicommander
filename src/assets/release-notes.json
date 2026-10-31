@@ -220,24 +220,16 @@
   },
   "2.0.0": {
     "highlights": [
-      "Suspend an idle terminal tab to free memory and CPU, then resume its agent later, even after a restart.",
-      "Hands-free voice conversations work on desktop and in the browser, with spoken replies in six languages.",
-      "Native plans, stories and workflow runs let you track, review and integrate agent work inside the app.",
-      "AI Chat keeps one conversation across repositories, with image paste, draft parking and conversation recovery.",
-      "Remote machines deploy and update themselves over SSH, stream compressed output and accept dropped files.",
-      "On mobile you can answer Claude and Codex questions, get push alerts, browse files and search sessions.",
-      "Desktop alerts, a Progress Flow view and reorganized Settings with an expert mode make work easier to follow.",
-      "The HTTP API now requires credentials even locally, and several MCP tool actions were renamed or removed.",
-      "Project Progress records what agents actually accomplished, in a per-project panel you can read after being away.",
-      "Progress exports a deterministic progress.md, previewed before it is written and never overwriting a hand edit.",
-      "Workspace creation is now linked Git worktrees only, still arriving warm through copy-on-write of ignored directories.",
-      "Claude and Codex status signals are launch-scoped and on by default, leaving your global configuration untouched.",
-      "Plan Tracker and Stories Ticker ship as ordinary plugins, so both can be updated or removed independently.",
-      "An AI stream now reaches a detached panel instead of rendering nowhere once the docked terminal unmounts.",
-      "The MCP session and peer payloads dropped the fields that restated each other, and is_caller marks the caller's own tab.",
-      "Windows is exercised by the suite now, fixing tilde expansion, plugin ZIP installs, child environment inheritance and the progress store there.",
-      "The TLS stack takes rustls 0.23.45 for RUSTSEC-2026-0285, covering remote access, the relay and tunnel HTTPS calls."
-    ]
+      "Workflows now support Fork/Join, For each and If/else branching, with optional evidence review and repair budgets.",
+      "Workflow timer wake receipts and bound-report decisions persist across daemon retries and restarts.",
+      "Local tuic://open links in Markdown now open in the right view on desktop and mobile, even across worktrees.",
+      "Mobile gets a cleaner Files view, a focused Progress feed, smaller terminal text and better long-name handling.",
+      "Chat has a breathing working orb, stuck pending prompt bubbles are fixed, and transcript clicks keep Compose typing.",
+      "Codex profile quota works again with Codex 0.166, and Gemini CLI JSONL sessions can now be discovered and resumed.",
+      "Long Claude dictation no longer loses its beginning, and zoom shortcuts now apply to Markdown and code tabs too.",
+      "Text contrast is higher across the interface, and terminal search controls stay reachable in narrow panes."
+    ],
+    "date": "2026-10-31"
   },
   "2.0.0-beta.1": {
     "highlights": [
