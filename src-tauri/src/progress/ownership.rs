@@ -224,6 +224,59 @@ mod tests {
         (root, document)
     }
 
+    /// Catches: a registered submodule's journal moving into .git/modules.
+    #[test]
+    fn a_registered_submodule_keeps_its_checkout_as_journal_owner() {
+        use tuic_git::git_cli::git_cmd;
+
+        let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let source = root.path().join("source");
+        let project = root.path().join("project");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        git_cmd(&source).args(["init"]).run().unwrap();
+        git_cmd(&source)
+            .args([
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "submodule fixture",
+            ])
+            .run()
+            .unwrap();
+        git_cmd(&project).args(["init"]).run().unwrap();
+        git_cmd(&project)
+            .args([
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                &source.to_string_lossy(),
+                "deps/library",
+            ])
+            .run()
+            .unwrap();
+        let submodule = project.join("deps/library");
+        let document = json!({
+            "repos": {
+                submodule.to_string_lossy(): {
+                    "workspaces": {
+                        "main": { "worktreePath": submodule, "parentRepoPath": null }
+                    }
+                }
+            }
+        });
+        assert_eq!(
+            resolve_owning_project_in(submodule.to_str().unwrap(), &document).unwrap(),
+            submodule.canonicalize().unwrap(),
+            "an absorbed submodule gitdir is not its journal's owning checkout"
+        );
+    }
+
     #[test]
     fn unbound_callers_fail_explicitly() {
         assert!(
