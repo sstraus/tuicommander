@@ -30,6 +30,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Resolve local Markdown image parent paths before creating desktop asset URLs, so images in sibling folders load (#2604-0ec2).
 
 - Show the backend error message and code when a Smart Prompt fails, instead of `[object Object]` (#2600-1421).
+- Use one aligned Smart Prompt editor in Settings and the Edit Prompt dialog, with eight readable placement choices and consistent conditional fields (#2603-8a87).
+
+- Send Ctrl+Enter as CSI u only with negotiated Kitty reporting or an identified ego session, preserving legacy CR for shells and other agents; retain ego busy-turn steering and the mobile ego Ctrl menu correction (#2599-0a6b).
 
 - Refuse managed child progress reports before user notifications or waiting badges; direct child reports to their parent and keep root reporting unchanged (#2597-76c6).
 
