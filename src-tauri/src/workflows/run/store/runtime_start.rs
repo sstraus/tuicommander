@@ -104,6 +104,7 @@ impl RunStore {
         let mut execution =
             GraphExecution::start("root".into(), target_id.clone(), definition.clone())?;
         let initial = RunSnapshot {
+            questions: vec![],
             proposal_batches: vec![],
             event_contract_version: super::super::graph::RUN_EVENT_CONTRACT_VERSION,
             id: Uuid::now_v7().to_string(),

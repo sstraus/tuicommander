@@ -600,6 +600,11 @@ pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, 
                                     );
                                 }
                             }
+                            if snapshot.event_contract_version >= 5
+                                && attempt.outcome == Some(super::AttemptOutcome::NeedsInput)
+                            {
+                                continue 'activations;
+                            }
                             if attempt.state == super::AttemptState::Running {
                                 continue 'activations;
                             }

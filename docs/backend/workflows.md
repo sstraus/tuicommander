@@ -34,7 +34,7 @@ The `workflow action=launch` MCP entry accepts a run attempt and a Git worktree 
 
 The engine reserves a spawn effect before calling the managed `agent spawn` path. The resulting PTY session and task handle are bound to the attempt in a durable event that also completes the effect. An already reserved spawn is never retried automatically; reconciliation pauses an uncertain run. Cancellation marks unfinished attempts interrupted and intended effects uncertain; a child that starts before the failed binding is killed. The `workflow action=report` MCP entry resolves the calling live PTY itself and accepts a typed report only for its bound attempt and current story revision. The report and criterion evidence are durable events. A pause prevents new work but preserves current-generation reports from already running parallel attempts. Duplicate identical reports return the original receipt; a different payload for the same attempt is rejected. PTY exit interrupts an unresolved attempt and pauses the run, regardless of exit code. The operator and browser clients receive the same `workflow-run-changed` cursor hint and replay events from storage.
 
-A `needs_input` report includes `inputRequest {question,options}` and pauses the run. The operator command `answer_input {attempt_id,answer}` appends an answer event; the run remains paused until an explicit `resume`. An unanswered request blocks resume and final verification. A completed reviewer report includes `review {decision,artifactDigest,findings}`; each finding names a criterion index, severity, summary, and evidence. This is advisory evidence tied to the reported story revision, and does not change story status. After a committed story-worker report, the active coordinator gets inbox mail containing only the run ID, story ID and durable sequence cursor; it must read the event log for the actual result. Late or duplicate reports do not send a fresh wake. The review policy and artifact verification are separate work.
+In retained event contracts 2–4, a `needs_input` report includes `inputRequest {question,options}` and pauses the run. The operator command `answer_input {attempt_id,answer}` appends an answer event; the run remains paused until an explicit `resume`. An unanswered request blocks resume and final verification. A completed reviewer report includes `review {decision,artifactDigest,findings}`; each finding names a criterion index, severity, summary, and evidence. This is advisory evidence tied to the reported story revision, and does not change story status. After a committed story-worker report, the active coordinator gets inbox mail containing only the run ID, story ID and durable sequence cursor; it must read the event log for the actual result. Late or duplicate reports do not send a fresh wake. The review policy and artifact verification are separate work.
 
 Launching attempts is explicit in this slice. Automatic graph scheduling, evaluation and review policy are subsequent slices.
 
@@ -267,7 +267,7 @@ retained serial MCP launch and profile selection stay unchanged.
 
 ### Answer continuation
 
-For a bound contract-3 or newer attempt, `answer_input` keeps the existing launch and
+For a bound contract-3 or contract-4 attempt, `answer_input` keeps the existing launch and
 conversation, advances the report generation and records the answer as `pending`.
 The run still requires explicit graph resume. The daemon journals `handoff_started`
 before external delivery and `delivered` after the ACP PromptSent acknowledgement
@@ -286,8 +286,8 @@ Contract-2 answer semantics and first-generation command keys are unchanged.
 ### Current version sequence
 
 The run-store schema and layout are the same `PRAGMA user_version`, not separate
-version counters. The combined build writes layout **8** and starts event
-contract **4**. The retained sequence is:
+version counters. The combined build writes layout **9** and starts event
+contract **5**. The retained sequence is:
 
 | Run-store layout | Contract and compatibility boundary |
 | --- | --- |
@@ -298,20 +298,21 @@ contract **4**. The retained sequence is:
 | 5 | WF01 immutable definition pins and serial event contract 3. |
 | 6 | WF19 durable timers for contract 3. |
 | 7 | WF02 correlated regions and event contract 4; retained contract-3 timers still replay. |
-| 8 | WF04 explicit worker transport/conversation bindings, answer continuation and durable report disposition; contract 4 remains current. |
+| 8 | WF04 explicit worker transport/conversation bindings, answer continuation and durable report disposition. |
+| 9 | WF03 branch-local questions and contract 5; contracts 2–4 retain their input/replay rules. |
 
 WF06 adds an optional evidence policy to the pinned definition and optional typed
 review evidence/check requirements digests. It does not allocate a competing
 layout or event-contract number. Omitted policy/evidence fields retain the legacy
 contract; snapshots written before WF19 decode with an empty timer list. Layouts
-0–7 open through the existing additive upgrade without rewriting their event
-streams. Contracts 2 and 3 keep serial Join semantics; contract 3 and 4 support
-Timer events, while contract 2 refuses them. Older binaries refuse layout 8 rather than interpreting lifecycle events without
+0–8 open through the existing additive upgrade without rewriting their event
+streams. Contracts 2 and 3 keep serial Join semantics; contracts 3–5 support
+Timer events, while contract 2 refuses them. Older binaries refuse layout 9 rather than interpreting lifecycle events without
 their ownership and continuation fences. Layout 7 remains the parallel-event boundary.
 
 ## Correlated parallel regions (WF02)
 
-New runs use event contract 4 and run-store layout 8. Contracts 2 and 3 retain
+New runs use event contract 5 and run-store layout 9. Contracts 2 and 3 retain
 serial replay, including exclusive Join; old definitions and events are not
 rewritten. The pinned definition digest remains part of each new graph start.
 
@@ -509,3 +510,61 @@ Internal consumers must emit the existing `workflow-run-changed` hint after
 committing schedule/retry/cancel commands so the actor recomputes its deadline.
 This foundation does not install provider polling, a proof collector or a question
 inbox; their consumer stories remain responsible for those behaviors.
+
+
+## Branch-local questions and decision inbox (WF03)
+
+Contract 5 turns a typed `needs_input` report into one atomic `question_requested`
+event. The event retains the report, suspends its exact graph activation, and
+records a revisioned question. Other graph branches and disjoint story executions
+can continue within the existing resource and file-scope limits. A waiting worker
+still owns its slot and file scope. A question never completes the worker or its
+all-Join arrival. Explicit operator pause/cancel and uncertain-effect safety stops
+remain run-wide; an answer does not clear such a pause.
+
+`inputRequest` accepts optional `answerSchema` and `deadline`. The schema is tagged
+by `type`: `text`, `boolean`, `single_choice {options}`, or
+`multiple_choice {options}`. Without a schema, nonempty legacy `options` mean one
+exact choice; otherwise the answer is nonempty text. The backend rejects invalid
+choices, duplicate selections and wrong JSON types. A deadline is
+`{atMs,outcome}`, where outcome is `timed_out` or `incomplete`, never approval.
+Its service-owned WF19 timer is created in the same event transaction and survives
+branch suspension, explicit pause and reconnect. Expiry leaves the activation
+suspended and the unresolved question visible. A new revision is required before
+answering an expired question.
+
+Commands use the existing `command` action and expected run sequence:
+
+- `answer_question {question_id,expected_revision,subject_digest,actor,answer}`
+- `revise_question {question_id,expected_revision,request,actor}`
+
+`actor` is `{kind,id}` with `human`, `ai` or `daemon` provenance. It describes the
+source; it is not a new authorization boundary. The question records its requester,
+exact subject digest and answer actor/time/value. The backend computes the subject
+from run/attempt/generation, current story or plan revision, and the assigned Git
+workspace. Workspace binding includes HEAD, staged and working changes, and
+untracked file bytes. An unreadable subject refuses the decision rather than
+assuming freshness. A revision refreshes the subject and schema explicitly;
+it does not grant consent. Superseded fork generations retire their questions and
+deadlines. Run cancellation withdraws all unanswered questions.
+
+The first valid answer transaction wins. Reusing a command ID with identical
+payload returns its original receipt; a changed payload, stale run sequence,
+question revision or subject refuses. The legacy `answer_input` command is refused
+for contract 5, so it cannot bypass the revision fence. A valid answer restores
+only its activation and uses WF04 generation-bound continuation delivery to the
+same worker. A fresh delivered-generation report is still required for completion.
+
+`question_inbox` is a read-only project action. It returns
+`{type:"question_inbox",value:{unansweredCount,items}}`; each item contains
+`runId`, `runStatus`, `storyId` and the complete question. Pending, timed-out and
+incomplete questions count; answered, superseded and canceled questions do not.
+The projection reads persisted runs, requires no coordinator or runtime actor, and
+is identical through IPC `workflow_run_action`, HTTP `/workflows/run/action` and
+MCP `workflow action=run`. Reconnect must reread the projection; run-change events
+remain cursor wake hints. The Stories answer form sends the revision and subject
+for new runs and retains the old input command for historical runs. Expired
+questions remain read-only records and do not hide the next pending question.
+The form shows choices from the current structured schema; only historical
+requests use legacy option suggestions. Boolean and multiple-choice values can
+be entered as JSON in that existing form.

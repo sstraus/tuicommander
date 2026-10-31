@@ -1591,3 +1591,15 @@ recovery pauses. Cancellation fences all timers. Retry hints respect declared
 attempt, expiry and backoff caps. A question expiry is only timed-out/incomplete,
 never consent. WF08 cohort collection, WF13 provider observation and WF03 inbox
 consumers build on this internal primitive; they are not installed by WF19.
+
+
+### Branch-local workflow decisions (WF03)
+
+Contract-5 workflow questions suspend only their activation. Disjoint work can
+continue within the existing resource policy. The durable project inbox counts
+pending and expired questions without a coordinator. Answers bind the question
+revision and current subject digest, retain actor provenance, and continue the
+same worker generation without completing it. Deadlines never imply approval.
+Explicit run pause/cancel and historical NeedsInput replay remain available.
+IPC, HTTP and MCP use the same question/inbox service. See
+[workflow decisions](docs/backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).

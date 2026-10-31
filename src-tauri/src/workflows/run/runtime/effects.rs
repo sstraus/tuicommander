@@ -46,6 +46,8 @@ pub(in crate::workflows::run) fn attempt_holds_slot(
     attempt: &NodeAttempt,
 ) -> bool {
     attempt.state == super::super::AttemptState::Running
+        || (attempt.outcome == Some(super::super::AttemptOutcome::NeedsInput)
+            && attempt.input_answer.is_none())
         || attempt.graph_binding.as_ref().is_some_and(|binding| {
             run.graph_executions
                 .iter()
