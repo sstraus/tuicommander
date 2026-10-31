@@ -3171,3 +3171,8 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] Terminal Chat queued prompt feedback: while Claude or Codex works, send two follow-ups from Chat; confirm muted Pending bubbles stay in send order and each disappears when its normal native transcript message arrives, without duplication. Repeat after a failed send and on mobile. Automated shared-host contracts and a worktree Vite appearance screenshot cover presentation; native busy-agent delivery remains owned by the CLI.
 
 - [ ] PR conversation links (#2559-dc9e): with GitHub Work loaded, click a sidebar PR’s Comments action, unresolved-thread count and PR notification. Confirm the exact PR/account opens in Tasks with Comments and review threads; return through Open branch. Unload the provider and confirm the GitHub fallback.
+
+## WF03 branch-local decisions (2510-14e7)
+
+- [ ] After a manual backend restart or release rebuild, ask on one workflow branch and confirm that its question remains visible while independent work advances; answer from a browser and confirm that only the bound worker continues. Rust changes do not hot-reload. Automated ledger, engine and transport checks are recorded in the story worklog.
+- [x] Session-only Progress popup mute: completion cards expose Mute; Terminal Progress retains reports and offers Unmute; blocked warnings remain visible. _(verified: isolated Vite real-component browser check and ProgressPopups.test.tsx; popup preference is in-memory only.)_

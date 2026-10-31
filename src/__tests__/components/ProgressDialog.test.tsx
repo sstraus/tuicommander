@@ -57,6 +57,8 @@ vi.mock("../../stores/terminals", () => ({
 
 vi.mock("../../stores/progress", () => ({
 	progressStore: {
+		popupsMuted: () => false,
+		unmutePopups: vi.fn(),
 		requestedProject: () => "/repo",
 		selectedPtyId: () => "pty-a",
 		selectPty,

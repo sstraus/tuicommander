@@ -16,6 +16,12 @@ export const TIPS: Tip[] = [
 		shortcut: null,
 	},
 	{
+		feature: "Progress popup mute",
+		description:
+			"Select Mute on a completion popup to quiet this app session. Reports remain in Terminal Progress, where Unmute restores future popups. Blocked reports still appear.",
+		shortcut: null,
+	},
+	{
 		feature: "Mobile URL paste",
 		description:
 			"Paste a web link into a mobile terminal or AI Chat draft. A space separates the URL from your next words unless whitespace already follows it.",
