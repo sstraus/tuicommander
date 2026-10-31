@@ -1437,11 +1437,9 @@ impl<T: EventListener> Handler for Term<T> {
             && self.grid.cursor.point.line > Line(0)
         {
             let prev = self.grid.cursor.point.line - 1i32;
-            let cols = self.columns();
-            if cols > 0 {
-                self.grid[prev][Column(cols - 1)]
-                    .flags
-                    .remove(Flags::WRAPLINE);
+            // Non-reflow growth can retain the edge before the current margin.
+            for cell in &mut self.grid[prev][..] {
+                cell.flags.remove(Flags::WRAPLINE);
             }
         }
 
@@ -1823,11 +1821,9 @@ impl<T: EventListener> Handler for Term<T> {
 
         // CR resets to column 0 — clear any stale WRAPLINE and reflow_wrap
         // on this line. If the line later wraps again, wrapline() will re-set them.
-        let cols = self.columns();
-        if cols > 0 {
-            self.grid[line][Column(cols - 1)]
-                .flags
-                .remove(Flags::WRAPLINE);
+        // Non-reflow growth can retain the edge before the current margin.
+        for cell in &mut self.grid[line][..] {
+            cell.flags.remove(Flags::WRAPLINE);
         }
         self.grid[line].reflow_wrap = false;
 
@@ -1844,11 +1840,9 @@ impl<T: EventListener> Handler for Term<T> {
         // WRAPLINE flag and reflow_wrap so grow_columns won't merge the next
         // line into this one.
         let line = self.grid.cursor.point.line;
-        let cols = self.columns();
-        if cols > 0 {
-            self.grid[line][Column(cols - 1)]
-                .flags
-                .remove(Flags::WRAPLINE);
+        // Non-reflow growth can retain the edge before the current margin.
+        for cell in &mut self.grid[line][..] {
+            cell.flags.remove(Flags::WRAPLINE);
         }
         self.grid[line].reflow_wrap = false;
         self.grid.cursor.input_needs_wrap = false;

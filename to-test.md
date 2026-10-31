@@ -1,6 +1,9 @@
 ## Settings catalogue effective defaults (2566-f6d0) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use a throwaway instance to confirm the default sidebar is 300 px, Settings navigation is 232 px, and the Voice engine default is Edge. Existing saved widths and legacy voice choices must remain unchanged. Release MCP audit stays off; debug audit stays on. Automated catalogue/export and UI-store regressions cover these defaults. The daily app was not restarted; restart only when losing current sessions is acceptable.
+## Retained answer gutters (2560-b448) — Rust rebuild/restart required
+
+- [ ] After Boss installs a rebuilt app or restarts it when session loss is acceptable, create a throwaway 80-column terminal with reflow disabled, emit a long marked answer, and widen it to 200 columns. Existing fragments stay narrow by design; the green gutter must cover their continuation rows. The recorded-grid production renderer replay and targeted terminal regression cover the contract. The daily app was not restarted or reconfigured. Independently repaint the next row after widening: it must not remain joined to the answer; explicit CR/LF must also break the retained edge.
 
 ## Expanded Chat tool colours (2552-fd00)
 
@@ -3180,3 +3183,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 
 - [ ] After a manual backend restart or release rebuild, ask on one workflow branch and confirm that its question remains visible while independent work advances; answer from a browser and confirm that only the bound worker continues. Rust changes do not hot-reload. Automated ledger, engine and transport checks are recorded in the story worklog.
 - [x] Session-only Progress popup mute: completion cards expose Mute; Terminal Progress retains reports and offers Unmute; blocked warnings remain visible. _(verified: isolated Vite real-component browser check and ProgressPopups.test.tsx; popup preference is in-memory only.)_
+
+- [ ] Fresh-install opt-in guidance (#2561-9861, #2562-d363): open inactive AI Chat with ego detected, confirm Use this, and check that the saved path activates Chat. Check a long active agent's sleep tip, a supported agent's setup hook tip, and a server-error retry tip; dismiss each and reopen to verify persistence. Defaults must stay off until explicitly changed.

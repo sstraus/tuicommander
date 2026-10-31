@@ -418,3 +418,12 @@ AI Chat explains the **Backend/frontend version mismatch** instead of offering
 Retry. Restart `make dev` (or `pnpm tauri dev`) when you are ready to end the
 current backend session. Reloading the frontend does not rebuild the backend.
 Release and remote-owner errors keep their existing recovery controls.
+
+## Confirm a detected ego executable
+
+If no ego executable is configured, opening AI Chat checks the host's agent detection.
+When it finds ego, the panel shows its path and **Use this**. Select **Use this** to
+save that path through the normal settings writer and activate AI Chat. Detection
+never saves a path automatically and never replaces a configured executable.
+**Configure ego** still opens manual setup. If detection finds nothing or fails,
+the existing inactive message and manual setup action remain available.
