@@ -2882,10 +2882,45 @@ async fn mcp_run_history_matches_owner_event_cursor() {
     let run = store
         .start_plan(&path, &plan.id, &definition.id, 1, Default::default())
         .unwrap();
+    let story = crate::stories::StoryStore::open()
+        .unwrap()
+        .create_story(crate::stories::NewStory {
+            story_type: None,
+            plan_id: plan.id.clone(),
+            title: "Question branch".into(),
+            criteria: vec!["Answered".into()],
+            priority: 1,
+            origin: crate::stories::StoryOrigin::Native,
+            file_scope: vec![],
+        })
+        .unwrap();
+    let started = store
+        .command(
+            &run.id,
+            "attempt",
+            crate::workflows::RunCommand::StartAttempt {
+                story_id: story.id,
+                node_id: "implement".into(),
+            },
+        )
+        .unwrap();
+    store
+        .command(
+            &run.id,
+            "ask",
+            crate::workflows::RunCommand::ReportAttempt {
+                attempt_id: started.snapshot.attempts[0].id.clone(),
+                generation: 1,
+                outcome: crate::workflows::AttemptOutcome::NeedsInput,
+            },
+        )
+        .unwrap();
     store
         .command(&run.id, "pause", crate::workflows::RunCommand::Pause)
         .unwrap();
+    assert_eq!(store.question_inbox(&path).unwrap().unanswered_count, 1);
     for input in [
+        serde_json::json!({"action":"question_inbox"}),
         serde_json::json!({"action":"get","run_id":run.id}),
         serde_json::json!({"action":"list_plan_runs","plan_id":plan.id,"limit":20}),
         serde_json::json!({"action":"events","run_id":run.id,"after_sequence":1,"limit":1}),
@@ -2940,6 +2975,10 @@ fn workflow_run_schema_exposes_typed_starts_and_recovery_without_internal_receip
     let schema = &definition["inputSchema"]["properties"]["input"];
     let encoded = schema.to_string();
     for required in [
+        "question_inbox",
+        "answer_question",
+        "subject_digest",
+        "expected_revision",
         "start_graph",
         "request_id",
         "expected_revision",

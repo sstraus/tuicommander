@@ -102,6 +102,14 @@ interface RunGraph {
 	completed: boolean;
 }
 interface RunSnapshot {
+	questions?: {
+		id: string;
+		revision: number;
+		attemptId: string;
+		subjectDigest: string;
+		state: string;
+		schema: { type: string };
+	}[];
 	id: string;
 	planId: string;
 	status: string;
@@ -516,12 +524,25 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 		setRunLoading(true);
 		setRunError("");
 		try {
+			const question = selected.questions?.findLast((item) => item.attemptId === attempt.id);
 			const reply = await callRun({
 				action: "command",
 				run_id: selected.id,
-				command_id: `answer-input:${attempt.id}`,
+				command_id: question ? `answer-question:${question.id}:${question.revision}` : `answer-input:${attempt.id}`,
 				expected_sequence: selected.sequence,
-				command: { action: "answer_input", attempt_id: attempt.id, answer },
+				command: question
+					? {
+							action: "answer_question",
+							question_id: question.id,
+							expected_revision: question.revision,
+							subject_digest: question.subjectDigest,
+							actor: { kind: "human", id: "stories-dialog" },
+							answer:
+								question.schema.type === "boolean" || question.schema.type === "multiple_choice"
+									? JSON.parse(answer)
+									: answer,
+						}
+					: { action: "answer_input", attempt_id: attempt.id, answer },
 			});
 			if (reply.type !== "receipt") throw new Error("Invalid run response");
 			setRun(reply.value.snapshot);

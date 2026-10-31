@@ -3614,3 +3614,12 @@ can flush a one-row cohort through a recovery pause. Activation pauses retain
 their deadlines; cancellation fences delivery. Question expiry never implies
 approval. This is internal infrastructure for later proof, provider and inbox
 consumers, not a new Designer control. See [workflows](backend/workflows.md#durable-timers-wf19).
+
+
+### Branch-local workflow decisions
+
+Workflow questions and approvals retain structured answer schemas, revision and
+subject fences, actor provenance and restart-safe deadlines. An unanswered question
+suspends its activation, not disjoint delivery. The project inbox counts pending
+and expired questions without a coordinator; all transports use the same service.
+No timeout grants consent. See [workflow decisions](backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).

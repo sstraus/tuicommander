@@ -615,8 +615,21 @@ describe("StoriesDialog", () => {
 		);
 	});
 
-	it("records a human answer to a paused workflow request", async () => {
+	it.each([false, true])("records a revision-bound answer and retains legacy input (branch=%s)", async (branch) => {
+		// Catches: desktop/browser answers dropping the question revision or subject digest.
 		const run = {
+			questions: branch
+				? [
+						{
+							id: "input:a1",
+							revision: 3,
+							attemptId: "a1",
+							subjectDigest: "subject-digest",
+							state: "pending",
+							schema: { type: "single_choice" },
+						},
+					]
+				: undefined,
 			id: "r1",
 			planId: "p1",
 			status: "paused",
@@ -668,7 +681,16 @@ describe("StoriesDialog", () => {
 					run_id: "r1",
 					expected_sequence: 4,
 					command_id: expect.any(String),
-					command: { action: "answer_input", attempt_id: "a1", answer: "A" },
+					command: branch
+						? {
+								action: "answer_question",
+								question_id: "input:a1",
+								expected_revision: 3,
+								subject_digest: "subject-digest",
+								actor: { kind: "human", id: "stories-dialog" },
+								answer: "A",
+							}
+						: { action: "answer_input", attempt_id: "a1", answer: "A" },
 				},
 			}),
 		);
