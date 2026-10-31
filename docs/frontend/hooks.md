@@ -292,6 +292,12 @@ Confirmation and info dialogs using Tauri dialog plugin.
 
 Push-to-talk dictation integration. The destination and selection are captured before any asynchronous work. Explicit editors take priority; transcript or BODY focus in terminal Chat targets that terminal's Compose editor. CodeMirror receives a transaction, preserving the surrounding draft. CLI uses the captured PTY session and its existing auto-send semantics, even if the active tab changes.
 
+Detached AI Chat mounts the same hook and hotkey lifecycle in its own WebView,
+hydrates the shared dictation configuration, and supplies its composer as the
+fallback when its transcript has focus. Main-window callers supply no fallback,
+so terminal and form targeting stay unchanged. Native Fn chooses the focused
+supported window at key-down; focus changes do not move the captured target.
+
 A removed target, replaced session, changed draft, or failed insertion retains the transcript in a sticky error message and the Messages bell. It never falls through to another destination. Start and delivery logs contain the recording id, target kind, terminal/session identity, character count and outcome, without transcript text.
 
 | Method | Description |

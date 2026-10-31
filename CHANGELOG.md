@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Keep push-to-talk dictation in the focused detached AI Chat window instead of sending its transcript to the main window; preserve the captured composer across focus changes.
+- Label the per-reply conversation branch action **Fork**, distinct from **Copy**.
+
 - Preserve ignored canonical work during native integration and recover interrupted validation, receipts and branch retirement without blocking unrelated trial repositories (#2514-3d1e).
 - Recover malformed config fields without resetting valid settings; preserve valid legacy service credentials and show reset field names and the original backup path once per recovery (#2564-8455).
 - Migrate legacy disabled scrollback reflow once; preserve later explicit choices (#2565-8b3c).

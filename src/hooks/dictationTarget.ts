@@ -14,8 +14,14 @@ export interface DictationTarget {
 }
 
 /** Resolve the operator's destination synchronously, before recording can yield. */
-export function captureDictationTarget(): DictationTarget {
-	const el = document.activeElement;
+export function captureDictationTarget(fallbackInput?: HTMLTextAreaElement | null): DictationTarget {
+	const focused = document.activeElement;
+	const el =
+		fallbackInput &&
+		!(focused instanceof HTMLInputElement || focused instanceof HTMLTextAreaElement) &&
+		!focused?.closest('.cm-editor, [contenteditable="true"]')
+			? fallbackInput
+			: focused;
 	const ownerId = el?.closest<HTMLElement>("[data-terminal-id]")?.dataset.terminalId;
 	const terminal = ownerId ? terminalsStore.get(ownerId) : terminalsStore.getActive();
 	const terminalId = terminal?.id ?? null;

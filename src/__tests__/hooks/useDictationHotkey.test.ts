@@ -69,6 +69,19 @@ describe("push-to-talk release recovery", () => {
 		expect(onStop).toHaveBeenCalledOnce();
 	});
 
+	// Catches: broadcasting native release stops main when only detached chat saw key-down.
+	it("ignores native Fn release in a window that never received key-down", async () => {
+		state.hotkey = "Fn";
+		createRoot((rootDispose) => {
+			dispose = rootDispose;
+			useDictationHotkey({ onStart, onStop });
+		});
+		await Promise.resolve();
+		listeners.get("fn-key-up")?.();
+		expect(onStart).not.toHaveBeenCalled();
+		expect(onStop).not.toHaveBeenCalled();
+	});
+
 	it("forgets held modifiers after focus loss", () => {
 		state.hotkey = "Cmd+F8";
 		createRoot((rootDispose) => {

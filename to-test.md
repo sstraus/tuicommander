@@ -3224,3 +3224,8 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 
 - [ ] Scroll through terminal web links and soft-wrapped file URLs: dotted underlines and Cmd-hover strokes must stay on their text, including when the backend viewport trails a smooth gesture (#2582-13dd).
 - [ ] After a Rust rebuild/restart, inspect the generated Waiting and long work launch preview: continue independent work, yield only for a needed result or user answer, report running work without completion/suggestions, and use the launched mechanism’s wake. Existing sessions do not receive the new launch text automatically. (#2581-4824)
+
+## Detached AI Chat dictation (2026-10-31)
+
+- [ ] After a manual `make dev` restart or a release rebuild, focus the detached AI Chat composer and dictate with Fn. Verify the transcript stays in that draft, including when focus changes before key-up. Main-window dictation must remain unchanged. Rust does not hot-reload; restart only when ready to lose live sessions.
+- [ ] [HUMAN] Verify a real microphone recording in the detached window, release Fn outside the app, and check that capture stops without losing the transcription. Component regression and native routing inspection do not prove physical audio or microphone permission state.
