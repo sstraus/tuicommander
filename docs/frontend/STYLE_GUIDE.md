@@ -454,8 +454,12 @@ controls have a 44px minimum height and 16px text to prevent iOS zoom.
 
 `Button` forwards native button attributes and defaults to `type="button"` (set
 `type="submit"` for form submission). Variants are `primary`, `secondary` (default),
-`ghost` and `danger`; sizes are `default` (36px) and `compact` (22px), both with a
+`ghost`, `hint` and `danger`; sizes are `default` (36px) and `compact` (22px), both with a
 44px touch minimum. It shares FormControls height and padding tokens with fields.
+Use `variant="hint"` for discreet actions such as the collapsed Compose handle:
+transparent chrome and muted text at rest, then a highlighted surface, border and
+primary text on enabled hover or keyboard focus. The primitive owns these styles;
+feature CSS owns placement only.
 For status-only toggles whose icon already indicates the active state, use
 `pressedIndicator="none"` to omit the pressed border. The default remains
 `"border"`; keyboard `:focus-visible` styling stays intact.

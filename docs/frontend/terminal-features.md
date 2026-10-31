@@ -167,6 +167,8 @@ Clickable file paths in terminal output resolve against the terminal working dir
 
 ### Collapsed Compose queue count
 
+The collapsed handle has transparent chrome and muted text at rest. Hover or keyboard focus reveals its background and border. The label and queue count stay fully opaque.
+
 The CLI Compose button shows a muted count pill for all pending FIFO entries,
 including user commands and TUIC messages. It hides at zero and follows the
 backend session state without opening the editor. Hover or keyboard focus loads

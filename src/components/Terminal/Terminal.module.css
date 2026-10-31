@@ -106,7 +106,7 @@
 }
 
 /* Compose panel tab — bottom edge handle that pulls up the compose panel */
-.composeHint {
+button.composeHint {
   position: absolute;
   bottom: 0;
   left: 12px;

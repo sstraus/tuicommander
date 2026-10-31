@@ -3,7 +3,7 @@ import { cx } from "../../utils/cx";
 import s from "./FormControls.module.css";
 
 type ButtonBaseProps = JSX.ButtonHTMLAttributes<HTMLButtonElement> & {
-	variant?: "primary" | "secondary" | "ghost" | "danger" | "removalToggle";
+	variant?: "primary" | "secondary" | "ghost" | "hint" | "danger" | "removalToggle";
 	size?: "default" | "compact";
 	/** Status-only toggles can omit the selected border without hiding keyboard focus. */
 	pressedIndicator?: "border" | "none";
