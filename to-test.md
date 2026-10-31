@@ -1,3 +1,7 @@
+## Progress ownership inventory (2583-fd08) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, report Progress from ego main and its separately registered history-anchors checkout. Both must resolve to the main project's history without an ownership-cycle error. The recorded live inventory covers the resolver automatically; no live config was changed and the daily app was not restarted. Restart only when losing current sessions is acceptable.
+
 ## Settings catalogue ledger coverage (2571-926a)
 
 - [x] Preserve generated settings descriptors while rejecting malformed and invalid owner ledgers, including pre-existing schema gaps. _(verified: rb `settings::catalogue::tests`, 13 passed; generated TypeScript matches the committed catalogue. This internal Rust refactor needs a rebuild to load, but changes no user-visible behavior. The daily app was not restarted.)_

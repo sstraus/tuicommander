@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Resolve Progress to the main checkout when a separately registered linked checkout repeats the shared workspace inventory (#2583-fd08).
+
 - Keep Session Chat and its composer on the destination repository when a progress toast's reporting terminal has closed (#2579-6271).
 
 - Permit the native notification plugin's startup permission probe in every app-owned desktop window (#2568-a5d5).
