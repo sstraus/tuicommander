@@ -304,6 +304,8 @@ keeping the row lock during that probe would deadlock a bound Codex terminal.
 
 ### Design Mode
 
+The extension launcher publishes its command queue before starting the dedicated browser, then awaits a request-id-matched `ready` reply identifying the launched tab. It retains an owned process controller after acknowledgment; Stop kills and reaps only that child. A failed startup closes its own launch. Native disconnect closes the queue and wakes both agent waiters and the outstanding extension poll. The worker replies before optional action-history persistence and exposes receive-loop errors in its connection status. MCP Design Mode command reads have a 15 s transport budget around the 10 s browser deadline; acknowledged start has 30 s.
+
 | Method | Path | Description |
 |--------|------|-------------|
 | `POST` | `/design-mode/start` | Start/rebind the dedicated Edge/Chrome profile (`{sessionId, browser?}`) |

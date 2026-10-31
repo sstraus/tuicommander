@@ -27,6 +27,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Align Design Mode sidebar sections and keep permission and error action buttons separated when they wrap (#2592-2a7f).
 - Honor dictation Auto-send in terminal Chat through the existing Compose Send path; keep review-only drafts when disabled and leave unrelated editors unchanged (#2585-dfc2).
+- Require a browser acknowledgment before Design Mode start succeeds, receive commands without a sidebar, report missing eval consent immediately, reject disconnected command queues, and close the dedicated browser on Stop (#2596-b9c6).
 
 - Keep dotted link underlines and wrapped hover underlines aligned with terminal text during smooth scrolling (#2582-13dd).
 - Keep Session Chat and its composer on the destination repository when a progress toast's reporting terminal has closed (#2579-6271).

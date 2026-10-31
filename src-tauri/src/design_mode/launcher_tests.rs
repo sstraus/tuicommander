@@ -53,6 +53,8 @@ async fn first_run_page_is_useful_without_a_server_and_escapes_paths() {
             );
             crate::config::save_repo_settings(base, settings).unwrap();
         }
+        let acknowledge = (std::env::var_os("TUIC_DESIGN_SILENT").is_none())
+            .then(|| acknowledge_test_launch(state.clone(), root.join("repo")));
         let response = launch(
             &state,
             &root.join("repo"),
@@ -60,8 +62,17 @@ async fn first_run_page_is_useful_without_a_server_and_escapes_paths() {
             Some("chrome"),
             std::env::var("TUIC_DESIGN_LAUNCH_URL").ok().as_deref(),
         )
-        .await
-        .unwrap();
+        .await;
+        if std::env::var_os("TUIC_DESIGN_SILENT").is_some() {
+            assert!(response.unwrap_err().contains("browser_not_ready"));
+            assert_eq!(
+                super::super::legacy::statuses(&state).await[0]["status"],
+                "stopped"
+            );
+            return;
+        }
+        acknowledge.unwrap().await.unwrap();
+        let response = response.unwrap();
         let target = response["url"].as_str().unwrap();
         if let Ok(requested) = std::env::var("TUIC_DESIGN_LAUNCH_URL")
             .or_else(|_| std::env::var("TUIC_DESIGN_DISCOVERED"))
@@ -113,10 +124,13 @@ async fn first_run_page_is_useful_without_a_server_and_escapes_paths() {
     for path in [&bridge, &browser] {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    for mode in ["setup", "explicit", "discovered", "running"] {
+    for mode in ["setup", "explicit", "discovered", "running", "silent"] {
         let _ = std::fs::remove_file(root.join("browser-args"));
         let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
         match mode {
+            "silent" => {
+                command.env("TUIC_DESIGN_SILENT", "1");
+            }
             "explicit" => {
                 command.env(
                     "TUIC_DESIGN_LAUNCH_URL",

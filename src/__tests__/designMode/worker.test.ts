@@ -3,24 +3,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 type Snapshot = { selectedSessionId?: string; servers: { servers: { url: string }[] } };
 type Reply = { ok: boolean; result?: Snapshot; error?: string };
 const PANEL = "chrome-extension://ext/panel.html";
-const calls: { action: string; sessionId?: string }[] = [];
+type NativePayload = {
+	action: string;
+	sessionId?: string;
+	requestId?: string;
+	reply?: { ok: boolean; error?: string; result?: unknown };
+};
+const calls: NativePayload[] = [];
+const offeredCommands: object[] = [];
+const suspendWorkers: (() => void)[] = [];
 const serversOf: Record<string, string[]> = { A: ["http://localhost:3001/"], B: ["http://localhost:3002/"] };
 
 vi.mock("../../../browser-extension/design-mode/native.js", () => ({
 	connectNative: () => {},
-	nativeRequest: async (payload: { action: string; sessionId?: string }) => {
-		calls.push({ action: payload.action, sessionId: payload.sessionId });
+	nativeRequest: async (payload: NativePayload) => {
+		calls.push(payload);
+		if (payload.action === "command_next") return offeredCommands.shift() ?? null;
+		if (payload.action === "command_reply") return { accepted: true };
 		if (payload.action === "hello") return { endpoint: "test" };
 		if (payload.action === "list_agents")
 			return ["A", "B"].map((sessionId) => ({ sessionId, agentType: "claude", repoPath: "/repo", label: sessionId }));
-		if (payload.action === "mode_status") return [];
+		if (payload.action === "mode_status") return [{ repoPath: "/repo", sessionId: "A", status: "armed" }];
 		if (payload.action === "list_dev_servers")
 			return { servers: (serversOf[payload.sessionId ?? ""] ?? []).map((url) => ({ url })), canStart: false };
 		throw new Error(`unexpected ${payload.action}`);
 	},
 }));
 
-async function boot() {
+async function boot(historyUnavailable = false) {
 	let listener: (m: unknown, s: unknown, r: (x: Reply) => void) => boolean | undefined = () => undefined;
 	const store: Record<string, unknown> = {};
 	const sessionStore: Record<string, unknown> = {};
@@ -30,6 +40,7 @@ async function boot() {
 		runtime: {
 			getURL: (p: string) => `chrome-extension://ext/${p}`,
 			sendMessage: async () => {},
+			onSuspend: { addListener: (listener: () => void) => suspendWorkers.push(listener) },
 			onMessage: {
 				addListener: (fn: typeof listener) => {
 					listener = fn;
@@ -49,6 +60,7 @@ async function boot() {
 			session: {
 				get: async () => ({ ...sessionStore }),
 				set: async (v: Record<string, unknown>) => {
+					if (historyUnavailable && "actionHistory" in v) throw new Error("history storage failed");
 					Object.assign(sessionStore, v);
 				},
 			},
@@ -60,7 +72,9 @@ async function boot() {
 			},
 		},
 		tabs: {
-			query: async () => [{ id: 7 }],
+			query: async () => [{ id: 7, windowId: 2, active: true, url: "http://localhost:5173/" }],
+			get: async () => ({ id: 7, windowId: 2, active: true, url: "http://localhost:5173/" }),
+			captureVisibleTab: async () => "data:image/png;base64,iVBORw0KGgo=",
 			sendMessage: async () => {},
 			update: tabsUpdate,
 			onActivated: { addListener: () => {} },
@@ -79,12 +93,76 @@ describe("Design Mode worker dev-server wiring", () => {
 		vi.resetModules();
 		vi.useFakeTimers();
 		calls.length = 0;
+		offeredCommands.length = 0;
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
+		for (const suspend of suspendWorkers.splice(0)) suspend();
+		await vi.advanceTimersByTimeAsync(1000);
 		vi.clearAllTimers();
 		vi.useRealTimers();
 		vi.unstubAllGlobals();
+	});
+
+	// Catches: the command receiver depending on a sidebar request or a later heartbeat to start.
+	it("starts the native command receiver when the worker boots without a sidebar", async () => {
+		await boot();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(calls.some((call) => call.action === "command_next")).toBe(true);
+	});
+
+	// Catches: commands requiring a sidebar-selected tab and grant denial disappearing instead of replying.
+	it("acknowledges the launched page and replies to grant-free evidence and denied eval without a sidebar", async () => {
+		offeredCommands.push(
+			{ requestId: "ready", sessionId: "A", action: "ready", args: { url: "http://localhost:5173/" } },
+			{ requestId: "eval", sessionId: "A", action: "eval", args: { script: "1+1" } },
+			{ requestId: "screenshot", sessionId: "A", action: "screenshot" },
+			{ requestId: "errors", sessionId: "A", action: "errors" },
+		);
+		await boot();
+		await vi.advanceTimersByTimeAsync(0);
+		const replies = calls.filter((call) => call.action === "command_reply");
+		expect(replies.map((call) => call.requestId)).toEqual(["ready", "eval", "screenshot", "errors"]);
+		expect(replies[0].reply).toEqual({ ok: true, result: { tabId: 7, windowId: 2 } });
+		expect(replies[1].reply).toEqual({
+			ok: false,
+			error: "eval_not_granted: grant needed: click Allow eval on this host in the Design Mode sidebar.",
+		});
+		expect(replies[2].reply).toEqual({
+			ok: true,
+			result: { image: "data:image/png;base64,iVBORw0KGgo=", url: "http://localhost:5173/" },
+		});
+		expect(replies[3].reply).toEqual({ ok: true, result: { errors: [] } });
+	});
+
+	// Catches: an optional action-history write swallowing an otherwise completed command reply.
+	it("delivers command replies even when action history cannot be saved", async () => {
+		offeredCommands.push(
+			{ requestId: "ready", sessionId: "A", action: "ready", args: { url: "http://localhost:5173/" } },
+			{ requestId: "errors", sessionId: "A", action: "errors" },
+		);
+		await boot(true);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(calls.filter((call) => call.action === "command_reply").map((call) => call.requestId)).toEqual([
+			"ready",
+			"errors",
+		]);
+	});
+
+	// Catches: an old session's queued command controlling the newly bound agent's page.
+	it("replies with not_armed instead of executing a command for a different session", async () => {
+		offeredCommands.push({
+			requestId: "old",
+			sessionId: "B",
+			action: "ready",
+			args: { url: "http://localhost:5173/" },
+		});
+		await boot();
+		await vi.advanceTimersByTimeAsync(0);
+		expect(calls.find((call) => call.action === "command_reply")?.reply).toEqual({
+			ok: false,
+			error: "not_armed: Design Mode is not armed for this session.",
+		});
 	});
 
 	// Catches: the dropdown pick changing the recipient while the list stays on the launching

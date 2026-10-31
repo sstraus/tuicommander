@@ -189,11 +189,53 @@ pub(crate) async fn launch(
         ))
         .args(["--no-first-run", "--no-default-browser-check"])
         .arg(&target);
-    tuic_core::child_reaping::spawn_reaped(command).map_err(|e| e.to_string())?;
-    let status = super::legacy::manager(state)
-        .await
-        .arm_extension(repo.to_string_lossy().into_owned(), session.to_owned())
+    let manager = super::legacy::manager(state).await;
+    // Publish the queue before the worker can poll it. An armed return still requires a reply.
+    let repo_path = repo.to_string_lossy().into_owned();
+    let status = manager
+        .arm_extension(repo_path.clone(), session.to_owned())
         .await;
+    let process = match super::extension_process::ExtensionProcess::spawn(command).await {
+        Ok(process) => process,
+        Err(error) => {
+            let _ = manager.stop(&repo_path).await;
+            return Err(error);
+        }
+    };
+    let channel = manager
+        .command_channels
+        .lock()
+        .unwrap()
+        .get(&repo_path)
+        .cloned();
+    let ready = match channel {
+        Some(channel) => {
+            channel
+                .request("ready", json!({"url":target}), session)
+                .await
+        }
+        None => Err("Design Mode start was cancelled".into()),
+    };
+    let ready = ready.and_then(|reply| {
+        if reply["ok"] == true && reply["result"]["tabId"].as_i64().is_some() {
+            Ok(())
+        } else {
+            Err(reply["error"]
+                .as_str()
+                .unwrap_or("Extension did not identify the launched page")
+                .to_owned())
+        }
+    });
+    if let Err(error) = ready {
+        let _ = manager.stop(&repo_path).await;
+        process.close().await?;
+        return Err(format!(
+            "browser_not_ready: Design Mode extension did not acknowledge startup: {error}"
+        ));
+    }
+    manager
+        .attach_extension_process(&repo_path, session, process)
+        .await?;
     Ok(
         json!({"repoPath":status.repo_path,"sessionId":status.session_id,"status":status.status,"browser":kind,"url":target,"extensionPath":profile.join("tuic-design-extension")}),
     )
@@ -270,3 +312,29 @@ mod url_tests {
 #[cfg(all(test, unix))]
 #[path = "launcher_reaping_tests.rs"]
 mod reaping_tests;
+
+#[cfg(all(test, unix))]
+fn acknowledge_test_launch(state: Arc<AppState>, repo: PathBuf) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let manager = super::legacy::manager(&state).await;
+        let repo = repo.to_string_lossy();
+        let channel = loop {
+            let channel = manager
+                .command_channels
+                .lock()
+                .unwrap()
+                .get(repo.as_ref())
+                .cloned();
+            if let Some(channel) = channel {
+                break channel;
+            }
+            tokio::task::yield_now().await;
+        };
+        let command = channel.next().await.unwrap();
+        assert_eq!(command["action"], "ready");
+        assert!(channel.reply(
+            command["requestId"].as_str().unwrap(),
+            json!({"ok":true,"result":{"tabId":7}})
+        ));
+    })
+}

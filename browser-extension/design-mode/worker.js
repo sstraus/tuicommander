@@ -37,30 +37,47 @@ async function refreshConnection(tabId) {
 let reviewedTab;
 let beating = false;
 let commandLoopStarted = false;
+let receivingCommands = true;
 async function commands() {
-  for (;;) {
+  while (receivingCommands) {
     try {
       const command = await request('command_next');
       if (!command) { await new Promise((resolve) => setTimeout(resolve, 250)); continue; }
-      const saved = await chrome.storage.session.get(['reviewedTab','actionHistory']);
-      const tabId = reviewedTab ?? saved.reviewedTab;
-      let reply;
+      let saved = {}, reply;
       try {
+        saved = await chrome.storage.session.get(['reviewedTab','actionHistory']);
         const mode = (await request('mode_status')).find((mode) => mode.repoPath === bound.repoPath);
         if (mode?.status !== 'armed' || mode.sessionId !== command.sessionId) throw new Error('not_armed: Design Mode is not armed for this session.');
-        let timer;
-        try {
-          const result = await Promise.race([
-            browserCommand(command, chrome, tabId, async (id) => draftForTab(await drafts(), id).errors ?? []),
-            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('command_timeout: Browser operation exceeded 8 seconds.')), 8000); }),
-          ]);
-          reply = {ok:true,result};
-        } finally { clearTimeout(timer); }
+        if (command.action === 'ready') {
+          const target = new URL(command.args.url).href;
+          const tab = (await chrome.tabs.query({})).find((tab) => [tab.url, tab.pendingUrl].some((raw) => raw && new URL(raw).href === target));
+          if (!tab?.id) throw new Error('page_not_ready: The launched Design Mode page is not available.');
+          reviewedTab = tab.id;
+          await chrome.storage.session.set({reviewedTab});
+          reply = {ok:true,result:{tabId:tab.id,windowId:tab.windowId}};
+        } else {
+          let timer;
+          try {
+            const result = await Promise.race([
+              browserCommand(command, chrome, reviewedTab ?? saved.reviewedTab, async (id) => draftForTab(await drafts(), id).errors ?? []),
+              new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('command_timeout: Browser operation exceeded 8 seconds.')), 8000); }),
+            ]);
+            reply = {ok:true,result};
+          } finally { clearTimeout(timer); }
+        }
       } catch (error) { reply = {ok:false,error:error.message}; }
-      const actionHistory = [...(saved.actionHistory ?? []), {who:command.sessionId, action:command.action, when:Date.now(), ok:reply.ok}].slice(-50);
-      await chrome.storage.session.set({actionHistory}); notify();
+      // The correlated reply must not depend on optional action-history persistence.
       await request('command_reply', {requestId:command.requestId, reply});
-    } catch { await new Promise((resolve) => setTimeout(resolve, 1000)); }
+      try {
+        const actionHistory = [...(saved.actionHistory ?? []), {who:command.sessionId, action:command.action, when:Date.now(), ok:reply.ok}].slice(-50);
+        await chrome.storage.session.set({actionHistory}); notify();
+      } catch (error) { connection = `Action history unavailable: ${error.message}`; notify(); }
+    } catch (error) {
+      if (!receivingCommands) return;
+      // DEFERRED (2026-10-31) — the original missing replies had no worker-error capture; retain this diagnostic for attribution on recurrence.
+      connection = `Browser command channel unavailable: ${error.message}`; notify();
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
   }
 }
 async function beat() {
@@ -211,3 +228,8 @@ const syncErrors = () => {
 chrome.permissions.onAdded.addListener(syncErrors);
 chrome.permissions.onRemoved.addListener(syncErrors);
 syncErrors();
+
+// Start receiving before a sidebar opens or the first periodic heartbeat fires.
+void request('hello').catch((error) => { connection = error.message; notify(); });
+
+chrome.runtime.onSuspend.addListener(() => { receivingCommands = false; });

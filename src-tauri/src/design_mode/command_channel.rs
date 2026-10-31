@@ -2,7 +2,10 @@
 use serde_json::{Value, json};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use tokio::sync::{mpsc, oneshot};
@@ -15,6 +18,8 @@ pub(crate) struct CommandChannel {
     tx: mpsc::Sender<Value>,
     rx: tokio::sync::Mutex<mpsc::Receiver<Value>>,
     pending: Mutex<HashMap<String, oneshot::Sender<Value>>>,
+    closed: AtomicBool,
+    disconnected: tokio::sync::Notify,
 }
 impl Default for CommandChannel {
     fn default() -> Self {
@@ -24,6 +29,8 @@ impl Default for CommandChannel {
             tx,
             rx: tokio::sync::Mutex::new(rx),
             pending: Mutex::default(),
+            closed: AtomicBool::new(false),
+            disconnected: tokio::sync::Notify::new(),
         }
     }
 }
@@ -50,6 +57,11 @@ impl CommandChannel {
         let (tx, rx) = oneshot::channel();
         {
             let mut pending = self.pending.lock().unwrap();
+            if self.closed.load(Ordering::Acquire) {
+                return Err(
+                    "browser_disconnected: Restart Design Mode to reconnect the browser".into(),
+                );
+            }
             if pending.len() >= LIMIT {
                 return Err("command_queue_full: Too many browser commands".into());
             }
@@ -68,7 +80,13 @@ impl CommandChannel {
     pub(crate) async fn next(&self) -> Option<Value> {
         let mut rx = self.rx.lock().await;
         loop {
-            let command = rx.recv().await?;
+            if self.closed.load(Ordering::Acquire) {
+                return None;
+            }
+            let command = tokio::select! {
+                _ = self.disconnected.notified() => return None,
+                command = rx.recv() => command?,
+            };
             if self
                 .pending
                 .lock()
@@ -87,7 +105,12 @@ impl CommandChannel {
             .is_some_and(|tx| tx.send(reply).is_ok())
     }
     pub(crate) fn cancel(&self) {
-        self.pending.lock().unwrap().clear();
+        {
+            let mut pending = self.pending.lock().unwrap();
+            self.closed.store(true, Ordering::Release);
+            pending.clear();
+        }
+        self.disconnected.notify_one();
     }
 }
 pub(crate) type Channels = Arc<Mutex<HashMap<String, Arc<CommandChannel>>>>;
@@ -121,6 +144,36 @@ mod tests {
                 .starts_with("browser_disconnected:")
         );
     }
+    // Catches: native disconnect leaving a live queue that accepts commands nobody can answer.
+    #[tokio::test(start_paused = true)]
+    async fn disconnected_channel_rejects_new_commands_and_releases_receiver() {
+        let channel = CommandChannel::default();
+        channel.cancel();
+        let result = channel.request("screenshot", json!({}), "agent").await;
+        assert!(
+            result.unwrap_err().starts_with("browser_disconnected:"),
+            "a disconnected extension must not leave the agent waiting for command_timeout"
+        );
+        assert!(channel.next().await.is_none());
+    }
+
+    // Catches: cancellation releasing agent requests but leaving the extension poll stuck.
+    #[tokio::test(start_paused = true)]
+    async fn disconnect_releases_an_already_waiting_receiver() {
+        let channel = Arc::new(CommandChannel::default());
+        let receiver = channel.clone();
+        let poll = tokio::spawn(async move { receiver.next().await });
+        tokio::task::yield_now().await;
+        channel.cancel();
+        assert!(
+            tokio::time::timeout(Duration::from_secs(1), poll)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_none()
+        );
+    }
+
     // Catches: a silent extension hanging a tool call forever or executing an expired command later.
     #[tokio::test(start_paused = true)]
     async fn mute_browser_times_out_and_drops_pending_command() {
