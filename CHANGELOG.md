@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- Keep push-to-talk dictation in the focused detached AI Chat window instead of sending its transcript to the main window; preserve the captured composer across focus changes.
+- Keep push-to-talk dictation in the focused detached AI Chat window instead of sending its transcript to the main window; preserve the captured composer across focus changes and scope native Fn listeners to their own WebView.
 - Label the per-reply conversation branch action **Fork**, distinct from **Copy**.
 
 - Preserve ignored canonical work during native integration and recover interrupted validation, receipts and branch retirement without blocking unrelated trial repositories (#2514-3d1e).

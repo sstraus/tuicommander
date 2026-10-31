@@ -9,10 +9,12 @@ const { state, listeners } = vi.hoisted(() => ({
 vi.mock("../../stores/dictation", () => ({ dictationStore: { state } }));
 vi.mock("../../stores/appLogger", () => ({ appLogger: { error: vi.fn() } }));
 vi.mock("../../transport", () => ({ isTauri: () => true }));
-vi.mock("../../invoke", () => ({
-	listen: vi.fn((name: string, callback: () => void) => {
-		listeners.set(name, callback);
-		return Promise.resolve(() => listeners.delete(name));
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+	getCurrentWebviewWindow: () => ({
+		listen: vi.fn((name: string, callback: () => void) => {
+			listeners.set(name, callback);
+			return Promise.resolve(() => listeners.delete(name));
+		}),
 	}),
 }));
 

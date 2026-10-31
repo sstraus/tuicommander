@@ -26,6 +26,10 @@ buffer policy. Edge speech retains the `symphonia-mp3` decoder feature.
 
 Local voice-to-text using Whisper with Metal acceleration on macOS. Push-to-talk workflow with streaming partial results: hold hotkey to record, see partial transcriptions in real-time, release to finalize.
 
+Fn down/up listeners use the current WebviewWindow target, not global event listeners.
+Global (`Any`) listeners also receive labeled events and would create competing recording owners.
+Each window disposes its guarded subscriptions when its hook scope ends.
+
 On macOS, Fn key-down is sent to the detached AI Chat WebView when it has focus,
 or to the secondary terminal WebView when it has focus, otherwise to the main
 WebView. Each owns its DOM target and dictation hooks.

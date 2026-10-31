@@ -51,6 +51,10 @@ vi.mock("@tauri-apps/api/event", () => ({
 	emitTo: vi.fn().mockResolvedValue(undefined),
 }));
 
+vi.mock("@tauri-apps/api/webviewWindow", () => ({
+	getCurrentWebviewWindow: () => ({ listen: (...args: Parameters<typeof listen>) => listen(...args) }),
+}));
+
 vi.mock("../../hooks/initPanelWindow", () => ({ initPanelWindow: vi.fn().mockResolvedValue(undefined) }));
 
 vi.mock("../../panelRouter", () => ({
