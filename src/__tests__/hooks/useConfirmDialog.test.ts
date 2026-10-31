@@ -229,6 +229,23 @@ describe("useConfirmDialog", () => {
 			}
 		});
 
+		// Catches: independent history described as ordinary retained commits or recycled merged work.
+		it("explains unrelated history before checkout removal", async () => {
+			const pending = dialog.confirmRemoveWorktree(
+				"orphan",
+				{
+					dirtyFiles: 0,
+					commitStatus: "unrelated_history",
+					removalSafety: "safe",
+				},
+				true,
+			);
+			expect(dialog.dialogState()?.message).toContain("no common ancestor");
+			expect(dialog.dialogState()?.message).toContain("archive its current tip");
+			dialog.handleClose();
+			expect(await pending).toBe(false);
+		});
+
 		it("distinguishes unstarted work from merged commits before confirmation", async () => {
 			const pending = dialog.confirmRemoveWorktree(
 				"unstarted",

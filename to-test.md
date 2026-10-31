@@ -1,3 +1,13 @@
+## Agent shim canonicalisation (2584-fdaa) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a new shell and run `ego models --help` through a canonicalising launcher. It must reach ego rather than exit 127 as `tuic-agent-shim`. Existing symlinks upgrade on new shell injection. The running app and installed shim directory were not changed during implementation; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+## Unrelated branch history (2611-6022) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a throwaway repository with an orphan branch and a related feature branch. Both must load; the orphan workspace must show Unrelated history in both sidebar densities without repeated refresh warnings. Removing its checkout must keep its branch unless a separate exact-tip archive authorizes deletion. Real-Git targeted tests cover the classification and deletion contract. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
+## Oversized plugin watcher lines (2607-678c) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm a long-running cursor-addressed TUI produces at most one oversized-line warning until its next LF, and plugin watchers still match subsequent normal output. Automated tests replay the recorded Codex idle animation and watcher registration changes. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
 ## Shared globe artwork (2602-2e4d)
 
 - [ ] Inspect the global-workspace globe at default and enlarged sizes in light and dark themes. Confirm symmetric openings, a continuous rim and a clear equator. Headless geometry and before/after crops cover the shared component.
@@ -3241,6 +3251,9 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] After a Rust rebuild/restart, inspect the generated Waiting and long work launch preview: continue independent work, yield only for a needed result or user answer, report running work without completion/suggestions, and use the launched mechanism’s wake. Existing sessions do not receive the new launch text automatically. (#2581-4824)
 
 - [ ] AI Chat master prompt (#2587-88de): after the next backend rebuild/restart, save instructions in Settings → AI → AI Chat, create a new conversation, and confirm it follows them while an existing conversation is unchanged. Also confirm Smart Prompts still produce their normal result when the chat instructions request delegation. Rust does not hot-reload; restart only when ready to lose current backend sessions.
+## Design Mode stale profile ownership (2591-937a) — Rust restart required
+
+- [ ] After Boss restarts `make dev` or installs `make build`, start Edge Design Mode with the old stale profile lock and confirm the profile opens. Starting again while that profile is open must still ask you to close its browser window. TUIC must not remove a live profile lock. Backend changes do not hot-reload.
 ## Detached AI Chat dictation (2026-10-31)
 
 - [ ] After a manual `make dev` restart or a release rebuild, focus the detached AI Chat composer and dictate with Fn. Verify the transcript stays in that draft, including when focus changes before key-up. Main-window dictation must remain unchanged. Rust does not hot-reload; restart only when ready to lose live sessions.

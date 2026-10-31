@@ -24,6 +24,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Preserve agent shim names when launchers canonicalise executable paths; upgrade legacy Unix symlinks to atomic hard links (#2584-fdaa).
+
+- Let Design Mode start after a stale browser profile lock PID is reused by an unrelated process; preserve live profile ownership (#2591-937a).
+- Show an explicit unrelated-history branch state without failing repository refresh or treating independent commits as merged work. Keep the dirty-file count and Changes action in compact rows (#2611-6022).
+
+- Stop buffering an oversized plugin watcher line after its first overflow; cursor-addressed TUI repaints now produce one warning until the next newline (#2607-678c).
+
+- Resolve local Markdown image parent paths before creating desktop asset URLs, so images in sibling folders load (#2604-0ec2).
+
+- Show the backend error message and code when a Smart Prompt fails, instead of `[object Object]` (#2600-1421).
 - Use one aligned Smart Prompt editor in Settings and the Edit Prompt dialog, with eight readable placement choices and consistent conditional fields (#2603-8a87).
 
 - Send Ctrl+Enter as CSI u only with negotiated Kitty reporting or an identified ego session, preserving legacy CR for shells and other agents; retain ego busy-turn steering and the mobile ego Ctrl menu correction (#2599-0a6b).

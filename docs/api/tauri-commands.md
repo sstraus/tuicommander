@@ -1179,3 +1179,7 @@ coordinator. See the backend workflow decision contract for shapes, deadline
 outcomes, retained legacy replay and continuation semantics.
 
 Native story phase previews use the existing story action envelope: `available_transitions {story_id,expected_revision}` returns `{type:"available_transitions",value:{revision,moves:[{status,command}]}}`. It uses the committed-transition evaluator without saving the story or history. Destinations include automatic QA and dependency-derived outcomes, with archived records and actor/workflow restrictions enforced. Previews do not reserve a move; the caller submits `transition` with the returned revision and command, and refreshes after any conflict. IPC, HTTP, CLI and managed MCP share this action.
+
+### Unrelated branch integration status
+
+Branch integration queries and workspace lifecycle/monitoring payloads serialize `commit_status: "unrelated_history"` when no default-branch candidate shares a common ancestor. The response remains successful with no inspection error and `integrated: false` in branch integration queries. IPC and HTTP use the same backend classifier. Missing refs and other Git errors remain errors; an absent common ancestor is not one.
