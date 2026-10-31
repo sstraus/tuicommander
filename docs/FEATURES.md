@@ -1,5 +1,7 @@
 # TUICommander — Complete Feature Reference
 
+- **Pending Chat prompt controls** — Busy Session Chat sends wait in TUIC’s existing idle-gate queue on desktop and mobile. Each host-owned Pending prompt has Cancel and, for Claude, Codex and ego, a compact return-key action labelled **Send now: stop the current request**. Send now claims its queue id once; a prompt already taken by the idle gate is not sent again. Claude and Codex use Escape followed by confirmed idle; ego uses native Ctrl+Enter. Native CLI receipts from earlier direct sends remain read-only. (#2589-4bc4).
+
 - **Native integration trial (WF07)** — Disabled-by-default typed workflow integration checks and publishes one pinned no-ff merge, retains proof debt across restart, and keeps cleanup independent. Only isolated trial clones may enable it before repository parity approval; WF08 proof batching is not included (#2514-3d1e).
 
 - Mobile terminal and AI Chat composers add one space after a pasted HTTP(S) URL when neither the paste nor the following draft character supplies whitespace (#2494-921f).

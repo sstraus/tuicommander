@@ -31,6 +31,12 @@ export const CONTEXTUAL_TIPS = {
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Send a pending Chat prompt now",
+		description:
+			"While an agent is busy, Session Chat keeps your next prompt in the host queue. Use the return-key button beside Pending to stop the current request and send it now, or Cancel to remove it. Send now supports Claude, Codex and ego.",
+		shortcut: null,
+	},
+	{
 		feature: "Recall a queued prompt",
 		description:
 			"In an empty desktop Compose or AI Chat editor, press ArrowUp to withdraw the latest host-owned text prompt for editing. Native CLI Pending bubbles cannot be recalled this way.",

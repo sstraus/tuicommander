@@ -873,6 +873,8 @@ selectors, approvals and free-text modal questions remain protected.
 
 Mobile Queue supplies `expectedDraft` to validate the live InputLineBuffer before a server-side Ctrl-U and enqueue on this same FIFO. Preflight rejections leave the draft untouched. A write failure may have cleared it already; the caller reports uncertainty and does not retry automatically. Concurrent producers are not transactionally isolated.
 
+Session Chat busy Send also uses this FIFO, not the native CLI queue. Its Pending bubbles use the backend entry id. `send_queued_agent_command_now` / `POST /sessions/:id/queue/:command_id/send-now` claims and removes that id under the same queue lock as the drain, then uses native ego Ctrl+Enter or existing Claude/Codex interrupt-and-confirmed-idle delivery. An absent id returns false without typing. Queue claim/pop is ordered through the existing per-session input transaction; that short guard ends before confirmation waits. Unsupported agents and open dialogs refuse before removal. Failed delivery reports the original text for manual recovery and never retries ambiguous input.
+
 **User-composed commands share that gate:** the Compose panel's enqueue action
 (`enqueue_agent_command` / `POST /sessions/:id/queue`) appends to the same
 typed `pending_injections` FIFO as peer delivery rather than writing to the PTY,

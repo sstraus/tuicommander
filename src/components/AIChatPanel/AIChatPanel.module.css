@@ -1427,7 +1427,7 @@ button[data-control-layout="row"].slashCommand:hover {
   overflow-wrap: anywhere;
 }
 
-/* Same muted palette as the ACP composer queue; no cancellation claim for a CLI-owned queue. */
+/* Pending receipts and host-owned queued prompts share the muted palette. */
 .userMsg[data-pending] {
   color: var(--fg-muted);
   background: var(--bg-tertiary);
@@ -1457,4 +1457,13 @@ button[data-control-layout="row"].slashCommand:hover {
   padding: 8px 16px;
   color: var(--fg-primary);
   overflow-wrap: anywhere;
+}
+
+.pendingActions {
+  composes: toolbar from "../ui/FormControls.module.css";
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  gap: 4px;
+  margin-inline-start: 8px;
 }

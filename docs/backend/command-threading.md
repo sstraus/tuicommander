@@ -1,5 +1,9 @@
 # Command threading
 
+## Session Chat Send now
+
+`send_queued_agent_command_now` is async. Both IPC and HTTP run the shared blocking queue claim and native submission on `tokio::task::spawn_blocking`. The existing interruption path can wait up to ten seconds for independent idle evidence; no UI thread or Tokio worker performs that wait.
+
 ## Plugin discovery
 
 `list_user_plugins` is async and runs the complete manifest scan and payload

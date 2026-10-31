@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import { createEffect, createMemo, createSignal, on, onCleanup, onMount, Show } from "solid-js";
 import { Button } from "../../components/ui";
 import { uploadAttachment } from "../../services/uploadAttachment";
 import { appLogger } from "../../stores/appLogger";
@@ -6,7 +6,7 @@ import { chatViewStore } from "../../stores/chatView";
 import { toastsStore } from "../../stores/toasts";
 import { HttpRpcError, rpc } from "../../transport";
 import { spacedUrlPaste } from "../../utils/pastedUrl";
-import { waitForAgentEnterGap } from "../../utils/sendCommand";
+import { sendCommand, waitForAgentEnterGap } from "../../utils/sendCommand";
 import { sendNativeChoice } from "../../utils/sendNativeChoice";
 import { useBrowserDictation } from "../useBrowserDictation";
 import { useKeyboardCorrection } from "../useKeyboardCorrection";
@@ -22,6 +22,9 @@ import { SlashMenuOverlay } from "./SlashMenuOverlay";
 import { type ComposerInputKey, computeInputDelta, isPostSendGuardActive, isSupersetEcho } from "./syncGuards";
 
 interface CommandInputProps {
+	/** Chat drafts stay local so a busy Send belongs to the host FIFO. */
+	chatMode?: boolean;
+	busy?: boolean;
 	/** Refresh the server-owned FIFO after an accepted enqueue. */
 	onQueued?: (sessionId: string) => void;
 	sessionId: string;
@@ -94,14 +97,16 @@ export function CommandInput(props: CommandInputProps) {
 		browserDictation.cancel();
 		setSubmitting(true);
 		try {
-			await lastInputWrite;
+			if (localChatDraft()) await parkChatDraft();
+			else await lastInputWrite;
 			const result = await rpc<{ accepted: boolean; typed: boolean }>("enqueue_agent_command", {
 				sessionId,
 				text,
-				expectedDraft: draft,
+				...(localChatDraft() ? { idempotencyKey: crypto.randomUUID() } : { expectedDraft: draft }),
 			});
 			if (!result.accepted) throw new Error("Queue was not accepted");
 			props.onQueued?.(sessionId);
+			if (localChatDraft()) void chatViewStore.refreshQueue(sessionId).catch(() => {});
 			syncedText = "";
 			inputRequest = null;
 			lastSendAt = Date.now();
@@ -129,6 +134,7 @@ export function CommandInput(props: CommandInputProps) {
 	const [uploading, setUploading] = createSignal<string | null>(null);
 	const [choiceSending, setChoiceSending] = createSignal(false);
 	const [codexNotesMode, setCodexNotesMode] = createSignal(false);
+	const localChatDraft = () => !!props.chatMode && !!props.agentType && !props.awaitingInput;
 	const atomicReply = () =>
 		props.managedSession && props.awaitingInput && !props.choicePrompt && !props.codexQuestionOpen && !codexNotesMode();
 	// A multi-question form replaces its prompt without an empty frame between
@@ -157,6 +163,21 @@ export function CommandInput(props: CommandInputProps) {
 	// before the shell advances the prompt.
 	let lastSendAt = 0;
 	let lastInputWrite: Promise<unknown> = Promise.resolve();
+	let draftChatMode = !!props.chatMode;
+	// The same textarea survives view switches. Transfer its known native draft,
+	// but never type a submitted prompt while its enqueue receipt is outstanding.
+	createEffect(
+		on(
+			() => [!!props.chatMode, submitting()] as const,
+			([chat, sending]) => {
+				if (sending || chat === draftChatMode) return;
+				draftChatMode = chat;
+				if (props.awaitingInput || props.sessionExists === false) return;
+				const transfer = chat ? parkChatDraft() : syncNativeDraft(textareaEl?.value ?? value());
+				void transfer.catch(() => {}); // writePty records failures; Send awaits the same write.
+			},
+		),
+	);
 
 	createEffect(() => {
 		const pv = props.prefillValue;
@@ -195,6 +216,9 @@ export function CommandInput(props: CommandInputProps) {
 			textareaEl.value = text;
 			autoResize();
 		}
+		// Completion/history borrowed the native input; Chat retains the returned
+		// draft locally so the host FIFO is not blocked by its own partial input.
+		if (localChatDraft()) void parkChatDraft().catch(() => {});
 	});
 
 	onMount(() => {
@@ -217,7 +241,8 @@ export function CommandInput(props: CommandInputProps) {
 
 	function writePty(data: string) {
 		const write = rpc("write_pty", { sessionId: props.sessionId, data });
-		lastInputWrite = write.catch((err: unknown) => {
+		lastInputWrite = write;
+		void write.catch((err: unknown) => {
 			appLogger.warn("network", "Failed to write to PTY", { error: err });
 		});
 		return write;
@@ -229,10 +254,20 @@ export function CommandInput(props: CommandInputProps) {
 	 *  whole line, which previously caused a keystroke storm and visible mess. */
 	function syncDelta(newText: string) {
 		inputRequest = null;
-		if (atomicReply() || props.sessionExists === false) return;
+		if (atomicReply() || localChatDraft() || props.sessionExists === false) return;
+		void syncNativeDraft(newText).catch(() => {});
+	}
+
+	function syncNativeDraft(newText: string): Promise<unknown> {
 		const delta = computeInputDelta(syncedText ?? props.ptyInputLine ?? restoredPartial, newText);
-		if (delta) writePty(delta);
 		syncedText = newText;
+		return delta ? writePty(delta) : lastInputWrite;
+	}
+
+	function parkChatDraft(): Promise<unknown> {
+		inputRequest = null;
+		// A null baseline is an unowned desktop draft, not permission to erase it.
+		return syncedText === null ? lastInputWrite : syncNativeDraft("");
 	}
 
 	function updateInput(text: string) {
@@ -319,8 +354,22 @@ export function CommandInput(props: CommandInputProps) {
 		props.onRegisterInputKey?.(requestInputKey);
 	});
 
-	function requestInputKey(key: ComposerInputKey) {
-		if (props.sessionExists === false) return;
+	async function requestInputKey(key: ComposerInputKey) {
+		if (props.sessionExists === false || submitting()) return;
+		if (localChatDraft()) {
+			const draft = textareaEl?.value ?? value();
+			try {
+				await syncNativeDraft(draft);
+				// An edit, Send or view switch can supersede the asynchronous transfer.
+				if (submitting() || !localChatDraft()) return;
+				if ((textareaEl?.value ?? value()) !== draft) {
+					await parkChatDraft();
+					return;
+				}
+			} catch {
+				return; // Do not navigate a native composer whose draft transfer failed.
+			}
+		}
 		const data = key === "Tab" ? "\t" : key === "ArrowUp" ? "\x1b[A" : "\x1b[B";
 		// A waiting agent can own a picker without a parsed choice_prompt. Keep
 		// navigation in the PTY, not in the free-text answer or shell history.
@@ -356,6 +405,49 @@ export function CommandInput(props: CommandInputProps) {
 
 		browserDictation.cancel();
 
+		if (localChatDraft()) {
+			setSubmitting(true);
+			const rollback = props.busy ? () => {} : chatViewStore.beginSubmission(sessionId, text);
+			try {
+				await parkChatDraft();
+				if (props.busy) {
+					await rpc("enqueue_agent_command", { sessionId, text, idempotencyKey: crypto.randomUUID() });
+					props.onQueued?.(sessionId);
+					void chatViewStore.refreshQueue(sessionId).catch(() => {});
+				} else {
+					await sendCommand(
+						(data) => rpc("write_pty", { sessionId, data }),
+						text,
+						agentType,
+						undefined,
+						true,
+						sessionId,
+					);
+				}
+				// Preserve edits made while the request was outstanding.
+				if ((textareaEl?.value ?? value()).trim() === text) {
+					syncedText = "";
+					inputRequest = null;
+					lastSendAt = Date.now();
+					setValue("");
+					if (textareaEl) {
+						textareaEl.value = "";
+						textareaEl.style.height = "auto";
+					}
+				}
+			} catch (error) {
+				rollback();
+				toastsStore.add(
+					"Send failed",
+					`Check the session before retrying. ${error instanceof Error ? error.message : String(error)}`,
+					"error",
+					true,
+				);
+			} finally {
+				setSubmitting(false);
+			}
+			return;
+		}
 		const rollback = chatViewStore.beginSubmission(sessionId, text);
 		if (atomicReply()) {
 			setSubmitting(true);

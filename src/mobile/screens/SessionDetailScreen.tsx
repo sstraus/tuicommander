@@ -654,6 +654,8 @@ export function SessionDetailScreen(props: SessionDetailScreenProps) {
 					onInputKeyRequest={(key) => requestComposerInputKey?.(key)}
 				/>
 				<CommandInput
+					chatMode={chat.active()}
+					busy={sessionState()?.shell_state === "busy"}
 					onQueued={(sessionId) => {
 						if (sessionId === props.session.session_id) setQueueRevision((value) => value + 1);
 					}}

@@ -519,11 +519,13 @@ Content-Type: application/json
 { "text": "run the tests", "idempotencyKey": "bg-job-1" }
                                   -> { "accepted": true, "typed": false, "queued": 2 }
 
-GET /sessions/:id/queue            -> [ { "id": 7, "text": "run the tests" } ]
+GET /sessions/:id/queue            -> [ { "id": 7, "text": "run the tests", "kind": "user_command" } ]
 
 DELETE /sessions/:id/queue         -> 2   (commands dropped)
 
 DELETE /sessions/:id/queue/:cmdId  -> true  (false when it already drained)
+POST /sessions/:id/queue/:cmdId/send-now -> true (false when already claimed)
+
 ```
 
 Hands the text to the same idle gate peer messages use instead of typing it now:

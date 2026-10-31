@@ -1344,6 +1344,15 @@ fn write_agent_command_with_boundary(
     session_id: &str,
     text: &str,
 ) -> (InjectionOutcome, u64) {
+    write_agent_command_with_submit_key(state, session_id, text, b"\r")
+}
+
+fn write_agent_command_with_submit_key(
+    state: &AppState,
+    session_id: &str,
+    text: &str,
+    submit_key: &[u8],
+) -> (InjectionOutcome, u64) {
     let agent_type = state
         .session_maps
         .session_states
@@ -1414,7 +1423,7 @@ fn write_agent_command_with_boundary(
         .get(session_id)
         .map(|buffer| buffer.lock().total_written)
         .unwrap_or(0);
-    if let Err((_, error)) = write_all_with_progress(writer.as_mut(), b"\r", payload.len()) {
+    if let Err((_, error)) = write_all_with_progress(writer.as_mut(), submit_key, payload.len()) {
         return (InjectionOutcome::Uncertain(error), acknowledgement_offset);
     }
     if let Err(error) = writer.flush() {
@@ -2406,6 +2415,10 @@ pub(crate) fn flush_pending_injections_blocking(state: &AppState, session_id: &s
     {
         return;
     }
+    // Order the short claim/pop boundary with explicit Send now. Release before
+    // confirmation so native answers and raw input can still take the composer.
+    let transaction = state.input_transaction(session_id);
+    let input = transaction.lock();
     let queued_before = queued_command_count(state, session_id);
     let snapshot = state.session_state_with_shell(session_id);
     let agent_state = snapshot
@@ -2484,6 +2497,7 @@ pub(crate) fn flush_pending_injections_blocking(state: &AppState, session_id: &s
         );
         return;
     };
+    drop(input);
     let (outcome, enter_retry) = submit_and_confirm(state, session_id, injection.text());
     let outcome = apply_claimed_injection_outcome(
         state,
@@ -2574,16 +2588,73 @@ pub(crate) fn list_queued_commands(state: &AppState, session_id: &str) -> Vec<Qu
 
 /// Drop a single parked entry by id. Returns false when the id is unknown —
 /// the entry may have been typed already, which is not an error for the caller.
+fn take_queued_command(
+    state: &AppState,
+    session_id: &str,
+    id: u64,
+) -> Option<crate::state::PendingInjection> {
+    let mut queue = state.pending_injections.get_mut(session_id)?;
+    let index = queue.iter().position(|entry| entry.id() == id)?;
+    queue.remove(index)
+}
+
 pub(crate) fn remove_queued_command(state: &AppState, session_id: &str, id: u64) -> bool {
-    state
-        .pending_injections
-        .get_mut(session_id)
-        .map(|mut queue| {
-            let before = queue.len();
-            queue.retain(|entry| entry.id() != id);
-            before != queue.len()
-        })
-        .unwrap_or(false)
+    take_queued_command(state, session_id, id).is_some()
+}
+
+/// Claim a parked prompt before any interrupt. The FIFO drain and every client
+/// remove under the same queue lock; a lost claim never injects replacement text.
+pub(crate) fn send_queued_command_now(
+    state: &AppState,
+    session_id: &str,
+    id: u64,
+) -> Result<bool, String> {
+    let transaction = state.input_transaction(session_id);
+    let entry = {
+        let _input = transaction.lock();
+        interrupt_mail_safety(state, session_id).map_err(str::to_string)?;
+        take_queued_command(state, session_id, id)
+    };
+    let Some(entry) = entry else {
+        return Ok(false);
+    };
+    let text = entry.text();
+    let ego = state
+        .session_maps
+        .session_states
+        .get(session_id)
+        .is_some_and(|session| session.agent_type.as_deref() == Some("ego"));
+    let result = if ego {
+        let transaction = state.input_transaction(session_id);
+        let _input = transaction.lock();
+        (|| {
+            interrupt_mail_safety(state, session_id)?;
+            let claim =
+                claim_composer_for_human_input(state, session_id).ok_or("composer_in_flight")?;
+            // CSI-u Ctrl+Enter: ego's native BusySteer, not an ordinary queued Enter.
+            let outcome =
+                write_agent_command_with_submit_key(state, session_id, text, b"\x1b[13;5u").0;
+            match apply_claimed_injection_outcome(
+                state,
+                session_id,
+                text,
+                claim,
+                outcome,
+                ClaimedInjectionKind::Message,
+            ) {
+                InjectionOutcome::Submitted => Ok(()),
+                InjectionOutcome::NotStarted(_) => Err("write_not_started"),
+                InjectionOutcome::Uncertain(_) => Err("write_uncertain"),
+            }
+        })()
+    } else {
+        deliver_interrupting_mail(state, session_id, text)
+    };
+    // Never retry ambiguous input. Return the original prompt for manual recovery
+    // rather than quietly dropping it or enqueueing a possible second delivery.
+    result.map(|()| true).map_err(|reason| format!(
+        "Send now did not confirm delivery ({reason}). Check the CLI before retrying. Prompt: {text}"
+    ))
 }
 
 /// What the idle gate did with a user-composed command.

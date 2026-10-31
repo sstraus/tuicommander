@@ -1154,6 +1154,10 @@ fn shared_routes() -> Router<Arc<AppState>> {
                 .delete(session::clear_queued_commands),
         )
         .route(
+            "/sessions/{id}/queue/{command_id}/send-now",
+            post(session::send_queued_command_now),
+        )
+        .route(
             "/sessions/{id}/queue/{command_id}",
             delete(session::remove_queued_command),
         )

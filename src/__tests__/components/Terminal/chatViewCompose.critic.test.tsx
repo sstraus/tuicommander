@@ -63,7 +63,7 @@ vi.mock("../../../components/Terminal/CanvasTerminal", () => ({
 vi.mock("../../../invoke", () => ({
 	invoke: vi.fn(async (command: string) => {
 		if (command === "get_session_foreground_process") return "claude";
-		if (command === "get_shell_state") return "busy";
+		if (command === "get_shell_state") return "idle";
 		if (command !== "chat_view_snapshot") return undefined;
 		return { epoch: 0, nextSeq: 0, reset: true, updates: [], unknownRows: 0, malformedRows: 0 };
 	}),

@@ -1,3 +1,7 @@
+## Pending Session Chat Send now (2589-4bc4) — Rust rebuild/restart required
+
+- [ ] After Boss rebuilds and manually restarts when losing current sessions is acceptable, send two prompts while a throwaway Claude, Codex or ego terminal is busy. Cancel one Pending item; send another now with the return-key button. Confirm one execution and no later duplicate. Repeat from mobile Chat. The daily app was not restarted; Rust does not hot-reload.
+
 ## Settings catalogue ledger coverage (2571-926a)
 
 - [x] Preserve generated settings descriptors while rejecting malformed and invalid owner ledgers, including pre-existing schema gaps. _(verified: rb `settings::catalogue::tests`, 13 passed; generated TypeScript matches the committed catalogue. This internal Rust refactor needs a rebuild to load, but changes no user-visible behavior. The daily app was not restarted.)_

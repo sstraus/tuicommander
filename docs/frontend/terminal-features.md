@@ -1,5 +1,11 @@
 # Terminal Features & Keyboard Shortcuts
 
+## Pending Session Chat prompts
+
+Busy Session Chat sends wait in TUIC’s existing idle-gate queue on desktop and mobile. Each host-owned Pending prompt has Cancel and, for Claude, Codex and ego, a compact return-key action labelled **Send now: stop the current request**. Send now claims its queue id once; a prompt already taken by the idle gate is not sent again. Claude and Codex use Escape followed by confirmed idle; ego uses native Ctrl+Enter. Native CLI receipts from earlier direct sends remain read-only.
+
+Mobile keeps the visible draft when you switch between Chat and CLI. Chat holds the draft locally; CLI streams it to the native composer. A switch transfers this composer's known native draft without submitting it. Tab and history temporarily use the native composer, then return the result to the local Chat draft before a queued send.
+
 On desktop, returning from Chat to CLI focuses the terminal input. You can type immediately after using the switch, closing Chat Compose, answering in CLI, or falling back from unavailable Chat. Only the active terminal restores focus, and an automatic fallback does not take the caret from an editable field outside that terminal.
 
 Session Chat shows a pulsing **Working…** row after Send and while the terminal reports busy. It disappears when the terminal reports idle or awaits a question or permission answer. Desktop and mobile use the existing session state; Chat does not infer activity from the conversation text.

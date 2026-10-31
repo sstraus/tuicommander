@@ -1,5 +1,7 @@
 # TUICommander Specification
 
+- [x] Busy Session Chat prompts use the host queue with Cancel and exactly-once Send now controls (#2589-4bc4).
+
 - [x] Config recovery (#2564-8455, #2565-8b3c): invalid fields fall back independently with a startup warning and preserved original backup. Legacy scrollback reflow enrolls once; subsequent explicit false values remain authoritative.
 - [x] Inactive AI Chat offers a detected ego path and saves it only after confirmation; configured paths and the no-detection empty state remain unchanged (#2561-9861).
 - [x] Disabled sleep prevention, global hook instrumentation and server-error retries have contextual, per-client dismissible tips without changing their defaults (#2562-d363).
