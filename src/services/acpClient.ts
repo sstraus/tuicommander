@@ -416,6 +416,10 @@ export function createAcpClient(open: AcpStreamOpener = openAcpStream) {
 			await invoke("acp_queued_prompt_cancel", { connectionId, sessionId, turnId });
 		},
 
+		async recallQueued(connectionId: AcpConnectionId, sessionId: AcpSessionId, turnId: string): Promise<string> {
+			return invoke<string>("acp_queued_prompt_recall", { connectionId, sessionId, turnId });
+		},
+
 		/** Answer with one of the option ids the agent published, never another. */
 		async answerPermission(
 			connectionId: AcpConnectionId,

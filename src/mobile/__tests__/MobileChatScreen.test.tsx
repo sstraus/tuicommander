@@ -62,6 +62,7 @@ function chat() {
 		send: vi.fn(),
 		cancel: vi.fn(),
 		cancelQueued: vi.fn(),
+		recallQueued: vi.fn().mockResolvedValue(null),
 		recover: vi.fn(),
 	};
 }

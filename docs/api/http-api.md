@@ -1,5 +1,7 @@
 # HTTP API Reference
 
+App config reads (`GET /config` and `load_config`) can include the transient `config_recovery: { fields: string[], backup_path: string }` diagnostic after startup recovery. It names reset fields and the preserved original; it is never persisted.
+
 ## Build identity
 
 `GET /api/version` returns `version` and `git_hash` in all builds. The desktop
@@ -2839,6 +2841,7 @@ POST   /acp/connections/{cid}/sessions/{session_id}/close                       
 POST   /acp/connections/{cid}/sessions/{session_id}/prompt       {prompt:[ContentBlock], viewedRepo?}   -> AcpTurnId
 POST   /acp/connections/{cid}/sessions/{session_id}/cancel                                 -> null
 DELETE /acp/connections/{cid}/sessions/{session_id}/queue/{turn_id}                       -> null
+POST   /acp/connections/{cid}/sessions/{session_id}/queue/{turn_id}/recall                -> string (full text, text-only prompts; refusal leaves queue unchanged)
 POST   /acp/connections/{cid}/sessions/{session_id}/config       {configId, value}         -> [SessionConfigOption]
 POST   /acp/connections/{cid}/sessions/{session_id}/pause        {requestId}               -> EgoHoldResponse
 POST   /acp/connections/{cid}/sessions/{session_id}/resume-turn  {requestId}               -> EgoHoldResponse

@@ -677,6 +677,21 @@ impl AcpClientManager {
         .await
     }
 
+    /// Withdraw and return a text-only prompt in the connection actor's queue.
+    pub async fn recall_queued(
+        &self,
+        connection_id: AcpConnectionId,
+        session_id: v1::SessionId,
+        turn_id: AcpTurnId,
+    ) -> Result<String, AcpClientError> {
+        self.dispatch(connection_id, |reply| Command::RecallQueued {
+            session_id,
+            turn_id,
+            reply,
+        })
+        .await
+    }
+
     /// Set one config option and take the full set back.
     ///
     /// The whole set is the answer because it is what the agent sent: setting

@@ -220,6 +220,9 @@
   padding: 40px 20px;
 }
 
+/* DEFERRED (2026-10-31) — reported right-edge user clipping does not reproduce
+   in the real Transcript at 420px or 960px. Preserve authored text and newlines;
+   do not guess at a PTY unwrapping fix without the failing source/layout. */
 .userMsg {
   position: relative;
   align-self: flex-end;
@@ -1434,6 +1437,15 @@ button[data-control-layout="row"].slashCommand:hover {
   display: block;
   font-size: var(--font-xs);
   color: var(--fg-muted);
+}
+
+/* Treat inline code as one chip; only tokens wider than the reading column wrap inside it. */
+.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content :not(pre) > code) {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: bottom;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .detectedEgo {

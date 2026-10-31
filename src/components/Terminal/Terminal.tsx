@@ -1635,6 +1635,21 @@ export const Terminal: Component<TerminalProps> = (props) => {
 								return [];
 							}
 						}}
+						onRecallQueued={async () => {
+							const owner = sessionId;
+							if (!owner) return null;
+							try {
+								const queue = await pty.listQueuedCommands(owner);
+								const newest = queue.filter((item) => item.kind === "user_command").at(-1);
+								if (!newest || sessionId !== owner) return null;
+								if (!(await pty.removeQueuedCommand(owner, newest.id))) return null;
+								terminalsStore.update(props.id, { queuedCommands: queue.length - 1 });
+								return newest.text;
+							} catch (err) {
+								appLogger.error("terminal", "ComposePanel recall queued failed", { sessionId: owner, error: err });
+								return null;
+							}
+						}}
 						onRemoveQueued={async (commandId) => {
 							if (!sessionId) return;
 							try {

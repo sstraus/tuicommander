@@ -1696,6 +1696,8 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 
 ## 11. Settings
 
+Malformed config fields recover independently, retaining valid preferences. A startup warning names reset fields and the original backup path. Legacy scrollback reflow is enabled once, without overriding later user choices.
+
 The navigation groups the global pages by task. Each group is a static label row above its pages:
 
 | Group | Pages |
@@ -3629,6 +3631,18 @@ can flush a one-row cohort through a recovery pause. Activation pauses retain
 their deadlines; cancellation fences delivery. Question expiry never implies
 approval. This is internal infrastructure for later proof, provider and inbox
 consumers, not a new Designer control. See [workflows](backend/workflows.md#durable-timers-wf19).
+
+## Pending prompt recall and transcript cleanup
+
+ArrowUp in an empty desktop Compose or AI Chat composer recalls the latest
+host-owned user prompt after successful withdrawal. AI Chat supports text-only
+ACP prompts; desktop Compose supports the PTY idle-gate FIFO for every detected
+agent. Native CLI Pending receipts are not cancellation handles. Slash menus,
+nonempty drafts, and modified arrow keys retain their normal behavior. See
+[coverage and evidence](frontend/chat-wrap-recall-evidence.md).
+
+Terminal Chat keeps short inline code chips together. Empty ACP plan snapshots
+clear the prior steps without drawing a blank Plan card.
 
 
 ### Branch-local workflow decisions

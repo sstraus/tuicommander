@@ -1,3 +1,7 @@
+## Config recovery and reflow migration (2564-8455, 2565-8b3c) — Rust rebuild/restart required
+
+- [ ] After a manual rebuild/restart when losing current sessions is acceptable, use a throwaway instance config with one malformed field. Valid settings must remain, and the Settings recovered warning must name the reset field and original backup. Include a valid legacy service secret beside the malformed field: it must survive and migrate to the vault. Refocus a detached panel after six seconds: the recovery warning must not repeat. The installed app was not restarted; Rust does not hot-reload.
+- [ ] In a throwaway legacy config, set reflow false without its marker: first load enables it and writes the marker. Turn it off, restart, and confirm it remains off. Automated loader tests cover this persistence contract.
 ## Typed workflow commands (2512-5a42) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a backend Run command graph in a throwaway project with an assigned workspace and inspect `command_executions`. Verify admission, target and immutable receipt; the daily instance was not restarted. Rust changes do not hot-reload.
@@ -3187,6 +3191,7 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] WF04 routing correction: after a manual Rust restart, confirm that unrelated profile and idle-close changes do not pause a pinned workflow. Contract-3 MCP launch must refuse caller-profile substitution; use the daemon run controls. Automated rb regressions cover both paths.
 - [ ] Terminal Chat queued prompt feedback: while Claude or Codex works, send two follow-ups from Chat; confirm muted Pending bubbles stay in send order and each disappears when its normal native transcript message arrives, without duplication. Repeat after a failed send and on mobile. Automated shared-host contracts and a worktree Vite appearance screenshot cover presentation; native busy-agent delivery remains owned by the CLI.
 
+- [ ] After the next manual backend restart, queue a text-only AI Chat prompt while busy, press ArrowUp in the empty composer, edit and resend once. Verify queue removal across desktop and phone. Rust changes do not hot-reload (#2556-6065).
 - [ ] PR conversation links (#2559-dc9e): with GitHub Work loaded, click a sidebar PR’s Comments action, unresolved-thread count and PR notification. Confirm the exact PR/account opens in Tasks with Comments and review threads; return through Open branch. Unload the provider and confirm the GitHub fallback.
 
 ## WF03 branch-local decisions (2510-14e7)

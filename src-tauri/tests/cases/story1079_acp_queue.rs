@@ -388,3 +388,138 @@ async fn queued_image_bytes_stay_out_of_snapshots_and_shared_events() {
         .await
         .unwrap();
 }
+
+/// Catches: restoring a truncated queue summary or leaving a withdrawn prompt deliverable.
+#[tokio::test]
+async fn recall_queued_returns_full_text_and_cannot_deliver_it_twice() {
+    let fixture = Fixture::with("prompt-queued-cancelled");
+    let connection = fixture.connect().await;
+    let id = connection.connection_id;
+    let session = fixture
+        .manager
+        .new_session(id, authority(fixture.root()))
+        .await
+        .unwrap()
+        .session_id;
+    let mut stream = fixture.manager.subscribe(id, 0).unwrap();
+    fixture
+        .manager
+        .prompt(id, session.clone(), vec![text("desktop")])
+        .await
+        .unwrap();
+    let older = fixture
+        .manager
+        .prompt(id, session.clone(), vec![text("older")])
+        .await
+        .unwrap();
+    let original = "restore this complete prompt\n".repeat(30);
+    let latest = fixture
+        .manager
+        .prompt(id, session.clone(), vec![text(&original)])
+        .await
+        .unwrap();
+    assert_eq!(
+        fixture
+            .manager
+            .recall_queued(id, session.clone(), latest)
+            .await
+            .unwrap(),
+        original
+    );
+    let snapshot = fixture.manager.snapshot(id).unwrap();
+    assert_eq!(
+        snapshot.attachments[0]
+            .queued_prompts
+            .iter()
+            .map(|item| item.turn_id)
+            .collect::<Vec<_>>(),
+        vec![older]
+    );
+    assert!(
+        fixture
+            .manager
+            .recall_queued(id, session.clone(), latest)
+            .await
+            .is_err(),
+        "already withdrawn text cannot be recalled twice"
+    );
+    fixture
+        .manager
+        .cancel_queued(id, session.clone(), older)
+        .await
+        .unwrap();
+    fixture.manager.cancel(id, session).await.unwrap();
+    until_settled(&mut stream).await;
+    fixture.manager.disconnect(id).await.unwrap();
+}
+
+/// Catches: withdrawing another session's prompt or silently dropping image attachments on recall.
+#[tokio::test]
+async fn recall_queued_refusal_keeps_the_original_payload_queued() {
+    let fixture = Fixture::with("prompt-queued-cancelled");
+    let connection = fixture.connect().await;
+    let id = connection.connection_id;
+    let session = fixture
+        .manager
+        .new_session(id, authority(fixture.root()))
+        .await
+        .unwrap()
+        .session_id;
+    let mut stream = fixture.manager.subscribe(id, 0).unwrap();
+    fixture
+        .manager
+        .prompt(id, session.clone(), vec![text("desktop")])
+        .await
+        .unwrap();
+    let queued = fixture
+        .manager
+        .prompt(id, session.clone(), vec![text("keep me")])
+        .await
+        .unwrap();
+    assert!(
+        fixture
+            .manager
+            .recall_queued(id, v1::SessionId::new("other-session"), queued)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        fixture
+            .manager
+            .recall_queued(id, session.clone(), queued)
+            .await
+            .unwrap(),
+        "keep me"
+    );
+    let image = fixture
+        .manager
+        .prompt(
+            id,
+            session.clone(),
+            vec![v1::ContentBlock::Image(v1::ImageContent::new(
+                "aGVsbG8=",
+                "image/png",
+            ))],
+        )
+        .await
+        .unwrap();
+    assert!(
+        fixture
+            .manager
+            .recall_queued(id, session.clone(), image)
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        fixture.manager.snapshot(id).unwrap().attachments[0].queued_prompts[0].turn_id,
+        image
+    );
+    fixture
+        .manager
+        .cancel_queued(id, session.clone(), image)
+        .await
+        .unwrap();
+    fixture.manager.cancel(id, session).await.unwrap();
+    until_settled(&mut stream).await;
+    fixture.manager.disconnect(id).await.unwrap();
+}

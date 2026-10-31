@@ -10,6 +10,8 @@ vi.mock("../../../stores/appLogger", () => ({
 const pty = vi.hoisted(() => ({
 	sendCommand: vi.fn().mockResolvedValue(undefined),
 	enqueueCommand: vi.fn().mockResolvedValue({ queued: 1 }),
+	listQueuedCommands: vi.fn().mockResolvedValue([]),
+	removeQueuedCommand: vi.fn().mockResolvedValue(false),
 }));
 
 vi.mock("../../../hooks/usePty", () => ({
@@ -580,5 +582,40 @@ describe("Compose focus lifecycle", () => {
 		} finally {
 			errors.mockRestore();
 		}
+	});
+});
+
+describe("host-owned terminal queue recall", () => {
+	it("withdraws the newest user command, not a server notice — catches editing the wrong owner or delivering recalled text twice", async () => {
+		const id = addTerminal();
+		terminalsStore.update(id, { queuedCommands: 3 });
+		pty.listQueuedCommands.mockResolvedValueOnce([
+			{ id: 1, text: "older prompt", kind: "user_command" },
+			{ id: 2, text: "latest full prompt", kind: "user_command" },
+			{ id: 3, text: "BG wake", kind: "notice" },
+		]);
+		pty.removeQueuedCommand.mockResolvedValueOnce(true);
+		const view = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
+		fireEvent.click(view.getByRole("tab", { name: "Chat" }));
+		const cm = await readyEditor(view.container);
+		fireEvent.keyDown(cm.contentDOM, { key: "ArrowUp" });
+		await waitFor(() => expect(cm.state.doc.toString()).toBe("latest full prompt"));
+		expect(pty.removeQueuedCommand).toHaveBeenCalledWith("live-session", 2);
+		expect(pty.sendCommand).not.toHaveBeenCalled();
+		expect(terminalsStore.get(id)?.queuedCommands).toBe(2);
+	});
+
+	it("keeps the composer empty when queue delivery won — catches duplicating a command already dispatched to the CLI", async () => {
+		const id = addTerminal();
+		terminalsStore.update(id, { queuedCommands: 1 });
+		pty.listQueuedCommands.mockResolvedValueOnce([{ id: 1, text: "already sent", kind: "user_command" }]);
+		pty.removeQueuedCommand.mockResolvedValueOnce(false);
+		const view = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
+		fireEvent.click(view.getByRole("tab", { name: "Chat" }));
+		const cm = await readyEditor(view.container);
+		fireEvent.keyDown(cm.contentDOM, { key: "ArrowUp" });
+		await waitFor(() => expect(pty.removeQueuedCommand).toHaveBeenCalledWith("live-session", 1));
+		expect(cm.state.doc.toString()).toBe("");
+		expect(pty.sendCommand).not.toHaveBeenCalled();
 	});
 });
