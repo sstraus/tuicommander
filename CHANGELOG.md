@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Send to the registered coordinator with `agent action=send to=orchestrator` without peer discovery; missing or ambiguous roles return explicit errors (#2580-dcbd).
 - Move native stories between legal Kanban phases with pointer drag, or use keyboard-accessible Phase selectors in List and beside Edit. Backend rules and revisions remain authoritative; rejected moves retain their placement. The toolbar includes Ready counts with named glyphs and tooltip lines (#2578-69b4).
 
 - Preserve ignored canonical work during native integration and recover interrupted validation, receipts and branch retirement without blocking unrelated trial repositories (#2514-3d1e).
