@@ -120,6 +120,15 @@ journal, and then dual-emits `progress-recorded`. A per-agent
 `progress_tracking: false` answers `progress_tracking_disabled` instead of
 hiding the tool — the tool index is global and has no session context.
 
+Managed children (a bound peer with a `session_parent` entry) cannot report
+through `progress`. The handler refuses the call before journal writes, user
+notifications, or waiting-state changes, and returns `agent action=send` guidance
+with the actual parent id. Both direct and collapsed calls use this handler.
+MCP instructions and native launch guidance tell children to mail their parent;
+root and unbound callers keep the existing reporting behavior. Refusal is explicit
+rather than automatic mail forwarding, so `progress` does not become a second
+mail API.
+
 The journal's third kind, `intent`, is written by TUIC from the agent's
 `intent:` marker in `pty.rs`. An agent that reports one is refused: the point of
 the kind is that it is observed rather than claimed.

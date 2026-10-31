@@ -3228,3 +3228,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 ## Chat dictation auto-send (#2585-dfc2)
 
 - [ ] [HUMAN] With a real microphone, check held hotkey dictation in terminal Chat with Auto-send on and off, including transcript focus. Auto-send sends once and clears the submitted draft; off leaves editable text. Automated component evidence covers delivery and submit behavior, not audio capture.
+
+- [ ] After the next manual backend restart, launch a child agent and confirm its progress call returns parent mail guidance without a user notice or waiting badge; confirm root progress still notifies. Rust changes require a manual `make dev` restart or release rebuild; do not restart an active session for this check. (#2597-76c6)
