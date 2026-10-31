@@ -47,12 +47,12 @@ setup = "repo-test-temp-windows"
 
 [[profile.default.scripts]]
 platform = { host = "cfg(unix)" }
-filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(/^mcp_http::launch_transaction::acp_tests::/) | test(/^workflows::run::runtime_tests::acp_close::/))'
+filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(/^mcp_http::launch_transaction::acp_tests::/) | test(/^workflows::run::runtime_tests::acp_close::/) | test(=workflows::run::runtime_tests::semantics::wf02_critic::wf04_acp_fork_fix_stops_processes_before_one_repair))'
 setup = "fixture-bins-unix"
 
 [[profile.default.scripts]]
 platform = { host = "cfg(windows)" }
-filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(/^mcp_http::launch_transaction::acp_tests::/) | test(/^workflows::run::runtime_tests::acp_close::/))'
+filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(/^mcp_http::launch_transaction::acp_tests::/) | test(/^workflows::run::runtime_tests::acp_close::/) | test(=workflows::run::runtime_tests::semantics::wf02_critic::wf04_acp_fork_fix_stops_processes_before_one_repair))'
 setup = "fixture-bins-windows"
 
 # The git_reads parity/shootout tests each spawn several `git` subprocesses in
@@ -92,12 +92,12 @@ setup = "repo-test-temp-windows"
 
 [[profile.ci.scripts]]
 platform = { host = "cfg(unix)" }
-filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(/^mcp_http::launch_transaction::acp_tests::/) | test(/^workflows::run::runtime_tests::acp_close::/))'
+filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(/^mcp_http::launch_transaction::acp_tests::/) | test(/^workflows::run::runtime_tests::acp_close::/) | test(=workflows::run::runtime_tests::semantics::wf02_critic::wf04_acp_fork_fix_stops_processes_before_one_repair))'
 setup = "fixture-bins-unix"
 
 [[profile.ci.scripts]]
 platform = { host = "cfg(windows)" }
-filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(/^mcp_http::launch_transaction::acp_tests::/) | test(/^workflows::run::runtime_tests::acp_close::/))'
+filter = 'binary_id(=tuicommander) & (test(/^mcp_proxy::stdio_client::tests::/) | test(=mcp_proxy::registry::tests::registry_respawns_an_exited_stdio_upstream) | test(=state::tests::live_acp_permission_reaches_one_subscribed_push_service) | test(/^acp_chat::tests::custom_chat_/) | test(/^mcp_http::launch_transaction::acp_tests::/) | test(/^workflows::run::runtime_tests::acp_close::/) | test(=workflows::run::runtime_tests::semantics::wf02_critic::wf04_acp_fork_fix_stops_processes_before_one_repair))'
 setup = "fixture-bins-windows"
 
 [profile.ci.junit]
