@@ -3084,3 +3084,5 @@ rejected. The report finalizes the run. GitHub publication is a separate host-ow
 effect, not permission for the evaluator to write. HTTP/IPC share the parser but
 have no managed-agent identity and reject this action. Existing run/list_runs
 responses expose the triage trigger, decision and result reason on all transports.
+
+WF07 integration uses the existing `workflow action=run` schema and owning-daemon run route. The typed `integrate` action requires expected base/source commits. Policy is disabled by default; inspection, debt and cleanup remain distinct actions. IPC, HTTP and MCP use the same Rust action and reply types. See [Native integration](workflows.md#opt-in-native-integration-wf07).

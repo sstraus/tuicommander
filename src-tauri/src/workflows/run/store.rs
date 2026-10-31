@@ -76,9 +76,11 @@ impl From<RunStartError> for String {
 // 7: contract-4 parallel tokens and generation-scoped check/cancellation events.
 // 8: explicit worker transport/conversation bindings, input continuation and report disposition.
 // 9: WF05 typed command/Tool and workspace effect kinds.
-const RUN_STORE_SCHEMA_VERSION: i64 = 9;
+// 10: native integration saga, policy and proof-obligation outbox.
+const RUN_STORE_SCHEMA_VERSION: i64 = 10;
 
 mod approval;
+pub(super) mod integration;
 mod report_disposition;
 mod runtime_start;
 pub(crate) use runtime_start::GraphStartRequest;
@@ -1557,6 +1559,9 @@ impl RunStore {
     }
 
     pub(super) fn reconcile_runs_after_restart(&self, run_ids: &[String]) -> usize {
+        if let Err(error) = self.recover_integration_outbox() {
+            tracing::warn!(%error, "Native integration outbox recovery remains pending");
+        }
         let mut recovered = 0;
         for run_id in run_ids {
             match self.reconcile_run_after_restart(run_id) {

@@ -1154,3 +1154,7 @@ See the MCP guide for the managed evaluator's report contract.
 ## Archive retention cleanup
 
 `sweep_archive_retention(repo_path)` returns `{ deleted: string[], kept: string[] }`. The host resolves the configured days; callers cannot supply a deletion threshold. Used by repository refresh. Named kept entries include their reason. It preserves archive refs and uses non-force Git removal. HTTP twin: `POST /worktrees/archive-retention`.
+
+### Native integration trial actions (WF07)
+
+`workflow_run_action` accepts the same policy, `integrate`, `integration`, `integration_obligations` and `cleanup_integration` actions as the existing HTTP run route. Native integration is disabled by default per canonical repository. It returns durable phase records and preserves integration when proof intake, dependency refresh or cleanup remains pending. See [Native integration](../backend/workflows.md#opt-in-native-integration-wf07).

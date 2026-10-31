@@ -1,3 +1,7 @@
+## Native integration trial (2514-3d1e) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use an isolated throwaway Git clone to inspect the default-disabled native integration policy, then enable only that clone and exercise the integration/debt/cleanup actions. The daily instance was not restarted. Rust changes do not hot-reload; restart only when losing current sessions is acceptable.
+
 ## Typed workflow commands (2512-5a42) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a backend Run command graph in a throwaway project with an assigned workspace and inspect `command_executions`. Verify admission, target and immutable receipt; the daily instance was not restarted. Rust changes do not hot-reload.

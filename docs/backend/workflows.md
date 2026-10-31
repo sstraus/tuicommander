@@ -580,3 +580,54 @@ Internal consumers must emit the existing `workflow-run-changed` hint after
 committing schedule/retry/cancel commands so the actor recomputes its deadline.
 This foundation does not install provider polling, a proof collector or a question
 inbox; their consumer stories remain responsible for those behaviors.
+
+## Opt-in native integration (WF07)
+
+Native integration is a typed `integrate` run action, not a shell command. The
+per-repository `native_integration_enabled` policy defaults to false. Keep it
+false through WF17 unless an isolated trial clone is under test or the specific
+repository has explicit parity approval. `set_native_integration_policy` changes
+admission only: disabling it does not remove receipts, pending recovery or debt.
+The policy key is the canonical Git common directory, so linked worktrees share
+one policy and one process-lifetime OS integration lock.
+
+`integrate` takes `request` with `runId`, `storyId`, `commandId`,
+`expectedSequence`, `expectedBase` and `expectedSource`. It requires the accepted
+story revision, current source checks, clean checkouts and the pinned canonical
+branch. It constructs a two-parent no-ff merge object, runs the published checks
+in an isolated synthetic workspace, rechecks both parents, then fast-forwards
+the canonical branch to that exact object. It does not construct a second merge
+after validation. A moved base refuses publication. Revalidation uses a new
+command ID and fresh expected commits; the previous unmerged intent stays in
+history. A published intent must recover under its original request.
+
+The journal separates publication, proof-obligation outbox, canonical receipt,
+dependency refresh and cleanup. Restart recovery first inspects refs. It resumes
+only already-published candidates and never merges an unmerged intent by itself.
+The outbox pins both parents, merge commit and exact changed-file scope. It is
+WF07 debt, not WF08 proof completion or a release-ready result. Read it through
+`integration_obligations`; read one saga through `integration {run_id,story_id}`.
+
+Partial success is typed: `integrated_cleanup_pending` corresponds to exit 2,
+`integrated_dependency_refresh_failed` to exit 3, and
+`integrated_obligation_pending` to exit 4. None permits another merge. A missing
+post-integration receipt or outbox entry remains recoverable debt. A failed
+`pnpm install --offline --frozen-lockfile` keeps the merge and retries only the
+refresh phase. Post-integration checks bind the real canonical ref and commit;
+out-of-band ref or tree movement invalidates the existing freshness rules.
+
+`cleanup_integration {run_id,story_id}` is a separate owning-daemon action. It
+proves integration, the exact source tip, native run/successor ownership, durable
+managed-process closure and absence of live or suspended workspace users before
+using TUIC's non-force worktree removal. The exact source tip is archived under
+`refs/archive/<branch>` before branch retirement. Dirty files, including
+managed-looking generated files and nested submodule dirt, keep the workspace;
+this action never restores, stashes or discards them. Ignored work also keeps the workspace until it has explicit disposal attribution.
+Native successor assignment and managed launch/close stay fenced through removal. Cleanup failure does not revoke integration.
+
+Code conflicts return `repair_required`. Append-only union is allowed only for
+explicit repository-relative Markdown paths in `append_only_documents` on the
+policy action, with no deletions from either parent relative to their common
+ancestor. Nested, incomplete and diff3 conflict markers refuse union. The legacy
+`record_integration` action remains a verifier of an already-performed clean
+merge and does not gain this union policy.
