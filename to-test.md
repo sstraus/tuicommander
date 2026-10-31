@@ -1,3 +1,7 @@
+## Visual identity artwork (2601-0477)
+
+- [ ] Inspect Droid and OpenCode beside Claude in sidebar, Settings agent tiles and mobile session cards. Confirm equal apparent height, no clipped artwork and theme-inherited color. Headless before/after crops are retained in `visual-audit-20`; no daily desktop interaction was used.
+
 ## Settings catalogue ledger coverage (2571-926a)
 
 - [x] Preserve generated settings descriptors while rejecting malformed and invalid owner ledgers, including pre-existing schema gaps. _(verified: rb `settings::catalogue::tests`, 13 passed; generated TypeScript matches the committed catalogue. This internal Rust refactor needs a rebuild to load, but changes no user-visible behavior. The daily app was not restarted.)_
