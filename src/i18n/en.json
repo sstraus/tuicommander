@@ -1137,6 +1137,7 @@
 	"sidebar.lastCommit": "Last commit",
 	"sidebar.lastPoll": "Last remote poll",
 	"sidebar.merged": "Merged",
+	"sidebar.unrelatedHistory": "Unrelated history",
 	"sidebar.openPrs": "open PRs",
 	"sidebar.stale": "Stale",
 	"sidebar.synced": "synced",

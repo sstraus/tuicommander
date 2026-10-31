@@ -33,7 +33,8 @@ describe("mobile control menu", () => {
 		expect(agentKeyFixture.map((row) => row.agent).sort()).toEqual([...AGENT_TYPES].sort());
 	});
 
-	it.each(agentKeyFixture)(
+	// The ego 0.1.0 probe is historical: current ego gives CSI u Enter a steering contract.
+	it.each(agentKeyFixture.filter(({ agent }) => agent !== "ego"))(
 		"uses recorded mapping for $agent, preventing ignored or corrupted Ctrl+Enter",
 		async ({ agent, selectedSequence }) => {
 			const view = render(() => <TerminalKeybar sessionId="owned" agentType={agent} />);
@@ -44,6 +45,17 @@ describe("mobile control menu", () => {
 			);
 		},
 	);
+
+	// Catches: the old LF fallback submitting instead of requesting ego BusySteer.
+	// Oracle: ego live_surface_ctrl_enter_steers_a_busy_turn_once sends these bytes.
+	it("sends current ego Ctrl+Enter steering bytes instead of the historical LF fallback", async () => {
+		const view = render(() => <TerminalKeybar sessionId="owned" agentType="ego" />);
+		fireEvent.click(view.getByRole("button", { name: "Ctrl" }));
+		fireEvent.click(view.getByRole("menuitem", { name: "Ctrl+Enter" }));
+		await waitFor(() =>
+			expect(rpc).toHaveBeenCalledExactlyOnceWith("write_pty", { sessionId: "owned", data: "\x1b[13;5u" }),
+		);
+	});
 
 	it.each([null, undefined, "unknown", "__proto__"])(
 		"preserves modified Enter for unknown %s instead of executing an accidental shell command",

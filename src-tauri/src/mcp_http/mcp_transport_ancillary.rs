@@ -829,6 +829,20 @@ pub(super) fn resolve_mcp_origin_session(
     mcp_session_id.and_then(|mcp_sid| state.mcp.to_session.get(mcp_sid).map(|s| s.value().clone()))
 }
 
+/// Parent identity for a bound managed child. Root and unbound callers have none.
+pub(super) fn resolve_mcp_parent_session(
+    state: &Arc<AppState>,
+    mcp_session_id: Option<&str>,
+) -> Option<String> {
+    resolve_mcp_origin_session(state, mcp_session_id).and_then(|peer| {
+        state
+            .session_maps
+            .session_parent
+            .get(&peer)
+            .map(|parent| parent.value().clone())
+    })
+}
+
 /// The live PTY behind this MCP connection, keyed as `sessions` keys it.
 ///
 /// Not the peer id: a hand-opened tab registers under its `$TUIC_SESSION`
@@ -1843,6 +1857,13 @@ pub(super) async fn handle_progress(
     args: &serde_json::Value,
     mcp_session_id: Option<&str>,
 ) -> serde_json::Value {
+    // Progress reaches the user. Child outcomes belong to the parent's mail lane,
+    // before journal writes, notifications or blocked-state changes can occur.
+    if let Some(parent) = resolve_mcp_parent_session(state, mcp_session_id) {
+        return serde_json::json!({"error": format!(
+            "Managed children must not call progress; report to your parent with agent action=send to={parent} message=<RESULT or BLOCKED report>."
+        )});
+    }
     let input = match parse_progress_report_input(args) {
         Ok(input) => input,
         Err(error) => return error,

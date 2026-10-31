@@ -167,34 +167,42 @@ async fn run_at(
     args: &[String],
     cwd: Option<&Path>,
 ) -> Result<String, EgoCliError> {
-    let mut command = tokio::process::Command::new(program);
-    command.args(args);
-    if let Some(cwd) = cwd {
-        command.current_dir(cwd).env_remove("EGO_PROFILE");
-    }
-    let output = command.output().await.map_err(|err| EgoCliError {
-        code: EgoCliErrorCode::LaunchFailed,
-        message: format!("could not run the configured ego executable: {err}"),
-        command: spell(program, args),
-        stdout: String::new(),
-        stderr: String::new(),
-        exit_code: None,
-    })?;
-
+    let output = execute_at(program, args, cwd).await?;
     if !output.status.success() {
         return Err(EgoCliError {
             code: EgoCliErrorCode::CommandFailed,
-            message: "ego refused the command".to_string(),
+            message: format!("`{}` did not complete successfully", spell(program, args)),
             command: spell(program, args),
             stdout: clip(&output.stdout),
             stderr: clip(&output.stderr),
             exit_code: output.status.code(),
         });
     }
-
     Ok(String::from_utf8_lossy(&output.stdout)
         .trim_end()
         .to_string())
+}
+
+/// Keep raw output until the command-specific consumer has interpreted it.
+/// Doctor exit 1 is a health result, not a failure to produce a snapshot.
+async fn execute_at(
+    program: &Path,
+    args: &[String],
+    cwd: Option<&Path>,
+) -> Result<std::process::Output, EgoCliError> {
+    let mut command = tokio::process::Command::new(program);
+    command.args(args);
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd).env_remove("EGO_PROFILE");
+    }
+    command.output().await.map_err(|err| EgoCliError {
+        code: EgoCliErrorCode::LaunchFailed,
+        message: format!("could not run the configured ego executable: {err}"),
+        command: spell(program, args),
+        stdout: String::new(),
+        stderr: String::new(),
+        exit_code: None,
+    })
 }
 
 /// Refuse a model id this host will not put on a command line.
@@ -291,7 +299,6 @@ enum Availability {
 /// `ego doctor --json` — the health snapshot, of which one section is read.
 #[derive(Deserialize)]
 struct HealthSnapshot {
-    #[serde(default)]
     sections: Vec<HealthSectionReport>,
 }
 
@@ -378,6 +385,9 @@ pub struct EgoProviders {
     /// Sorted by provider name, so two reads of an unchanged installation
     /// render identically.
     pub providers: Vec<EgoProvider>,
+    /// Non-blocking health diagnosis; model/configuration reads remain usable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub diagnostic: Option<String>,
 }
 
 /// Read `key` out of `ego config ls --json`.
@@ -508,6 +518,7 @@ fn project(
     EgoProviders {
         default_model: config_string(&listing, "model"),
         providers,
+        diagnostic: None,
     }
 }
 
@@ -525,11 +536,9 @@ fn unreadable(command: &str, stdout: String, error: serde_json::Error) -> EgoCli
 
 /// Everything the Providers tab shows, read from ego in three calls.
 ///
-/// All three must succeed. A partial answer would have to render as a tab that
-/// is silently missing one of the three things it exists to show — which model
-/// is the default, which models exist, whether a provider has a credential —
-/// and none of those is optional to the question being asked. Whichever call
-/// fails is reported with what ego printed.
+/// Config and catalogue are required for model selection. Doctor only enriches
+/// credential status: its exit 1 snapshot may diagnose an unrelated subsystem.
+/// An unavailable health snapshot must not discard independent model controls.
 ///
 /// `refresh` is passed straight to `ego models`, which is the only thing here
 /// that reaches a provider over the network, and it is ego that reaches it.
@@ -566,10 +575,96 @@ pub(crate) async fn providers_in(
     let raw = context.run(&models_args).await?;
     let catalogue: CatalogueSnapshot =
         serde_json::from_str(&raw).map_err(|error| unreadable("ego models --json", raw, error))?;
-    let raw = context.run(&["doctor".into(), "--json".into()]).await?;
-    let health: HealthSnapshot =
-        serde_json::from_str(&raw).map_err(|error| unreadable("ego doctor --json", raw, error))?;
-    Ok(project(listing, catalogue, health))
+    let args = ["doctor".into(), "--json".into()];
+    let output = execute_at(&context.program, &args, Some(&context.workspace)).await;
+    let (health, diagnostic) = doctor_health(output);
+    let credentials_observed = health.as_ref().is_some_and(|snapshot| {
+        snapshot.sections.iter().any(|section| {
+            section.section == "credentials"
+                && section.items.iter().any(|item| {
+                    matches!(
+                        item.id.probe.as_str(),
+                        "credentials.entry" | "credentials.store" | "credentials.home"
+                    )
+                })
+        })
+    });
+    let mut answer = project(
+        listing,
+        catalogue,
+        health.unwrap_or(HealthSnapshot { sections: vec![] }),
+    );
+    if let Some(message) = diagnostic.as_ref().filter(|_| !credentials_observed) {
+        // No credentials section is not evidence of an empty credential store.
+        // Preserve any positive evidence from a usable partial snapshot.
+        for provider in &mut answer.providers {
+            if matches!(provider.credential, EgoCredential::Missing) {
+                provider.credential = EgoCredential::Unknown {
+                    detail: message.clone(),
+                };
+            }
+        }
+    }
+    answer.diagnostic = diagnostic;
+    Ok(answer)
+}
+
+/// Interpret the diagnostic command without turning health into launch authority.
+fn doctor_health(
+    output: Result<std::process::Output, EgoCliError>,
+) -> (Option<HealthSnapshot>, Option<String>) {
+    let output = match output {
+        Ok(output) => output,
+        Err(error) => {
+            return (
+                None,
+                Some(format!(
+                    "ego health check could not start: {}. Run ego doctor --json in a terminal.",
+                    error.message
+                )),
+            );
+        }
+    };
+    if (output.status.success() || output.status.code() == Some(1))
+        && let Ok(snapshot) = serde_json::from_slice::<HealthSnapshot>(&output.stdout)
+    {
+        let problems: Vec<String> = snapshot
+            .sections
+            .iter()
+            .flat_map(|section| {
+                section
+                    .items
+                    .iter()
+                    .filter(|item| item.status == "error" || item.status == "warning")
+                    .map(|item| format!("{}: {}", section.section.replace('_', " "), item.detail))
+            })
+            .collect();
+        let diagnostic = if !problems.is_empty() {
+            Some(format!(
+                "ego health check reported problems: {}",
+                problems.join("; ")
+            ))
+        } else if !output.status.success() {
+            Some("ego health check exited 1 without a reported cause. Run ego doctor --json in a terminal.".into())
+        } else {
+            None
+        };
+        return (Some(snapshot), diagnostic);
+    }
+    let result = if output.status.success() {
+        "returned unreadable JSON".to_owned()
+    } else {
+        match output.status.code() {
+            Some(code) => format!("failed (exit {code})"),
+            None => "was terminated".to_owned(),
+        }
+    };
+    (
+        None,
+        Some(format!(
+            "ego health check {result}; credential status is unavailable. Run ego doctor --json in a terminal."
+        )),
+    )
 }
 
 /// Write ego's default model, then read the whole tab back.
@@ -620,6 +715,91 @@ mod tests {
     use super::*;
     use crate::test_support::{fail_with_stderr_script, host_shell};
     use std::path::PathBuf;
+
+    // Catches: a nonzero doctor exit discarding otherwise usable config/catalogue,
+    // or parsing only the clipped error payload and losing valid health JSON.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn doctor_failure_keeps_model_controls_and_credential_evidence() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let health = include_str!("fixtures/ego-doctor-exit1.json");
+        std::fs::write(
+            dir.path().join("health.json"),
+            format!("{}{}", " ".repeat(5000), health),
+        )
+        .unwrap();
+        let program = dir.path().join("ego");
+        std::fs::write(&program, r##"#!/bin/sh
+case "$1" in
+config) printf '%s' '{"values":{"model":"openai-codex/gpt-6.1-sol"}}' ;;
+models) printf '%s' '{"models":[{"slug":"openai-codex/gpt-6.1-sol","availability":{"status":"available"}}]}' ;;
+doctor) cat health.json; exit "$(cat exit-code)" ;;
+esac
+"##).unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::write(dir.path().join("exit-code"), "1").unwrap();
+        let context = ConfigContext {
+            program,
+            workspace: dir.path().to_owned(),
+            profile: None,
+        };
+        let answer = providers_in(&context, false)
+            .await
+            .expect("doctor is diagnostic, not a model prerequisite");
+        assert_eq!(
+            answer.default_model.as_deref(),
+            Some("openai-codex/gpt-6.1-sol")
+        );
+        assert_eq!(
+            answer.providers[0].models[0].slug,
+            "openai-codex/gpt-6.1-sol"
+        );
+        assert!(matches!(
+            answer.providers[0].credential,
+            EgoCredential::Stored { .. }
+        ));
+        assert_eq!(
+            answer.diagnostic.as_deref(),
+            Some(
+                "ego health check reported problems: session store: probe timed out: the two-second doctor budget was exhausted"
+            )
+        );
+
+        // Catches: invalid diagnostic output being called a missing credential.
+        std::fs::write(dir.path().join("health.json"), "").unwrap();
+        let answer = providers_in(&context, false).await.unwrap();
+        assert_eq!(
+            answer.default_model.as_deref(),
+            Some("openai-codex/gpt-6.1-sol")
+        );
+        assert_eq!(answer.providers[0].models.len(), 1);
+        assert!(matches!(
+            answer.providers[0].credential,
+            EgoCredential::Unknown { .. }
+        ));
+        assert_eq!(
+            answer.diagnostic.as_deref(),
+            Some(
+                "ego health check failed (exit 1); credential status is unavailable. Run ego doctor --json in a terminal."
+            )
+        );
+
+        // Catches: an old health error surviving a successful subsequent read.
+        let mut healthy: serde_json::Value = serde_json::from_str(health).unwrap();
+        healthy["sections"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|section| section["section"] == "credentials");
+        std::fs::write(dir.path().join("health.json"), healthy.to_string()).unwrap();
+        std::fs::write(dir.path().join("exit-code"), "0").unwrap();
+        let answer = providers_in(&context, false).await.unwrap();
+        assert!(answer.diagnostic.is_none());
+        assert!(matches!(
+            answer.providers[0].credential,
+            EgoCredential::Stored { .. }
+        ));
+    }
 
     /// `sh -c <script>` / `cmd /C <script>`, as the runner's argument vector.
     fn shell(script: String) -> (PathBuf, Vec<String>) {

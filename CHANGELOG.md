@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- AI Chat master prompt in Settings: additive instructions for new conversations, with an 8192-byte limit.
+### Fixed
+
+- Keep push-to-talk dictation in the focused detached AI Chat window instead of sending its transcript to the main window; preserve the captured composer across focus changes and scope native Fn listeners to their own WebView.
+- Label the per-reply conversation branch action **Fork**, distinct from **Copy**.
+- Keep AI Chat model settings available when ego doctor reports a health problem, and show the specific diagnostic instead of a generic refusal (#2586-6732).
+- Add or remove a session from the Global Workspace through its sidebar context menu (#2590-2d63).
 - Send to the registered coordinator with `agent action=send to=orchestrator` without peer discovery; missing or ambiguous roles return explicit errors (#2580-dcbd).
 - Move native stories between legal Kanban phases with pointer drag, or use keyboard-accessible Phase selectors in List and beside Edit. Backend rules and revisions remain authoritative; rejected moves retain their placement. The toolbar includes Ready counts with named glyphs and tooltip lines (#2578-69b4).
 
@@ -18,6 +25,29 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Recognize an answer joined to an intent title without a newline. Keep answer parentheses out of the intent title and preserve terminal, Chat and answers-only rendering (#2612-b0ac).
+- Preserve agent shim names when launchers canonicalise executable paths; upgrade legacy Unix symlinks to atomic hard links (#2584-fdaa).
+
+- Let Design Mode start after a stale browser profile lock PID is reused by an unrelated process; preserve live profile ownership (#2591-937a).
+- Show an explicit unrelated-history branch state without failing repository refresh or treating independent commits as merged work. Keep the dirty-file count and Changes action in compact rows (#2611-6022).
+
+- Stop buffering an oversized plugin watcher line after its first overflow; cursor-addressed TUI repaints now produce one warning until the next newline (#2607-678c).
+
+- Resolve local Markdown image parent paths before creating desktop asset URLs, so images in sibling folders load (#2604-0ec2).
+
+- Show the backend error message and code when a Smart Prompt fails, instead of `[object Object]` (#2600-1421).
+- Use one aligned Smart Prompt editor in Settings and the Edit Prompt dialog, with eight readable placement choices and consistent conditional fields (#2603-8a87).
+
+- Send Ctrl+Enter as CSI u only with negotiated Kitty reporting or an identified ego session, preserving legacy CR for shells and other agents; retain ego busy-turn steering and the mobile ego Ctrl menu correction (#2599-0a6b).
+
+- Refuse managed child progress reports before user notifications or waiting badges; direct child reports to their parent and keep root reporting unchanged (#2597-76c6).
+
+- Restore symmetric open meridians in the shared global-workspace globe icon (#2602-2e4d).
+
+- Match Droid and OpenCode identity artwork to sibling icon sizes in sidebar, Settings and mobile (#2601-0477).
+
+- Show a rounded Greek epsilon (ε), not an æ ligature or square E, in the ego identity circle across the sidebar and shared agent icons (#2598-8df7).
+
+- Resolve Progress to the main checkout when a separately registered linked checkout repeats the shared workspace inventory (#2583-fd08).
 
 - Keep AI Chat Stop and Send buttons at a fixed size and bottom-aligned as the draft grows (#2588-b8af).
 - Keep verified terminal link underlines visible during unrelated spinner redraws, including full frames and same-row file paths (#01a19332-aa59-7025-9cb0-071b909bf871).

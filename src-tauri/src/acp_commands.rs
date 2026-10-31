@@ -44,6 +44,8 @@ pub(crate) fn ego_config(state: &AppState) -> Result<EgoAcpConfig, AcpClientErro
     Ok(EgoAcpConfig {
         executable: PathBuf::from(executable),
         profile: settings.ego_profile.clone(),
+        // AI Chat instructions belong to its conversation-specific ChatLaunch snapshot.
+        master_prompt: String::new(),
     })
 }
 

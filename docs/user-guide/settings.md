@@ -300,6 +300,16 @@ See [AI Agents](ai-agents.md) for details on agent detection, rate limits, and t
 
 ### AI Chat
 
+**Chat behavior → Master prompt** adds your instructions to new AI Chat conversations.
+Use the multiline field to describe how the agent should answer or delegate work.
+The text is saved by TUIC and added to the existing TUIC rules; it does not replace them.
+Leave it empty for no extra instructions. The limit is **8192 UTF-8 bytes**; an edit above
+that limit shows an error and is not saved. Running and saved conversations keep their
+original instructions, including when reopened or forked. Do not put secrets in this field.
+
+
+AI Chat model selection remains available when `ego doctor` reports a health problem. The page shows the affected health section and its detail. If doctor cannot return readable JSON, credential status is unknown, not missing; run `ego doctor --json` in a terminal to inspect it.
+
 Shows the configuration of `ego`, the engine behind the AI Chat panel. Offered
 only while **Experimental Features** (General page) is on, because that is what
 offers the AI Chat panel — the one place ego is reachable from.

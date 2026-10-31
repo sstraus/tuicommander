@@ -201,7 +201,7 @@ Select text in user messages, answers, code blocks, and tool output and use
 `Cmd/Ctrl+C` to copy it. **Copy** appears when a message is hovered or has
 keyboard focus. It copies the whole raw message, including fenced code, through
 the same clipboard adapter as the terminal. Answers have no separate code-block
-Copy button. The compact Copy and **Fork from here** row stays below its answer
+Copy button. The compact Copy and **Fork** row stays below its answer
 and does not overlap the next message. Web links open in the
 system browser; file links and plain source paths are resolved by the backend.
 Files open in TUICommander's viewer or editor, while directories open in the
@@ -352,7 +352,7 @@ The write-only command knowledge store was removed in #2115-1333. TUICommander n
 
 Pending permissions and ego notice cards can alert your phone when the desktop is away. Both share a 30-second limit per conversation; ordinary activity does not send a push.
 
-AI Chat offers **Fork from here** beside a reply when ego advertises message-point forks. The new tab keeps history through that reply’s completed turn; the parent remains open.
+AI Chat offers **Fork** beside a reply when ego advertises message-point forks. The new tab keeps history through that reply’s completed turn; the parent remains open.
 
 Forked AI Chat tabs label inherited history. A separator marks where the child’s own conversation begins, including after loading saved history.
 
@@ -419,6 +419,19 @@ Retry. Restart `make dev` (or `pnpm tauri dev`) when you are ready to end the
 current backend session. Reloading the frontend does not rebuild the backend.
 Release and remote-owner errors keep their existing recovery controls.
 
+## Dictation in a detached chat
+
+The detached AI Chat window owns its dictation input. Focus that window and hold
+its configured push-to-talk key. On macOS, Fn starts in the focused chat window;
+releasing it still stops that recording if focus moves away. The transcript goes
+to the input and selection captured at recording start, not to the main window.
+If the chat transcript has focus, dictation targets that window's composer.
+
+AI Chat dictation inserts a draft for review. It does not submit the draft. If
+the captured input is removed or edited before transcription completes, the
+transcript is retained in Messages instead of overwriting the new draft. If the
+model is missing, the setup action opens Voice settings in the main window.
+
 ## Confirm a detected ego executable
 
 If no ego executable is configured, opening AI Chat checks the host's agent detection.
@@ -427,3 +440,11 @@ save that path through the normal settings writer and activate AI Chat. Detectio
 never saves a path automatically and never replaces a configured executable.
 **Configure ego** still opens manual setup. If detection finds nothing or fails,
 the existing inactive message and manual setup action remain available.
+
+## Master prompt
+
+Settings → AI → AI Chat → Chat behavior has a multiline **Master prompt** field.
+It adds instructions to new conversations without replacing TUIC launch rules. Empty
+means no extra instructions. The limit is 8192 UTF-8 bytes. Existing conversations
+keep their saved instructions, also after reopening. Smart Prompts, PR reviews,
+changelog generation and story drafting do not use this field. Do not use it to store secrets.

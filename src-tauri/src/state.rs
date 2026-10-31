@@ -9736,6 +9736,7 @@ mod tests {
                 &crate::acp::EgoAcpConfig {
                     executable,
                     profile: String::new(),
+                    master_prompt: String::new(),
                 },
                 crate::acp::AcpConnectRequest {
                     root: root.path().to_path_buf(),

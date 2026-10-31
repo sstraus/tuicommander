@@ -675,7 +675,13 @@ it("forks from the second of four replies without changing the parent", async ()
 });
 
 describe("configured conversation replay", () => {
-	const launch = { executable: "/bin/ego", profile: "coordinator", workspace: "/observer", peerId: "peer" };
+	const launch = {
+		executable: "/bin/ego",
+		profile: "coordinator",
+		masterPrompt: "",
+		workspace: "/observer",
+		peerId: "peer",
+	};
 	// Catches: reopening appends replayed history to the old projection instead of replacing it.
 	it("clears the old projection for a replay but retains it when already attached", async () => {
 		acpTranscript.noteUserMessage(SESSION, "old projection");
@@ -727,7 +733,13 @@ it("retains live response chunks while reopening an already attached custom conv
 	finishOpen({
 		connection: snapshot({ latestSequence: 2 }),
 		sessionId: SESSION,
-		launch: { executable: "/bin/ego", profile: "coordinator", workspace: "/observer", peerId: "peer" },
+		launch: {
+			executable: "/bin/ego",
+			profile: "coordinator",
+			masterPrompt: "",
+			workspace: "/observer",
+			peerId: "peer",
+		},
 		replayed: false,
 	});
 	await reopening;

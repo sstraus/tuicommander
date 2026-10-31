@@ -15,6 +15,8 @@ Adjacent `💬` answer paragraphs share one continuous tint and left bar, includ
 
 Link underlines use the same active viewport offset as selection and search before marker-row and marker-column projection. Backend-frame link rows (including each wrapped hover span) move with cached smooth-scroll text and are clipped when their text leaves the viewport. No additional scroll listener owns link decoration movement. Full-frame damage retains verified wrapped-link identities; installed row text and link boundaries invalidate changed identities synchronously. Asynchronous verification publishes its replacement atomically, and single-row file caches use candidate identities rather than unrelated row text.
 
+Ctrl+Enter uses CSI u when Kitty flag 1 is active, or only for identified ego sessions that accept BusySteer without negotiation. Legacy input remains CR, avoiding shell command corruption. The mounted Enter-delivery regression asserts actual `write_pty` payloads, negotiated frame push/pop, current ego identity and shell-return behavior, and sibling Enter chords.
+
 ## Incremental base-grid painting
 
 Whole-row forward viewport movement can copy retained base-canvas pixels once.
