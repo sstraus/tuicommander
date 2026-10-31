@@ -75,6 +75,11 @@ Terminals are **never unmounted** from the DOM. When you switch branches or tabs
 
 ### CLI / Chat view
 
+Session Chat and its composer belong to their terminal tab. **Go to repo** on a
+progress toast opens the reporting terminal when it is still open. Otherwise it
+selects a surviving tab in the destination workspace, or clears the terminal area
+when that workspace has none. It does not leave a foreign repository's Chat active.
+
 On desktop, returning from Chat to CLI focuses the terminal input. You can type immediately after using the switch, closing Chat Compose, answering in CLI, or falling back from unavailable Chat. Only the active terminal restores focus, and an automatic fallback does not take the caret from an editable field outside that terminal.
 
 Session Chat shows a pulsing **Working…** row after Send and while the terminal reports busy. It disappears when the terminal reports idle or awaits a question or permission answer. Desktop and mobile use the existing session state; Chat does not infer activity from the conversation text.
