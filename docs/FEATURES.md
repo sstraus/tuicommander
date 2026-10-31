@@ -167,7 +167,7 @@ Story details show the persisted origin, plan step, revision and claiming sessio
 
 New story and Edit plan keep the primary action, then Cancel, together at the bottom-left. New story has no permanent manual-prefix hint below acceptance criteria; `[MANUAL]` criteria remain supported. Story Edit stays in the story header. Disabled Add dependency exposes its reason as a native tooltip and accessible description.
 
-Plans and Stories combines open/closed and optional story-type filters, including untyped historical stories, with a session-retained List/Kanban switch that also survives detach and reattach. Rust supplies the shared display projection; the native read-only board follows the Wiz Kanban layout without importing plugin code.
+Plans and Stories combines open/closed and optional story-type filters, including untyped historical stories, with a session-retained List/Kanban switch that also survives detach and reattach. Rust supplies the shared display projection; the native board follows the Wiz Kanban layout without importing plugin code. Cards support pointer-based phase moves to backend-provided legal destinations; List rows and story detail share revision-checked Phase selectors. Illegal or rejected drops retain placement and show the reason.
 
 Native stories support one revision-checked `update_story` patch through MCP, CLI, IPC and HTTP. It amends metadata including nullable story type, optional problem/risk, ordered criteria and dependencies on unclaimed Backlog/Ready stories without active run ownership. Changed requirements lose checks; priority-only edits keep them, and workflow evidence follows existing fingerprints. StoriesDialog provides one revision-checked Edit form with Save/Cancel, retained conflict drafts, and metadata, criteria and dependency fields. QA and other started work are not editable. Criteria use separate ordered entries so multiline requirement text is preserved during edits. Edited titles must contain 1 to 200 Unicode characters after trimming. Invalid titles disable Save without truncating the draft.
 
@@ -1027,6 +1027,10 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
   account dashboard because Gemini CLI has no stable machine-readable account
   quota interface. Session-local `/stats` is not treated as account headroom.
 
+### Coordinator mail address
+
+- `agent action=send to=orchestrator` reaches the registered coordinator in the caller parent chain, or the unique role in its registered repository path, without peer discovery. Missing or ambiguous roles fail explicitly.
+
 ### 6.7 Intent Event Tracking
 - Agents declare work phases via `intent: text (Title)` tokens at the start of a row. The canvas tints intent rows and their soft-wrapped or indented hard-wrapped tails, preserving row coordinates. Blank rows and new output, answer, prompt or marker blocks end an indented tail. The token is also read when it follows the ack sentence on one row, and when the agent's own wrapping split it across many rows; terminal width distinguishes wrapped text from adjacent indented prose, and input-box chrome is excluded. A long intent keeps its full tab-title event while the Progress journal stores a redacted, capped copy
 - MCP instructions request an intent on its own line, at the start of every task and on each material phase change; the terminal Context bar shows it separately from the orchestrator assignment and user prompt
@@ -1480,7 +1484,7 @@ The `tuic-dictation` Rust crate implements audio, transcription and speech; the 
 - Default hotkey: `F5` (configurable, registered globally)
 - Mic button in status bar: hold to record, release to transcribe
 - On macOS, releasing Fn stops microphone capture in Rust before the WebView handles the event. A late Fn start is refused. DOM hotkeys release on blur if key-up was lost; native Fn follows physical key state. The file log records release-to-stop latency without storing spoken text.
-- The destination and selection are captured at key-press time, before asynchronous work. Explicit editors take priority. In terminal Chat, transcript or BODY focus delivers to Compose through a CodeMirror transaction; CLI uses the captured PTY session with existing auto-send behavior. Focus and tab changes do not redirect the text.
+- The destination and selection are captured at key-press time, before asynchronous work. Explicit editors take priority. In terminal Chat, Compose, transcript or BODY focus delivers to Compose through a CodeMirror transaction; Auto-send then uses its normal Send action once, while disabled Auto-send leaves an editable draft. Other fields stay review-only. CLI uses the captured PTY session with existing auto-send behavior. Focus and tab changes do not redirect the text.
 - Long Claude CLI dictation uses bracketed paste to preserve its beginning, with or without Auto-send. Short dialog answers remain key events.
 - If the target disappears or the draft changes before delivery, the transcript stays in a sticky error message and the Messages bell for recovery. Delivery logs contain metadata without spoken text.
 
@@ -3654,3 +3658,5 @@ subject fences, actor provenance and restart-safe deadlines. An unanswered quest
 suspends its activation, not disjoint delivery. The project inbox counts pending
 and expired questions without a coordinator; all transports use the same service.
 No timeout grants consent. See [workflow decisions](backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).
+
+The Plans and Stories toolbar pill shows active-plan, Ready and In progress counts with distinct glyphs and a tooltip line for each number. Ready comes from the Rust `summary` action, not a frontend subtraction; Done/total remains the progress bar tooltip. Ready-only work therefore remains visible when no story is running.

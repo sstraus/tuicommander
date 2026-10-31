@@ -1,3 +1,7 @@
+## Coordinator mail address (2580-dcbd) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, send `agent action=send to=orchestrator message=<text>` from a managed child and confirm receipt at its registered coordinator without `list_peers`. The daily app was not restarted; Rust changes do not hot-reload. Restart only when losing current sessions is acceptable.
+
 ## Settings catalogue ledger coverage (2571-926a)
 
 - [x] Preserve generated settings descriptors while rejecting malformed and invalid owner ledgers, including pre-existing schema gaps. _(verified: rb `settings::catalogue::tests`, 13 passed; generated TypeScript matches the committed catalogue. This internal Rust refactor needs a rebuild to load, but changes no user-visible behavior. The daily app was not restarted.)_
@@ -3222,5 +3226,10 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   retained errors alone do not prove that the merge caused a reload race; all
   twelve plugins were subsequently loaded. No running app reload was performed.
 
+- [ ] After a backend rebuild, open Plans and Stories: drag a Ready card to an outlined destination, cancel with Escape, and use the List/detail Phase selectors. A stale move must show its backend error without moving the card. Native `available_transitions` requires the rebuilt Rust backend (#2578-69b4).
 - [ ] Scroll through terminal web links and soft-wrapped file URLs: dotted underlines and Cmd-hover strokes must stay on their text, including when the backend viewport trails a smooth gesture (#2582-13dd).
 - [ ] After a Rust rebuild/restart, inspect the generated Waiting and long work launch preview: continue independent work, yield only for a needed result or user answer, report running work without completion/suggestions, and use the launched mechanism’s wake. Existing sessions do not receive the new launch text automatically. (#2581-4824)
+
+## Chat dictation auto-send (#2585-dfc2)
+
+- [ ] [HUMAN] With a real microphone, check held hotkey dictation in terminal Chat with Auto-send on and off, including transcript focus. Auto-send sends once and clears the submitted draft; off leaves editable text. Automated component evidence covers delivery and submit behavior, not audio capture.
