@@ -1,5 +1,8 @@
 # TUICommander Specification
 
+- [x] Inactive AI Chat offers a detected ego path and saves it only after confirmation; configured paths and the no-detection empty state remain unchanged (#2561-9861).
+- [x] Disabled sleep prevention, global hook instrumentation and server-error retries have contextual, per-client dismissible tips without changing their defaults (#2562-d363).
+
 - [x] PR popovers, thread-count buttons and PR notifications open the exact Tasks conversation, reveal comments and the first review-thread page, fall back to GitHub without a provider, and return from PR detail to a matching existing sidebar workspace (#2559-dc9e).
 
 - [x] Desktop and mobile AI Chat and Session Chat use one theme-accent breathing orb while working, with accessible Working text and a static dot under reduced motion (#2535-8b6b).

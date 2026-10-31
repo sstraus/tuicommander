@@ -1435,3 +1435,14 @@ button[data-control-layout="row"].slashCommand:hover {
   font-size: var(--font-xs);
   color: var(--fg-muted);
 }
+
+.detectedEgo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  color: var(--fg-primary);
+  overflow-wrap: anywhere;
+}

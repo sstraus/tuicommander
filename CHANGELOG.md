@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Offer a detected ego executable in inactive AI Chat with an explicit Use this confirmation; preserve manual setup and existing paths (#2561-9861).
+- Add dismissible contextual tips for long-running agents, optional global hooks during agent setup and disabled temporary-server-error retries. Defaults stay unchanged (#2562-d363).
+
 - Connect PR popovers, unresolved-thread counts and PR notifications to the exact Tasks conversation, with a GitHub fallback and a return action to an existing branch/worktree (#2559-dc9e).
 
 ## [2.0.0] - 2026-10-31
