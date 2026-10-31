@@ -2044,7 +2044,11 @@ mod tests {
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
         // 10: WF05 command effects extend the WF03 branch-question layout.
-        assert_eq!(stored_schema_version(&db), 10, "fresh store records version");
+        assert_eq!(
+            stored_schema_version(&db),
+            10,
+            "fresh store records version"
+        );
         let run = store
             .start_plan(
                 project.path().to_str().unwrap(),
