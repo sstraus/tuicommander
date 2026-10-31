@@ -300,6 +300,8 @@ See [AI Agents](ai-agents.md) for details on agent detection, rate limits, and t
 
 ### AI Chat
 
+AI Chat model selection remains available when `ego doctor` reports a health problem. The page shows the affected health section and its detail. If doctor cannot return readable JSON, credential status is unknown, not missing; run `ego doctor --json` in a terminal to inspect it.
+
 Shows the configuration of `ego`, the engine behind the AI Chat panel. Offered
 only while **Experimental Features** (General page) is on, because that is what
 offers the AI Chat panel — the one place ego is reachable from.

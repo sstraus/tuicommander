@@ -1,0 +1,34 @@
+{
+  "v": 1,
+  "sections": [
+    {
+      "section": "credentials",
+      "items": [
+        {
+          "id": {
+            "probe": "credentials.entry",
+            "subject": "openai-codex"
+          },
+          "status": "ok",
+          "detail": "oauth credential stored and unexpired",
+          "source": "the credential store",
+          "remediation": "Run 'ego auth status'"
+        }
+      ]
+    },
+    {
+      "section": "session_store",
+      "items": [
+        {
+          "id": {
+            "probe": "doctor.probe",
+            "subject": null
+          },
+          "status": "error",
+          "detail": "probe timed out: the two-second doctor budget was exhausted",
+          "source": "the read-only doctor probe"
+        }
+      ]
+    }
+  ]
+}

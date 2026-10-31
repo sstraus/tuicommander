@@ -3223,3 +3223,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   twelve plugins were subsequently loaded. No running app reload was performed.
 
 - [ ] After a Rust rebuild/restart, inspect the generated Waiting and long work launch preview: continue independent work, yield only for a needed result or user answer, report running work without completion/suggestions, and use the launched mechanism’s wake. Existing sessions do not receive the new launch text automatically. (#2581-4824)
+
+- [ ] After the next backend rebuild, open Settings > AI / AI Chat with the installed ego session-store timeout: confirm the default-model picker and provider actions remain usable beside the specific health diagnosis. Rust changes require a manual restart when ready; no live restart was performed.
