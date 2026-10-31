@@ -1960,3 +1960,10 @@ write. See [Incoming PR reviews](../user-guide/automations.md#incoming-pr-review
 ## Archived worktree retention
 
 `archive_retention_days` is a `u32` in global repo defaults (default 0, Off), nullable in repository overrides and optional in `.tuic.json`. Explicit 0 overrides an enabled default. The backend resolves the same three-level precedence as the rendered settings. A positive value permits eligible archived checkout deletion during the existing repository refresh cleanup; it does not install a timer. See [Worktrees](../user-guide/worktrees.md#archived-worktree-retention) for age and recovery rules.
+
+### Native notification bootstrap capability
+
+The default desktop capability grants `notification:allow-is-permission-granted`
+for the main, floating and panel windows. The notification plugin's injected
+initialization script probes this permission before application code runs.
+Request-permission and notification-delivery grants do not authorize that probe.
