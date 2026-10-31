@@ -1,3 +1,7 @@
+## Agent shim canonicalisation (2584-fdaa) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a new shell and run `ego models --help` through a canonicalising launcher. It must reach ego rather than exit 127 as `tuic-agent-shim`. Existing symlinks upgrade on new shell injection. The running app and installed shim directory were not changed during implementation; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
 ## Settings catalogue ledger coverage (2571-926a)
 
 - [x] Preserve generated settings descriptors while rejecting malformed and invalid owner ledgers, including pre-existing schema gaps. _(verified: rb `settings::catalogue::tests`, 13 passed; generated TypeScript matches the committed catalogue. This internal Rust refactor needs a rebuild to load, but changes no user-visible behavior. The daily app was not restarted.)_
