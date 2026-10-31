@@ -10,6 +10,14 @@ The desktop CLI | Chat switch uses shared toolbar density. In both modes it is c
 
 Terminal Find overlays the grid below the Context and CLI/Chat switch row. Search controls wrap within narrow panes without covering the view switch.
 
+## Answer gutters after resize
+
+When scrollback reflow is disabled, widening a terminal keeps existing text in
+its original physical rows. Green answer gutters still cover the retained
+soft-wrapped continuation rows. This does not enable reflow or join the text
+into wider rows. MCP session creation without dimensions starts at 80 columns
+and 24 rows; callers can supply dimensions before starting output.
+
 ## Mobile composer focus
 
 The composer border highlights only while its textarea has focus. Tapping the mic releases editor focus without changing the insertion range. Recording uses the red mic icon, not an extra accent border. Keyboard navigation retains the mic focus ring. The blue slash key marks an available action, not retained focus.

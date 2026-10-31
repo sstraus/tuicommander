@@ -286,6 +286,15 @@ The largest remaining payload is the retained terminal grid: `(10,000 + 24) ×
 rows, spare rows and allocator rounding. Compact cells or file-backed history
 need a separate decision; neither is included in this patch.
 
+### Retained wrap edges without reflow
+
+Non-reflow width growth preserves the original cells, including a `WRAPLINE`
+flag at the old margin. Blank columns added to the right do not cancel that
+edge. The styled-range and live-frame serializers inspect the full retained
+row for the wire wrap bit, even when a dirty frame ships only a partial span
+(#2560-b448). This keeps answer gutters on continuation rows without changing
+the configured reflow policy, cell positions, or copy semantics.
+
 ### Resize repaint reconciliation
 
 Every primary-screen resize records the source/target column widths, grid
