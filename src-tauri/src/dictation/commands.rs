@@ -2607,7 +2607,7 @@ pub(crate) fn arm_hands_free_with(
                 .to_string(),
         );
     }
-    if !crate::pty::session_accepts_voice(state, session_id) {
+    if !super::adapters::accepts_voice(state, session_id) {
         return Err("Session cannot accept hands-free input".to_string());
     }
     reap_finished_runtime(dictation);
@@ -2768,6 +2768,14 @@ pub(crate) fn disarm_hands_free(
         discarded_capture: disarmed.discarded_capture,
         status: hands_free_status(dictation),
     }
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub fn get_voice_targets(
+    state: State<'_, Arc<crate::state::AppState>>,
+) -> Vec<super::adapters::ChatVoiceTarget> {
+    super::adapters::chat_targets(&state)
 }
 
 #[cfg(feature = "desktop")]

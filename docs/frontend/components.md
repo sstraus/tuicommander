@@ -529,7 +529,7 @@ The two voice sections:
   (see `docs/backend/dictation.md` → "The language of the conversation"). A
   voice row is **Active** when it is the selected voice; only a language row is
   active for the language.
-- **Hands-free conversation** (`HandsFreeControls`) — a terminal picker, Start /
+- **Hands-free conversation** (`HandsFreeControls`) — a terminal-or-AI-Chat target picker, Start /
   Stop (accent Start, distinct Stop), a coloured Running/Stopped indicator, the polled phase, the activation phrase, the hold-back slider, the
   earcons toggle, the "notify model" toggle and, while that is on, the start
   notice textarea. Its placeholder is `getDefaultHandsFreeStartNotice()` — Rust

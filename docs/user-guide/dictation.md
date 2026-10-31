@@ -205,3 +205,7 @@ Default: `F5`
 Enable **Auto-send** in Settings → Voice to submit the terminal input after transcription. In terminal **Chat** mode, dictation inserts at the captured Compose selection and uses the normal Compose Send action exactly once, including draft cleanup after success. This works with Compose or transcript focus. With Auto-send off, the text stays in Compose for review. Other editors, search fields and form inputs never submit automatically.
 
 Mobile **Dictate into draft** uses browser speech recognition and stays review-only; tap Send when ready. The separate hands-free conversation sends through its existing server-owned path.
+
+## AI Chat voice targets
+
+In Settings → Voice → Hands-free conversation, choose an **AI Chat** entry in **Target**, then select **Start conversation**. Attached chats are available whether the panel is docked or detached. Spoken turns use the same ACP prompt queue as typed turns. The chat can answer through the existing voice tool and speech engine. Changing the voice target stops the previous conversation; select Start to bind the new target. Closing the bound tab or its last panel view, selecting another chat, or stopping ego also stops its voice binding. Moving the panel between docked and detached views does not change the target.

@@ -3673,3 +3673,9 @@ instructions on new conversations (8192 UTF-8 bytes maximum). Existing conversat
 keep their original launch instructions. Empty adds nothing.
 
 The Plans and Stories toolbar pill shows active-plan, Ready and In progress counts with distinct glyphs and a tooltip line for each number. Ready comes from the Rust `summary` action, not a frontend subtraction; Done/total remains the progress bar tooltip. Ready-only work therefore remains visible when no story is running.
+
+### AI Chat as a hands-free target
+
+Spoken prompts retain the conversation's pinned repository or the currently viewed worktree, just like typed prompts. Unpinning, switching repository or clearing the view updates the next spoken prompt's hint without changing the agent cwd.
+
+The Voice target picker includes attached AI Chat sessions, docked or detached. Speech uses the existing ACP prompt queue and caller-bound speech service. Switching targets or closing the bound chat releases the binding.

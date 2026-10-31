@@ -1,6 +1,7 @@
 import { createEffect, onCleanup, untrack } from "solid-js";
 import { invoke, listen } from "../invoke";
 import { panelRegistry } from "../panelRouter";
+import { stopChatVoice } from "../services/chatVoice";
 import { appLogger } from "../stores/appLogger";
 import { uiStore } from "../stores/ui";
 import { isTauri } from "../transport";
@@ -27,6 +28,9 @@ export function useDetachedPanelBridge(
 
 	let unlistenClosed: (() => void) | undefined;
 	listen<string>("panel-window-closed", (event) => {
+		// Explicit reattach has already cleared detached state. A native close
+		// must revoke audio even though the panel then returns to the main window.
+		if (event.payload === "ai-chat" && uiStore.isDetached("ai-chat")) void stopChatVoice();
 		bringPanelHome(event.payload);
 	}).then((unlisten) => {
 		unlistenClosed = unlisten;

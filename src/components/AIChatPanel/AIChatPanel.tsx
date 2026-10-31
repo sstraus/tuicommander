@@ -2,6 +2,7 @@ import { emitTo } from "@tauri-apps/api/event";
 import { type Component, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { useAgentDetection } from "../../hooks/useAgentDetection";
 import { invoke } from "../../invoke";
+import { stopChatVoice } from "../../services/chatVoice";
 import { acpTranscript } from "../../stores/acpTranscript";
 import { appLogger } from "../../stores/appLogger";
 import { settingsStore } from "../../stores/settings";
@@ -59,6 +60,20 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 	// looking at, not the repository's main checkout.
 	const viewed = createMemo(() => props.fsRoot || props.repoPath || null);
 	const chat = createAcpChat(viewed, () => props.visible);
+	// Detaching transfers the view, not the audio binding. Only the last view
+	// closing revokes hands-free, whether it was docked or in its own window.
+	let hadView = false;
+	createEffect(() => {
+		const open = props.visible || uiStore.isDetached("ai-chat");
+		if (hadView && !open) void stopChatVoice();
+		hadView = open;
+	});
+
+	// The orchestrator unmounts the docked panel when it closes or detaches.
+	onCleanup(() => {
+		if (!uiStore.isDetached("ai-chat")) void stopChatVoice();
+	});
+
 	const [newOptionsOpen, setNewOptionsOpen] = createSignal(false);
 	const [sessionSettingsOpen, setSessionSettingsOpen] = createSignal(false);
 	// Toasts keep clear of this panel's rendered width (see ToastContainer).

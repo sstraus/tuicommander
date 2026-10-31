@@ -152,6 +152,7 @@ import { aiChatTabs } from "../../stores/aiChatTabs";
 import { dictationStore } from "../../stores/dictation";
 import { terminalsStore } from "../../stores/terminals";
 import { toastsStore } from "../../stores/toasts";
+import { uiStore } from "../../stores/ui";
 import { subscribeEvents } from "../../transport";
 import type {
 	AcpAttachmentSnapshot,
@@ -2067,6 +2068,40 @@ describe("AIChatPanel: parallel tabs", () => {
 		await settle();
 		expect(container.textContent).toContain("uncertain effect");
 		expect(client.closeSession).not.toHaveBeenCalled();
+	});
+
+	// Catches: speech receiving a stale viewed repo, ignoring a pin, or retaining a cleared hint.
+	it("publishes pinned viewed and cleared repository context for spoken prompts", async () => {
+		const [repo, setRepo] = createSignal<string | null>(ROOT);
+		const [visible, setVisible] = createSignal(true);
+		const { container } = render(() => <AIChatPanel visible={visible()} repoPath={repo()} onClose={() => {}} />);
+		await settle();
+		(container.querySelector('button[aria-label="New chat tab"]') as HTMLButtonElement).click();
+		await settle();
+		const contexts = () =>
+			vi.mocked(invoke).mock.calls.filter(([command]) => command === "acp_session_set_viewed_repo");
+		expect(contexts().at(-1)?.[1]).toEqual({ connectionId: CONNECTION, sessionId: SESSION, viewedRepo: ROOT });
+		(container.querySelector('button[aria-label="Pin repository"]') as HTMLButtonElement).click();
+		setRepo("/other/worktree");
+		await settle();
+		expect(contexts().at(-1)?.[1]).toEqual({ connectionId: CONNECTION, sessionId: SESSION, viewedRepo: ROOT });
+		(container.querySelector('button[aria-label="Unpin repository"]') as HTMLButtonElement).click();
+		await settle();
+		expect(contexts().at(-1)?.[1]).toEqual({
+			connectionId: CONNECTION,
+			sessionId: SESSION,
+			viewedRepo: "/other/worktree",
+		});
+		setRepo(null);
+		await settle();
+		expect(contexts().at(-1)?.[1]).toEqual({ connectionId: CONNECTION, sessionId: SESSION, viewedRepo: null });
+		const count = contexts().length;
+		setVisible(false);
+		await settle();
+		setVisible(true);
+		await settle();
+		expect(contexts().length).toBe(count + 1);
+		expect(client.prompt).not.toHaveBeenCalled();
 	});
 
 	it("pins per-conversation repository context without replacing draft parking", async () => {
@@ -6161,6 +6196,57 @@ describe("queued prompt recall", () => {
 		expect(container.textContent).toContain("short preview");
 		expect(container.textContent).toContain("queued prompt not found");
 		expect(client.prompt).not.toHaveBeenCalled();
+	});
+});
+
+describe("AI Chat hands-free binding lifecycle", () => {
+	async function bindVoice(session = SESSION) {
+		const original = vi.mocked(invoke).getMockImplementation()!;
+		vi.mocked(invoke).mockImplementation(async (command, args) => {
+			if (command === "get_hands_free_status") return { armed: true, sessionId: `acp:${CONNECTION}:${session}` };
+			if (command === "disarm_hands_free_dictation") return { status: { armed: false, phase: "disarmed" } };
+			return original(command, args);
+		});
+	}
+	it("releases voice when its chat tab closes — catches a latched microphone after tab close", async () => {
+		const { container } = await renderPanel();
+		await bindVoice();
+		const input = container.querySelector("textarea")!;
+		input.dispatchEvent(new KeyboardEvent("keydown", { key: "w", metaKey: true, bubbles: true }));
+		await settle();
+		expect(invoke).toHaveBeenCalledWith("disarm_hands_free_dictation");
+	});
+	it("releases voice when the docked panel hides — catches a binding outliving its last view", async () => {
+		const [visible, setVisible] = createSignal(true);
+		render(() => <AIChatPanel visible={visible()} repoPath={ROOT} onClose={() => {}} />);
+		await settle();
+		await bindVoice();
+		setVisible(false);
+		await settle();
+		expect(invoke).toHaveBeenCalledWith("disarm_hands_free_dictation");
+	});
+	it("releases voice on docked unmount but preserves it during detach — catches lost cleanup on conditional mounting", async () => {
+		const mounted = await renderPanel();
+		await bindVoice();
+		vi.mocked(uiStore.isDetached).mockReturnValue(true);
+		mounted.unmount();
+		await settle();
+		expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "disarm_hands_free_dictation")).toBe(false);
+		vi.mocked(uiStore.isDetached).mockReturnValue(false);
+		const docked = await renderPanel();
+		await bindVoice();
+		docked.unmount();
+		await settle();
+		expect(invoke).toHaveBeenCalledWith("disarm_hands_free_dictation");
+	});
+	it("does not revoke another chat's voice when an unrelated tab closes", async () => {
+		const { container } = await renderPanel();
+		await bindVoice("another-chat");
+		container
+			.querySelector("textarea")!
+			.dispatchEvent(new KeyboardEvent("keydown", { key: "w", metaKey: true, bubbles: true }));
+		await settle();
+		expect(vi.mocked(invoke).mock.calls.some(([command]) => command === "disarm_hands_free_dictation")).toBe(false);
 	});
 });
 

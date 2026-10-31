@@ -2842,6 +2842,7 @@ POST   /acp/connections/{cid}/sessions/{session_id}/resume       {authority}    
 POST   /acp/connections/{cid}/sessions/{session_id}/fork         {authority}               -> AcpAttachmentSnapshot
 DELETE /acp/connections/{cid}/sessions/{session_id}                                        -> null
 POST   /acp/connections/{cid}/sessions/{session_id}/close                                  -> null
+POST   /acp/connections/{cid}/sessions/{session_id}/viewed-repo  {viewedRepo: string|null} -> null (live speech context; no prompt)
 POST   /acp/connections/{cid}/sessions/{session_id}/prompt       {prompt:[ContentBlock], viewedRepo?}   -> AcpTurnId
 POST   /acp/connections/{cid}/sessions/{session_id}/cancel                                 -> null
 DELETE /acp/connections/{cid}/sessions/{session_id}/queue/{turn_id}                       -> null
@@ -3852,3 +3853,7 @@ outcomes, retained legacy replay and continuation semantics.
 Native story phase previews use the existing story action envelope: `available_transitions {story_id,expected_revision}` returns `{type:"available_transitions",value:{revision,moves:[{status,command}]}}`. It uses the committed-transition evaluator without saving the story or history. Destinations include automatic QA and dependency-derived outcomes, with archived records and actor/workflow restrictions enforced. Previews do not reserve a move; the caller submits `transition` with the returned revision and command, and refreshes after any conflict. IPC, HTTP, CLI and managed MCP share this action.
 
 The Plans and Stories toolbar pill shows active-plan, Ready and In progress counts with distinct glyphs and a tooltip line for each number. Ready comes from the Rust `summary` action, not a frontend subtraction; Done/total remains the progress bar tooltip. Ready-only work therefore remains visible when no story is running.
+
+### AI Chat voice targets
+
+`GET /dictation/hands-free/targets` returns `[{ id, name, chatSessionId }]` for attached host-managed AI Chat sessions. Pass the opaque `id` unchanged as `sessionId` to the existing hands-free arm endpoint. The arm, status, disarm and speech payloads remain unchanged. Terminal session ids continue to work.

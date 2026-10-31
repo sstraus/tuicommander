@@ -2385,6 +2385,10 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             get(dictation_routes::get_hands_free_status_http),
         )
         .route(
+            "/dictation/hands-free/targets",
+            get(dictation_routes::get_voice_targets_http),
+        )
+        .route(
             "/dictation/hands-free/default-notice",
             get(dictation_routes::get_hands_free_default_notice_http),
         )
