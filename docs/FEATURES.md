@@ -2957,6 +2957,8 @@ Missing machine selection or missing ego acknowledgement refuses attachment.
 
 ## 27. Terminal Progress
 
+- **Session-only popup mute:** select Mute on a completion popup, then Unmute in Terminal Progress to restore future popups. Existing and queued completion cards close, but journal entries, unread counts and blocked warning popups remain. Restart or browser reload restores popups; native notification settings do not change.
+
 - One append-only journal per project with each new entry attributed to its source PTY when known: entries are written once, then kept or deleted. No pause, clear, correction, revision, deduplication or Markdown export
 - Three kinds. Agents report `done` and `blocked`; TUICommander writes `intent` from the agent's own `intent:` marker, so an agent that never calls the tool still leaves a trail
 - Compact MCP `progress` tool (`type`, `text`, optional `step`) that appends and toasts in one call, stays directly callable in collapsed tool mode, and refuses `intent` — that kind is observed, not claimed

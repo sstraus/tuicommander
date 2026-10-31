@@ -285,6 +285,13 @@ export const ProgressDialog: Component<ProgressDialogProps> = (props) => {
 				</div>
 			</Show>
 
+			<Show when={progressStore.popupsMuted()}>
+				<div class={s.popupStatus} role="status">
+					<span>Progress popups muted for this session. Blocked reports still appear.</span>
+					<Button onClick={() => progressStore.unmutePopups()}>Unmute</Button>
+				</div>
+			</Show>
+
 			<Show when={projectState()?.error}>
 				{/* One line for the whole failure. The old panel printed one red block
 					    per repository and filled the view with them. */}
