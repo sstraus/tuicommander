@@ -23,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Use one aligned Smart Prompt editor in Settings and the Edit Prompt dialog, with eight readable placement choices and consistent conditional fields (#2603-8a87).
+
 - Send Ctrl+Enter as CSI u only with negotiated Kitty reporting or an identified ego session, preserving legacy CR for shells and other agents; retain ego busy-turn steering and the mobile ego Ctrl menu correction (#2599-0a6b).
 
 - Refuse managed child progress reports before user notifications or waiting badges; direct child reports to their parent and keep root reporting unchanged (#2597-76c6).

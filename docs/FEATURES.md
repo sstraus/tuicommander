@@ -1687,9 +1687,9 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 
 ### 10.10 Smart Prompts Management (Cmd+Shift+K Drawer)
 
-- All prompt management consolidated in the Cmd+Shift+K drawer (Settings tab removed)
+- Settings → Smart Prompts and the Cmd+Shift+K drawer use one shared aligned editor. Settings saves changes immediately; the drawer uses explicit Save and Cancel.
 - Enable/disable individual prompts via toggle button on each row
-- Edit prompt: opens modal with name, description, content, variable dropdown, placement, execution mode, auto-execute, keyboard shortcut
+- Edit prompt: opens a modal with name, description, content, variable dropdown, eight readable placement choices, execution mode and its conditional target/agent/output fields, plus keyboard shortcut. Placement choices use two columns on the shared label/control grid.
 - A normal click or Enter follows the saved auto-execute setting; double-click and **Insert & Run** force one submission, while **Insert** always keeps the result editable
 - Variable insertion dropdown below content textarea: grouped by Git/GitHub/Terminal, click to insert `{variable}` at cursor
 - Create custom smart prompts with `+ New Prompt` button
