@@ -1358,7 +1358,7 @@ execution and public commands are not available in this step.
 The version-1 document contains `version`, `max_concurrent_runs` (default `2`)
 and a `definitions` array (default empty). Missing files return these defaults
 without creating a JSON document. Reading can create its directory and `.lock`
-file. Edits use `ConfigFile<T>::update_with_strict`: load fresh state under the
+file. Edits use `ConfigFile<T>::update_preserving_invalid`: load fresh state under the
 in-process and cross-process locks, mutate one id or the global limit, and
 atomically persist. No-op edits do not rewrite the document.
 
@@ -1378,11 +1378,13 @@ Each definition stores:
 
 Required strings must not be blank. Limits must be positive. Duplicate ids,
 identity changes, missing edit/delete targets and unsupported schema versions
-return errors before writing. Unknown fields or malformed JSON cause the strict
-ConfigFile loader to preserve the original bytes in `.corrupt-<uuid>` recovery
-files and abort that operation. Semantic errors leave the original document in
-place. No independent unattended-permission flag exists: the run config owns
-permissions.
+return errors before writing. Unknown fields, malformed JSON and semantic errors
+abort reads and edits without moving or replacing the live document. External
+editors do not take TUIC's locks: a truncate/write save can expose incomplete
+JSON. Leaving its inode at the live path lets that save finish normally; a later
+normal read sees the completed document. No retry or cached default hides an
+invalid file. No independent unattended-permission flag exists: the run config
+owns permissions.
 
 `automations/schedule.rs` validates exactly five Vixie fields, with day-of-month
 and day-of-week OR semantics when both day fields are restricted. If either day

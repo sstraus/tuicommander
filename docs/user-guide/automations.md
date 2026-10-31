@@ -164,6 +164,15 @@ exact across daylight-saving changes.
 
 For step-by-step policy setup, use the three [event configuration Smart Prompts](event-driven-templates.md), not the scheduled draft templates above. The guides verify the owning daemon, agent/reviewer profiles, GitHub auth, skills and supported intake/publication APIs. Missing capabilities stop the interview; no event subscription is created by applying a scheduled template.
 
+### Manual configuration edits
+
+You can edit the selected instance's `automations.json` with an external editor.
+Reads and edits reject incomplete or invalid documents without renaming or
+replacing them. If a read overlaps an in-place save, it can report an error;
+after the save finishes, Refresh or the next runtime tick reads the completed
+file. A genuinely invalid document continues to report an error until you repair
+it. TUIC does not replace it with an empty configuration.
+
 ### GitHub issue intake (allowlisted, off by default)
 
 `automations.json` accepts an `event_intake` block. It stays off until `repositories` lists at least one `owner/name`:
