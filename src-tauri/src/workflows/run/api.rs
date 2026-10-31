@@ -8,6 +8,25 @@ use tauri::Emitter;
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RunAction {
+    /// Trial-clone rollout switch. Disabling it keeps receipts and proof debt.
+    SetNativeIntegrationPolicy {
+        native_integration_enabled: bool,
+        #[serde(default)]
+        append_only_documents: Vec<String>,
+    },
+    NativeIntegrationPolicy,
+    Integrate {
+        request: Box<super::IntegrateRequest>,
+    },
+    Integration {
+        run_id: String,
+        story_id: String,
+    },
+    IntegrationObligations,
+    CleanupIntegration {
+        run_id: String,
+        story_id: String,
+    },
     /// Durable unanswered questions, including expired questions, without a coordinator.
     QuestionInbox,
     /// Start a pinned executable root through the owning daemon, never the legacy ledger.
@@ -94,6 +113,9 @@ pub enum RunAction {
 pub enum RunReply {
     QuestionInbox(super::questions::QuestionInbox),
     Snapshot(Box<RunSnapshot>),
+    Integration(Box<super::IntegrationProgress>),
+    IntegrationObligations(Vec<super::IntegrationObligation>),
+    NativeIntegrationPolicy { native_integration_enabled: bool },
     Runs(Vec<RunSnapshot>),
     Events(Vec<RunEvent>),
     Receipt(Box<RunReceipt>),
@@ -152,6 +174,41 @@ pub fn run_action(project: &str, action: RunAction) -> Result<RunReply, String> 
         .to_string();
     let store = RunStore::open()?;
     match action {
+        RunAction::SetNativeIntegrationPolicy {
+            native_integration_enabled,
+            append_only_documents,
+        } => {
+            store.set_integration_policy(
+                std::path::Path::new(&owner),
+                native_integration_enabled,
+                &append_only_documents,
+            )?;
+            Ok(RunReply::NativeIntegrationPolicy {
+                native_integration_enabled,
+            })
+        }
+        RunAction::NativeIntegrationPolicy => Ok(RunReply::NativeIntegrationPolicy {
+            native_integration_enabled: store
+                .native_integration_enabled(std::path::Path::new(&owner))?,
+        }),
+        RunAction::Integrate { request } => {
+            scoped_snapshot(&store, &owner, &request.run_id)?;
+            Ok(RunReply::Integration(Box::new(store.integrate(&request)?)))
+        }
+        RunAction::Integration { run_id, story_id } => {
+            scoped_snapshot(&store, &owner, &run_id)?;
+            Ok(RunReply::Integration(Box::new(
+                store
+                    .integration_progress(&run_id, &story_id)?
+                    .ok_or("integration not found")?,
+            )))
+        }
+        RunAction::IntegrationObligations => Ok(RunReply::IntegrationObligations(
+            store.integration_obligations(std::path::Path::new(&owner))?,
+        )),
+        RunAction::CleanupIntegration { .. } => {
+            Err("integration cleanup requires the owning daemon".into())
+        }
         RunAction::QuestionInbox => Ok(RunReply::QuestionInbox(store.question_inbox(&owner)?)),
         RunAction::AgentCloses { .. } | RunAction::CloseAgent { .. } => {
             Err("owned agent close requires the owning daemon service".into())
@@ -376,6 +433,9 @@ pub fn run_action_with_events(
             | RunAction::StartPlan { .. }
             | RunAction::Command { .. }
             | RunAction::RecordIntegration { .. }
+            | RunAction::Integrate { .. }
+            | RunAction::CleanupIntegration { .. }
+            | RunAction::SetNativeIntegrationPolicy { .. }
             | RunAction::RecertifyCanonical { .. }
             | RunAction::ExecuteCheck { .. }
     );
@@ -383,7 +443,20 @@ pub fn run_action_with_events(
         state.workflow_runtime.require_owner()?;
     }
     let graph_start = matches!(action, RunAction::StartGraph { .. });
-    let reply = if let RunAction::StartGraph {
+    let reply = if let RunAction::CleanupIntegration { run_id, story_id } = &action {
+        let RunReply::Snapshot(run) = run_action(
+            project,
+            RunAction::Get {
+                run_id: run_id.clone(),
+            },
+        )?
+        else {
+            unreachable!("snapshot")
+        };
+        let store = RunStore::open()?;
+        let progress = store.cleanup_integration(&run.id, story_id, Some(state))?;
+        RunReply::Integration(Box::new(progress))
+    } else if let RunAction::StartGraph {
         target,
         expected_revision,
         definition_id,
@@ -418,7 +491,14 @@ pub fn run_action_with_events(
                 &receipt.snapshot.id,
                 receipt.sequence,
             ),
-            RunReply::CommandExecutions(_)
+            RunReply::Integration(progress) => {
+                let snapshot = RunStore::open()?.snapshot(&progress.request.run_id)?;
+                emit_run_changed(state, &snapshot.project, &snapshot.id, snapshot.sequence);
+                return Ok(reply);
+            }
+            RunReply::NativeIntegrationPolicy { .. } => return Ok(reply),
+            RunReply::IntegrationObligations(_)
+            | RunReply::CommandExecutions(_)
             | RunReply::QuestionInbox(_)
             | RunReply::Events(_)
             | RunReply::Runs(_)

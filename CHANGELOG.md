@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Preserve ignored canonical work during native integration and recover interrupted validation, receipts and branch retirement without blocking unrelated trial repositories (#2514-3d1e).
 - Recover malformed config fields without resetting valid settings; preserve valid legacy service credentials and show reset field names and the original backup path once per recovery (#2564-8455).
 - Migrate legacy disabled scrollback reflow once; preserve later explicit choices (#2565-8b3c).
 - Recall the latest host-owned text prompt with ArrowUp in an empty chat composer; native CLI Pending receipts remain non-cancellable (#2556-6065).
@@ -34,6 +35,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Keep mobile Markdown images, review saves and Back navigation in the destination folder after opening a local link.
 
 ### Added
+
+- Add disabled-by-default native workflow integration trials with checked no-ff merge publication, crash-recoverable proof debt and independently retriable non-force cleanup (#2514-3d1e).
 
 - Add backend typed workflow command/Tool nodes with durable resource waits, source/target receipts, secret-reference transport and fenced rb reconciliation (#2512-5a42).
 - Mute completion progress popups for the current app session and restore them from Terminal Progress. Journal entries and blocked warning popups remain available (#2553-6446).

@@ -356,7 +356,7 @@ Contract-2 answer semantics and first-generation command keys are unchanged.
 ### Current version sequence
 
 The run-store schema and layout are the same `PRAGMA user_version`, not separate
-version counters. The combined build writes layout **10** and starts event
+version counters. The combined build writes layout **11** and starts event
 contract **5**. The retained sequence is:
 
 | Run-store layout | Contract and compatibility boundary |
@@ -371,19 +371,22 @@ contract **5**. The retained sequence is:
 | 8 | WF04 explicit worker transport/conversation bindings, answer continuation and durable report disposition. |
 | 9 | WF03 branch-local questions and contract 5; contracts 2–4 retain their input/replay rules. |
 | 10 | WF05 typed command, Tool and workspace effects; contract 5 remains current. |
+| 11 | WF07 native integration saga, policy and proof-obligation outbox; contract 5 remains current. |
 
 WF06 adds an optional evidence policy to the pinned definition and optional typed
 review evidence/check requirements digests. It does not allocate a competing
 layout or event-contract number. Omitted policy/evidence fields retain the legacy
 contract; snapshots written before WF19 decode with an empty timer list. Layouts
-0–9 open through the existing additive upgrade without rewriting their event
-streams. Contracts 2 and 3 keep serial Join semantics; contracts 3–5 support
-Timer events, while contract 2 refuses them. Older binaries refuse layout 10 rather than interpreting lifecycle events without
-their ownership and continuation fences. Layout 7 remains the parallel-event boundary.
+0–10 open through the existing additive upgrade to layout 11 without rewriting
+their snapshots or event streams. Contracts 2 and 3 keep serial Join semantics;
+contracts 3–5 support Timer events, while contract 2 refuses them. A layout-10
+binary refuses a layout-11 store because its `PRAGMA user_version` exceeds the
+supported schema version; it cannot reopen the upgraded store. Layout 10 remains
+the typed-effect boundary, and layout 7 remains the parallel-event boundary.
 
 ## Correlated parallel regions (WF02)
 
-New runs use event contract 5 and run-store layout 10. Contracts 2 and 3 retain
+New runs use event contract 5 and run-store layout 11. Contracts 2 and 3 retain
 serial replay, including exclusive Join; old definitions and events are not
 rewritten. The pinned definition digest remains part of each new graph start.
 
@@ -582,6 +585,56 @@ committing schedule/retry/cancel commands so the actor recomputes its deadline.
 This foundation does not install provider polling, a proof collector or a question
 inbox; their consumer stories remain responsible for those behaviors.
 
+## Opt-in native integration (WF07)
+
+Native integration is a typed `integrate` run action, not a shell command. The
+per-repository `native_integration_enabled` policy defaults to false. Keep it
+false through WF17 unless an isolated trial clone is under test or the specific
+repository has explicit parity approval. `set_native_integration_policy` changes
+admission only: disabling it does not remove receipts, pending recovery or debt.
+The policy key is the canonical Git common directory, so linked worktrees share
+one policy and one process-lifetime OS integration lock.
+
+`integrate` takes `request` with `runId`, `storyId`, `commandId`,
+`expectedSequence`, `expectedBase` and `expectedSource`. It requires the accepted
+story revision, current source checks, clean checkouts and the pinned canonical
+branch. It constructs a two-parent no-ff merge object, runs the published checks
+in an isolated synthetic workspace, rechecks both parents, then fast-forwards
+the canonical branch to that exact object. It does not construct a second merge
+after validation. Publication refuses to overwrite ignored canonical files that the source starts tracking. A moved base refuses publication. Revalidation uses a new
+command ID and fresh expected commits; the previous unmerged intent stays in
+history. Repair-only records do not reserve the repository. A surviving synthetic validation ref is reused only at the pinned candidate. A published intent must recover under its original request.
+
+The journal separates publication, proof-obligation outbox, canonical receipt,
+dependency refresh and cleanup. Restart recovery first inspects refs. It resumes
+only already-published candidates and never merges an unmerged intent by itself. An unavailable trial repository does not stop recovery for other repositories. Internal receipt replay is idempotent by command ID and does not depend on a saved operator-event cursor.
+The outbox pins both parents, merge commit and exact changed-file scope. It is
+WF07 debt, not WF08 proof completion or a release-ready result. Read it through
+`integration_obligations`; read one saga through `integration {run_id,story_id}`.
+
+Partial success is typed: `integrated_cleanup_pending` corresponds to exit 2,
+`integrated_dependency_refresh_failed` to exit 3, and
+`integrated_obligation_pending` to exit 4. None permits another merge. A missing
+post-integration receipt or outbox entry remains recoverable debt. A failed
+`pnpm install --offline --frozen-lockfile` keeps the merge and retries only the
+refresh phase. Post-integration checks bind the real canonical ref and commit;
+out-of-band ref or tree movement invalidates the existing freshness rules. Artifact inspection and check-setup errors after publication return durable obligation-pending outcomes, not failed-merge results.
+
+`cleanup_integration {run_id,story_id}` is a separate owning-daemon action. It
+proves integration, the exact source tip, native run/successor ownership, durable
+managed-process closure and absence of live or suspended workspace users before
+using TUIC's non-force worktree removal. The exact source tip is archived under
+`refs/archive/<branch>` before branch retirement. Dirty files, including
+managed-looking generated files and nested submodule dirt, keep the workspace;
+this action never restores, stashes or discards them. Ignored work also keeps the workspace until it has explicit disposal attribution.
+If checkout removal finishes before branch retirement, replay can retire the remaining branch only with the exact source tip and archive, through the same TUIC Git deletion boundary. Native successor assignment and managed launch/close stay fenced through removal. Cleanup failure does not revoke integration.
+
+Code conflicts return `repair_required`. Append-only union is allowed only for
+explicit repository-relative Markdown paths in `append_only_documents` on the
+policy action, with no deletions from either parent relative to their common
+ancestor. Nested, incomplete and diff3 conflict markers refuse union. The legacy
+`record_integration` action remains a verifier of an already-performed clean
+merge and does not gain this union policy.
 
 ## Branch-local questions and decision inbox (WF03)
 

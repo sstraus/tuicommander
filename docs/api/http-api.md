@@ -3825,6 +3825,9 @@ Workflow incidents add optional `launchId` and `acp` with the same durable
 references. ACP report callers are fenced by the native MCP channel, not a
 caller-supplied terminal ID or the peer's latest connection.
 
+### Native workflow integration trial actions (WF07)
+
+The existing `POST /workflows/run/action?path=<project>` route also accepts `native_integration_policy`, `set_native_integration_policy {native_integration_enabled,append_only_documents?}`, `integrate {request:{runId,storyId,commandId,expectedSequence,expectedBase,expectedSource}}`, `integration {run_id,story_id}`, `integration_obligations`, and `cleanup_integration {run_id,story_id}`. Integration replies use `{type:"integration",value:<durable phase record>}`. Policy defaults to false; only isolated trial clones may enable it before repository parity approval. Cleanup requires the owning daemon and never merges. See [Native integration](../backend/workflows.md#opt-in-native-integration-wf07) for typed partial-success outcomes and retained proof debt.
 
 ### Workflow decision inbox (WF03)
 

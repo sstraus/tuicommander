@@ -1,9 +1,12 @@
 mod api;
+pub use store::integration::{IntegrateRequest, IntegrationObligation, IntegrationProgress};
 pub(super) mod check;
 mod contracts;
 pub mod evidence;
 pub mod graph;
 mod incidents;
+#[cfg(test)]
+mod integration_tests;
 mod model;
 pub mod parallel;
 pub mod timer;
@@ -2043,10 +2046,10 @@ mod tests {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
-        // 10: WF05 command effects extend the WF03 branch-question layout.
+        // 11: native integration debt extends the WF03 questions and WF05 command layout.
         assert_eq!(
             stored_schema_version(&db),
-            10,
+            11,
             "fresh store records version"
         );
         let run = store
@@ -2058,9 +2061,9 @@ mod tests {
                 RunLimits::default(),
             )
             .unwrap();
-        // Catches: WF05 reusing layout 9 without upgrading main's
+        // Catches: WF07 reusing layout 10 without upgrading main's
         // store, or an additive upgrade rewriting retained events/snapshots.
-        for old_version in [0, 6, 7, 8, 9] {
+        for old_version in [0, 6, 7, 8, 9, 10] {
             let conn = rusqlite::Connection::open(&db).unwrap();
             conn.pragma_update(None, "user_version", old_version)
                 .unwrap();
@@ -2068,7 +2071,7 @@ mod tests {
                 .unwrap();
             drop(conn);
             let upgraded = RunStore::open_at(&db).unwrap();
-            assert_eq!(stored_schema_version(&db), 10);
+            assert_eq!(stored_schema_version(&db), 11);
             assert_eq!(upgraded.snapshot(&run.id).unwrap(), run);
             assert_eq!(upgraded.replay(&run.id).unwrap(), run);
             assert_eq!(upgraded.report_dispositions(&run.id).unwrap(), vec![]);

@@ -1604,6 +1604,9 @@ attempt, expiry and backoff caps. A question expiry is only timed-out/incomplete
 never consent. WF08 cohort collection, WF13 provider observation and WF03 inbox
 consumers build on this internal primitive; they are not installed by WF19.
 
+### Native workflow integration (WF07)
+
+An opt-in typed integration action now pins expected base/source commits, checks a synthetic two-parent merge object, and publishes that exact no-ff result under a canonical repository lock. Durable phase records retain proof-obligation outbox debt, dependency refresh and cleanup independently. Native integration policy defaults to false through WF17; isolated trial clones only before repository parity approval. Cleanup uses TUIC non-force removal after integration, exact-tip archive and ownership checks. WF08 proof batching is not included. See [backend contract](docs/backend/workflows.md#opt-in-native-integration-wf07).
 
 ### Branch-local workflow decisions (WF03)
 
