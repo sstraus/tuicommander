@@ -33,6 +33,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Keep collapsed Compose chrome in the shared Button primitive, without changing its idle, hover or keyboard-focus appearance (#2555-29b4).
+
 - Restore the collapsed Compose handle’s transparent idle chrome and muted label. Hover and keyboard focus reveal the button without fading its queue count (#2551-7a80).
 
 - Preserve `automations.json` during external in-place saves. Incomplete or invalid reads report errors without quarantining the live file or losing the completed edit (#2548-0bc7).

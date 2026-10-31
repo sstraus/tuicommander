@@ -117,11 +117,13 @@ it.each(["idle", "hover", "focus"])(
 	async (state) => {
 		const { readStylesheet } = await import("../fixtures/readStylesheet");
 		const style = document.createElement("style");
-		// happy-dom has no pointer/keyboard modality: map only those pseudo-classes to attributes.
+		// happy-dom has no pointer/keyboard modality and does not match :enabled on native buttons.
+		// Map modality to attributes and spell enabled as the equivalent :not(:disabled).
 		style.textContent =
 			`${readStylesheet("src/components/ui/FormControls.module.css")}\n${readStylesheet("src/components/Terminal/Terminal.module.css")}`
 				.replaceAll(":hover", "[data-test-hover]")
-				.replaceAll(":focus-visible", "[data-test-focus]");
+				.replaceAll(":focus-visible", "[data-test-focus]")
+				.replaceAll(":enabled", ":not(:disabled)");
 		document.head.append(style);
 		try {
 			const { getByRole, getByText } = render(() => (
