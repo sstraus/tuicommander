@@ -25,7 +25,7 @@ impl DefinitionStore {
 
     /// Read validated definitions without creating or rewriting the document.
     pub fn load(&self) -> Result<AutomationsConfig, String> {
-        self.file.update_with_strict(|latest| {
+        self.file.update_preserving_invalid(|latest| {
             latest.validate()?;
             Ok((latest.clone(), false))
         })
@@ -60,7 +60,7 @@ impl DefinitionStore {
             definition.timezone = super::schedule::timezone_for_creation(None)?;
         }
         definition.validate()?;
-        self.file.update_with_strict(|latest| {
+        self.file.update_preserving_invalid(|latest| {
             latest.validate()?;
             if let Some(saved) = latest
                 .definitions
@@ -84,7 +84,7 @@ impl DefinitionStore {
         if definition.id != id {
             return Err("Automation id cannot change".into());
         }
-        self.file.update_with_strict(|latest| {
+        self.file.update_preserving_invalid(|latest| {
             latest.validate()?;
             let item = latest
                 .definitions
@@ -109,7 +109,7 @@ impl DefinitionStore {
 
     /// Remove one definition; run history is owned by a separate store.
     pub fn remove(&self, id: &str) -> Result<(), String> {
-        self.file.update_with_strict(|latest| {
+        self.file.update_preserving_invalid(|latest| {
             latest.validate()?;
             let position = latest
                 .definitions
@@ -132,7 +132,7 @@ impl DefinitionStore {
 
     /// Pause or resume only the latest definition, retaining concurrent edits.
     pub fn set_enabled(&self, id: &str, enabled: bool) -> Result<(), String> {
-        self.file.update_with_strict(|latest| {
+        self.file.update_preserving_invalid(|latest| {
             latest.validate()?;
             let item = latest
                 .definitions
@@ -150,7 +150,7 @@ impl DefinitionStore {
         if limit == 0 {
             return Err("Automation concurrency must be greater than zero".into());
         }
-        self.file.update_with_strict(|latest| {
+        self.file.update_preserving_invalid(|latest| {
             latest.validate()?;
             let changed = latest.max_concurrent_runs != limit;
             latest.max_concurrent_runs = limit;
