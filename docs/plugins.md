@@ -1632,6 +1632,14 @@ Plugins can also write to their log via `host.log(level, message, data)`.
 
 View logs in Settings > Plugins > click "Logs" on any plugin row.
 
+Module import failures also produce an error-level application log with source
+`plugin`. Its data includes the exact `url`, `errorName`, `errorMessage`,
+`httpStatus` (null when the loader does not expose it), `attempt` (currently 1),
+`documentId` (the document's performance time origin), and a unique `loadCycleId`.
+The message includes the load ID so consecutive failures retain separate data.
+These fields help distinguish repeated loads from document reloads; they do not
+prove why an import failed. Imports are not automatically retried.
+
 ## Preinstalled External Plugins
 
 Plan Tracker (`plan`) and Stories Ticker (`stories-ticker`) are external packages installed into the normal plugin directory by a one-time migration. They use only `PluginHost`, declare capabilities in their manifests, and can be disabled, uninstalled, or updated like any other external plugin. The migration marker prevents an explicitly uninstalled package from being recreated on later launches.

@@ -47,6 +47,7 @@ vi.mock("../../stores/appLogger", () => ({
 
 import { invoke, listen } from "../../invoke";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
+import { appLogger } from "../../stores/appLogger";
 import { pluginStore } from "../../stores/pluginStore";
 
 // ---------------------------------------------------------------------------
@@ -199,6 +200,42 @@ describe("loadUserPlugins", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		(invoke as Mock).mockResolvedValue([]);
+	});
+
+	it("logs import URL and cause per load — catches import failures without actionable provenance", async () => {
+		const manifest = validManifest({ id: "missing-import-diagnostics" });
+		(invoke as Mock).mockResolvedValue([manifest]);
+		const clock = vi.spyOn(Date, "now").mockReturnValue(1793461000000);
+		try {
+			// The runner rejects this native custom-scheme import; no plugin is installed or executed.
+			await loadUserPlugins(false);
+			await loadUserPlugins(false);
+			const failures = (appLogger.error as Mock).mock.calls.filter(([, message]) =>
+				message.includes('Failed to import plugin "missing-import-diagnostics"'),
+			);
+			expect(failures).toHaveLength(2);
+			for (const [source, message, data] of failures) {
+				expect(source).toBe("plugin");
+				// Catches: appLogger coalesces a later failure and drops its new diagnostic data.
+				expect(message).toContain(`(load ${data.loadCycleId})`);
+				expect(data).toEqual(
+					expect.objectContaining({
+						url: "plugin://missing-import-diagnostics/~v1793461000000/main.js",
+						errorName: "Error",
+						// Recorded from Node's native import rejection in the pre-fix RED run.
+						errorMessage: expect.stringContaining("Received protocol 'plugin:'"),
+						httpStatus: null,
+						attempt: 1,
+						documentId: performance.timeOrigin,
+						loadCycleId: expect.any(String),
+					}),
+				);
+			}
+			expect(failures[0][2].loadCycleId).not.toBe(failures[1][2].loadCycleId);
+			expect(pluginRegistry.register).not.toHaveBeenCalled();
+		} finally {
+			clock.mockRestore();
+		}
 	});
 
 	it("calls list_user_plugins to discover plugins", async () => {

@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Record plugin import URLs, error details and document/load identifiers for failure diagnosis, without adding retries (#2567-ee9c).
 - Permit the native notification plugin's startup permission probe in every app-owned desktop window (#2568-a5d5).
 - Keep repository structure available when a local branch has unrelated history; retain that branch as unmerged (#2569-b40f).
 

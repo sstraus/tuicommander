@@ -205,6 +205,12 @@ See the [Plugin Authoring Guide](../plugins.md) for the full API reference, mani
 | Changes not taking effect | Save the file again to trigger hot reload, or restart the app |
 | Plugin errors | Check Settings → Plugins → Logs for the plugin's error log |
 
+For a module import failure, retain the error-level application log from source
+`plugin`, including its data. It records the import URL, error name/message,
+status when known, attempt number, document ID and load ID. A null status means
+that the module loader did not expose a response status. No automatic retry is
+performed; a later successful startup alone does not establish the failure cause.
+
 Repository-aware plugins discard scans started before a repository switch or unload.
 The MDKB status ticker refreshes when you select another repository.
 When MDKB reports that hook telemetry is disabled, its dashboard shows

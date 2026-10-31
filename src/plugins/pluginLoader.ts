@@ -238,16 +238,29 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
 	//
 	// A fresh `~v<n>` path version per load cache-busts the whole module graph for hot reload.
 	const url = pluginModuleUrl(manifest.id, manifest.main, isWindows(), Date.now());
+	const loadCycleId = crypto.randomUUID();
 	let mod: unknown;
 	try {
 		mod = await import(/* @vite-ignore */ url);
 	} catch (err) {
-		const msg = err instanceof Error ? err.message : String(err);
-		// DEFERRED (2026-10-31) — the retained all-plugin failure batch is followed
-		// by successful startup, but has no URL/status or document-lifecycle evidence.
-		// Capture an isolated reproduction before classifying it as reload cancellation
-		// or adding retries; this path currently leaves the plugin failed until reload.
-		appLogger.error("plugin", `Failed to import plugin "${manifest.id}"`, err);
+		// Read error fields across realms too; instanceof can miss a native loader error.
+		const importError = err as { name?: unknown; message?: unknown; status?: unknown } | null | undefined;
+		const msg = typeof importError?.message === "string" ? importError.message : String(err);
+		// DEFERRED (2026-10-31) — the historical all-plugin failure batch recovered,
+		// but its cause is unknown. Capture a recurrence before adding retries.
+		// Include the load id in the message: appLogger coalesces equal messages, not equal data.
+		appLogger.error("plugin", `Failed to import plugin "${manifest.id}" (load ${loadCycleId})`, {
+			url,
+			errorName: typeof importError?.name === "string" ? importError.name : null,
+			errorMessage: msg,
+			// Native import normally hides response status; do not issue a second request to guess it.
+			httpStatus: typeof importError?.status === "number" ? importError.status : null,
+			attempt: 1,
+			// timeOrigin identifies this document across HMR, unlike a module-scoped UUID.
+			documentId: performance.timeOrigin,
+			loadCycleId,
+			error: err,
+		});
 		logger.error(`Import failed: ${msg}`, err);
 		pluginStore.updatePlugin(manifest.id, { error: msg });
 		return;
