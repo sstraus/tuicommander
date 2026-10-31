@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Send to the registered coordinator with `agent action=send to=orchestrator` without peer discovery; missing or ambiguous roles return explicit errors (#2580-dcbd).
+
 - Preserve ignored canonical work during native integration and recover interrupted validation, receipts and branch retirement without blocking unrelated trial repositories (#2514-3d1e).
 - Recover malformed config fields without resetting valid settings; preserve valid legacy service credentials and show reset field names and the original backup path once per recovery (#2564-8455).
 - Migrate legacy disabled scrollback reflow once; preserve later explicit choices (#2565-8b3c).

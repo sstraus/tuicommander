@@ -119,6 +119,8 @@ separate integration step.
 
 TUICommander is a multi-agent terminal orchestrator designed to manage supported AI coding agents, including Claude Code, Gemini CLI, OpenCode, and Codex, in parallel. It provides per-pane zoom, git worktree isolation, and GitHub integration.
 
+- [x] MCP coordinator mail: `agent action=send to=orchestrator` resolves a registered role in the caller parent chain, otherwise the unique role in its registered repository path. An unset path uses server-local roles; missing and ambiguous roles fail explicitly. Discovery names the address before the action guide.
+
 ## Goals
 
 1. **Parallel Agent Orchestration** - Run 50+ coding agents simultaneously
