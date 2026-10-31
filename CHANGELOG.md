@@ -14,7 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
-- Preserve Ctrl+Enter as CSI u terminal input without Kitty negotiation, so ego can steer a busy turn instead of receiving plain Enter; use the same steering bytes in the mobile ego Ctrl menu (#2599-0a6b).
+- Send Ctrl+Enter as CSI u only with negotiated Kitty reporting or an identified ego session, preserving legacy CR for shells and other agents; retain ego busy-turn steering and the mobile ego Ctrl menu correction (#2599-0a6b).
 
 - Honor dictation Auto-send in terminal Chat through the existing Compose Send path; keep review-only drafts when disabled and leave unrelated editors unchanged (#2585-dfc2).
 

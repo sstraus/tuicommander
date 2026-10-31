@@ -89,9 +89,8 @@ export function keyToSequence(e: KeyboardEvent): string | null {
 	// Simple named keys
 	switch (e.key) {
 		case "Enter":
-			// Preserve Control even without Kitty negotiation (ego BusySteer).
-			// CR would silently turn a steer request into an ordinary submission.
-			return e.ctrlKey ? `\x1b[13;${modifierParam(e)}u` : "\r";
+			// Legacy programs have not requested enhanced key reporting.
+			return "\r";
 		case "Tab":
 			return e.shiftKey ? "\x1b[Z" : "\t";
 		case "Backspace":

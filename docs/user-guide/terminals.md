@@ -1,6 +1,6 @@
 # Terminal Features
 
-With CLI terminal input focused, **Ctrl+Enter** reaches the running program as a distinct modified Enter, even without Kitty keyboard negotiation. In ego it steers a busy turn. Plain Enter submits normally; Shift+Enter keeps its multiline behavior. Browser and remote grid terminals use the same encoding. The mobile Ctrl menu uses the same Ctrl+Enter bytes for ego. Compose shortcuts remain separate.
+With CLI terminal input focused, **Ctrl+Enter** sends a distinct modified Enter when the program has negotiated Kitty keyboard reporting. Identified ego sessions also receive this encoding to steer a busy turn, because current ego does not negotiate the mode. Legacy shells and other nonnegotiating agents receive ordinary Enter (CR). Plain Enter submits normally; Shift+Enter keeps its multiline behavior. Browser and remote grid terminals use the same encoding. The mobile Ctrl menu uses the same Ctrl+Enter bytes for ego. Compose shortcuts remain separate.
 
 Remote terminals replay their current viewport when attached or reconnected. A stream failure or stalled initial replay shows a persistent error toast; the client retries without requiring new terminal output. See [Remote Access](remote-access.md).
 
