@@ -9,6 +9,7 @@ import s from "./Toolbar.module.css";
 /** Counts over the active plans of one project, computed by the Rust `summary` story action. */
 interface StoriesSummary {
 	activePlans: number;
+	ready: number;
 	inProgress: number;
 	done: number;
 	total: number;
@@ -62,7 +63,7 @@ export const StoriesButton: Component<{ repoPath: string }> = (props) => {
 
 	const active = () => {
 		const value = summary();
-		return value && (value.activePlans > 0 || value.inProgress > 0) ? value : null;
+		return value && (value.activePlans > 0 || value.ready > 0 || value.inProgress > 0) ? value : null;
 	};
 	const label = () => {
 		const value = active();
@@ -70,15 +71,33 @@ export const StoriesButton: Component<{ repoPath: string }> = (props) => {
 		if (!value) return base;
 		return t(
 			"stories.pill.label",
-			"{title}: active plans {plans}, stories in progress {working}, stories done {done} of {total}",
+			"{title}: active plans {plans}, ready stories {ready}, stories in progress {working}, stories done {done} of {total}",
 			{
 				title: base,
 				plans: String(value.activePlans),
+				ready: String(value.ready ?? 0),
 				working: String(value.inProgress),
 				done: String(value.done),
 				total: String(value.total),
 			},
 		);
+	};
+
+	const tooltip = () => {
+		const value = active();
+		return value
+			? t(
+					"stories.pill.tooltip",
+					"Plans and Stories\nActive plans: {plans}\nReady: {ready}\nIn progress: {working}\nDone: {done} of {total}",
+					{
+						plans: String(value.activePlans),
+						ready: String(value.ready ?? 0),
+						working: String(value.inProgress),
+						done: String(value.done),
+						total: String(value.total),
+					},
+				)
+			: label();
 	};
 
 	return (
@@ -87,7 +106,7 @@ export const StoriesButton: Component<{ repoPath: string }> = (props) => {
 			variant="ghost"
 			type="button"
 			class={cx(s.bell, active() && s.storiesPillBtn)}
-			title={label()}
+			title={tooltip()}
 			aria-label={label()}
 			onClick={() => storiesUi.open(props.repoPath)}
 		>
@@ -97,13 +116,50 @@ export const StoriesButton: Component<{ repoPath: string }> = (props) => {
 			<Show when={active()}>
 				{(value) => (
 					<span class={s.storiesPill} data-testid="stories-pill" aria-hidden="true">
-						<span class={s.storiesCount}>{value().activePlans}</span>
-						<svg class={s.storiesGlyph} viewBox="0 0 16 16" width="9" height="9" fill="currentColor">
-							<path d="M4 2.5v11l9-5.5-9-5.5Z" />
-						</svg>
-						<span class={s.storiesCount}>{value().inProgress}</span>
+						<span
+							class={s.storiesMetric}
+							title={t("stories.pill.plans", "{count} active plans", { count: String(value().activePlans) })}
+						>
+							<span class={s.storiesCount}>{value().activePlans}</span>
+						</span>
+						<span
+							class={s.storiesMetric}
+							title={t("stories.pill.ready", "{count} ready stories", { count: String(value().ready ?? 0) })}
+						>
+							<svg
+								class={s.storiesGlyph}
+								viewBox="0 0 16 16"
+								width="12"
+								height="12"
+								fill="currentColor"
+								aria-hidden="true"
+							>
+								<path d="M3 1h10v14H3V1Zm1.5 1.5v11h7v-11h-7ZM6 5h4v1.5H6V5Zm0 3h4v1.5H6V8Z" />
+							</svg>
+							<span class={s.storiesCount}>{value().ready ?? 0}</span>
+						</span>
+						<span
+							class={s.storiesMetric}
+							title={t("stories.pill.working", "{count} stories in progress", { count: String(value().inProgress) })}
+						>
+							<svg
+								class={s.storiesGlyph}
+								viewBox="0 0 16 16"
+								width="12"
+								height="12"
+								fill="currentColor"
+								aria-hidden="true"
+							>
+								<path d="M4 2.5v11l9-5.5-9-5.5Z" />
+							</svg>
+							<span class={s.storiesCount}>{value().inProgress}</span>
+						</span>
 						<span
 							class={s.storiesTrack}
+							title={t("stories.pill.done", "{done} of {total} stories done", {
+								done: String(value().done),
+								total: String(value().total),
+							})}
 							role="progressbar"
 							aria-valuemin={0}
 							aria-valuenow={value().done}

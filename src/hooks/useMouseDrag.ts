@@ -47,7 +47,7 @@ export function initMouseDrag(
 	sourceEl: HTMLElement,
 	callbacks: MouseDragCallbacks,
 	options?: { threshold?: number; ghostOpacity?: number; touchLongPressMs?: number; touchSlop?: number },
-): void {
+): (() => void) | undefined {
 	if (e.button !== 0) return;
 
 	const threshold = options?.threshold ?? 5;
@@ -66,6 +66,7 @@ export function initMouseDrag(
 
 	let started = false;
 	let captured = false;
+	let cleaned = false;
 	let ghost: HTMLElement | null = null;
 	// Touch only: set when the long-press timer fires; the drag may begin from then on.
 	let longPressArmed = false;
@@ -163,6 +164,7 @@ export function initMouseDrag(
 	};
 
 	const cleanup = () => {
+		cleaned = true;
 		if (longPressTimer !== undefined) clearTimeout(longPressTimer);
 		document.removeEventListener("pointermove", handleMove);
 		document.removeEventListener("pointerup", handleUp);
@@ -214,4 +216,9 @@ export function initMouseDrag(
 			if (!started) beginDrag(lastX, lastY);
 		}, longPressMs);
 	}
+	return () => {
+		if (cleaned) return;
+		cleanup();
+		if (started) callbacks.onCancel?.();
+	};
 }

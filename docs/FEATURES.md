@@ -167,7 +167,7 @@ Story details show the persisted origin, plan step, revision and claiming sessio
 
 New story and Edit plan keep the primary action, then Cancel, together at the bottom-left. New story has no permanent manual-prefix hint below acceptance criteria; `[MANUAL]` criteria remain supported. Story Edit stays in the story header. Disabled Add dependency exposes its reason as a native tooltip and accessible description.
 
-Plans and Stories combines open/closed and optional story-type filters, including untyped historical stories, with a session-retained List/Kanban switch that also survives detach and reattach. Rust supplies the shared display projection; the native read-only board follows the Wiz Kanban layout without importing plugin code.
+Plans and Stories combines open/closed and optional story-type filters, including untyped historical stories, with a session-retained List/Kanban switch that also survives detach and reattach. Rust supplies the shared display projection; the native board follows the Wiz Kanban layout without importing plugin code. Cards support pointer-based phase moves to backend-provided legal destinations; List rows and story detail share revision-checked Phase selectors. Illegal or rejected drops retain placement and show the reason.
 
 Native stories support one revision-checked `update_story` patch through MCP, CLI, IPC and HTTP. It amends metadata including nullable story type, optional problem/risk, ordered criteria and dependencies on unclaimed Backlog/Ready stories without active run ownership. Changed requirements lose checks; priority-only edits keep them, and workflow evidence follows existing fingerprints. StoriesDialog provides one revision-checked Edit form with Save/Cancel, retained conflict drafts, and metadata, criteria and dependency fields. QA and other started work are not editable. Criteria use separate ordered entries so multiline requirement text is preserved during edits. Edited titles must contain 1 to 200 Unicode characters after trimming. Invalid titles disable Save without truncating the draft.
 
@@ -270,6 +270,7 @@ Expanded tool rows use theme colours for Bash/execute commands, flags, strings a
 - Overflow menu on scroll arrows (right-click) shows clipped tabs; the `+` button always stays visible regardless of scroll position
 - `+` button: click opens a terminal in the active branch; right-click or long press (500 ms) lists the enabled agents (with a submenu per run config) and opens a new tab running the chosen one
 - Tab pinning: pinned tabs are visible across all branches (not scoped to branch key)
+- Right-click a sidebar session row to add it to the Global Workspace, or remove it when already included. This uses the same membership action as the tab context menu.
 
 ### 1.3 Split Panes
 - Vertical split: `Cmd+\` (side by side)
@@ -311,6 +312,7 @@ Expanded tool rows use theme colours for Bash/execute commands, flags, strings a
 - Paths validated against filesystem before activation (Rust `resolve_terminal_path`)
 - `.md`/`.mdx` → opens in Markdown panel; preview-capable files (HTML, PDF, images, video, audio, plain text/data) → open in the Preview tab (section 3.15); all other code files → open in the built-in code editor
 - `file://` URLs are recognized in addition to plain paths — the prefix is stripped and the path resolved like any other
+- Verified terminal link underlines remain visible during unrelated spinner redraws, including wrapped links and file paths beside a changing tool indicator.
 - OSC 8 hyperlinks: programs that emit hyperlink escape sequences (e.g. Claude Code, modern `ls`) produce clickable links; hover underline spans the full link text (via `terminal_hyperlink_span` backend API)
 - Supports `:line` and `:line:col` suffixes; the built-in editor moves to that position even when the file is already open
 - Single left-click opens the link instantly (UI-first — opening is a primary action, not gated behind a modifier); drag-select over a link still copies text without opening
@@ -1027,6 +1029,10 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
   account dashboard because Gemini CLI has no stable machine-readable account
   quota interface. Session-local `/stats` is not treated as account headroom.
 
+### Coordinator mail address
+
+- `agent action=send to=orchestrator` reaches the registered coordinator in the caller parent chain, or the unique role in its registered repository path, without peer discovery. Missing or ambiguous roles fail explicitly.
+
 ### 6.7 Intent Event Tracking
 - Agents declare work phases via `intent: text (Title)` tokens at the start of a row. The canvas tints intent rows and their soft-wrapped or indented hard-wrapped tails, preserving row coordinates. Blank rows and new output, answer, prompt or marker blocks end an indented tail. The token is also read when it follows the ack sentence on one row, and when the agent's own wrapping split it across many rows; terminal width distinguishes wrapped text from adjacent indented prose, and input-box chrome is excluded. A long intent keeps its full tab-title event while the Progress journal stores a redacted, capped copy
 - MCP instructions request an intent on its own line, at the start of every task and on each material phase change; the terminal Context bar shows it separately from the orchestrator assignment and user prompt
@@ -1697,6 +1703,8 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 ---
 
 ## 11. Settings
+
+AI Chat settings retain model controls when ego health diagnostics fail, with a non-blocking explanation and preserved credential evidence.
 
 Malformed config fields recover independently, retaining valid preferences. A startup warning names reset fields and the original backup path. Legacy scrollback reflow is enabled once, without overriding later user choices.
 
@@ -3654,3 +3662,5 @@ subject fences, actor provenance and restart-safe deadlines. An unanswered quest
 suspends its activation, not disjoint delivery. The project inbox counts pending
 and expired questions without a coordinator; all transports use the same service.
 No timeout grants consent. See [workflow decisions](backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).
+
+The Plans and Stories toolbar pill shows active-plan, Ready and In progress counts with distinct glyphs and a tooltip line for each number. Ready comes from the Rust `summary` action, not a frontend subtraction; Done/total remains the progress bar tooltip. Ready-only work therefore remains visible when no story is running.
