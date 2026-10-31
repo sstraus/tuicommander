@@ -801,6 +801,76 @@ esac
         ));
     }
 
+    #[cfg(unix)]
+    async fn providers_with_doctor_snapshot(health: serde_json::Value) -> EgoProviders {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        std::fs::write(dir.path().join("health.json"), health.to_string()).unwrap();
+        let program = dir.path().join("ego");
+        std::fs::write(
+            &program,
+            r##"#!/bin/sh
+case "$1" in
+config) printf '%s' '{"values":{"model":"openai-codex/gpt-6.1-sol"}}' ;;
+models) printf '%s' '{"models":[{"slug":"openai-codex/gpt-6.1-sol","availability":{"status":"available"}}]}' ;;
+doctor) cat health.json; exit 1 ;;
+esac
+"##,
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        providers_in(
+            &ConfigContext {
+                program,
+                workspace: dir.path().to_owned(),
+                profile: None,
+            },
+            false,
+        )
+        .await
+        .expect("a doctor warning must not discard the provider")
+    }
+
+    // Catches: accepting a credentials.* probe outside the credentials section
+    // as evidence that an unreported provider has no stored credential.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn providers_in_reports_unknown_when_credential_probe_is_in_another_section() {
+        let mut health: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/ego-doctor-exit1.json")).unwrap();
+        health["sections"][0]["section"] = "mcp".into();
+        let answer = providers_with_doctor_snapshot(health).await;
+        assert_eq!(answer.providers.len(), 1);
+        assert_eq!(answer.providers[0].name, "openai-codex");
+        assert_eq!(
+            answer.providers[0].credential,
+            EgoCredential::Unknown {
+                detail: "ego health check reported problems: session store: probe timed out: the two-second doctor budget was exhausted".into(),
+            }
+        );
+    }
+
+    // Catches: treating a section name alone as a completed credential probe,
+    // even when its only item reports an unrelated diagnostic failure.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn providers_in_reports_unknown_when_credentials_section_has_no_credential_probe() {
+        let mut health: serde_json::Value =
+            serde_json::from_str(include_str!("fixtures/ego-doctor-exit1.json")).unwrap();
+        let unrelated_items = health["sections"][1]["items"].clone();
+        health["sections"][0]["items"] = unrelated_items;
+        health["sections"].as_array_mut().unwrap().truncate(1);
+        let answer = providers_with_doctor_snapshot(health).await;
+        assert_eq!(answer.providers.len(), 1);
+        assert_eq!(answer.providers[0].name, "openai-codex");
+        assert_eq!(
+            answer.providers[0].credential,
+            EgoCredential::Unknown {
+                detail: "ego health check reported problems: credentials: probe timed out: the two-second doctor budget was exhausted".into(),
+            }
+        );
+    }
+
     /// `sh -c <script>` / `cmd /C <script>`, as the runner's argument vector.
     fn shell(script: String) -> (PathBuf, Vec<String>) {
         let (program, flag) = host_shell();
