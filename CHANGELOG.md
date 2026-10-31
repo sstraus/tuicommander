@@ -31,6 +31,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Restore the collapsed Compose handle’s transparent idle chrome and muted label. Hover and keyboard focus reveal the button without fading its queue count (#2551-7a80).
+
 - Preserve `automations.json` during external in-place saves. Incomplete or invalid reads report errors without quarantining the live file or losing the completed edit (#2548-0bc7).
 
 - Restore session quota for Codex profiles with Codex 0.166 by loading the selected profile file through supported App Server configuration overrides. Preserve profile-relative paths, and reject App Server's invalid-configuration defaults fallback (#2541-18a3).
