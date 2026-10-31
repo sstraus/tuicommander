@@ -1309,7 +1309,7 @@ pub fn deliver_due(
 ///
 /// One line, for the reason [`compose_entry`] gives: the sink types this into
 /// a terminal and submits it, and a newline in the middle submits half of it.
-pub const MODE_ENTRY_HINT: &str = "Hands-free voice is now on for this terminal: what arrives from \
+pub const MODE_ENTRY_HINT: &str = "Hands-free voice is now on for this conversation: what arrives from \
      here on was spoken out loud, and you can answer out loud with the `voice` tool of the \
      TUICommander MCP server (tuicommander), called with action \"speak\". If that tool is not \
      loaded yet, search your deferred tools for \"voice\". Keep spoken replies short enough to \
@@ -1333,7 +1333,7 @@ pub fn entry_hint_text(configured: &str) -> String {
 
 /// What a replies-only conversation tells the model: nothing is heard, input
 /// is the user's push-to-talk dictation, and answers may be spoken.
-pub const REPLIES_ONLY_ENTRY_HINT: &str = "Spoken replies are now on for this terminal: the user \
+pub const REPLIES_ONLY_ENTRY_HINT: &str = "Spoken replies are now on for this conversation: the user \
      dictates by push-to-talk, and you can answer out loud with the `voice` tool of the \
      TUICommander MCP server (tuicommander), called with action \"speak\". If that tool is not \
      loaded yet, search your deferred tools for \"voice\". Keep spoken replies short enough to \
@@ -1361,7 +1361,7 @@ pub fn entry_hint_for_replies(configured: &str, spoken_replies: bool) -> String 
     if spoken_replies {
         entry_hint_text(configured)
     } else {
-        "Hands-free dictation is now on for this terminal. Spoken replies are off. Reply in text; do not call the voice tool to speak.".to_string()
+        "Hands-free dictation is now on for this conversation. Spoken replies are off. Reply in text; do not call the voice tool to speak.".to_string()
     }
 }
 
@@ -1370,7 +1370,7 @@ pub fn entry_hint_for_replies(configured: &str, spoken_replies: bool) -> String 
 /// Sent only to a model that read the entry hint — see [`deliver_exit_hint`].
 /// Its whole job is to undo that one, so it must not describe a capability or
 /// imply anything is still listening.
-pub const MODE_EXIT_HINT: &str = "Hands-free voice is off for this terminal. The voice tool can no \
+pub const MODE_EXIT_HINT: &str = "Hands-free voice is off for this conversation. The voice tool can no \
      longer speak here, so reply as text from now on.";
 
 /// Tell the bound model that a hands-free conversation just opened.
