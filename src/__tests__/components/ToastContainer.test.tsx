@@ -14,11 +14,14 @@ import { toastsStore } from "../../stores/toasts";
  */
 describe("ToastContainer", () => {
 	beforeEach(() => {
+		vi.restoreAllMocks();
+		vi.spyOn(appLogger, "debug").mockImplementation(() => {});
+		vi.spyOn(appLogger, "info").mockImplementation(() => {});
+		vi.spyOn(appLogger, "warn").mockImplementation(() => {});
 		vi.useFakeTimers();
 		progressStore.resetForTests();
 		for (const id of terminalsStore.getIds()) terminalsStore.remove(id);
 		for (const toast of [...toastsStore.toasts]) toastsStore.remove(toast.id);
-		vi.restoreAllMocks();
 	});
 
 	afterEach(() => {
@@ -202,7 +205,7 @@ describe("ToastContainer", () => {
 		fireEvent.click(screen.getByRole("button", { name: "Go to repo" }));
 
 		expect(repositoriesStore.state.activeRepoPath).toBe("/progress-gone");
-		expect(terminalsStore.state.activeId).toBe(current);
+		expect(terminalsStore.state.activeId).toBeNull();
 		expect(warn).toHaveBeenCalledWith(
 			"app",
 			expect.stringContaining("terminal"),

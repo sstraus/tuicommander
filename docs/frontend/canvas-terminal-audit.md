@@ -13,6 +13,8 @@ Submitted prompts are not tinted in the terminal grid. Recorded `userPromptLines
 
 Adjacent `💬` answer paragraphs share one continuous tint and left bar, including blank rows between them. An unmarked prose paragraph after a blank row ends the answer; an uninterrupted indented continuation stays inside. The CLI gutter joins separate marked answer sections across internal blank rows and indented section headings when a later marked answer closes the gap. Trailing unmarked prose, unmarked list siblings, tools, prompts and status rows stay outside that gutter; extracted Answers and Chat keep their semantic paragraph boundaries. Lists, tables, quotations and fenced code remain attached to the answer. A non-answer output row or prompt ends the region. The CLI blanks only the marker glyph cells; selection and search retain their grid coordinates. Clipboard copy removes answer-prefix markers through the same helper used by AI Chat answer buttons (including mobile) and selectable Answers text. Inline emoji and fenced examples stay literal. Chat uses the same answer extent and strips every paragraph marker. User prompt echoes do not open answer regions: indented quoted markers stay in the prompt until an agent output bullet or an unindented answer marker begins output.
 
+Link underlines use the same active viewport offset as selection and search before marker-row and marker-column projection. Backend-frame link rows (including each wrapped hover span) move with cached smooth-scroll text and are clipped when their text leaves the viewport. No additional scroll listener owns link decoration movement.
+
 ## Incremental base-grid painting
 
 Whole-row forward viewport movement can copy retained base-canvas pixels once.
