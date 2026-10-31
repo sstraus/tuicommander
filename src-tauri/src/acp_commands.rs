@@ -403,6 +403,19 @@ pub(crate) async fn acp_session_close(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
+pub(crate) fn acp_session_set_viewed_repo(
+    state: State<'_, Arc<AppState>>,
+    connection_id: AcpConnectionId,
+    session_id: v1::SessionId,
+    viewed_repo: Option<String>,
+) -> Result<(), AcpClientError> {
+    state
+        .acp
+        .set_viewed_repo(connection_id, session_id, viewed_repo)
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
 pub(crate) async fn acp_session_prompt(
     state: State<'_, Arc<AppState>>,
     connection_id: AcpConnectionId,

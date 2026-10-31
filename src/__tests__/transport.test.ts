@@ -2533,6 +2533,13 @@ describe("transport", () => {
 				{ prompt: [{ type: "text", text: "hi" }], viewedRepo: "/repo/viewed" },
 			],
 			[
+				"acp_session_set_viewed_repo",
+				{ connectionId: CONNECTION, sessionId: SESSION, viewedRepo: "/repo/pinned" },
+				"POST",
+				`/acp/connections/${CONNECTION}/sessions/${SESSION}/viewed-repo`,
+				{ viewedRepo: "/repo/pinned" },
+			],
+			[
 				"acp_session_cancel",
 				{ connectionId: CONNECTION, sessionId: SESSION },
 				"POST",

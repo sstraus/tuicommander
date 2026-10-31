@@ -3659,4 +3659,6 @@ The Plans and Stories toolbar pill shows active-plan, Ready and In progress coun
 
 ### AI Chat as a hands-free target
 
+Spoken prompts retain the conversation's pinned repository or the currently viewed worktree, just like typed prompts. Unpinning, switching repository or clearing the view updates the next spoken prompt's hint without changing the agent cwd.
+
 The Voice target picker includes attached AI Chat sessions, docked or detached. Speech uses the existing ACP prompt queue and caller-bound speech service. Switching targets or closing the bound chat releases the binding.

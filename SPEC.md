@@ -1623,4 +1623,4 @@ The Plans and Stories toolbar pill shows active-plan, Ready and In progress coun
 
 ### AI Chat hands-free target
 
-Implemented: the hands-free target picker includes attached host-managed ACP chats. Opaque ACP binding ids stay separate from PTY identity. Spoken text follows the existing ACP prompt submission and queue path. MCP speech requires the bound native ACP connection and generation. Closing or leaving the bound chat releases its microphone and speaker binding.
+Implemented: the hands-free target picker includes attached host-managed ACP chats. Opaque ACP binding ids stay separate from PTY identity. Spoken text follows the existing ACP prompt submission and queue path, with the same live pinned-or-viewed repository hint as typed input. MCP speech requires the bound native ACP connection and generation. Closing or leaving the bound chat releases its microphone and speaker binding.

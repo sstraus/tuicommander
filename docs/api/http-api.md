@@ -2838,6 +2838,7 @@ POST   /acp/connections/{cid}/sessions/{session_id}/resume       {authority}    
 POST   /acp/connections/{cid}/sessions/{session_id}/fork         {authority}               -> AcpAttachmentSnapshot
 DELETE /acp/connections/{cid}/sessions/{session_id}                                        -> null
 POST   /acp/connections/{cid}/sessions/{session_id}/close                                  -> null
+POST   /acp/connections/{cid}/sessions/{session_id}/viewed-repo  {viewedRepo: string|null} -> null (live speech context; no prompt)
 POST   /acp/connections/{cid}/sessions/{session_id}/prompt       {prompt:[ContentBlock], viewedRepo?}   -> AcpTurnId
 POST   /acp/connections/{cid}/sessions/{session_id}/cancel                                 -> null
 DELETE /acp/connections/{cid}/sessions/{session_id}/queue/{turn_id}                       -> null

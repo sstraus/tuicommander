@@ -621,6 +621,36 @@ export function createAcpChat(
 
 	const pinnedRepo = () => aiChatTabs.pinnedRepo(TABS, sessionId() ?? "");
 	const operatingRepo = () => pinnedRepo() ?? viewedRepo();
+	// Publish the same effective hint typed sends use. Serialize context updates
+	// so a slower HTTP request cannot restore an older pin after a newer clear.
+	let contextUpdate = Promise.resolve();
+	let publishedContext: string | null = null;
+	createEffect(() => {
+		if (!active()) {
+			publishedContext = null;
+			return;
+		}
+		const current = pair();
+		const repo = operatingRepo();
+		if (!current) {
+			publishedContext = null;
+			return;
+		}
+		const contextKey = JSON.stringify([current.id, current.session, repo]);
+		if (contextKey === publishedContext) return;
+		publishedContext = contextKey;
+		contextUpdate = contextUpdate
+			.then(async () => {
+				await invoke("acp_session_set_viewed_repo", {
+					connectionId: current.id,
+					sessionId: current.session,
+					viewedRepo: repo,
+				});
+			})
+			.catch((failure: unknown) => {
+				appLogger.error("ai-chat", "Failed to update chat repository context", failure);
+			});
+	});
 	/** Button, slash command and overflow recovery all use this one transition. */
 	async function compact(): Promise<boolean> {
 		const current = pair();

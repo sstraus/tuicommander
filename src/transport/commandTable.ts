@@ -292,6 +292,13 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			body: { prompt: args.prompt, viewedRepo: args.viewedRepo ?? null },
 		}),
 	},
+	acp_session_set_viewed_repo: {
+		map: (args, p) => ({
+			method: "POST",
+			path: `/acp/connections/${p("connectionId")}/sessions/${p("sessionId")}/viewed-repo`,
+			body: { viewedRepo: args.viewedRepo ?? null },
+		}),
+	},
 	acp_session_cancel: {
 		map: (_args, p) => ({
 			method: "POST",

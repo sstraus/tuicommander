@@ -2063,6 +2063,40 @@ describe("AIChatPanel: parallel tabs", () => {
 		expect(client.closeSession).not.toHaveBeenCalled();
 	});
 
+	// Catches: speech receiving a stale viewed repo, ignoring a pin, or retaining a cleared hint.
+	it("publishes pinned viewed and cleared repository context for spoken prompts", async () => {
+		const [repo, setRepo] = createSignal<string | null>(ROOT);
+		const [visible, setVisible] = createSignal(true);
+		const { container } = render(() => <AIChatPanel visible={visible()} repoPath={repo()} onClose={() => {}} />);
+		await settle();
+		(container.querySelector('button[aria-label="New chat tab"]') as HTMLButtonElement).click();
+		await settle();
+		const contexts = () =>
+			vi.mocked(invoke).mock.calls.filter(([command]) => command === "acp_session_set_viewed_repo");
+		expect(contexts().at(-1)?.[1]).toEqual({ connectionId: CONNECTION, sessionId: SESSION, viewedRepo: ROOT });
+		(container.querySelector('button[aria-label="Pin repository"]') as HTMLButtonElement).click();
+		setRepo("/other/worktree");
+		await settle();
+		expect(contexts().at(-1)?.[1]).toEqual({ connectionId: CONNECTION, sessionId: SESSION, viewedRepo: ROOT });
+		(container.querySelector('button[aria-label="Unpin repository"]') as HTMLButtonElement).click();
+		await settle();
+		expect(contexts().at(-1)?.[1]).toEqual({
+			connectionId: CONNECTION,
+			sessionId: SESSION,
+			viewedRepo: "/other/worktree",
+		});
+		setRepo(null);
+		await settle();
+		expect(contexts().at(-1)?.[1]).toEqual({ connectionId: CONNECTION, sessionId: SESSION, viewedRepo: null });
+		const count = contexts().length;
+		setVisible(false);
+		await settle();
+		setVisible(true);
+		await settle();
+		expect(contexts().length).toBe(count + 1);
+		expect(client.prompt).not.toHaveBeenCalled();
+	});
+
 	it("pins per-conversation repository context without replacing draft parking", async () => {
 		const [repo, setRepo] = createSignal<string | null>(ROOT);
 		const { container } = render(() => <AIChatPanel visible={true} repoPath={repo()} onClose={() => {}} />);

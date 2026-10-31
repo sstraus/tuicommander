@@ -109,6 +109,7 @@ struct ConnectionHandle {
     peer_id: Option<String>,
     root: PathBuf,
     attachment_directories: HashMap<String, (PathBuf, String)>,
+    viewed_repos: HashMap<String, String>,
     commands: mpsc::Sender<Command>,
     journal: Arc<AcpEventJournal>,
     shutdown: Option<oneshot::Sender<()>>,
@@ -376,6 +377,7 @@ impl AcpClientManager {
                 peer_id,
                 root,
                 attachment_directories: HashMap::new(),
+                viewed_repos: HashMap::new(),
                 commands: commands_tx,
                 journal,
                 shutdown: Some(shutdown_tx),
@@ -558,10 +560,12 @@ impl AcpClientManager {
         })
         .await?;
         let mut connections = self.connections.lock();
-        if let Some(connection) = connections.get_mut(&connection_id)
-            && let Some((data_dir, key)) = connection.attachment_directories.remove(&attachment_id)
-        {
-            crate::attachments::cleanup_session(&data_dir, "acp", &key);
+        if let Some(connection) = connections.get_mut(&connection_id) {
+            connection.viewed_repos.remove(&attachment_id);
+            if let Some((data_dir, key)) = connection.attachment_directories.remove(&attachment_id)
+            {
+                crate::attachments::cleanup_session(&data_dir, "acp", &key);
+            }
         }
         Ok(())
     }
@@ -593,6 +597,47 @@ impl AcpClientManager {
         }
         response.sessions = super::session_tree(response.sessions);
         Ok(response)
+    }
+
+    /// The visible chat publishes its effective pin-or-viewed repository, not a scope.
+    pub fn set_viewed_repo(
+        &self,
+        connection_id: AcpConnectionId,
+        session_id: v1::SessionId,
+        viewed_repo: Option<String>,
+    ) -> Result<(), AcpClientError> {
+        let mut connections = self.connections.lock();
+        let connection = connections
+            .get_mut(&connection_id)
+            .ok_or_else(|| AcpClientError::invalid_input("ACP connection is not attached"))?;
+        if !connection
+            .snapshot
+            .attachments
+            .iter()
+            .any(|attachment| attachment.session_id == session_id)
+        {
+            return Err(AcpClientError::invalid_input("ACP session is not attached"));
+        }
+        let key = session_id.to_string();
+        if let Some(repo) = viewed_repo {
+            connection.viewed_repos.insert(key, repo);
+        } else {
+            connection.viewed_repos.remove(&key);
+        }
+        Ok(())
+    }
+
+    pub fn viewed_repo(
+        &self,
+        connection_id: AcpConnectionId,
+        session_id: &v1::SessionId,
+    ) -> Option<String> {
+        self.connections
+            .lock()
+            .get(&connection_id)?
+            .viewed_repos
+            .get(&session_id.to_string())
+            .cloned()
     }
 
     /// Start a turn and get back its id, not its outcome.
@@ -840,6 +885,7 @@ impl AcpClientManager {
                 peer_id: Some(peer.into()),
                 root: crate::test_support::test_temp_root(),
                 attachment_directories: HashMap::new(),
+                viewed_repos: HashMap::new(),
                 commands,
                 journal: journal.clone(),
                 shutdown: None,
@@ -1723,6 +1769,46 @@ mod tests {
             state.session_maps.sessions.is_empty(),
             "ACP never fabricates a terminal"
         );
+    }
+
+    /// Catches spoken prompts dropping pinned/viewed context or retaining a cleared hint.
+    #[cfg(feature = "dictation")]
+    #[tokio::test]
+    async fn voice_chat_preserves_updated_and_cleared_repository_context() {
+        use tuic_dictation::continuous::{VoiceSink, VoiceWrite};
+        let (state, snapshot, mut receiver) = voice_chat();
+        let target = crate::dictation::adapters::chat_targets(&state)
+            .pop()
+            .unwrap()
+            .id;
+        for repo in [Some("/repo/pinned"), Some("/repo/viewed-worktree"), None] {
+            state
+                .acp
+                .set_viewed_repo(
+                    snapshot.connection_id,
+                    v1::SessionId::new("voice-chat"),
+                    repo.map(str::to_owned),
+                )
+                .unwrap();
+            let writer = state.clone();
+            let target = target.clone();
+            let write = tokio::task::spawn_blocking(move || {
+                crate::dictation::adapters::PtyVoiceSink(&writer)
+                    .write(&target, "Read the current diff")
+            });
+            let Command::Prompt { meta, reply, .. } = receiver.recv().await.unwrap() else {
+                panic!("voice must submit the existing Prompt command");
+            };
+            reply.send(Ok(AcpTurnId::new())).unwrap();
+            assert_eq!(write.await.unwrap().unwrap(), VoiceWrite::Written);
+            assert_eq!(
+                meta.as_ref()
+                    .and_then(|meta| meta.get(VIEWED_REPO_META_KEY))
+                    .and_then(serde_json::Value::as_str),
+                repo
+            );
+            assert!(receiver.try_recv().is_err());
+        }
     }
 
     /// Catches a stale ACP channel speaking into a replacement connection.

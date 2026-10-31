@@ -118,13 +118,14 @@ fn write_voice(state: &AppState, target: &str, text: &str) -> Result<VoiceWrite,
     }
     // Identical to acp_session_prompt (typed input): the actor owns queuing,
     // transcript publication, cancellation and the actual session/prompt call.
+    let viewed_repo = state.acp.viewed_repo(connection, &attachment.session_id);
     tauri::async_runtime::block_on(state.acp.prompt_with_context(
         connection,
         attachment.session_id,
         vec![agent_client_protocol::schema::v1::ContentBlock::Text(
             agent_client_protocol::schema::v1::TextContent::new(text),
         )],
-        None,
+        viewed_repo,
     ))
     .map_err(|error| error.message)?;
     Ok(VoiceWrite::Written)
