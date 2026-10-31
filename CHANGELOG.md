@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Stop buffering an oversized plugin watcher line after its first overflow; cursor-addressed TUI repaints now produce one warning until the next newline (#2607-678c).
+
 - Resolve local Markdown image parent paths before creating desktop asset URLs, so images in sibling folders load (#2604-0ec2).
 
 - Show the backend error message and code when a Smart Prompt fails, instead of `[object Object]` (#2600-1421).

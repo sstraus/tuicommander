@@ -1,3 +1,7 @@
+## Oversized plugin watcher lines (2607-678c) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm a long-running cursor-addressed TUI produces at most one oversized-line warning until its next LF, and plugin watchers still match subsequent normal output. Automated tests replay the recorded Codex idle animation and watcher registration changes. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
 ## Settings catalogue ledger coverage (2571-926a)
 
 - [x] Preserve generated settings descriptors while rejecting malformed and invalid owner ledgers, including pre-existing schema gaps. _(verified: rb `settings::catalogue::tests`, 13 passed; generated TypeScript matches the committed catalogue. This internal Rust refactor needs a rebuild to load, but changes no user-visible behavior. The daily app was not restarted.)_
