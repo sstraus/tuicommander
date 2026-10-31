@@ -3221,3 +3221,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   with request URL/status and document lifecycle before selecting a fix. The
   retained errors alone do not prove that the merge caused a reload race; all
   twelve plugins were subsequently loaded. No running app reload was performed.
+
+- [ ] After a backend rebuild, open Plans and Stories: drag a Ready card to an outlined destination, cancel with Escape, and use the List/detail Phase selectors. A stale move must show its backend error without moving the card. Native `available_transitions` requires the rebuilt Rust backend (#2578-69b4).
