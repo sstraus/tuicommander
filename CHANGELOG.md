@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-31
+
 - Restore Compose typing after clicking the session Chat transcript, without changing selection, copy or shortcuts (#2554-0ee4).
 
 - Retire Terminal Chat pending bubbles when native receipts truncate or redact the submitted prompt (#2542-49c3).
