@@ -1,6 +1,7 @@
 import { type Component, createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { t } from "../../i18n";
 import { invoke } from "../../invoke";
+import { type ChatVoiceTarget, chatVoiceTargets } from "../../services/chatVoice";
 import { appLogger } from "../../stores/appLogger";
 import type { ModelInfo, SpeechAsset, SpeechEngineId } from "../../stores/dictation";
 import { dictationStore, WHISPER_LANGUAGES } from "../../stores/dictation";
@@ -1130,6 +1131,11 @@ const SpeechAssetRow: Component<{ asset: SpeechAsset }> = (props) => {
  * `dictation.ts armHandsFree` rather than in a control.
  */
 const HandsFreeControls: Component = () => {
+	const [chats, setChats] = createSignal<ChatVoiceTarget[]>([]);
+	const refreshChats = () =>
+		chatVoiceTargets()
+			.then(setChats)
+			.catch(() => {});
 	const [target, setTarget] = createSignal(terminalsStore.getActive()?.sessionId ?? "");
 	// Rust owns the built-in notice; it is only shown here as the placeholder.
 	const [defaultNotice, setDefaultNotice] = createSignal("");
@@ -1143,9 +1149,11 @@ const HandsFreeControls: Component = () => {
 			.getDefaultHandsFreeStartNotice()
 			.then(setDefaultNotice)
 			.catch(() => appLogger.warn("dictation", "Failed to load the default hands-free start notice"));
+		void refreshChats();
 		dictationStore.refreshHandsFree();
 		dictationStore.refreshSpeechStatus();
 		timer = setInterval(() => {
+			void refreshChats();
 			dictationStore.refreshHandsFree();
 			dictationStore.refreshSpeechStatus();
 		}, 500);
@@ -1189,38 +1197,40 @@ const HandsFreeControls: Component = () => {
 			<p class={cx(s.hint, d.intro)}>
 				{t(
 					"dictation.handsFreeHint",
-					"Push-to-talk is the hotkey above: hold it, speak, release. Hands-free binds one terminal, keeps the microphone open and sends each utterance by itself. Use {hotkey} to start or stop hands-free on the active terminal.",
+					"Push-to-talk is the hotkey above: hold it, speak, release. Hands-free binds one terminal or AI Chat, keeps the microphone open and sends each utterance by itself. Use {hotkey} to start or stop hands-free on the active terminal.",
 					{ hotkey: keyFor("toggle-hands-free") || t("dictation.handsFreePaletteFallback", "the Command Palette") },
 				)}
 			</p>
 
 			<div class={s.group}>
-				<SettingRow label="Terminal">
+				<SettingRow label="Target">
 					{(id, descriptionId) => (
-						<>
+						<div class={s.passwordRow}>
+							<Select
+								data-non-setting="Current hands-free conversation target, not persisted configuration"
+								id={id}
+								aria-describedby={descriptionId()}
+								value={armed() ? (status()?.sessionId ?? target()) : target()}
+								onChange={(e) => {
+									setTarget(e.currentTarget.value);
+									if (armed()) void dictationStore.disarmHandsFree();
+								}}
+							>
+								<option value="">{t("dictation.handsFreeNoTarget", "Choose a terminal or AI Chat…")}</option>
+								<For each={targets()}>{(term) => <option value={term.sessionId ?? ""}>{term.name}</option>}</For>
+								<For each={chats()}>{(chat) => <option value={chat.id}>{chat.name}</option>}</For>
+							</Select>
 							<Show
 								when={armed()}
 								fallback={
-									<div class={s.passwordRow}>
-										<Select
-											data-non-setting="Current hands-free terminal session, not persisted configuration"
-											id={id}
-											aria-describedby={descriptionId()}
-											value={target()}
-											onChange={(e) => setTarget(e.currentTarget.value)}
-										>
-											<option value="">{t("dictation.handsFreeNoTarget", "Choose a terminal…")}</option>
-											<For each={targets()}>{(term) => <option value={term.sessionId ?? ""}>{term.name}</option>}</For>
-										</Select>
-										<Button
-											variant="primary"
-											data-non-setting="Start or stop the current hands-free runtime conversation"
-											onClick={start}
-											disabled={!target()}
-										>
-											{t("dictation.handsFreeStart", "Start conversation")}
-										</Button>
-									</div>
+									<Button
+										variant="primary"
+										data-non-setting="Start or stop the current hands-free runtime conversation"
+										onClick={start}
+										disabled={!target()}
+									>
+										{t("dictation.handsFreeStart", "Start conversation")}
+									</Button>
 								}
 							>
 								<Button
@@ -1231,7 +1241,7 @@ const HandsFreeControls: Component = () => {
 									{t("dictation.handsFreeStop", "Stop conversation")}
 								</Button>
 							</Show>
-						</>
+						</div>
 					)}
 				</SettingRow>
 
@@ -1252,9 +1262,10 @@ const HandsFreeControls: Component = () => {
 						<>
 							<Show when={current().sessionId}>
 								<ListRow
-									name={t("dictation.handsFreeTarget", "Bound terminal")}
+									name={t("dictation.handsFreeTarget", "Bound target")}
 									description={String(
-										terminalsStore.get(terminalsStore.getTerminalForSession(current().sessionId ?? "") ?? "")?.name ??
+										chats().find((chat) => chat.id === current().sessionId)?.name ??
+											terminalsStore.get(terminalsStore.getTerminalForSession(current().sessionId ?? "") ?? "")?.name ??
 											current().sessionId,
 									)}
 								/>

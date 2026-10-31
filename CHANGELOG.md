@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Add AI Chat to the hands-free voice target picker, including detached chats. Spoken prompts use the existing ACP prompt queue, replies use the bound voice tool, and closing or switching the chat releases the binding (native story 01a19335-a29d-7376-ac67-9bf64639edee).
+
 - Move native stories between legal Kanban phases with pointer drag, or use keyboard-accessible Phase selectors in List and beside Edit. Backend rules and revisions remain authoritative; rejected moves retain their placement. The toolbar includes Ready counts with named glyphs and tooltip lines (#2578-69b4).
 
 - Preserve ignored canonical work during native integration and recover interrupted validation, receipts and branch retirement without blocking unrelated trial repositories (#2514-3d1e).

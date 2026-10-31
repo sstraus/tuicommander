@@ -1,15 +1,141 @@
 use crate::state::AppState;
 use std::sync::Arc;
-#[cfg(all(test, unix))]
 use tuic_dictation::continuous::VoiceHold;
 use tuic_dictation::continuous::{TargetProbe, VoiceSink, VoiceWrite};
+
+/// Opaque binding ids keep ACP conversations out of PTY identity and routing.
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatVoiceTarget {
+    pub id: String,
+    pub name: String,
+    pub chat_session_id: String,
+}
+
+fn chat_id(connection: crate::acp::AcpConnectionId, session: &str) -> String {
+    format!("acp:{connection}:{session}")
+}
+
+pub fn chat_targets(state: &AppState) -> Vec<ChatVoiceTarget> {
+    state
+        .acp
+        .chat_snapshots()
+        .into_iter()
+        .flat_map(|connection| {
+            connection
+                .attachments
+                .into_iter()
+                .filter(|attachment| live_attachment(attachment.state))
+                .map(move |attachment| {
+                    let session = attachment.session_id.to_string();
+                    ChatVoiceTarget {
+                        id: chat_id(connection.connection_id, &session),
+                        name: format!("AI Chat · {session}"),
+                        chat_session_id: session,
+                    }
+                })
+        })
+        .collect()
+}
+
+fn live_attachment(state: crate::acp::AcpAttachmentState) -> bool {
+    use crate::acp::AcpAttachmentState::{Cancelling, Idle, PausePending, Paused, Prompting};
+    matches!(state, Idle | Prompting | Cancelling | PausePending | Paused)
+}
+
+fn chat_target(
+    state: &AppState,
+    target: &str,
+) -> Option<(
+    crate::acp::AcpConnectionId,
+    crate::acp::AcpAttachmentSnapshot,
+)> {
+    state
+        .acp
+        .chat_snapshots()
+        .into_iter()
+        .find_map(|connection| {
+            connection
+                .attachments
+                .into_iter()
+                .find(|attachment| {
+                    live_attachment(attachment.state)
+                        && chat_id(connection.connection_id, &attachment.session_id.to_string())
+                            == target
+                })
+                .map(|attachment| (connection.connection_id, attachment))
+        })
+}
+
+/// The native MCP channel must own the exact live connection generation.
+/// Never resolve ACP through a peer's latest conversation or a terminal id.
+pub fn chat_caller(state: &AppState, origin: &crate::acp::AcpMcpOrigin, target: &str) -> bool {
+    state.acp.chat_snapshots().into_iter().any(|connection| {
+        connection.connection_id == origin.connection_id
+            && connection.generation == origin.generation
+            // DEFERRED (2026-10-31) — MCP-over-ACP origins name a connection,
+            // not a session. While another conversation has a running turn,
+            // its tool call cannot be attributed to this voice target.
+            && !connection.attachments.iter().any(|attachment| {
+                chat_id(connection.connection_id, &attachment.session_id.to_string()) != target
+                    && attachment.active_turn.as_ref().is_some_and(|turn| turn.state != crate::acp::AcpTurnState::Settled)
+            })
+            && connection.attachments.iter().any(|attachment| {
+                live_attachment(attachment.state)
+                    && chat_id(connection.connection_id, &attachment.session_id.to_string())
+                        == target
+            })
+    })
+}
+
+pub fn accepts_voice(state: &AppState, target: &str) -> bool {
+    if target.starts_with("acp:") {
+        chat_target(state, target).is_some()
+    } else {
+        crate::pty::session_accepts_voice(state, target)
+    }
+}
+
+fn write_voice(state: &AppState, target: &str, text: &str) -> Result<VoiceWrite, String> {
+    if !target.starts_with("acp:") {
+        return crate::pty::write_voice_turn(state, target, text);
+    }
+    if text.trim().is_empty() {
+        return Err("Command text is empty".into());
+    }
+    let (connection, attachment) =
+        chat_target(state, target).ok_or("AI Chat target is no longer attached")?;
+    if !attachment.pending_permission_ids.is_empty()
+        || !attachment.pending_elicitation_ids.is_empty()
+    {
+        return Ok(VoiceWrite::Held(VoiceHold::Question));
+    }
+    if matches!(
+        attachment.state,
+        crate::acp::AcpAttachmentState::Paused | crate::acp::AcpAttachmentState::PausePending
+    ) {
+        return Ok(VoiceWrite::Held(VoiceHold::InFlight));
+    }
+    // Identical to acp_session_prompt (typed input): the actor owns queuing,
+    // transcript publication, cancellation and the actual session/prompt call.
+    tauri::async_runtime::block_on(state.acp.prompt_with_context(
+        connection,
+        attachment.session_id,
+        vec![agent_client_protocol::schema::v1::ContentBlock::Text(
+            agent_client_protocol::schema::v1::TextContent::new(text),
+        )],
+        None,
+    ))
+    .map_err(|error| error.message)?;
+    Ok(VoiceWrite::Written)
+}
 
 /// Production adapter: `pty::write_voice_turn`, nothing else.
 pub struct PtyVoiceSink<'a>(pub &'a AppState);
 
 impl VoiceSink for PtyVoiceSink<'_> {
     fn write(&self, session_id: &str, text: &str) -> Result<VoiceWrite, String> {
-        crate::pty::write_voice_turn(self.0, session_id, text)
+        write_voice(self.0, session_id, text)
     }
 }
 
@@ -20,7 +146,7 @@ pub struct PtyTargetProbe<'a>(pub &'a AppState);
 #[cfg(all(test, unix))]
 impl TargetProbe for PtyTargetProbe<'_> {
     fn accepts(&self, session_id: &str) -> bool {
-        crate::pty::session_accepts_voice(self.0, session_id)
+        accepts_voice(self.0, session_id)
     }
 }
 
@@ -29,13 +155,13 @@ pub struct PtyVoicePort(pub Arc<AppState>);
 
 impl VoiceSink for PtyVoicePort {
     fn write(&self, session_id: &str, text: &str) -> Result<VoiceWrite, String> {
-        crate::pty::write_voice_turn(&self.0, session_id, text)
+        write_voice(&self.0, session_id, text)
     }
 }
 
 impl TargetProbe for PtyVoicePort {
     fn accepts(&self, session_id: &str) -> bool {
-        crate::pty::session_accepts_voice(&self.0, session_id)
+        accepts_voice(&self.0, session_id)
     }
 }
 

@@ -127,6 +127,7 @@
 /dictation/hands-free/arm
 /dictation/hands-free/default-notice
 /dictation/hands-free/disarm
+/dictation/hands-free/targets
 /dictation/inject
 /dictation/models
 /dictation/models/delete

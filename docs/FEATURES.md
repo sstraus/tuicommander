@@ -3656,3 +3656,7 @@ and expired questions without a coordinator; all transports use the same service
 No timeout grants consent. See [workflow decisions](backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).
 
 The Plans and Stories toolbar pill shows active-plan, Ready and In progress counts with distinct glyphs and a tooltip line for each number. Ready comes from the Rust `summary` action, not a frontend subtraction; Done/total remains the progress bar tooltip. Ready-only work therefore remains visible when no story is running.
+
+### AI Chat as a hands-free target
+
+The Voice target picker includes attached AI Chat sessions, docked or detached. Speech uses the existing ACP prompt queue and caller-bound speech service. Switching targets or closing the bound chat releases the binding.

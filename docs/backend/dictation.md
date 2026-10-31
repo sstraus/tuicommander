@@ -52,7 +52,7 @@ that log before attributing a missing beginning to audio capture or Whisper.
 
 ## Diagnose speech that also appears in the mobile composer
 
-Hands-free uses `pty::write_voice_turn` for its bound session. The mobile
+Hands-free terminal targets use `pty::write_voice_turn`; AI Chat targets use the existing ACP prompt submission. The mobile
 `input_line` feed observes that terminal prompt; it does not choose the voice
 destination. Correlate `Hands-free turn accepted` and `Hands-free turn typed now`
 with the session ID before treating a mobile draft as a delivery failure. The
@@ -74,7 +74,7 @@ bundle. A desktop rebuild does not replace JavaScript already loaded on a phone.
 | `audio.rs` | Audio capture from microphone via CPAL (VecDeque ring buffer) |
 | root `commands.rs` | Tauri command handlers, AppState and event integration |
 | root `browser.rs` | Browser audio transport and Tokio broadcast |
-| root `adapters.rs` | PTY delivery and target checks for hands-free mode |
+| root `adapters.rs` | PTY and ACP delivery and target checks for hands-free mode |
 | root `model_download.rs` | Tokio/HTTP Whisper model download |
 | root `asset_download.rs` | Tokio/HTTP staging of pinned speech assets |
 | `model.rs` | Whisper model catalogue and local file management |
@@ -131,9 +131,14 @@ lets standalone release tests link without building the Tauri root package.
 
 ### Hands-free
 
+AI Chat targets use opaque `acp:<connectionId>:<sessionId>` binding ids, not PTY ids. The shared voice sink submits through `AcpClientManager::prompt_with_context`, the same path as typed `acp_session_prompt` input. The existing ACP actor owns queuing and transcript events. Open permissions hold speech; a removed attachment or settled connection fails the target probe. MCP-over-ACP speech resolves the bound target only when its native channel owns the exact live connection and generation. Terminal voice routing is unchanged.
+
+`get_voice_targets` / `GET /dictation/hands-free/targets` lists attached host-managed chats as `{ id, name, chatSessionId }`. Both docked and detached panels use this host-owned list. Closing a chat tab, changing its selected session, stopping ego or closing its last view releases its voice binding. HTTP disarm runs on a blocking worker so an ACP exit notice cannot block the async executor.
+
+
 | Command | HTTP | Description |
 |---------|------|-------------|
-| `arm_hands_free_dictation(sessionId, owner)` | `POST /dictation/hands-free/arm` | Bind the delivery target and the audio owner, open a generation, return `HandsFreeStatus`. Refused when the target cannot take hands-free input (not an agent PTY session). Does **not** open a microphone. |
+| `arm_hands_free_dictation(sessionId, owner)` | `POST /dictation/hands-free/arm` | Bind the delivery target and the audio owner, open a generation, return `HandsFreeStatus`. Refused when the target cannot take hands-free input (neither an agent PTY session nor an attached AI Chat). Does **not** open a microphone. |
 | `disarm_hands_free_dictation()` | `POST /dictation/hands-free/disarm` | Disarm the whole mode, drop the transcript that never reached the model, return `HandsFreeDisarmed`. Idempotent. |
 | `get_hands_free_status()` | `GET /dictation/hands-free` | `HandsFreeStatus`. |
 | `get_hands_free_default_notice()` | `GET /dictation/hands-free/default-notice` | The built-in start notice (`MODE_ENTRY_HINT`) as a string, so a settings surface can show it and reset to it without a copy of the text. |
@@ -1945,3 +1950,5 @@ speech service is needed for correction configuration.
 An authorized `make agent-test AGENT_TEST_INSTANCE=agent-test-<name> AGENT_TEST_SPEECH_OUTPUT=1` can exercise spoken replies without microphone input. The runtime forces hands-free listening off and refuses microphone permission/capture. It does not claim global input ownership. Each actual reply synthesis logs its engine, resolved voice, language and completion, but not reply text or external command arguments. The default agent-test build still excludes dictation.
 
 Voice saves normalize the latest locked engine selection before applying the caller’s field delta. An unchanged resolved Edge choice must not remain unset on disk and later migrate to an inactive external command or Pocket voice. A concurrent explicit engine choice is retained unless this caller changed that field.
+
+ACP channel origins do not identify an individual session within a shared connection. If another session on that connection has an unsettled turn, voice calls are unavailable rather than attributed to the wrong chat. Settled turn history does not mute the target.

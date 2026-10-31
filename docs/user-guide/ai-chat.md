@@ -427,3 +427,7 @@ save that path through the normal settings writer and activate AI Chat. Detectio
 never saves a path automatically and never replaces a configured executable.
 **Configure ego** still opens manual setup. If detection finds nothing or fails,
 the existing inactive message and manual setup action remain available.
+
+## Hands-free voice
+
+Settings → Voice → Hands-free conversation lists attached AI Chat sessions in the Target picker, including sessions in detached panels. Select a chat and start the conversation to submit speech through its normal ACP prompt queue and allow replies through the voice tool. Closing or leaving the selected chat releases its voice binding.

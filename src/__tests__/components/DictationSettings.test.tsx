@@ -1135,6 +1135,34 @@ describe("DictationSettings – Edge engine", () => {
 });
 
 describe("hands-free conversation state", () => {
+	it("offers an attached AI Chat instead of limiting voice targets to PTYs", async () => {
+		mockInvoke.mockImplementation(async (command: string) => {
+			if (command === "get_voice_targets")
+				return [{ id: "acp:connection:chat", name: "AI Chat · chat", chatSessionId: "chat" }];
+			return undefined;
+		});
+		const view = render(() => <DictationSettings />);
+		const option = await view.findByRole("option", { name: "AI Chat · chat" });
+		const picker = option.parentElement as HTMLSelectElement;
+		fireEvent.change(picker, { target: { value: "acp:connection:chat" } });
+		fireEvent.click(view.getByRole("button", { name: "Start conversation" }));
+		expect(mockStore.armHandsFree).toHaveBeenCalledWith("acp:connection:chat");
+	});
+
+	it("revokes the old voice binding when the target picker changes while armed", async () => {
+		mockStore.state.handsFree = { armed: true, phase: "waiting", sessionId: "terminal" };
+		mockInvoke.mockImplementation(async (command: string) =>
+			command === "get_voice_targets"
+				? [{ id: "acp:connection:chat", name: "AI Chat · chat", chatSessionId: "chat" }]
+				: undefined,
+		);
+		const view = render(() => <DictationSettings />);
+		const option = await view.findByRole("option", { name: "AI Chat · chat" });
+		mockStore.disarmHandsFree.mockClear();
+		fireEvent.change(option.parentElement!, { target: { value: "acp:connection:chat" } });
+		expect(mockStore.disarmHandsFree).toHaveBeenCalledOnce();
+	});
+
 	afterEach(() => {
 		mockStore.state.handsFree = null;
 	});

@@ -2524,6 +2524,8 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             dictation::commands::disarm_hands_free_dictation,
             #[cfg(feature = "dictation")]
             dictation::commands::get_hands_free_status,
+            #[cfg(feature = "dictation")]
+            dictation::commands::get_voice_targets,
             global_hotkey::set_global_hotkey,
             config::load_app_config,
             save_app_config,

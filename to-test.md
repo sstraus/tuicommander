@@ -1,3 +1,7 @@
+## AI Chat hands-free target — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt app when losing current sessions is acceptable, select a docked AI Chat in Voice → Target. Speak a prompt and confirm its reply is spoken. Repeat with the detached panel. Change target, close the bound tab, and close its last view: capture and playback must stop. Native microphone/speaker acceptance requires real audio; no daily app was restarted. Rust changes do not hot-reload.
+
 ## Settings catalogue ledger coverage (2571-926a)
 
 - [x] Preserve generated settings descriptors while rejecting malformed and invalid owner ledgers, including pre-existing schema gaps. _(verified: rb `settings::catalogue::tests`, 13 passed; generated TypeScript matches the committed catalogue. This internal Rust refactor needs a rebuild to load, but changes no user-visible behavior. The daily app was not restarted.)_

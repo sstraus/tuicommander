@@ -927,10 +927,8 @@ fn resolve_mcp_origin_agent_type(
 ///
 /// The binding is the whole security property, and it is checked in
 /// `dictation::commands` rather than here: a model may drive only the
-/// hands-free conversation armed for its own terminal. What this function
-/// contributes is the *identity* — an unbound caller has no terminal, so it
-/// can never match a binding and is told speech is unavailable rather than
-/// being allowed to speak into whichever conversation happens to be armed.
+/// hands-free conversation armed for its terminal or native ACP channel.
+/// Unbound and replaced channels cannot drive the current conversation.
 #[cfg(feature = "dictation")]
 pub(super) fn handle_voice(
     state: &Arc<AppState>,
@@ -945,24 +943,35 @@ pub(super) fn handle_voice(
         Err(error) => return error,
     };
 
-    // Identity first, before the app is even consulted. No session header means
-    // no terminal, which means no conversation — and that answer does not
-    // depend on how far along startup is. Saying so here also keeps the caller
-    // off the owner's own control surface: that path exists for the user's UI,
-    // and handing it to a model would let any MCP client speak into somebody
-    // else's conversation.
-    let Some(caller) = resolve_mcp_origin_pty(state, mcp_session_id) else {
+    let pty = resolve_mcp_origin_pty(state, mcp_session_id);
+    let origin = mcp_session_id.and_then(|id| {
+        state
+            .mcp
+            .acp_origins
+            .get(id)
+            .map(|entry| entry.value().clone())
+    });
+    if pty.is_none() && origin.is_none() {
         return serde_json::json!({"error":
-            "This connection is not bound to a terminal, so there is no conversation to speak into"
+            "This connection is not bound to a terminal or AI Chat, so there is no conversation to speak into"
         });
-    };
-    let caller = dictation::Caller::Model(&caller);
-
+    }
     let app_handle = state.app_handle.read();
     let Some(app) = app_handle.as_ref() else {
         return serde_json::json!({"error": "TUICommander is still starting up"});
     };
     let dictation_state = app.state::<DictationState>();
+    let caller = pty.or_else(|| {
+        let bound = dictation::hands_free_status(&dictation_state).session_id?;
+        origin
+            .as_ref()
+            .filter(|origin| crate::dictation::adapters::chat_caller(state, origin, &bound))
+            .map(|_| bound)
+    });
+    let Some(caller) = caller else {
+        return serde_json::json!({"available": false, "error": "This AI Chat is not the bound voice target"});
+    };
+    let caller = dictation::Caller::Model(&caller);
 
     match action {
         "speak" => {

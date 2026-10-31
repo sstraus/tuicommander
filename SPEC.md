@@ -1620,3 +1620,7 @@ IPC, HTTP and MCP use the same question/inbox service. See
 [workflow decisions](docs/backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).
 
 The Plans and Stories toolbar pill shows active-plan, Ready and In progress counts with distinct glyphs and a tooltip line for each number. Ready comes from the Rust `summary` action, not a frontend subtraction; Done/total remains the progress bar tooltip. Ready-only work therefore remains visible when no story is running.
+
+### AI Chat hands-free target
+
+Implemented: the hands-free target picker includes attached host-managed ACP chats. Opaque ACP binding ids stay separate from PTY identity. Spoken text follows the existing ACP prompt submission and queue path. MCP speech requires the bound native ACP connection and generation. Closing or leaving the bound chat releases its microphone and speaker binding.
