@@ -1028,6 +1028,10 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
   account dashboard because Gemini CLI has no stable machine-readable account
   quota interface. Session-local `/stats` is not treated as account headroom.
 
+### Coordinator mail address
+
+- `agent action=send to=orchestrator` reaches the registered coordinator in the caller parent chain, or the unique role in its registered repository path, without peer discovery. Missing or ambiguous roles fail explicitly.
+
 ### 6.7 Intent Event Tracking
 - Agents declare work phases via `intent: text (Title)` tokens at the start of a row. The canvas tints intent rows and their soft-wrapped or indented hard-wrapped tails, preserving row coordinates. Blank rows and new output, answer, prompt or marker blocks end an indented tail. The token is also read when it follows the ack sentence on one row, and when the agent's own wrapping split it across many rows; terminal width distinguishes wrapped text from adjacent indented prose, and input-box chrome is excluded. A long intent keeps its full tab-title event while the Progress journal stores a redacted, capped copy
 - MCP instructions request an intent on its own line, at the start of every task and on each material phase change; the terminal Context bar shows it separately from the orchestrator assignment and user prompt

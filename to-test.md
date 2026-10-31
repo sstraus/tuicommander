@@ -1,3 +1,7 @@
+## Coordinator mail address (2580-dcbd) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, send `agent action=send to=orchestrator message=<text>` from a managed child and confirm receipt at its registered coordinator without `list_peers`. The daily app was not restarted; Rust changes do not hot-reload. Restart only when losing current sessions is acceptable.
+
 ## Settings catalogue ledger coverage (2571-926a)
 
 - [x] Preserve generated settings descriptors while rejecting malformed and invalid owner ledgers, including pre-existing schema gaps. _(verified: rb `settings::catalogue::tests`, 13 passed; generated TypeScript matches the committed catalogue. This internal Rust refactor needs a rebuild to load, but changes no user-visible behavior. The daily app was not restarted.)_
@@ -3229,3 +3233,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 ## Chat dictation auto-send (#2585-dfc2)
 
 - [ ] [HUMAN] With a real microphone, check held hotkey dictation in terminal Chat with Auto-send on and off, including transcript focus. Auto-send sends once and clears the submitted draft; off leaves editable text. Automated component evidence covers delivery and submit behavior, not audio capture.
+
+- [ ] Voice Settings: compare Speech assets and Spoken replies in Paper and Commander; check aligned rows, model/voice dropdowns and named asset actions. Confirm existing download, preview and recording actions still use the same state (#2608-f1c4).
