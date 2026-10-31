@@ -46,6 +46,30 @@ The fresh Edge profile had no capture consent. No screenshot PNG was produced, a
 
 Raw evidence is retained under `~/Gits/.tmp/dm-2596/`: `red.log`, `js-red.log`, `green-retry.log`, `rust-final.log`, and `live/{tool-results.json,focus.tsv,setup.json}`.
 
+## Sequential native replay after rebase
+
+The branch was rebased onto `fbbdc90c2d59a5cd5e134641d5ddfc6e57c617d5`, including panel fix 2592. Fixed implementation HEAD was `9b76888f4659e9bed51f0eac871690f837824ebf`. For the pre-fix build, the clean worktree's tracked files were restored from that main commit without switching branches. The fixed HEAD was restored before the second build. Only one isolated desktop instance ran at a time, with the same instance name and Edge profile.
+
+The pre-fix sequence did **not** reproduce the historical IPC or command timeouts. Start returned `armed` in 1083 ms, before Edge became frontmost. Screenshot, errors, eval, reload and navigate each returned `no_reviewed_tab: Open the Design Mode sidebar on a page first.` Their durations were 1860, 239, 300, 254 and 239 ms. Stop returned success in 230 ms but left the launched Edge process running. The exact owned browser PID, 87011, was then terminated. This proves false-success startup and missing browser ownership in this replay, not the cause of the original missing replies.
+
+The fixed sequence selected the reviewed tab without opening the sidebar. Errors succeeded; eval returned the actionable grant denial in 261 ms; reload and navigate succeeded in 289 and 271 ms. Stop succeeded in 280 ms and returned focus from Edge to TUIC. All requested actions have before/after frontmost application records in `fixed-replay.log`. The original timeout attribution remains unknown. Worker receive exceptions are now retained and reported instead of discarded, so a recurrence has a diagnostic path.
+
+## Native capture consent and grant-control verification
+
+A further fixed-build run used the same isolated instance. Start acknowledged in 5233 ms. Screenshot initially returned the separate `capture_permission_required` error in 296 ms; errors succeeded in 474 ms and denied eval returned its guidance in 415 ms.
+
+The owned page URL was verified as `http://127.0.0.1:54907/src/__tests__/browser/aiChatComposerGeometry.html`. The extension action shortcut opened its native sidebar in owned Edge window 14730. MacControl found a visible **Allow eval on this host** button at window-relative `(984, 434)`, size `124 × 30`, and a separate **Let agents capture any site** button at `(830, 434)`, size `146 × 30`. This verifies the rebased panel control without granting eval.
+
+The first capture-consent click was interrupted by physical user activity. Capture remained denied. A later native click completed without that interruption. MCP `ui design_screenshot` then succeeded in 406 ms, with Edge frontmost before and after. Its returned PNG was copied to `capture-live/mcp-screenshot.png`: 1612 × 2496 RGB, SHA-256 `210db04af119e2d4cd1c832dc4fc938206dbec9279e98078d42550a915198b43`. The scoped native-window screenshot is `capture-live/native-sidebar.png`: 2400 × 2732 RGBA, SHA-256 `7edb069ab1571831bd8b687bf78200420c4c6f20e18396548053f61dcce179a3`. No daily browser consent or eval grant was changed.
+
+Additional evidence under `~/Gits/.tmp/dm-2596/`: `replay-refs.txt`, `prefix-replay.log`, `prefix-live/{tool-results.json,focus.tsv,setup.json}`, `fixed-replay.log`, `fixed-live/{tool-results.json,focus.tsv,setup.json}`, `capture-replay.log`, `capture-live/tool-results.json`, and `capture-after-native-click.json`.
+
+### Harness failures and final cleanup
+
+The first fixed replay's optional self-notification failed because `TUIC_SESSION` was absent from the Node environment. Its browser and PTY cleanup succeeded, but its control server kept Node alive. That owned Node PID, 10286, was stopped. The retry used the explicit registered peer ID.
+
+During the capture run, an AppleScript accessibility read failed with `osascript is not allowed assistive access`; no permission workaround was used. The final frontmost-app probe also failed with `Can't get application process 1 whose frontmost = true`. That harness exception interrupted its automatic Stop/PTY cleanup. The named app was stopped, and its exact owned Edge PID, 11525, was terminated explicitly. Final probes found no listener on 19876, 19877 or 54907 and no browser process using this instance's Design Mode profile. The successful PNG and its MCP response precede that cleanup failure. The earlier fixed replay, not this interrupted cleanup, is the evidence for successful `design_stop` ownership.
+
 ## Cleanup and deployment
 
 Stop closed the dedicated Edge launch. The throwaway PTY was deleted, Vite was closed, and the named agent-test instance was stopped. Final probes found no listener on the Vite port or `19876`, and no process using this instance's Design Mode profile.
