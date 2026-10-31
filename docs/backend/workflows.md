@@ -356,7 +356,7 @@ Contract-2 answer semantics and first-generation command keys are unchanged.
 ### Current version sequence
 
 The run-store schema and layout are the same `PRAGMA user_version`, not separate
-version counters. The combined build writes layout **10** and starts event
+version counters. The combined build writes layout **11** and starts event
 contract **5**. The retained sequence is:
 
 | Run-store layout | Contract and compatibility boundary |
@@ -371,19 +371,22 @@ contract **5**. The retained sequence is:
 | 8 | WF04 explicit worker transport/conversation bindings, answer continuation and durable report disposition. |
 | 9 | WF03 branch-local questions and contract 5; contracts 2–4 retain their input/replay rules. |
 | 10 | WF05 typed command, Tool and workspace effects; contract 5 remains current. |
+| 11 | WF07 native integration saga, policy and proof-obligation outbox; contract 5 remains current. |
 
 WF06 adds an optional evidence policy to the pinned definition and optional typed
 review evidence/check requirements digests. It does not allocate a competing
 layout or event-contract number. Omitted policy/evidence fields retain the legacy
 contract; snapshots written before WF19 decode with an empty timer list. Layouts
-0–9 open through the existing additive upgrade without rewriting their event
-streams. Contracts 2 and 3 keep serial Join semantics; contracts 3–5 support
-Timer events, while contract 2 refuses them. Older binaries refuse layout 10 rather than interpreting lifecycle events without
-their ownership and continuation fences. Layout 7 remains the parallel-event boundary.
+0–10 open through the existing additive upgrade to layout 11 without rewriting
+their snapshots or event streams. Contracts 2 and 3 keep serial Join semantics;
+contracts 3–5 support Timer events, while contract 2 refuses them. A layout-10
+binary refuses a layout-11 store because its `PRAGMA user_version` exceeds the
+supported schema version; it cannot reopen the upgraded store. Layout 10 remains
+the typed-effect boundary, and layout 7 remains the parallel-event boundary.
 
 ## Correlated parallel regions (WF02)
 
-New runs use event contract 5 and run-store layout 10. Contracts 2 and 3 retain
+New runs use event contract 5 and run-store layout 11. Contracts 2 and 3 retain
 serial replay, including exclusive Join; old definitions and events are not
 rewritten. The pinned definition digest remains part of each new graph start.
 
