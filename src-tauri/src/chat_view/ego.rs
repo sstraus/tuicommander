@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use serde_json::{Value, json};
 
-use super::claude::{AdapterStats, cap_strings, clean, notice};
+use super::claude::{AdapterStats, MAX_TEXT_CHARS, cap_strings, clean, notice};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct ExportSource {
@@ -134,7 +134,7 @@ impl EgoAdapter {
                     Some("user_message") => "user_message_chunk",
                     Some("reasoning") => "agent_thought_chunk",
                     _ => "agent_message_chunk",
-                }, "messageId": id, "content": {"type": "text", "text": clean(text, 20_000)}})]
+                }, "messageId": id, "content": {"type": "text", "text": clean(text, MAX_TEXT_CHARS)}})]
             }
             (Some("item_started"), Some("tool")) if !id.is_empty() => {
                 let name = clean(event["name"].as_str().unwrap_or("tool"), 120);
@@ -152,11 +152,11 @@ impl EgoAdapter {
             }
             (Some("item_completed"), Some("context_checkpoint")) => vec![notice(&format!(
                 "Conversation compacted\n\n{}",
-                clean(text, 20_000)
+                clean(text, MAX_TEXT_CHARS)
             ))],
             (Some("goal_continuation"), _) => vec![notice(&format!(
                 "Goal continuation\n\n{}",
-                clean(text, 20_000)
+                clean(text, MAX_TEXT_CHARS)
             ))],
             (
                 Some(

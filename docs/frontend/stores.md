@@ -828,3 +828,5 @@ Native story controls retain the QA-only visibility filter through `storiesUi`, 
 ### Ideas synchronization
 
 `ideasStore.hydrate()` subscribes once to `ideas-changed` on desktop or SSE, with reconnect resynchronization. Reads wait for queued local persistence. A read raced by a newer mutation or read is discarded and retried when needed. Hydration never saves. The backend merges `save_notes` baselines by stable idea id and changed field, so an agent addition absent from a panel snapshot is not a deletion.
+
+Terminal Chat pending receipt matching uses the Rust-cleaned `pendingTexts` returned by `chat_view_snapshot`. Candidates and results retain request order; the client binds them to the captured local send IDs, so an in-flight rollback cannot acknowledge a newer send. Original submitted text remains presentation-only.

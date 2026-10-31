@@ -155,3 +155,72 @@ it("does not retain pending feedback for an unwatched terminal", () => {
 	chatViewStore.beginSubmission("closed", "not in Chat");
 	expect(chatViewStore.entries("closed")).toEqual([]);
 });
+
+// Catches: adapter truncation leaving the last submitted prompt pending forever.
+it("retires a 20001-character prompt with an adapter-shaped truncated receipt", async () => {
+	const submitted = "a".repeat(20001);
+	const received = `${"a".repeat(19999)}…`;
+	chatViewStore.beginSubmission("queued", submitted);
+	invoke.mockResolvedValueOnce({
+		epoch: 1,
+		nextSeq: 11,
+		reset: false,
+		updates: [user("long", received)],
+		unknownRows: 0,
+		malformedRows: 0,
+		pendingTexts: [received],
+	});
+	await chatViewStore.refresh("queued");
+	expect(chatViewStore.entries("queued").filter((entry) => entry.kind === "user" && entry.pending)).toHaveLength(0);
+});
+
+// Catches: redaction mismatch and sharing a transformed receipt between repeated sends.
+it("matches redacted receipts once while keeping original pending presentation", async () => {
+	const submitted = "inspect AKIAIOSFODNN7EXAMPLE";
+	chatViewStore.beginSubmission("queued", submitted);
+	chatViewStore.beginSubmission("queued", submitted);
+	invoke.mockResolvedValueOnce({
+		epoch: 1,
+		nextSeq: 11,
+		reset: false,
+		updates: [user("secret", "inspect [REDACTED]")],
+		unknownRows: 0,
+		malformedRows: 0,
+		pendingTexts: ["inspect [REDACTED]", "inspect [REDACTED]"],
+	});
+	await chatViewStore.refresh("queued");
+	expect(invoke).toHaveBeenLastCalledWith(
+		"chat_view_snapshot",
+		expect.objectContaining({ pendingTexts: [submitted, submitted] }),
+	);
+	expect(
+		chatViewStore.entries("queued").flatMap((entry) => (entry.kind === "user" && entry.pending ? [entry.text] : [])),
+	).toEqual([submitted]);
+});
+
+// Catches: an in-flight comparison being applied by position to a newer submission after rollback.
+it("binds comparison results to the sends captured before the snapshot", async () => {
+	const rollback = chatViewStore.beginSubmission("queued", "first secret");
+	let resolve!: (value: unknown) => void;
+	invoke.mockReturnValueOnce(
+		new Promise((done) => {
+			resolve = done;
+		}),
+	);
+	const refresh = chatViewStore.refresh("queued");
+	rollback();
+	chatViewStore.beginSubmission("queued", "second secret");
+	resolve({
+		epoch: 1,
+		nextSeq: 11,
+		reset: false,
+		updates: [user("first", "[REDACTED]")],
+		unknownRows: 0,
+		malformedRows: 0,
+		pendingTexts: ["[REDACTED]"],
+	});
+	await refresh;
+	expect(
+		chatViewStore.entries("queued").flatMap((entry) => (entry.kind === "user" && entry.pending ? [entry.text] : [])),
+	).toEqual(["second secret"]);
+});

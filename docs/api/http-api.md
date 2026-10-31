@@ -613,7 +613,8 @@ GET  /sessions/:id/shell-family                        -> "posix"|"windows-nativ
 GET  /sessions/:id/last-prompt                         -> { "prompt": string|null }
 GET  /sessions/:id/input-buffer                        -> { "content": string }
 GET  /sessions/:id/leaf-pid                            -> { "pid": number|null }
-GET  /sessions/:id/chat-view?from_seq=N&epoch=E        -> { epoch, nextSeq, reset, updates[], unknownRows, malformedRows }
+GET  /sessions/:id/chat-view?from_seq=N&epoch=E        -> { epoch, nextSeq, reset, updates[], unknownRows, malformedRows, pendingTexts: [] }
+POST /sessions/:id/chat-view { epoch?, fromSeq?, pendingTexts?: string[] } -> same snapshot with cleaned pendingTexts[]
 GET  /sessions/:id/has-foreground                      -> { "process": string|null }
 POST /sessions/:id/visible              { "visible": bool }   -> { "ok": true }
 GET  /sessions/:id/terminal/selection-text?startRow=&startCol=&endRow=&endCol=&historyBase=  -> { "text": string }
@@ -622,6 +623,8 @@ GET  /sessions/:id/terminal/hyperlink-span?row=R&col=C -> [startCol, endCol, url
 GET  /sessions/:id/terminal/styled-rows?start=N&count=N -> application/octet-stream (packed rows)
 GET  /process/stats                                    -> ProcessStats[]
 ```
+
+`POST chat-view` accepts optional pending prompt candidates in its JSON body, not the URL. `pendingTexts` in the response preserves request order and uses the same Rust redaction-then-character-cap contract as native user messages. Desktop IPC accepts the same camelCase fields. Terminal Chat compares these forms while keeping original pending text for display; normalization adds no extra polling. The GET form remains available for readers without candidates.
 
 `chat-view` is the transcript of a Claude or Grok terminal as ACP `SessionUpdate`s, tailed from the agent's own session file (never the grid). `updates` are the entries from `from_seq` in the `epoch` the client last saw; `reset: true` means the client holds a different conversation (`/clear`, new session, file truncated) or fell behind the bounded log, and must drop what it has and apply `updates` from scratch. A Grok terminal is bound only through its pid's `~/.grok/active_sessions.json` entry (never the newest session). A terminal with no bound Claude or Grok agent answers 500 `{"error":"not_bound: <reason>"}`. A read keeps the tail alive for 20 s; the server wakes clients with the `chat-view-changed` event while one reads.
 

@@ -6,7 +6,7 @@
 
 use serde_json::{Value, json};
 
-use super::claude::{AdapterStats, cap_strings, clean};
+use super::claude::{AdapterStats, MAX_TEXT_CHARS, cap_strings, clean};
 
 #[derive(Default)]
 pub(crate) struct CodexAdapter {
@@ -92,7 +92,7 @@ fn text_update(kind: &str, id: &str, text: &str) -> Vec<Value> {
         return Vec::new();
     }
     vec![json!({"sessionUpdate": kind, "messageId": id,
-        "content": {"type": "text", "text": clean(text, 20_000)}})]
+        "content": {"type": "text", "text": clean(text, MAX_TEXT_CHARS)}})]
 }
 
 fn terminal_status(item: &Value) -> Option<&'static str> {

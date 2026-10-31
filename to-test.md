@@ -1,3 +1,7 @@
+## Terminal Chat transformed receipts (2542-49c3) — Rust rebuild/restart required
+
+- [ ] After Boss restarts a rebuilt `make dev` or installs `make build`, send a prompt longer than 20000 characters or containing a redacted secret pattern in Terminal Chat. Its pending bubble must disappear after the native transcript receipt arrives. Automated store and native-adapter tests cover the comparison contract. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
 ## Codex profile session quota (2541-18a3) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a Codex session with an existing `--profile` and check its mobile session quota. Include a profile with `model_instructions_file = "instructions.md"` beside the profile file. The installed Codex 0.166 App Server accepted the rebased profile path without a defaults warning in the isolated CLI probe; the earlier probe returned live quota. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.

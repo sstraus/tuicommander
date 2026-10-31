@@ -501,3 +501,5 @@ Settings → Agents → Idle agent hibernation (Expert Mode) includes **Close ab
 Mobile dictation edits the visible composer. On its first edit, the composer reconciles an existing terminal input snapshot instead of appending to an unseen desktop draft. Later dictation takes continue the visible draft. The blue `/` quick key is an insertion action, not a selected modifier. Tap it to insert a slash; choose a command explicitly to use autocomplete.
 
 In session Chat, a Claude slash-command user message shows its command name and arguments. Complete command envelopes are presentation metadata; quoted or incomplete XML remains literal text. The Copy action retains the original transcript text.
+
+Terminal Chat removes a pending prompt bubble when the native transcript records its receipt, including prompts that the view truncates or redacts. The view keeps pending prompts in send order.

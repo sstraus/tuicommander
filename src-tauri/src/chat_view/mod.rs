@@ -257,6 +257,8 @@ pub struct ChatViewSnapshot {
     pub updates: Vec<Value>,
     pub unknown_rows: u64,
     pub malformed_rows: u64,
+    /// Submitted candidates cleaned exactly like native user messages, in request order.
+    pub pending_texts: Vec<String>,
 }
 
 /// Per-terminal views, keyed by TUIC session id.
@@ -393,6 +395,7 @@ pub(crate) fn chat_view_snapshot(
             updates,
             unknown_rows: view.adapter.stats().unknown_rows,
             malformed_rows: view.adapter.stats().malformed_rows,
+            pending_texts: Vec::new(),
         };
         let start = !view.ticking;
         view.ticking = true;
@@ -427,10 +430,18 @@ pub(crate) async fn chat_view_snapshot_blocking(
     session_id: String,
     epoch: Option<u64>,
     from_seq: u64,
+    pending_texts: Vec<String>,
 ) -> Result<ChatViewSnapshot, String> {
-    tokio::task::spawn_blocking(move || chat_view_snapshot(&state, &session_id, epoch, from_seq))
-        .await
-        .map_err(|e| format!("chat view task failed: {e}"))?
+    tokio::task::spawn_blocking(move || {
+        let mut snapshot = chat_view_snapshot(&state, &session_id, epoch, from_seq)?;
+        snapshot.pending_texts = pending_texts
+            .iter()
+            .map(|text| claude::clean(text, claude::MAX_TEXT_CHARS))
+            .collect();
+        Ok(snapshot)
+    })
+    .await
+    .map_err(|e| format!("chat view task failed: {e}"))?
 }
 
 fn spawn_ticker(state: Arc<AppState>, session_id: String, view: Arc<Mutex<View>>) {
