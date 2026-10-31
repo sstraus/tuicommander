@@ -511,7 +511,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 		configKey: "dictation.speech_levelling",
 	},
 	{ tab: "dictation", section: "Spoken replies", label: "Voices", labelKey: "dictation.voicesLabel" },
-	{ tab: "dictation", section: "Hands-free conversation", label: "Terminal" },
+	{ tab: "dictation", section: "Hands-free conversation", label: "Target" },
 	{
 		tab: "dictation",
 		section: "Hands-free conversation",

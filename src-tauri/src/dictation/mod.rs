@@ -1,5 +1,5 @@
 pub use tuic_dictation::audio;
-mod adapters;
+pub(crate) mod adapters;
 mod asset_download;
 pub mod browser;
 pub mod commands;

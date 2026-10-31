@@ -546,6 +546,7 @@ These commands stay in the root `dictation/commands.rs` adapter; their audio and
 | `set_correction_map` | `map` | `()` | Save corrections |
 | `list_audio_devices` | -- | `Vec<AudioDevice>` | List input devices |
 | `get_dictation_config` | -- | `DictationConfig` | Load saved config. With an activation phrase, the hands-free runtime applies at least 5000 ms of hold-back even when the saved `hands_free_hold_back_ms` is shorter; hands-free status reports the effective value |
+| `get_voice_targets` | -- | `ChatVoiceTarget[]` | List live host-managed AI Chat attachments as `{ id, name, chatSessionId }`; ids are opaque voice targets, not PTY ids |
 | `get_hands_free_default_notice` | -- | `string` | The built-in hands-free start notice, sent while `hands_free_start_notice` is empty |
 | `set_dictation_config` | `base, config` | `()` | Save only the changes between the loaded base and edited config. A changed `language`, `speechCommand` or `speech_voice` also drops the voice built for the previous one, cancelling what it was speaking; hands_free_spoken_replies=false also cancels it and refuses new speech while dictation stays armed. Edge 401/403 rejection makes speech unavailable for five minutes. Other fields leave the voice alone. `hands_free_listening` (default true, read at arm time only; false arms a replies-only conversation with no microphone, and arming with it and `hands_free_spoken_replies` both false is refused). `hands_free_earcons` (default true) turns the hands-free earcons off; only the frontend reads it. `hands_free_notify_model` (default true) is read at arm time only — turning it off mid-conversation does not cancel the end notice the model is already owed. `hands_free_start_notice` (default empty = built-in text) replaces the start notice, also at arm time only, folded to one line |
 | `check_microphone_permission` | -- | `String` | Check macOS microphone TCC permission status |
@@ -786,6 +787,7 @@ can choose what the host runs.
 | `acp_session_fork` | `connectionId, sessionId, authority` | `AcpAttachmentSnapshot` | `session/fork` |
 | `acp_session_delete` | `connectionId, sessionId` | `()` | `session/delete` — the session is gone for good |
 | `acp_session_close` | `connectionId, sessionId` | `()` | Detach without deleting |
+| `acp_session_set_viewed_repo` | `connectionId, sessionId, viewedRepo?` | `()` | Update or clear the attached chat's effective repository hint for spoken prompts; no prompt is submitted and cwd is unchanged |
 | `acp_session_prompt` | `connectionId, sessionId, prompt, viewedRepo?` | `AcpTurnId` | Start a turn or accept it into the server-owned FIFO when one is running. `viewedRepo` is sent as `_meta.tuicommander/viewedRepo`, a hint for that turn only |
 | `acp_session_cancel` | `connectionId, sessionId` | `()` | Cancel the running turn |
 | `acp_queued_prompt_cancel` | `connectionId, sessionId, turnId` | `()` | Remove one queued prompt before it reaches ego |

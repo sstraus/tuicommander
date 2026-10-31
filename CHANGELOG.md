@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Add AI Chat to the hands-free voice target picker, including detached chats. Spoken prompts keep the pinned-or-viewed repository hint and use the existing ACP prompt queue, replies use the bound voice tool, and closing or switching the chat releases the binding (native story 01a19335-a29d-7376-ac67-9bf64639edee).
+
 - AI Chat master prompt in Settings: additive instructions for new conversations, with an 8192-byte limit.
 ### Fixed
 
@@ -24,6 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Recognize an answer joined to an intent title without a newline. Keep answer parentheses out of the intent title and preserve terminal, Chat and answers-only rendering (#2612-b0ac).
 - Show “Go ahead” only after a recognized activation phrase during hands-free capture; keep unrelated voice activity at “Listening” and final recognition at “Transcribing”. Desktop and browser capture share bounded prefix checks with the existing model (#2610-9b43).
 
 - Preserve agent shim names when launchers canonicalise executable paths; upgrade legacy Unix symlinks to atomic hard links (#2584-fdaa).

@@ -109,6 +109,7 @@ struct ConnectionHandle {
     peer_id: Option<String>,
     root: PathBuf,
     attachment_directories: HashMap<String, (PathBuf, String)>,
+    viewed_repos: HashMap<String, String>,
     commands: mpsc::Sender<Command>,
     journal: Arc<AcpEventJournal>,
     shutdown: Option<oneshot::Sender<()>>,
@@ -377,6 +378,7 @@ impl AcpClientManager {
                 peer_id,
                 root,
                 attachment_directories: HashMap::new(),
+                viewed_repos: HashMap::new(),
                 commands: commands_tx,
                 journal,
                 shutdown: Some(shutdown_tx),
@@ -560,10 +562,12 @@ impl AcpClientManager {
         })
         .await?;
         let mut connections = self.connections.lock();
-        if let Some(connection) = connections.get_mut(&connection_id)
-            && let Some((data_dir, key)) = connection.attachment_directories.remove(&attachment_id)
-        {
-            crate::attachments::cleanup_session(&data_dir, "acp", &key);
+        if let Some(connection) = connections.get_mut(&connection_id) {
+            connection.viewed_repos.remove(&attachment_id);
+            if let Some((data_dir, key)) = connection.attachment_directories.remove(&attachment_id)
+            {
+                crate::attachments::cleanup_session(&data_dir, "acp", &key);
+            }
         }
         Ok(())
     }
@@ -595,6 +599,47 @@ impl AcpClientManager {
         }
         response.sessions = super::session_tree(response.sessions);
         Ok(response)
+    }
+
+    /// The visible chat publishes its effective pin-or-viewed repository, not a scope.
+    pub fn set_viewed_repo(
+        &self,
+        connection_id: AcpConnectionId,
+        session_id: v1::SessionId,
+        viewed_repo: Option<String>,
+    ) -> Result<(), AcpClientError> {
+        let mut connections = self.connections.lock();
+        let connection = connections
+            .get_mut(&connection_id)
+            .ok_or_else(|| AcpClientError::invalid_input("ACP connection is not attached"))?;
+        if !connection
+            .snapshot
+            .attachments
+            .iter()
+            .any(|attachment| attachment.session_id == session_id)
+        {
+            return Err(AcpClientError::invalid_input("ACP session is not attached"));
+        }
+        let key = session_id.to_string();
+        if let Some(repo) = viewed_repo {
+            connection.viewed_repos.insert(key, repo);
+        } else {
+            connection.viewed_repos.remove(&key);
+        }
+        Ok(())
+    }
+
+    pub fn viewed_repo(
+        &self,
+        connection_id: AcpConnectionId,
+        session_id: &v1::SessionId,
+    ) -> Option<String> {
+        self.connections
+            .lock()
+            .get(&connection_id)?
+            .viewed_repos
+            .get(&session_id.to_string())
+            .cloned()
     }
 
     /// Start a turn and get back its id, not its outcome.
@@ -842,6 +887,7 @@ impl AcpClientManager {
                 peer_id: Some(peer.into()),
                 root: crate::test_support::test_temp_root(),
                 attachment_directories: HashMap::new(),
+                viewed_repos: HashMap::new(),
                 commands,
                 journal: journal.clone(),
                 shutdown: None,
@@ -957,6 +1003,19 @@ impl AcpClientManager {
                 }
             })
             .ok_or_else(|| AcpClientError::not_found(connection_id))
+    }
+
+    /// Live, host-managed chat connections, shared by docked and detached views.
+    #[cfg(feature = "dictation")]
+    pub(crate) fn chat_snapshots(&self) -> Vec<AcpConnectionSnapshot> {
+        self.connections
+            .lock()
+            .values()
+            .filter(|connection| {
+                connection.peer_id.is_some() && connection.snapshot.settlement.is_none()
+            })
+            .map(|connection| connection.snapshot.clone())
+            .collect()
     }
 
     /// Resolve only live ACP connections. A settled connection must never
@@ -1638,6 +1697,241 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+
+    #[cfg(feature = "dictation")]
+    fn voice_chat() -> (
+        Arc<crate::state::AppState>,
+        AcpConnectionSnapshot,
+        mpsc::Receiver<Command>,
+    ) {
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        state.acp.test_peer_journal("voice-chat-peer");
+        let snapshot = state.acp.chat_snapshots().pop().unwrap();
+        let (commands, receiver) = mpsc::channel(8);
+        {
+            let mut connections = state.acp.connections.lock();
+            let connection = connections.get_mut(&snapshot.connection_id).unwrap();
+            connection.commands = commands;
+            connection.snapshot.attachments.push(AcpAttachmentSnapshot {
+                session_id: v1::SessionId::new("voice-chat"),
+                state: AcpAttachmentState::Idle,
+                cwd: crate::test_support::test_temp_root(),
+                additional_directories: vec![],
+                config_options: vec![],
+                available_commands: vec![],
+                profile_warnings: vec![],
+                usage: None,
+                active_turn: None,
+                queued_prompts: vec![],
+                pending_permission_ids: vec![],
+                pending_elicitation_ids: vec![],
+            });
+        }
+        (state, snapshot, receiver)
+    }
+
+    /// Catches speech bypassing the same ACP command queue used by typed prompts.
+    #[cfg(feature = "dictation")]
+    #[tokio::test]
+    async fn voice_chat_submits_one_existing_acp_prompt_not_a_pty_write() {
+        use tuic_dictation::continuous::{VoiceSink, VoiceWrite};
+        let (state, _snapshot, mut receiver) = voice_chat();
+        let targets = crate::dictation::adapters::chat_targets(&state);
+        assert_eq!(targets.len(), 1);
+        assert_eq!(targets[0].name, "AI Chat · voice-chat");
+        let target = targets[0].id.clone();
+        let writer = state.clone();
+        let write = tokio::task::spawn_blocking(move || {
+            crate::dictation::adapters::PtyVoiceSink(&writer)
+                .write(&target, "Read the current diff")
+        });
+        let Command::Prompt {
+            session_id,
+            prompt,
+            reply,
+            ..
+        } = receiver.recv().await.unwrap()
+        else {
+            panic!("voice must submit the existing Prompt command");
+        };
+        assert_eq!(session_id.to_string(), "voice-chat");
+        assert_eq!(
+            prompt,
+            vec![v1::ContentBlock::Text(v1::TextContent::new(
+                "Read the current diff"
+            ))]
+        );
+        reply.send(Ok(AcpTurnId::new())).unwrap();
+        assert_eq!(write.await.unwrap().unwrap(), VoiceWrite::Written);
+        assert!(
+            receiver.try_recv().is_err(),
+            "one utterance submits exactly once"
+        );
+        assert!(
+            state.session_maps.sessions.is_empty(),
+            "ACP never fabricates a terminal"
+        );
+    }
+
+    /// Catches spoken prompts dropping pinned/viewed context or retaining a cleared hint.
+    #[cfg(feature = "dictation")]
+    #[tokio::test]
+    async fn voice_chat_preserves_updated_and_cleared_repository_context() {
+        use tuic_dictation::continuous::{VoiceSink, VoiceWrite};
+        let (state, snapshot, mut receiver) = voice_chat();
+        let target = crate::dictation::adapters::chat_targets(&state)
+            .pop()
+            .unwrap()
+            .id;
+        for repo in [Some("/repo/pinned"), Some("/repo/viewed-worktree"), None] {
+            state
+                .acp
+                .set_viewed_repo(
+                    snapshot.connection_id,
+                    v1::SessionId::new("voice-chat"),
+                    repo.map(str::to_owned),
+                )
+                .unwrap();
+            let writer = state.clone();
+            let target = target.clone();
+            let write = tokio::task::spawn_blocking(move || {
+                crate::dictation::adapters::PtyVoiceSink(&writer)
+                    .write(&target, "Read the current diff")
+            });
+            let Command::Prompt { meta, reply, .. } = receiver.recv().await.unwrap() else {
+                panic!("voice must submit the existing Prompt command");
+            };
+            reply.send(Ok(AcpTurnId::new())).unwrap();
+            assert_eq!(write.await.unwrap().unwrap(), VoiceWrite::Written);
+            assert_eq!(
+                meta.as_ref()
+                    .and_then(|meta| meta.get(VIEWED_REPO_META_KEY))
+                    .and_then(serde_json::Value::as_str),
+                repo
+            );
+            assert!(receiver.try_recv().is_err());
+        }
+    }
+
+    /// Catches a stale ACP channel speaking into a replacement connection.
+    #[cfg(feature = "dictation")]
+    #[test]
+    fn voice_chat_caller_requires_its_exact_live_connection_generation() {
+        let (state, snapshot, _receiver) = voice_chat();
+        let target = crate::dictation::adapters::chat_targets(&state)
+            .pop()
+            .unwrap()
+            .id;
+        let mut origin = super::super::AcpMcpOrigin {
+            peer_id: Some("voice-chat-peer".into()),
+            connection_id: snapshot.connection_id,
+            generation: snapshot.generation,
+        };
+        assert!(crate::dictation::adapters::chat_caller(
+            &state, &origin, &target
+        ));
+        origin.generation += 1;
+        assert!(!crate::dictation::adapters::chat_caller(
+            &state, &origin, &target
+        ));
+        origin.generation = snapshot.generation;
+        origin.connection_id = AcpConnectionId::new();
+        assert!(!crate::dictation::adapters::chat_caller(
+            &state, &origin, &target
+        ));
+    }
+
+    /// Catches another session on a shared ACP connection borrowing the voice binding.
+    #[cfg(feature = "dictation")]
+    #[test]
+    fn voice_chat_rejects_an_ambiguous_other_running_conversation() {
+        let (state, snapshot, _receiver) = voice_chat();
+        let target = crate::dictation::adapters::chat_targets(&state)
+            .pop()
+            .unwrap()
+            .id;
+        let origin = super::super::AcpMcpOrigin {
+            peer_id: Some("voice-chat-peer".into()),
+            connection_id: snapshot.connection_id,
+            generation: snapshot.generation,
+        };
+        {
+            let mut connections = state.acp.connections.lock();
+            let connection = connections.get_mut(&snapshot.connection_id).unwrap();
+            let mut other = connection.snapshot.attachments[0].clone();
+            other.session_id = v1::SessionId::new("another-conversation");
+            other.active_turn = Some(super::super::AcpTurnSnapshot {
+                turn_id: AcpTurnId::new(),
+                state: super::super::AcpTurnState::Running,
+                stop_reason: None,
+                usage: None,
+            });
+            connection.snapshot.attachments.push(other);
+        }
+        assert!(!crate::dictation::adapters::chat_caller(
+            &state, &origin, &target
+        ));
+        state
+            .acp
+            .connections
+            .lock()
+            .get_mut(&snapshot.connection_id)
+            .unwrap()
+            .snapshot
+            .attachments[1]
+            .active_turn
+            .as_mut()
+            .unwrap()
+            .state = super::super::AcpTurnState::Settled;
+        assert!(
+            crate::dictation::adapters::chat_caller(&state, &origin, &target),
+            "retained settled-turn history must not mute the voice target"
+        );
+    }
+
+    /// Catches permission speech being submitted and closed chat bindings staying live.
+    #[cfg(feature = "dictation")]
+    #[test]
+    fn voice_chat_holds_dialog_input_and_retracts_a_closed_attachment() {
+        use tuic_dictation::continuous::{VoiceHold, VoiceSink, VoiceWrite};
+        let (state, snapshot, mut receiver) = voice_chat();
+        let target = crate::dictation::adapters::chat_targets(&state)
+            .pop()
+            .unwrap()
+            .id;
+        state
+            .acp
+            .connections
+            .lock()
+            .get_mut(&snapshot.connection_id)
+            .unwrap()
+            .snapshot
+            .attachments[0]
+            .pending_permission_ids
+            .push(super::super::AcpHostRequestId::new());
+        assert_eq!(
+            crate::dictation::adapters::PtyVoiceSink(&state).write(&target, "yes"),
+            Ok(VoiceWrite::Held(VoiceHold::Question))
+        );
+        assert!(receiver.try_recv().is_err());
+        state
+            .acp
+            .connections
+            .lock()
+            .get_mut(&snapshot.connection_id)
+            .unwrap()
+            .snapshot
+            .attachments
+            .clear();
+        assert!(!crate::dictation::adapters::accepts_voice(&state, &target));
+        assert!(crate::dictation::adapters::chat_targets(&state).is_empty());
+        assert!(
+            crate::dictation::adapters::PtyVoiceSink(&state)
+                .write(&target, "hello")
+                .is_err()
+        );
+        assert!(receiver.try_recv().is_err());
+    }
 
     #[test]
     fn an_unattended_session_is_given_no_mcp_server() {

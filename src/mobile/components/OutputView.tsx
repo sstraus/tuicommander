@@ -1,6 +1,7 @@
 import { createEffect, createMemo, createSignal, For, type JSX, onCleanup, onMount, Show } from "solid-js";
 import {
 	ANSWER_RULE_SHADOW,
+	answerMarkerOffset,
 	INTENT_HIGHLIGHT_RE,
 	intentTitleEnd,
 	planSuggestOverlay,
@@ -456,7 +457,7 @@ export function OutputView(props: OutputViewProps) {
 		const result: JSX.Element[] = [];
 		let offset = 0;
 		const text = line.spans.map((span) => span.text).join("");
-		const marker = answers().markers.has(line) ? text.indexOf("💬") : -1;
+		const marker = answers().markers.has(line) ? (answerMarkerOffset(text) ?? text.indexOf("💬")) : -1;
 		const markerEnd = marker < 0 ? -1 : marker + (text.slice(marker).match(/^💬[\uFE0E\uFE0F]? ?/)?.[0].length ?? 2);
 		for (const span of line.spans) {
 			const from = Math.max(start, offset);
@@ -509,7 +510,7 @@ export function OutputView(props: OutputViewProps) {
 		const partial = !!anchor && text.slice(end).trim() !== "";
 		const isIntent = !!anchor;
 		const isAnswer = () => answers().lines.has(line);
-		const marker = () => (isIntent && !partial ? "intent" : isAnswer() ? "answer" : undefined);
+		const marker = () => (partial ? undefined : isIntent ? "intent" : isAnswer() ? "answer" : undefined);
 		const lineClass = isIntent && !partial ? `${styles.line} ${styles.intent}` : styles.line;
 		const wrapStyle = () => ({
 			"--wrap-indent": indent ? `${indent}ch` : undefined,
@@ -553,7 +554,7 @@ export function OutputView(props: OutputViewProps) {
 		}
 		return (
 			<div class={lineClass} style={wrapStyle()} data-terminal-marker={marker()}>
-				<Show when={isAnswer()}>
+				<Show when={isAnswer() && !partial}>
 					<span aria-hidden="true" class={styles.answerRule} style={{ "box-shadow": ANSWER_RULE_SHADOW }} />
 				</Show>
 				{partial ? (
@@ -561,7 +562,12 @@ export function OutputView(props: OutputViewProps) {
 						<span class={styles.intent} data-terminal-marker="intent">
 							{content(0, end)}
 						</span>
-						{content(end, text.length)}
+						<span style={{ position: "relative" }} data-terminal-marker={isAnswer() ? "answer" : undefined}>
+							<Show when={isAnswer()}>
+								<span aria-hidden="true" class={styles.answerRule} style={{ "box-shadow": ANSWER_RULE_SHADOW }} />
+							</Show>
+							{content(end, text.length)}
+						</span>
 					</>
 				) : (
 					content(0, text.length)

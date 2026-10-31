@@ -390,12 +390,20 @@ pub(super) async fn arm_hands_free_http(
 }
 
 pub(super) async fn disarm_hands_free_http(State(state): State<Arc<AppState>>) -> Response {
-    let app_handle = state.app_handle.read();
-    let Some(app) = app_handle.as_ref() else {
+    let Some(app) = state.app_handle.read().clone() else {
         return (StatusCode::SERVICE_UNAVAILABLE, "App not initialized").into_response();
     };
-    let dictation = app.state::<DictationState>();
-    Json(dictation::commands::disarm_hands_free(&state, &dictation)).into_response()
+    // ACP exit notices use the same synchronous voice sink as capture. Keep
+    // its prompt acknowledgement and runtime join off the async workers.
+    match tokio::task::spawn_blocking(move || {
+        let dictation = app.state::<DictationState>();
+        dictation::commands::disarm_hands_free(&state, &dictation)
+    })
+    .await
+    {
+        Ok(status) => Json(status).into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+    }
 }
 
 pub(super) async fn get_hands_free_status_http(State(state): State<Arc<AppState>>) -> Response {
@@ -574,4 +582,11 @@ fn decode_samples(bytes: &[u8]) -> Vec<f32> {
         .iter()
         .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect()
+}
+
+/// Attached AI Chat targets are host state, independent of the panel window.
+pub(super) async fn get_voice_targets_http(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    Json(dictation::adapters::chat_targets(&state))
 }

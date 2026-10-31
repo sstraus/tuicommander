@@ -1,3 +1,10 @@
+## AI Chat hands-free target — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt app when losing current sessions is acceptable, select a docked AI Chat in Voice → Target. Speak a prompt and confirm its reply is spoken. Pin a repository, view another worktree and confirm spoken requests retain the pin; unpin and confirm subsequent speech uses the viewed worktree, then clear the view and confirm no stale repository hint remains. Repeat with the detached panel. Change target, close the bound tab, and close its last view: capture and playback must stop. Native microphone/speaker acceptance requires real audio; no daily app was restarted. Rust changes do not hot-reload.
+## Joined intent and answer markers (2612-b0ac) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, show `intent: Ti indico i passaggi ... (Configurazione Claude)💬 Per configurare la tua installazione ...` in a throwaway agent session. Confirm the title ends at Configurazione Claude, only the intent prefix is tinted, and the answer has its own gutter in CLI and Chat. The daily app was not restarted. Rust changes do not hot-reload; restart only when losing current sessions is acceptable.
+
 ## Early wake acknowledgement (2610-9b43) — Rust rebuild/restart required
 
 - [ ] After a manual rebuild/restart when losing current sessions is acceptable, use an isolated voice conversation with a configured phrase. Unrelated speech must stay **Listening**. Say the phrase and continue speaking: a recognized prefix should show **Go ahead** before final **Transcribing**. Repeat from a browser-owned microphone. Record real wake-to-display latency and the matching `prefix_ms`/`inference_ms` log; deterministic tests do not establish acoustic accuracy or native latency. The daily instance was not restarted; Rust does not hot-reload.
