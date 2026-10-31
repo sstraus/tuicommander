@@ -22,6 +22,8 @@ interface ChatViewSnapshot {
 	updates: AcpSessionUpdate[];
 	unknownRows: number;
 	malformedRows: number;
+	/** Rust applies the same cleaning as native user receipts, in request order. */
+	pendingTexts?: string[];
 }
 
 interface Cursor {
@@ -107,12 +109,14 @@ async function readOnce(sessionId: string): Promise<void> {
 	const owner = watchOwners.get(sessionId);
 	// Not watched: nobody asked for this view, or it was closed.
 	if (!cursor) return;
+	const submitted = [...(state.pending[sessionId] ?? [])];
 	let snapshot: ChatViewSnapshot;
 	try {
 		snapshot = await invoke<ChatViewSnapshot>("chat_view_snapshot", {
 			sessionId,
 			epoch: cursor.epoch,
 			fromSeq: cursor.nextSeq,
+			pendingTexts: submitted.map((prompt) => prompt.text),
 		});
 	} catch (error) {
 		if (watchOwners.get(sessionId) !== owner) return;
@@ -150,12 +154,13 @@ async function readOnce(sessionId: string): Promise<void> {
 		let consumed = 0;
 		// CLI sends are ordered: a later receipt also retires older sends that
 		// produced no matching user record (for example, a local slash command).
-		// DEFERRED (2026-10-30) — Rust adapters redact and truncate user text.
-		// Exact matching can leave the last transformed send pending; sharing
-		// their comparison form needs a backend contract, not copied TS rules.
+		const comparisons = new Map(
+			submitted.map((prompt, index) => [prompt.id, snapshot.pendingTexts?.[index] ?? prompt.text]),
+		);
 		for (const [pendingIndex, prompt] of pending.entries()) {
 			const index = users.findIndex(
-				(entry, index) => index >= Math.max(after, prompt.after) && entry.text.trim() === prompt.text.trim(),
+				(entry, index) =>
+					index >= Math.max(after, prompt.after) && entry.text.trim() === comparisons.get(prompt.id)?.trim(),
 			);
 			if (index < 0) continue;
 			after = index + 1;

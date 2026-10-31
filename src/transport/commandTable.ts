@@ -649,8 +649,9 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	},
 	chat_view_snapshot: {
 		map: (args) => ({
-			method: "GET",
-			path: `/sessions/${args.sessionId}/chat-view?from_seq=${args.fromSeq ?? 0}${args.epoch != null ? `&epoch=${args.epoch}` : ""}`,
+			method: "POST",
+			path: `/sessions/${args.sessionId}/chat-view`,
+			body: { epoch: args.epoch ?? null, fromSeq: args.fromSeq ?? 0, pendingTexts: args.pendingTexts ?? [] },
 		}),
 	},
 	terminal_styled_rows: {

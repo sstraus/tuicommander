@@ -1242,7 +1242,10 @@ fn shared_routes() -> Router<Arc<AppState>> {
             "/sessions/{id}/terminal/lines",
             get(session::terminal_get_lines),
         )
-        .route("/sessions/{id}/chat-view", get(session::chat_view))
+        .route(
+            "/sessions/{id}/chat-view",
+            get(session::chat_view).post(session::chat_view_with_pending),
+        )
         .route(
             "/sessions/{id}/terminal/styled-rows",
             get(session::terminal_styled_rows),

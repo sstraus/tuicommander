@@ -193,7 +193,7 @@ async fn ticker_follows_appends_and_equal_size_transcript_replacement() {
         ))),
     );
     let mut rx = state.event_bus.subscribe();
-    let initial = chat_view_snapshot_blocking(state.clone(), sid.into(), None, 0)
+    let initial = chat_view_snapshot_blocking(state.clone(), sid.into(), None, 0, Vec::new())
         .await
         .expect("initial");
     assert_eq!(initial.updates[0]["content"]["text"], "before");
@@ -204,6 +204,7 @@ async fn ticker_follows_appends_and_equal_size_transcript_replacement() {
         sid.into(),
         Some(initial.epoch),
         initial.next_seq,
+        Vec::new(),
     )
     .await
     .expect("appended");
@@ -225,10 +226,15 @@ async fn ticker_follows_appends_and_equal_size_transcript_replacement() {
     );
     std::fs::rename(&replacement, &path).expect("replace");
     changed(&mut rx, sid).await;
-    let replaced =
-        chat_view_snapshot_blocking(state, sid.into(), Some(appended.epoch), appended.next_seq)
-            .await
-            .expect("replaced");
+    let replaced = chat_view_snapshot_blocking(
+        state,
+        sid.into(),
+        Some(appended.epoch),
+        appended.next_seq,
+        Vec::new(),
+    )
+    .await
+    .expect("replaced");
     assert!(
         replaced.reset,
         "replacement must invalidate the old conversation cursor"
@@ -303,4 +309,58 @@ fn unreadable_transcript_recovers_for_the_snapshot_consumer() {
     assert!(recovered.reset);
     assert_eq!(recovered.updates.len(), 1);
     assert_eq!(recovered.updates[0]["content"]["text"], "recovered");
+}
+
+// Catches: snapshot candidates using a different cap/redaction order than native receipts.
+// Recorded schemas are retained; only prompt payloads vary at the cleaning boundary.
+#[tokio::test]
+async fn pending_comparison_matches_native_receipts_at_cleaning_boundaries() {
+    let cases = [
+        ("a".repeat(20_001), format!("{}…", "a".repeat(19_999))),
+        ("🦀".repeat(20_000), "🦀".repeat(20_000)),
+        ("🦀".repeat(20_001), format!("{}…", "🦀".repeat(19_999))),
+        (
+            "inspect AKIAIOSFODNN7EXAMPLE".into(),
+            "inspect [REDACTED]".into(),
+        ),
+        // Redacting before cutting keeps this below the cap, with no ellipsis.
+        (
+            format!("{} AKIAIOSFODNN7EXAMPLE", "a".repeat(19_980)),
+            format!("{} [REDACTED]", "a".repeat(19_980)),
+        ),
+    ];
+    let mut claude_row: Value = include_str!("../fixtures/chat_view/claude_session.jsonl")
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .find(|row| row["origin"]["kind"] == "human")
+        .expect("recorded human prompt");
+    let mut codex_row: Value = include_str!("../fixtures/chat_view/codex/completed.jsonl")
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .find(|row| row["payload"]["item"]["type"] == "UserMessage")
+        .expect("recorded user item");
+    for (raw, expected) in cases {
+        claude_row["message"]["content"] = Value::String(raw.clone());
+        codex_row["payload"]["item"]["content"][0]["text"] = Value::String(raw.clone());
+        let tmp = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let path = tmp.path().join("transcript.jsonl");
+        std::fs::write(&path, format!("{claude_row}\n")).unwrap();
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        state.chat_views.views.lock().insert(
+            "comparison".into(),
+            Arc::new(Mutex::new(View::for_agent(
+                Agent::Claude,
+                path,
+                MAX_LOG_ENTRIES,
+                MAX_LOG_BYTES,
+            ))),
+        );
+        let snapshot = chat_view_snapshot_blocking(state, "comparison".into(), None, 0, vec![raw])
+            .await
+            .unwrap();
+        assert_eq!(snapshot.pending_texts, std::slice::from_ref(&expected));
+        assert_eq!(snapshot.updates[0]["content"]["text"], expected);
+        let updates = codex::CodexAdapter::default().absorb(&codex_row.to_string());
+        assert_eq!(updates[0]["content"]["text"], expected);
+    }
 }

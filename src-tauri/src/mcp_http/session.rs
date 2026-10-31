@@ -2587,6 +2587,25 @@ pub(super) async fn chat_view(
             session_id,
             query.epoch,
             query.from_seq.unwrap_or(0),
+            Vec::new(),
+        )
+        .await,
+    )
+}
+
+/// Snapshot candidates travel in a body, never a URL (prompts can be long or secret).
+pub(super) async fn chat_view_with_pending(
+    State(state): State<Arc<AppState>>,
+    Path(session_id): Path<String>,
+    Json(request): Json<super::types::ChatViewRequest>,
+) -> Response {
+    super::json_result(
+        crate::chat_view::chat_view_snapshot_blocking(
+            state,
+            session_id,
+            request.epoch,
+            request.from_seq.unwrap_or(0),
+            request.pending_texts,
         )
         .await,
     )

@@ -44,6 +44,7 @@ it("mobile_codex_chat_toggle_for_bound_transcript", async () => {
 			sessionId: "mobile-codex",
 			epoch: null,
 			fromSeq: 0,
+			pendingTexts: [],
 		}),
 	);
 	view.getByRole("tab", { name: "CLI" }).click();
@@ -82,6 +83,7 @@ it("mobile_grok_chat_toggle_for_bound_transcript", async () => {
 		sessionId: "mobile-grok",
 		epoch: null,
 		fromSeq: 0,
+		pendingTexts: [],
 	});
 	view.getByRole("tab", { name: "CLI" }).click();
 	expect(view.queryByTestId("terminal-chat-view")).toBeNull();

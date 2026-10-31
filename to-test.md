@@ -1,3 +1,6 @@
+## Terminal Chat transformed receipts (2542-49c3) — Rust rebuild/restart required
+
+- [ ] After Boss restarts a rebuilt `make dev` or installs `make build`, send a prompt longer than 20000 characters or containing a redacted secret pattern in Terminal Chat. Its pending bubble must disappear after the native transcript receipt arrives. Automated store and native-adapter tests cover the comparison contract. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
 ## Automation external edits (2548-0bc7) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, save `automations.json` in place in a throwaway instance and confirm the completed definitions remain visible. Invalid JSON must report an error without moving the live file. Deterministic rb regression covers the truncate/read/write ordering; the daily app was not restarted. Rust does not hot-reload; restart only when losing current sessions is acceptable.
