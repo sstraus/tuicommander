@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Let Design Mode start after a stale browser profile lock PID is reused by an unrelated process; preserve live profile ownership (#2591-937a).
 - Show an explicit unrelated-history branch state without failing repository refresh or treating independent commits as merged work. Keep the dirty-file count and Changes action in compact rows (#2611-6022).
 
 - Stop buffering an oversized plugin watcher line after its first overflow; cursor-addressed TUI repaints now produce one warning until the next newline (#2607-678c).
