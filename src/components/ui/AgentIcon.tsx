@@ -16,11 +16,11 @@ interface IconPath {
 
 /** SVG path data for agents with official brand icons */
 const AGENT_PATHS: Partial<Record<AgentType, IconPath>> = {
-	// ego: ring around an epsilon.
+	// ego: ring around a rounded, joined lowercase ae ligature (no font fallback).
 	ego: {
 		viewBox: "0 0 24 24",
 		evenodd: true,
-		d: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16zM15 8.5H11a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h4V14h-3.5a.5.5 0 0 1-.5-.5v-.75h3.5v-1.5H11v-.75a.5.5 0 0 1 .5-.5H15z",
+		d: "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16zM9 8C7.5 8 6.5 8.6 6.2 9.8L7.7 10.2C7.9 9.6 8.3 9.3 9 9.3C10 9.3 10.5 9.8 10.5 10.6V11H9C7 11 6 11.9 6 13.4C6 15 7.2 16 8.8 16C10 16 10.9 15.5 11.5 14.7C12.2 15.6 13.3 16 14.6 16C16.2 16 17.4 15.3 18 14L16.6 13.4C16.2 14.2 15.6 14.6 14.6 14.6C13.2 14.6 12.4 13.8 12.3 12.6H18V11.9C18 9.5 16.7 8 14.6 8C13.3 8 12.3 8.5 11.6 9.4C11.1 8.5 10.2 8 9 8ZM10.5 12.3H9C8 12.3 7.5 12.7 7.5 13.4C7.5 14.2 8 14.6 8.8 14.6C9.9 14.6 10.5 13.8 10.5 12.8ZM12.3 11.3H16.4C16.3 10 15.7 9.4 14.5 9.4C13.3 9.4 12.5 10.1 12.3 11.3Z",
 	},
 	// Claude sparkle/asterisk (source: simpleicons.org)
 	claude: {
