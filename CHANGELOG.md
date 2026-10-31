@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Show a rounded Greek epsilon (ε), not an æ ligature or square E, in the ego identity circle across the sidebar and shared agent icons (#2598-8df7).
+
 - Resolve Progress to the main checkout when a separately registered linked checkout repeats the shared workspace inventory (#2583-fd08).
 
 - Keep AI Chat Stop and Send buttons at a fixed size and bottom-aligned as the draft grows (#2588-b8af).
