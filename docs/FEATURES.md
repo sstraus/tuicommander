@@ -1704,6 +1704,8 @@ Variables are resolved from the Rust backend (`resolve_context_variables`) and f
 
 ## 11. Settings
 
+AI Chat settings retain model controls when ego health diagnostics fail, with a non-blocking explanation and preserved credential evidence.
+
 Malformed config fields recover independently, retaining valid preferences. A startup warning names reset fields and the original backup path. Legacy scrollback reflow is enabled once, without overriding later user choices.
 
 The navigation groups the global pages by task. Each group is a static label row above its pages:

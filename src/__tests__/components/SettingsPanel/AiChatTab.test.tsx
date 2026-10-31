@@ -45,6 +45,49 @@ function fakeClient(over: Partial<EgoCliClient> = {}): EgoCliClient & { refreshe
 	};
 }
 
+describe("AiChatTab — diagnostic independence", () => {
+	it.each([
+		[
+			"doctor exit 1 with JSON",
+			"ego health check reported problems: session store: probe timed out: the two-second doctor budget was exhausted",
+		],
+		[
+			"doctor exit 1 without JSON",
+			"ego health check failed (exit 1); credential status is unavailable. Run ego doctor --json in a terminal.",
+		],
+		["doctor ok", null],
+	])("keeps model selection usable with %s", async (_case, diagnostic) => {
+		// Catches: a doctor warning replacing the model selector, or being silently dropped.
+		const loaded = {
+			...snapshot(
+				[
+					provider(
+						"openai-codex",
+						[model("openai-codex/gpt-6.1-sol"), model("openai-codex/gpt-6.1-terra")],
+						_case.includes("without JSON") ? { state: "unknown", detail: "Health status unavailable" } : undefined,
+					),
+				],
+				"openai-codex/gpt-6.1-sol",
+			),
+			diagnostic,
+		};
+		const client = fakeClient({
+			providers: async () => loaded,
+			setDefaultModel: vi.fn(async (model: string) => ({ ...loaded, defaultModel: model })),
+		});
+		render(() => <AiChatTab client={client} />);
+		const select = await screen.findByRole("combobox", { name: "Default model" });
+		expect((select as HTMLSelectElement).value).toBe("openai-codex/gpt-6.1-sol");
+		expect((select as HTMLSelectElement).disabled).toBe(false);
+		if (diagnostic) expect(await screen.findByText(diagnostic)).toBeTruthy();
+		else expect(screen.queryByRole("status")).toBeNull();
+		expect(screen.queryByText("ego refused the command")).toBeNull();
+		fireEvent.change(select, { target: { value: "openai-codex/gpt-6.1-terra" } });
+		await vi.waitFor(() => expect(client.setDefaultModel).toHaveBeenCalledWith("openai-codex/gpt-6.1-terra"));
+		await vi.waitFor(() => expect((select as HTMLSelectElement).value).toBe("openai-codex/gpt-6.1-terra"));
+	});
+});
+
 describe("AiChatTab", () => {
 	it("keeps model controls without exposing ownership and transport commentary", async () => {
 		const client = fakeClient({

@@ -830,6 +830,8 @@ Four rules hold this surface down:
   contain `"` or `\` — the last two would break out of ego's TOML string.
 - A failure carries what ego printed.
 
+`ego_providers` and `ego_set_default_model` return an optional `EgoProviders.diagnostic` alongside usable model data when the health check fails. Doctor exit 1 does not reject the whole response; IPC and HTTP use the same projection.
+
 | Command | Args | Returns | Description |
 |---------|------|---------|-------------|
 | `ego_providers` | `refresh?` | `EgoProviders` | `config ls --profile=<configured> --json` + `models --json` + `doctor --json`, joined in the configured AI Chat workspace. The profile flag is omitted for the base. `refresh: true` adds `--refresh`, the only call that reaches a provider |

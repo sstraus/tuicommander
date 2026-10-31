@@ -3233,6 +3233,7 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] Scroll through terminal web links and soft-wrapped file URLs: dotted underlines and Cmd-hover strokes must stay on their text, including when the backend viewport trails a smooth gesture (#2582-13dd).
 - [ ] After a Rust rebuild/restart, inspect the generated Waiting and long work launch preview: continue independent work, yield only for a needed result or user answer, report running work without completion/suggestions, and use the launched mechanism’s wake. Existing sessions do not receive the new launch text automatically. (#2581-4824)
 
+- [ ] After the next backend rebuild, open Settings > AI / AI Chat with the installed ego session-store timeout: confirm the default-model picker and provider actions remain usable beside the specific health diagnosis. Rust changes require a manual restart when ready; no live restart was performed.
 - [ ] Sidebar session context menu: add a session to the Global Workspace, reopen the menu and remove it; existing copy actions remain available (#2590-2d63).
 - [x] AI Chat multiline composer: Stop and Send remain fixed-size at the bottom. _(verified: real Composer in worktree Vite, one-line/five-line idle/busy browser bounds and screenshots in orchestrator reports/tuicommander/img/2026-10-31-compose-buttons/.)_
 ## Chat dictation auto-send (#2585-dfc2)
