@@ -30,6 +30,10 @@ loses its old Worktrees bell offer, so that offer cannot open the obsolete path.
 
 Worktree removal uses the same checkout identity as the sidebar. A symbolic branch name remains addressable even when Git reports its target branch. Deleting that alias after removal preserves the target branch. If a branch was renamed externally, refresh the repository before removal; the directory name does not define its identity.
 
+## Unrelated histories
+
+A branch with no common ancestor with the default branch shows **Unrelated history** in compact and rich sidebar rows. The repository and its other branches still load normally. In compact rows, a dirty-file badge keeps its count and opens Changes, including when the only changes are untracked files. This is not a failed refresh or merged work. Keep the branch when removing its checkout. Branch deletion requires an archive at the current tip so the independent history remains recoverable.
+
 ## Worktree Storage Strategies
 
 Configure where worktrees are stored (Settings → Git & GitHub → Worktree Defaults → Storage):

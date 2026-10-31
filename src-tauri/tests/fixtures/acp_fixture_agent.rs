@@ -62,6 +62,20 @@ fn main() {
             "production argv"
         );
     }
+    let expected_prompt = root.join("expected-master-prompt.txt");
+    if expected_prompt.exists() {
+        let expected = fs::read_to_string(expected_prompt).expect("expected master prompt");
+        assert_eq!(
+            args.next().as_deref(),
+            Some("--append-system"),
+            "production argv"
+        );
+        assert_eq!(
+            args.next().as_deref(),
+            Some(expected.as_str()),
+            "production prompt argv"
+        );
+    }
     assert!(
         args.next().is_none(),
         "production argv carries nothing else"

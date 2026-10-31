@@ -2343,7 +2343,11 @@ With an activation phrase, `holdBackMs` reports the effective minimum of 5000
 ms, even when the saved hold-back setting is shorter. A continuation that
 starts before that deadline joins the same pending turn.
 
-`phase` is one of `disarmed`, `waiting`, `capturing`, `transcribing`,
+`wake_confirmed` acknowledges a recognized leading activation phrase during open
+capture; it does not admit or submit the final transcript. VAD alone remains
+`capturing`. Both capture sources use the same bounded prefix recognition.
+
+`phase` is one of `disarmed`, `waiting`, `capturing`, `wake_confirmed`, `transcribing`,
 `holding_back`, `delivered`, `error`.
 
 `deliveredTurns` counts spoken turns typed into the composer and
@@ -2944,6 +2948,8 @@ payload names the connection, generation, sequence and — when it has one — t
 session and request it is about.
 
 ## ego Command Line (`mcp_http/ego_routes.rs`)
+
+`EgoProviders` from `/ego/providers` and `/ego/providers/model` can include an optional `diagnostic` string. Health failures do not turn successful config/model reads into HTTP errors; valid doctor exit-1 JSON is still consumed. Without usable credential evidence, provider credentials are `unknown`.
 
 The browser half of the dedicated ego configuration commands — what the Settings →
 AI Chat page reads and writes. Same field names, same response body, same error

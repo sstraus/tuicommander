@@ -28,7 +28,8 @@ function renderErrors(draft, errors, selection) {
     catch (error) { status(error.message,true); await refresh(); }
   };
   const clear = node('button', 'Clear errors'); clear.onclick = () => call({kind:'clear_errors',tabId:draft.tabId}).then(render).catch((error)=>status(error.message,true));
-  section.append(summary, list, label, only, clear);
+  const actions = node('div', undefined, 'actions'); actions.append(only, clear);
+  section.append(summary, list, label, actions);
   $('errors').append(section);
 }
 function render(draft) {

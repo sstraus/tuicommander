@@ -462,7 +462,10 @@ const App: Component = () => {
 	usePluginRuntime();
 	useSystemLifecycle();
 
-	const detachedPanelBridge = useDetachedPanelBridge(() => openSettings("general", SETTINGS_SECTION_EGO));
+	const detachedPanelBridge = useDetachedPanelBridge(
+		() => openSettings("general", SETTINGS_SECTION_EGO),
+		() => openSettings("dictation"),
+	);
 
 	// Notification sounds are now played natively via Rust (rodio) —
 	// no Web Audio warmup needed.

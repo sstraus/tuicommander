@@ -12,6 +12,8 @@ type Sample = {
 	actualFocus: boolean;
 	focusVisible: boolean;
 	mobile: boolean;
+	busy: boolean;
+	stop: Box | null;
 	editor: Box;
 	send: Box;
 	header: Box;
@@ -21,7 +23,7 @@ type Sample = {
 const directory = process.env.TUIC_COMPOSER_GEOMETRY_DIR;
 const phase = process.env.TUIC_COMPOSER_GEOMETRY_PHASE ?? "after";
 // Opt-in: happy-dom cannot measure CSS. This mounts the real component in worktree Vite.
-describe.skipIf(!directory)("AI Chat composer shared edges", () => {
+describe.skipIf(!directory)("AI Chat composer fixed actions", () => {
 	let server: ChildProcess;
 	const samples: Sample[] = [];
 	const mobile: Sample[] = [];
@@ -32,11 +34,15 @@ describe.skipIf(!directory)("AI Chat composer shared edges", () => {
 		const result = spawnSync("perl", ["-e", "alarm 40; exec @ARGV", wrapper, ...args], {
 			encoding: "utf8",
 			timeout: 45000,
-			env: { ...process.env, AB_SESSION: "tuic-chat-align-2550", AB_AGENT_BROWSER_DIR: join(directory!, "ab-empty") },
+			env: {
+				...process.env,
+				AB_SESSION: "tuic-compose-buttons-2588",
+				AB_AGENT_BROWSER_DIR: join(directory!, "ab-empty"),
+			},
 			stdio: ["ignore", "pipe", "pipe"],
 		});
-		const pid = result.stderr?.match(/session=tuic-chat-align-2550 Chrome=(\d+)/)?.[1];
-		if (pid) daemon = `ab-shared-tuic-chat-align-2550-${pid}`;
+		const pid = result.stderr?.match(/session=tuic-compose-buttons-2588 Chrome=(\d+)/)?.[1];
+		if (pid) daemon = `ab-shared-tuic-compose-buttons-2588-${pid}`;
 		if (result.status !== 0) throw new Error(result.stderr || String(result.error));
 		return result.stdout;
 	};
@@ -102,18 +108,27 @@ describe.skipIf(!directory)("AI Chat composer shared edges", () => {
 				for (const [name, text] of [
 					["empty", ""],
 					["one", "il mio goal è di"],
-					["multi", "First line\nSecond line\nThird line\nFourth line"],
+					["multi", "First line\nSecond line\nThird line\nFourth line\nFifth line"],
 				]) {
-					for (const focus of [false, true]) {
-						const sample = JSON.parse(
-							run("--", "eval", `window.composerSample(${JSON.stringify(text)}, ${focus})`),
-						) as Sample;
-						(phone ? mobile : samples).push(sample);
-						run(
-							"--",
-							"screenshot",
-							join(directory!, `${phase}-${phone ? "mobile" : "desktop"}-${name}-${focus ? "focus" : "blur"}.png`),
-						);
+					for (const busy of phone ? [false] : [false, true]) {
+						for (const focus of [false, true]) {
+							const sample = JSON.parse(
+								run(
+									"--",
+									"eval",
+									`window.composerSample(${JSON.stringify(phone && name === "multi" ? text.split("\n").slice(0, 4).join("\n") : text)}, ${focus}, ${busy})`,
+								),
+							) as Sample;
+							(phone ? mobile : samples).push(sample);
+							run(
+								"--",
+								"screenshot",
+								join(
+									directory!,
+									`${phase}-${phone ? "mobile" : "desktop"}-${name}-${busy ? "busy" : "idle"}-${focus ? "focus" : "blur"}.png`,
+								),
+							);
+						}
 					}
 				}
 			}
@@ -130,13 +145,16 @@ describe.skipIf(!directory)("AI Chat composer shared edges", () => {
 			await closed;
 		}
 	});
-	it("aligns textarea and Send — catches independent editor width and bottom-only button alignment", () => {
-		expect(samples).toHaveLength(6);
+	it("keeps Send and Stop fixed-size and bottom-aligned — catches actions stretching with multiline drafts", () => {
+		expect(samples).toHaveLength(12);
 		for (const sample of samples) {
-			for (const edge of ["top", "bottom", "height"] as const) {
-				expect.soft(sample.editor[edge], JSON.stringify(sample)).toBeCloseTo(sample.send[edge], 1);
+			for (const action of [sample.send, ...(sample.stop ? [sample.stop] : [])]) {
+				expect.soft(action.height, JSON.stringify(sample)).toBeCloseTo(36, 1);
+				expect.soft(action.bottom, JSON.stringify(sample)).toBeCloseTo(sample.editor.bottom, 1);
 			}
-			expect.soft(sample.editor.right).toBeLessThan(sample.send.left);
+			expect.soft(sample.send.width, JSON.stringify(sample)).toBeCloseTo(36, 1);
+			expect.soft(!!sample.stop).toBe(sample.busy);
+			expect.soft(sample.editor.right).toBeLessThan((sample.stop ?? sample.send).left);
 		}
 	});
 	it("retains shared content edges and focus band — catches misplaced rows or an offset editor focus ring", () => {

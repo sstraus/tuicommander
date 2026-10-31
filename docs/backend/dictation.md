@@ -26,7 +26,15 @@ buffer policy. Edge speech retains the `symphonia-mp3` decoder feature.
 
 Local voice-to-text using Whisper with Metal acceleration on macOS. Push-to-talk workflow with streaming partial results: hold hotkey to record, see partial transcriptions in real-time, release to finalize.
 
-On macOS, losing main-window focus does not release a physically held Fn key.
+Fn down/up listeners use the current WebviewWindow target, not global event listeners.
+Global (`Any`) listeners also receive labeled events and would create competing recording owners.
+Each window disposes its guarded subscriptions when its hook scope ends.
+
+On macOS, Fn key-down is sent to the detached AI Chat WebView when it has focus,
+or to the secondary terminal WebView when it has focus, otherwise to the main
+WebView. Each owns its DOM target and dictation hooks.
+Key-up reaches all three supported WebViews; only the handler that saw key-down can
+stop a take. Losing a supported window's focus does not release a physically held Fn key.
 The local event monitor still handles ordinary key-up. After focus loss, a
 temporary AppKit timer checks the current modifier flags every 50 ms, stops
 capture and emits key-up once Fn is released, then invalidates itself. The timer
@@ -147,7 +155,7 @@ Both transports serialize the same structs, camelCase on the wire:
 `HandsFreeStatus { armed, phase, sessionId, owner, generation, pendingText, holdBackMs, error, deliveredTurns, droppedTurns }` and
 `HandsFreeDisarmed { wasArmed, generation, discardedPending, discardedCapture, status }`.
 `sessionId` and `owner` are bounded at 256 bytes and may not be blank.
-`phase` is one of `disarmed`, `waiting`, `capturing`, `transcribing`,
+`phase` is one of `disarmed`, `waiting`, `capturing`, `wake_confirmed`, `transcribing`,
 `holding_back`, `delivered`, `error`.
 `deliveredTurns` (bumped in `HandsFree::note_written`) and `droppedTurns`
 (bumped on `TranscriptOutcome::Rejected`) are monotonic for the process and
@@ -570,6 +578,31 @@ Since 832-e730 the Voice settings page (formerly the Dictation tab) renders in b
 `isTauri()`: the global hotkey, which the browser cannot register, and the
 microphone device list, which enumerates the *server's* devices — offering a
 browser user a device in another building is worse than offering nothing.
+
+### Early wake acknowledgement
+
+`waiting` and VAD-only `capturing` both display **Listening**. With a configured
+activation phrase, the shared continuous runtime recognizes prefixes of the open
+utterance at one-second audio intervals, up to four seconds. A recognized
+leading phrase changes the phase to `wake_confirmed` (**Go ahead**) while the
+utterance is still open. Recognition uses the same endpoint, model, language,
+speech gates and phrase matcher on desktop and browser capture. No extra model
+or parallel inference worker is created.
+
+There are at most four prefix passes per utterance, each borrowing at most
+64,000 samples (256 KB at 16 kHz mono f32). Backlogged cadence points are skipped
+rather than queued. Idle capture, an unset phrase and an already confirmed wake
+run no prefix inference. A failed prefix is best effort; final transcription
+still owns error reporting. Slow inference can delay the next capture-loop tick;
+this is not a dedicated keyword spotter or a fixed-latency guarantee.
+
+The acknowledgement does not open the activation window, schedule delivery or
+change the spoken language. The final transcript still passes through
+`Activation::admit`, including when it revises a matching partial. Closing the
+utterance changes the phase to **Transcribing**. A disarm or generation change
+invalidates an in-flight prefix, and an old capture cannot adopt a new arm.
+Successful acknowledgement logs `prefix_ms` and `inference_ms`; these are probe
+measurements, not a measured acoustic wake-to-display latency.
 
 ### The activation phrase
 

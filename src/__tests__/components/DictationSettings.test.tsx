@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appLogger } from "../../stores/appLogger";
 import { mockInvoke } from "../mocks/tauri";
@@ -136,6 +136,55 @@ beforeEach(() => {
 	mockStore.state.speechEngine = "edge";
 });
 
+describe("DictationSettings – consistent voice presentation", () => {
+	afterEach(() => {
+		mockStore.state.language = "auto";
+		mockStore.state.speechAssets = [];
+	});
+	it("keeps model and reply voice choices accessible as named native selectors", () => {
+		mockStore.state.language = "en";
+		mockStore.state.speechEngine = "edge";
+		const view = render(() => <DictationSettings />);
+		expect(view.getByRole("combobox", { name: "Whisper model" }).tagName).toBe("SELECT");
+		expect(view.getByRole("combobox", { name: "Voice" }).tagName).toBe("SELECT");
+	});
+
+	it("keeps downloaded Pocket and Whisper assets labelled with working removal actions", () => {
+		vi.clearAllMocks();
+		mockStore.state.speechEngine = "pocket";
+		mockStore.state.speechAssets = [
+			{
+				id: "runtime",
+				kind: "runtime",
+				display_name: "Runtime",
+				language: null,
+				voices: [],
+				download_bytes: 1_000_000,
+				state: "ready",
+			},
+		];
+		const view = render(() => <DictationSettings />);
+		const whisper = view.container.querySelector('[data-whisper-model="large-v3-turbo"]')!;
+		const speech = view.container.querySelector("[data-speech-downloads]")!;
+		expect(whisper.textContent).toContain("Downloaded");
+		expect(speech.textContent).toContain("Downloaded");
+		fireEvent.click(within(whisper as HTMLElement).getByRole("button", { name: "Remove" }));
+		fireEvent.click(within(speech as HTMLElement).getByRole("button", { name: "Remove" }));
+		expect(mockStore.deleteModel).toHaveBeenCalledWith("large-v3-turbo");
+		expect(mockStore.deleteSpeechAsset).toHaveBeenCalledWith("runtime");
+	});
+
+	it("prevents the external speech command from bypassing shared row labels and help", () => {
+		mockStore.state.speechEngine = "external";
+		const { container } = render(() => <DictationSettings />);
+		const command = container.querySelector<HTMLTextAreaElement>('[data-setting-id="voice.speech_command"]')!;
+		expect(command.id).toBeTruthy();
+		expect(container.querySelector(`label[for="${command.id}"]`)?.textContent).toBe("Speech command");
+		const description = document.getElementById(command.getAttribute("aria-describedby")!);
+		expect(description?.textContent).toContain("One argument per line, no shell.");
+	});
+});
+
 describe("DictationSettings – Model Selector", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -202,7 +251,7 @@ describe("DictationSettings – Model Selector", () => {
 		expect(rows[0].textContent).not.toContain("Active");
 	});
 
-	it("clicking a downloaded model calls setModel", () => {
+	it("selecting a downloaded model calls setModel", () => {
 		// Both models downloaded for this test
 		mockStore.state.models = [
 			{ name: "small", display_name: "Small", size_hint_mb: 488, downloaded: true, actual_size_mb: 488 },
@@ -216,10 +265,8 @@ describe("DictationSettings – Model Selector", () => {
 		];
 
 		const { container } = render(() => <DictationSettings />);
-		const rows = container.querySelectorAll("[data-whisper-model]");
-		const selectBtn = rows[0].querySelector('button[title="Use model"]');
-		expect(selectBtn).not.toBeNull();
-		fireEvent.click(selectBtn!);
+		const select = container.querySelector<HTMLSelectElement>('[data-setting-id="voice.model"]')!;
+		fireEvent.change(select, { target: { value: "small" } });
 		expect(mockStore.setModel).toHaveBeenCalledWith("small");
 	});
 
@@ -241,10 +288,17 @@ describe("DictationSettings – Model Selector", () => {
 
 	it("does not allow selecting a not-downloaded model", () => {
 		const { container } = render(() => <DictationSettings />);
-		const rows = container.querySelectorAll("[data-whisper-model]");
-		// Not-downloaded model should not have a select button
-		const selectBtn = rows[0].querySelector('button[title="Use model"]');
-		expect(selectBtn).toBeNull();
+		const select = container.querySelector<HTMLSelectElement>('[data-setting-id="voice.model"]')!;
+		expect(select.querySelector<HTMLOptionElement>('option[value="small"]')?.disabled).toBe(true);
+	});
+
+	it("retains the configured model while the catalogue has not loaded instead of showing a different choice", () => {
+		mockStore.state.models = [];
+		mockStore.state.selectedModel = "large-v3-turbo";
+		const { container } = render(() => <DictationSettings />);
+		const select = container.querySelector<HTMLSelectElement>('[data-setting-id="voice.model"]')!;
+		expect(select.value).toBe("large-v3-turbo");
+		expect(mockStore.setModel).not.toHaveBeenCalled();
 	});
 
 	it("shows status badge for each model", () => {
@@ -460,7 +514,7 @@ describe("DictationSettings – Spoken replies", () => {
 
 	/** The speech rows, which follow the Whisper rows in the same markup. */
 	const speechRows = (container: HTMLElement) =>
-		Array.from(container.querySelectorAll("[data-speech-downloads] .modelRow"));
+		Array.from(container.querySelectorAll("[data-speech-downloads] .assetRow"));
 
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -478,7 +532,7 @@ describe("DictationSettings – Spoken replies", () => {
 	it("marks only the language replies are spoken in as active, like the selected Whisper model", () => {
 		const { container } = render(() => <DictationSettings />);
 		const rows = speechRows(container);
-		const active = rows.filter((row) => row.classList.contains("active")).map((row) => row.textContent);
+		const active = rows.filter((row) => row.textContent?.includes("Active")).map((row) => row.textContent);
 		expect(active).toHaveLength(1);
 		expect(active[0]).toContain("italian");
 		expect(active[0]).toContain("Active");
@@ -494,19 +548,19 @@ describe("DictationSettings – Spoken replies", () => {
 			...mockStore.state.speechAssets,
 		];
 		const { container } = render(() => <DictationSettings />);
-		const rows = Array.from(container.querySelectorAll("[data-speech-downloads] .modelRow"));
+		const rows = Array.from(container.querySelectorAll("[data-speech-downloads] .assetRow"));
 		expect(rows).toHaveLength(3);
 		expect(rows.some((row) => row.textContent?.includes("voice-italian-jean"))).toBe(false);
-		const active = rows.filter((row) => row.classList.contains("active"));
+		const active = rows.filter((row) => row.textContent?.includes("Active"));
 		expect(active.map((row) => row.textContent)).toEqual([expect.stringContaining("italian")]);
 	});
 
-	it("cancels a running download from a × control, not a text button", () => {
+	it("cancels a running download from the named shared action", () => {
 		mockStore.state.speechDownloads = { english: 40 };
 		const { container } = render(() => <DictationSettings />);
 		const english = speechRows(container).find((row) => row.textContent?.includes("english"))!;
 		const cancel = english.querySelector('button[title="Cancel"]') as HTMLButtonElement;
-		expect(cancel.textContent).toBe("×");
+		expect(cancel.textContent).toBe("Cancel");
 		fireEvent.click(cancel);
 		expect(mockStore.cancelSpeechDownload).toHaveBeenCalledWith("english");
 	});
@@ -588,7 +642,7 @@ describe("DictationSettings – Voice library", () => {
 
 	it("downloads a voice from its own row", () => {
 		const { container } = render(() => <DictationSettings />);
-		const row = Array.from(group(container, "downloadable")!.querySelectorAll(".modelRow")).find((r) =>
+		const row = Array.from(group(container, "downloadable")!.querySelectorAll(".assetRow")).find((r) =>
 			r.textContent?.includes("alba"),
 		)!;
 		fireEvent.click(button(row, "Download")!);
@@ -625,7 +679,7 @@ describe("DictationSettings – Voice library", () => {
 		const { container } = render(() => <DictationSettings />);
 		const select = voiceSelect(container);
 		expect(select.value).toBe("bill_boerst");
-		expect(select.selectedOptions[0].textContent).toContain("Not Downloaded");
+		expect(select.selectedOptions[0].textContent).toContain("Not downloaded");
 		const values = Array.from(select.options).map((o) => o.value);
 		expect(values).toEqual(["", "giovanni", "jean", "alba", "marco", "bill_boerst"]);
 		expect(values).not.toContain("lola");
@@ -818,7 +872,7 @@ describe("DictationSettings – layout", () => {
 		for (const label of ["Input device", "Language", "Level gate", "Speech confidence gate"]) {
 			expect(owner[label]).toBe("Speech recognition");
 		}
-		expect(owner["Whisper Model"]).toBe("Speech assets");
+		expect(owner["Whisper model"]).toBe("Speech assets");
 		expect(owner["Voice tuning"]).toBe("Speech assets");
 		expect(owner.Voice).toBe("Spoken replies");
 	});
@@ -950,7 +1004,7 @@ describe("DictationSettings – expert controls", () => {
 		["Voice volume", "speechVolumeDb", -24],
 		["Levelling", "speechLevelling", 0.2],
 	];
-	const BASIC = ["Enable Dictation", "Hotkey", "Whisper Model", "Language", "Activation phrase", "Earcons"];
+	const BASIC = ["Enable Dictation", "Hotkey", "Whisper model", "Language", "Activation phrase", "Earcons"];
 
 	const hasLabel = (container: HTMLElement, text: string) =>
 		[...container.querySelectorAll("label")].some((el) => el.textContent === text);
@@ -1121,8 +1175,8 @@ describe("DictationSettings – Edge engine", () => {
 		// run a program named "piper --model x".
 		mockStore.state.speechEngine = "external";
 		uiStore.setSettingsExpertMode(true);
-		const { container } = render(() => <DictationSettings />);
-		const area = labelled(container, "Speech command")?.parentElement?.querySelector("textarea") as HTMLTextAreaElement;
+		const view = render(() => <DictationSettings />);
+		const area = view.getByRole("textbox", { name: "Speech command" });
 		fireEvent.change(area, { target: { value: "piper\n--output_file\n\n{out}\n" } });
 		expect(mockStore.setSpeechCommand).toHaveBeenCalledWith(["piper", "--output_file", "{out}"]);
 	});

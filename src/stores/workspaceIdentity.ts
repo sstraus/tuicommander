@@ -24,7 +24,13 @@ export type WorkspaceKind =
  *  of its own and was never merged. Both it and `merged` satisfy the backend's
  *  `merge-base --is-ancestor` check; only `merged` describes commits that were
  *  actually integrated. */
-export type WorkspaceCommitStatus = "unmerged" | "pushed_unmerged" | "in_sync" | "merged" | "unknown";
+export type WorkspaceCommitStatus =
+	| "unrelated_history"
+	| "unmerged"
+	| "pushed_unmerged"
+	| "in_sync"
+	| "merged"
+	| "unknown";
 export type WorkspaceRemovalSafety = "safe" | "requires_force" | "unknown";
 
 /** Backend-authored checklist; the frontend only renders its verdict and text. */

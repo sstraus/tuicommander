@@ -1,7 +1,13 @@
-import { type Component, lazy, onMount, Suspense } from "solid-js";
+import { emitTo } from "@tauri-apps/api/event";
+import { type Component, lazy, onCleanup, onMount, Suspense } from "solid-js";
 import { openChatTableDocument } from "../components/AIChatPanel/tableDocument";
 import { initPanelWindow } from "../hooks/initPanelWindow";
+import { useDictation } from "../hooks/useDictation";
+import { useDictationHotkey } from "../hooks/useDictationHotkey";
+import { invoke } from "../invoke";
 import type { PanelAdapter } from "../panelRouter";
+import { appLogger } from "../stores/appLogger";
+import { dictationStore } from "../stores/dictation";
 import { repositoriesStore } from "../stores/repositories";
 import { uiStore } from "../stores/ui";
 import { openTerminalFilePath } from "../utils/filePreview";
@@ -23,8 +29,31 @@ const DetachedAIChatPanel: Component<{ params: URLSearchParams }> = (props) => {
 	const repoPath = props.params.get("repoPath");
 	const fsRoot = props.params.get("fsRoot");
 
+	// Each WebView owns its DOM and captured target. Main-window hooks cannot
+	// insert into this composer, even though both windows share the microphone.
+	const dictation = useDictation({
+		fallbackInput: () => document.querySelector<HTMLTextAreaElement>("#ai-chat-panel textarea"),
+		pty: {
+			write: async () => {
+				throw new Error("Detached AI Chat has no PTY");
+			},
+		},
+		dictation: dictationStore,
+		setStatusInfo: (message) => appLogger.info("dictation", message),
+		openSettings: () => {
+			void emitTo("main", "panel-action", { panelId: "ai-chat", action: "configure-dictation", data: {} })
+				.then(() => invoke("focus_main_window"))
+				.catch((error) => appLogger.error("dictation", "Failed to open Voice settings", error));
+		},
+	});
+	useDictationHotkey({
+		onStart: () => void dictation.handleDictationStart(dictationStore.state.hotkey === "Fn" ? "fn" : "hotkey"),
+		onStop: dictation.handleDictationStop,
+	});
 	onMount(() => {
 		void initPanelWindow();
+		void dictationStore.refreshConfig();
+		onCleanup(dictationStore.startRemoteSync());
 	});
 
 	return (

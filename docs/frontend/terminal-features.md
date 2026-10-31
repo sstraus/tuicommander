@@ -24,6 +24,8 @@ The composer border highlights only while its textarea has focus. Tapping the mi
 
 ## Keyboard Shortcuts
 
+With terminal input focused, Ctrl+Enter sends `ESC [ 13 ; 5 u` when Kitty keyboard flag 1 is active. Identified ego sessions receive the same encoding without negotiation to preserve BusySteer; current ego does not enable its Reedline Kitty guard. Legacy shells and other nonnegotiating agents receive CR. In enhanced mode, Control plus Shift or Alt retains those modifiers in the CSI u parameter. Plain Enter remains CR, Shift+Enter remains ESC CR, legacy Alt+Enter remains CR, and Cmd+Enter stays available to app shortcuts. This applies to desktop and browser/remote grid terminals; Compose has its own editor shortcuts.
+
 ### Terminal Management
 
 | Shortcut | Action | Notes |
@@ -141,7 +143,7 @@ Desktop terminal Chat and AI Chat use the shared scale in `styles/chat-tokens.cs
 Auto-copies selected text to clipboard when text is selected in terminal. Configurable in settings (`copy_on_select`, default: on).
 
 ### URL Click
-Cmd+Click on URLs in terminal output opens them in the system browser. URL detection handled by the native terminal link parser. Dotted link underlines and solid hover underlines, including soft-wrapped file URLs, follow the text during smooth scrolling.
+Cmd+Click on URLs in terminal output opens them in the system browser. URL detection handled by the native terminal link parser. Dotted link underlines and solid hover underlines, including soft-wrapped file URLs, follow the text during smooth scrolling. Verified underlines remain visible when unrelated cells or full grid frames redraw; changed link text removes the old underline before asynchronous verification completes.
 
 ### File Path Click
 Clickable file paths in terminal output resolve against the terminal working directory when relative. Sentence periods are excluded from heuristic path targets, including paths in soft-wrapped lines. Existing files open in their viewer or editor; directories open in the File Browser.

@@ -723,7 +723,7 @@ system and never turns an absent provider value into zero.
 
 | Component | Description |
 |-----------|-------------|
-| `AgentIcon` | Agent type icon with consistent sizing and coloring |
+| `AgentIcon` | Agent identity SVG with consistent sizing and inherited color; ego uses a rounded Greek small epsilon (ε, U+03B5) inside a ring, independent of provider and installed fonts |
 | `CiRing` | SVG circular CI status indicator with proportional segments |
 | `DiffViewer` | Syntax-highlighted unified diff renderer |
 | `Dropdown` | Reusable dropdown select component |

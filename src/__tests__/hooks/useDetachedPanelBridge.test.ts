@@ -41,10 +41,10 @@ describe("useDetachedPanelBridge", () => {
 	let restoreDetachedPanels: (() => void) | undefined;
 	const unlisteners: Array<ReturnType<typeof vi.fn>> = [];
 
-	const startBridge = async (onConfigureEgo?: () => void) => {
+	const startBridge = async (onConfigureEgo?: () => void, onConfigureDictation?: () => void) => {
 		createRoot((rootDispose) => {
 			dispose = rootDispose;
-			({ restoreDetachedPanels } = useDetachedPanelBridge(onConfigureEgo));
+			({ restoreDetachedPanels } = useDetachedPanelBridge(onConfigureEgo, onConfigureDictation));
 		});
 		await Promise.resolve();
 	};
@@ -79,6 +79,18 @@ describe("useDetachedPanelBridge", () => {
 		expect(opened).toBe(0);
 		handlers.get("panel-action")?.({ payload: { panelId: "ai-chat", action: "configure-ego", data: {} } });
 		expect(opened).toBe(1);
+	});
+
+	// Catches: a missing voice model in the detached window has no usable setup action.
+	it("routes detached chat voice setup to the main dictation settings only", async () => {
+		const ego = vi.fn();
+		const voice = vi.fn();
+		await startBridge(ego, voice);
+		handlers.get("panel-action")?.({ payload: { panelId: "notes", action: "configure-dictation", data: {} } });
+		expect(voice).not.toHaveBeenCalled();
+		handlers.get("panel-action")?.({ payload: { panelId: "ai-chat", action: "configure-dictation", data: {} } });
+		expect(voice).toHaveBeenCalledOnce();
+		expect(ego).not.toHaveBeenCalled();
 	});
 
 	it("returns a detached Markdown document to its existing tab when its window closes", async () => {

@@ -17,7 +17,6 @@ import { Input } from "../ui/Input";
 import { Select } from "../ui/Select";
 import { StatusBadge } from "../ui/StatusBadge";
 import { Textarea } from "../ui/Textarea";
-import { ContextualHelp } from "./ContextualHelp";
 import d from "./DictationSettings.module.css";
 import { ExpertSetting } from "./ExpertSetting";
 import { SettingSlider, SettingToggle } from "./SettingFields";
@@ -41,6 +40,16 @@ function meterToRms(meter: number): number {
 	return (meter * meter) / RMS_METER_SCALE;
 }
 
+/** Progress presentation shared by recognition and reply asset downloads. */
+const AssetDownloadProgress: Component<{ percent: number }> = (props) => (
+	<div class={d.downloadProgress}>
+		<div class={d.progressBar}>
+			<div class={d.progressFill} style={{ transform: `scaleX(${props.percent / 100})` }} />
+		</div>
+		<span class={d.progressText}>{props.percent}%</span>
+	</div>
+);
+
 /** Single model row in the model selector list */
 const ModelRow: Component<{ model: ModelInfo }> = (props) => {
 	const isSelected = () => dictationStore.state.selectedModel === props.model.name;
@@ -63,7 +72,7 @@ const ModelRow: Component<{ model: ModelInfo }> = (props) => {
 							label={
 								props.model.downloaded
 									? t("dictation.downloaded", "Downloaded")
-									: t("dictation.notDownloaded", "Not Downloaded")
+									: t("dictation.notDownloaded", "Not downloaded")
 							}
 						/>
 						<Show when={isSelected()}>
@@ -73,17 +82,6 @@ const ModelRow: Component<{ model: ModelInfo }> = (props) => {
 				}
 				actions={
 					<>
-						<Show when={props.model.downloaded && !isSelected()}>
-							<Button
-								data-setting-id="voice.model"
-								title="Use model"
-								class={s.testBtn}
-								onClick={() => dictationStore.setModel(props.model.name)}
-							>
-								{t("dictation.use", "Use")}
-							</Button>
-						</Show>
-
 						<Show when={!props.model.downloaded && !isDownloading()}>
 							<Button
 								data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
@@ -95,15 +93,7 @@ const ModelRow: Component<{ model: ModelInfo }> = (props) => {
 							</Button>
 						</Show>
 						<Show when={isDownloading()}>
-							<div class={d.downloadProgress}>
-								<div class={d.progressBar}>
-									<div
-										class={d.progressFill}
-										style={{ transform: `scaleX(${dictationStore.state.downloadPercent / 100})` }}
-									/>
-								</div>
-								<span class={d.progressText}>{dictationStore.state.downloadPercent}%</span>
-							</div>
+							<AssetDownloadProgress percent={dictationStore.state.downloadPercent} />
 						</Show>
 						<Show when={props.model.downloaded}>
 							<Button
@@ -544,20 +534,45 @@ const SpeechRecognition: Component = () => {
 					/>
 				</ExpertSetting>
 			</SectionCard>
-			<SectionCard title="Speech assets">
-				{" "}
+			<SectionCard title="Speech assets" layout="aligned">
 				<SettingRow
-					label={t("dictation.modelLabel", "Whisper Model")}
+					label={t("dictation.modelLabel", "Whisper model")}
 					hint={t("dictation.modelHint", "Choose a model. Larger models are more accurate but slower.")}
 				>
-					{() => (
-						<span>
-							{dictationStore.state.models.find((model) => model.name === dictationStore.state.selectedModel)
-								?.display_name ?? dictationStore.state.selectedModel}
-						</span>
+					{(id, descriptionId) => (
+						<Select
+							data-setting-id="voice.model"
+							id={id}
+							aria-describedby={descriptionId()}
+							value={dictationStore.state.selectedModel}
+							onChange={(e) => dictationStore.setModel(e.currentTarget.value)}
+						>
+							<Show
+								when={!dictationStore.state.models.some((model) => model.name === dictationStore.state.selectedModel)}
+							>
+								<option value={dictationStore.state.selectedModel}>{dictationStore.state.selectedModel}</option>
+							</Show>
+							<For each={dictationStore.state.models}>
+								{(model) => (
+									<option
+										value={model.name}
+										selected={model.name === dictationStore.state.selectedModel}
+										disabled={!model.downloaded}
+									>
+										{model.display_name}
+									</option>
+								)}
+							</For>
+						</Select>
 					)}
 				</SettingRow>
-				<For each={dictationStore.state.models}>{(model: ModelInfo) => <ModelRow model={model} />}</For>
+				<SettingRow label={t("dictation.downloadsLabel", "Downloads")}>
+					{() => (
+						<div class={d.assetList}>
+							<For each={dictationStore.state.models}>{(model: ModelInfo) => <ModelRow model={model} />}</For>
+						</div>
+					)}
+				</SettingRow>
 				<SettingRow
 					label={t("dictation.tuningLabel", "Voice tuning")}
 					hint={t(
@@ -701,7 +716,7 @@ const SpeechSetup: Component = () => {
 	};
 	const voiceLabel = (voice: string): string => {
 		const asset = voiceAssets().find((asset) => asset.voice === voice);
-		return asset && asset.state !== "ready" ? `${voice} — ${t("dictation.notDownloaded", "Not Downloaded")}` : voice;
+		return asset && asset.state !== "ready" ? `${voice} — ${t("dictation.notDownloaded", "Not downloaded")}` : voice;
 	};
 
 	const [previewError, setPreviewError] = createSignal<string | null>(null);
@@ -734,9 +749,11 @@ const SpeechSetup: Component = () => {
 	};
 
 	return (
-		<SectionCard title={t("dictation.heading.spokenReplies", "Spoken replies")}>
-			<p class={cx(s.hint, d.intro)}>
-				{isEdge()
+		<SectionCard
+			title={t("dictation.heading.spokenReplies", "Spoken replies")}
+			layout="aligned"
+			description={
+				isEdge()
 					? t(
 							"dictation.speechHintEdge",
 							"Replies are spoken with Microsoft Edge neural voices: nothing to download, but each reply's text is sent to Microsoft's online speech service, so it needs an internet connection.",
@@ -749,20 +766,21 @@ const SpeechSetup: Component = () => {
 						: t(
 								"dictation.speechHintExternal",
 								"Replies are spoken by the command below, which runs on this machine as you.",
-							)}
-			</p>
-
-			<div class={s.group}>
-				<Show when={engine() === "pocket"}>
-					<div class={d.modelList} data-speech-downloads>
-						<For each={downloadRows()}>{(asset) => <SpeechAssetRow asset={asset} />}</For>
-					</div>
-				</Show>
-
-				<SettingRow label={t("dictation.speechLanguageLabel", "Replies are spoken in")}>
-					{() => <span>{spokenLanguage()}</span>}
+							)
+			}
+		>
+			<Show when={engine() === "pocket"}>
+				<SettingRow label={t("dictation.downloadsLabel", "Downloads")}>
+					{() => (
+						<div class={d.assetList} data-speech-downloads>
+							<For each={downloadRows()}>{(asset) => <SpeechAssetRow asset={asset} />}</For>
+						</div>
+					)}
 				</SettingRow>
-			</div>
+			</Show>
+			<SettingRow label={t("dictation.speechLanguageLabel", "Replies are spoken in")}>
+				{() => <span>{spokenLanguage()}</span>}
+			</SettingRow>
 
 			<ExpertSetting configKey="dictation.speech_engine" value={engine()}>
 				<SettingRow
@@ -792,29 +810,31 @@ const SpeechSetup: Component = () => {
 
 			<Show when={engine() === "external"}>
 				<ExpertSetting configKey="dictation.speech_command" value={dictationStore.state.speechCommand}>
-					<div class={s.group}>
-						<label>{t("dictation.speechCommandLabel", "Speech command")}</label>
-						<ContextualHelp label={t("dictation.speechCommandLabel", "Speech command")} />
-						<Textarea
-							data-setting-id="voice.speech_command"
-							rows={4}
-							value={dictationStore.state.speechCommand.join("\n")}
-							onChange={(e) =>
-								void dictationStore.setSpeechCommand(
-									e.currentTarget.value
-										.split("\n")
-										.map((line) => line.trim())
-										.filter((line) => line !== ""),
-								)
-							}
-						/>
-						<p class={s.hint}>
-							{t(
-								"dictation.speechCommandHint",
-								"One argument per line, no shell. {out} is the WAV file the command must write; {text} and {voice} are optional (without {text}, the text arrives on stdin).",
-							)}
-						</p>
-					</div>
+					<SettingRow
+						label={t("dictation.speechCommandLabel", "Speech command")}
+						hint={t(
+							"dictation.speechCommandHint",
+							"One argument per line, no shell. {out} is the WAV file the command must write; {text} and {voice} are optional (without {text}, the text arrives on stdin).",
+						)}
+					>
+						{(id, descriptionId) => (
+							<Textarea
+								id={id}
+								aria-describedby={descriptionId()}
+								data-setting-id="voice.speech_command"
+								rows={4}
+								value={dictationStore.state.speechCommand.join("\n")}
+								onChange={(e) =>
+									void dictationStore.setSpeechCommand(
+										e.currentTarget.value
+											.split("\n")
+											.map((line) => line.trim())
+											.filter((line) => line !== ""),
+									)
+								}
+							/>
+						)}
+					</SettingRow>
 				</ExpertSetting>
 			</Show>
 
@@ -852,6 +872,8 @@ const SpeechSetup: Component = () => {
 								>
 									<Select
 										data-setting-id="voice.speech_edge_voice"
+										id={id}
+										aria-describedby={descriptionId()}
 										value={dictationStore.state.speechEdgeVoice}
 										onChange={(e) => dictationStore.setSpeechEdgeVoice(e.currentTarget.value)}
 									>
@@ -882,7 +904,9 @@ const SpeechSetup: Component = () => {
 			</Show>
 
 			<Show when={engine() === "pocket" && (languageAsset()?.voices.length ?? 0) > 0}>
-				<VoiceLibrary language={languageAsset()?.language ?? ""} />
+				<SettingRow label={t("dictation.voicesLabel", "Voices")}>
+					{() => <VoiceLibrary language={languageAsset()?.language ?? ""} />}
+				</SettingRow>
 			</Show>
 
 			<ExpertSetting configKey="dictation.speech_volume_db" value={dictationStore.state.speechVolumeDb}>
@@ -960,11 +984,10 @@ const VoiceLibrary: Component<{ language: string }> = (props) => {
 
 	return (
 		<div class={cx(s.group, d.voiceLibrary)}>
-			<label>{t("dictation.voicesLabel", "Voices")}</label>
 			<Show when={installed().length > 0}>
 				<div class={d.voiceGroup} data-voice-group="installed">
 					<span class={d.voiceGroupTitle}>{t("dictation.voiceGroupInstalled", "Installed")}</span>
-					<div class={d.modelList}>
+					<div class={d.assetList}>
 						<For each={installed()}>{(asset) => <SpeechAssetRow asset={asset} />}</For>
 					</div>
 				</div>
@@ -977,7 +1000,7 @@ const VoiceLibrary: Component<{ language: string }> = (props) => {
 					<summary class={cx(d.voiceGroupTitle, d.voiceGroupToggle)}>
 						{t("dictation.voiceGroupDownloadable", "Downloadable")} ({downloadable().length})
 					</summary>
-					<div class={d.modelList}>
+					<div class={d.assetList}>
 						<For each={downloadable()}>{(asset) => <SpeechAssetRow asset={asset} />}</For>
 					</div>
 				</details>
@@ -985,24 +1008,26 @@ const VoiceLibrary: Component<{ language: string }> = (props) => {
 			<div class={d.voiceGroup} data-voice-group="yours">
 				<span class={d.voiceGroupTitle}>{t("dictation.voiceGroupYours", "Yours")}</span>
 				<Show when={userVoices().length > 0}>
-					<div class={d.modelList}>
+					<div class={d.assetList}>
 						<For each={userVoices()}>
 							{(voice) => (
-								<div class={cx(d.modelRow, voice.id === dictationStore.state.speechVoice && d.active)}>
-									<div class={d.modelInfo}>
-										<span class={d.modelName}>{voice.id}</span>
-									</div>
-									<div class={d.modelActions}>
+								<ListRow
+									name={voice.id}
+									badges={
+										<Show when={voice.id === dictationStore.state.speechVoice}>
+											<StatusBadge label={t("dictation.active", "Active")} variant="success" />
+										</Show>
+									}
+									actions={
 										<Button
-											variant="ghost"
 											data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
 											onClick={() => dictationStore.deleteSpeechVoice(props.language, voice.id)}
 											title={t("dictation.voiceDeleteUser", "Delete this voice file")}
 										>
-											&times;
+											{t("dictation.removeModel", "Remove")}
 										</Button>
-									</div>
-								</div>
+									}
+								/>
 							)}
 						</For>
 					</div>
@@ -1043,7 +1068,7 @@ const SpeechAssetRow: Component<{ asset: SpeechAsset }> = (props) => {
 	const percent = () => dictationStore.state.speechDownloads[props.asset.id];
 	const downloading = () => props.asset.state === "downloading" || percent() !== undefined;
 	// The bundle replies are spoken with — the counterpart of the selected
-	// Whisper model, and highlighted the same way.
+	// Whisper model, and marked with the same shared badge.
 	const speaking = () =>
 		props.asset.state === "ready" &&
 		(props.asset.kind === "voice"
@@ -1051,62 +1076,62 @@ const SpeechAssetRow: Component<{ asset: SpeechAsset }> = (props) => {
 			: props.asset.language !== null && props.asset.language === dictationStore.state.language);
 
 	return (
-		<div class={cx(d.modelRow, speaking() && d.active)}>
-			<div class={d.modelInfo}>
-				<span class={d.modelName}>{props.asset.display_name}</span>
-				<span class={d.modelSize}>{megabytes(props.asset.download_bytes)}</span>
-			</div>
-			<Show when={!downloading()}>
-				<span class={cx(d.modelBadge, props.asset.state === "ready" && d.downloaded)}>
-					{props.asset.state === "ready"
-						? t("dictation.downloaded", "Downloaded")
-						: props.asset.state === "incomplete"
-							? t("dictation.speechIncomplete", "Incomplete")
-							: t("dictation.notDownloaded", "Not Downloaded")}
-				</span>
-			</Show>
-			<div class={d.modelActions}>
-				<Show when={downloading()}>
-					<div class={d.downloadProgress}>
-						<div class={d.progressBar}>
-							<div class={d.progressFill} style={{ transform: `scaleX(${(percent() ?? 0) / 100})` }} />
-						</div>
-						<span class={d.progressText}>{percent() ?? 0}%</span>
-					</div>
-					<Button
-						variant="ghost"
-						data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
-						onClick={() => dictationStore.cancelSpeechDownload(props.asset.id)}
-						title={t("dictation.cancel", "Cancel")}
-					>
-						&times;
-					</Button>
-				</Show>
-				<Show when={!downloading() && speaking()}>
-					<span class={d.modelActiveLabel}>{t("dictation.active", "Active")}</span>
-				</Show>
-				<Show when={!downloading() && props.asset.state !== "ready"}>
-					<Button
-						variant="primary"
-						data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
-						onClick={() => dictationStore.downloadSpeechAsset(props.asset.id)}
-					>
-						{props.asset.state === "incomplete"
-							? t("dictation.speechRepair", "Repair")
-							: t("dictation.download", "Download")}
-					</Button>
-				</Show>
-				<Show when={!downloading() && props.asset.state !== "absent"}>
-					<Button
-						variant="ghost"
-						data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
-						onClick={() => dictationStore.deleteSpeechAsset(props.asset.id)}
-						title={t("dictation.speechDelete", "Delete this download")}
-					>
-						&times;
-					</Button>
-				</Show>
-			</div>
+		<div class={d.assetRow}>
+			<ListRow
+				name={props.asset.display_name}
+				description={megabytes(props.asset.download_bytes)}
+				badges={
+					<>
+						<Show when={!downloading()}>
+							<StatusBadge
+								label={
+									props.asset.state === "ready"
+										? t("dictation.downloaded", "Downloaded")
+										: props.asset.state === "incomplete"
+											? t("dictation.speechIncomplete", "Incomplete")
+											: t("dictation.notDownloaded", "Not downloaded")
+								}
+							/>
+						</Show>
+						<Show when={!downloading() && speaking()}>
+							<StatusBadge label={t("dictation.active", "Active")} variant="success" />
+						</Show>
+					</>
+				}
+				actions={
+					<>
+						<Show when={downloading()}>
+							<AssetDownloadProgress percent={percent() ?? 0} />
+							<Button
+								data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
+								onClick={() => dictationStore.cancelSpeechDownload(props.asset.id)}
+								title={t("dictation.cancel", "Cancel")}
+							>
+								{t("dictation.cancel", "Cancel")}
+							</Button>
+						</Show>
+						<Show when={!downloading() && props.asset.state !== "ready"}>
+							<Button
+								data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
+								onClick={() => dictationStore.downloadSpeechAsset(props.asset.id)}
+							>
+								{props.asset.state === "incomplete"
+									? t("dictation.speechRepair", "Repair")
+									: t("dictation.download", "Download")}
+							</Button>
+						</Show>
+						<Show when={!downloading() && props.asset.state !== "absent"}>
+							<Button
+								data-non-setting="Voice asset install, removal or download workflow; not an editable preference"
+								onClick={() => dictationStore.deleteSpeechAsset(props.asset.id)}
+								title={t("dictation.speechDelete", "Delete this download")}
+							>
+								{t("dictation.removeModel", "Remove")}
+							</Button>
+						</Show>
+					</>
+				}
+			/>
 		</div>
 	);
 };
@@ -1405,7 +1430,7 @@ const HandsFreeControls: Component = () => {
 									placeholder={defaultNotice()}
 									onChange={(e) => dictationStore.setHandsFreeStartNotice(e.currentTarget.value)}
 								/>
-								<div class={d.controlRow}>
+								<div class={cx(d.controlRow, d.spacedControlRow)}>
 									<Button
 										data-setting-id="voice.hands_free_start_notice"
 										class={s.testBtn}

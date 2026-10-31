@@ -805,6 +805,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 	{ tab: "ai-chat", section: "Advanced and diagnostics" },
 	{ tab: "ai-chat", section: "AI Chat" },
 	{ tab: "ai-chat", section: "Agent and model" },
+	{ tab: "ai-chat", section: "Chat behavior" },
 	{ tab: "ai-chat", section: "Workspace access", label: "Workspace" },
 	{ tab: "ai-chat", section: "Workspace access", label: "Root directory", labelKey: "perimeter.label.rootDir" },
 	{ tab: "ai-chat", section: "Workspace access", label: "Root access", labelKey: "perimeter.label.rootAccess" },
@@ -818,6 +819,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 	{ tab: "ai-chat", section: "Network and sandbox", label: "Network" },
 	{ tab: "ai-chat", section: "Agent and model", label: "Default model", labelKey: "providers.label.defaultModel" },
 	{ tab: "ai-chat", section: "Agent and model", label: "Provider catalogue" },
+	{ tab: "ai-chat", section: "Chat behavior", label: "Master prompt" },
 ];
 
 /** Section heading as rendered, i18n applied. */

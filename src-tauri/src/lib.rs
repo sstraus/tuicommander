@@ -1967,10 +1967,12 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
                     .state::<Arc<AppState>>()
                     .desktop_window_focused
                     .store(*focused, std::sync::atomic::Ordering::Relaxed);
-                #[cfg(all(target_os = "macos", feature = "dictation"))]
-                if !focused {
-                    dictation::fn_key_monitor::release_on_focus_loss(window.app_handle());
-                }
+            }
+            #[cfg(all(target_os = "macos", feature = "dictation"))]
+            if matches!(event, tauri::WindowEvent::Focused(false))
+                && dictation::fn_key_monitor::DICTATION_WINDOWS.contains(&window.label())
+            {
+                dictation::fn_key_monitor::release_on_focus_loss(window.app_handle());
             }
             if matches!(event, tauri::WindowEvent::Focused(true)) && window.label() == "main" {
                 background_mode::desktop::shown(window.app_handle());

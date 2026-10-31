@@ -158,3 +158,5 @@ Repository events invalidate the inventory, and a 60-second reconciliation
 bound covers roots without a repository watcher. Cold queries share one build
 per repository. Up to eight repository inventories are retained, with ten-minute
 idle eviction.
+
+Markdown image paths can use `.` and `..` to refer to images next to the document or in parent folders. The desktop preview resolves these segments before creating the local asset URL.
