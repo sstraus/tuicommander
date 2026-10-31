@@ -1,3 +1,6 @@
+## Expanded Chat tool colours (2552-fd00)
+
+- [x] Bash/execute shell roles and separate Read/Edit/Write tool/path colours render in the shared session Chat transcript. Collapsed summary text and six expanded row bounds match the pre-change default-dark baseline. _(verified: isolated worktree Vite, production Transcript via `sessionChatAppearance.html?toolColours`, agent-browser screenshots and computed-style/geometry logs in `~/Gits/.tmp/results/toolrows-2552-{before,after}-browser.log`.)_
 ## Session Chat transcript typing (2554-0ee4)
 
 - [x] Click the transcript and type: the first character reaches Compose at the draft selection and typing continues there. Drag-selected transcript text stays selected; copy, Find, arrow keys and Compose Escape retain their behavior. _(verified: `src/__tests__/components/Terminal/chatViewCompose.critic.test.tsx`, 24 tests; isolated Vite plus trusted agent-browser clicks/keys and mouse selection; screenshots `~/Gits/.tmp/results/2554-before.png`, `2554-after.png`, `2554-selection.png`. Native clipboard command is asserted at the component boundary; the background browser did not provide a clipboard round trip.)_
