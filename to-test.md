@@ -3224,3 +3224,7 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 
 - [ ] Scroll through terminal web links and soft-wrapped file URLs: dotted underlines and Cmd-hover strokes must stay on their text, including when the backend viewport trails a smooth gesture (#2582-13dd).
 - [ ] After a Rust rebuild/restart, inspect the generated Waiting and long work launch preview: continue independent work, yield only for a needed result or user answer, report running work without completion/suggestions, and use the launched mechanism’s wake. Existing sessions do not receive the new launch text automatically. (#2581-4824)
+
+## Design Mode stale profile ownership (2591-937a) — Rust restart required
+
+- [ ] After Boss restarts `make dev` or installs `make build`, start Edge Design Mode with the old stale profile lock and confirm the profile opens. Starting again while that profile is open must still ask you to close its browser window. TUIC must not remove a live profile lock. Backend changes do not hot-reload.

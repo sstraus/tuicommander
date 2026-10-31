@@ -54,8 +54,8 @@ fn installed(profile: &Path) -> bool {
 }
 
 /// Never forward a load flag to a running browser: Chromium ignores it there.
-fn ensure_profile_closed(profile: &Path) -> Result<(), String> {
-    if profile_running(profile)? {
+async fn ensure_profile_closed(profile: &Path) -> Result<(), String> {
+    if profile_running(profile).await? {
         let previous = if installed(profile) {
             " The installed extension may still use an older repository binding."
         } else {
@@ -70,28 +70,87 @@ fn ensure_profile_closed(profile: &Path) -> Result<(), String> {
 }
 
 #[cfg(unix)]
-fn profile_running(profile: &Path) -> Result<bool, String> {
+async fn profile_running(profile: &Path) -> Result<bool, String> {
+    // Chromium checks its socket before the lock PID. Do not send a launch message:
+    // even a browser whose PID cannot be inspected must keep its profile ownership.
+    let socket = profile.join("SingletonSocket");
+    let socket = std::fs::canonicalize(&socket).unwrap_or(socket);
+    if matches!(
+        tokio::time::timeout(
+            std::time::Duration::from_millis(250),
+            tokio::net::UnixStream::connect(socket),
+        )
+        .await,
+        Ok(Ok(_))
+    ) {
+        return Ok(true);
+    }
     let lock = match std::fs::read_link(profile.join("SingletonLock")) {
         Ok(lock) => lock,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(error) => return Err(format!("Cannot inspect Design Mode profile lock: {error}")),
     };
-    let pid = lock
-        .to_string_lossy()
-        .rsplit('-')
-        .next()
-        .and_then(|pid| pid.parse::<i32>().ok())
-        .filter(|pid| *pid > 0)
+    let owner = lock.to_string_lossy();
+    let (host, pid) = owner.rsplit_once('-').ok_or(
+        "Cannot identify the Design Mode profile owner; close its browser window and try again",
+    )?;
+    let pid = pid
+        .parse::<u32>()
+        .ok()
+        .filter(|pid| *pid > 0 && i32::try_from(*pid).is_ok())
         .ok_or(
             "Cannot identify the Design Mode profile owner; close its browser window and try again",
         )?;
-    // SAFETY: signal zero only observes the lock owner; it never sends a signal.
-    Ok(unsafe { libc::kill(pid, 0) } == 0
-        || std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH))
+    let mut hostname = [0u8; 256];
+    // SAFETY: gethostname writes at most the length of this initialized buffer.
+    if unsafe { libc::gethostname(hostname.as_mut_ptr().cast(), hostname.len()) } != 0 {
+        return Err(format!(
+            "Cannot inspect Design Mode lock hostname: {}",
+            std::io::Error::last_os_error()
+        ));
+    }
+    let end = hostname
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(hostname.len());
+    if host.as_bytes() != &hostname[..end] {
+        // Chromium's macOS DisplayProfileInUseError permits reclaiming a foreign
+        // host lock. Linux protects shared profiles until the user unlocks them.
+        #[cfg(target_os = "macos")]
+        return Ok(false);
+        #[cfg(not(target_os = "macos"))]
+        return Err(format!(
+            "Design Mode profile is locked by host {host}; close its browser there or unlock the profile before starting again"
+        ));
+    }
+    // A live PID alone is not ownership: after reboot it may belong to an
+    // unrelated service. Require its exact browser profile argument, not a path
+    // substring or the browser executable (Linux launchers can be wrappers).
+    // Leave stale-lock cleanup to Chromium, never unlink here.
+    Ok(
+        crate::process_env::read_process_argv(pid).is_some_and(|argv| {
+            argv.iter().enumerate().any(|(index, arg)| {
+                let value = arg.strip_prefix("--user-data-dir=").or_else(|| {
+                    if arg == "--user-data-dir" {
+                        argv.get(index + 1).map(String::as_str)
+                    } else {
+                        None
+                    }
+                });
+                value.is_some_and(|value| same_profile_path(Path::new(value), profile))
+            })
+        }),
+    )
+}
+
+#[cfg(unix)]
+fn same_profile_path(left: &Path, right: &Path) -> bool {
+    left == right
+        || matches!((left.canonicalize(), right.canonicalize()), (Ok(left), Ok(right)) if left == right)
 }
 
 #[cfg(windows)]
-fn profile_running(profile: &Path) -> Result<bool, String> {
+async fn profile_running(profile: &Path) -> Result<bool, String> {
     use std::os::windows::fs::OpenOptionsExt;
     // Chromium owns lockfile with GENERIC_WRITE, FILE_SHARE_READ, DELETE_ON_CLOSE.
     match std::fs::OpenOptions::new()
@@ -138,7 +197,7 @@ pub(crate) async fn launch(
     let (kind, executable) = browser(choice)?;
     let profile = super::browser::profile_dir(repo).join(&kind);
     ensure_autoload_supported(&executable)?;
-    ensure_profile_closed(&profile)?;
+    ensure_profile_closed(&profile).await?;
     let bridge = crate::agent_mcp::locate_bridge_binary()
         .ok_or("Design Mode native host is missing; rebuild the bundled tuic-bridge sidecar")?;
     #[cfg(unix)]
@@ -179,7 +238,7 @@ pub(crate) async fn launch(
         Some(target) => target,
         None => onboarding(&profile)?,
     };
-    ensure_profile_closed(&profile)?;
+    ensure_profile_closed(&profile).await?;
     let mut command = std::process::Command::new(executable);
     command
         .arg(format!("--user-data-dir={}", profile.display()))
