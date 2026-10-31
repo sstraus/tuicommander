@@ -166,6 +166,10 @@ pub struct CriterionResult {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct InputRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub answer_schema: Option<super::questions::AnswerSchema>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline: Option<super::questions::QuestionDeadline>,
     pub question: String,
     #[serde(default)]
     pub options: Vec<String>,
@@ -228,6 +232,8 @@ pub struct AttemptReport {
 #[serde(rename_all = "snake_case")]
 pub enum EffectKind {
     SpawnAgent,
+    RunCommand,
+    PrepareWorkspace,
     CreateStory,
     Notify,
     Integrate,
@@ -311,6 +317,8 @@ pub struct StoryProposalBatch {
 #[serde(rename_all = "camelCase")]
 pub struct RunSnapshot {
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub questions: Vec<super::questions::Question>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub proposal_batches: Vec<StoryProposalBatch>,
     #[serde(default)]
     pub event_contract_version: u16,
@@ -355,6 +363,19 @@ pub struct RunSnapshot {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RunEventKind {
+    QuestionRequested {
+        question: Box<super::questions::Question>,
+        report: Option<AttemptReport>,
+    },
+    QuestionRevised {
+        question: Box<super::questions::Question>,
+    },
+    QuestionAnswered {
+        question_id: String,
+        revision: u64,
+        subject_digest: String,
+        answer: super::questions::QuestionAnswer,
+    },
     Timer {
         event: super::timer::TimerEvent,
     },
@@ -469,6 +490,19 @@ pub struct RunEvent {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RunCommand {
+    AnswerQuestion {
+        question_id: String,
+        expected_revision: u64,
+        subject_digest: String,
+        actor: super::questions::QuestionActor,
+        answer: serde_json::Value,
+    },
+    ReviseQuestion {
+        question_id: String,
+        expected_revision: u64,
+        request: InputRequest,
+        actor: super::questions::QuestionActor,
+    },
     /// Internal durable deadline service; never an operator assertion of elapsed time.
     #[schemars(skip)]
     Timer {

@@ -91,6 +91,27 @@ async function mount() {
 					"\n```",
 		},
 	];
+	if (params.has("toolColours")) {
+		// Synthetic presentation inputs for the production Transcript, not agent protocol fixtures.
+		entries.splice(
+			2,
+			1,
+			...[
+				"Bash: cd /repo/tuicommander && pnpm --filter 'chat view' test | cat",
+				'execute: git diff --stat && echo "Ready to review"',
+				"Read: /repo/tuicommander/src/components/AIChatPanel/Transcript.tsx",
+				"Edit: /repo/tuicommander/src/components/AIChatPanel/AIChatPanel.module.css",
+				"Write: /repo/tuicommander/docs/tool-colours.md",
+				"search_tools: find the session Chat API",
+			].map(
+				(title, index): AcpTranscriptEntry => ({
+					id: `tool-colour-${index}`,
+					kind: "tool",
+					call: { toolCallId: `tool-colour-${index}`, title, status: "completed" },
+				}),
+			),
+		);
+	}
 	if (params.has("pending"))
 		entries.push(
 			{ id: "pending-1", kind: "user", text: "Review the migration and check backward compatibility.", pending: true },

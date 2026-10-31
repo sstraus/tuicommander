@@ -1,0 +1,1 @@
+💬 Questa risposta italiana deve occupare tutta la larghezza disponibile del terminale senza spezzare le parole durante il ridimensionamento. Le sessioni sono terminate e il risultato resta leggibile anche quando il terminale viene allargato fino a duecento colonne. Il controllo verifica il comportamento della barra verde sulle righe successive dello stesso paragrafo. END-WRAP-BAR

@@ -22,7 +22,7 @@ shapes do not change. See the [shared contract baseline](../backend/workflow-bas
 
 | Command | Parameters | Result | Description |
 |---|---|---|---|
-| `workflow_run_action` | `project, action` | tagged `RunReply` | Starts, reads, lists plan runs, pages events, executes pinned checks, records checked integrations or canonical recertifications, or commands a durable project-scoped run. See [Workflow runs](../backend/workflows.md#durable-runs). |
+| `workflow_run_action` | `project, action` | tagged `RunReply` | Starts, reads, lists plan runs, pages events, inspects typed command executions (`command_executions`), executes pinned checks, records checked integrations or canonical recertifications, or commands a durable project-scoped run. See [Workflow runs](../backend/workflows.md#durable-runs). |
 
 ## Workflow definitions
 
@@ -1155,3 +1155,18 @@ See the MCP guide for the managed evaluator's report contract.
 ## Archive retention cleanup
 
 `sweep_archive_retention(repo_path)` returns `{ deleted: string[], kept: string[] }`. The host resolves the configured days; callers cannot supply a deletion threshold. Used by repository refresh. Named kept entries include their reason. It preserves archive refs and uses non-force Git removal. HTTP twin: `POST /worktrees/archive-retention`.
+
+
+### Workflow decision inbox (WF03)
+
+The existing workflow run action accepts `{"action":"question_inbox"}` for the
+canonical project. The read-only tagged reply contains `unansweredCount` and
+`items` (run identity/status, story identity and complete revisioned question).
+`command` also accepts `answer_question` with `question_id`, `expected_revision`,
+`subject_digest`, `actor` and a schema-valid JSON `answer`; `revise_question`
+requires the question ID/revision, new `request` and actor. The outer command still
+requires `run_id`, `command_id` and `expected_sequence`. IPC
+`workflow_run_action`, HTTP `POST /workflows/run/action?path=<project>` and MCP
+`workflow action=run input=<RunAction>` use the same service. The inbox needs no
+coordinator. See the backend workflow decision contract for shapes, deadline
+outcomes, retained legacy replay and continuation semantics.

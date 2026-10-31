@@ -336,10 +336,13 @@ function createGitHubStore() {
 			)
 				return;
 		}
+		const pr = getPrStatus(t.repo_path, t.branch);
+		const url = pr?.url?.replace(/\/pull\/\d+(?:[?#].*)?$/, `/pull/${t.pr_number}`);
 		prNotificationsStore.add({
 			repoPath: t.repo_path,
 			branch: t.branch,
 			prNumber: t.pr_number,
+			url,
 			title: origin ? `[${origin.name}] ${t.title}` : t.title,
 			...(origin ? { connectionId: origin.connection } : {}),
 			type: t.type,
@@ -347,15 +350,14 @@ function createGitHubStore() {
 
 		// Transitions are emitted before `github-pr-update`, so the store can still hold the branch's
 		// previous PR: take only the repo base from its URL and address the transitioning PR number.
-		const pr = getPrStatus(t.repo_path, t.branch);
-		if (pr?.url) {
+		if (url) {
 			notifyPrTransition({
 				repoName: `${origin ? `[${origin.name}] ` : ""}${repositoriesStore.get(t.repo_path)?.displayName ?? t.repo_path}`,
 				prNumber: t.pr_number,
 				title: t.title,
 				type: t.type,
 				linkedItem: origin ? undefined : workItemLinksStore.get(t.repo_path, t.branch),
-				url: pr.url.replace(/\/pull\/\d+$/, `/pull/${t.pr_number}`),
+				url,
 			});
 		}
 

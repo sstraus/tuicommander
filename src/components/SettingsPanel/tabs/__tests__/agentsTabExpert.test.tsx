@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { fireEvent, render, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, waitFor, within } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mockInvoke } from "../../../../__tests__/mocks/tauri";
@@ -111,6 +111,12 @@ function renderExpanded(agent: "claude" | "gemini" | "codex" | "ego" = "claude")
 }
 
 const has = (container: HTMLElement, text: string) => container.textContent?.includes(text) ?? false;
+
+// Hook guidance mentions the setting even while its expert control is hidden.
+const hasOverrideControl = (container: HTMLElement, label: string) =>
+	label === "Install hooks globally"
+		? within(container).queryByRole("checkbox", { name: /^Install hooks globally/ }) !== null
+		: has(container, label);
 
 describe("AgentsTab expert controls", () => {
 	beforeEach(() => {
@@ -297,13 +303,16 @@ describe("AgentsTab expert controls", () => {
 		const { container } = renderExpanded(agent);
 		// Wait for the bridge status, so the gated rows would be rendered if visible.
 		await waitFor(() => expect(has(container, "MCP bridge installed")).toBe(true));
-		expect(has(container, label)).toBe(false);
+		expect(hasOverrideControl(container, label)).toBe(false);
+		if (label === "Install hooks globally") {
+			expect(within(container).getByRole("complementary", { name: "More precise agent status" })).toBeInTheDocument();
+		}
 	});
 
 	it.each(OVERRIDES)("shows %s in basic mode once the agent stores an override", async (label, agent, override) => {
 		await setup({ [agent]: { run_configs: [], ...override } });
 		const { container } = renderExpanded(agent);
-		await waitFor(() => expect(has(container, label)).toBe(true));
+		await waitFor(() => expect(hasOverrideControl(container, label)).toBe(true));
 	});
 
 	it("shows every per-agent override at its default in expert mode", async () => {
@@ -311,7 +320,7 @@ describe("AgentsTab expert controls", () => {
 		uiStore.setSettingsExpertMode(true);
 		for (const [label, agent] of OVERRIDES) {
 			const { container, unmount } = renderExpanded(agent);
-			await waitFor(() => expect(has(container, label), label).toBe(true));
+			await waitFor(() => expect(hasOverrideControl(container, label), label).toBe(true));
 			unmount();
 		}
 	});

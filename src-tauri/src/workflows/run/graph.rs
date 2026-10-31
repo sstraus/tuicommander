@@ -15,6 +15,7 @@ pub enum ActivationState {
     Running,
     Completed,
     Paused,
+    Suspended,
     Superseded,
 }
 
@@ -214,7 +215,14 @@ impl GraphExecution {
                     .expect("pinned contract")
                     .version = version;
             }
-            super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {}
+            super::contracts::PARALLEL_EVENT_CONTRACT_VERSION
+            | super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {
+                execution
+                    .contract
+                    .as_mut()
+                    .expect("pinned contract")
+                    .version = version;
+            }
             _ => return Err("unsupported workflow graph event contract".into()),
         }
         Ok(execution)
@@ -229,7 +237,8 @@ impl GraphExecution {
         version: u16,
     ) -> Result<u16, String> {
         match version {
-            super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {
+            super::contracts::PARALLEL_EVENT_CONTRACT_VERSION
+            | super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {
                 self.apply_parallel(transition, remaining_loops)
             }
             super::contracts::SERIAL_EVENT_CONTRACT_VERSION
@@ -357,7 +366,11 @@ impl GraphExecution {
                 }
                 let mut repeats = 0;
                 let label = match kind {
-                    NodeKind::Judge | NodeKind::Gate | NodeKind::StoryDispatch { .. } => {
+                    NodeKind::Judge
+                    | NodeKind::Gate
+                    | NodeKind::RunCommand { .. }
+                    | NodeKind::Tool { .. }
+                    | NodeKind::StoryDispatch { .. } => {
                         let evidence = evidence.as_ref().ok_or("decision needs evidence")?;
                         evidence.validate()?;
                         Some(outcome.ok_or("decision needs one outcome")?.label())

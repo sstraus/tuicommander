@@ -3,7 +3,7 @@ use super::graph::{ActivationState, GraphExecution, GraphTransition, RUN_EVENT_C
 use crate::workflows::{PublishedWorkflow, WorkflowGraph, WorkflowKind, validate_executable_graph};
 use serde_json::{Value, json};
 
-fn graph_json() -> Value {
+pub(super) fn graph_json() -> Value {
     json!({"nodes": [
         {"id":"start","kind":{"type":"start"}},
         {"id":"implement","kind":{"type":"agent","role":"implementer","capabilities":[],"prompt_template":"Implement the current artifact"}},

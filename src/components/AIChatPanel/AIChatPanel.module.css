@@ -645,6 +645,16 @@
   color: var(--fg-primary);
 }
 
+/* Inline syntax roles reuse the current app theme; no row geometry changes. */
+.toolLabel,
+.shellCommand { color: var(--accent); }
+.toolPath,
+.shellString { color: var(--success); }
+.shellFlag { color: var(--warning); }
+.shellOperator { color: var(--attention); }
+.shellVariable { color: var(--fg-primary); }
+.shellComment { color: var(--fg-secondary); }
+
 .toolCallDuration {
   color: var(--fg-muted);
   font-size: var(--font-xs);
@@ -1435,5 +1445,16 @@ button[data-control-layout="row"].slashCommand:hover {
   max-width: 100%;
   vertical-align: bottom;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.detectedEgo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  color: var(--fg-primary);
   overflow-wrap: anywhere;
 }

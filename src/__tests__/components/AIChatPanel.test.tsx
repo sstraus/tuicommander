@@ -93,6 +93,9 @@ vi.mock("../../stores/settings", async () => {
 		settingsStore: {
 			state: settings,
 			isAiChatEnabled: () => true,
+			setEgoExecutable: (path: string) => {
+				settings.egoExecutable = path;
+			},
 			isAcpConfigured: () => settings.egoExecutable.trim().length > 0,
 		},
 	};
@@ -2243,6 +2246,34 @@ describe("AIChatPanel: transcript keyboard", () => {
 });
 
 describe("AIChatPanel: without a configured binary", () => {
+	// Catches: detection is available but a fresh AI Chat still requires a manual path choice.
+	it("offers a detected ego path and configures it only after confirmation", async () => {
+		settings.egoExecutable = "";
+		const original = vi.mocked(invoke).getMockImplementation()!;
+		vi.mocked(invoke).mockImplementation(async (command, args) =>
+			command === "detect_all_agent_binaries"
+				? { ego: { path: "/detected/bin/ego", version: null } }
+				: original(command, args),
+		);
+		const view = renderIdlePanel();
+		await vi.waitFor(() => expect(view.container.textContent).toContain("/detected/bin/ego"));
+		expect(settings.egoExecutable).toBe("");
+		expect(client.connect).not.toHaveBeenCalled();
+		view.getByRole("button", { name: "Use this" }).click();
+		expect(settings.egoExecutable).toBe("/detected/bin/ego");
+		await settle();
+		expect(view.queryByRole("button", { name: "Use this" })).toBeNull();
+	});
+
+	// Catches: an existing user choice is overwritten by a later detection result.
+	it("does not offer detection over an explicitly configured path", async () => {
+		const view = renderIdlePanel();
+		await settle();
+		expect(view.queryByRole("button", { name: "Use this" })).toBeNull();
+		expect(settings.egoExecutable).toBe("/usr/local/bin/ego");
+		expect(invoke).not.toHaveBeenCalledWith("detect_all_agent_binaries", expect.anything());
+	});
+
 	// An empty `ego_executable` is refused in Rust at connect. Saying so is the
 	// difference between a panel that explains itself and one that silently
 	// never starts.
@@ -2256,6 +2287,7 @@ describe("AIChatPanel: without a configured binary", () => {
 		expect(getByRole("button", { name: "Configure ego" })).not.toBeNull();
 		expect(client.connect).not.toHaveBeenCalled();
 		expect(container.querySelector("textarea")).toBeNull();
+		expect(container.textContent).not.toContain("Detected ego:");
 	});
 	// Catches: missing setup action leaves a fresh profile with no route to configure ego.
 	it("opens the ego settings section from the inactive panel", async () => {

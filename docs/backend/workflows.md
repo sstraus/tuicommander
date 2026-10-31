@@ -34,7 +34,7 @@ The `workflow action=launch` MCP entry accepts a run attempt and a Git worktree 
 
 The engine reserves a spawn effect before calling the managed `agent spawn` path. The resulting PTY session and task handle are bound to the attempt in a durable event that also completes the effect. An already reserved spawn is never retried automatically; reconciliation pauses an uncertain run. Cancellation marks unfinished attempts interrupted and intended effects uncertain; a child that starts before the failed binding is killed. The `workflow action=report` MCP entry resolves the calling live PTY itself and accepts a typed report only for its bound attempt and current story revision. The report and criterion evidence are durable events. A pause prevents new work but preserves current-generation reports from already running parallel attempts. Duplicate identical reports return the original receipt; a different payload for the same attempt is rejected. PTY exit interrupts an unresolved attempt and pauses the run, regardless of exit code. The operator and browser clients receive the same `workflow-run-changed` cursor hint and replay events from storage.
 
-A `needs_input` report includes `inputRequest {question,options}` and pauses the run. The operator command `answer_input {attempt_id,answer}` appends an answer event; the run remains paused until an explicit `resume`. An unanswered request blocks resume and final verification. A completed reviewer report includes `review {decision,artifactDigest,findings}`; each finding names a criterion index, severity, summary, and evidence. This is advisory evidence tied to the reported story revision, and does not change story status. After a committed story-worker report, the active coordinator gets inbox mail containing only the run ID, story ID and durable sequence cursor; it must read the event log for the actual result. Late or duplicate reports do not send a fresh wake. The review policy and artifact verification are separate work.
+In retained event contracts 2–4, a `needs_input` report includes `inputRequest {question,options}` and pauses the run. The operator command `answer_input {attempt_id,answer}` appends an answer event; the run remains paused until an explicit `resume`. An unanswered request blocks resume and final verification. A completed reviewer report includes `review {decision,artifactDigest,findings}`; each finding names a criterion index, severity, summary, and evidence. This is advisory evidence tied to the reported story revision, and does not change story status. After a committed story-worker report, the active coordinator gets inbox mail containing only the run ID, story ID and durable sequence cursor; it must read the event log for the actual result. Late or duplicate reports do not send a fresh wake. The review policy and artifact verification are separate work.
 
 Launching attempts is explicit in this slice. Automatic graph scheduling, evaluation and review policy are subsequent slices.
 
@@ -129,6 +129,76 @@ recorded serial-run fixtures, complete capability matrix and source/test pins.
 This is a compatibility foundation, not operational migration or authority to
 start a second scheduler, publish externally or retire legacy mechanisms.
 
+## Typed command execution (WF05)
+
+Run-store layout 9 refuses older binaries before they read the new command and workspace effect kinds; retained contract-2/3 serial histories remain replayable.
+
+Published `run_command {command}` and `tool {tool_id,tool_revision,command}` nodes
+have `pass` and `fail` edges. Their version-1 command contract pins an argv
+invocation (no implicit shell), or an explicit `shell` invocation with a program,
+script and shell-contract version. It also pins `workspace: "assigned"`, target,
+resources, secret references, optional workspace-relative stdin artifact, timeout
+(1–86400 seconds), and output schema. Tool IDs and revisions are receipt inputs;
+provisioning tools are explicit authorized maintenance, never automatic installs.
+These nodes do not add Designer controls; author them through the existing
+versioned definition API. They require the run's assigned clean Git workspace.
+Story commands can prepare that workspace before the first Agent node. Plan
+commands without an assigned workspace fail closed; durable plan workspace
+bindings remain part of WF04.
+
+`local {os,arch}` refuses a different host. `rb` delegates to the installed
+build-slot/rb adapters, including freeze, source manifests, reservations and
+fair build admission. `rb_after_native {native_effect,os,arch}` additionally
+requires successful local proof for the exact source and command/schema before
+setting RB_FORCE. Linux proof cannot satisfy a native macOS requirement. The
+adapter root defaults to the orchestrator tools checkout and can be selected by
+`TUIC_WORKFLOW_ADAPTER_ROOT` on daemon startup. No SSH scheduler is added.
+
+Resources are Build (capacity/fairness owned by the wrapper), canonical Git
+(resolved from the actual Git common directory), Mutation, GUI and Device.
+The durable sidecar `workflow_runs.commands.sqlite3` records ready, queued,
+admitted, uncertain and completed observations and named-resource ownership.
+Secret/platform/native-proof checks and private input preparation finish before
+admission. A confirmed spawn failure produces a failed, stopped/released receipt;
+it is not an uncertain remote lease and cannot strand named resources.
+The command intent pins its source subject and commits before starting a process. Duplicate identical effects
+return their immutable receipt; conflicting payloads refuse. Freeze prevents new
+admission but not history reads. A queued node pauses with its reason; explicitly
+resume it after the recorded blocker changes. There is no busy polling loop.
+
+`secretRefs` maps command environment names to daemon environment references.
+Resolved values go only into the child environment or temporary private rb input
+transport, never into definitions, argv or receipts. Local captured output is
+redacted, including raw and JSON-escaped secret spellings; remote output is
+redacted inside the admitted task before rb records it. Capture is bounded by
+the serialized JSON envelope, not only by each source stream. Oversized output
+ends with `[TRUNCATED]` and still produces a complete terminal receipt. Exit-status output checks the exit code. `test_summary`
+requires JSON `{matched,passed,failed}` with a positive `minimum_matched`, every
+matched test passing and no failures. `json_object` requires named fields. A zero
+exit with no matching tests cannot pass a declared test-summary requirement.
+
+Local commands use the same process-tree cancellation owner as pinned checks.
+On Unix, shutdown stops and walks the owned descendants before killing the
+wrapper, including the separate child groups created by local `--gate` commands.
+Journal admission and local wrappers both use the same agent identity for
+`BUILD_FREEZE` (`RB_AGENT_NAME` and `BUILD_SLOT_AGENT`).
+A lost remote client or lease never releases a named resource. Reconciliation
+uses the rb task/generation/fence and observed stop/release, not `result.txt`
+alone. A recovered stop without retained command output is failed proof, not
+success or permission to replay. Restart recovery also runs while paused. The
+existing run actor rechecks pending stop proof every 30 seconds or on a wake,
+using the admitted subject/handle without requiring clean source or current
+secret references. An immutable receipt settles the existing uncertain effect;
+it does not resume the graph. Failed/unknown lookup retains the reservation
+and workspace. A completed receipt records source commit/tree, command and
+output digests, target, toolchain, stop/release and remote manifest references.
+Explicit Tool effects can change their assigned workspace; their receipts distinguish the starting subject from a clean result artifact, or disclose a dirty/unresolved result. Such a receipt cannot satisfy unchanged-artifact/native proof. A source-changing Run command fails proof but still releases its slot after observed stop. The graph follows only a committed terminal receipt. Old serial replay and
+legacy `requiredChecks` keep their original contracts.
+
+IPC, HTTP and MCP run actions accept `command_executions {run_id}`. The reply is
+`{type:"command_executions",value:[...]}` with sequence-ordered durable command
+observations. It is read-only and project-scoped. The existing run event cursor
+still owns graph transitions; the command observation cursor is separate.
 ## Typed Create Stories input (WF04 foundation)
 
 Contract-3 and newer plan graphs no longer require a Coordinator Agent node. A reached
@@ -267,7 +337,7 @@ retained serial MCP launch and profile selection stay unchanged.
 
 ### Answer continuation
 
-For a bound contract-3 or newer attempt, `answer_input` keeps the existing launch and
+For a bound contract-3 or contract-4 attempt, `answer_input` keeps the existing launch and
 conversation, advances the report generation and records the answer as `pending`.
 The run still requires explicit graph resume. The daemon journals `handoff_started`
 before external delivery and `delivered` after the ACP PromptSent acknowledgement
@@ -286,8 +356,8 @@ Contract-2 answer semantics and first-generation command keys are unchanged.
 ### Current version sequence
 
 The run-store schema and layout are the same `PRAGMA user_version`, not separate
-version counters. The combined build writes layout **8** and starts event
-contract **4**. The retained sequence is:
+version counters. The combined build writes layout **10** and starts event
+contract **5**. The retained sequence is:
 
 | Run-store layout | Contract and compatibility boundary |
 | --- | --- |
@@ -298,20 +368,22 @@ contract **4**. The retained sequence is:
 | 5 | WF01 immutable definition pins and serial event contract 3. |
 | 6 | WF19 durable timers for contract 3. |
 | 7 | WF02 correlated regions and event contract 4; retained contract-3 timers still replay. |
-| 8 | WF04 explicit worker transport/conversation bindings, answer continuation and durable report disposition; contract 4 remains current. |
+| 8 | WF04 explicit worker transport/conversation bindings, answer continuation and durable report disposition. |
+| 9 | WF03 branch-local questions and contract 5; contracts 2–4 retain their input/replay rules. |
+| 10 | WF05 typed command, Tool and workspace effects; contract 5 remains current. |
 
 WF06 adds an optional evidence policy to the pinned definition and optional typed
 review evidence/check requirements digests. It does not allocate a competing
 layout or event-contract number. Omitted policy/evidence fields retain the legacy
 contract; snapshots written before WF19 decode with an empty timer list. Layouts
-0–7 open through the existing additive upgrade without rewriting their event
-streams. Contracts 2 and 3 keep serial Join semantics; contract 3 and 4 support
-Timer events, while contract 2 refuses them. Older binaries refuse layout 8 rather than interpreting lifecycle events without
+0–9 open through the existing additive upgrade without rewriting their event
+streams. Contracts 2 and 3 keep serial Join semantics; contracts 3–5 support
+Timer events, while contract 2 refuses them. Older binaries refuse layout 10 rather than interpreting lifecycle events without
 their ownership and continuation fences. Layout 7 remains the parallel-event boundary.
 
 ## Correlated parallel regions (WF02)
 
-New runs use event contract 4 and run-store layout 8. Contracts 2 and 3 retain
+New runs use event contract 5 and run-store layout 10. Contracts 2 and 3 retain
 serial replay, including exclusive Join; old definitions and events are not
 rewritten. The pinned definition digest remains part of each new graph start.
 
@@ -509,3 +581,61 @@ Internal consumers must emit the existing `workflow-run-changed` hint after
 committing schedule/retry/cancel commands so the actor recomputes its deadline.
 This foundation does not install provider polling, a proof collector or a question
 inbox; their consumer stories remain responsible for those behaviors.
+
+
+## Branch-local questions and decision inbox (WF03)
+
+Contract 5 turns a typed `needs_input` report into one atomic `question_requested`
+event. The event retains the report, suspends its exact graph activation, and
+records a revisioned question. Other graph branches and disjoint story executions
+can continue within the existing resource and file-scope limits. A waiting worker
+still owns its slot and file scope. A question never completes the worker or its
+all-Join arrival. Explicit operator pause/cancel and uncertain-effect safety stops
+remain run-wide; an answer does not clear such a pause.
+
+`inputRequest` accepts optional `answerSchema` and `deadline`. The schema is tagged
+by `type`: `text`, `boolean`, `single_choice {options}`, or
+`multiple_choice {options}`. Without a schema, nonempty legacy `options` mean one
+exact choice; otherwise the answer is nonempty text. The backend rejects invalid
+choices, duplicate selections and wrong JSON types. A deadline is
+`{atMs,outcome}`, where outcome is `timed_out` or `incomplete`, never approval.
+Its service-owned WF19 timer is created in the same event transaction and survives
+branch suspension, explicit pause and reconnect. Expiry leaves the activation
+suspended and the unresolved question visible. A new revision is required before
+answering an expired question.
+
+Commands use the existing `command` action and expected run sequence:
+
+- `answer_question {question_id,expected_revision,subject_digest,actor,answer}`
+- `revise_question {question_id,expected_revision,request,actor}`
+
+`actor` is `{kind,id}` with `human`, `ai` or `daemon` provenance. It describes the
+source; it is not a new authorization boundary. The question records its requester,
+exact subject digest and answer actor/time/value. The backend computes the subject
+from run/attempt/generation, current story or plan revision, and the assigned Git
+workspace. Workspace binding includes HEAD, staged and working changes, and
+untracked file bytes. An unreadable subject refuses the decision rather than
+assuming freshness. A revision refreshes the subject and schema explicitly;
+it does not grant consent. Superseded fork generations retire their questions and
+deadlines. Run cancellation withdraws all unanswered questions.
+
+The first valid answer transaction wins. Reusing a command ID with identical
+payload returns its original receipt; a changed payload, stale run sequence,
+question revision or subject refuses. The legacy `answer_input` command is refused
+for contract 5, so it cannot bypass the revision fence. A valid answer restores
+only its activation and uses WF04 generation-bound continuation delivery to the
+same worker. A fresh delivered-generation report is still required for completion.
+
+`question_inbox` is a read-only project action. It returns
+`{type:"question_inbox",value:{unansweredCount,items}}`; each item contains
+`runId`, `runStatus`, `storyId` and the complete question. Pending, timed-out and
+incomplete questions count; answered, superseded and canceled questions do not.
+The projection reads persisted runs, requires no coordinator or runtime actor, and
+is identical through IPC `workflow_run_action`, HTTP `/workflows/run/action` and
+MCP `workflow action=run`. Reconnect must reread the projection; run-change events
+remain cursor wake hints. The Stories answer form sends the revision and subject
+for new runs and retains the old input command for historical runs. Expired
+questions remain read-only records and do not hide the next pending question.
+The form shows choices from the current structured schema; only historical
+requests use legacy option suggestions. Boolean and multiple-choice values can
+be entered as JSON in that existing form.

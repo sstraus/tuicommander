@@ -217,7 +217,7 @@ Configuration via Settings > MCP and Settings > Remote Access, or `config.json`:
 ```json
 {
   "mcp_server_enabled": true,
-  "mcp_port": 9876
+  "mcp_port": 3845
 }
 ```
 
@@ -3084,3 +3084,18 @@ rejected. The report finalizes the run. GitHub publication is a separate host-ow
 effect, not permission for the evaluator to write. HTTP/IPC share the parser but
 have no managed-agent identity and reject this action. Existing run/list_runs
 responses expose the triage trigger, decision and result reason on all transports.
+
+
+### Workflow decision inbox (WF03)
+
+The existing workflow run action accepts `{"action":"question_inbox"}` for the
+canonical project. The read-only tagged reply contains `unansweredCount` and
+`items` (run identity/status, story identity and complete revisioned question).
+`command` also accepts `answer_question` with `question_id`, `expected_revision`,
+`subject_digest`, `actor` and a schema-valid JSON `answer`; `revise_question`
+requires the question ID/revision, new `request` and actor. The outer command still
+requires `run_id`, `command_id` and `expected_sequence`. IPC
+`workflow_run_action`, HTTP `POST /workflows/run/action?path=<project>` and MCP
+`workflow action=run input=<RunAction>` use the same service. The inbox needs no
+coordinator. See the backend workflow decision contract for shapes, deadline
+outcomes, retained legacy replay and continuation semantics.

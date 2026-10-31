@@ -77,6 +77,10 @@ Mobile CLI and log snapshots use the active session identity when hiding agent
 chrome. Shell output remains visible after agent exit, and retained agent input
 does not become the shell composer draft (#2178-24da).
 
+## Connected PR conversations
+
+PR popovers, unresolved-thread counts and notifications open the exact account-scoped PR in Tasks at Comments, including its first review-thread page. Without a loaded provider they open the GitHub conversation. Tasks PR details return to a matching live sidebar branch/worktree through the normal branch-selection path (#2559-dc9e).
+
 ## Desktop close and quit
 
 PTY close and kill stop polling when child status is unavailable. A persistent OS status error does not keep the desktop quit cleanup waiting forever.
@@ -231,6 +235,8 @@ Right-click an HTTP(S) terminal link (including localhost) and choose **Start in
 - **Readable session edits** — Expand a Chat tool card to read structured old/new edit blocks with aligned four-space tab stops and horizontal scrolling.
 - **Native terminal Chat questions** — Desktop and mobile expose exported native question titles and choices. Answers use agent-specific PTY keys, not Compose submission or ACP replies. Desktop preserves transcript binding and returns to CLI for unexported or free-form prompts.
 - **Pending terminal Chat prompts** — Prompts submitted through the open desktop or mobile Chat composer appear immediately as muted Pending bubbles in send order, including sends while Claude or Codex is busy. Matching new native transcript messages replace them without a duplicate bubble and retire older unmatched sends, so a local slash command cannot block later receipts. This is local send feedback, not a cancellable CLI queue; prompts typed directly into the CLI or sent by another client cannot be shown before the native transcript records them.
+Expanded tool rows use theme colours for Bash/execute commands, flags, strings and operators. Read, Edit and Write keep the tool name separate from the path; other tools retain readable text. The collapsed activity summary and row sizing are unchanged.
+
 - **Mobile session Chat appearance** — The session detail CLI/Chat view shares desktop prompt/answer theme tokens and transcript typography. Mobile keeps its existing touch-sized switch and native input; AI Chat is a separate surface.
 - **Deferred update restart** — After an in-app update installs, TUICommander restarts only when no session is busy or awaiting input; the APP UPDATE notification shows how many are busy and offers **Restart now** (with confirmation). Turn off in **Settings → General → Updates → Wait for agents before restarting** (`defer_update_relaunch`, default on).
 - **Eager resume after an update** — When the app restarts to apply an update, every agent tab with a confirmed session id resumes by itself on every branch, without selecting the branch first. Tabs without a confirmed id keep the click-to-resume banner. Turn off in **Settings → General → Updates → Resume all agents after an update** (`eager_resume_after_update`, default on).
@@ -1092,6 +1098,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Durable task handles**: `agent action=spawn` returns `task_id` and `poll_interval_ms` alongside `session_id`. The `agent` MCP tool polls that handle without blocking — `agent action=task_get` returns `{task_id, status, status_message?, result?, error_detail?, poll_interval_ms}` where status is `working|input_required|completed|failed|cancelled` (the last three final), and `agent action=task_cancel` marks the task cancelled **without** killing the agent (`session action=kill` does that). Use this instead of `agent action=wait` / `session action=wait` when work runs past their 300 s cap or when the client may reconnect: the outcome is recorded by the session exit path whether or not anyone was listening. Tasks live for the TUICommander process only — they are deliberately not persisted, because a restart tears down every PTY
 
 ### 6.14 AI Chat Panel (`Cmd+Alt+A`) — ego over ACP
+- When no ego executable is configured, AI Chat offers the detected path with **Use this**. Only confirmation saves it; **Configure ego** remains available.
 
 AI Chat keeps the active conversation usable while saved-conversation discovery is pending or fails. Background saved-tab load failures do not replace the selected conversation’s state. **New chat** opens a fresh session without first replaying the saved conversation, so an old greeting title or refused replay cannot block it.
 
@@ -1849,6 +1856,7 @@ All data persisted to platform config directory via Rust:
 - Menu: Check for Updates (app menu and Help menu)
 
 ### 14.2 Sleep Prevention
+- With prevention disabled, an agent run lasting at least one minute shows dismissible idle-sleep guidance; short runs and plain shells do not. The guidance does not inspect battery or OS sleep policy. Dismissal persists in this client.
 - Backend-owned `keepawake` assertions cover active turns, meaningful background descendants, detached `tuic bg` runners and live managed agents marked `keep_open`
 - Sleep prevention does not depend on WebView activity; hidden, unloaded or blocked views cannot release it
 - The user setting still disables inhibition; idle agents without live work and closed sessions do not retain the hold
@@ -2955,6 +2963,8 @@ Missing machine selection or missing ego acknowledgement refuses attachment.
 
 ## 27. Terminal Progress
 
+- **Session-only popup mute:** select Mute on a completion popup, then Unmute in Terminal Progress to restore future popups. Existing and queued completion cards close, but journal entries, unread counts and blocked warning popups remain. Restart or browser reload restores popups; native notification settings do not change.
+
 - One append-only journal per project with each new entry attributed to its source PTY when known: entries are written once, then kept or deleted. No pause, clear, correction, revision, deduplication or Markdown export
 - Three kinds. Agents report `done` and `blocked`; TUICommander writes `intent` from the agent's own `intent:` marker, so an agent that never calls the tool still leaves a trail
 - Compact MCP `progress` tool (`type`, `text`, optional `step`) that appends and toasts in one call, stays directly callable in collapsed tool mode, and refuses `intent` — that kind is observed, not claimed
@@ -3581,6 +3591,10 @@ approves or merges. See [Incoming PR reviews](user-guide/automations.md#incoming
 
 Opt-in global and per-repository retention in days (0/Off by default). Repository refresh removes only eligible recorded checkouts under `__archived/`, keeps dirty or unsafe archives with named status reasons, and retains commit recovery refs. No new timer or branch deletion. See [Worktrees](user-guide/worktrees.md#archived-worktree-retention).
 
+
+### Typed workflow commands (WF05)
+
+Published Run command and versioned Tool nodes execute argv or explicit shell contracts in assigned workspaces. Durable resource waits and immutable source/target receipts reuse build-slot/rb admission; unknown effects retain resources until observed stop/release. Secret references and declared output schemas keep secrets out of receipts and refuse zero-match test proof. Native proof remains distinct from Linux execution. See `docs/backend/workflows.md` for the backend contract; Designer controls are not added by WF05.
 ### Typed workflow plan proposals (WF04 foundation)
 
 Contract-3 Create Stories visits accept a durable, activation- and plan-revision-
@@ -3627,3 +3641,12 @@ nonempty drafts, and modified arrow keys retain their normal behavior. See
 
 Terminal Chat keeps short inline code chips together. Empty ACP plan snapshots
 clear the prior steps without drawing a blank Plan card.
+
+
+### Branch-local workflow decisions
+
+Workflow questions and approvals retain structured answer schemas, revision and
+subject fences, actor provenance and restart-safe deadlines. An unanswered question
+suspends its activation, not disjoint delivery. The project inbox counts pending
+and expired questions without a coordinator; all transports use the same service.
+No timeout grants consent. See [workflow decisions](backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).

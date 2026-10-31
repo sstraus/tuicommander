@@ -32,6 +32,7 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
         snapshot.event_contract_version,
         super::contracts::SERIAL_EVENT_CONTRACT_VERSION
             | super::contracts::PINNED_SERIAL_EVENT_CONTRACT_VERSION
+            | super::contracts::PARALLEL_EVENT_CONTRACT_VERSION
             | super::contracts::CURRENT_EVENT_CONTRACT_VERSION
     ) {
         return Err("unsupported workflow graph event contract".into());
@@ -39,6 +40,24 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
     let previous_status = snapshot.status;
     match &event.kind {
         RunEventKind::Started { .. } => unreachable!(),
+        RunEventKind::QuestionRequested { question, report } => {
+            super::questions::open(&mut snapshot, question, report.clone(), false)?
+        }
+        RunEventKind::QuestionRevised { question } => {
+            super::questions::open(&mut snapshot, question, None, true)?
+        }
+        RunEventKind::QuestionAnswered {
+            question_id,
+            revision,
+            subject_digest,
+            answer,
+        } => super::questions::answered(
+            &mut snapshot,
+            question_id,
+            *revision,
+            subject_digest,
+            answer,
+        )?,
         RunEventKind::Timer { event: timer } => {
             super::timer::apply(&mut snapshot, timer, event.at_ms)?
         }
@@ -84,6 +103,31 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                 }
                 if **execution != initial {
                     return Err("graph start state is not pristine".into());
+                }
+                // Positioned commands have a workspace before (or without) an Agent attempt.
+                // Old graphs do not contain these kinds, so serial replay stays unchanged.
+                if execution.target_id != snapshot.plan_id
+                    && execution.definition.graph.nodes.iter().any(|node| {
+                        matches!(
+                            node.kind,
+                            crate::workflows::NodeKind::RunCommand { .. }
+                                | crate::workflows::NodeKind::Tool { .. }
+                        )
+                    })
+                    && !snapshot
+                        .stories
+                        .iter()
+                        .any(|story| story.story_id == execution.target_id)
+                {
+                    snapshot.stories.push(StoryExecution {
+                        story_id: execution.target_id.clone(),
+                        accepted: false,
+                        accepted_revision: None,
+                        worktree_path: None,
+                        attempt_ids: vec![],
+                        check_receipts: vec![],
+                        integration_receipt: None,
+                    });
                 }
                 snapshot.graph_executions.push(initial);
             }
@@ -198,7 +242,10 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                     .ok_or("loop counter overflow")?;
                 for attempt in &mut snapshot.attempts {
                     if superseded_attempts.contains(&attempt.id)
-                        && attempt.state == AttemptState::Running
+                        && (attempt.state == AttemptState::Running
+                            || (snapshot.event_contract_version >= 5
+                                && attempt.outcome == Some(AttemptOutcome::NeedsInput)
+                                && attempt.input_answer.is_none()))
                     {
                         attempt.state = AttemptState::Interrupted;
                         attempt.outcome = Some(AttemptOutcome::Interrupted);
@@ -315,31 +362,10 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
             }
         }
         RunEventKind::InputAnswered { attempt_id, answer } => {
-            let attempt = snapshot
-                .attempts
-                .iter_mut()
-                .find(|attempt| attempt.id == *attempt_id)
-                .ok_or("node attempt not found")?;
-            if attempt.outcome != Some(AttemptOutcome::NeedsInput) || attempt.input_answer.is_some()
-            {
-                return Err("attempt has no pending input request".into());
+            if snapshot.event_contract_version >= 5 {
+                return Err("legacy InputAnswered cannot resolve a branch question".into());
             }
-            attempt.input_answer = Some(answer.clone());
-            if snapshot.event_contract_version >= 3 && attempt.agent.is_some() {
-                attempt.generation = attempt
-                    .generation
-                    .checked_add(1)
-                    .ok_or("attempt generation exhausted")?;
-                attempt.state = AttemptState::Running;
-                attempt.outcome = None;
-                attempt.report = None;
-                attempt.continuation = Some(super::model::AgentContinuation {
-                    generation: attempt.generation,
-                    answer: answer.clone(),
-                    delivery: super::model::ContinuationDelivery::Pending,
-                    delivery_reference: None,
-                });
-            }
+            resume_input_attempt(&mut snapshot, attempt_id, answer)?;
         }
         RunEventKind::ContinuationDeliveryChanged {
             attempt_id,
@@ -628,6 +654,7 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                                 super::graph::ActivationState::Ready
                                     | super::graph::ActivationState::Running
                                     | super::graph::ActivationState::Paused
+                                    | super::graph::ActivationState::Suspended
                             )
                     })
             });
@@ -649,6 +676,7 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
             .paused_duration_ms
             .saturating_add(event.at_ms.saturating_sub(since).max(0));
     }
+    super::questions::reconcile(&mut snapshot);
     snapshot.sequence = event.sequence;
     Ok(snapshot)
 }
@@ -665,10 +693,45 @@ pub(super) fn validate_resume(snapshot: &RunSnapshot) -> Result<(), String> {
     {
         return Err("uncertain effects need an explicit resolution".into());
     }
-    if snapshot.attempts.iter().any(|attempt| {
-        attempt.outcome == Some(AttemptOutcome::NeedsInput) && attempt.input_answer.is_none()
-    }) {
+    if snapshot.event_contract_version < 5
+        && snapshot.attempts.iter().any(|attempt| {
+            attempt.outcome == Some(AttemptOutcome::NeedsInput) && attempt.input_answer.is_none()
+        })
+    {
         return Err("human input is still pending".into());
+    }
+    Ok(())
+}
+
+/// Apply the existing generation-bound continuation semantics for either question contract.
+pub(super) fn resume_input_attempt(
+    snapshot: &mut RunSnapshot,
+    attempt_id: &str,
+    answer: &str,
+) -> Result<(), String> {
+    let attempt = snapshot
+        .attempts
+        .iter_mut()
+        .find(|attempt| attempt.id == attempt_id)
+        .ok_or("node attempt not found")?;
+    if attempt.outcome != Some(AttemptOutcome::NeedsInput) || attempt.input_answer.is_some() {
+        return Err("attempt has no pending input request".into());
+    }
+    attempt.input_answer = Some(answer.to_owned());
+    if snapshot.event_contract_version >= 3 && attempt.agent.is_some() {
+        attempt.generation = attempt
+            .generation
+            .checked_add(1)
+            .ok_or("attempt generation exhausted")?;
+        attempt.state = AttemptState::Running;
+        attempt.outcome = None;
+        attempt.report = None;
+        attempt.continuation = Some(super::model::AgentContinuation {
+            generation: attempt.generation,
+            answer: answer.to_owned(),
+            delivery: super::model::ContinuationDelivery::Pending,
+            delivery_reference: None,
+        });
     }
     Ok(())
 }

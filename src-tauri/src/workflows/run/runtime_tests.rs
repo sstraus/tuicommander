@@ -17,6 +17,7 @@ mod lifecycle;
 mod parity;
 mod proposals;
 mod routing;
+mod typed_commands;
 
 fn fixture() -> (
     tempfile::TempDir,

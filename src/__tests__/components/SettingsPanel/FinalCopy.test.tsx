@@ -6,6 +6,7 @@ import { AgentsTab } from "../../../components/SettingsPanel/tabs/AgentsTab";
 import { NotificationsTab } from "../../../components/SettingsPanel/tabs/NotificationsTab";
 import { SmartPromptsTab } from "../../../components/SettingsPanel/tabs/SmartPromptsTab";
 import { VariableInputDialog } from "../../../components/SmartPromptsDropdown/VariableInputDialog";
+import { agentConfigsStore } from "../../../stores/agentConfigs";
 import { uiStore } from "../../../stores/ui";
 import { mockInvoke } from "../../mocks/tauri";
 
@@ -24,6 +25,7 @@ vi.mock("../../../stores/notifications", async (original) => {
 });
 
 beforeEach(() => {
+	localStorage.clear();
 	vi.useFakeTimers();
 	mockInvoke.mockImplementation(async (command: string) => {
 		if (command === "detect_all_agent_binaries") return {};
@@ -47,6 +49,21 @@ describe("final copy regressions", () => {
 		const view = render(() => <AgentsTab />);
 		expect(view.getByRole("heading", { name: "Agent behavior" })).toBeInTheDocument();
 		expect(view.queryByText(copy)).not.toBeInTheDocument();
+	});
+
+	// Catches: global hooks remain undiscoverable in basic setup or are advertised for native-signal agents.
+	it("offers the hooks tip only in supported disabled agent setup", () => {
+		agentConfigsStore.syncHookInstrumentation("grok", false);
+		uiStore.setSettingsExpertMode(false);
+		const view = render(() => <AgentsTab />);
+		expect(view.queryByRole("complementary", { name: "More precise agent status" })).toBeNull();
+		fireEvent.click(view.getByRole("button", { name: /^Claude Code/ }));
+		expect(view.queryByRole("complementary", { name: "More precise agent status" })).toBeNull();
+		fireEvent.click(view.getByRole("button", { name: /Grok Not found/ }));
+		expect(view.getByRole("complementary", { name: "More precise agent status" })).toBeTruthy();
+		agentConfigsStore.syncHookInstrumentation("grok", true);
+		expect(view.queryByRole("complementary", { name: "More precise agent status" })).toBeNull();
+		agentConfigsStore.syncHookInstrumentation("grok", false);
 	});
 
 	it("does not narrate the background agent card", () => {

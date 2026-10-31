@@ -107,6 +107,7 @@ mod dictation_config {
         /// `dictation::commands::legacy_speech_engine`.
         #[serde(default)]
         #[schemars(extend("x-setting" = {"sensitivity":"public","apply":"live","effect":"Updates speech engine for the current owner.","operations":["get","set"],"confirmationClass":"ordinary"}))]
+        #[schemars(default = "default_speech_engine")]
         pub speech_engine: String,
         /// The Edge voice, such as `it-IT-IsabellaNeural`. Empty means the
         /// language's default. A voice that does not speak the conversation's
@@ -227,6 +228,20 @@ mod dictation_config {
                     default_speech_volume_db()
                 },
                 levelling: self.speech_levelling,
+            }
+        }
+    }
+
+    fn default_speech_engine() -> String {
+        "edge".to_string()
+    }
+
+    impl DictationConfig {
+        /// Effective baseline for a new installation, not a legacy file with no engine choice.
+        pub(crate) fn fresh_defaults() -> Self {
+            Self {
+                speech_engine: default_speech_engine(),
+                ..Self::default()
             }
         }
     }
@@ -1282,8 +1297,14 @@ fn default_terminal_renderer() -> String {
 }
 
 /// The audit records every MCP call: off in release builds, on while developing.
+pub(crate) const RELEASE_MCP_CALL_AUDIT_ENABLED: bool = false;
+
 fn default_mcp_call_audit_enabled() -> bool {
-    cfg!(debug_assertions)
+    if cfg!(debug_assertions) {
+        true
+    } else {
+        RELEASE_MCP_CALL_AUDIT_ENABLED
+    }
 }
 
 fn default_mcp_port() -> u16 {
@@ -1635,7 +1656,7 @@ impl Default for UIPrefsConfig {
 }
 
 fn default_sidebar_width() -> u32 {
-    260
+    300
 }
 fn default_panel_width() -> u32 {
     400
@@ -1650,7 +1671,7 @@ fn default_git_panel_width() -> u32 {
     380
 }
 fn default_settings_nav_width() -> u32 {
-    180
+    232
 }
 
 // ---------------------------------------------------------------------------
@@ -4878,10 +4899,7 @@ pub(crate) fn get_config_defaults(
         // told apart from a choice (`dictation::commands`); a brand-new install
         // loads it as "edge", and the settings panel compares against that.
         #[cfg(feature = "dictation")]
-        dictation: DictationConfig {
-            speech_engine: "edge".to_string(),
-            ..DictationConfig::default()
-        },
+        dictation: DictationConfig::fresh_defaults(),
         launch_instructions: crate::settings::agents::launch_instruction_defaults(preview),
     }
 }

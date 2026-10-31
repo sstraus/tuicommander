@@ -8,12 +8,51 @@ import { isMacOS } from "../platform";
 
 const mod = isMacOS() ? "Cmd" : "Ctrl";
 
+export const CONTEXTUAL_TIPS = {
+	preventSleep: {
+		feature: "Keep long agent runs awake",
+		description:
+			"A long agent run can be interrupted by idle sleep, especially on battery. In General settings, enable Prevent sleep when busy to keep the system awake during agent work.",
+		shortcut: null,
+	},
+	hooks: {
+		feature: "More precise agent status",
+		description:
+			"This agent supports optional global hooks for busy, idle and waiting status. Enable Install hooks globally in this agent's expert settings. Hooks apply on the next launch; heuristics remain available without them.",
+		shortcut: null,
+	},
+	autoRetry: {
+		feature: "Retry temporary API failures",
+		description:
+			"This agent hit a server error. Optional Auto-retry on server errors in this agent's expert settings can send continue after temporary server failures, up to three attempts. Authentication and other errors are not retried.",
+		shortcut: null,
+	},
+} satisfies Record<string, Tip>;
+
 export const TIPS: Tip[] = [
 	{
 		feature: "Recall a queued prompt",
 		description:
 			"In an empty desktop Compose or AI Chat editor, press ArrowUp to withdraw the latest host-owned text prompt for editing. Native CLI Pending bubbles cannot be recalled this way.",
 		shortcut: "ArrowUp",
+	},
+	{
+		feature: "Confirm a detected ego executable",
+		description:
+			"Open AI Chat to see a detected ego path when none is configured. Choose Use this to save it, or Configure ego to choose a different binary. Detection never changes your settings automatically.",
+		shortcut: null,
+	},
+	{
+		feature: "Connected PR conversations",
+		description:
+			"Open comments from a PR popover, its unresolved-thread count or a PR notification. Tasks shows the conversation and a return action for an existing branch; without a provider, GitHub opens instead.",
+		shortcut: null,
+	},
+	{
+		feature: "Progress popup mute",
+		description:
+			"Select Mute on a completion popup to quiet this app session. Reports remain in Terminal Progress, where Unmute restores future popups. Blocked reports still appear.",
+		shortcut: null,
 	},
 	{
 		feature: "Mobile URL paste",

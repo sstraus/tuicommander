@@ -8,6 +8,8 @@ use tauri::Emitter;
 #[derive(Clone, Debug, Deserialize, Serialize, JsonSchema)]
 #[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
 pub enum RunAction {
+    /// Durable unanswered questions, including expired questions, without a coordinator.
+    QuestionInbox,
     /// Start a pinned executable root through the owning daemon, never the legacy ledger.
     StartGraph {
         target: super::RunTarget,
@@ -23,6 +25,9 @@ pub enum RunAction {
         definition_id: String,
         definition_revision: i64,
         limits: RunLimits,
+    },
+    CommandExecutions {
+        run_id: String,
     },
     Incidents {
         run_id: String,
@@ -87,11 +92,13 @@ pub enum RunAction {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum RunReply {
+    QuestionInbox(super::questions::QuestionInbox),
     Snapshot(Box<RunSnapshot>),
     Runs(Vec<RunSnapshot>),
     Events(Vec<RunEvent>),
     Receipt(Box<RunReceipt>),
     Incidents(Vec<super::RunIncident>),
+    CommandExecutions(Vec<crate::workflows::command::CommandObservation>),
     ReportDispositions(Vec<super::ReportDisposition>),
     Readiness(Vec<String>),
     AgentClose(serde_json::Value),
@@ -145,6 +152,7 @@ pub fn run_action(project: &str, action: RunAction) -> Result<RunReply, String> 
         .to_string();
     let store = RunStore::open()?;
     match action {
+        RunAction::QuestionInbox => Ok(RunReply::QuestionInbox(store.question_inbox(&owner)?)),
         RunAction::AgentCloses { .. } | RunAction::CloseAgent { .. } => {
             Err("owned agent close requires the owning daemon service".into())
         }
@@ -176,6 +184,12 @@ pub fn run_action(project: &str, action: RunAction) -> Result<RunReply, String> 
             definition_revision,
             limits,
         )?))),
+        RunAction::CommandExecutions { run_id } => {
+            scoped_snapshot(&store, &owner, &run_id)?;
+            Ok(RunReply::CommandExecutions(
+                store.command_journal().observations(&run_id)?,
+            ))
+        }
         RunAction::Incidents { run_id } => {
             let run = scoped_snapshot(&store, &owner, &run_id)?;
             Ok(RunReply::Incidents(super::incidents::read_incidents(
@@ -404,7 +418,9 @@ pub fn run_action_with_events(
                 &receipt.snapshot.id,
                 receipt.sequence,
             ),
-            RunReply::Events(_)
+            RunReply::CommandExecutions(_)
+            | RunReply::QuestionInbox(_)
+            | RunReply::Events(_)
             | RunReply::Runs(_)
             | RunReply::Incidents(_)
             | RunReply::ReportDispositions(_)
