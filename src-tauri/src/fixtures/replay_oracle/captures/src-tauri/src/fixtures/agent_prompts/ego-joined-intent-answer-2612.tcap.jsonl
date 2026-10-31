@@ -1,0 +1,5 @@
+{"fixture":"src-tauri/src/fixtures/agent_prompts/ego-joined-intent-answer-2612.tcap","agent":"ego","geometry":[63,234]}
+{"record":0,"event":{"type":"intent","text":"Ti indico i passaggi necessari per configurare il default globale della tua installazione, distinguendo il blocco dell’ambiente dalla parte che ego non supporta ancora","title":"Configurazione Claude","_turn_epoch":0}}
+{"record":0,"event":{"type":"shell-state","state":"busy","agent_type":"ego"}}
+{"record":0,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
+{"ring_len":574}
