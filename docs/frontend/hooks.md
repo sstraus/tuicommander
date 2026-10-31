@@ -290,7 +290,7 @@ Confirmation and info dialogs using Tauri dialog plugin.
 
 **File:** `src/hooks/useDictation.ts`
 
-Push-to-talk dictation integration. The destination and selection are captured before any asynchronous work. Explicit editors take priority; transcript or BODY focus in terminal Chat targets that terminal's Compose editor. CodeMirror receives a transaction, preserving the surrounding draft. CLI uses the captured PTY session and its existing auto-send semantics, even if the active tab changes.
+Push-to-talk dictation integration. The destination and selection are captured before any asynchronous work. Explicit editors take priority; transcript or BODY focus in terminal Chat targets that terminal's Compose editor. CodeMirror receives a transaction, preserving the surrounding draft. Terminal Chat Compose also honors auto-send through its editor-owned submit callback, sharing normal Send deduplication and successful-draft cleanup; ordinary editors remain review-only. CLI uses the captured PTY session and its existing auto-send semantics, even if the active tab changes.
 
 Detached AI Chat mounts the same hook and hotkey lifecycle in its own WebView,
 hydrates the shared dictation configuration, and supplies its composer as the

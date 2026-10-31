@@ -13,6 +13,7 @@ import {
 	Suspense,
 	untrack,
 } from "solid-js";
+import { initMouseDrag } from "../../hooks/useMouseDrag";
 import { t } from "../../i18n";
 import { invoke } from "../../invoke";
 import { appLogger } from "../../stores/appLogger";
@@ -58,6 +59,16 @@ interface Story extends EditableStory {
 	claimSession: string | null;
 	abandoned: boolean;
 }
+interface PhaseMove {
+	status: StoryStatus;
+	command: string;
+}
+interface PhaseChoices {
+	revision: number;
+	moves: PhaseMove[];
+	error?: string;
+}
+
 const ALL_PLANS = "all-plans";
 
 type Reply =
@@ -78,7 +89,8 @@ type Reply =
 	  }
 	| { type: "project_story_view"; value: { stories: Story[]; visibleStoryIds: string[]; columns: StoryColumn[] } }
 	| { type: "story"; value: Story }
-	| { type: "stories"; value: Story[] };
+	| { type: "stories"; value: Story[] }
+	| { type: "available_transitions"; value: PhaseChoices };
 
 interface RunGraph {
 	id: string;
@@ -176,6 +188,35 @@ const statusLabel = (status: StoryStatus): string => {
 	}
 };
 
+function PhaseSelector(props: {
+	story: Story;
+	choices: PhaseChoices | undefined;
+	disabled: boolean;
+	label: string;
+	onMove: (story: Story, command: string) => void;
+}) {
+	const moves = () => (props.choices?.revision === props.story.revision ? props.choices.moves : []);
+	return (
+		<label class={s.phaseSelector}>
+			<span>{t("stories.phase.label", "Phase")}</span>
+			<Select
+				aria-label={props.label}
+				title={props.choices?.error}
+				value=""
+				disabled={props.disabled || moves().length === 0}
+				onChange={(event) => {
+					const command = event.currentTarget.value;
+					event.currentTarget.value = "";
+					if (moves().some((move) => move.command === command)) props.onMove(props.story, command);
+				}}
+			>
+				<option value="">{statusLabel(props.story.status)}</option>
+				<For each={moves()}>{(move) => <option value={move.command}>{statusLabel(move.status)}</option>}</For>
+			</Select>
+		</label>
+	);
+}
+
 const storyTypeLabel = (kind: StoryType | null | undefined): string => {
 	switch (kind) {
 		case "feature":
@@ -229,6 +270,13 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 	const [stories, setStories] = createSignal<Story[]>([]);
 	const [visibleIds, setVisibleIds] = createSignal<string[] | undefined>();
 	const [columns, setColumns] = createSignal<StoryColumn[]>([]);
+	const [phaseChoices, setPhaseChoices] = createSignal<ReadonlyMap<string, PhaseChoices>>(new Map());
+	const [draggedStory, setDraggedStory] = createSignal<Story | null>(null);
+	const [dropTarget, setDropTarget] = createSignal<StoryStatus | null>(null);
+	let boardRoot: HTMLDivElement | undefined;
+	let suppressCardClick = false;
+	let cancelStoryDrag: (() => void) | undefined;
+	onCleanup(() => cancelStoryDrag?.());
 	const [archivedPlans, setArchivedPlans] = createSignal(false);
 	const [archivedStories, setArchivedStories] = createSignal(false);
 	const [newStoryType, setNewStoryType] = createSignal<StoryType | "untyped">("untyped");
@@ -265,6 +313,12 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 	const [wontFixCount, setWontFixCount] = createSignal(0);
 	const [allCancelled, setAllCancelled] = createSignal(false);
 	const [loading, setLoading] = createSignal(true);
+	createEffect(
+		on(
+			() => [props.project, planId(), storiesUi.view(), loading()],
+			() => cancelStoryDrag?.(),
+		),
+	);
 	const [readFailed, setReadFailed] = createSignal(false);
 	const [busy, setBusy] = createSignal(false);
 	const [error, setError] = createSignal("");
@@ -405,9 +459,16 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 		setRecoveryExecution(pending[0].execution);
 		setRecoveryActivation(pending[0].activation);
 	});
+	const cancelDragOnBlur = () => cancelStoryDrag?.();
+	onMount(() => window.addEventListener("blur", cancelDragOnBlur));
+	onCleanup(() => window.removeEventListener("blur", cancelDragOnBlur));
 	let closeButton: HTMLButtonElement | undefined;
 	let request = 0;
 	let runRequest = 0;
+	onCleanup(() => {
+		++request;
+		++runRequest;
+	});
 	let capabilitiesReady = false;
 	// A dependency choice belongs to the story it was made for.
 	createEffect(on(storyId, () => setDependencyId("")));
@@ -739,6 +800,35 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 				nextWontFixCount = view.value.wontFixCount;
 				nextAllCancelled = view.value.allCancelled;
 			}
+			const nextChoices = new Map<string, PhaseChoices>();
+			// Four reads at a time; a large plan must not fan out unbounded requests.
+			const actionable = nextStories.filter(
+				(story) => !story.archived && !list.value.find((plan) => plan.id === story.planId)?.archived,
+			);
+			let index = 0;
+			await Promise.all(
+				Array.from({ length: Math.min(4, actionable.length) }, async () => {
+					while (index < actionable.length && current === request) {
+						const story = actionable[index++];
+						try {
+							const reply = await call({
+								action: "available_transitions",
+								story_id: story.id,
+								expected_revision: story.revision,
+							});
+							if (reply.type !== "available_transitions") throw new Error("Invalid phase transitions response");
+							nextChoices.set(story.id, reply.value);
+						} catch (cause) {
+							nextChoices.set(story.id, {
+								revision: story.revision,
+								moves: [],
+								error:
+									cause instanceof HttpRpcError ? cause.detail : cause instanceof Error ? cause.message : String(cause),
+							});
+						}
+					}
+				}),
+			);
 			if (current !== request) return;
 			if (available) {
 				setPlanSources(available);
@@ -748,6 +838,7 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 			setPlans(list.value);
 			setPlanId(nextPlan);
 			setStories(nextStories);
+			setPhaseChoices(nextChoices);
 			setVisibleIds(nextVisibleIds);
 			setColumns(nextColumns);
 			setPlanState(nextState);
@@ -962,10 +1053,72 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 		}
 	}
 
+	function moveStory(story: Story, command: string): void {
+		if (busy() || loading()) return;
+		const choices = phaseChoices().get(story.id);
+		if (choices?.revision !== story.revision || !choices.moves.some((move) => move.command === command)) return;
+		submitTransition(story, command);
+	}
+	function submitTransition(story: Story, command: string | Record<string, number>): void {
+		if (busy() || loading()) return;
+		void mutate({ action: "transition", story_id: story.id, expected_revision: story.revision, command });
+	}
+
+	const legalMove = (story: Story, status: StoryStatus) => {
+		const choices = phaseChoices().get(story.id);
+		return choices?.revision === story.revision ? choices.moves.find((move) => move.status === status) : undefined;
+	};
+	const columnAt = (x: number, y: number): StoryStatus | null => {
+		for (const column of boardRoot?.querySelectorAll<HTMLElement>("[data-story-column]") ?? []) {
+			const rect = column.getBoundingClientRect();
+			if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom)
+				return column.dataset.storyColumn as StoryStatus;
+		}
+		return null;
+	};
+	function startStoryDrag(event: PointerEvent, story: Story): void {
+		if (
+			busy() ||
+			loading() ||
+			editing() ||
+			draggedStory() ||
+			story.archived ||
+			!phaseChoices().get(story.id)?.moves.length
+		)
+			return;
+		const source = event.currentTarget as HTMLElement;
+		cancelStoryDrag?.();
+		cancelStoryDrag = initMouseDrag(event, source, {
+			onStart: () => {
+				suppressCardClick = true;
+				setDraggedStory(story);
+			},
+			onMove: (x, y) => {
+				const status = columnAt(x, y);
+				setDropTarget(status && legalMove(story, status) ? status : null);
+			},
+			onDrop: (x, y) => {
+				const active = draggedStory();
+				setDraggedStory(null);
+				setDropTarget(null);
+				if (!active) return;
+				const status = columnAt(x, y);
+				if (!status || status === active.status) return;
+				const move = legalMove(active, status);
+				if (move) moveStory(active, move.command);
+				else setError(t("stories.phase.illegal", "No legal transition to {phase}.", { phase: statusLabel(status) }));
+			},
+			onCancel: () => {
+				setDraggedStory(null);
+				setDropTarget(null);
+			},
+		});
+	}
+
 	function transition(command: string | Record<string, number>): void {
 		const story = selectedStory();
 		if (!story) return;
-		void mutate({ action: "transition", story_id: story.id, expected_revision: story.revision, command });
+		submitTransition(story, command);
 	}
 
 	function addDependency(): void {
@@ -1826,28 +1979,45 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 										<nav class={s.items}>
 											<For each={listedStories()}>
 												{(story) => (
-													<button
-														data-control-layout="row"
-														type="button"
-														class={s.item}
-														aria-current={storyId() === story.id ? "true" : undefined}
-														onClick={() => setStoryId(story.id)}
-													>
-														<span>{story.title}</span>
-														<small>{planTitleFor(story)}</small>
-														<small>
-															{statusLabel(story.status)} · {storyTypeLabel(story.storyType)}
-														</small>
-													</button>
+													<div class={s.storyListRow}>
+														<button
+															data-control-layout="row"
+															type="button"
+															class={s.item}
+															aria-current={storyId() === story.id ? "true" : undefined}
+															onClick={() => setStoryId(story.id)}
+														>
+															<span>{story.title}</span>
+															<small>{planTitleFor(story)}</small>
+															<small>
+																{statusLabel(story.status)} · {storyTypeLabel(story.storyType)}
+															</small>
+														</button>
+														<PhaseSelector
+															story={story}
+															choices={phaseChoices().get(story.id)}
+															disabled={busy() || loading() || !!editing()}
+															label={t("stories.phase.forStory", "Phase for {title}", { title: story.title })}
+															onMove={moveStory}
+														/>
+													</div>
 												)}
 											</For>
 										</nav>
 									}
 								>
-									<div class={s.board} role="region" aria-label={t("stories.view.kanban", "Kanban")}>
+									<div ref={boardRoot} class={s.board} role="region" aria-label={t("stories.view.kanban", "Kanban")}>
 										<For each={columns()}>
 											{(column) => (
-												<section class={s.boardColumn} aria-label={statusLabel(column.status)}>
+												<section
+													class={s.boardColumn}
+													aria-label={statusLabel(column.status)}
+													data-story-column={column.status}
+													data-drop-allowed={
+														draggedStory() && legalMove(draggedStory()!, column.status) ? "true" : undefined
+													}
+													data-drop-target={dropTarget() === column.status ? "true" : undefined}
+												>
 													<header class={s.boardColumnHeader} data-status={column.status}>
 														<span>{statusLabel(column.status)}</span>
 														<span>{column.storyIds.length}</span>
@@ -1866,7 +2036,18 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 																				type="button"
 																				class={s.boardCard}
 																				aria-current={storyId() === id ? "true" : undefined}
-																				onClick={() => setStoryId(id)}
+																				onPointerDown={(event) => {
+																					suppressCardClick = false;
+																					startStoryDrag(event, story());
+																				}}
+																				onClick={(event) => {
+																					if (suppressCardClick) {
+																						suppressCardClick = false;
+																						event.preventDefault();
+																						return;
+																					}
+																					setStoryId(id);
+																				}}
 																			>
 																				<small class={s.boardCardId}>{story().id}</small>
 																				<span>{story().title}</span>
@@ -1920,30 +2101,38 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 													</span>
 													<h3>{story().title}</h3>
 												</div>
-												<Show
-													when={
-														!editing() &&
-														!story().archived &&
-														!storyPlan()?.archived &&
-														["backlog", "ready"].includes(story().status) &&
-														!story().claimSession
-													}
-												>
-													<Button
-														variant="primary"
-														type="button"
-														disabled={busy()}
-														onClick={() => {
-															setEditing(structuredClone(story()));
-															setEditError("");
-														}}
+												<div class={s.storyHeaderActions} data-story-header-actions>
+													<Show
+														when={
+															!editing() &&
+															!story().archived &&
+															!storyPlan()?.archived &&
+															["backlog", "ready"].includes(story().status) &&
+															!story().claimSession
+														}
 													>
-														{t("stories.edit.open", "Edit")}
-													</Button>
-												</Show>
-												<span class={s.status} data-status={story().status}>
-													{statusLabel(story().status)}
-												</span>
+														<Button
+															variant="primary"
+															type="button"
+															disabled={busy()}
+															onClick={() => {
+																setEditing(structuredClone(story()));
+																setEditError("");
+															}}
+														>
+															{t("stories.edit.open", "Edit")}
+														</Button>
+													</Show>
+													<Show when={!editing()}>
+														<PhaseSelector
+															story={story()}
+															choices={phaseChoices().get(story().id)}
+															disabled={busy() || loading()}
+															label={t("stories.phase.label", "Phase")}
+															onMove={moveStory}
+														/>
+													</Show>
+												</div>
 											</div>
 											<StoryMetadata project={props.project} story={story()} />
 											<Show when={editing()} keyed>

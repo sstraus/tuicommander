@@ -1,4 +1,5 @@
 import { EditorView } from "@codemirror/view";
+import { composeSubmit } from "../components/ComposePanel/composeSubmit";
 import { terminalsStore } from "../stores/terminals";
 import { agentInputPayload, getShellFamily, sendCommand } from "../utils/sendCommand";
 
@@ -43,7 +44,7 @@ export function captureDictationTarget(fallbackInput?: HTMLTextAreaElement | nul
 		return {
 			kind,
 			...context,
-			async deliver(text) {
+			async deliver(text, _write, autoSend) {
 				if (ownerId || kind === "compose") checkSession();
 				if (
 					!view.contentDOM.isConnected ||
@@ -57,13 +58,20 @@ export function captureDictationTarget(fallbackInput?: HTMLTextAreaElement | nul
 				// focus. A concurrently edited draft is retained rather than overwritten.
 				const selected = view.state.update({ selection }).state;
 				view.dispatch({ ...selected.replaceSelection(text), userEvent: "input.dictation" });
+				// Only terminal Chat Compose opts into submit. Ordinary editors still
+				// need review, and Compose owns in-flight deduplication and cleanup.
+				if (kind === "compose" && autoSend) view.state.facet(composeSubmit)?.();
 			},
 		};
 	};
 	// findFromDOM searches descendants, so BODY would match any editor on the page.
 	const cmDom = el instanceof HTMLElement ? el.closest<HTMLElement>(".cm-editor") : null;
 	const view = cmDom ? EditorView.findFromDOM(cmDom) : null;
-	if (view) return editorTarget(view, "editor");
+	if (view)
+		return editorTarget(
+			view,
+			ownerId && terminal?.viewMode === "chat" && cmDom?.closest("[data-compose-editor]") ? "compose" : "editor",
+		);
 
 	// CanvasTerminal and xterm own hidden keyboard inputs; those are PTY focus,
 	// not ordinary editors. Explicit search/form inputs still take precedence.

@@ -58,6 +58,18 @@ describe("initMouseDrag", () => {
 	};
 	const up = (x: number, y: number) => document.dispatchEvent(pointer("pointerup", { clientX: x, clientY: y }));
 
+	it("catches an owner-disposed drag leaving a ghost or dispatching a late drop", () => {
+		const cancel = start();
+		move(160, 160);
+		expect(document.body.children).toHaveLength(2);
+		cancel?.();
+		cancel?.();
+		expect(document.body.children).toHaveLength(1);
+		up(180, 180);
+		expect(cbs.onDrop).not.toHaveBeenCalled();
+		expect(cbs.onCancel).toHaveBeenCalledTimes(1);
+	});
+
 	it("ignores a non-left-button pointerdown (never attaches the drag)", () => {
 		initMouseDrag(
 			pointer("pointerdown", { clientX: 0, clientY: 0, button: 2 }),

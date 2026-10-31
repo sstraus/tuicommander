@@ -35,7 +35,7 @@ existing warning notices. The repository cannot raise the machine policy.
 A repo selection requires an explicit machine profile and an ego build that
 acknowledges the ceiling. Without a repo selection, launch behavior is unchanged.
 
-The desktop composer uses one compact card. Its header shows **Repository · name** and an independent repository pin. The document button on the right parks the draft; its tooltip offers restore or swap when a draft is parked. The blue play button sends while idle and queues while ego is busy. Stop remains beside the input during a running turn. The desktop input and its actions share the same top and bottom edges as the input grows. The header, input row and footer use the same content edges.
+The desktop composer uses one compact card. Its header shows **Repository · name** and an independent repository pin. The document button on the right parks the draft; its tooltip offers restore or swap when a draft is parked. The blue play button sends while idle and queues while ego is busy. Stop remains beside the input during a running turn. The desktop input grows with the draft. Stop and Send keep their fixed control size and align to its bottom edge. The header, input row and footer use the same content edges.
 
 Pasting an image starts ego when needed before checking image support. Finder image copies attach the image rather than its filename; mixed clipboard data with substantive text pastes as text, as in Ideas and terminal Compose. An empty text clipboard flavor does not suppress an available image.
 
@@ -372,7 +372,7 @@ AI Chat replies use plain chat prose without the terminal answer rail. Literal M
 
 Use **Pin repository** beside the composer to keep that conversation's repository context while you navigate elsewhere. **Pinned repository** identifies the frozen context. Unpin to follow the repository on screen again. The name uses the repository or group color, with the normal light-theme text adjustment. This does not move or filter conversation tabs. The existing pin icon still parks your draft; it is a separate action.
 
-Middle-click a conversation tab to close it through the same path as its close button. The last conversation tab stays open. Press Escape from the composer or transcript to stop a running turn without clearing your draft. When Find is open, Escape closes Find first, including when focus has moved back to the composer. Desktop Stop, Park and Send align to the input height.
+Middle-click a conversation tab to close it through the same path as its close button. The last conversation tab stays open. Press Escape from the composer or transcript to stop a running turn without clearing your draft. When Find is open, Escape closes Find first, including when focus has moved back to the composer. Desktop Stop and Send stay at the bottom of the input without growing with it. Park remains in the card header.
 
 Repository names in linked worktree contexts use the registered parent repository color, including its inherited group color. Pinning a worktree keeps that color while you browse another repository.
 
