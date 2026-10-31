@@ -621,11 +621,11 @@ mod tests {
         );
         let mut changed = intake;
         changed.event_intake.repositories = vec!["SSTRAUS/replacement".into()];
-        std::fs::write(
-            config.join("automations.json"),
-            serde_json::to_vec(&changed).unwrap(),
-        )
-        .unwrap();
+        // The runtime reads concurrently. A truncate/write can be quarantined as
+        // corrupt between those operations, leaving no live config to reconcile.
+        crate::config::ConfigFile::at_path(config.join("automations.json"))
+            .save(&changed)
+            .unwrap();
         fixture
             .state
             .event_bus
