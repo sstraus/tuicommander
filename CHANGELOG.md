@@ -9,6 +9,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Keep AI Chat model settings available when ego doctor reports a health problem, and show the specific diagnostic instead of a generic refusal (#2586-6732).
+- Add or remove a session from the Global Workspace through its sidebar context menu (#2590-2d63).
+- Send to the registered coordinator with `agent action=send to=orchestrator` without peer discovery; missing or ambiguous roles return explicit errors (#2580-dcbd).
+- Move native stories between legal Kanban phases with pointer drag, or use keyboard-accessible Phase selectors in List and beside Edit. Backend rules and revisions remain authoritative; rejected moves retain their placement. The toolbar includes Ready counts with named glyphs and tooltip lines (#2578-69b4).
+
 - Preserve ignored canonical work during native integration and recover interrupted validation, receipts and branch retirement without blocking unrelated trial repositories (#2514-3d1e).
 - Recover malformed config fields without resetting valid settings; preserve valid legacy service credentials and show reset field names and the original backup path once per recovery (#2564-8455).
 - Migrate legacy disabled scrollback reflow once; preserve later explicit choices (#2565-8b3c).
@@ -17,6 +21,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Show a rounded Greek epsilon (ε), not an æ ligature or square E, in the ego identity circle across the sidebar and shared agent icons (#2598-8df7).
+
+- Resolve Progress to the main checkout when a separately registered linked checkout repeats the shared workspace inventory (#2583-fd08).
+
+- Keep AI Chat Stop and Send buttons at a fixed size and bottom-aligned as the draft grows (#2588-b8af).
+- Keep verified terminal link underlines visible during unrelated spinner redraws, including full frames and same-row file paths (#01a19332-aa59-7025-9cb0-071b909bf871).
+
+- Align Speech assets and Spoken replies in Voice Settings, with shared rows, model/voice selectors, asset badges and named download actions. Keep the configured Whisper choice selected when its catalogue arrives (#2608-f1c4).
+
+- Align Design Mode sidebar sections and keep permission and error action buttons separated when they wrap (#2592-2a7f).
+- Honor dictation Auto-send in terminal Chat through the existing Compose Send path; keep review-only drafts when disabled and leave unrelated editors unchanged (#2585-dfc2).
+
+- Keep dotted link underlines and wrapped hover underlines aligned with terminal text during smooth scrolling (#2582-13dd).
 - Keep Session Chat and its composer on the destination repository when a progress toast's reporting terminal has closed (#2579-6271).
 
 - Permit the native notification plugin's startup permission probe in every app-owned desktop window (#2568-a5d5).

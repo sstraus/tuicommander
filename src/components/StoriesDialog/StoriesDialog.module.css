@@ -141,3 +141,14 @@ button.boardCard[data-control-layout="card"] small { color: var(--fg-muted); fon
 .sourceRow > button { flex-shrink: 0; }
 .sourcePath { flex: 1; min-width: 0; margin: 0; color: var(--fg-muted); white-space: pre-wrap; overflow-wrap: anywhere; font: var(--font-xs) var(--font-mono); }
 .planState { margin: 0 0 12px; color: var(--fg-secondary); font-size: var(--font-sm); }
+
+.storyListRow { composes: toolbar from "../ui/FormControls.module.css"; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border-bottom: 1px solid var(--border); }
+.storyListRow > button.item[data-control-layout="row"] { flex: 1 1 120px; width: auto; border-bottom: 0; }
+.phaseSelector { display: flex; align-items: center; gap: 8px; color: var(--fg-secondary); font-size: var(--font-xs); }
+.storyListRow > .phaseSelector { margin: 0 12px 8px; }
+.storyHeaderActions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-start; gap: 8px; }
+.detailHeader:has(.storyHeaderActions) { flex-wrap: wrap; justify-content: flex-start; }
+.detailHeader:has(.storyHeaderActions) > div:first-child { flex-basis: 100%; }
+.boardColumn[data-drop-allowed="true"] { outline: 1px dashed var(--accent); outline-offset: -2px; }
+.boardColumn[data-drop-target="true"] { background: var(--bg-highlight); outline-style: solid; }
+button.boardCard[data-control-layout="card"] { touch-action: pan-y; user-select: none; }

@@ -6942,3 +6942,208 @@ fn stale_peer_recovery_logs_at_info() {
         assert!(!recovery.contains("WARN"), "{recovery}");
     }
 }
+
+const COORDINATOR_OTHER_PEER: &str = "550e8400-e29b-41d4-a716-446655440a03";
+
+/// Catches: a role address falls through to a display name instead of the role mailbox.
+#[test]
+fn coordinator_address_delivers_to_registered_role_without_discovery() {
+    let state = test_state();
+    register_peer(&state, TEST_UUID_A, "worker", "mcp-worker");
+    register_peer(&state, COORDINATOR_OTHER_PEER, "orchestrator", "mcp-decoy");
+    let registered = handle_messaging(
+        &state,
+        &serde_json::json!({"action":"register", "tuic_session":TEST_UUID_B,
+            "name":"mailory", "orchestrator":true}),
+        Some("mcp-coordinator"),
+    );
+    assert_eq!(registered["orchestrator"], true, "{registered}");
+    let sent = handle_messaging(
+        &state,
+        &serde_json::json!({"action":"send", "to":"orchestrator", "message":"Review complete"}),
+        Some("mcp-worker"),
+    );
+    assert!(sent.get("error").is_none(), "{sent}");
+    let inbox = handle_messaging(
+        &state,
+        &serde_json::json!({"action":"inbox"}),
+        Some("mcp-coordinator"),
+    );
+    assert_eq!(
+        inbox["messages"][0]["content"], "Review complete",
+        "{inbox}"
+    );
+    assert!(!state.agent_inbox.contains_key(COORDINATOR_OTHER_PEER));
+}
+
+/// Catches: an absent role falls through to an ordinary peer name.
+#[test]
+fn coordinator_address_refuses_missing_roles() {
+    let state = test_state();
+    register_peer(&state, TEST_UUID_A, "worker", "mcp-worker");
+    register_peer(&state, TEST_UUID_B, "orchestrator", "mcp-decoy");
+    let result = handle_messaging(
+        &state,
+        &serde_json::json!({"action":"send", "to":"orchestrator", "message":"result"}),
+        Some("mcp-worker"),
+    );
+    assert!(
+        result["error"]
+            .as_str()
+            .unwrap()
+            .contains("No registered orchestrator"),
+        "{result}"
+    );
+    assert!(!state.agent_inbox.contains_key(TEST_UUID_B));
+}
+
+/// Catches: multiple roles silently route to an arbitrary peer.
+#[test]
+fn coordinator_address_refuses_ambiguous_roles() {
+    let state = test_state();
+    register_peer(&state, TEST_UUID_A, "worker", "mcp-worker");
+    let send = || {
+        handle_messaging(
+            &state,
+            &serde_json::json!({"action":"send", "to":"orchestrator", "message":"result"}),
+            Some("mcp-worker"),
+        )
+    };
+    for (id, mcp) in [
+        (TEST_UUID_B, "mcp-first"),
+        (COORDINATOR_OTHER_PEER, "mcp-second"),
+    ] {
+        handle_messaging(
+            &state,
+            &serde_json::json!({"action":"register", "tuic_session":id,
+            "name":"coordinator", "orchestrator":true}),
+            Some(mcp),
+        );
+    }
+    let result = send();
+    let error = result["error"].as_str().unwrap();
+    assert!(error.contains("ambiguous"), "{result}");
+    assert!(
+        error.contains(TEST_UUID_B) && error.contains(COORDINATOR_OTHER_PEER),
+        "{result}"
+    );
+    assert!(!state.agent_inbox.contains_key(TEST_UUID_B));
+    assert!(!state.agent_inbox.contains_key(COORDINATOR_OTHER_PEER));
+}
+
+/// Catches: unrelated coordinators steal replies from a nested managed child.
+#[test]
+fn coordinator_address_prefers_registered_parent_chain_over_other_roles() {
+    let state = test_state();
+    register_peer(&state, TEST_UUID_A, "worker", "mcp-worker");
+    for (id, mcp) in [
+        (TEST_UUID_B, "mcp-parent"),
+        (COORDINATOR_OTHER_PEER, "mcp-other"),
+    ] {
+        handle_messaging(
+            &state,
+            &serde_json::json!({"action":"register", "tuic_session":id,
+            "name":"coordinator", "orchestrator":true}),
+            Some(mcp),
+        );
+    }
+    state
+        .session_maps
+        .session_parent
+        .insert(TEST_UUID_A.into(), "intermediate-child".into());
+    state
+        .session_maps
+        .session_parent
+        .insert("intermediate-child".into(), TEST_UUID_B.into());
+    let result = handle_messaging(
+        &state,
+        &serde_json::json!({"action":"send", "to":"orchestrator", "message":"nested result"}),
+        Some("mcp-worker"),
+    );
+    assert!(result.get("error").is_none(), "{result}");
+    let inbox = handle_messaging(
+        &state,
+        &serde_json::json!({"action":"inbox"}),
+        Some("mcp-parent"),
+    );
+    assert_eq!(inbox["messages"][0]["content"], "nested result", "{inbox}");
+    assert!(!state.agent_inbox.contains_key(COORDINATOR_OTHER_PEER));
+}
+
+/// Catches: project-local role lookup is made ambiguous by another repository.
+#[test]
+fn coordinator_address_scopes_fallback_to_the_callers_project() {
+    let state = test_state();
+    for (id, mcp, path, role) in [
+        (TEST_UUID_A, "mcp-worker", "/repo/a", false),
+        (TEST_UUID_B, "mcp-local", "/repo/a", true),
+        (COORDINATOR_OTHER_PEER, "mcp-other", "/repo/b", true),
+    ] {
+        handle_messaging(
+            &state,
+            &serde_json::json!({"action":"register", "tuic_session":id,
+            "path":path, "orchestrator":role}),
+            Some(mcp),
+        );
+    }
+    let result = handle_messaging(
+        &state,
+        &serde_json::json!({"action":"send", "to":"orchestrator", "message":"local result"}),
+        Some("mcp-worker"),
+    );
+    assert!(result.get("error").is_none(), "{result}");
+    let inbox = handle_messaging(
+        &state,
+        &serde_json::json!({"action":"inbox"}),
+        Some("mcp-local"),
+    );
+    assert_eq!(inbox["messages"][0]["content"], "local result", "{inbox}");
+}
+
+/// Catches: collapsed discovery omits the role address or still needs peer-list calls.
+#[tokio::test]
+async fn coordinator_address_replay_uses_one_discovery_and_one_send() {
+    let state = test_state();
+    register_peer(&state, TEST_UUID_A, "worker", "mcp-worker");
+    handle_messaging(
+        &state,
+        &serde_json::json!({"action":"register", "tuic_session":TEST_UUID_B,
+        "name":"mailory", "orchestrator":true}),
+        Some("mcp-coordinator"),
+    );
+    let discovery = handle_search_tools(&state, &serde_json::json!({"query":"select:agent"}));
+    let schema = &discovery["top_schema"];
+    assert_eq!(schema["name"], "agent", "{discovery}");
+    let description = schema["description"].as_str().unwrap();
+    assert!(
+        description
+            .lines()
+            .next()
+            .unwrap()
+            .contains("send to=orchestrator message=<text>"),
+        "{description}"
+    );
+    let arguments = serde_json::json!({"action":"send", "to":"orchestrator", "message":"Screenshot task result"});
+    jsonschema::validator_for(&schema["inputSchema"])
+        .unwrap()
+        .validate(&arguments)
+        .unwrap();
+    let result = handle_call_tool(
+        &state,
+        loopback_addr(),
+        &serde_json::json!({"tool_name":"agent", "arguments":arguments}),
+        Some("mcp-worker"),
+        None,
+    )
+    .await;
+    assert!(result.get("error").is_none(), "{result}");
+    let inbox = handle_messaging(
+        &state,
+        &serde_json::json!({"action":"inbox"}),
+        Some("mcp-coordinator"),
+    );
+    assert_eq!(
+        inbox["messages"][0]["content"], "Screenshot task result",
+        "{inbox}"
+    );
+}
