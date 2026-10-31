@@ -37,6 +37,12 @@ to 500 characters after redaction.
 
 ## How an agent reports
 
+The MCP `progress` tool is for root agents that report to you. Managed child
+agents send their final `RESULT` or `BLOCKED` report to the parent agent with
+`agent action=send`. A child that calls `progress` receives an error with its
+parent's address; it does not create a journal outcome, notification, or waiting
+badge. Host-observed intents and agent mail can still appear in the journal.
+
 The MCP `progress` tool takes three fields.
 
 | Field | Required | Limit | Meaning |

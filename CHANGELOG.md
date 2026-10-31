@@ -23,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Refuse managed child progress reports before user notifications or waiting badges; direct child reports to their parent and keep root reporting unchanged (#2597-76c6).
+
 - Restore symmetric open meridians in the shared global-workspace globe icon (#2602-2e4d).
 
 - Match Droid and OpenCode identity artwork to sibling icon sizes in sidebar, Settings and mobile (#2601-0477).
