@@ -1,3 +1,7 @@
+## Claude Unicode preview columns (2537-88a4) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a Claude question with CJK or wide emoji in an answer beside its preview. Confirm Chat labels contain no pane borders and the selected preview remains separate. The recorded-dialog regression also covers combining marks; the daily app was not restarted. Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
 ## Settings catalogue effective defaults (2566-f6d0) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use a throwaway instance to confirm the default sidebar is 300 px, Settings navigation is 232 px, and the Voice engine default is Edge. Existing saved widths and legacy voice choices must remain unchanged. Release MCP audit stays off; debug audit stays on. Automated catalogue/export and UI-store regressions cover these defaults. The daily app was not restarted; restart only when losing current sessions is acceptable.
