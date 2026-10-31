@@ -929,6 +929,8 @@ Voice correction controls carry `corrections.replacements.{from}.from` and
 `corrections.replacements.{from}.to` catalogue identities. Import, add and remove
 retain the existing TextCorrector workflow; export does not change settings.
 
+Progress toast repository navigation uses `navigateToTerminal` for both a live origin and a surviving destination-workspace tab. With no destination tab, it clears terminal activation and the previous pane layout. Chat and Compose stay owned by their terminal; no second navigation listener retargets them.
+
 Desktop `TerminalChatView` renders active native questions from the existing session lifecycle store below the shared transcript. `ChoicePromptOverlay` has an embedded layout; desktop and mobile share `sendNativeChoice` for agent-specific PTY keys. Compose drafts and ACP interaction state are not involved.
 
 Mobile offers the **Chat** tab only when the host has a configured ego executable, using the same availability predicate as desktop. Host settings changes update the tab without reloading. Removing ego configuration returns an open Chat view to **Sessions**; unavailable saved Chat links also stay on **Sessions**.
