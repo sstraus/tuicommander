@@ -1,3 +1,7 @@
+## Settings catalogue effective defaults (2566-f6d0) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use a throwaway instance to confirm the default sidebar is 300 px, Settings navigation is 232 px, and the Voice engine default is Edge. Existing saved widths and legacy voice choices must remain unchanged. Release MCP audit stays off; debug audit stays on. Automated catalogue/export and UI-store regressions cover these defaults. The daily app was not restarted; restart only when losing current sessions is acceptable.
+
 ## Expanded Chat tool colours (2552-fd00)
 
 - [x] Bash/execute shell roles and separate Read/Edit/Write tool/path colours render in the shared session Chat transcript. Collapsed summary text and six expanded row bounds match the pre-change default-dark baseline. _(verified: isolated worktree Vite, production Transcript via `sessionChatAppearance.html?toolColours`, agent-browser screenshots and computed-style/geometry logs in `~/Gits/.tmp/results/toolrows-2552-{before,after}-browser.log`.)_
