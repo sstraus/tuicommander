@@ -30,7 +30,14 @@ pub(crate) fn resolve_owning_project_in(
     for (repo_path, repo) in repos {
         // Registrations can repeat the same shared Git inventory from a linked
         // checkout. Infer one main-checkout owner rather than opposite edges.
-        let repo_root = tuic_git::git::canonical_repo_root(Path::new(repo_path));
+        let repo_path = Path::new(repo_path);
+        let repo_root = tuic_git::git::resolve_git_dir(repo_path)
+            .filter(|git_dir| git_dir.join("commondir").is_file())
+            .map(|_| tuic_git::git::canonical_repo_root(repo_path))
+            .filter(|main| main.join(".git").is_dir())
+            // An absorbed submodule's gitdir is administration storage, not a
+            // checkout parent. Only infer a main checkout for linked worktrees.
+            .unwrap_or_else(|| canonical_if_present(repo_path));
         let Some(workspaces) = repo
             .get("workspaces")
             .and_then(serde_json::Value::as_object)

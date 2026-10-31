@@ -1276,8 +1276,9 @@ Ownership resolution starts from an authoritative registered project and follows
 recorded linked and nested workspace parent records, so a worktree's entries land
 in its parent project's journal. It never uses the focused UI repository or a
 bare CWD; unbound callers fail with `project_required`.
-When `parentRepoPath` is absent or null, the containing registration's Git common
-directory identifies the main checkout as the inferred owner. Registering a linked
+When `parentRepoPath` is absent or null, a linked-worktree registration's Git common
+directory identifies the main checkout as the inferred owner. Other registrations,
+including absorbed submodules, keep their checkout path as the owner. Registering a linked
 checkout separately can duplicate the shared workspace inventory without creating
 an ownership cycle. Explicit parent paths still take precedence, and real parent
 cycles fail with `project_unavailable`.
