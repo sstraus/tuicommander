@@ -370,6 +370,7 @@ function createSettingsStore() {
 	// with defaults, wiping the user's settings (observed in the field).
 	// No successful hydrate, no persist.
 	let hydrated = false;
+	const shownRecoveryBackups = new Set<string>();
 
 	// Compare with this window's normalized local state, never a fresh disk load:
 	// another window may have changed even fields owned by this same store.
@@ -638,7 +639,8 @@ function createSettingsStore() {
 				const config = await invoke<RustAppConfig>("load_config");
 				baseConfig = config;
 				applyConfig(config, false);
-				if (config.config_recovery) {
+				if (config.config_recovery && !shownRecoveryBackups.has(config.config_recovery.backup_path)) {
+					shownRecoveryBackups.add(config.config_recovery.backup_path);
 					toastsStore.add(
 						"Settings recovered",
 						`Reset invalid or missing settings: ${config.config_recovery.fields.join(", ")}. Original file: ${config.config_recovery.backup_path}`,

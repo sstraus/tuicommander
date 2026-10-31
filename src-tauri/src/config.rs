@@ -3359,6 +3359,9 @@ fn read_app_config_unlocked_for_version(
     if recovered {
         // Preserve the exact original BEFORE hydration or any migration can rewrite it.
         let aside = preserve_corrupt_config(path).ok_or_else(|| {
+            // DEFERRED (2026-10-31) — a failed backup rename returns defaults instead
+            // of recovered siblings. Recovery currently assumes rename succeeds;
+            // do not rewrite the original when its backup cannot be preserved.
             AppConfigReadError::Unreadable(format!(
                 "Could not preserve damaged config {}",
                 path.display()
@@ -3432,15 +3435,28 @@ fn recover_app_config_field(
     saved: &serde_json::Value,
     fields: &mut Vec<String>,
 ) {
-    // Unknown keys remain ignored, as in an ordinary serde load.
-    let Some(slot) = repaired.pointer_mut(pointer) else {
-        return;
-    };
-    let previous = std::mem::replace(slot, saved.clone());
+    // Serialized defaults omit some known fields (notably empty secrets).
+    // Insert before probing so serde, not pointer presence, validates the key.
+    // Unknown keys still pass the probe and are ignored by the final typed load.
+    let (parent_pointer, key) = pointer.rsplit_once('/').expect("field pointer");
+    let key = key.replace("~1", "/").replace("~0", "~");
+    let parent = repaired
+        .pointer_mut(parent_pointer)
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("field parent object");
+    let previous = parent.insert(key.clone(), saved.clone());
     if serde_json::from_value::<AppConfig>(repaired.clone()).is_ok() {
         return;
     }
-    *repaired.pointer_mut(pointer).expect("existing field") = previous;
+    let parent = repaired
+        .pointer_mut(parent_pointer)
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("field parent object");
+    if let Some(previous) = previous {
+        parent.insert(key, previous);
+    } else {
+        parent.remove(&key);
+    }
     if let (Some(saved), Some(default)) = (
         saved.as_object(),
         defaults
@@ -5533,6 +5549,88 @@ mod tests {
             loaded.config_recovery.unwrap().fields,
             ["font_weight", "services.server.port"]
         );
+    }
+
+    // Catches: recursive repair drops secrets omitted from serialized defaults.
+    #[test]
+    #[serial_test::serial]
+    fn damaged_service_siblings_keep_legacy_secrets_in_vault_and_reload() {
+        use crate::credentials::{Credential, get};
+        crate::credentials::reset_test_faults();
+        let mut failures = Vec::new();
+        for (service, secret_field, bad_field, credential) in [
+            (
+                "auth",
+                "session_token",
+                "session_token_duration_secs",
+                Credential::RemoteSessionToken,
+            ),
+            ("relay", "token", "enabled", Credential::RelayToken),
+            (
+                "push",
+                "vapid_private_key",
+                "enabled",
+                Credential::PushVapidPrivateKey,
+            ),
+        ] {
+            let dir = TempDir::new().unwrap();
+            let _guard = set_config_dir_override(dir.path().to_path_buf());
+            crate::credentials::delete(credential.clone()).unwrap();
+            let path = dir.path().join(APP_CONFIG_FILE);
+            let mut doc = serde_json::to_value(AppConfig::default()).unwrap();
+            doc["services"][service][secret_field] = serde_json::json!("legacy-secret");
+            doc["services"][service][bad_field] = serde_json::json!("broken");
+            doc["services"][service]["unknown_future_field"] = serde_json::json!({"ignored": true});
+            fs::write(&path, doc.to_string()).unwrap();
+            let loaded = load_app_config();
+            assert_eq!(
+                loaded.config_recovery.unwrap().fields,
+                [format!("services.{service}.{bad_field}")]
+            );
+            let reloaded = load_app_config();
+            let value = serde_json::to_value(&reloaded).unwrap();
+            if value["services"][service][secret_field] != "legacy-secret"
+                || get(credential).unwrap().as_deref() != Some("legacy-secret")
+            {
+                failures.push(format!(
+                    "{service}: valid secret lost during recovery/migration/reload"
+                ));
+            }
+            let persisted: serde_json::Value =
+                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            assert!(
+                persisted["services"][service].get(secret_field).is_none(),
+                "plaintext must migrate to vault"
+            );
+            assert!(
+                persisted["services"][service]
+                    .get("unknown_future_field")
+                    .is_none()
+            );
+            assert!(reloaded.config_recovery.is_none(), "repair must not recur");
+        }
+        assert!(failures.is_empty(), "{}", failures.join("; "));
+    }
+
+    // Catches: malformed fields omitted from default JSON bypass validation/diagnostics.
+    #[test]
+    fn damaged_omitted_service_fields_are_reported() {
+        let mut doc = serde_json::to_value(AppConfig::default()).unwrap();
+        doc["services"]["auth"]["session_token"] = serde_json::json!(42);
+        doc["services"]["relay"]["token_exists"] = serde_json::json!("broken");
+        doc["services"]["push"]["vapid_private_key_exists"] = serde_json::json!("broken");
+        let (loaded, fields) = recover_app_config_fields(doc).unwrap();
+        assert_eq!(
+            fields,
+            [
+                "services.auth.session_token",
+                "services.push.vapid_private_key_exists",
+                "services.relay.token_exists"
+            ]
+        );
+        assert_eq!(loaded.services.auth.session_token, "");
+        assert!(!loaded.services.push.vapid_private_key_exists);
+        assert_eq!(loaded.services.relay.token_exists, None);
     }
 
     // Catches: malformed dynamic-map entries disappear without a backup or warning.

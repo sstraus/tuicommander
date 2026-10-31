@@ -1,6 +1,6 @@
 ## Config recovery and reflow migration (2564-8455, 2565-8b3c) — Rust rebuild/restart required
 
-- [ ] After a manual rebuild/restart when losing current sessions is acceptable, use a throwaway instance config with one malformed field. Valid settings must remain, and the Settings recovered warning must name the reset field and original backup. The installed app was not restarted; Rust does not hot-reload.
+- [ ] After a manual rebuild/restart when losing current sessions is acceptable, use a throwaway instance config with one malformed field. Valid settings must remain, and the Settings recovered warning must name the reset field and original backup. Include a valid legacy service secret beside the malformed field: it must survive and migrate to the vault. Refocus a detached panel after six seconds: the recovery warning must not repeat. The installed app was not restarted; Rust does not hot-reload.
 - [ ] In a throwaway legacy config, set reflow false without its marker: first load enables it and writes the marker. Turn it off, restart, and confirm it remains off. Automated loader tests cover this persistence contract.
 
 ## Expanded Chat tool colours (2552-fd00)

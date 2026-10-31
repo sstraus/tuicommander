@@ -61,6 +61,27 @@ describe("settingsStore", () => {
 		toast.mockRestore();
 	});
 
+	// Catches: detached-panel focus repeats a cached recovery warning after toast dedup expires.
+	it("shows each recovery only once across repeated hydration and focus", async () => {
+		const { toastsStore } = await import("../../stores/toasts");
+		const toast = vi.spyOn(toastsStore, "add");
+		const config = { config_recovery: { fields: ["font_size"], backup_path: "/config/config.corrupt-first" } };
+		mockInvoke.mockResolvedValue(config);
+		await store.hydrate();
+		await vi.advanceTimersByTimeAsync(6000);
+		await store.hydrate();
+		mockInvoke.mockResolvedValueOnce({});
+		await store.hydrate();
+		await store.hydrate();
+		expect(toast).toHaveBeenCalledTimes(1);
+		mockInvoke.mockResolvedValueOnce({
+			config_recovery: { fields: ["theme"], backup_path: "/config/config.corrupt-second" },
+		});
+		await store.hydrate();
+		expect(toast).toHaveBeenCalledTimes(2);
+		toast.mockRestore();
+	});
+
 	/** Hydrate the store so save() is unlocked — pre-hydrate saves are refused
 	 *  to avoid clobbering config.json with defaults. */
 	async function hydrateStore(): Promise<void> {
