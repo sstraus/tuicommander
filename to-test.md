@@ -3222,6 +3222,7 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   retained errors alone do not prove that the merge caused a reload race; all
   twelve plugins were subsequently loaded. No running app reload was performed.
 
+- [ ] After a backend rebuild, open Plans and Stories: drag a Ready card to an outlined destination, cancel with Escape, and use the List/detail Phase selectors. A stale move must show its backend error without moving the card. Native `available_transitions` requires the rebuilt Rust backend (#2578-69b4).
 - [ ] Scroll through terminal web links and soft-wrapped file URLs: dotted underlines and Cmd-hover strokes must stay on their text, including when the backend viewport trails a smooth gesture (#2582-13dd).
 - [ ] After a Rust rebuild/restart, inspect the generated Waiting and long work launch preview: continue independent work, yield only for a needed result or user answer, report running work without completion/suggestions, and use the launched mechanism’s wake. Existing sessions do not receive the new launch text automatically. (#2581-4824)
 
