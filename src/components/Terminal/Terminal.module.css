@@ -107,22 +107,12 @@
 
 /* Compose panel tab — bottom edge handle that pulls up the compose panel */
 button.composeHint {
-  background: transparent;
-  border-color: transparent;
-  color: var(--fg-muted);
   position: absolute;
   bottom: 0;
   left: 12px;
   z-index: 10;
   gap: 4px;
   font-family: var(--font-ui);
-}
-
-button.composeHint:hover,
-button.composeHint:focus-visible {
-  background: var(--bg-highlight);
-  border-color: var(--border);
-  color: var(--fg-primary);
 }
 
 .composeQueueCount {

@@ -1,6 +1,8 @@
 import { render, waitFor } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const retrySettings = vi.hoisted(() => ({ enabled: true }));
+
 const { createSession, resize, sendCommand, mockRpc, ptyOptions, mockVerifyResume } = vi.hoisted(() => ({
 	createSession: vi.fn().mockResolvedValue("fresh-session"),
 	resize: vi.fn().mockResolvedValue(undefined),
@@ -54,7 +56,7 @@ vi.mock("../../stores/agentConfigs", () => ({
 	ensureAgentConfigsForRepo: vi.fn().mockResolvedValue({ getEnvFlags: () => ({}) }),
 	agentConfigsForRepo: () => ({
 		getEnvFlags: () => ({}),
-		isAutoRetryEnabled: () => true,
+		isAutoRetryEnabled: () => retrySettings.enabled,
 		getIntentTabTitle: () => true,
 	}),
 }));
@@ -153,6 +155,8 @@ describe("Terminal API failure recovery 2335", () => {
 		sendCommand.mockClear().mockResolvedValue(undefined);
 		mockRpc.mockReset().mockResolvedValue(undefined);
 		ptyOptions.clear();
+		retrySettings.enabled = true;
+		localStorage.clear();
 		id = openIdleAgentTab();
 		// The eager subscription exists before resize/listener setup completes.
 		// Wait for the reconnect receipt before advancing the retry clock.
@@ -324,5 +328,17 @@ describe("Terminal API failure recovery 2335", () => {
 		await vi.advanceTimersByTimeAsync(60_000);
 		expect(sendCommand).not.toHaveBeenCalled();
 		expect(terminalsStore.get(id)?.awaitingInput).toBe("error");
+	});
+	// Catches: a disabled expert-only recovery option remains undiscoverable after a recoverable failure.
+	it("offers a dismissible retry tip only for a disabled server-error recovery", () => {
+		retrySettings.enabled = false;
+		emit({ type: "api-error", error_kind: "auth", pattern_name: "codex-native-auth", matched_text: "Unauthorized" });
+		expect(document.querySelector('aside[aria-label="Retry temporary API failures"]')).toBeNull();
+		failed();
+		expect(document.querySelector('aside[aria-label="Retry temporary API failures"]')).not.toBeNull();
+		(document.querySelector('button[aria-label="Dismiss Retry temporary API failures"]') as HTMLButtonElement).click();
+		expect(document.querySelector('aside[aria-label="Retry temporary API failures"]')).toBeNull();
+		expect(localStorage.getItem("tuic.dismissed-tip.autoRetry")).toBe("true");
+		expect(sendCommand).not.toHaveBeenCalled();
 	});
 });

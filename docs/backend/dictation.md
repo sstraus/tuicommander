@@ -977,9 +977,11 @@ speech service** (the settings panel says so under Spoken replies).
   the synthesis socket does not (DEFERRED 2026-10-01, `dial_service`). Behind a
   proxy the picker loads and speech fails with "cannot reach … needs an internet
   connection". Pocket TTS or an external command work there.
-- **Defaults.** `get_config_defaults` reports `speech_engine: "edge"`, the value
-  a brand-new install loads, so the settings panel hides the Expert engine
-  selector while Edge is in use.
+- **Defaults.** `get_config_defaults` and the settings catalogue share
+  `DictationConfig::fresh_defaults()`, which reports `speech_engine: "edge"`.
+  The schema reports the same effective default, so the settings panel hides
+  the Expert engine selector while Edge is in use. Serde still keeps a missing
+  engine empty for the legacy resolver described above.
 - **Unofficial.** The service is not a supported API. If it changes, the
   adapter fails with a typed error and Pocket TTS or the external command stay
   available in Expert.

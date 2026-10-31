@@ -3821,3 +3821,18 @@ A binding's optional camel-case `acp` contains `connectionId`, `generation` and
 Workflow incidents add optional `launchId` and `acp` with the same durable
 references. ACP report callers are fenced by the native MCP channel, not a
 caller-supplied terminal ID or the peer's latest connection.
+
+
+### Workflow decision inbox (WF03)
+
+The existing workflow run action accepts `{"action":"question_inbox"}` for the
+canonical project. The read-only tagged reply contains `unansweredCount` and
+`items` (run identity/status, story identity and complete revisioned question).
+`command` also accepts `answer_question` with `question_id`, `expected_revision`,
+`subject_digest`, `actor` and a schema-valid JSON `answer`; `revise_question`
+requires the question ID/revision, new `request` and actor. The outer command still
+requires `run_id`, `command_id` and `expected_sequence`. IPC
+`workflow_run_action`, HTTP `POST /workflows/run/action?path=<project>` and MCP
+`workflow action=run input=<RunAction>` use the same service. The inbox needs no
+coordinator. See the backend workflow decision contract for shapes, deadline
+outcomes, retained legacy replay and continuation semantics.

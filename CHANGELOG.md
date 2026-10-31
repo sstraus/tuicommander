@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Offer a detected ego executable in inactive AI Chat with an explicit Use this confirmation; preserve manual setup and existing paths (#2561-9861).
+- Add dismissible contextual tips for long-running agents, optional global hooks during agent setup and disabled temporary-server-error retries. Defaults stay unchanged (#2562-d363).
+
+- Connect PR popovers, unresolved-thread counts and PR notifications to the exact Tasks conversation, with a GitHub fallback and a return action to an existing branch/worktree (#2559-dc9e).
+
+## [2.0.0] - 2026-10-31
+
+- Restore Compose typing after clicking the session Chat transcript, without changing selection, copy or shortcuts (#2554-0ee4).
+
 - Retire Terminal Chat pending bubbles when native receipts truncate or redact the submitted prompt (#2542-49c3).
 
 - Fix workflow routing pins so unrelated profile and idle-close edits do not block an unchanged route. Keep contract-3 graph launches daemon-owned.
@@ -17,6 +26,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Added
 
 - Add backend typed workflow command/Tool nodes with durable resource waits, source/target receipts, secret-reference transport and fenced rb reconciliation (#2512-5a42).
+- Mute completion progress popups for the current app session and restore them from Terminal Progress. Journal entries and blocked warning popups remain available (#2553-6446).
+- Colour expanded Chat tool rows with shell syntax roles and separate tool/path styling. Reuse the existing Shell grammar and theme colours; collapsed summaries and sizing stay unchanged (#2552-fd00).
+
 - Add explicit workflow PTY/ACP execution routes and genuine ACP launch/conversation references, with binding-before-prompt journaling and channel-generation report fences (#2511-37f0, policy/handover/close still incomplete).
 
 - Retain workflow bound-report acceptance/refusal decisions across retry and restart, with atomic accepted-event recording and a read-only `report_dispositions` run action (#2511-37f0, lifecycle increment only).
@@ -33,6 +45,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Reconcile paused typed workflow commands after restart without replay; stop local gate child groups, redact JSON-escaped secrets, bound remote result envelopes, release known no-start failures, and pass the wrapper freeze identity (#2512-5a42).
+- Keep collapsed Compose chrome in the shared Button primitive, without changing its idle, hover or keyboard-focus appearance (#2555-29b4).
+
 - Restore the collapsed Compose handle’s transparent idle chrome and muted label. Hover and keyboard focus reveal the button without fading its queue count (#2551-7a80).
 
 - Preserve `automations.json` during external in-place saves. Incomplete or invalid reads report errors without quarantining the live file or losing the completed edit (#2548-0bc7).

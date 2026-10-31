@@ -1,5 +1,10 @@
 # TUICommander Specification
 
+- [x] Inactive AI Chat offers a detected ego path and saves it only after confirmation; configured paths and the no-detection empty state remain unchanged (#2561-9861).
+- [x] Disabled sleep prevention, global hook instrumentation and server-error retries have contextual, per-client dismissible tips without changing their defaults (#2562-d363).
+
+- [x] PR popovers, thread-count buttons and PR notifications open the exact Tasks conversation, reveal comments and the first review-thread page, fall back to GitHub without a provider, and return from PR detail to a matching existing sidebar workspace (#2559-dc9e).
+
 - [x] Desktop and mobile AI Chat and Session Chat use one theme-accent breathing orb while working, with accessible Working text and a static dot under reduced motion (#2535-8b6b).
 
 - [x] Mobile terminal and AI Chat composers add one space after a pasted HTTP(S) URL when neither the paste nor the following draft character supplies whitespace (#2494-921f).
@@ -67,7 +72,7 @@ Agent capture tooling: `scripts/agent_capture/run.py` records real installed CLI
 
 Published story workflows can start in Plans and Stories through the owning daemon. Run history renders graph positions, decisions, evidence and paged event payloads, with explicit graph recovery and cancellation. IPC/HTTP and the generated `workflow action=run` MCP schema share the native run service. Plan start remains visibly unavailable pending plan dispatch. The grouped `workflow` MCP tool exposes typed story, run, proposal_create, report and launch actions through existing service owners. Proposal retries preserve coordinator ownership and proposal-key idempotency. Legacy workflow tool names are removed without aliases; scheduled automations stay separate. `tuic workflow` forwards the same envelope.
 
-**Version:** 2.0.0-beta.5
+**Version:** 2.0.0
 **Last Updated:** 2026-09-16
 
 ## Shared form controls — Implemented (#1815-01c9)
@@ -552,6 +557,8 @@ open dialog through MCP; a remove answer and the final removal repeat the
 backend safety check.
 
 ## Project Progress
+
+Completion popups offer Mute for the current client session. Terminal Progress shows the muted state and Unmute. Entries and unread counts remain unchanged; blocked warning popups still appear. The preference is in memory only and resets on app restart or browser reload. Native OS notification preferences are independent.
 
 Mobile Files uses saved repository group/order and display names with short paths. Mobile Progress uses readable status cards and defaults to intent/done/blocked through the backend pre-pagination `progressOnly` filter. Filters exposes messages/delegations; Flow retains all hand-offs. Desktop presentation and Commander tokens are unchanged.
 
@@ -1282,6 +1289,8 @@ Chat is unavailable. Desktop and mobile reuse `TerminalChatTranscript`; no ACP
 connection or second event subscription is created. Compose, dictation targeting
 and answer marker rendering remain on the existing terminal paths.
 
+Expanded tool rows use theme colours for Bash/execute commands, flags, strings and operators. Read, Edit and Write keep the tool name separate from the path; other tools retain readable text. The collapsed activity summary and row sizing are unchanged.
+
 ## Mobile terminal Chat view
 
 The terminal stays mounted. Chat edit tool disclosures render bounded
@@ -1591,3 +1600,15 @@ recovery pauses. Cancellation fences all timers. Retry hints respect declared
 attempt, expiry and backoff caps. A question expiry is only timed-out/incomplete,
 never consent. WF08 cohort collection, WF13 provider observation and WF03 inbox
 consumers build on this internal primitive; they are not installed by WF19.
+
+
+### Branch-local workflow decisions (WF03)
+
+Contract-5 workflow questions suspend only their activation. Disjoint work can
+continue within the existing resource policy. The durable project inbox counts
+pending and expired questions without a coordinator. Answers bind the question
+revision and current subject digest, retain actor provenance, and continue the
+same worker generation without completing it. Deadlines never imply approval.
+Explicit run pause/cancel and historical NeedsInput replay remain available.
+IPC, HTTP and MCP use the same question/inbox service. See
+[workflow decisions](docs/backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).

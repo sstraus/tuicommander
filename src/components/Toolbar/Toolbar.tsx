@@ -3,9 +3,11 @@ import releaseNotes from "../../assets/release-notes.json";
 import { useGitHub } from "../../hooks/useGitHub";
 import { t } from "../../i18n";
 import type { ActivityItem } from "../../plugins/types";
+import { openTaskConversation } from "../../services/taskNavigation";
 import { activityStore } from "../../stores/activityStore";
 import { commandPaletteStore } from "../../stores/commandPalette";
 import { editorTabsStore } from "../../stores/editorTabs";
+import { githubStore } from "../../stores/github";
 import { mdTabsStore } from "../../stores/mdTabs";
 import { pluginStore } from "../../stores/pluginStore";
 import type { PrNotification } from "../../stores/prNotifications";
@@ -786,7 +788,11 @@ export const Toolbar: Component<ToolbarProps> = (props) => {
 													setShowNotifPopover(false);
 													requestAnimationFrame(() => {
 														if (getRepoConnection(notif.repoPath) !== notif.connectionId) return;
-														setPrDetailTarget({ repoPath: notif.repoPath, branch: notif.branch });
+														const pr = githubStore.getBranchPrData(notif.repoPath, notif.branch);
+														const url =
+															notif.url ?? pr?.url?.replace(/\/pull\/\d+(?:[?#].*)?$/, `/pull/${notif.prNumber}`);
+														if (url) void openTaskConversation(url);
+														else setPrDetailTarget({ repoPath: notif.repoPath, branch: notif.branch });
 													});
 												}}
 											>

@@ -473,19 +473,17 @@ fn resolve_color(c: Color, colors: &Colors) -> Option<Rgb> {
 /// matches.
 ///
 /// `count` is how many cells the row actually carries — the full width on the
-/// whole-row path, the damaged span on a [`ROW_PARTIAL_FLAG`] row. The wrap probe
-/// always reads the row's real last cell, so a partial row that stops short of the
-/// right edge still reports the line's true wrap state.
+/// whole-row path, the damaged span on a [`ROW_PARTIAL_FLAG`] row. Non-reflow
+/// growth retains WRAPLINE at its original column, before the new blank cells.
+/// Inspect the full retained row, including when shipping only a damaged span,
+/// so growth cannot hide a continuation edge from the renderer.
 fn encode_col_count(
     grid: &alacritty_terminal::grid::Grid<Cell>,
     line: Line,
     num_cols: usize,
     count: usize,
 ) -> u16 {
-    let wrapped = num_cols > 0
-        && grid[line][Column(num_cols - 1)]
-            .flags
-            .contains(Flags::WRAPLINE);
+    let wrapped = (0..num_cols).any(|col| grid[line][Column(col)].flags.contains(Flags::WRAPLINE));
     (count as u16) | if wrapped { ROW_WRAPPED_FLAG } else { 0 }
 }
 
@@ -5239,6 +5237,107 @@ mod tests {
             "the last row of a line is not wrapped"
         );
         assert_eq!(tail & !ROW_WRAPPED_FLAG, 10);
+    }
+
+    /// Catches: replacing a continuation after growth leaves an unrelated row joined to the answer.
+    #[test]
+    fn replacing_continuation_after_growth_clears_serialized_wrap() {
+        for cols in [80, 200] {
+            for (action, input) in [
+                // Independently replace the next row, retaining the preceding answer.
+                ("repaint", &b"\x1b[2;1H\x1b[2Ksuggest: cargo check"[..]),
+                // Explicit line endings must clear an edge retained at the old margin.
+                ("CR", &b"\x1b[1;1H\r"[..]),
+                ("LF", &b"\x1b[1;1H\n"[..]),
+            ] {
+                let mut grid = TerminalGrid::new(24, 80, 100);
+                grid.reflow_history = false;
+                grid.process("💬 answer ".as_bytes());
+                grid.process("a".repeat(90).as_bytes());
+                assert!(first_row_header(&grid.serialize_full_frame(), 80).2);
+                grid.resize(24, cols);
+
+                grid.process(input);
+                let bytes = grid.serialize_styled_range(0, 2);
+                let count = u16::from_le_bytes([bytes[16], bytes[17]]);
+                assert_eq!(
+                    count & ROW_WRAPPED_FLAG,
+                    0,
+                    "{action} must break answer continuation at width {cols}"
+                );
+            }
+        }
+    }
+
+    /// Catches: width growth hides retained wrap edges from the answer gutter.
+    #[test]
+    fn non_reflow_growth_preserves_answer_continuation_flags() {
+        let answer = include_str!("../tests/fixtures/ego-wrap-2560/answer.txt").trim_end();
+        let mut grid = TerminalGrid::new(24, 80, 100);
+        grid.reflow_history = false;
+        grid.process(answer.as_bytes());
+        grid.process(b"\r\nhard newline");
+        let before = grid.serialize_styled_range(0, 6);
+        let wraps = |bytes: &[u8], cols: usize| -> Vec<bool> {
+            (0..6)
+                .map(|row| {
+                    let offset = 12 + row * (6 + cols * 11) + 4;
+                    u16::from_le_bytes([bytes[offset], bytes[offset + 1]]) & ROW_WRAPPED_FLAG != 0
+                })
+                .collect()
+        };
+        assert_eq!(wraps(&before, 80), [true, true, true, true, false, false]);
+
+        grid.resize(24, 200);
+        let after = grid.serialize_styled_range(0, 6);
+        assert_eq!(
+            wraps(&after, 200),
+            wraps(&before, 80),
+            "non-reflow growth must retain the four answer continuation edges"
+        );
+        let frame = grid.serialize_full_frame();
+        assert!(
+            first_row_header(&frame, 200).2,
+            "live frames retain the same edge"
+        );
+        for row in 0..6 {
+            let old_cells = 12 + row * (6 + 80 * 11) + 6;
+            let new_cells = 12 + row * (6 + 200 * 11) + 6;
+            assert_eq!(
+                &after[new_cells..new_cells + 80 * 11],
+                &before[old_cells..old_cells + 80 * 11],
+                "the original physical cells must not move"
+            );
+        }
+        grid.resize(24, 240);
+        assert_eq!(
+            wraps(&grid.serialize_styled_range(0, 6), 240),
+            wraps(&before, 80)
+        );
+        grid.process(b"\x1b[H\x1b[2K");
+        assert!(
+            !wraps(&grid.serialize_styled_range(0, 6), 240)[0],
+            "erasure clears provenance"
+        );
+        grid.resize(24, 40);
+        assert!(
+            !wraps(&grid.serialize_styled_range(0, 6), 40)[1],
+            "truncation drops a removed wrap edge"
+        );
+
+        let mut history = TerminalGrid::new(6, 80, 100);
+        history.reflow_history = false;
+        history.process(answer.as_bytes());
+        history.process(b"\r\nhard newline\r\n1\r\n2\r\n3\r\n4\r\n5\r\n6");
+        assert!(
+            history.scrollback_count() >= 6,
+            "exercise retained history, not just the screen"
+        );
+        history.resize(6, 200);
+        assert_eq!(
+            wraps(&history.serialize_styled_range(0, 6), 200),
+            wraps(&before, 80)
+        );
     }
 
     #[test]

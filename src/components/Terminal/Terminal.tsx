@@ -35,6 +35,8 @@ import { safeUnlisten } from "../../utils/safeUnlisten";
 import { isSuspendingOrSuspended, resumeTerminal } from "../../utils/suspendTerminal";
 import type { TranscriptSearchRef } from "../AIChatPanel/Transcript";
 import { createSearchVisibility } from "../shared/SearchBar";
+import { ContextualTip } from "../TipOfTheDay/ContextualTip";
+import { LongRunTip } from "../TipOfTheDay/LongRunTip";
 import { Button } from "../ui";
 import { handleAgentExitCompletion } from "./agentExitCompletion";
 import { getAwaitingInputSound } from "./awaitingInputSound";
@@ -228,6 +230,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 	const [composePinned, setComposePinned] = createSignal(false);
 	const [composeFocusRequest, setComposeFocusRequest] = createSignal(0);
 	const [composeTextRequest, setComposeTextRequest] = createSignal(0);
+	let insertComposeText: ((text: string) => boolean) | undefined;
 	// Chat owns its input slot without changing this tab's CLI Compose preferences.
 	const composeVisible = () => chatActive() || composeOpen();
 	const composeDocked = () => chatActive() || composePinned();
@@ -284,7 +287,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
 	const RETRY_DELAYS = [5_000, 15_000, 30_000];
 	let retryCount = 0;
 	let retryTimer: ReturnType<typeof setTimeout> | undefined;
+	const [retryHint, setRetryHint] = createSignal(false);
 	let retryWorkObserved = false;
+	createEffect(() => {
+		if (terminalsStore.get(props.id)?.awaitingInput !== "error") setRetryHint(false);
+	});
 	// Reset only after a recovered turn reaches idle. A late pre-error idle
 	// snapshot can briefly have no last_error; it must not cancel the retry.
 	createEffect(() => {
@@ -507,6 +514,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					break;
 				}
 				case "usage-exhausted": {
+					setRetryHint(false);
 					appLogger.warn("terminal", `[UsageExhausted] ${props.id} reset_time=${parsed.reset_time ?? "unknown"}`);
 					terminalsStore.setAwaitingInput(props.id, "error");
 					break;
@@ -554,6 +562,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					// injected continue that stays idle is not a successful turn.
 					retryWorkObserved = false;
 					terminalsStore.setAwaitingInput(props.id, "error");
+					setRetryHint(kind === "server");
 
 					const willAutoRetry =
 						kind === "server" &&
@@ -599,6 +608,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					break;
 				}
 				case "tool-error":
+					setRetryHint(false);
 					terminalsStore.setAwaitingInput(props.id, "error");
 					break;
 				case "agent-session-conflict": {
@@ -1368,14 +1378,53 @@ export const Terminal: Component<TerminalProps> = (props) => {
 		transcript?.scrollBy({ top: e.deltaY, left: e.deltaX });
 	};
 
+	// Keep transcript focus for selection, copy and scrolling. Only actual typing
+	// on its container returns to Compose; links, buttons and Find own their keys.
+	const handleChatTyping = (event: KeyboardEvent) => {
+		if (
+			!chatActive() ||
+			event.defaultPrevented ||
+			event.isComposing ||
+			event.metaKey ||
+			event.ctrlKey ||
+			event.altKey ||
+			event.key.length !== 1 ||
+			!(event.target instanceof HTMLElement) ||
+			!event.target.hasAttribute("data-terminal-chat") ||
+			!window.getSelection()?.isCollapsed
+		)
+			return;
+		if (!insertComposeText?.(event.key)) return;
+		event.preventDefault();
+		event.stopPropagation();
+	};
+
 	return (
 		<div
 			class={s.wrapper}
 			data-terminal-id={props.id}
 			data-focus-target="terminal"
+			onKeyDown={handleChatTyping}
 			onDragOver={handleFileDragOver}
 			onDrop={handleFileDrop}
 		>
+			<LongRunTip
+				eligible={
+					!!terminalsStore.get(props.id)?.agentType &&
+					terminalsStore.isBusy(props.id) &&
+					!settingsStore.state.preventSleepWhenBusy
+				}
+				busyDuration={terminalsStore.getBusyDuration(props.id)}
+			/>
+			<ContextualTip
+				id="autoRetry"
+				when={
+					retryHint() &&
+					terminalsStore.get(props.id)?.awaitingInput === "error" &&
+					!!terminalsStore.get(props.id)?.agentType &&
+					!agentConfigsForRepo(props.cwd).isAutoRetryEnabled(terminalsStore.get(props.id)!.agentType!)
+				}
+			/>
 			<ViewModeToggle terminalId={props.id} onWheel={handleToggleWheel} />
 			<ChatViewFallbackBanner terminalId={props.id} />
 			<Show
@@ -1560,6 +1609,9 @@ export const Terminal: Component<TerminalProps> = (props) => {
 							setComposePinned(false);
 							setComposeOpen(false);
 							canvasTerminalRef()?.focus();
+						}}
+						onInsertText={(insert) => {
+							insertComposeText = insert;
 						}}
 						focusRequest={composeFocusRequest}
 						textRequest={composeTextRequest}

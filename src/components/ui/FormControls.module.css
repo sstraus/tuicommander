@@ -136,6 +136,14 @@
 .secondary { background: var(--bg-tertiary); color: var(--fg-primary); }
 .primary { background: var(--accent); border-color: var(--accent); color: var(--text-on-accent); }
 .ghost { background: transparent; border-color: transparent; color: var(--fg-secondary); }
+/* Discreet actions retain readable text and reveal their chrome on interaction. */
+.hint { background: transparent; border-color: transparent; color: var(--fg-muted); }
+.hint:hover:enabled, .hint:focus-visible:enabled,
+.circleButton:hover:enabled > .hint, .circleButton:focus-visible:enabled > .hint {
+ background: var(--bg-highlight);
+ border-color: var(--border);
+ color: var(--fg-primary);
+}
 .danger { background: var(--error); border-color: var(--error); color: var(--text-on-error); }
 .secondary:hover:enabled, .ghost:hover:enabled, .circleButton:hover:enabled > :is(.secondary, .ghost) { background: var(--bg-highlight); }
 .primary:hover:enabled, .danger:hover:enabled, .circleButton:hover:enabled > :is(.primary, .danger) { filter: brightness(1.1); }

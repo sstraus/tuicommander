@@ -15,6 +15,7 @@ pub enum ActivationState {
     Running,
     Completed,
     Paused,
+    Suspended,
     Superseded,
 }
 
@@ -214,7 +215,14 @@ impl GraphExecution {
                     .expect("pinned contract")
                     .version = version;
             }
-            super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {}
+            super::contracts::PARALLEL_EVENT_CONTRACT_VERSION
+            | super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {
+                execution
+                    .contract
+                    .as_mut()
+                    .expect("pinned contract")
+                    .version = version;
+            }
             _ => return Err("unsupported workflow graph event contract".into()),
         }
         Ok(execution)
@@ -229,7 +237,8 @@ impl GraphExecution {
         version: u16,
     ) -> Result<u16, String> {
         match version {
-            super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {
+            super::contracts::PARALLEL_EVENT_CONTRACT_VERSION
+            | super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {
                 self.apply_parallel(transition, remaining_loops)
             }
             super::contracts::SERIAL_EVENT_CONTRACT_VERSION
