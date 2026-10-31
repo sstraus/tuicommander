@@ -1,3 +1,10 @@
+## Typed workflow commands (2512-5a42) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a backend Run command graph in a throwaway project with an assigned workspace and inspect `command_executions`. Verify admission, target and immutable receipt; the daily instance was not restarted. Rust changes do not hot-reload.
+## Claude Unicode preview columns (2537-88a4) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a Claude question with CJK or wide emoji in an answer beside its preview. Confirm Chat labels contain no pane borders and the selected preview remains separate. The recorded-dialog regression also covers combining marks; the daily app was not restarted. Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
 ## Settings catalogue effective defaults (2566-f6d0) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use a throwaway instance to confirm the default sidebar is 300 px, Settings navigation is 232 px, and the Voice engine default is Edge. Existing saved widths and legacy voice choices must remain unchanged. Release MCP audit stays off; debug audit stays on. Automated catalogue/export and UI-store regressions cover these defaults. The daily app was not restarted; restart only when losing current sessions is acceptable.
@@ -3159,6 +3166,9 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   Targeted recorded-run and HTTP/service parity tests provide automated coverage;
   the running development backend does not hot-reload this Rust change.
 
+## WF05 critic fixes — load after a manual Rust rebuild (2512-5a42)
+
+- [ ] After Boss chooses to restart `make dev` (or rebuild release), inspect a paused remote typed command interrupted by daemon restart. Fenced stop/release must create a failed-proof receipt, release its named resources, and settle its uncertain effect without replay or automatic graph resume. Automated regression covers dirty-source recovery and lost output; the current live daemon does not contain this Rust change.
 - [ ] After a manual Rust restart (`make dev` or release rebuild), inspect a new daemon workflow launch: its `workspace_baseline` must retain pre-existing dirt and its attempt binding must retain `launchId` across retry. Do not restart an active daily instance for this check. Automated baseline, ACP and owned-close regressions passed on rb; the daily process still requires a rebuild/restart.
 
 - [ ] WF04 owned close: after a backend rebuild, inspect `close_agent` refusal/stop receipts and confirm dirty work, pending input, background receipts and test apps prevent closure. Workspaces must remain. Automated ACP stop-proof and real background-receipt refusal tests passed on rb. The daily app was not restarted.

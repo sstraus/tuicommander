@@ -2690,6 +2690,20 @@ fn submit_review_end(screen_rows: &[String]) -> Option<usize> {
     Some(end)
 }
 
+/// Split screen text at a terminal-cell column. The grid omits wide spacers
+/// and includes zero-width marks, so each row needs its own byte boundary.
+fn split_at_cell_column(row: &str, column: usize) -> (&str, &str) {
+    let mut cells = 0;
+    for (offset, ch) in row.char_indices() {
+        let width = unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0);
+        if width > 0 && cells >= column {
+            return row.split_at(offset);
+        }
+        cells += width;
+    }
+    (row, "")
+}
+
 /// Claude Ink AskUserQuestion uses arrow navigation and Enter, even though its
 /// displayed options are numbered. Parse only while its column-zero footer is
 /// present; descriptions and wrapped text may separate option rows.
@@ -2727,21 +2741,25 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
                 if idx < active_first? {
                     return None;
                 }
-                let column = row.chars().position(|ch| ch == '┌')?;
-                let border: String = row.chars().skip(column).collect();
+                let border_start = row.find('┌')?;
+                let column = row[..border_start]
+                    .chars()
+                    .map(|ch| unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0))
+                    .sum();
+                let border = &row[border_start..];
                 (border.starts_with("┌─") && border.trim_end().ends_with('┐'))
                     .then_some((idx, column))
             })
     {
         let bottom = (top + 1..footer).find(|&idx| {
-            let border: String = screen_rows[idx].chars().skip(column).collect();
+            let (_, border) = split_at_cell_column(&screen_rows[idx], column);
             border.starts_with("└─") && border.trim_end().ends_with('┘')
         });
         if let Some(bottom) = bottom {
             let text = screen_rows[top + 1..bottom]
                 .iter()
                 .map(|row| {
-                    let pane: String = row.chars().skip(column).collect();
+                    let (_, pane) = split_at_cell_column(row, column);
                     pane.trim_end()
                         .strip_prefix('│')
                         .and_then(|line| line.strip_suffix('│'))
@@ -2753,12 +2771,7 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
                 .join("\n");
             preview = Some(text);
             for row in &mut answer_rows.to_mut()[top..=bottom] {
-                *row = row
-                    .chars()
-                    .take(column)
-                    .collect::<String>()
-                    .trim_end()
-                    .to_string();
+                *row = split_at_cell_column(row, column).0.trim_end().to_string();
             }
         }
     }
@@ -7693,6 +7706,63 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
     #[test]
     fn claude_preview_question_preserves_native_columns() {
         assert_preview_question(&recorded_preview_rows("wide"));
+    }
+
+    // Catches: scalar offsets from one row misplace the preview on rows with different cell widths.
+    #[test]
+    fn claude_preview_question_with_wide_label_keeps_columns() {
+        for (from, to, expected_first, expected_second) in [
+            (
+                "Schede",
+                "界界界",
+                "界界界 nel dettaglio processo (Recommended)",
+                "Nuova scheda Inspect",
+            ),
+            (
+                "Nuova",
+                "🙂abc",
+                "Schede nel dettaglio processo (Recommended)",
+                "🙂abc scheda Inspect",
+            ),
+            (
+                "Recommended",
+                "推奨e\u{301}abcdef",
+                "Schede nel dettaglio processo (推奨e\u{301}abcdef)",
+                "Nuova scheda Inspect",
+            ),
+        ] {
+            // Derive label variations from the real dialog, preserving its cell geometry.
+            assert_eq!(
+                unicode_width::UnicodeWidthStr::width(from),
+                unicode_width::UnicodeWidthStr::width(to)
+            );
+            let rows = recorded_preview_rows("wide");
+            let mut grid = crate::terminal_grid::TerminalGrid::new(rows.len() as u16 + 1, 128, 0);
+            grid.process(rows.join("\r\n").replace(from, to).as_bytes());
+            let rows = grid.screen_text_rows();
+            let Some(ParsedEvent::ChoicePrompt { options, .. }) =
+                parse_claude_ask_user_question(&rows)
+            else {
+                panic!("wide label must remain answerable: {to}: {rows:#?}");
+            };
+            assert_eq!(
+                options
+                    .iter()
+                    .map(|option| option.label.as_str())
+                    .collect::<Vec<_>>(),
+                [expected_first, expected_second, "Chat about this"],
+                "label variation: {to}"
+            );
+            let hint = options[0]
+                .hint
+                .as_deref()
+                .expect("selected preview must survive");
+            assert!(
+                hint.contains("Files") && hint.contains("/usr/bin/example"),
+                "{to}: {hint}"
+            );
+            assert!(!hint.contains(['┌', '┐', '└', '┘']), "{to}: {hint}");
+        }
     }
 
     // Catches: a narrow preview's wrapped table is mistaken for option continuation text.

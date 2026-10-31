@@ -245,7 +245,8 @@ async fn run_actor(
         if matches!(snapshot.status, RunStatus::Completed | RunStatus::Cancelled) {
             break;
         }
-        if snapshot.status == RunStatus::Running {
+        if snapshot.status == RunStatus::Running || effects::has_pending_command_recovery(&snapshot)
+        {
             let Some(state) = state.upgrade() else {
                 break;
             };
@@ -319,8 +320,22 @@ async fn run_actor(
                 Err(error) => {
                     tracing::warn!(source = "workflows", %run_id, %error, "Workflow effect paused");
                     pause_failure(&state, &current.store, &run_id, &error);
+                    if snapshot.status != RunStatus::Running {
+                        tokio::select! {
+                            _ = notify.notified() => {},
+                            _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {},
+                        }
+                    }
                     continue;
                 }
+            }
+            // Keep pending ownership inspectable without replaying a paused command.
+            if snapshot.status != RunStatus::Running {
+                tokio::select! {
+                    _ = notify.notified() => {},
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {},
+                }
+                continue;
             }
             // Yielding the deterministic turn never strands remaining runnable nodes.
             if deterministic_work_pending(&snapshot) {
@@ -782,6 +797,35 @@ pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, 
                                 references: vec![format!(
                                     "activation:{}:{}",
                                     graph.id, activation.id
+                                )],
+                            });
+                        }
+                        NodeKind::RunCommand { .. } | NodeKind::Tool { .. } => {
+                            let key =
+                                effects::command_identity(&snapshot, graph, activation).effect;
+                            if !snapshot.effects.iter().any(|effect| {
+                                effect.key == key
+                                    && matches!(
+                                        effect.state,
+                                        super::EffectState::Succeeded | super::EffectState::Failed
+                                    )
+                            }) {
+                                continue 'activations;
+                            }
+                            let Some(receipt) = store.command_journal().receipt(&key)? else {
+                                continue 'activations;
+                            };
+                            outcome = Some(if receipt.succeeded {
+                                super::graph::EdgeOutcome::Pass
+                            } else {
+                                super::graph::EdgeOutcome::Fail
+                            });
+                            evidence = Some(DecisionEvidence {
+                                actor: "daemon:typed-command".into(),
+                                reason: receipt.reason.clone(),
+                                references: vec![format!(
+                                    "command:{}:{}",
+                                    key, receipt.output_sha256
                                 )],
                             });
                         }
