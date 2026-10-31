@@ -5,6 +5,19 @@
 ## Oversized plugin watcher lines (2607-678c) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm a long-running cursor-addressed TUI produces at most one oversized-line warning until its next LF, and plugin watchers still match subsequent normal output. Automated tests replay the recorded Codex idle animation and watcher registration changes. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+## Shared globe artwork (2602-2e4d)
+
+- [ ] Inspect the global-workspace globe at default and enlarged sizes in light and dark themes. Confirm symmetric openings, a continuous rim and a clear equator. Headless geometry and before/after crops cover the shared component.
+
+## Visual identity artwork (2601-0477)
+
+- [ ] Inspect Droid and OpenCode beside Claude in sidebar, Settings agent tiles and mobile session cards. Confirm equal apparent height, no clipped artwork and theme-inherited color. Headless before/after crops are retained in `visual-audit-20`; no daily desktop interaction was used.
+## Progress ownership inventory (2583-fd08) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, report Progress from ego main and its separately registered history-anchors checkout. Both must resolve to the main project's history without an ownership-cycle error. The recorded live inventory covers the resolver automatically; no live config was changed and the daily app was not restarted. Restart only when losing current sessions is acceptable.
+## Coordinator mail address (2580-dcbd) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, send `agent action=send to=orchestrator message=<text>` from a managed child and confirm receipt at its registered coordinator without `list_peers`. The daily app was not restarted; Rust changes do not hot-reload. Restart only when losing current sessions is acceptable.
 
 ## Settings catalogue ledger coverage (2571-926a)
 
@@ -3230,9 +3243,20 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   retained errors alone do not prove that the merge caused a reload race; all
   twelve plugins were subsequently loaded. No running app reload was performed.
 
+- [ ] After a backend rebuild, open Plans and Stories: drag a Ready card to an outlined destination, cancel with Escape, and use the List/detail Phase selectors. A stale move must show its backend error without moving the card. Native `available_transitions` requires the rebuilt Rust backend (#2578-69b4).
 - [ ] Scroll through terminal web links and soft-wrapped file URLs: dotted underlines and Cmd-hover strokes must stay on their text, including when the backend viewport trails a smooth gesture (#2582-13dd).
 - [ ] After a Rust rebuild/restart, inspect the generated Waiting and long work launch preview: continue independent work, yield only for a needed result or user answer, report running work without completion/suggestions, and use the launched mechanism’s wake. Existing sessions do not receive the new launch text automatically. (#2581-4824)
 
+## Detached AI Chat dictation (2026-10-31)
+
+- [ ] After a manual `make dev` restart or a release rebuild, focus the detached AI Chat composer and dictate with Fn. Verify the transcript stays in that draft, including when focus changes before key-up. Main-window dictation must remain unchanged. Rust does not hot-reload; restart only when ready to lose live sessions.
+- [ ] [HUMAN] Verify a real microphone recording in the detached window, release Fn outside the app, and check that capture stops without losing the transcription. Component regression and native routing inspection do not prove physical audio or microphone permission state.
+- [ ] After the next backend rebuild, open Settings > AI / AI Chat with the installed ego session-store timeout: confirm the default-model picker and provider actions remain usable beside the specific health diagnosis. Rust changes require a manual restart when ready; no live restart was performed.
+- [ ] Sidebar session context menu: add a session to the Global Workspace, reopen the menu and remove it; existing copy actions remain available (#2590-2d63).
+- [x] AI Chat multiline composer: Stop and Send remain fixed-size at the bottom. _(verified: real Composer in worktree Vite, one-line/five-line idle/busy browser bounds and screenshots in orchestrator reports/tuicommander/img/2026-10-31-compose-buttons/.)_
 ## Chat dictation auto-send (#2585-dfc2)
 
 - [ ] [HUMAN] With a real microphone, check held hotkey dictation in terminal Chat with Auto-send on and off, including transcript focus. Auto-send sends once and clears the submitted draft; off leaves editable text. Automated component evidence covers delivery and submit behavior, not audio capture.
+
+- [ ] After the next manual backend restart, launch a child agent and confirm its progress call returns parent mail guidance without a user notice or waiting badge; confirm root progress still notifies. Rust changes require a manual `make dev` restart or release rebuild; do not restart an active session for this check. (#2597-76c6)
+- [ ] Voice Settings: compare Speech assets and Spoken replies in Paper and Commander; check aligned rows, model/voice dropdowns and named asset actions. Confirm existing download, preview and recording actions still use the same state (#2608-f1c4).

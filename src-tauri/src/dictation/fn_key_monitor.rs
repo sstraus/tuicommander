@@ -7,8 +7,14 @@
 //! Keys that arrive as ordinary `keyDown` events but never reach the WebView
 //! (Ctrl+Tab, F13-F20) are handled by `crate::native_keys` instead.
 
+/// WebViews that mount a push-to-talk lifecycle and can own a native Fn take.
+#[cfg(target_os = "macos")]
+pub(crate) const DICTATION_WINDOWS: [&str; 3] = ["main", "secondary", "panel-ai-chat"];
+
 /// Install the Fn key local event monitor. Emits "fn-key-down" and "fn-key-up"
-/// Tauri events (scoped to the main window) when the Fn/Globe modifier flag toggles.
+/// Tauri events when the Fn/Globe modifier flag toggles. Key-down belongs to the
+/// focused dictation-capable window; key-up also reaches a recording owner
+/// that lost focus while Fn was held.
 ///
 /// Must be called from the main thread (Tauri setup runs on main thread).
 // DEFERRED (2026-09-06) — story #672-c1a3 asked for this monitor to start
@@ -38,8 +44,7 @@ pub fn install(app_handle: tauri::AppHandle) {
         let dictation = app_handle.state::<super::DictationState>();
         let was_down = dictation.fn_down.swap(fn_down, Ordering::AcqRel);
 
-        // Scope events to main window only — prevents plugin iframes from
-        // observing dictation timing.
+        // Each WebView captures its own DOM target before recording starts.
         if fn_down && !was_down {
             tracing::info!(
                 source = "dictation",
@@ -49,7 +54,15 @@ pub fn install(app_handle: tauri::AppHandle) {
                 unix_ms = unix_ms(),
                 "Push-to-talk key edge"
             );
-            let _ = app_handle.emit_to(tauri::EventTarget::labeled("main"), "fn-key-down", ());
+            let target = DICTATION_WINDOWS
+                .into_iter()
+                .find(|label| {
+                    app_handle
+                        .get_webview_window(label)
+                        .is_some_and(|window| window.is_focused().unwrap_or(false))
+                })
+                .unwrap_or("main");
+            let _ = app_handle.emit_to(tauri::EventTarget::labeled(target), "fn-key-down", ());
         } else if !fn_down && was_down {
             tracing::info!(
                 source = "dictation",
@@ -60,7 +73,7 @@ pub fn install(app_handle: tauri::AppHandle) {
                 "Push-to-talk key edge"
             );
             dictation.request_native_stop("fn-key-up");
-            let _ = app_handle.emit_to(tauri::EventTarget::labeled("main"), "fn-key-up", ());
+            emit_fn_release(&app_handle);
         }
 
         // Return the event unchanged to let it propagate normally.
@@ -88,7 +101,7 @@ pub fn release_on_focus_loss(app_handle: &tauri::AppHandle) {
     use objc2_app_kit::{NSEvent, NSEventModifierFlags};
     use objc2_foundation::{NSRunLoop, NSRunLoopCommonModes};
     use std::sync::atomic::Ordering;
-    use tauri::{Emitter, Manager};
+    use tauri::Manager;
 
     let dictation = app_handle.state::<super::DictationState>();
     if !dictation.fn_down.load(Ordering::Acquire) {
@@ -103,7 +116,7 @@ pub fn release_on_focus_loss(app_handle: &tauri::AppHandle) {
         "Fn focus loss observed"
     );
     release_fn_capture(&dictation, physically_down, "focus-loss", || {
-        let _ = app_handle.emit_to(tauri::EventTarget::labeled("main"), "fn-key-up", ());
+        emit_fn_release(app_handle);
     });
     if !dictation.fn_down.load(Ordering::Acquire)
         || dictation
@@ -122,7 +135,7 @@ pub fn release_on_focus_loss(app_handle: &tauri::AppHandle) {
             let physically_down =
                 NSEvent::modifierFlags_class().contains(NSEventModifierFlags::Function);
             release_fn_capture(&dictation, physically_down, "fn-state-poll", || {
-                let _ = app.emit_to(tauri::EventTarget::labeled("main"), "fn-key-up", ());
+                emit_fn_release(&app);
             });
         }
         let held = dictation.fn_down.load(Ordering::Acquire);
@@ -136,6 +149,16 @@ pub fn release_on_focus_loss(app_handle: &tauri::AppHandle) {
     // SAFETY: Tauri window events run on the AppKit thread. The run loop retains
     // the timer, including during menus/tracking, until it invalidates itself.
     unsafe { NSRunLoop::mainRunLoop().addTimer_forMode(&timer, NSRunLoopCommonModes) };
+}
+
+/// Only the window whose handler saw key-down can stop a recording. Deliver
+/// release to all supported windows so a focus change cannot strand it.
+#[cfg(target_os = "macos")]
+fn emit_fn_release(app: &tauri::AppHandle) {
+    use tauri::Emitter;
+    for target in DICTATION_WINDOWS {
+        let _ = app.emit_to(tauri::EventTarget::labeled(target), "fn-key-up", ());
+    }
 }
 
 /// A temporary watch: no wakeups remain once the held key has been released.

@@ -134,7 +134,7 @@ pub(crate) const MODULES: [(&str, &str); 5] = [
     ),
     (
         "children",
-        "## Child agents\nStay within the assigned scope; do not delegate. Report out-of-scope defects rather than fixing them. Send exactly one final `RESULT` or `BLOCKED` to the parent with `agent action=send to=<parent> message=<report>`: changes, commands, evidence and remaining gaps. Do not send heartbeats.\n",
+        "## Child agents\nStay within the assigned scope; do not delegate. Report out-of-scope defects rather than fixing them. Send exactly one final `RESULT` or `BLOCKED` to the parent with `agent action=send to=<parent> message=<report>`: changes, commands, evidence and remaining gaps. Do not send heartbeats. Do not call `progress`: child reports belong to the parent, not the user.\n",
     ),
 ];
 
@@ -227,6 +227,7 @@ fn effective_text_with(
             }
             text.push_str(module);
             if id == "working_with_user"
+                && !spawned_child
                 && app.progress_tracking
                 && settings.and_then(|s| s.progress_tracking).unwrap_or(true)
             {

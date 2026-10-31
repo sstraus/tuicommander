@@ -152,6 +152,7 @@ import { Sidebar } from "../../components/Sidebar/Sidebar";
 import { appLogger } from "../../stores/appLogger";
 import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
 import { githubStore } from "../../stores/github";
+import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { progressStore } from "../../stores/progress";
 import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
@@ -2766,6 +2767,55 @@ describe("Sidebar", () => {
 					"Refusing to persist settings: store not hydrated — would clobber config.json with defaults",
 				]);
 			errors.mockRestore();
+		});
+
+		// Catches: missing workspace actions, toggling the active tab instead of the clicked row,
+		// duplicate dispatch, or requiring a live PTY for workspace membership.
+		it.each(["idle", "suspended", "exited"])("sidebar_session_menu_toggles_clicked_workspace_member_%s", (state) => {
+			mockInvoke.mockImplementation(async (command: string) => (command === "list_active_sessions" ? [] : undefined));
+			mockTerminalsGet.mockImplementation((id) => ({
+				id,
+				name: id,
+				sessionId: state === "suspended" ? null : `pty-${id}`,
+				shellState: state === "exited" ? "exited" : "idle",
+				suspended: state === "suspended",
+			}));
+			setRepos({
+				"/repo1": makeRepo({
+					workspaces: {
+						main: {
+							workspaceId: "main",
+							branchName: "main",
+							isMain: true,
+							worktreePath: null,
+							terminals: ["workspace-menu-target"],
+							additions: 0,
+							deletions: 0,
+						},
+					},
+				}),
+			});
+			const toggle = vi.spyOn(globalWorkspaceStore, "togglePromote");
+			const view = render(() => <Sidebar {...defaultProps()} />);
+			const row = view.container.querySelector(".branchTabItem")!;
+			try {
+				fireEvent.contextMenu(row);
+				fireEvent.click(view.getByText("Add to Global Workspace"));
+				expect(toggle).toHaveBeenCalledExactlyOnceWith("workspace-menu-target");
+				expect(globalWorkspaceStore.getPromotedIds()).toEqual(["workspace-menu-target"]);
+				expect(view.queryByText("Add to Global Workspace")).not.toBeInTheDocument();
+
+				fireEvent.contextMenu(row);
+				fireEvent.click(view.getByText("Remove from Global Workspace"));
+				expect(toggle).toHaveBeenCalledTimes(2);
+				expect(globalWorkspaceStore.getPromotedIds()).toEqual([]);
+				fireEvent.contextMenu(row);
+				expect(view.getByText("Add to Global Workspace")).toBeInTheDocument();
+				expect(mockNavigateToTerminal).not.toHaveBeenCalled();
+			} finally {
+				globalWorkspaceStore.onTerminalRemoved("workspace-menu-target");
+				toggle.mockRestore();
+			}
 		});
 
 		// Catches: copying the active tab, a stale store alias, or a same-ID session on another host.

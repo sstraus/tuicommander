@@ -120,6 +120,15 @@ journal, and then dual-emits `progress-recorded`. A per-agent
 `progress_tracking: false` answers `progress_tracking_disabled` instead of
 hiding the tool — the tool index is global and has no session context.
 
+Managed children (a bound peer with a `session_parent` entry) cannot report
+through `progress`. The handler refuses the call before journal writes, user
+notifications, or waiting-state changes, and returns `agent action=send` guidance
+with the actual parent id. Both direct and collapsed calls use this handler.
+MCP instructions and native launch guidance tell children to mail their parent;
+root and unbound callers keep the existing reporting behavior. Refusal is explicit
+rather than automatic mail forwarding, so `progress` does not become a second
+mail API.
+
 The journal's third kind, `intent`, is written by TUIC from the agent's
 `intent:` marker in `pty.rs`. An agent that reports one is refused: the point of
 the kind is that it is observed rather than claimed.
@@ -1123,6 +1132,19 @@ and the `repo` schema both advertised nine `progress_*` actions that the
 description body never mentioned — invisible to any client reading descriptions
 alone. `debug` is the single exemption: its description points at `action=help`,
 which returns the full usage guide.
+
+#### Send to the coordinator without discovery
+
+Use `agent action=send to=orchestrator message=<text>` without `list_peers`.
+The reserved address selects registered `orchestrator=true` peers in the caller's
+managed parent chain. If that chain has no role, it selects a unique registered
+orchestrator with the caller's registered `path`; an unset caller path considers
+all registered roles on this server. No match or multiple matches returns an
+explicit error; ambiguity lists UUIDs for an explicit send. Display names do not
+claim the role address. Other recipient addresses keep their existing behavior.
+The compact tool description and full `agent action=help` guide put this address
+in their first line, so one `search_tools` response with `top_schema` followed by
+one send is enough. Registration declares the role; spawning does not infer it.
 
 #### One session, three addresses
 

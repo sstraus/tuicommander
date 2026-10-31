@@ -36,6 +36,8 @@ export interface EgoProviders {
 	/** ego's `model` key: the default a run starts from. */
 	defaultModel: string | null;
 	providers: EgoProvider[];
+	/** Non-blocking health check result, independent of model selection. */
+	diagnostic?: string | null;
 }
 
 export type EgoRootAccess = "read" | "read-write";
