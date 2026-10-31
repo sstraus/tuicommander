@@ -836,7 +836,7 @@ fn old_exclusive_join_replays_without_parallel_wait() {
     assert_eq!(replayed.graph_executions[0].decisions.len(), 1);
     // The upgrade must retain replay while new starts advertise the new pin boundary.
     assert_eq!(
-        replayed.event_contract_version, 4,
+        replayed.event_contract_version, 5,
         "missing WF01 versioned pin boundary"
     );
 }
@@ -879,7 +879,7 @@ fn draft_publish_does_not_repin_active_run() {
         json.get("contract").is_some(),
         "missing immutable definition/policy contract pin"
     );
-    assert_eq!(json["contract"]["version"], 4);
+    assert_eq!(json["contract"]["version"], 5);
 }
 
 fn replay_contract_fixture(bytes: &str) -> RunSnapshot {

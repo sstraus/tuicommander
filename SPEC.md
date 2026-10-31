@@ -553,6 +553,8 @@ backend safety check.
 
 ## Project Progress
 
+Completion popups offer Mute for the current client session. Terminal Progress shows the muted state and Unmute. Entries and unread counts remain unchanged; blocked warning popups still appear. The preference is in memory only and resets on app restart or browser reload. Native OS notification preferences are independent.
+
 Mobile Files uses saved repository group/order and display names with short paths. Mobile Progress uses readable status cards and defaults to intent/done/blocked through the backend pre-pagination `progressOnly` filter. Filters exposes messages/delegations; Flow retains all hand-offs. Desktop presentation and Commander tokens are unchanged.
 
 Native plan and story records have a separate config-directory SQLite authority (`stories.sqlite3`). Progress remains a human-readable journal and does not determine story status. Manual story actions use the shared Rust service across IPC, HTTP, MCP, and CLI. The desktop and browser UI exposes plan and story lists, criteria, dependencies, and manual transitions. For manual plans, WontFix is terminal for plan aggregation but does not satisfy a dependency or promote a dependent; a nonempty plan with only Done/WontFix stories is Done, while an empty plan is Draft. Any trusted caller can remove a direct WontFix dependency only from a Backlog story with a current revision. In plans with no workflow run, a dependent becomes Ready when every remaining dependency is Done; workflow-owned plans additionally require current integration receipts. An explicitly Blocked story is never auto-unblocked. Rust derives direct and transitive abandoned dependency indicators and the WontFix count on `plan_view` reads; the UI renders them. Any trusted caller may approve after checking the acceptance criteria. Actor identity is tracking only and never restricts story or workflow actions. Desktop IPC and credential-authenticated HTTP record `human`, sessionless local HTTP records `local_api`, and managed transitions record the acting session. Local token exchange is accepted. The optional workflow engine described in `plans/native-story-workflows.md` remains in development; import/export is excluded.
@@ -1282,6 +1284,8 @@ Chat is unavailable. Desktop and mobile reuse `TerminalChatTranscript`; no ACP
 connection or second event subscription is created. Compose, dictation targeting
 and answer marker rendering remain on the existing terminal paths.
 
+Expanded tool rows use theme colours for Bash/execute commands, flags, strings and operators. Read, Edit and Write keep the tool name separate from the path; other tools retain readable text. The collapsed activity summary and row sizing are unchanged.
+
 ## Mobile terminal Chat view
 
 The terminal stays mounted. Chat edit tool disclosures render bounded
@@ -1587,3 +1591,15 @@ recovery pauses. Cancellation fences all timers. Retry hints respect declared
 attempt, expiry and backoff caps. A question expiry is only timed-out/incomplete,
 never consent. WF08 cohort collection, WF13 provider observation and WF03 inbox
 consumers build on this internal primitive; they are not installed by WF19.
+
+
+### Branch-local workflow decisions (WF03)
+
+Contract-5 workflow questions suspend only their activation. Disjoint work can
+continue within the existing resource policy. The durable project inbox counts
+pending and expired questions without a coordinator. Answers bind the question
+revision and current subject digest, retain actor provenance, and continue the
+same worker generation without completing it. Deadlines never imply approval.
+Explicit run pause/cancel and historical NeedsInput replay remain available.
+IPC, HTTP and MCP use the same question/inbox service. See
+[workflow decisions](docs/backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).

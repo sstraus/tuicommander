@@ -1315,6 +1315,7 @@ pub(super) fn handle_workflow_report(
                 && matches!(
                     &receipt.event.kind,
                     crate::workflows::RunEventKind::AttemptReported { .. }
+                        | crate::workflows::RunEventKind::QuestionRequested { .. }
                 )
                 && let Ok(Some(coordinator_session)) =
                     crate::workflows::active_coordinator_session(&receipt.snapshot)

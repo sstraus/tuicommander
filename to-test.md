@@ -2,6 +2,9 @@
 
 - [ ] After Boss installs a rebuilt app or restarts it when session loss is acceptable, create a throwaway 80-column terminal with reflow disabled, emit a long marked answer, and widen it to 200 columns. Existing fragments stay narrow by design; the green gutter must cover their continuation rows. The recorded-grid production renderer replay and targeted terminal regression cover the contract. The daily app was not restarted or reconfigured. Independently repaint the next row after widening: it must not remain joined to the answer; explicit CR/LF must also break the retained edge.
 
+## Expanded Chat tool colours (2552-fd00)
+
+- [x] Bash/execute shell roles and separate Read/Edit/Write tool/path colours render in the shared session Chat transcript. Collapsed summary text and six expanded row bounds match the pre-change default-dark baseline. _(verified: isolated worktree Vite, production Transcript via `sessionChatAppearance.html?toolColours`, agent-browser screenshots and computed-style/geometry logs in `~/Gits/.tmp/results/toolrows-2552-{before,after}-browser.log`.)_
 ## Session Chat transcript typing (2554-0ee4)
 
 - [x] Click the transcript and type: the first character reaches Compose at the draft selection and typing continues there. Drag-selected transcript text stays selected; copy, Find, arrow keys and Compose Escape retain their behavior. _(verified: `src/__tests__/components/Terminal/chatViewCompose.critic.test.tsx`, 24 tests; isolated Vite plus trusted agent-browser clicks/keys and mouse selection; screenshots `~/Gits/.tmp/results/2554-before.png`, `2554-after.png`, `2554-selection.png`. Native clipboard command is asserted at the component boundary; the background browser did not provide a clipboard round trip.)_
@@ -3170,3 +3173,9 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 
 - [ ] WF04 routing correction: after a manual Rust restart, confirm that unrelated profile and idle-close changes do not pause a pinned workflow. Contract-3 MCP launch must refuse caller-profile substitution; use the daemon run controls. Automated rb regressions cover both paths.
 - [ ] Terminal Chat queued prompt feedback: while Claude or Codex works, send two follow-ups from Chat; confirm muted Pending bubbles stay in send order and each disappears when its normal native transcript message arrives, without duplication. Repeat after a failed send and on mobile. Automated shared-host contracts and a worktree Vite appearance screenshot cover presentation; native busy-agent delivery remains owned by the CLI.
+
+
+## WF03 branch-local decisions (2510-14e7)
+
+- [ ] After a manual backend restart or release rebuild, ask on one workflow branch and confirm that its question remains visible while independent work advances; answer from a browser and confirm that only the bound worker continues. Rust changes do not hot-reload. Automated ledger, engine and transport checks are recorded in the story worklog.
+- [x] Session-only Progress popup mute: completion cards expose Mute; Terminal Progress retains reports and offers Unmute; blocked warnings remain visible. _(verified: isolated Vite real-component browser check and ProgressPopups.test.tsx; popup preference is in-memory only.)_

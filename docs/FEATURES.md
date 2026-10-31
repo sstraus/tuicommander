@@ -231,6 +231,8 @@ Right-click an HTTP(S) terminal link (including localhost) and choose **Start in
 - **Readable session edits** — Expand a Chat tool card to read structured old/new edit blocks with aligned four-space tab stops and horizontal scrolling.
 - **Native terminal Chat questions** — Desktop and mobile expose exported native question titles and choices. Answers use agent-specific PTY keys, not Compose submission or ACP replies. Desktop preserves transcript binding and returns to CLI for unexported or free-form prompts.
 - **Pending terminal Chat prompts** — Prompts submitted through the open desktop or mobile Chat composer appear immediately as muted Pending bubbles in send order, including sends while Claude or Codex is busy. Matching new native transcript messages replace them without a duplicate bubble and retire older unmatched sends, so a local slash command cannot block later receipts. This is local send feedback, not a cancellable CLI queue; prompts typed directly into the CLI or sent by another client cannot be shown before the native transcript records them.
+Expanded tool rows use theme colours for Bash/execute commands, flags, strings and operators. Read, Edit and Write keep the tool name separate from the path; other tools retain readable text. The collapsed activity summary and row sizing are unchanged.
+
 - **Mobile session Chat appearance** — The session detail CLI/Chat view shares desktop prompt/answer theme tokens and transcript typography. Mobile keeps its existing touch-sized switch and native input; AI Chat is a separate surface.
 - **Deferred update restart** — After an in-app update installs, TUICommander restarts only when no session is busy or awaiting input; the APP UPDATE notification shows how many are busy and offers **Restart now** (with confirmation). Turn off in **Settings → General → Updates → Wait for agents before restarting** (`defer_update_relaunch`, default on).
 - **Eager resume after an update** — When the app restarts to apply an update, every agent tab with a confirmed session id resumes by itself on every branch, without selecting the branch first. Tabs without a confirmed id keep the click-to-resume banner. Turn off in **Settings → General → Updates → Resume all agents after an update** (`eager_resume_after_update`, default on).
@@ -2955,6 +2957,8 @@ Missing machine selection or missing ego acknowledgement refuses attachment.
 
 ## 27. Terminal Progress
 
+- **Session-only popup mute:** select Mute on a completion popup, then Unmute in Terminal Progress to restore future popups. Existing and queued completion cards close, but journal entries, unread counts and blocked warning popups remain. Restart or browser reload restores popups; native notification settings do not change.
+
 - One append-only journal per project with each new entry attributed to its source PTY when known: entries are written once, then kept or deleted. No pause, clear, correction, revision, deduplication or Markdown export
 - Three kinds. Agents report `done` and `blocked`; TUICommander writes `intent` from the agent's own `intent:` marker, so an agent that never calls the tool still leaves a trail
 - Compact MCP `progress` tool (`type`, `text`, optional `step`) that appends and toasts in one call, stays directly callable in collapsed tool mode, and refuses `intent` — that kind is observed, not claimed
@@ -3615,3 +3619,12 @@ can flush a one-row cohort through a recovery pause. Activation pauses retain
 their deadlines; cancellation fences delivery. Question expiry never implies
 approval. This is internal infrastructure for later proof, provider and inbox
 consumers, not a new Designer control. See [workflows](backend/workflows.md#durable-timers-wf19).
+
+
+### Branch-local workflow decisions
+
+Workflow questions and approvals retain structured answer schemas, revision and
+subject fences, actor provenance and restart-safe deadlines. An unanswered question
+suspends its activation, not disjoint delivery. The project inbox counts pending
+and expired questions without a coordinator; all transports use the same service.
+No timeout grants consent. See [workflow decisions](backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).
