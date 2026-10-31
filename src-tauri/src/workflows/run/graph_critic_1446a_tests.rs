@@ -226,6 +226,10 @@ fn resolve_pause_keeps_the_uncertain_effect_fence() {
             .unwrap_err()
             .contains("uncertain effects")
     );
+    // This phase asserts retained run-wide input blocking, not contract-5 branch input.
+    // The uncertain-effect assertions above continue to use the current contract.
+    s.event_contract_version = 4;
+    s.graph_executions[0].contract.as_mut().unwrap().version = 4;
     s.effects[0].state = EffectState::Succeeded;
     s.attempts[0].input_answer = None;
     assert!(

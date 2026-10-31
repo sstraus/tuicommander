@@ -1,5 +1,6 @@
 import { emitTo } from "@tauri-apps/api/event";
 import { type Component, createEffect, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { useAgentDetection } from "../../hooks/useAgentDetection";
 import { invoke } from "../../invoke";
 import { acpTranscript } from "../../stores/acpTranscript";
 import { appLogger } from "../../stores/appLogger";
@@ -112,6 +113,12 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 			appLogger.error("ai-chat", "Failed to resolve file link", error);
 		}
 	};
+
+	const detection = useAgentDetection();
+	createEffect(() => {
+		if (props.visible && chat.phase() === "unconfigured") void detection.detectAll();
+	});
+	const detectedEgo = () => detection.getDetection("ego")?.path?.trim();
 
 	const configureEgo = async () => {
 		if (isPanelMode() && isTauri()) {
@@ -294,6 +301,24 @@ export const AIChatPanel: Component<AIChatPanelProps> = (props) => {
 			</Transcript>
 
 			<Show when={chat.phase() === "unconfigured"}>
+				<Show when={detectedEgo()}>
+					{(path) => (
+						<div class={s.detectedEgo}>
+							<span>
+								Detected ego: <code>{path()}</code>
+							</span>
+							<Button
+								type="button"
+								variant="primary"
+								onClick={() => {
+									if (!settingsStore.isAcpConfigured()) settingsStore.setEgoExecutable(path());
+								}}
+							>
+								Use this
+							</Button>
+						</div>
+					)}
+				</Show>
 				<div class={s.setupActions}>
 					<Button
 						type="button"

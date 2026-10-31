@@ -54,6 +54,7 @@ import {
 	type ProfileChip,
 	splitRawArgs,
 } from "../../../utils/runConfigArgs";
+import { ContextualTip } from "../../TipOfTheDay/ContextualTip";
 import { AgentIcon } from "../../ui/AgentIcon";
 import { Button } from "../../ui/Button";
 import { Input } from "../../ui/Input";
@@ -1205,6 +1206,11 @@ const AgentRow: Component<{
 							</SettingRow>
 						</ExpertSetting>
 					</Show>
+
+					<ContextualTip
+						id="hooks"
+						when={supportsHooks() && supportsGlobalHooks() && !configStore.getHookInstrumentation(props.agentType)}
+					/>
 
 					{/* Explicit global installation remains available only where launch-scoped integration is unavailable. */}
 					<Show when={supportsHooks() && supportsGlobalHooks()}>

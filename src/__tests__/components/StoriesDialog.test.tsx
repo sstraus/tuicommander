@@ -615,8 +615,21 @@ describe("StoriesDialog", () => {
 		);
 	});
 
-	it("records a human answer to a paused workflow request", async () => {
+	it.each([false, true])("records a revision-bound answer and retains legacy input (branch=%s)", async (branch) => {
+		// Catches: desktop/browser answers dropping the question revision or subject digest.
 		const run = {
+			questions: branch
+				? [
+						{
+							id: "input:a1",
+							revision: 3,
+							attemptId: "a1",
+							subjectDigest: "subject-digest",
+							state: "pending",
+							schema: { type: "single_choice" },
+						},
+					]
+				: undefined,
 			id: "r1",
 			planId: "p1",
 			status: "paused",
@@ -668,10 +681,131 @@ describe("StoriesDialog", () => {
 					run_id: "r1",
 					expected_sequence: 4,
 					command_id: expect.any(String),
-					command: { action: "answer_input", attempt_id: "a1", answer: "A" },
+					command: branch
+						? {
+								action: "answer_question",
+								question_id: "input:a1",
+								expected_revision: 3,
+								subject_digest: "subject-digest",
+								actor: { kind: "human", id: "stories-dialog" },
+								answer: "A",
+							}
+						: { action: "answer_input", attempt_id: "a1", answer: "A" },
 				},
 			}),
 		);
+	});
+
+	describe("branch question presentation", () => {
+		function mockRun(run: Record<string, unknown>): void {
+			const fallback = vi.mocked(invoke).getMockImplementation();
+			vi.mocked(invoke).mockImplementation(async (command, args) => {
+				if (command === "workflow_run_action") {
+					const action = (args as { action: { action: string } }).action;
+					if (action.action === "list_plan_runs") return { type: "runs", value: [run] };
+					if (action.action === "get") return { type: "snapshot", value: run };
+					if (action.action === "events") return { type: "events", value: [] };
+					if (action.action === "command") return { type: "receipt", value: { snapshot: run } };
+				}
+				return fallback?.(command, args);
+			});
+		}
+		const attempt = (id: string, question: string) => ({
+			id,
+			storyId: "s1",
+			nodeId: "implement",
+			state: "reported",
+			outcome: "needs_input",
+			inputAnswer: null,
+			report: { inputRequest: { question, options: [] } },
+		});
+		const baseRun = {
+			id: "r1",
+			planId: "p1",
+			status: "running",
+			sequence: 7,
+			startedMs: 1000,
+			stories: [{ storyId: "s1", accepted: false }],
+		};
+
+		it.each(["timed_out", "incomplete"])("expired first question cannot hide a pending branch (%s)", async (state) => {
+			// Catches F1: expired NeedsInput monopolizes the only answer form.
+			mockRun({
+				...baseRun,
+				attempts: [attempt("a1", "Expired branch choice"), attempt("a2", "Pending branch choice")],
+				questions: [
+					{
+						id: "input:a1",
+						revision: 1,
+						attemptId: "a1",
+						subjectDigest: "old",
+						state,
+						schema: { type: "text" },
+						request: { question: "Expired branch choice", options: [] },
+					},
+					{
+						id: "input:a2",
+						revision: 2,
+						attemptId: "a2",
+						subjectDigest: "current",
+						state: "pending",
+						schema: { type: "text" },
+						request: { question: "Pending branch choice", options: [] },
+					},
+				],
+			});
+			render(() => <StoriesDialog project="/repo" onClose={() => {}} />);
+			await screen.findByRole("heading", { name: "Implement API" });
+			fireEvent.click(screen.getByRole("button", { name: "Run history" }));
+			await screen.findByText("Pending branch choice");
+			expect(screen.getByText(/Expired branch choice/)).toBeTruthy();
+			expect(screen.getAllByRole("textbox", { name: "Answer" })).toHaveLength(1);
+			fireEvent.input(screen.getByRole("textbox", { name: "Answer" }), { target: { value: "continue" } });
+			fireEvent.click(screen.getByRole("button", { name: "Record answer" }));
+			await waitFor(() =>
+				expect(invoke).toHaveBeenCalledWith("workflow_run_action", {
+					project: "/repo",
+					action: {
+						action: "command",
+						run_id: "r1",
+						command_id: expect.any(String),
+						expected_sequence: 7,
+						command: {
+							action: "answer_question",
+							question_id: "input:a2",
+							expected_revision: 2,
+							subject_digest: "current",
+							actor: { kind: "human", id: "stories-dialog" },
+							answer: "continue",
+						},
+					},
+				}),
+			);
+		});
+
+		it.each(["single_choice", "multiple_choice"])("displays schema-only choices (%s)", async (type) => {
+			// Catches F2: valid structured choices disappear when legacy options are empty.
+			mockRun({
+				...baseRun,
+				attempts: [attempt("a1", "Select release track")],
+				questions: [
+					{
+						id: "input:a1",
+						revision: 1,
+						attemptId: "a1",
+						subjectDigest: "current",
+						state: "pending",
+						schema: { type, options: ["stable", "nightly"] },
+						request: { question: "Select release track", options: [] },
+					},
+				],
+			});
+			render(() => <StoriesDialog project="/repo" onClose={() => {}} />);
+			await screen.findByRole("heading", { name: "Implement API" });
+			fireEvent.click(screen.getByRole("button", { name: "Run history" }));
+			await screen.findByText("Select release track");
+			expect(screen.getByText("Suggested: stable, nightly")).toBeTruthy();
+		});
 	});
 
 	it("resumes a graph pause with an explicit activation and resolution after input is answered", async () => {

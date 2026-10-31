@@ -22,6 +22,9 @@ export interface Toast {
 	 *  only the session id can name the terminal that actually spoke. */
 	sessionId?: string;
 	action?: { label: string; onClick: () => void };
+	secondaryAction?: { label: string; onClick: () => void };
+	/** Presentation group for dismissing visible and queued cards together. */
+	dismissGroup?: string;
 }
 
 let nextId = 1;
@@ -204,6 +207,7 @@ function createToastsStore() {
 			repoPath?: string,
 			sessionId?: string,
 			mirrorInBell = true,
+			options: Pick<Toast, "secondaryAction" | "dismissGroup"> = {},
 		) {
 			if (
 				this.hasVisible(title, message, level, repoPath) ||
@@ -219,13 +223,24 @@ function createToastsStore() {
 				return -1;
 			}
 			const id = nextId++;
-			const toast: Toast = { id, title, message, level, createdAt: Date.now(), action, repoPath, sessionId };
+			const toast: Toast = {
+				id,
+				title,
+				message,
+				level,
+				createdAt: Date.now(),
+				action,
+				repoPath,
+				sessionId,
+				...options,
+			};
 			const group = state.toasts.find(
 				(item) =>
 					item.title === title &&
 					item.level === level &&
 					item.repoPath === repoPath &&
 					item.sessionId === sessionId &&
+					item.dismissGroup === toast.dismissGroup &&
 					toast.createdAt - item.createdAt <= NOTICE_WINDOW_MS,
 			);
 			const overflow = !group && state.toasts.length >= 2;
@@ -258,6 +273,17 @@ function createToastsStore() {
 			setState("toasts", (prev) => [...prev, toast]);
 			armDismissTimer(id, (toastId) => this.remove(toastId));
 			return id;
+		},
+
+		/** Remove queued cards first, so dismissing a visible card cannot reveal a muted one. */
+		removeGroup(group: string) {
+			const pending = queued.filter((toast) => toast.dismissGroup === group);
+			for (const toast of pending) {
+				clearDismissTimer(toast.id);
+				durations.delete(toast.id);
+			}
+			queued.splice(0, queued.length, ...queued.filter((toast) => toast.dismissGroup !== group));
+			for (const toast of state.toasts.filter((toast) => toast.dismissGroup === group)) this.remove(toast.id);
 		},
 
 		remove(id: number) {

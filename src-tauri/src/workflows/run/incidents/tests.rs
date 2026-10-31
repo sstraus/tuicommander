@@ -3,6 +3,7 @@ use crate::workflows::{AgentBinding, AttemptReport, InputRequest, RunLimits};
 
 fn run() -> RunSnapshot {
     RunSnapshot {
+        questions: vec![],
         proposal_batches: vec![],
         event_contract_version: 1,
         id: "run-1".into(),
@@ -84,6 +85,8 @@ fn incident_reports_keep_cause_and_identity_instead_of_only_transition_labels() 
     assert!(entries[0].next_action.contains("manually"));
     run.attempts[0].outcome = Some(AttemptOutcome::NeedsInput);
     run.attempts[0].report.as_mut().unwrap().input_request = Some(InputRequest {
+        answer_schema: None,
+        deadline: None,
         question: "Which API version?".into(),
         options: vec![],
     });

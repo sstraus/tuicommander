@@ -33,6 +33,8 @@ export interface PrNotification {
 	repoPath: string;
 	branch: string;
 	prNumber: number;
+	/** Captured at the transition so reused head branches cannot redirect an old notice. */
+	url?: string;
 	title: string;
 	type: PrNotificationType;
 	createdAt: number;

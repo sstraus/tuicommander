@@ -21,7 +21,11 @@ interface ToastListProps {
 export const ToastList: Component<ToastListProps> = (props) => {
 	function toastActions(toast: Toast): ToastAction[] {
 		const repoAction = props.repoAction?.(toast);
-		return [...(repoAction ? [repoAction] : []), ...(toast.action ? [toast.action] : [])];
+		return [
+			...(repoAction ? [repoAction] : []),
+			...(toast.secondaryAction ? [toast.secondaryAction] : []),
+			...(toast.action ? [toast.action] : []),
+		];
 	}
 
 	return (

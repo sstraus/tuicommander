@@ -561,6 +561,22 @@ describe("Toolbar", () => {
 			expect(prNotificationsStore.getActive().length).toBe(0);
 		});
 
+		// Catches: an old notification following a reused head branch to a different PR.
+		it("opens a PR notification using its captured conversation URL without a cached branch", async () => {
+			const open = vi.spyOn(window, "open").mockReturnValue(null);
+			addTestNotif({ url: "https://github.com/acme/remote/pull/42" });
+			const { container } = render(() => <Toolbar />);
+			fireEvent.click(container.querySelector(".bell")!);
+			fireEvent.click(container.querySelector(".notifItem")!);
+			await waitFor(() =>
+				expect(invoke).toHaveBeenCalledWith("open_default_app", {
+					target: "https://github.com/acme/remote/pull/42",
+					kind: "url",
+				}),
+			);
+			open.mockRestore();
+		});
+
 		it("clicking PR notification item opens PrDetailPopover", async () => {
 			addTestNotif({ repoPath: "/my/repo", branch: "feature", prNumber: 42 });
 			const { container } = render(() => <Toolbar />);
