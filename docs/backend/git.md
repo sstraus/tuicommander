@@ -40,6 +40,13 @@ without gitlinks has an empty submodule contribution to the same fingerprint;
 real gitlinks still use Git's recursive status and recovery inventory. The absence
 of `.gitmodules` alone never permits skipping that inventory.
 
+Worktree creation resolves an explicit start ref to a commit before mutation.
+The original ref retains Git upstream tracking. The branch-collision retry may reuse an
+existing branch only when its tip matches the explicit base; it never resets that
+branch. Requests without an explicit base keep the existing-branch fallback.
+The app adapters capture `base_commit` from the allocated checkout before setup
+scripts run and return it over IPC, HTTP and MCP.
+
 ## Async Execution & Caching
 
 The root Git adapters run blocking domain operations inside `tokio::task::spawn_blocking`; the domain crate does not own a runtime. All Tauri git commands are `async` and run git subprocesses inside `tokio::task::spawn_blocking`. This prevents blocking Tokio worker threads during I/O-heavy operations like `git diff`, `git log`, or `git fetch`.

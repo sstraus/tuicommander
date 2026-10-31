@@ -413,6 +413,7 @@ async fn handle_worktree_with_caller(
                         // The id `action=worktree_remove` asks for.
                         "workspace_id": &created.workspace_id,
                         "branch": &branch_name,
+                        "base_commit": &created.base_commit,
                         // The same value the HTTP route returns, not a second
                         // rendering of it: one payload, two carriers, so the two
                         // transports cannot describe the same workspace

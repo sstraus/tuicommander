@@ -753,6 +753,15 @@ pub(crate) fn allocate_workspace(
     Ok((workspace, rename))
 }
 
+/// Read the allocation commit before setup scripts or callers can change HEAD.
+pub(crate) fn workspace_base_commit(path: &Path) -> Result<String, String> {
+    git_cmd(path)
+        .args(["rev-parse", "--verify", "HEAD^{commit}"])
+        .run()
+        .map(|out| out.stdout.trim().to_owned())
+        .map_err(|error| format!("Cannot read worktree base commit: {error}"))
+}
+
 /// Create a linked worktree without a PTY session.
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -772,13 +781,15 @@ pub(crate) async fn create_worktree(
     let worktrees_dir =
         resolve_worktree_dir_for_repo(Path::new(&config.base_repo), &state.worktrees_dir);
     let allocation_state = Arc::clone(&state);
-    let (workspace, recycled) = tokio::task::spawn_blocking(move || {
-        allocate_workspace(
+    let (workspace, recycled, base_commit) = tokio::task::spawn_blocking(move || {
+        let (workspace, recycled) = allocate_workspace(
             &allocation_state,
             &worktrees_dir,
             &config,
             base_ref.as_deref(),
-        )
+        )?;
+        let base_commit = workspace_base_commit(&workspace.path)?;
+        Ok::<_, String>((workspace, recycled, base_commit))
     })
     .await
     .map_err(|error| format!("Task panic: {error}"))??;
@@ -800,6 +811,7 @@ pub(crate) async fn create_worktree(
     }
     state.invalidate_repo_caches(&base_repo);
     let mut response = ipc_worktree_response(&workspace, &base_repo);
+    response["base_commit"] = serde_json::json!(base_commit);
     response["worktree_rename"] = serde_json::json!(recycled);
     Ok(response)
 }
