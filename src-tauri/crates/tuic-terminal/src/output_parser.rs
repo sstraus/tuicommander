@@ -1737,6 +1737,12 @@ pub fn parse_intent(clean: &str, agent_active: bool) -> Option<ParsedEvent> {
 }
 
 lazy_static::lazy_static! {
+    /// The shared answer boundary recovers a missing marker newline.
+    static ref INTENT_ANSWER_RE: regex::Regex = {
+        let grammar: serde_json::Value =
+            serde_json::from_str(include_str!("intent_marker.json")).expect("intent marker grammar");
+        regex::Regex::new(grammar["answer"].as_str().expect("intent answer grammar")).unwrap()
+    };
     /// The shared title closure also bounds frontend tinting. Trailing prose
     /// is not part of the token; earlier parenthesized asides stay in the body.
     static ref INTENT_TITLE_RE: regex::Regex = {
@@ -1830,7 +1836,7 @@ pub fn dewrap_intent_continuation_with_rows<'a>(
 
 /// True when the last group is closed, with no unfinished later title.
 pub fn intent_row_is_complete(row: &str) -> bool {
-    INTENT_TITLE_RE.is_match(row.trim_end())
+    INTENT_TITLE_RE.is_match(intent_before_answer(row.trim_end()))
 }
 
 /// True when the row is the wrapped tail of the `intent:` row above it.
@@ -1855,10 +1861,24 @@ fn is_intent_continuation_row(row: &str) -> bool {
     )
 }
 
+/// Bound metadata before choosing its title; answer parentheses are prose.
+fn intent_before_answer(raw: &str) -> &str {
+    INTENT_ANSWER_RE
+        .captures(raw)
+        .and_then(|capture| {
+            let prefix = raw[..capture.get(1)?.start()].trim_end();
+            INTENT_TITLE_RE.is_match(prefix).then_some(prefix)
+        })
+        .unwrap_or(raw)
+}
+
 /// Shared logic for building an Intent event from a raw match string.
 fn build_intent_event(raw_match: Option<String>, title_re: &regex::Regex) -> Option<ParsedEvent> {
     raw_match.and_then(|raw| {
         let raw = raw.trim();
+        // A joined answer is outside the intent token. Choose the title only
+        // after this shared boundary, so answer parentheses cannot replace it.
+        let raw = intent_before_answer(raw);
         // Filter out meaningless intents: ellipsis, bare punctuation, template placeholders
         if raw == "..." || raw == "<text>" || raw.len() < 4 {
             return None;
@@ -5044,6 +5064,52 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             ParsedEvent::Intent { title, .. } => title.clone(),
             _ => None,
         })
+    }
+
+    // Catches: a real retained ego row being captured as intent description in full.
+    #[test]
+    fn test_intent_retained_ego_joined_answer() {
+        let capture = crate::pty_capture::decode_capture(include_bytes!(
+            "../../../src/fixtures/agent_prompts/ego-joined-intent-answer-2612.tcap"
+        ))
+        .unwrap();
+        let raw = String::from_utf8(capture.records[0].data.clone()).unwrap();
+        let events = parse_intent_events(&strip_ansi_via_vt100(&raw));
+        assert_eq!(
+            get_intent_title(&events).as_deref(),
+            Some("Configurazione Claude")
+        );
+        assert_eq!(
+            get_intent(&events).as_deref(),
+            Some(
+                "Ti indico i passaggi necessari per configurare il default globale della tua installazione, distinguendo il blocco dell’ambiente dalla parte che ego non supporta ancora"
+            )
+        );
+    }
+
+    // Catches: answer parentheses replacing the intent title on a joined marker row.
+    #[test]
+    fn test_intent_same_line_answer_keeps_title() {
+        for suffix in [
+            "",
+            " (default)",
+            " (unfinished",
+            " 💬 Second answer (second)",
+        ] {
+            let line = format!(
+                "intent: Ti indico i passaggi ... (Configurazione Claude)💬 Per configurare la tua installazione ...{suffix}"
+            );
+            assert!(intent_row_is_complete(&line));
+            let events = parse_intent_events(&line);
+            assert_eq!(
+                get_intent(&events).as_deref(),
+                Some("Ti indico i passaggi ...")
+            );
+            assert_eq!(
+                get_intent_title(&events).as_deref(),
+                Some("Configurazione Claude")
+            );
+        }
     }
 
     #[test]

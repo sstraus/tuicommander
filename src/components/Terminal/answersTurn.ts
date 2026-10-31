@@ -1,6 +1,13 @@
 import type { DecodedRow, StyledRange } from "./canvasTerminalUtils";
 import { cellText } from "./canvasTerminalUtils";
-import { ANSWER_MARKER_RE, answerExtent, PROMPT_ROW_RE, promptEnd, type RowSnapshot } from "./suggestOverlay";
+import {
+	ANSWER_MARKER_RE,
+	answerExtent,
+	answerMarkerOffset,
+	PROMPT_ROW_RE,
+	promptEnd,
+	type RowSnapshot,
+} from "./suggestOverlay";
 
 /** One turn of the answers-only view: what the user asked, then only the 💬 answers. */
 export interface AnswersTurn {
@@ -37,8 +44,14 @@ export function rowCopyText(row: DecodedRow): string {
 export const PROMPT_MAX_ROWS = 50;
 
 /** Text of rows `[from, to]`: soft-wrapped rows concatenated, hard lines joined with a newline, indent under the bullet removed. */
-function joinAnswerRows(rows: readonly RowSnapshot[], from: number, to: number, markers: ReadonlySet<number>): string {
-	let text = rows[from].text.trimStart().replace(/^[●⏺•]\s*/, "");
+function joinAnswerRows(
+	rows: readonly RowSnapshot[],
+	from: number,
+	to: number,
+	markers: ReadonlySet<number>,
+	firstText = rows[from].text,
+): string {
+	let text = firstText.trimStart().replace(/^[●⏺•]\s*/, "");
 	for (let i = from + 1; i <= to; i++) {
 		const line = rows[i].text;
 		text += rows[i].isWrapped
@@ -95,15 +108,26 @@ export function buildAnswersTurn(rows: readonly RowSnapshot[], hasPrompt: boolea
 			i = promptEnd(i, rows.length, (r) => rows[r] ?? null);
 			continue;
 		}
-		if (!rows[i].isWrapped && ANSWER_MARKER_RE.test(rows[i].text)) {
+		const logical = joinLogicalLine(rows, i);
+		let marker = rows[i].isWrapped ? undefined : answerMarkerOffset(logical.text);
+		let firstText = rows[i].text;
+		if (marker !== undefined && !ANSWER_MARKER_RE.test(firstText)) {
+			// Locate the recovered marker without changing stored row coordinates.
+			while (i + 1 < logical.next && marker >= rows[i].text.length) {
+				marker -= rows[i].text.length;
+				i++;
+			}
+			firstText = rows[i].text.slice(marker);
+		}
+		if (marker !== undefined) {
 			const markers = new Set<number>();
 			const last = answerExtent(
 				i,
 				rows.length,
-				(r) => rows[r] ?? null,
+				(r) => (r === i ? { text: firstText, isWrapped: false } : (rows[r] ?? null)),
 				(marker) => markers.add(marker),
 			);
-			answers.push(joinAnswerRows(rows, i, last, markers));
+			answers.push(joinAnswerRows(rows, i, last, markers, firstText));
 			i = last + 1;
 		} else {
 			i = joinLogicalLine(rows, i).next;

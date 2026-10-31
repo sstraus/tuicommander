@@ -1,3 +1,7 @@
+## Joined intent and answer markers (2612-b0ac) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, show `intent: Ti indico i passaggi ... (Configurazione Claude)💬 Per configurare la tua installazione ...` in a throwaway agent session. Confirm the title ends at Configurazione Claude, only the intent prefix is tinted, and the answer has its own gutter in CLI and Chat. The daily app was not restarted. Rust changes do not hot-reload; restart only when losing current sessions is acceptable.
+
 ## Coordinator mail address (2580-dcbd) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, send `agent action=send to=orchestrator message=<text>` from a managed child and confirm receipt at its registered coordinator without `list_peers`. The daily app was not restarted; Rust changes do not hot-reload. Restart only when losing current sessions is acceptable.
