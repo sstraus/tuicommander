@@ -570,6 +570,8 @@ Text symbols and Unicode are still correct where the glyph *is* the content rath
 | `⎇` | Git branch symbol | Status bar |
 | `💡` | Ideas panel | Status bar, panel header |
 
+Brand SVG viewports crop blank favicon artboard margins. Preserve each mark's aspect ratio and use the shared AgentIcon artwork for desktop and mobile identities.
+
 Icon dimensions: 18px wide container for branch icons. `--font-md` or `--font-lg` size. Always left of text with `gap: 6–8px`.
 
 ## Scrollbars

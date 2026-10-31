@@ -143,7 +143,7 @@ Desktop terminal Chat and AI Chat use the shared scale in `styles/chat-tokens.cs
 Auto-copies selected text to clipboard when text is selected in terminal. Configurable in settings (`copy_on_select`, default: on).
 
 ### URL Click
-Cmd+Click on URLs in terminal output opens them in the system browser. URL detection handled by the native terminal link parser. Dotted link underlines and solid hover underlines, including soft-wrapped file URLs, follow the text during smooth scrolling.
+Cmd+Click on URLs in terminal output opens them in the system browser. URL detection handled by the native terminal link parser. Dotted link underlines and solid hover underlines, including soft-wrapped file URLs, follow the text during smooth scrolling. Verified underlines remain visible when unrelated cells or full grid frames redraw; changed link text removes the old underline before asynchronous verification completes.
 
 ### File Path Click
 Clickable file paths in terminal output resolve against the terminal working directory when relative. Sentence periods are excluded from heuristic path targets, including paths in soft-wrapped lines. Existing files open in their viewer or editor; directories open in the File Browser.

@@ -329,7 +329,7 @@ The bell behavior when receiving BEL character (\x07) is set by `bell_style` in 
 
 ## Clickable File Paths
 
-File paths appearing in terminal output are automatically detected and become clickable links. Hover over a path to see the link underline, then click to open it.
+File paths appearing in terminal output are automatically detected and become clickable links. Hover over a path to see the link underline, then click to open it. Verified link underlines stay visible while unrelated tool indicators animate, including links that wrap across terminal rows.
 
 - `.md` / `.mdx` files open in the Markdown viewer panel
 - Other source files open in the built-in editor
@@ -524,3 +524,7 @@ delivery. A normal Send's muted **Pending** bubble belongs to the native CLI and
 cannot be withdrawn by this action. AI Chat's shared ACP composer supports the
 same shortcut for text-only queued turns. Nonempty drafts and slash menus keep
 their normal arrow-key behavior. See [coverage and evidence](../frontend/chat-wrap-recall-evidence.md).
+
+### Global Workspace membership
+
+Right-click a terminal tab or a session row in the sidebar and select **Add to Global Workspace**. For an existing member, select **Remove from Global Workspace** instead. This changes workspace membership without closing the terminal.
