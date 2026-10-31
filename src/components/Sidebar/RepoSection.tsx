@@ -255,6 +255,9 @@ function lifecycleTooltip(status: LifecycleStatus, part?: "dirty" | "commit", is
 	if (lost > 0 && part !== "commit") {
 		return `${lost} uncommitted file${lost === 1 ? "" : "s"} (staged, unstaged or untracked) would be discarded by removing this workspace.`;
 	}
+	if (status.commitStatus === "unrelated_history") {
+		return "Branch has unrelated history: no common ancestor with the default branch. Keep the branch when removing this workspace; deleting it requires an archive at its current tip.";
+	}
 	const commitState =
 		status.commitStatus === "merged"
 			? "HEAD is merged"
@@ -1269,6 +1272,7 @@ export const BranchItem: Component<{
 							const lostFiles = () => status().dirtyFiles ?? 0;
 							const label = () => {
 								if (status().commitStatus === "unknown") return unknownLifecycleLabel(status());
+								if (status().commitStatus === "unrelated_history") return "Unrelated history";
 								// Uncommitted files outrank the commit verdict, which reads commits
 								// only: "Merged" over them claims nothing would be lost while removal
 								// discards every one. The count earns a chip only when the stats chip
@@ -1286,7 +1290,10 @@ export const BranchItem: Component<{
 							};
 							// Only the dirty count points at a diff; commit verdicts have none to show.
 							const opensChanges = () =>
-								!!props.onShowChanges && status().commitStatus !== "unknown" && lostFiles() > 0;
+								!!props.onShowChanges &&
+								status().commitStatus !== "unknown" &&
+								status().commitStatus !== "unrelated_history" &&
+								lostFiles() > 0;
 							const tooltip = () => lifecycleTooltip(status());
 							return (
 								<Show when={label()}>
@@ -1448,6 +1455,7 @@ export const BranchItem: Component<{
 									{(state) => {
 										const risky = () =>
 											state() === "unknown" ||
+											state() === "unrelated_history" ||
 											(state() === "merged" && !!lifecycle() && lifecycle()?.removalSafety !== "safe");
 										return (
 											<span
@@ -1463,7 +1471,9 @@ export const BranchItem: Component<{
 													? unknownLifecycleLabel(lifecycle())
 													: state() === "merged"
 														? t("sidebar.merged", "Merged")
-														: t("sidebar.stale", "Stale")}
+														: state() === "unrelated_history"
+															? t("sidebar.unrelatedHistory", "Unrelated history")
+															: t("sidebar.stale", "Stale")}
 											</span>
 										);
 									}}

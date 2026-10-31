@@ -1175,3 +1175,7 @@ requires `run_id`, `command_id` and `expected_sequence`. IPC
 `workflow action=run input=<RunAction>` use the same service. The inbox needs no
 coordinator. See the backend workflow decision contract for shapes, deadline
 outcomes, retained legacy replay and continuation semantics.
+
+### Unrelated branch integration status
+
+Branch integration queries and workspace lifecycle/monitoring payloads serialize `commit_status: "unrelated_history"` when no default-branch candidate shares a common ancestor. The response remains successful with no inspection error and `integrated: false` in branch integration queries. IPC and HTTP use the same backend classifier. Missing refs and other Git errors remain errors; an absent common ancestor is not one.

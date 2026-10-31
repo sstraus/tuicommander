@@ -705,6 +705,28 @@ describe("Sidebar", () => {
 		});
 		const withBranch = (b: Record<string, unknown>) => setRepos({ "/repo1": makeRepo({ workspaces: { feat: b } }) });
 
+		// Catches: unrelated branches masquerade as merged/stale or generic unmerged.
+		it.each(["compact", "auto"] as const)("shows unrelated history in %s rows", (mode) => {
+			densityMode(mode);
+			withBranch(
+				richBranch({
+					isMerged: true,
+					lastCommitTs: Date.now() - 90 * 86400_000,
+					lifecycleStatus: { dirtyFiles: 0, commitStatus: "unrelated_history", removalSafety: "safe" },
+				}),
+			);
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			const row = container.querySelector(".branchItem") as HTMLElement;
+			expect(row.textContent).toContain("Unrelated history");
+			expect(row.textContent).not.toContain("Merged");
+			expect(row.textContent).not.toContain("Stale");
+			const badge = Array.from(row.querySelectorAll("[data-tooltip]")).find(
+				(node) => node.textContent === "Unrelated history",
+			);
+			expect(badge?.getAttribute("data-tooltip")).toContain("no common ancestor");
+			expect(badge?.getAttribute("data-tooltip")).toContain("archive");
+		});
+
 		// Catches: the rich row printing nothing beyond the name (the bare list Boss rejected).
 		it("prints the PR title, commit age, diff stats and dirty count under the branch name", () => {
 			mockGetPrStatus.mockReturnValue({ state: "OPEN", number: 77, title: "Add the thing", url: "u" });
