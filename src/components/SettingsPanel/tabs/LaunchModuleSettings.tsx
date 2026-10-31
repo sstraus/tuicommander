@@ -54,7 +54,7 @@ export const LaunchModuleSettings: Component<{ agentType?: AgentType }> = (props
 			<ModuleToggle
 				id="waiting"
 				label="Waiting and long work"
-				help="Runs long tasks in the background and waits for TUIC to wake the agent instead of polling. Terminal commands submit text and Enter together."
+				help="Runs long tasks in the background and continues independent work. Yields only for a needed result or your answer, using the launched mechanism’s completion wake instead of polling. Reports what still runs without claiming completion. Terminal commands submit text and Enter together."
 			/>
 			<ModuleToggle
 				id="git_worktree"
