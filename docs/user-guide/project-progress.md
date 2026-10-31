@@ -80,7 +80,9 @@ entry remains available when there are no unread updates; its badge counts
 entries that arrived since you last opened the dialog.
 An outcome toast's **Go to repo** action also opens the reporting terminal
 in its workspace when that terminal is still open. If it has closed, the
-action opens the repository instead.
+action selects a surviving terminal in the repository's active workspace, preferring
+the last active terminal. If none remains, it shows the empty terminal area.
+It never keeps another repository's Session Chat or composer active.
 Clicking the toast body closes it without changing the current repository or
 terminal. Use **Go to repo** when you want to navigate.
 
