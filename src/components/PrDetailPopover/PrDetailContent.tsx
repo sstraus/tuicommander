@@ -1,5 +1,7 @@
 import { type Component, createEffect, createMemo, createResource, createSignal, For, type JSX, Show } from "solid-js";
 import { t } from "../../i18n";
+import { workItemProviderRegistry } from "../../plugins/workItemProviderRegistry";
+import { openTaskConversation } from "../../services/taskNavigation";
 import { appLogger } from "../../stores/appLogger";
 import { githubStore } from "../../stores/github";
 import { flattenReviewFindings, postableFindings, prReviewStore, type SelectableFinding } from "../../stores/prReview";
@@ -112,6 +114,7 @@ export interface PrDetailContentProps {
 	/** Push the (rebased/resolved) conflict worktree branch to origin. Shown when a
 	 *  local worktree exists for this branch. Gated behind a confirm() by the caller. */
 	onPushBranch?: (worktreePath: string) => void;
+	onConversationOpen?: () => void;
 	/** Extra content rendered after CI checks (e.g. action buttons) */
 	children?: JSX.Element;
 }
@@ -119,6 +122,12 @@ export interface PrDetailContentProps {
 /** Shared PR detail body: status pills, labels, merge direction, timestamps, meta, CI, checks, and Open on GitHub link.
  *  Used by both PrDetailPopover (floating) and the remote-only PR accordion (inline). */
 export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
+	const openConversation = () => {
+		const url = prData()?.url;
+		if (!url) return;
+		void openTaskConversation(url);
+		props.onConversationOpen?.();
+	};
 	const prData = () => githubStore.getBranchPrData(props.repoPath, props.branch);
 	const checkSummary = () => githubStore.getCheckSummary(props.repoPath, props.branch);
 	const checkDetails = () => githubStore.getCheckDetails(props.repoPath, props.branch);
@@ -313,7 +322,7 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
 
 					<Show when={!isTerminalState() && (pr().unresolved_threads > 0 || pr().unresolved_threads_truncated)}>
 						<div class={s.statusRow} data-testid="unresolved-threads">
-							<span class={s.reviewStateBadge}>
+							<Button disabled={!pr().url} onClick={openConversation} title="Open comments and review threads">
 								{threadSplit()
 									? t("prDetail.unresolvedSplit", "{human} human, {bot} bot, {ego} ego unresolved threads", {
 											human: String(threadSplit()?.human),
@@ -323,7 +332,15 @@ export const PrDetailContent: Component<PrDetailContentProps> = (props) => {
 									: t("prDetail.unresolved", "{count} unresolved threads", {
 											count: `${pr().unresolved_threads}${pr().unresolved_threads_truncated ? "+" : ""}`,
 										})}
-							</span>
+							</Button>
+						</div>
+					</Show>
+
+					<Show when={pr().url}>
+						<div class={s.actions}>
+							<Button onClick={openConversation}>
+								{workItemProviderRegistry.list("github").length ? "Comments and review threads" : "Comments on GitHub"}
+							</Button>
 						</div>
 					</Show>
 

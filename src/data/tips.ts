@@ -10,6 +10,12 @@ const mod = isMacOS() ? "Cmd" : "Ctrl";
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Connected PR conversations",
+		description:
+			"Open comments from a PR popover, its unresolved-thread count or a PR notification. Tasks shows the conversation and a return action for an existing branch; without a provider, GitHub opens instead.",
+		shortcut: null,
+	},
+	{
 		feature: "Progress popup mute",
 		description:
 			"Select Mute on a completion popup to quiet this app session. Reports remain in Terminal Progress, where Unmute restores future popups. Blocked reports still appear.",

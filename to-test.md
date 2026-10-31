@@ -3174,6 +3174,7 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] WF04 routing correction: after a manual Rust restart, confirm that unrelated profile and idle-close changes do not pause a pinned workflow. Contract-3 MCP launch must refuse caller-profile substitution; use the daemon run controls. Automated rb regressions cover both paths.
 - [ ] Terminal Chat queued prompt feedback: while Claude or Codex works, send two follow-ups from Chat; confirm muted Pending bubbles stay in send order and each disappears when its normal native transcript message arrives, without duplication. Repeat after a failed send and on mobile. Automated shared-host contracts and a worktree Vite appearance screenshot cover presentation; native busy-agent delivery remains owned by the CLI.
 
+- [ ] PR conversation links (#2559-dc9e): with GitHub Work loaded, click a sidebar PR’s Comments action, unresolved-thread count and PR notification. Confirm the exact PR/account opens in Tasks with Comments and review threads; return through Open branch. Unload the provider and confirm the GitHub fallback.
 
 ## WF03 branch-local decisions (2510-14e7)
 

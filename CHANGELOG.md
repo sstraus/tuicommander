@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Connect PR popovers, unresolved-thread counts and PR notifications to the exact Tasks conversation, with a GitHub fallback and a return action to an existing branch/worktree (#2559-dc9e).
+
 ## [2.0.0] - 2026-10-31
 
 - Restore Compose typing after clicking the session Chat transcript, without changing selection, copy or shortcuts (#2554-0ee4).

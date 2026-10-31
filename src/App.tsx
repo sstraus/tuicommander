@@ -1,4 +1,4 @@
-import { type Component, createSignal, lazy, Show, Suspense } from "solid-js";
+import { type Component, createSignal, lazy, onCleanup, Show, Suspense } from "solid-js";
 import { ApplicationOverlays } from "./components/ApplicationOverlays/ApplicationOverlays";
 import { BranchSwitcher } from "./components/BranchSwitcher/BranchSwitcher";
 import { CommandPalette } from "./components/CommandPalette";
@@ -18,6 +18,7 @@ import { TerminalArea } from "./components/TerminalArea";
 import { Toolbar } from "./components/Toolbar";
 import { useOpenMarkdownPublication } from "./hooks/useOpenMarkdownPublication";
 import { executeCleanup } from "./hooks/usePostMergeCleanup";
+import { registerTaskWorkspaceOpener } from "./services/taskNavigation";
 import { editorTabsStore } from "./stores/editorTabs";
 import { getAppTheme } from "./themes";
 
@@ -687,6 +688,12 @@ const App: Component = () => {
 			},
 			signal,
 		);
+
+	onCleanup(
+		registerTaskWorkspaceOpener((repoPath, workspaceId) => {
+			void gitOps.handleBranchSelect(repoPath, workspaceId);
+		}),
+	);
 
 	useShortcutRegistration(shortcutHandlers);
 
