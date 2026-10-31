@@ -433,4 +433,5 @@ the existing inactive message and manual setup action remain available.
 Settings → AI → AI Chat → Chat behavior has a multiline **Master prompt** field.
 It adds instructions to new conversations without replacing TUIC launch rules. Empty
 means no extra instructions. The limit is 8192 UTF-8 bytes. Existing conversations
-keep their saved instructions, also after reopening. Do not use it to store secrets.
+keep their saved instructions, also after reopening. Smart Prompts, PR reviews,
+changelog generation and story drafting do not use this field. Do not use it to store secrets.
