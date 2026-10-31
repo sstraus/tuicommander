@@ -11,7 +11,7 @@ Design Mode collects elements and comments in a browser sidebar before sending f
 5. Add comments, choose the receiving agent, and click **Send to agent**. The terminal that launched Design Mode is selected initially. Other live local agents in the same Git repository, including linked worktrees, are available. If your selection exits, the sidebar asks you to choose another; it never silently switches recipients.
 6. Feedback is delivered immediately when the agent is idle, or queued for its next idle window. The sidebar reports which happened. Failed sends retain your cards; retries to the same recipient reuse the exact batch and delivery key. Choosing a different recipient rebuilds the batch from retained commented picks with a new delivery key. Only commented picks are sent.
 
-The D badge and Stop action remain on the launching terminal. Browsers open on the backend host, including when TUIC is controlled from a browser/PWA client. No debugging port or automation banner is requested by the v2 launcher. Close an existing Design Mode browser window before starting again: Chromium ignores new extension flags on a running profile, and a cold launch also repairs an extension loaded from another repository’s folder. TUIC reports this condition and does not stop browser processes.
+The D badge and Stop action remain on the launching terminal. Browsers open on the backend host, including when TUIC is controlled from a browser/PWA client. No debugging port or automation banner is requested by the v2 launcher. Close an existing Design Mode browser window before starting again: Chromium ignores new extension flags on a running profile, and a cold launch also repairs an extension loaded from another repository’s folder. TUIC reports this condition and does not stop browser processes. On Unix, a reachable profile socket or a local owner with the exact `--user-data-dir` identifies a running profile. A stale lock whose PID was reused by an unrelated process does not block startup. TUIC does not delete lock files; the browser handles stale-lock cleanup. A foreign-host lock can be reclaimed on macOS; on Linux, close the browser on that host or unlock the shared profile first.
 
 Branded Google Chrome 137+ ignores automatic extension loading. TUIC reports an error and asks you to choose Edge or Chromium; CDP pipe installation is not implemented. Branded Chrome is unverified on the development machine because it is not installed. See the [Chrome extension team announcement](https://groups.google.com/a/chromium.org/g/chromium-extensions/c/1-g8EFx2BBY/m/S0ET5wPjCAAJ).
 
@@ -66,6 +66,8 @@ explicitly permit agent JavaScript. Default localhost inspection access alone do
 not permit eval. Grants are Chrome extension permissions and can be revoked in
 Chrome's extension settings. Eval runs in the page MAIN world without a debugger port.
 The sidebar retains the last fifty agent actions with session, action, time and outcome.
+The server list, action history and permission section share the panel content inset.
+Permission and error action buttons wrap with a gap, including in narrow sidebars.
 
 The grouped `ui` tool always lists `design_*` actions. Discovery is not authorization:
 dispatch requires the armed terminal session and repository. Lifecycle changes

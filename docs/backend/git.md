@@ -619,4 +619,4 @@ The integration classifier checks for a common ancestor before computing a
 branch delta. A `git merge-base` exit status of 1 means that the two histories
 are unrelated. It supplies no content-integration proof, but does not fail the
 repository's merged-branch inventory. Other Git failures still propagate.
-An unrelated local branch remains visible and unmerged; it is not deleted.
+If no default candidate shares an ancestor, branch queries and workspace lifecycle/monitoring return `commit_status: "unrelated_history"`, even without a reflog. This is a successful classification, not a refresh error, and cached PR metadata cannot turn it into merged work. Compact and rich sidebar rows show **Unrelated history**. Worktree removal must keep its branch; standalone branch deletion requires an existing exact-tip archive. A candidate with shared ancestry still permits normal integration proofs.

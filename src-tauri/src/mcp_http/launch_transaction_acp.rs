@@ -43,6 +43,7 @@ pub(super) async fn create(
                 &EgoAcpConfig {
                     executable: launch.executable.clone(),
                     profile: launch.profile.clone(),
+                    master_prompt: String::new(),
                 },
                 AcpConnectRequest {
                     root: root.clone(),

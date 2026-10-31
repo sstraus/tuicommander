@@ -2948,6 +2948,8 @@ session and request it is about.
 
 ## ego Command Line (`mcp_http/ego_routes.rs`)
 
+`EgoProviders` from `/ego/providers` and `/ego/providers/model` can include an optional `diagnostic` string. Health failures do not turn successful config/model reads into HTTP errors; valid doctor exit-1 JSON is still consumed. Without usable credential evidence, provider credentials are `unknown`.
+
 The browser half of the dedicated ego configuration commands — what the Settings →
 AI Chat page reads and writes. Same field names, same response body, same error
 body: an `EgoCliError` serialized whole (`code`, `message`, `command`, `stdout`,

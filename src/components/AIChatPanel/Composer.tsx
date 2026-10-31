@@ -607,19 +607,13 @@ export const Composer: Component<{
 						/>
 						<Show when={!props.mobileAttachments}>
 							<Show when={props.chat.busy()}>
-								<Button
-									type="button"
-									variant="danger"
-									geometry="stretch"
-									title="Stop"
-									onClick={() => void props.chat.cancel()}
-								>
+								<Button type="button" variant="danger" title="Stop" onClick={() => void props.chat.cancel()}>
 									Stop
 								</Button>
 							</Show>
 							<Button
 								variant="primary"
-								geometry="stretch"
+								shape="icon"
 								aria-label={props.chat.busy() ? "Queue" : "Send"}
 								title={props.chat.busy() ? "Queue" : "Send"}
 								disabled={!hasContent()}

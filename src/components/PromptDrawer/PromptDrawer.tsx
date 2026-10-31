@@ -1,24 +1,20 @@
-import { type Component, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
+import { type Component, createEffect, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
+import { AGENTS } from "../../agents";
 import { SMART_PROMPTS_BUILTIN, VARIABLE_DESCRIPTIONS } from "../../data/smartPromptsBuiltIn";
+import { useAgentDetection } from "../../hooks/useAgentDetection";
 import { useConfirmDialog } from "../../hooks/useConfirmDialog";
 import { usePty } from "../../hooks/usePty";
 import { shouldSubmitInjectPrompt } from "../../hooks/useSmartPrompts";
 import { t } from "../../i18n";
 import { appLogger } from "../../stores/appLogger";
-import {
-	type PromptCategory,
-	promptLibraryStore,
-	type SavedPrompt,
-	type SmartPlacement,
-} from "../../stores/promptLibrary";
+import { type PromptCategory, promptLibraryStore, type SavedPrompt } from "../../stores/promptLibrary";
 import { terminalsStore } from "../../stores/terminals";
 import { cx } from "../../utils";
 import { ConfirmDialog } from "../ConfirmDialog";
-import { KeyComboCapture } from "../shared/KeyComboCapture";
+import { SmartPromptEditor } from "../shared/SmartPromptEditor";
 import { Button } from "../ui/Button";
 import { Input } from "../ui/Input";
-import { Select } from "../ui/Select";
-import { Textarea } from "../ui/Textarea";
 import s from "./PromptDrawer.module.css";
 
 export interface PromptDrawerProps {
@@ -32,16 +28,6 @@ const CATEGORY_LABELS: Record<PromptCategory | "all", string> = {
 	recent: "Recent",
 	favorite: "Favorites",
 };
-
-const ALL_PLACEMENTS: SmartPlacement[] = [
-	"toolbar",
-	"git-changes",
-	"git-branches",
-	"pr-popover",
-	"issue-popover",
-	"terminal-context",
-	"command-palette",
-];
 
 /** Built-in defaults indexed by ID for quick lookup */
 const BUILTIN_BY_ID = new Map(SMART_PROMPTS_BUILTIN.map((p) => [p.id, p]));
@@ -481,6 +467,9 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 										autoExecute: promptData.autoExecute,
 										executionMode: promptData.executionMode,
 										outputTarget: promptData.outputTarget,
+										injectTarget: promptData.injectTarget,
+										preferredAgent: promptData.preferredAgent,
+										systemPrompt: promptData.systemPrompt,
 										enabled: true,
 									});
 								}
@@ -509,98 +498,7 @@ export const PromptDrawer: Component<PromptDrawerProps> = (props) => {
 	);
 };
 
-/** Context variables available for smart prompt templates */
-interface VarDef {
-	name: string;
-	description: string;
-	group: string;
-}
-
-const CONTEXT_VARIABLES: VarDef[] = [
-	// Git
-	{ name: "branch", description: "Current branch name", group: "Git" },
-	{ name: "base_branch", description: "Base branch (main/master/develop)", group: "Git" },
-	{ name: "diff", description: "Full working tree diff", group: "Git" },
-	{ name: "staged_diff", description: "Staged changes diff", group: "Git" },
-	{ name: "changed_files", description: "git status --short", group: "Git" },
-	{ name: "dirty_files_count", description: "Number of modified files", group: "Git" },
-	{ name: "commit_log", description: "Last 20 commits (oneline)", group: "Git" },
-	{ name: "last_commit", description: "Last commit hash + subject", group: "Git" },
-	{ name: "conflict_files", description: "Files with merge conflicts", group: "Git" },
-	{ name: "stash_list", description: "Stash entries", group: "Git" },
-	{ name: "branch_status", description: "Ahead/behind remote tracking", group: "Git" },
-	{ name: "remote_url", description: "Remote origin URL", group: "Git" },
-	{ name: "current_user", description: "Git user.name", group: "Git" },
-	{ name: "repo_name", description: "Repository directory name", group: "Git" },
-	{ name: "repo_path", description: "Full repository path", group: "Git" },
-	{ name: "repo_owner", description: "GitHub owner from remote URL", group: "Git" },
-	{ name: "repo_slug", description: "Repository name from remote URL", group: "Git" },
-	// GitHub
-	{ name: "pr_number", description: "PR number for current branch", group: "GitHub" },
-	{ name: "pr_title", description: "PR title", group: "GitHub" },
-	{ name: "pr_url", description: "PR URL", group: "GitHub" },
-	{ name: "pr_state", description: "open / closed / merged", group: "GitHub" },
-	{ name: "pr_author", description: "PR author username", group: "GitHub" },
-	{ name: "pr_labels", description: "PR labels (comma-separated)", group: "GitHub" },
-	{ name: "pr_additions", description: "Lines added in PR", group: "GitHub" },
-	{ name: "pr_deletions", description: "Lines deleted in PR", group: "GitHub" },
-	{ name: "merge_status", description: "Mergeable status", group: "GitHub" },
-	{ name: "review_decision", description: "Review decision", group: "GitHub" },
-	{ name: "pr_checks", description: "CI check summary", group: "GitHub" },
-	{ name: "pr_open_threads", description: "Open review threads (untrusted list)", group: "GitHub" },
-	// Terminal
-	{ name: "agent_type", description: "Detected agent (claude, codex...)", group: "Terminal" },
-	{ name: "cwd", description: "Terminal working directory", group: "Terminal" },
-];
-
-/** Variable insertion dropdown */
-const VariableDropdown: Component<{
-	onInsert: (varName: string) => void;
-}> = (props) => {
-	const [open, setOpen] = createSignal(false);
-
-	const groups = () => Map.groupBy(CONTEXT_VARIABLES, (v) => v.group);
-
-	return (
-		<div class={s.varDropdownWrap}>
-			<Button onClick={() => setOpen(!open())} type="button">
-				Insert variable...
-				<span class={s.varChevron} classList={{ [s.varChevronOpen]: open() }}>
-					&#9660;
-				</span>
-			</Button>
-			<Show when={open()}>
-				<div class={s.varDropdownList}>
-					<For each={Array.from(groups().entries())}>
-						{([group, vars]) => (
-							<>
-								<div class={s.varGroupLabel}>{group}</div>
-								<For each={vars}>
-									{(v) => (
-										<button
-											data-control-layout="row"
-											class={s.varItem}
-											type="button"
-											onClick={() => {
-												props.onInsert(v.name);
-												setOpen(false);
-											}}
-										>
-											<span class={s.varItemName}>{`{${v.name}}`}</span>
-											<span class={s.varItemDesc}>{v.description}</span>
-										</button>
-									)}
-								</For>
-							</>
-						)}
-					</For>
-				</div>
-			</Show>
-		</div>
-	);
-};
-
-/** Full-featured prompt editor dialog */
+/** Explicit-save drawer adapter. The shared fields never write the store directly. */
 interface PromptEditorProps {
 	prompt: SavedPrompt | null;
 	onSave: (data: Partial<SavedPrompt>) => void;
@@ -608,251 +506,97 @@ interface PromptEditorProps {
 }
 
 const PromptEditor: Component<PromptEditorProps> = (props) => {
-	const isBuiltIn = () => !!props.prompt?.builtIn;
-	const builtInDefault = () => (props.prompt ? BUILTIN_BY_ID.get(props.prompt.id) : undefined);
-	let textareaRef: HTMLTextAreaElement | undefined;
-
-	const [name, setName] = createSignal(props.prompt?.name || "");
-	const [description, setDescription] = createSignal(props.prompt?.description || "");
-	const [content, setContent] = createSignal(props.prompt?.content || "");
-	const [shortcut, setShortcut] = createSignal(props.prompt?.shortcut || "");
-	const [placement, setPlacement] = createSignal<SmartPlacement[]>(props.prompt?.placement ?? []);
-	const [autoExecute, setAutoExecute] = createSignal(props.prompt?.autoExecute ?? false);
-	const [executionMode, setExecutionMode] = createSignal<"inject" | "headless" | "api" | "shell">(
-		props.prompt?.executionMode ?? "inject",
+	const [draft, setDraft] = createStore<SavedPrompt>(
+		props.prompt
+			? JSON.parse(JSON.stringify(props.prompt))
+			: {
+					id: "",
+					name: "",
+					content: "",
+					category: "custom",
+					isFavorite: false,
+					createdAt: 0,
+					updatedAt: 0,
+					executionMode: "inject",
+					injectTarget: "compose",
+					autoExecute: false,
+				},
 	);
-	const [outputTarget, setOutputTarget] = createSignal<SavedPrompt["outputTarget"]>(props.prompt?.outputTarget);
-	const [systemPrompt, setSystemPrompt] = createSignal(props.prompt?.systemPrompt ?? "");
+	const initialSnapshot = JSON.stringify(draft);
+	const formDirty = () => JSON.stringify(draft) !== initialSnapshot;
 	const [validationError, setValidationError] = createSignal<string | null>(null);
-
-	const formSnapshot = () =>
-		JSON.stringify([
-			name(),
-			description(),
-			content(),
-			shortcut(),
-			placement(),
-			autoExecute(),
-			executionMode(),
-			outputTarget(),
-			systemPrompt(),
-		]);
-	const initialSnapshot = formSnapshot();
-	const formDirty = () => formSnapshot() !== initialSnapshot;
-
-	const isOverridden = () => {
-		const def = builtInDefault();
-		return def ? content() !== def.content : false;
-	};
-
-	const handleReset = () => {
-		const def = builtInDefault();
-		if (def) {
-			setContent(def.content);
-			setName(def.name);
-			setDescription(def.description ?? "");
-			setPlacement(def.placement ?? []);
-			setAutoExecute(def.autoExecute ?? false);
-			setExecutionMode(def.executionMode ?? "inject");
-			setOutputTarget(def.outputTarget);
-			setSystemPrompt(def.systemPrompt ?? "");
-		}
-	};
-
-	const handlePlacementToggle = (p: SmartPlacement) => {
-		setPlacement((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
-	};
-
-	const handleInsertVariable = (varName: string) => {
-		const el = textareaRef;
-		if (!el) return;
-		const insertion = `{${varName}}`;
-		const start = el.selectionStart;
-		const end = el.selectionEnd;
-		const before = el.value.slice(0, start);
-		const after = el.value.slice(end);
-		setContent(before + insertion + after);
-		requestAnimationFrame(() => {
-			el.focus();
-			const pos = start + insertion.length;
-			el.setSelectionRange(pos, pos);
-		});
-	};
-
+	const detection = useAgentDetection();
+	onMount(() => {
+		void detection.detectAll();
+	});
+	const headlessAgents = () =>
+		detection
+			.getAvailable()
+			.filter((agent) => agent.type !== "git" && AGENTS[agent.type]?.defaultHeadlessTemplate)
+			.map((agent) => agent.type);
 	const handleSave = () => {
-		if (!name().trim() || !content().trim()) {
+		if (!draft.name.trim() || !draft.content.trim()) {
 			setValidationError("Name and content are required");
 			return;
 		}
-		setValidationError(null);
-
 		props.onSave({
-			name: name().trim(),
-			description: description().trim() || undefined,
-			content: content(),
-			shortcut: shortcut().trim() || undefined,
-			placement: placement().length > 0 ? placement() : undefined,
-			autoExecute: autoExecute(),
-			executionMode: executionMode(),
-			outputTarget: executionMode() !== "inject" ? outputTarget() : undefined,
-			systemPrompt: executionMode() === "api" ? systemPrompt().trim() || undefined : undefined,
+			name: draft.name.trim(),
+			description: draft.description?.trim() || undefined,
+			content: draft.content,
+			shortcut: draft.shortcut?.trim() || undefined,
+			placement: draft.placement,
+			autoExecute: draft.autoExecute,
+			executionMode: draft.executionMode,
+			injectTarget: draft.injectTarget,
+			preferredAgent: draft.preferredAgent,
+			outputTarget: draft.outputTarget,
+			systemPrompt: draft.systemPrompt?.trim() || undefined,
 		});
 	};
-
+	const handleReset = () => {
+		const def = props.prompt && BUILTIN_BY_ID.get(props.prompt.id);
+		if (def)
+			setDraft(
+				reconcile({
+					...draft,
+					name: def.name,
+					description: def.description,
+					content: def.content,
+					placement: def.placement,
+					autoExecute: def.autoExecute,
+					executionMode: def.executionMode ?? "inject",
+					outputTarget: def.outputTarget,
+					injectTarget: def.injectTarget,
+					preferredAgent: def.preferredAgent,
+					systemPrompt: def.systemPrompt,
+				}),
+			);
+	};
 	return (
 		<div class={s.editorOverlay} onClick={props.onCancel}>
-			<div class={s.editor} onClick={(e) => e.stopPropagation()}>
-				<h4>
-					{props.prompt ? "Edit Prompt" : "New Prompt"}
-					<Show when={isBuiltIn()}>
-						<span class={s.badge} style={{ "margin-left": "8px" }}>
-							built-in
-						</span>
-					</Show>
-				</h4>
-
+			<div
+				class={s.editor}
+				role="dialog"
+				aria-label={props.prompt ? "Edit Prompt" : "New Prompt"}
+				aria-modal="true"
+				onClick={(event) => event.stopPropagation()}
+			>
 				<Show when={validationError()}>
-					<p class={s.validationError}>{validationError()}</p>
+					<p class={s.validationError} role="alert">
+						{validationError()}
+					</p>
 				</Show>
-
-				{/* Name */}
-				<div class={s.editorField}>
-					<label>Name *</label>
-					<Input
-						type="text"
-						value={name()}
-						disabled={isBuiltIn()}
-						onInput={(e) => {
-							setName(e.currentTarget.value);
-							setValidationError(null);
-						}}
-						placeholder="My Prompt"
-						autofocus
-					/>
-				</div>
-
-				{/* Description */}
-				<div class={s.editorField}>
-					<label>Description</label>
-					<Input
-						type="text"
-						value={description()}
-						onInput={(e) => setDescription(e.currentTarget.value)}
-						placeholder="What does this prompt do?"
-					/>
-				</div>
-
-				{/* Content + Variable dropdown */}
-				<div class={s.editorField}>
-					<label>Content *</label>
-					<Textarea
-						ref={textareaRef}
-						value={content()}
-						onInput={(e) => setContent(e.currentTarget.value)}
-						placeholder="Enter your prompt text here..."
-						rows={6}
-					/>
-					<VariableDropdown onInsert={handleInsertVariable} />
-				</div>
-
-				{/* Placement */}
-				<div class={s.editorField}>
-					<label>Placement</label>
-					<div class={s.placementGrid}>
-						<For each={ALL_PLACEMENTS}>
-							{(p) => (
-								<label class={s.placementCheck}>
-									<input type="checkbox" checked={placement().includes(p)} onChange={() => handlePlacementToggle(p)} />
-									<span>{p}</span>
-								</label>
-							)}
-						</For>
-					</div>
-				</div>
-
-				{/* Execution Mode + Auto-execute */}
-				<div class={s.editorFieldRow}>
-					<div class={s.editorField}>
-						<label>Execution Mode</label>
-						<Select
-							value={executionMode()}
-							onChange={(e) => {
-								const mode = e.currentTarget.value as "inject" | "headless" | "api" | "shell";
-								setExecutionMode(mode);
-								if (mode === "inject") {
-									setOutputTarget(undefined);
-									setSystemPrompt("");
-								}
-								if (mode === "shell") {
-									setSystemPrompt("");
-								}
-							}}
-						>
-							<option value="inject">Inject into terminal</option>
-							<option value="shell">Shell script (direct run)</option>
-							<option value="headless">Headless (one-shot CLI)</option>
-							<option value="api">API (via ego)</option>
-						</Select>
-					</div>
-
-					<Show when={executionMode() === "inject"}>
-						<div class={s.editorField}>
-							<label>Auto-execute</label>
-							<label class={s.toggleRow}>
-								<input type="checkbox" checked={autoExecute()} onChange={() => setAutoExecute(!autoExecute())} />
-								<span>Send immediately</span>
-							</label>
-						</div>
-					</Show>
-				</div>
-
-				{/* Output Target (headless and api modes) */}
-				<Show when={executionMode() !== "inject"}>
-					<div class={s.editorField}>
-						<label>Output Target</label>
-						<Select
-							value={outputTarget() ?? ""}
-							onChange={(e) => {
-								const val = e.currentTarget.value || undefined;
-								setOutputTarget(val as SavedPrompt["outputTarget"]);
-							}}
-						>
-							<option value="">None (return in result)</option>
-							<option value="commit-message">Commit message</option>
-							<option value="clipboard">Clipboard</option>
-							<option value="toast">Notification</option>
-							<option value="panel">Panel</option>
-						</Select>
-					</div>
-				</Show>
-
-				{/* System Prompt (api mode only) */}
-				<Show when={executionMode() === "api"}>
-					<div class={s.editorField}>
-						<label>System Prompt</label>
-						<Textarea
-							rows={3}
-							value={systemPrompt()}
-							placeholder="Instructions for the LLM (e.g. 'You are a Git expert.')"
-							onInput={(e) => setSystemPrompt(e.currentTarget.value)}
-						/>
-					</div>
-				</Show>
-
-				{/* Shortcut */}
-				<div class={s.editorField}>
-					<label>Keyboard Shortcut</label>
-					<KeyComboCapture value={shortcut()} onChange={setShortcut} placeholder="Click to set shortcut" />
-				</div>
-
-				{/* Actions */}
+				<SmartPromptEditor
+					prompt={draft}
+					title={props.prompt ? "Edit Prompt" : "New Prompt"}
+					headlessAgents={headlessAgents()}
+					onChange={(update) => {
+						setDraft(update);
+						setValidationError(null);
+					}}
+					onReset={handleReset}
+				/>
 				<div class={s.editorActions}>
-					<Show when={isBuiltIn() && isOverridden()}>
-						<Button variant="ghost" class={s.resetBtn} onClick={handleReset}>
-							Reset to Default
-						</Button>
-					</Show>
-					<div style={{ flex: "1" }} />
 					<Button variant="primary" data-ready={formDirty() ? "true" : undefined} onClick={handleSave}>
 						Save
 					</Button>

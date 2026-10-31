@@ -1,5 +1,6 @@
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { createEffect, onCleanup } from "solid-js";
-import { listen } from "../invoke";
+import { guardTauriUnlisten } from "../invoke";
 import { appLogger } from "../stores/appLogger";
 import { dictationStore } from "../stores/dictation";
 import { isTauri } from "../transport";
@@ -31,14 +32,19 @@ export function useDictationHotkey(options: DictationHotkeyOptions): void {
 			let unlistenDown: (() => void) | undefined;
 			let unlistenUp: (() => void) | undefined;
 			if (isTauri()) {
-				listen("fn-key-down", () => handler.handleEvent({ eventType: "KeyPress", key: "Fn" }))
+				const currentWindow = getCurrentWebviewWindow();
+				currentWindow
+					.listen("fn-key-down", () => handler.handleEvent({ eventType: "KeyPress", key: "Fn" }))
 					.then((dispose) => {
-						cancelled ? dispose() : (unlistenDown = dispose);
+						const guarded = guardTauriUnlisten(dispose);
+						cancelled ? guarded() : (unlistenDown = guarded);
 					})
 					.catch((error) => appLogger.error("dictation", "Failed to listen for fn-key-down", error));
-				listen("fn-key-up", () => handler.handleEvent({ eventType: "KeyRelease", key: "Fn" }))
+				currentWindow
+					.listen("fn-key-up", () => handler.handleEvent({ eventType: "KeyRelease", key: "Fn" }))
 					.then((dispose) => {
-						cancelled ? dispose() : (unlistenUp = dispose);
+						const guarded = guardTauriUnlisten(dispose);
+						cancelled ? guarded() : (unlistenUp = guarded);
 					})
 					.catch((error) => appLogger.error("dictation", "Failed to listen for fn-key-up", error));
 			}

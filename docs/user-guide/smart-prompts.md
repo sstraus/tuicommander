@@ -148,3 +148,7 @@ Without a template, headless prompts automatically fall back to inject mode. A p
 ### API Mode
 
 Calls LLM providers directly via HTTP API without terminal or agent CLI. Supports an optional system prompt per prompt. Output routed via the same output target options. Requires LLM API configuration in Settings > Agents.
+
+### Execution failures
+
+A failed Smart Prompt reports the backend error message. Structured errors also show their code, for example `agent_error: Internal error: ...`. This does not retry the failed agent operation.

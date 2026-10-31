@@ -2,6 +2,7 @@ import { type Component, createEffect, createMemo, createSignal, For, type JSX, 
 import { shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
 import { githubStore } from "../../stores/github";
+import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import type { RepositoryState, WorkspaceState } from "../../stores/repositories";
 import { repositoriesStore } from "../../stores/repositories";
 import { type TerminalState, terminalsStore } from "../../stores/terminals";
@@ -254,6 +255,9 @@ function lifecycleTooltip(status: LifecycleStatus, part?: "dirty" | "commit", is
 	const lost = status.dirtyFiles ?? 0;
 	if (lost > 0 && part !== "commit") {
 		return `${lost} uncommitted file${lost === 1 ? "" : "s"} (staged, unstaged or untracked) would be discarded by removing this workspace.`;
+	}
+	if (status.commitStatus === "unrelated_history") {
+		return "Branch has unrelated history: no common ancestor with the default branch. Keep the branch when removing this workspace; deleting it requires an archive at its current tip.";
 	}
 	const commitState =
 		status.commitStatus === "merged"
@@ -534,6 +538,16 @@ const BranchTabList: Component<{ terminalIds: string[]; repoPath: string }> = (p
 					},
 				]
 			: []),
+		{ label: "", separator: true, action: () => {} },
+		{
+			label: globalWorkspaceStore.isPromoted(menuTerminalId() ?? "")
+				? t("tabBar.removeFromWorkspace", "Remove from Global Workspace")
+				: t("tabBar.promoteToWorkspace", "Add to Global Workspace"),
+			action: () => {
+				const id = menuTerminalId();
+				if (id) globalWorkspaceStore.togglePromote(id);
+			},
+		},
 	];
 	const density = useSidebarDensity();
 	const rich = () => density() === "rich";
@@ -1269,6 +1283,11 @@ export const BranchItem: Component<{
 							const lostFiles = () => status().dirtyFiles ?? 0;
 							const label = () => {
 								if (status().commitStatus === "unknown") return unknownLifecycleLabel(status());
+								if (status().commitStatus === "unrelated_history") {
+									const otherChip = props.branch.additions + props.branch.deletions > 0 || !!pr();
+									const verdict = t("sidebar.unrelatedHistory", "Unrelated history");
+									return lostFiles() > 0 && !otherChip ? `${lostFiles()} dirty · ${verdict}` : verdict;
+								}
 								// Uncommitted files outrank the commit verdict, which reads commits
 								// only: "Merged" over them claims nothing would be lost while removal
 								// discards every one. The count earns a chip only when the stats chip
@@ -1448,6 +1467,7 @@ export const BranchItem: Component<{
 									{(state) => {
 										const risky = () =>
 											state() === "unknown" ||
+											state() === "unrelated_history" ||
 											(state() === "merged" && !!lifecycle() && lifecycle()?.removalSafety !== "safe");
 										return (
 											<span
@@ -1463,7 +1483,9 @@ export const BranchItem: Component<{
 													? unknownLifecycleLabel(lifecycle())
 													: state() === "merged"
 														? t("sidebar.merged", "Merged")
-														: t("sidebar.stale", "Stale")}
+														: state() === "unrelated_history"
+															? t("sidebar.unrelatedHistory", "Unrelated history")
+															: t("sidebar.stale", "Stale")}
 											</span>
 										);
 									}}

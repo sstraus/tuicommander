@@ -3,6 +3,7 @@ import { useSmartPrompts } from "../../hooks/useSmartPrompts";
 import { appLogger } from "../../stores/appLogger";
 import { promptLibraryStore, type SavedPrompt, type SmartPlacement } from "../../stores/promptLibrary";
 import { cx } from "../../utils";
+import { promptError } from "../../utils/promptError";
 import { Button } from "../ui/Button";
 import { ButtonGroup } from "../ui/ButtonGroup";
 import s from "./SmartButtonStrip.module.css";
@@ -105,7 +106,7 @@ export const SmartButtonStrip: Component<SmartButtonStripProps> = (props) => {
 			const result = await executeSmartPrompt(prompt, extraVars);
 			if (!result.ok) props.onError?.(friendlyError(result, prompt.name));
 		} catch (err) {
-			props.onError?.(String(err));
+			props.onError?.(promptError(err));
 			appLogger.error("prompts", `SmartButtonStrip "${prompt.name}" failed`, err);
 		} finally {
 			setBusy(false);

@@ -95,6 +95,7 @@ interface RustAppConfig {
 	ego_executable?: string;
 	/** Optional ego user-config profile for AI Chat ACP launches. */
 	ego_profile?: string;
+	ai_chat_master_prompt?: string;
 	ai_chat_workspace?: string;
 }
 
@@ -296,6 +297,7 @@ interface SettingsStoreState {
 	 */
 	egoExecutable: string;
 	egoProfile: string;
+	aiChatMasterPrompt: string;
 	aiChatWorkspace: string;
 }
 
@@ -358,6 +360,7 @@ function createSettingsStore() {
 		inlineBlameEnabled: true,
 		egoExecutable: "",
 		egoProfile: "",
+		aiChatMasterPrompt: "",
 		aiChatWorkspace: "",
 	});
 
@@ -439,6 +442,7 @@ function createSettingsStore() {
 		values.inlineBlameEnabled = config.inline_blame_enabled ?? true;
 		values.egoExecutable = config.ego_executable ?? "";
 		values.egoProfile = config.ego_profile ?? "";
+		values.aiChatMasterPrompt = config.ai_chat_master_prompt ?? "";
 		values.aiChatWorkspace = config.ai_chat_workspace ?? "";
 		return values;
 	}
@@ -503,6 +507,7 @@ function createSettingsStore() {
 			inline_blame_enabled: values.inlineBlameEnabled,
 			ego_executable: values.egoExecutable,
 			ego_profile: values.egoProfile,
+			ai_chat_master_prompt: values.aiChatMasterPrompt,
 			ai_chat_workspace: values.aiChatWorkspace,
 		} satisfies Partial<RustAppConfig>;
 	}
@@ -947,6 +952,14 @@ function createSettingsStore() {
 		setEgoExecutable(path: string): void {
 			setState("egoExecutable", path.trim());
 			save();
+		},
+
+		/** Persist instructions only; no ACP command is sent to a running conversation. */
+		setAiChatMasterPrompt(value: string): boolean {
+			if (new TextEncoder().encode(value).length > 8192 || value.includes("\0")) return false;
+			setState("aiChatMasterPrompt", value);
+			save();
+			return true;
 		},
 
 		/** Keep the profile as one unambiguous argument, or leave it unset. */
