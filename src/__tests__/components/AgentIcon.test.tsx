@@ -44,16 +44,16 @@ describe("AgentIcon for ego sessions", () => {
 	});
 });
 
-// Catches: the hand-drawn square E replacing the joined lowercase ae artwork.
-describe("ego rounded ae artwork", () => {
-	it("keeps the rounded ae ligature artwork instead of a square E", () => {
+// Catches: an ae ligature or square E replacing the Greek epsilon artwork.
+describe("ego rounded epsilon artwork", () => {
+	it("keeps the rounded Greek epsilon instead of an ae ligature or square E", () => {
 		expect(pathOf("ego")).toMatchInlineSnapshot(
-			`"M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16zM9 8C7.5 8 6.5 8.6 6.2 9.8L7.7 10.2C7.9 9.6 8.3 9.3 9 9.3C10 9.3 10.5 9.8 10.5 10.6V11H9C7 11 6 11.9 6 13.4C6 15 7.2 16 8.8 16C10 16 10.9 15.5 11.5 14.7C12.2 15.6 13.3 16 14.6 16C16.2 16 17.4 15.3 18 14L16.6 13.4C16.2 14.2 15.6 14.6 14.6 14.6C13.2 14.6 12.4 13.8 12.3 12.6H18V11.9C18 9.5 16.7 8 14.6 8C13.3 8 12.3 8.5 11.6 9.4C11.1 8.5 10.2 8 9 8ZM10.5 12.3H9C8 12.3 7.5 12.7 7.5 13.4C7.5 14.2 8 14.6 8.8 14.6C9.9 14.6 10.5 13.8 10.5 12.8ZM12.3 11.3H16.4C16.3 10 15.7 9.4 14.5 9.4C13.3 9.4 12.5 10.1 12.3 11.3Z"`,
+			`"M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm0 2a8 8 0 1 1 0 16 8 8 0 0 1 0-16zM16 8.2C15 7.4 13.8 7 12.3 7C9.6 7 8 8.3 8 10.2C8 11.1 8.5 11.8 9.4 12C8.3 12.4 7.7 13.2 7.7 14.3C7.7 16.1 9.5 17.2 12.3 17.2C13.9 17.2 15.2 16.7 16.2 15.8L15.1 14.5C14.4 15.2 13.5 15.5 12.3 15.5C10.6 15.5 9.6 15 9.6 14.1C9.6 13.2 10.4 12.8 12 12.8H14V11.2H12C10.6 11.2 9.8 10.9 9.8 10.2C9.8 9.3 10.7 8.7 12.3 8.7C13.4 8.7 14.2 9 14.9 9.5Z"`,
 		);
 	});
 
 	// Catches: small sidebar/status icons losing the vector or using a font fallback.
-	it.each([12, 14, 16, 22, 24])("preserves the ae vector at %ipx", (size) => {
+	it.each([12, 14, 16, 22, 24])("preserves the epsilon vector at %ipx", (size) => {
 		const { container } = render(() => <AgentIcon agent="ego" size={size} />);
 		const svg = container.querySelector("svg");
 		expect(svg?.getAttribute("width")).toBe(String(size));
@@ -63,8 +63,8 @@ describe("ego rounded ae artwork", () => {
 		expect(container.querySelector("text, span")).toBeNull();
 	});
 
-	// Catches: notification markup retaining different artwork or filling the ae counters.
-	it("uses the same hollow ae artwork in inline notifications", () => {
+	// Catches: notification markup retaining different artwork or filling the identity ring.
+	it("uses the same ringed epsilon artwork in inline notifications", () => {
 		const host = document.createElement("div");
 		host.innerHTML = getAgentIconSvg("ego", 14) ?? "";
 		expect(host.querySelector("path")?.getAttribute("d")).toBe(pathOf("ego"));
