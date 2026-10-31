@@ -1098,6 +1098,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Durable task handles**: `agent action=spawn` returns `task_id` and `poll_interval_ms` alongside `session_id`. The `agent` MCP tool polls that handle without blocking — `agent action=task_get` returns `{task_id, status, status_message?, result?, error_detail?, poll_interval_ms}` where status is `working|input_required|completed|failed|cancelled` (the last three final), and `agent action=task_cancel` marks the task cancelled **without** killing the agent (`session action=kill` does that). Use this instead of `agent action=wait` / `session action=wait` when work runs past their 300 s cap or when the client may reconnect: the outcome is recorded by the session exit path whether or not anyone was listening. Tasks live for the TUICommander process only — they are deliberately not persisted, because a restart tears down every PTY
 
 ### 6.14 AI Chat Panel (`Cmd+Alt+A`) — ego over ACP
+- When no ego executable is configured, AI Chat offers the detected path with **Use this**. Only confirmation saves it; **Configure ego** remains available.
 
 AI Chat keeps the active conversation usable while saved-conversation discovery is pending or fails. Background saved-tab load failures do not replace the selected conversation’s state. **New chat** opens a fresh session without first replaying the saved conversation, so an old greeting title or refused replay cannot block it.
 
@@ -1855,6 +1856,7 @@ All data persisted to platform config directory via Rust:
 - Menu: Check for Updates (app menu and Help menu)
 
 ### 14.2 Sleep Prevention
+- With prevention disabled, an agent run lasting at least one minute shows dismissible idle-sleep guidance; short runs and plain shells do not. The guidance does not inspect battery or OS sleep policy. Dismissal persists in this client.
 - Backend-owned `keepawake` assertions cover active turns, meaningful background descendants, detached `tuic bg` runners and live managed agents marked `keep_open`
 - Sleep prevention does not depend on WebView activity; hidden, unloaded or blocked views cannot release it
 - The user setting still disables inhibition; idle agents without live work and closed sessions do not retain the hold

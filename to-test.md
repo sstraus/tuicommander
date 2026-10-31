@@ -3180,3 +3180,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 
 - [ ] After a manual backend restart or release rebuild, ask on one workflow branch and confirm that its question remains visible while independent work advances; answer from a browser and confirm that only the bound worker continues. Rust changes do not hot-reload. Automated ledger, engine and transport checks are recorded in the story worklog.
 - [x] Session-only Progress popup mute: completion cards expose Mute; Terminal Progress retains reports and offers Unmute; blocked warnings remain visible. _(verified: isolated Vite real-component browser check and ProgressPopups.test.tsx; popup preference is in-memory only.)_
+
+- [ ] Fresh-install opt-in guidance (#2561-9861, #2562-d363): open inactive AI Chat with ego detected, confirm Use this, and check that the saved path activates Chat. Check a long active agent's sleep tip, a supported agent's setup hook tip, and a server-error retry tip; dismiss each and reopen to verify persistence. Defaults must stay off until explicitly changed.

@@ -214,3 +214,19 @@ The source-level refusal/confirmation-expiry, stale-revision, owner deadline and
 persisted-apply-failure tests cover automatable recovery independently. They do
 not require a live provider, and passing them must not be reported as completion
 of the human authentication or external-response steps above.
+
+## Contextual opt-in tips
+
+The tip catalogue includes contextual entries for disabled opt-ins. After one
+minute of active agent work, a terminal shows idle-sleep guidance when sleep
+prevention is off. This is conservative guidance, not a battery or OS policy
+probe. Expanded setup for Gemini, Grok and OpenCode offers the global hook tip
+when global instrumentation is off; Claude and Codex use their separate
+launch-scoped status controls. A recoverable server API error offers retry
+guidance only when retry is disabled for that agent. Auth and tool errors do
+not trigger it.
+
+Each tip has a separate client-local dismissal key. Dismissal propagates to
+mounted copies and other windows through storage events and persists across
+reloads. If browser storage is unavailable, dismissal lasts for the document.
+These tips never enable settings, install hooks or submit a retry.
