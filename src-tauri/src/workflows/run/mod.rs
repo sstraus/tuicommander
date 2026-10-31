@@ -15,6 +15,7 @@ mod timer_tests;
 pub use incidents::RunIncident;
 mod proposals;
 mod publication;
+pub mod questions;
 mod reducer;
 mod runtime;
 pub(crate) use publication::{PublicationReview, publication_review};
@@ -39,6 +40,8 @@ mod graph_critic_1446a_tests;
 mod graph_tests;
 #[cfg(test)]
 mod wf02_tests;
+#[cfg(test)]
+mod wf03_tests;
 
 #[cfg(test)]
 mod critic_957_tests;
@@ -1400,7 +1403,10 @@ mod tests {
         }))
         .unwrap();
         let receipt = store.report_bound_agent(report, "input-worker").unwrap();
-        assert_eq!(receipt.snapshot.status, RunStatus::Paused);
+        assert_eq!(receipt.snapshot.status, RunStatus::Running);
+        store
+            .command(&run.id, "explicit-pause", RunCommand::Pause)
+            .unwrap();
         assert_eq!(receipt.snapshot.attempts[0].input_answer, None);
         assert_eq!(
             receipt.snapshot.attempts[0]
@@ -1414,18 +1420,19 @@ mod tests {
             "Use A or B?"
         );
         assert!(
-            store
-                .command(&run.id, "early-resume", RunCommand::Resume)
-                .is_err()
+            store.snapshot(&run.id).unwrap().attempts[0]
+                .continuation
+                .is_none()
         );
         let answered = store
             .command(
                 &run.id,
                 "human-answer",
-                RunCommand::AnswerInput {
-                    attempt_id: attempt.id.clone(),
-                    answer: "A".into(),
-                },
+                super::wf03_tests::current_answer(
+                    &store.snapshot(&run.id).unwrap(),
+                    &attempt.id.clone(),
+                    "A",
+                ),
             )
             .unwrap();
         assert_eq!(answered.snapshot.status, RunStatus::Paused);
@@ -1438,10 +1445,11 @@ mod tests {
                 .command(
                     &run.id,
                     "human-answer",
-                    RunCommand::AnswerInput {
-                        attempt_id: attempt.id.clone(),
-                        answer: "A".into(),
-                    }
+                    super::wf03_tests::current_answer(
+                        &store.snapshot(&run.id).unwrap(),
+                        &attempt.id.clone(),
+                        "A"
+                    )
                 )
                 .unwrap()
                 .sequence,
@@ -1452,10 +1460,11 @@ mod tests {
                 .command(
                     &run.id,
                     "different-answer",
-                    RunCommand::AnswerInput {
-                        attempt_id: attempt.id.clone(),
-                        answer: "B".into(),
-                    }
+                    super::wf03_tests::current_answer(
+                        &store.snapshot(&run.id).unwrap(),
+                        &attempt.id.clone(),
+                        "B"
+                    )
                 )
                 .is_err()
         );
@@ -1552,6 +1561,8 @@ mod tests {
             criterion_results: vec![],
             evidence: vec![],
             input_request: (outcome == AttemptOutcome::NeedsInput).then(|| InputRequest {
+                answer_schema: None,
+                deadline: None,
                 question: "Which option?".into(),
                 options: vec!["A".into()],
             }),
@@ -1563,7 +1574,10 @@ mod tests {
                 "worker-waiting",
             )
             .unwrap();
-        assert_eq!(store.snapshot(&run.id).unwrap().status, RunStatus::Paused);
+        assert_eq!(store.snapshot(&run.id).unwrap().status, RunStatus::Running);
+        store
+            .command(&run.id, "explicit-pause", RunCommand::Pause)
+            .unwrap();
         let completed_report = report(&completed, &finishing, AttemptOutcome::Completed);
         let receipt = store
             .report_bound_agent(completed_report.clone(), "worker-finishing")
@@ -1593,10 +1607,11 @@ mod tests {
             .command(
                 &run.id,
                 "answer-parallel-input",
-                RunCommand::AnswerInput {
-                    attempt_id: waiting.id,
-                    answer: "A".into(),
-                },
+                super::wf03_tests::current_answer(
+                    &store.snapshot(&run.id).unwrap(),
+                    &waiting.id,
+                    "A",
+                ),
             )
             .unwrap();
         let resumed = store
@@ -2031,10 +2046,10 @@ mod tests {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
-        // 10: native integration debt must not be invisible to an older binary.
+        // 11: native integration debt extends the WF03 questions and WF05 command layout.
         assert_eq!(
             stored_schema_version(&db),
-            10,
+            11,
             "fresh store records version"
         );
         let run = store
@@ -2046,9 +2061,9 @@ mod tests {
                 RunLimits::default(),
             )
             .unwrap();
-        // Catches: WF04 and WF02 reusing layout 7 without upgrading main's
+        // Catches: WF07 reusing layout 10 without upgrading main's
         // store, or an additive upgrade rewriting retained events/snapshots.
-        for old_version in [0, 6, 7, 8, 9] {
+        for old_version in [0, 6, 7, 8, 9, 10] {
             let conn = rusqlite::Connection::open(&db).unwrap();
             conn.pragma_update(None, "user_version", old_version)
                 .unwrap();
@@ -2056,7 +2071,7 @@ mod tests {
                 .unwrap();
             drop(conn);
             let upgraded = RunStore::open_at(&db).unwrap();
-            assert_eq!(stored_schema_version(&db), 10);
+            assert_eq!(stored_schema_version(&db), 11);
             assert_eq!(upgraded.snapshot(&run.id).unwrap(), run);
             assert_eq!(upgraded.replay(&run.id).unwrap(), run);
             assert_eq!(upgraded.report_dispositions(&run.id).unwrap(), vec![]);

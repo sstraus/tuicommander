@@ -40,6 +40,7 @@ export function ComposeToggle(props: ComposeToggleProps) {
 	};
 	return (
 		<Button
+			variant="hint"
 			size="compact"
 			class={s.composeHint}
 			onClick={props.onOpen}

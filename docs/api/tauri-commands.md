@@ -787,6 +787,7 @@ can choose what the host runs.
 | `acp_session_prompt` | `connectionId, sessionId, prompt, viewedRepo?` | `AcpTurnId` | Start a turn or accept it into the server-owned FIFO when one is running. `viewedRepo` is sent as `_meta.tuicommander/viewedRepo`, a hint for that turn only |
 | `acp_session_cancel` | `connectionId, sessionId` | `()` | Cancel the running turn |
 | `acp_queued_prompt_cancel` | `connectionId, sessionId, turnId` | `()` | Remove one queued prompt before it reaches ego |
+| `acp_queued_prompt_recall` | `connectionId, sessionId, turnId` | `string` | Atomically withdraw a queued text-only prompt and return its full text; refuse missing, dispatched, steering-in-flight, or attachment-bearing prompts without removing them |
 | `acp_session_set_config_option` | `connectionId, sessionId, configId, value` | `Vec<SessionConfigOption>` | Set one option; the agent returns the whole resulting set |
 | `acp_turn_pause` | `connectionId, sessionId, requestId` | `EgoHoldResponse` | `_ego/pause`. `state` may be `pending` — the hold has not landed yet |
 | `acp_turn_resume` | `connectionId, sessionId, requestId` | `EgoHoldResponse` | `_ego/resume` |
@@ -1158,3 +1159,17 @@ See the MCP guide for the managed evaluator's report contract.
 ### Native integration trial actions (WF07)
 
 `workflow_run_action` accepts the same policy, `integrate`, `integration`, `integration_obligations` and `cleanup_integration` actions as the existing HTTP run route. Native integration is disabled by default per canonical repository. It returns durable phase records and preserves integration when proof intake, dependency refresh or cleanup remains pending. See [Native integration](../backend/workflows.md#opt-in-native-integration-wf07).
+
+### Workflow decision inbox (WF03)
+
+The existing workflow run action accepts `{"action":"question_inbox"}` for the
+canonical project. The read-only tagged reply contains `unansweredCount` and
+`items` (run identity/status, story identity and complete revisioned question).
+`command` also accepts `answer_question` with `question_id`, `expected_revision`,
+`subject_digest`, `actor` and a schema-valid JSON `answer`; `revise_question`
+requires the question ID/revision, new `request` and actor. The outer command still
+requires `run_id`, `command_id` and `expected_sequence`. IPC
+`workflow_run_action`, HTTP `POST /workflows/run/action?path=<project>` and MCP
+`workflow action=run input=<RunAction>` use the same service. The inbox needs no
+coordinator. See the backend workflow decision contract for shapes, deadline
+outcomes, retained legacy replay and continuation semantics.

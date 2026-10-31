@@ -399,7 +399,7 @@ export const PrDetailPopover: Component<PrDetailPopoverProps> = (props) => {
 								</div>
 
 								{/* Shared body content: status pills, labels, meta, CI, checks, open link */}
-								<PrDetailContent repoPath={props.repoPath} branch={props.branch}>
+								<PrDetailContent repoPath={props.repoPath} branch={props.branch} onConversationOpen={props.onClose}>
 									<div class={s.actions}>
 										<Button onClick={handleViewDiff} disabled={diffLoading()}>
 											{diffLoading() ? t("prDetail.loadingDiff", "Loading...") : t("prDetail.viewDiff", "View Diff")}

@@ -162,24 +162,43 @@ fn opaque_or_unkeyed_records_are_rejected() {
 }
 
 // The checked-in descriptors are shared by stable, beta and nightly builds.
-// Pin only the exported channel defaults; live descriptors retain the build default.
+// Pin exported build-dependent defaults; live descriptors retain the build defaults.
 fn generated_typescript(mut catalogue: Catalogue) -> String {
     let channel = catalogue.fields.get_mut("app.update_channel").unwrap();
     channel.default = Some(json!("stable"));
     channel.schema["default"] = json!("stable");
+    let audit = catalogue
+        .fields
+        .get_mut("app.mcp_call_audit_enabled")
+        .unwrap();
+    let release_default = json!(crate::config::RELEASE_MCP_CALL_AUDIT_ENABLED);
+    audit.default = Some(release_default.clone());
+    audit.schema["default"] = release_default;
     catalogue.typescript().unwrap()
 }
 
-// Catches: either copy of the build-dependent channel default leaking into the export.
+// Catches: build-dependent channel or audit defaults leaking into the export.
 #[test]
 fn generated_typescript_is_independent_of_build_channel() {
     let expected = generated_typescript(native_catalogue_for(true).unwrap());
     for channel in ["stable", "beta", "nightly"] {
-        let mut catalogue = native_catalogue_for(true).unwrap();
-        let field = catalogue.fields.get_mut("app.update_channel").unwrap();
-        field.default = Some(json!(channel));
-        field.schema["default"] = json!(channel);
-        assert_eq!(generated_typescript(catalogue), expected, "{channel}");
+        for audit in [true, false] {
+            let mut catalogue = native_catalogue_for(true).unwrap();
+            let field = catalogue.fields.get_mut("app.update_channel").unwrap();
+            field.default = Some(json!(channel));
+            field.schema["default"] = json!(channel);
+            let field = catalogue
+                .fields
+                .get_mut("app.mcp_call_audit_enabled")
+                .unwrap();
+            field.default = Some(json!(audit));
+            field.schema["default"] = json!(audit);
+            assert_eq!(
+                generated_typescript(catalogue),
+                expected,
+                "{channel}/{audit}"
+            );
+        }
     }
 }
 
@@ -193,6 +212,49 @@ fn generated_typescript_matches_native_catalogue() {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, &expected).unwrap();
     }
+    // Catches: schema/serde defaults and exported UI defaults agreeing with each
+    // other while all reporting the wrong effective fresh-install values.
+    let catalogue = native_catalogue_for(true).unwrap();
+    let prefs: crate::config::UIPrefsConfig = serde_json::from_value(json!({})).unwrap();
+    let mut wrong = Vec::new();
+    for (id, effective) in [
+        ("preferences.sidebar_width", json!(300)),
+        ("preferences.settings_nav_width", json!(232)),
+        ("voice.speech_engine", json!("edge")),
+    ] {
+        if catalogue.fields[id].default.as_ref() != Some(&effective)
+            || catalogue.fields[id].schema["default"] != effective
+        {
+            wrong.push(format!(
+                "{id}: {:?} != {effective}",
+                catalogue.fields[id].default
+            ));
+        }
+    }
+    if prefs.sidebar_width != 300 || prefs.settings_nav_width != 232 {
+        wrong.push(format!(
+            "serde preferences: {} / {}",
+            prefs.sidebar_width, prefs.settings_nav_width
+        ));
+    }
+    // An absent legacy choice must still reach the existing installation resolver.
+    let legacy: crate::config::DictationConfig = serde_json::from_value(json!({})).unwrap();
+    assert_eq!(legacy.speech_engine, "");
+    let exported: serde_json::Value = serde_json::from_str(
+        expected
+            .split_once("export const settingsCatalogue = ")
+            .unwrap()
+            .1
+            .strip_suffix(" as const;\n")
+            .unwrap(),
+    )
+    .unwrap();
+    if exported["fields"]["app.mcp_call_audit_enabled"]["default"] != json!(false)
+        || exported["fields"]["app.mcp_call_audit_enabled"]["schema"]["default"] != json!(false)
+    {
+        wrong.push("exported audit must use the release default in both locations".into());
+    }
+    assert!(wrong.is_empty(), "effective defaults drifted: {wrong:?}");
     assert_eq!(
         std::fs::read_to_string(path).unwrap(),
         expected,

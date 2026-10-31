@@ -2546,6 +2546,13 @@ describe("transport", () => {
 				undefined,
 			],
 			[
+				"acp_queued_prompt_recall",
+				{ connectionId: CONNECTION, sessionId: SESSION, turnId: "01932d5e-0000-7000-8000-0000000000b1" },
+				"POST",
+				`/acp/connections/${CONNECTION}/sessions/${SESSION}/queue/01932d5e-0000-7000-8000-0000000000b1/recall`,
+				undefined,
+			],
+			[
 				"acp_session_set_config_option",
 				{ connectionId: CONNECTION, sessionId: SESSION, configId: "model", value: { value: "opus" } },
 				"POST",

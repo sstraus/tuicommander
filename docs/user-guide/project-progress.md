@@ -137,6 +137,20 @@ transcripts while the agent runs.
 There is no export, no pause, no clear and no correction. An entry is appended
 once, and it is either there or deleted.
 
+## Muting popups
+
+Select **Mute** on a completion popup to hide completion popups for the current
+app session, across all repositories and terminals. Existing and queued completion
+cards close too. Entries are still collected, counted in Terminal Progress, and
+shown in the journal. Open **Terminal Progress** to see the muted state and select
+**Unmute**. The next completion report can show a popup again; old reports are not
+replayed. Restarting the app also restores popups. In a browser, the mute belongs
+to that page and resets on reload; it is not saved or shared with other clients.
+
+**Blocked reports keep their warning popup**, because the agent is waiting for
+your answer. Muting completion cards does not change collection settings or
+native OS notification preferences.
+
 ## Turning it off
 
 **Settings → Agents → Collect project progress** turns collection off for every

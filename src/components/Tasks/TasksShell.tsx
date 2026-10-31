@@ -1,6 +1,7 @@
-import { createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
+import { createEffect, createMemo, createSignal, For, Match, Show, Switch } from "solid-js";
 import { workItemProviderRegistry } from "../../plugins/workItemProviderRegistry";
 import { setupForProvider } from "../../plugins/workItemSetup";
+import { taskNavigation } from "../../services/taskNavigation";
 import { repositoriesStore } from "../../stores/repositories";
 import { uiStore } from "../../stores/ui";
 import type { WorkItemRef } from "../../types/work-items.gen";
@@ -35,6 +36,7 @@ export function TasksShell(props: { visible?: () => boolean }) {
 		repoPath() ? uiStore.setTaskViewPreference(viewKey(), { view: next }) : setLocalView(next);
 	const [creating, setCreating] = createSignal(false);
 	const [configuring, setConfiguring] = createSignal(false);
+	const [comments, setComments] = createSignal<object>();
 	const [reference, setReference] = createSignal<WorkItemRef | null>(null);
 	const repoPath = () => repositoriesStore.state.activeRepoPath ?? undefined;
 	const providers = () => workItemProviderRegistry.list();
@@ -43,6 +45,16 @@ export function TasksShell(props: { visible?: () => boolean }) {
 	);
 	// A roadmap needs a start or target date; a provider without a date field has nothing to lay out.
 	const views = (hasDates: boolean) => (hasDates ? VIEWS : VIEWS.filter((entry) => entry.id !== "roadmap"));
+	createEffect(() => {
+		const target = taskNavigation.target();
+		if (!target) return;
+		const { reference } = target;
+		const key = sourceKey(reference.providerId, reference.accountId);
+		chooseSource(key);
+		setComments(target.comments ? target : undefined);
+		setReference(reference);
+		taskNavigation.clear();
+	});
 	function chooseSource(key: string) {
 		if (repoPath()) uiStore.setTaskViewPreference(JSON.stringify([repoPath()]), { source: key });
 		else setLocalSource(key);
@@ -51,6 +63,7 @@ export function TasksShell(props: { visible?: () => boolean }) {
 		setConfiguring(false);
 	}
 	function open(next: WorkItemRef) {
+		setComments(undefined);
 		setCreating(false);
 		setConfiguring(false);
 		setReference(next);
@@ -165,6 +178,7 @@ export function TasksShell(props: { visible?: () => boolean }) {
 										</Button>
 										<TasksDetail
 											provider={current()}
+											focusComments={comments()}
 											reference={reference()}
 											visible={props.visible?.()}
 											repoPath={repoPath()}

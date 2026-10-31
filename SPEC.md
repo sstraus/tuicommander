@@ -1,5 +1,10 @@
 # TUICommander Specification
 
+- [x] Inactive AI Chat offers a detected ego path and saves it only after confirmation; configured paths and the no-detection empty state remain unchanged (#2561-9861).
+- [x] Disabled sleep prevention, global hook instrumentation and server-error retries have contextual, per-client dismissible tips without changing their defaults (#2562-d363).
+
+- [x] PR popovers, thread-count buttons and PR notifications open the exact Tasks conversation, reveal comments and the first review-thread page, fall back to GitHub without a provider, and return from PR detail to a matching existing sidebar workspace (#2559-dc9e).
+
 - [x] Desktop and mobile AI Chat and Session Chat use one theme-accent breathing orb while working, with accessible Working text and a static dot under reduced motion (#2535-8b6b).
 
 - [x] Mobile terminal and AI Chat composers add one space after a pasted HTTP(S) URL when neither the paste nor the following draft character supplies whitespace (#2494-921f).
@@ -67,7 +72,7 @@ Agent capture tooling: `scripts/agent_capture/run.py` records real installed CLI
 
 Published story workflows can start in Plans and Stories through the owning daemon. Run history renders graph positions, decisions, evidence and paged event payloads, with explicit graph recovery and cancellation. IPC/HTTP and the generated `workflow action=run` MCP schema share the native run service. Plan start remains visibly unavailable pending plan dispatch. The grouped `workflow` MCP tool exposes typed story, run, proposal_create, report and launch actions through existing service owners. Proposal retries preserve coordinator ownership and proposal-key idempotency. Legacy workflow tool names are removed without aliases; scheduled automations stay separate. `tuic workflow` forwards the same envelope.
 
-**Version:** 2.0.0-beta.5
+**Version:** 2.0.0
 **Last Updated:** 2026-09-16
 
 ## Shared form controls — Implemented (#1815-01c9)
@@ -553,6 +558,8 @@ backend safety check.
 
 ## Project Progress
 
+Completion popups offer Mute for the current client session. Terminal Progress shows the muted state and Unmute. Entries and unread counts remain unchanged; blocked warning popups still appear. The preference is in memory only and resets on app restart or browser reload. Native OS notification preferences are independent.
+
 Mobile Files uses saved repository group/order and display names with short paths. Mobile Progress uses readable status cards and defaults to intent/done/blocked through the backend pre-pagination `progressOnly` filter. Filters exposes messages/delegations; Flow retains all hand-offs. Desktop presentation and Commander tokens are unchanged.
 
 Native plan and story records have a separate config-directory SQLite authority (`stories.sqlite3`). Progress remains a human-readable journal and does not determine story status. Manual story actions use the shared Rust service across IPC, HTTP, MCP, and CLI. The desktop and browser UI exposes plan and story lists, criteria, dependencies, and manual transitions. For manual plans, WontFix is terminal for plan aggregation but does not satisfy a dependency or promote a dependent; a nonempty plan with only Done/WontFix stories is Done, while an empty plan is Draft. Any trusted caller can remove a direct WontFix dependency only from a Backlog story with a current revision. In plans with no workflow run, a dependent becomes Ready when every remaining dependency is Done; workflow-owned plans additionally require current integration receipts. An explicitly Blocked story is never auto-unblocked. Rust derives direct and transitive abandoned dependency indicators and the WontFix count on `plan_view` reads; the UI renders them. Any trusted caller may approve after checking the acceptance criteria. Actor identity is tracking only and never restricts story or workflow actions. Desktop IPC and credential-authenticated HTTP record `human`, sessionless local HTTP records `local_api`, and managed transitions record the acting session. Local token exchange is accepted. The optional workflow engine described in `plans/native-story-workflows.md` remains in development; import/export is excluded.
@@ -781,6 +788,8 @@ Some frontend-only stores persist to localStorage:
 - [x] Collapsed terminal Compose shows the shared FIFO count in a muted pill, hidden at zero, with a command/message breakdown on hover or focus (#2339-056c).
 - [x] Terminal Compose starts at one control line, grows intrinsically up to its existing 96px editor maximum, scrolls longer drafts internally, and shrinks after clear or successful send through shared auto-grow bounds (#2447-9d28).
 - [x] Terminal Compose shows only Ctrl+Enter in the newline hint and hides shortcut hints in panels up to 640px wide instead of wrapping (#2411-c7c9).
+- [x] Empty-composer ArrowUp recalls the latest host-owned text prompt: ACP actor queue or desktop Compose PTY user-command FIFO. Native CLI Pending receipts and multimodal ACP restore remain unsupported (#2556-6065).
+- [x] Terminal Chat inline code chips remain whole when they fit the reading column; empty ACP plan snapshots render no blank card (#2557-0f37, #2558-2056).
 - [x] Terminal Compose sends on Enter, inserts a new line on Ctrl+Enter or Shift+Enter, and queues on Shift+Ctrl+Enter. IME confirmation does not send (#2395-ed27).
 - [x] Terminal Compose accepts ordered image drops and an image-only multi-file picker through the existing paste save path. Drop inserts at the pointer; unsupported images and failed saves show an error.
 - [x] Terminal Chat uses focused, docked Compose input with existing send/queue semantics; CLI open/pin preferences and shared unsent drafts survive view switches. Active exported native questions and permission choices render above Compose and use the same PTY key semantics as mobile, without submitting drafts; unexported/free-form prompts retain CLI fallback.
@@ -1282,6 +1291,8 @@ Chat is unavailable. Desktop and mobile reuse `TerminalChatTranscript`; no ACP
 connection or second event subscription is created. Compose, dictation targeting
 and answer marker rendering remain on the existing terminal paths.
 
+Expanded tool rows use theme colours for Bash/execute commands, flags, strings and operators. Read, Edit and Write keep the tool name separate from the path; other tools retain readable text. The collapsed activity summary and row sizing are unchanged.
+
 ## Mobile terminal Chat view
 
 The terminal stays mounted. Chat edit tool disclosures render bounded
@@ -1595,3 +1606,14 @@ consumers build on this internal primitive; they are not installed by WF19.
 ### Native workflow integration (WF07)
 
 An opt-in typed integration action now pins expected base/source commits, checks a synthetic two-parent merge object, and publishes that exact no-ff result under a canonical repository lock. Durable phase records retain proof-obligation outbox debt, dependency refresh and cleanup independently. Native integration policy defaults to false through WF17; isolated trial clones only before repository parity approval. Cleanup uses TUIC non-force removal after integration, exact-tip archive and ownership checks. WF08 proof batching is not included. See [backend contract](docs/backend/workflows.md#opt-in-native-integration-wf07).
+
+### Branch-local workflow decisions (WF03)
+
+Contract-5 workflow questions suspend only their activation. Disjoint work can
+continue within the existing resource policy. The durable project inbox counts
+pending and expired questions without a coordinator. Answers bind the question
+revision and current subject digest, retain actor provenance, and continue the
+same worker generation without completing it. Deadlines never imply approval.
+Explicit run pause/cancel and historical NeedsInput replay remain available.
+IPC, HTTP and MCP use the same question/inbox service. See
+[workflow decisions](docs/backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).

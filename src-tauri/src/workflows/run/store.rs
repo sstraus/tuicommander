@@ -75,9 +75,10 @@ impl From<RunStartError> for String {
 // 6: durable Timer events; older builds cannot decode their ledger.
 // 7: contract-4 parallel tokens and generation-scoped check/cancellation events.
 // 8: explicit worker transport/conversation bindings, input continuation and report disposition.
-// 9: WF05 typed command/Tool and workspace effect kinds.
-// 10: native integration saga, policy and proof-obligation outbox.
-const RUN_STORE_SCHEMA_VERSION: i64 = 10;
+// 9: WF03 branch-local questions and contract-5 input projection.
+// 10: WF05 typed command/Tool and workspace effect kinds.
+// 11: native integration saga, policy and proof-obligation outbox.
+const RUN_STORE_SCHEMA_VERSION: i64 = 11;
 
 mod approval;
 pub(super) mod integration;
@@ -418,6 +419,7 @@ impl RunStore {
             require_nonempty_policy(&story_definition)?;
         }
         let initial = RunSnapshot {
+            questions: vec![],
             proposal_batches: vec![],
             event_contract_version: super::graph::RUN_EVENT_CONTRACT_VERSION,
             id: Uuid::now_v7().to_string(),
@@ -515,6 +517,19 @@ impl RunStore {
 
     pub fn snapshot(&self, run_id: &str) -> Result<RunSnapshot, String> {
         read_snapshot(&self.connect()?, run_id)
+    }
+
+    pub fn question_inbox(&self, project: &str) -> Result<super::questions::QuestionInbox, String> {
+        let conn = self.connect()?;
+        let mut statement = conn.prepare("SELECT snapshot_json FROM workflow_runs WHERE project=?1 AND status IN ('running','paused') ORDER BY rowid").map_err(|e| e.to_string())?;
+        let rows = statement
+            .query_map([project], |row| row.get::<_, String>(0))
+            .map_err(|e| e.to_string())?;
+        let mut runs = vec![];
+        for row in rows {
+            runs.push(decode::<RunSnapshot>(&row.map_err(|e| e.to_string())?)?);
+        }
+        Ok(super::questions::inbox(runs))
     }
 
     pub fn list_plan_runs(
@@ -2180,6 +2195,12 @@ fn choose_event(
         return super::timer::choose(snapshot, command, at_ms)
             .map(|event| RunEventKind::Timer { event });
     }
+    if matches!(
+        command,
+        RunCommand::AnswerQuestion { .. } | RunCommand::ReviseQuestion { .. }
+    ) {
+        return super::questions::choose(snapshot, &command, at_ms);
+    }
     let expired = at_ms >= super::runtime::deadline_at(snapshot, at_ms);
     if matches!(command, RunCommand::ExpireDeadline) {
         if !expired || snapshot.status != RunStatus::Running {
@@ -2261,6 +2282,9 @@ fn choose_event(
         return Err("workflow is paused".into());
     }
     match command {
+        RunCommand::AnswerQuestion { .. } | RunCommand::ReviseQuestion { .. } => {
+            unreachable!("question commands handled above")
+        }
         RunCommand::Timer { .. } => unreachable!("timer command handled before run timing"),
         RunCommand::Graph { transition } => {
             if matches!(
@@ -2496,12 +2520,7 @@ fn choose_event(
                     generation,
                 })
             } else {
-                Ok(RunEventKind::AttemptReported {
-                    attempt_id,
-                    generation,
-                    outcome,
-                    report: None,
-                })
+                super::questions::reported(snapshot, attempt_id, generation, outcome, None, at_ms)
             }
         }
         RunCommand::BindAgent {
@@ -2705,12 +2724,14 @@ fn choose_event(
                     generation: report.generation,
                 });
             }
-            Ok(RunEventKind::AttemptReported {
-                attempt_id: report.attempt_id.clone(),
-                generation: report.generation,
-                outcome: report.outcome,
-                report: Some(report),
-            })
+            super::questions::reported(
+                snapshot,
+                report.attempt_id.clone(),
+                report.generation,
+                report.outcome,
+                Some(report),
+                at_ms,
+            )
         }
         RunCommand::ReserveEffect { key, kind } => {
             validate_key("effect key", &key)?;
@@ -2770,6 +2791,9 @@ fn choose_event(
             })
         }
         RunCommand::AnswerInput { attempt_id, answer } => {
+            if snapshot.event_contract_version >= 5 {
+                return Err("use revision-bound answer_question for branch input".into());
+            }
             validate_key("attempt id", &attempt_id)?;
             if snapshot.status != RunStatus::Paused {
                 return Err("workflow is not paused for input".into());
@@ -3221,6 +3245,9 @@ pub(super) fn validate_graph_recovery(
                 activation.state,
                 super::graph::ActivationState::Ready | super::graph::ActivationState::Running
             )
+            || (snapshot.event_contract_version >= 5
+                && activation.id == activation_id
+                && activation.state == super::graph::ActivationState::Suspended)
     }) {
         return Err("graph activation is not pending recovery".into());
     }

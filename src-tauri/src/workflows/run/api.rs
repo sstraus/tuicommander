@@ -27,6 +27,8 @@ pub enum RunAction {
         run_id: String,
         story_id: String,
     },
+    /// Durable unanswered questions, including expired questions, without a coordinator.
+    QuestionInbox,
     /// Start a pinned executable root through the owning daemon, never the legacy ledger.
     StartGraph {
         target: super::RunTarget,
@@ -109,6 +111,7 @@ pub enum RunAction {
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "value", rename_all = "snake_case")]
 pub enum RunReply {
+    QuestionInbox(super::questions::QuestionInbox),
     Snapshot(Box<RunSnapshot>),
     Integration(Box<super::IntegrationProgress>),
     IntegrationObligations(Vec<super::IntegrationObligation>),
@@ -206,6 +209,7 @@ pub fn run_action(project: &str, action: RunAction) -> Result<RunReply, String> 
         RunAction::CleanupIntegration { .. } => {
             Err("integration cleanup requires the owning daemon".into())
         }
+        RunAction::QuestionInbox => Ok(RunReply::QuestionInbox(store.question_inbox(&owner)?)),
         RunAction::AgentCloses { .. } | RunAction::CloseAgent { .. } => {
             Err("owned agent close requires the owning daemon service".into())
         }
@@ -495,6 +499,7 @@ pub fn run_action_with_events(
             RunReply::NativeIntegrationPolicy { .. } => return Ok(reply),
             RunReply::IntegrationObligations(_)
             | RunReply::CommandExecutions(_)
+            | RunReply::QuestionInbox(_)
             | RunReply::Events(_)
             | RunReply::Runs(_)
             | RunReply::Incidents(_)

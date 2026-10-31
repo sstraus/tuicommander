@@ -249,6 +249,17 @@ export const aiChatDraft = {
 		this.requestFocus(session);
 	},
 
+	/** An acknowledged withdrawal belongs to its source session, even after a tab switch.
+	 * Preserve text typed while the backend was answering rather than replacing it. */
+	restoreRecalled(session: string, recalled: string): void {
+		const merge = (current: string) => (current ? `${recalled}\n\n${current}` : recalled);
+		if (activeSession === session) setText(merge(text()));
+		else {
+			const draft = drafts.get(session) ?? { text: "", images: [], files: [] };
+			drafts.set(session, { ...draft, text: merge(draft.text) });
+		}
+	},
+
 	/** Add text to the draft and leave the cursor after it. */
 	append(addition: string): void {
 		const current = text();

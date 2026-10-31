@@ -95,3 +95,20 @@
   opacity: 1;
   background: var(--accent);
 }
+
+.contextual {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+}
+
+.contextual .content {
+  align-items: flex-start;
+  text-align: left;
+  flex-basis: 240px;
+}

@@ -2839,6 +2839,7 @@ POST   /acp/connections/{cid}/sessions/{session_id}/close                       
 POST   /acp/connections/{cid}/sessions/{session_id}/prompt       {prompt:[ContentBlock], viewedRepo?}   -> AcpTurnId
 POST   /acp/connections/{cid}/sessions/{session_id}/cancel                                 -> null
 DELETE /acp/connections/{cid}/sessions/{session_id}/queue/{turn_id}                       -> null
+POST   /acp/connections/{cid}/sessions/{session_id}/queue/{turn_id}/recall                -> string (full text, text-only prompts; refusal leaves queue unchanged)
 POST   /acp/connections/{cid}/sessions/{session_id}/config       {configId, value}         -> [SessionConfigOption]
 POST   /acp/connections/{cid}/sessions/{session_id}/pause        {requestId}               -> EgoHoldResponse
 POST   /acp/connections/{cid}/sessions/{session_id}/resume-turn  {requestId}               -> EgoHoldResponse
@@ -3825,3 +3826,17 @@ caller-supplied terminal ID or the peer's latest connection.
 ### Native workflow integration trial actions (WF07)
 
 The existing `POST /workflows/run/action?path=<project>` route also accepts `native_integration_policy`, `set_native_integration_policy {native_integration_enabled,append_only_documents?}`, `integrate {request:{runId,storyId,commandId,expectedSequence,expectedBase,expectedSource}}`, `integration {run_id,story_id}`, `integration_obligations`, and `cleanup_integration {run_id,story_id}`. Integration replies use `{type:"integration",value:<durable phase record>}`. Policy defaults to false; only isolated trial clones may enable it before repository parity approval. Cleanup requires the owning daemon and never merges. See [Native integration](../backend/workflows.md#opt-in-native-integration-wf07) for typed partial-success outcomes and retained proof debt.
+
+### Workflow decision inbox (WF03)
+
+The existing workflow run action accepts `{"action":"question_inbox"}` for the
+canonical project. The read-only tagged reply contains `unansweredCount` and
+`items` (run identity/status, story identity and complete revisioned question).
+`command` also accepts `answer_question` with `question_id`, `expected_revision`,
+`subject_digest`, `actor` and a schema-valid JSON `answer`; `revise_question`
+requires the question ID/revision, new `request` and actor. The outer command still
+requires `run_id`, `command_id` and `expected_sequence`. IPC
+`workflow_run_action`, HTTP `POST /workflows/run/action?path=<project>` and MCP
+`workflow action=run input=<RunAction>` use the same service. The inbox needs no
+coordinator. See the backend workflow decision contract for shapes, deadline
+outcomes, retained legacy replay and continuation semantics.

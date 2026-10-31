@@ -220,6 +220,9 @@
   padding: 40px 20px;
 }
 
+/* DEFERRED (2026-10-31) — reported right-edge user clipping does not reproduce
+   in the real Transcript at 420px or 960px. Preserve authored text and newlines;
+   do not guess at a PTY unwrapping fix without the failing source/layout. */
 .userMsg {
   position: relative;
   align-self: flex-end;
@@ -641,6 +644,16 @@
   font-weight: 500;
   color: var(--fg-primary);
 }
+
+/* Inline syntax roles reuse the current app theme; no row geometry changes. */
+.toolLabel,
+.shellCommand { color: var(--accent); }
+.toolPath,
+.shellString { color: var(--success); }
+.shellFlag { color: var(--warning); }
+.shellOperator { color: var(--attention); }
+.shellVariable { color: var(--fg-primary); }
+.shellComment { color: var(--fg-secondary); }
 
 .toolCallDuration {
   color: var(--fg-muted);
@@ -1424,4 +1437,24 @@ button[data-control-layout="row"].slashCommand:hover {
   display: block;
   font-size: var(--font-xs);
   color: var(--fg-muted);
+}
+
+/* Treat inline code as one chip; only tokens wider than the reading column wrap inside it. */
+.messageList[data-terminal-chat] .assistantMsg :global(#markdown-content :not(pre) > code) {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: bottom;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.detectedEgo {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 16px;
+  color: var(--fg-primary);
+  overflow-wrap: anywhere;
 }

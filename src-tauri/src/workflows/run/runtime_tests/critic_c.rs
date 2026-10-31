@@ -51,6 +51,8 @@ fn report(store: &RunStore, run: &RunSnapshot, outcome: AttemptOutcome) {
                     criterion_results: vec![],
                     evidence: vec![],
                     input_request: (outcome == AttemptOutcome::NeedsInput).then(|| InputRequest {
+                        answer_schema: None,
+                        deadline: None,
                         question: "Which implementation option should I use?".into(),
                         options: vec![],
                     }),
@@ -138,27 +140,15 @@ fn answered_input_does_not_complete_the_unfinished_agent() {
         .unwrap();
     let run = drive_turn(&store, &run.id).unwrap();
     report(&store, &run, AttemptOutcome::NeedsInput);
-    let graph = &run.graph_executions[0];
-    let activation = graph.activations.last().unwrap();
     store
         .command(
             &run.id,
             "critic-answer",
-            RunCommand::AnswerInput {
-                attempt_id: run.attempts.last().unwrap().id.clone(),
-                answer: "Use the first option".into(),
-            },
-        )
-        .unwrap();
-    store
-        .command(
-            &run.id,
-            "critic-resume",
-            RunCommand::ResumeGraph {
-                execution_id: graph.id.clone(),
-                activation_id: activation.id.clone(),
-                resolution: "Continue with the answer".into(),
-            },
+            super::super::wf03_tests::current_answer(
+                &store.snapshot(&run.id).unwrap(),
+                &run.attempts.last().unwrap().id.clone(),
+                "Use the first option",
+            ),
         )
         .unwrap();
     let after = drive_turn(&store, &run.id).unwrap();

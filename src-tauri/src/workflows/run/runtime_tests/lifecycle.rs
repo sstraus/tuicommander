@@ -125,6 +125,8 @@ async fn close_preserves_unattributed_dirty_work() {
     let mut question = report.clone();
     question.outcome = AttemptOutcome::NeedsInput;
     question.input_request = Some(InputRequest {
+        answer_schema: None,
+        deadline: None,
         question: "Which bytes must remain?".into(),
         options: vec![],
     });
@@ -133,10 +135,11 @@ async fn close_preserves_unattributed_dirty_work() {
         .command(
             &run.id,
             "answer-owned-worker",
-            RunCommand::AnswerInput {
-                attempt_id: attempt.id.clone(),
-                answer: "Keep unsaved ownership must remain".into(),
-            },
+            super::super::wf03_tests::current_answer(
+                &store.snapshot(&run.id).unwrap(),
+                &attempt.id.clone(),
+                "Keep unsaved ownership must remain",
+            ),
         )
         .unwrap()
         .snapshot;
@@ -160,19 +163,7 @@ async fn close_preserves_unattributed_dirty_work() {
     let late = store.snapshot(&run.id).unwrap();
     assert_eq!(late.attempts[0].generation, 2);
     assert_eq!(late.attempts[0].state, AttemptState::Running);
-    let graph = &late.graph_executions[0];
-    let resumed = store
-        .command(
-            &run.id,
-            "resume-owned-worker",
-            RunCommand::ResumeGraph {
-                execution_id: graph.id.clone(),
-                activation_id: graph.activations.last().unwrap().id.clone(),
-                resolution: "Deliver recorded answer".into(),
-            },
-        )
-        .unwrap()
-        .snapshot;
+    let resumed = late;
     let mut unknown = crate::state::tests_support::make_test_app_state();
     unknown.data_dir = state.data_dir.clone();
     let unknown = Arc::new(unknown);

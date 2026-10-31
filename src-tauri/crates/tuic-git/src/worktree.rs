@@ -1105,6 +1105,14 @@ fn integrated_in_defaults(
     let mut content_targets = Vec::new();
     for base in bases {
         let target = rev_at(repo, base)?;
+        // Unrelated histories have no fork delta and cannot prove content
+        // integration. Exit 1 means no common ancestor; other Git failures
+        // must still reach the caller rather than becoming unmerged evidence.
+        let fork = match git_cmd(repo).args(["merge-base", &target, tip]).run() {
+            Ok(output) => output.stdout,
+            Err(crate::git_cli::GitError::NonZeroExit { code: Some(1), .. }) => continue,
+            Err(error) => return Err(format!("could not inspect branch merge base: {error}")),
+        };
         // A fresh empty start commit also produces a no-op merge, but nothing
         // was integrated. Content heuristics require a delta from the fork;
         // ancestry and verified PR evidence are handled by the caller.
@@ -1114,7 +1122,7 @@ fn integrated_in_defaults(
                 "--no-ext-diff",
                 "--no-textconv",
                 "--name-only",
-                &format!("{target}...{tip}"),
+                &format!("{}..{tip}", fork.trim()),
             ])
             .run()
             .map_err(|error| format!("could not inspect branch changes: {error}"))?;
@@ -5482,6 +5490,64 @@ mod tests {
             assert!(wt.exists());
         }
         assert!(failures.is_empty(), "{}", failures.join("\n"));
+    }
+
+    // Catches: one unrelated branch aborts the entire merged-branch inventory.
+    #[test]
+    fn unrelated_history_does_not_abort_merged_branch_inventory_2569() {
+        for same_tree in [true, false] {
+            let (_temp, repo, _) = workspace_fixture();
+            let default = git_cmd(&repo)
+                .args(["branch", "--show-current"])
+                .run()
+                .unwrap()
+                .stdout;
+            let tree = rev_at(&repo, "HEAD^{tree}").unwrap();
+            let root = git_cmd(&repo)
+                .args(["commit-tree", &tree, "-m", "unrelated root"])
+                .run()
+                .unwrap()
+                .stdout;
+            git_cmd(&repo)
+                .args(["branch", "--create-reflog", "unrelated", root.trim()])
+                .run()
+                .unwrap();
+            if !same_tree {
+                commit_file(&repo, "default-only.txt", "default content\n");
+            }
+            let related = add_worktree(&repo, "integrated-related");
+            commit_file(&related, "related.txt", "real integrated work\n");
+            git_cmd(&repo)
+                .args(["merge", "--ff-only", "integrated-related"])
+                .run()
+                .unwrap();
+            // Advance default so the real merged branch is not a same-tip branch.
+            commit_file(&repo, "later.txt", "later default work\n");
+            let verdict = branch_integration_with_pr(&repo, "unrelated", |_, _, _| false)
+                .expect("unrelated history is a valid unmerged branch");
+            assert!(!verdict.integrated, "same_tree={same_tree}: {verdict:?}");
+            let merged = crate::git::get_merged_branches_impl(&repo).unwrap();
+            assert!(
+                merged.contains(&"integrated-related".to_owned()),
+                "{merged:?}"
+            );
+            assert!(!merged.contains(&"unrelated".to_owned()), "{merged:?}");
+            assert_eq!(
+                git_cmd(&repo)
+                    .args(["branch", "--show-current"])
+                    .run()
+                    .unwrap()
+                    .stdout,
+                default
+            );
+        }
+    }
+
+    // Catches: handling absent merge bases also hides invalid-ref failures.
+    #[test]
+    fn unrelated_history_handling_preserves_invalid_ref_errors_2569() {
+        let (_temp, repo, _) = workspace_fixture();
+        assert!(integrated_in_defaults(&repo, &["HEAD".into()], "not-a-ref").is_err());
     }
 
     // Catches: protecting empty-start branches also hides real ancestry/PR proof.

@@ -13,6 +13,7 @@
       "allow": [{ "path": "**" }]
     },
     "dialog:default",
+    "notification:allow-is-permission-granted",
     "notification:allow-request-permission",
     "notification:allow-notify",
     "core:window:allow-start-dragging",

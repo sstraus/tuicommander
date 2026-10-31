@@ -217,7 +217,7 @@ Configuration via Settings > MCP and Settings > Remote Access, or `config.json`:
 ```json
 {
   "mcp_server_enabled": true,
-  "mcp_port": 9876
+  "mcp_port": 3845
 }
 ```
 
@@ -3086,3 +3086,17 @@ have no managed-agent identity and reject this action. Existing run/list_runs
 responses expose the triage trigger, decision and result reason on all transports.
 
 WF07 integration uses the existing `workflow action=run` schema and owning-daemon run route. The typed `integrate` action requires expected base/source commits. Policy is disabled by default; inspection, debt and cleanup remain distinct actions. IPC, HTTP and MCP use the same Rust action and reply types. See [Native integration](workflows.md#opt-in-native-integration-wf07).
+
+### Workflow decision inbox (WF03)
+
+The existing workflow run action accepts `{"action":"question_inbox"}` for the
+canonical project. The read-only tagged reply contains `unansweredCount` and
+`items` (run identity/status, story identity and complete revisioned question).
+`command` also accepts `answer_question` with `question_id`, `expected_revision`,
+`subject_digest`, `actor` and a schema-valid JSON `answer`; `revise_question`
+requires the question ID/revision, new `request` and actor. The outer command still
+requires `run_id`, `command_id` and `expected_sequence`. IPC
+`workflow_run_action`, HTTP `POST /workflows/run/action?path=<project>` and MCP
+`workflow action=run input=<RunAction>` use the same service. The inbox needs no
+coordinator. See the backend workflow decision contract for shapes, deadline
+outcomes, retained legacy replay and continuation semantics.
