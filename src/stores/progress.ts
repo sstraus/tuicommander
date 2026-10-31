@@ -121,6 +121,12 @@ function messageOf(error: unknown): string {
 }
 
 export function createProgressStore() {
+	// Client-session presentation only: never saved with collection settings or the journal.
+	const [popupsMuted, setPopupsMuted] = createSignal(false);
+	function mutePopups(): void {
+		setPopupsMuted(true);
+		toastsStore.removeGroup("progress-done");
+	}
 	const [state, setState] = createStore<{
 		projects: Record<string, ProjectProgressState>;
 		flows: Record<string, ProjectFlowState>;
@@ -393,6 +399,10 @@ export function createProgressStore() {
 				isCurrent: () => !notificationsStore.isSessionSilenced(entry.ptyId),
 			});
 		}
+		// Blocked means the agent is waiting on the user. Keep its warning card
+		// even when routine completion popups are muted; collection and native
+		// notification preferences remain independent of this transient-card control.
+		if (popupsMuted() && entry.type === "done") return;
 		toastsStore.add(
 			// The repo badge already names the project (it is passed below), so a
 			// title of "<project> · <step>" printed it twice and spent half the
@@ -409,10 +419,16 @@ export function createProgressStore() {
 			payload.repo_path,
 			entry.ptyId,
 			false,
+			entry.type === "done"
+				? { dismissGroup: "progress-done", secondaryAction: { label: "Mute", onClick: mutePopups } }
+				: {},
 		);
 	}
 
 	return {
+		popupsMuted,
+		mutePopups,
+		unmutePopups: () => setPopupsMuted(false),
 		state,
 		dialogVisible,
 		requestedProject,
@@ -481,6 +497,7 @@ export function createProgressStore() {
 				setBlockedOnly(false);
 				setProgressOnly(false);
 				setArrivedSinceOpen(0);
+				setPopupsMuted(false);
 				visitedScopes.clear();
 			});
 		},

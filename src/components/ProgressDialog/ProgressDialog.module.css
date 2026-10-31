@@ -91,3 +91,15 @@
 .embedded .divider { padding: 10px 4px 12px; color: var(--fg-secondary); font-size: 13px; text-transform: none; letter-spacing: normal; }
 .embedded .divider::before, .embedded .divider::after { display: none; }
 .embedded .empty { color: var(--fg-secondary); font-size: 15px; }
+
+.popupStatus {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg-secondary);
+  font-size: var(--font-sm);
+}

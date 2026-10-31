@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Mute completion progress popups for the current app session and restore them from Terminal Progress. Journal entries and blocked warning popups remain available (#2553-6446).
+
 - Add explicit workflow PTY/ACP execution routes and genuine ACP launch/conversation references, with binding-before-prompt journaling and channel-generation report fences (#2511-37f0, policy/handover/close still incomplete).
 
 - Retain workflow bound-report acceptance/refusal decisions across retry and restart, with atomic accepted-event recording and a read-only `report_dispositions` run action (#2511-37f0, lifecycle increment only).
