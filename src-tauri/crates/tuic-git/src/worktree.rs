@@ -14838,10 +14838,40 @@ branch refs/heads/feat
         assert!(!error.contains("No workspace found"), "{error}");
     }
 
+    // Catches: sibling fixtures reuse origin.git and reject independent branch tips.
+    #[test]
+    fn add_origin_isolates_sibling_repositories_2549() {
+        let root = TempDir::new_in(tuic_test_support::test_temp_root()).unwrap();
+        let mut origins: Vec<(PathBuf, String, String)> = Vec::new();
+        let mut repositories = Vec::new();
+        for index in 0..3 {
+            let repo =
+                crate::test_fixtures::setup_test_repo_at(TempDir::new_in(root.path()).unwrap());
+            commit_file(repo.path(), "distinct.txt", &format!("fixture {index}\n"));
+            let branch = base_branch_of(repo.path());
+            let tip = rev_at(repo.path(), "HEAD").unwrap();
+            let origin = add_origin(repo.path());
+            assert!(origin.starts_with(root.path()));
+            for (previous_origin, previous_branch, previous_tip) in &origins {
+                assert_eq!(
+                    rev_at(previous_origin, previous_branch).unwrap(),
+                    *previous_tip,
+                    "a sibling fixture changed an existing origin"
+                );
+            }
+            assert_eq!(rev_at(&origin, &branch).unwrap(), tip);
+            origins.push((origin, branch, tip));
+            // Retain both repositories and origins until every sibling has pushed.
+            repositories.push(repo);
+        }
+    }
+
     /// A bare origin holding the repo's default branch, fetched so
     /// `origin/<default>` exists locally.
     fn add_origin(repo: &Path) -> PathBuf {
-        let origin = repo.parent().unwrap().join("origin.git");
+        // Direct-temp repositories share a parent. Keep the remote inside this
+        // fixture's Git directory so independent fixtures cannot reuse its refs.
+        let origin = repo.join(".git").join("test-origin.git");
         git_cmd(repo.parent().unwrap())
             .args(["init", "--bare", &origin.to_string_lossy()])
             .run()
