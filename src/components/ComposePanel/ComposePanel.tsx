@@ -76,6 +76,8 @@ export interface ComposePanelProps {
 	focusRequest: Accessor<number>;
 	/** Explicit host replacement (for example a smart prompt), independent of typing. */
 	textRequest?: Accessor<number>;
+	/** Register insertion into the current editor selection for host typing handoffs. */
+	onInsertText?: (insert: ((text: string) => boolean) | undefined) => void;
 }
 
 /** Who parked a queue entry, for the entries that are not the operator's own. */
@@ -141,6 +143,15 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 				inFlight = false;
 			});
 	};
+
+	props.onInsertText?.((text) => {
+		const view = editorView();
+		if (!view) return false;
+		view.dispatch(view.state.replaceSelection(text));
+		view.focus();
+		return true;
+	});
+	onCleanup(() => props.onInsertText?.(undefined));
 
 	createExtension(composeTheme);
 	createExtension(EditorView.editorAttributes.of({ class: controls.autoGrow }));

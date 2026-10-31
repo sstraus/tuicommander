@@ -1,3 +1,7 @@
+## Session Chat transcript typing (2554-0ee4)
+
+- [x] Click the transcript and type: the first character reaches Compose at the draft selection and typing continues there. Drag-selected transcript text stays selected; copy, Find, arrow keys and Compose Escape retain their behavior. _(verified: `src/__tests__/components/Terminal/chatViewCompose.critic.test.tsx`, 24 tests; isolated Vite plus trusted agent-browser clicks/keys and mouse selection; screenshots `~/Gits/.tmp/results/2554-before.png`, `2554-after.png`, `2554-selection.png`. Native clipboard command is asserted at the component boundary; the background browser did not provide a clipboard round trip.)_
+
 ## AI Chat desktop composer alignment (2550-e756)
 
 - [x] Empty, one-line and four-line drafts share the editor/Send top and bottom edges, with and without focus. Header, editor row and footer share content edges. Mobile editor and Send bounds match the recorded pre-fix baseline. _(verified: `src/__tests__/browser/AIChatComposerGeometry.test.ts`, mounted Chromium at 1400px/390px; screenshots and measurements in orchestrator `reports/tuicommander/img/2026-10-31-chat-composer-align/`)_
