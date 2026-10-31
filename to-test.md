@@ -1,3 +1,7 @@
+## AI Chat desktop composer alignment (2550-e756)
+
+- [x] Empty, one-line and four-line drafts share the editor/Send top and bottom edges, with and without focus. Header, editor row and footer share content edges. Mobile editor and Send bounds match the recorded pre-fix baseline. _(verified: `src/__tests__/browser/AIChatComposerGeometry.test.ts`, mounted Chromium at 1400px/390px; screenshots and measurements in orchestrator `reports/tuicommander/img/2026-10-31-chat-composer-align/`)_
+
 ## Terminal Chat transformed receipts (2542-49c3) — Rust rebuild/restart required
 
 - [ ] After Boss restarts a rebuilt `make dev` or installs `make build`, send a prompt longer than 20000 characters or containing a redacted secret pattern in Terminal Chat. Its pending bubble must disappear after the native transcript receipt arrives. Automated store and native-adapter tests cover the comparison contract. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
