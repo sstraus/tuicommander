@@ -24,6 +24,8 @@ The composer border highlights only while its textarea has focus. Tapping the mi
 
 ## Keyboard Shortcuts
 
+With terminal input focused, Ctrl+Enter sends `ESC [ 13 ; 5 u` when Kitty keyboard flag 1 is active. Identified ego sessions receive the same encoding without negotiation to preserve BusySteer; current ego does not enable its Reedline Kitty guard. Legacy shells and other nonnegotiating agents receive CR. In enhanced mode, Control plus Shift or Alt retains those modifiers in the CSI u parameter. Plain Enter remains CR, Shift+Enter remains ESC CR, legacy Alt+Enter remains CR, and Cmd+Enter stays available to app shortcuts. This applies to desktop and browser/remote grid terminals; Compose has its own editor shortcuts.
+
 ### Terminal Management
 
 | Shortcut | Action | Notes |

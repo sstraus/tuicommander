@@ -3080,9 +3080,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				}
 			}
 
-			// Kitty keyboard protocol: encode special keys when flag 1 (disambiguate) is active
+			// Kitty keyboard protocol: encode special keys when flag 1 (disambiguate) is active.
 			const kbFlags = currentFrame?.keyboardFlags ?? 0;
-			if (kbFlags & 1) {
+			// DEFERRED (2026-10-31) — ego accepts BusySteer but does not negotiate Kitty yet.
+			// Keep only its Ctrl+Enter exception until ego enables the Reedline protocol guard.
+			const egoCtrlEnter = e.key === "Enter" && e.ctrlKey && terminalsStore.get(props.terminalId)?.agentType === "ego";
+			if (kbFlags & 1 || egoCtrlEnter) {
 				const seq = kittySequenceForKey(e.key, e.shiftKey, e.altKey, e.ctrlKey, e.metaKey);
 				if (seq !== null) {
 					e.preventDefault();
