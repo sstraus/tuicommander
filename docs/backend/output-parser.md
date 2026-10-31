@@ -904,7 +904,9 @@ The heading is not required for detection.
 ### Claude option previews
 
 Claude AskUserQuestion preview forms render a bordered pane beside the numbered
-answers. Parse its rectangle before the answer rows. Join left-column label
+answers. Parse its rectangle before the answer rows. Locate and split each row
+at terminal-cell columns, not character offsets: wide glyphs and combining marks
+in a label must not shift the preview boundary. Join left-column label
 continuations, including `(Recommended)`, without merging pane borders or text.
 The same rectangle extraction accepts a pane below the options. The selected
 option carries the pane text in its existing multiline `hint`; no wire field is

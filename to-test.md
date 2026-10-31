@@ -1,3 +1,7 @@
+## Claude Unicode preview columns (2537-88a4) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a Claude question with CJK or wide emoji in an answer beside its preview. Confirm Chat labels contain no pane borders and the selected preview remains separate. The recorded-dialog regression also covers combining marks; the daily app was not restarted. Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
 ## Session Chat transcript typing (2554-0ee4)
 
 - [x] Click the transcript and type: the first character reaches Compose at the draft selection and typing continues there. Drag-selected transcript text stays selected; copy, Find, arrow keys and Compose Escape retain their behavior. _(verified: `src/__tests__/components/Terminal/chatViewCompose.critic.test.tsx`, 24 tests; isolated Vite plus trusted agent-browser clicks/keys and mouse selection; screenshots `~/Gits/.tmp/results/2554-before.png`, `2554-after.png`, `2554-selection.png`. Native clipboard command is asserted at the component boundary; the background browser did not provide a clipboard round trip.)_
