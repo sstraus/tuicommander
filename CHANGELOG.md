@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Keep push-to-talk dictation in the focused detached AI Chat window instead of sending its transcript to the main window; preserve the captured composer across focus changes and scope native Fn listeners to their own WebView.
+- Label the per-reply conversation branch action **Fork**, distinct from **Copy**.
 - Keep AI Chat model settings available when ego doctor reports a health problem, and show the specific diagnostic instead of a generic refusal (#2586-6732).
 - Add or remove a session from the Global Workspace through its sidebar context menu (#2590-2d63).
 - Send to the registered coordinator with `agent action=send to=orchestrator` without peer discovery; missing or ambiguous roles return explicit errors (#2580-dcbd).
