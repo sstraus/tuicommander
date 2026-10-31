@@ -239,7 +239,7 @@ fn generated_typescript_matches_native_catalogue() {
     }
     // An absent legacy choice must still reach the existing installation resolver.
     let legacy: crate::config::DictationConfig = serde_json::from_value(json!({})).unwrap();
-    assert!(legacy.speech_engine.is_empty());
+    assert_eq!(legacy.speech_engine, "");
     let exported: serde_json::Value = serde_json::from_str(
         expected
             .split_once("export const settingsCatalogue = ")
