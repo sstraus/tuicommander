@@ -44,7 +44,11 @@ case 'get_relay_status':return {enabled:false,connected:false,url:'',session_id:
 case 'get_local_ips':return [];
 case 'get_tailscale_status':return {installed:false,running:false,ip:null};
 case 'get_remote_connections':case 'load_remote_connections':return {};
-case 'list_audio_output_devices':case 'list_audio_devices':case 'get_model_info':case 'get_speech_assets':case 'get_speech_voices':case 'get_edge_voices':case 'fetch_plugin_registry':case 'list_installed_mcp_integrations':case 'github_list_accounts':return [];
+case 'get_dictation_config': return new URLSearchParams(location.search).has('voice-audit') ? {enabled:false,hotkey:'F5',language:'en',model:'small',speech_engine:new URLSearchParams(location.search).get('engine')??'pocket',speech_voice:'alba',speech_command:['speech-tool','{out}']} : undefined;
+case 'get_model_info': return new URLSearchParams(location.search).has('voice-audit') ? [{name:'small',display_name:'Small',size_hint_mb:488,downloaded:true,actual_size_mb:488},{name:'large-v3-turbo',display_name:'Large V3 Turbo',size_hint_mb:1620,downloaded:false,actual_size_mb:0}] : [];
+case 'get_speech_assets': return new URLSearchParams(location.search).has('voice-audit') ? [{id:'runtime',kind:'runtime',display_name:'Pocket TTS runtime',language:null,state:'ready',download_bytes:12000000,voices:[]},{id:'english',kind:'language',display_name:'English',language:'en',state:'ready',download_bytes:220000000,voices:['alba']},{id:'voice-alba',kind:'voice',display_name:'Alba',language:'en',voice:'alba',state:'ready',download_bytes:1000000,voices:[]}] : [];
+case 'get_speech_voices': return new URLSearchParams(location.search).has('voice-audit') ? [{id:'alba',source:'catalogue'}] : [];
+case 'list_audio_output_devices':case 'list_audio_devices':case 'get_edge_voices':case 'fetch_plugin_registry':case 'list_installed_mcp_integrations':case 'github_list_accounts':return [];
 case 'get_agent_mcp_status':return {supported:true,installed:false,config_path:null,shared_settings_file:false};
 case 'github_auth_status':return {authenticated:true,login:'fixture-account',avatar_url:null,source:'oauth',scopes:'repo'};
 case 'github_diagnostics':return {circuit_breaker_open:false,circuit_breaker_status:'closed',repos_not_found:[],repos_monitored:0};

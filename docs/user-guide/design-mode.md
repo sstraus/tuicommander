@@ -66,6 +66,8 @@ explicitly permit agent JavaScript. Default localhost inspection access alone do
 not permit eval. Grants are Chrome extension permissions and can be revoked in
 Chrome's extension settings. Eval runs in the page MAIN world without a debugger port.
 The sidebar retains the last fifty agent actions with session, action, time and outcome.
+The server list, action history and permission section share the panel content inset.
+Permission and error action buttons wrap with a gap, including in narrow sidebars.
 
 The grouped `ui` tool always lists `design_*` actions. Discovery is not authorization:
 dispatch requires the armed terminal session and repository. Lifecycle changes

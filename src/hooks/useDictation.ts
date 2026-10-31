@@ -14,6 +14,8 @@ interface TranscribeResponse {
 
 /** Dependencies injected into useDictation */
 export interface DictationDeps {
+	/** A detached chat has no active PTY: transcript focus still targets its composer. */
+	fallbackInput?: () => HTMLTextAreaElement | null;
 	pty: {
 		write: (sessionId: string, data: string) => Promise<void>;
 	};
@@ -49,7 +51,7 @@ export function useDictation(deps: DictationDeps) {
 
 	const handleDictationStart = async (source = "hotkey") => {
 		if (!deps.dictation.state.enabled || starting) return;
-		const captured = { id: crypto.randomUUID(), target: captureDictationTarget() };
+		const captured = { id: crypto.randomUUID(), target: captureDictationTarget(deps.fallbackInput?.()) };
 		starting = true;
 		startPromise = (async () => {
 			// The hotkey also stops hands-free; refresh before trusting its cached flag.

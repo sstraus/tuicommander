@@ -131,6 +131,11 @@ pub enum StoryAction {
     GetStory {
         story_id: String,
     },
+    /// Read legal phase destinations for the displayed revision, without changing a record.
+    AvailableTransitions {
+        story_id: String,
+        expected_revision: i64,
+    },
     TransitionHistory {
         story_id: String,
     },
@@ -178,6 +183,7 @@ pub enum StoryReply {
     Summary(StorySummary),
     Story(Story),
     Transitions(Vec<StoryTransition>),
+    AvailableTransitions(super::AvailableTransitions),
     Note(super::StoryNote),
     Notes(Vec<super::StoryNote>),
     ArchiveHistory(Vec<super::ArchiveEvent>),
@@ -329,6 +335,7 @@ fn story_action_with_source(
                     }
                     match read.story.status {
                         StoryStatus::WontFix => continue,
+                        StoryStatus::Ready => summary.ready += 1,
                         StoryStatus::InProgress => summary.in_progress += 1,
                         StoryStatus::Qa => summary.qa += 1,
                         StoryStatus::Done => summary.done += 1,
@@ -450,6 +457,19 @@ fn story_action_with_source(
             Ok(StoryReply::ArchiveHistory(store.archive_history(&plan_id)?))
         }
         StoryAction::GetStory { story_id } => Ok(StoryReply::Story(story_in_project(&story_id)?)),
+        StoryAction::AvailableTransitions {
+            story_id,
+            expected_revision,
+        } => {
+            story_in_project(&story_id)?;
+            Ok(StoryReply::AvailableTransitions(
+                store.available_transitions(
+                    &story_id,
+                    expected_revision,
+                    archive_actor(actor_session, unauthenticated_http),
+                )?,
+            ))
+        }
         StoryAction::TransitionHistory { story_id } => {
             story_in_project(&story_id)?;
             Ok(StoryReply::Transitions(
@@ -575,6 +595,59 @@ fn archive_actor(session: Option<&str>, unauthenticated_http: bool) -> super::St
 mod tests {
     use super::super::StoryOrigin;
     use super::*;
+
+    /// Catches: the shared action envelope omits phase previews or changes their wire fields.
+    #[test]
+    fn available_transitions_action_preserves_revision_and_project_scope() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(dir.path().join("config"));
+        let repo = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let project = repo.path().to_str().unwrap();
+        let store = StoryStore::open().unwrap();
+        let plan = store
+            .create_plan(NewPlan {
+                project: project.into(),
+                title: "Phase previews".into(),
+                source: "release.md".into(),
+            })
+            .unwrap();
+        let story = store
+            .create_story(NewStory {
+                story_type: None,
+                plan_id: plan.id,
+                title: "Move".into(),
+                criteria: vec!["Delivered".into()],
+                priority: 1,
+                origin: StoryOrigin::Native,
+                file_scope: vec![],
+            })
+            .unwrap();
+        let action = serde_json::json!({"action":"available_transitions", "story_id":story.id, "expected_revision":story.revision});
+        let reply = story_action(
+            project,
+            serde_json::from_value(action.clone()).unwrap(),
+            None,
+        )
+        .unwrap();
+        let wire = serde_json::to_value(reply).unwrap();
+        assert_eq!(wire["type"], "available_transitions");
+        assert_eq!(wire["value"]["revision"], story.revision);
+        assert_eq!(
+            wire["value"]["moves"][0],
+            serde_json::json!({"status":"in_progress", "command":"start_manual"})
+        );
+        let other = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        assert!(
+            story_action(
+                other.path().to_str().unwrap(),
+                serde_json::from_value(action).unwrap(),
+                None
+            )
+            .unwrap_err()
+            .contains("does not belong")
+        );
+        assert_eq!(store.get_story(&story.id).unwrap(), story);
+    }
 
     /// Catches: the missing update_plan action prevents correcting either stored field.
     #[test]
@@ -1554,6 +1627,35 @@ mod tests {
         assert_eq!(cleared.risk, None);
     }
 
+    /// Catches: Ready-only work disappearing from the toolbar summary while no story is running.
+    #[test]
+    fn summary_reports_three_ready_stories_with_no_running_or_done_work() {
+        let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(config.path().into());
+        let repo = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let project = repo.path().to_str().unwrap();
+        let (first, _) = two_stories(project);
+        let store = StoryStore::open().unwrap();
+        store
+            .create_story(NewStory {
+                story_type: None,
+                plan_id: first.plan_id,
+                title: "Third".into(),
+                criteria: vec!["Delivered".into()],
+                priority: 1,
+                origin: StoryOrigin::Native,
+                file_scope: vec![],
+            })
+            .unwrap();
+        let reply =
+            serde_json::to_value(story_action(project, StoryAction::Summary, None).unwrap())
+                .unwrap();
+        assert_eq!(reply["value"]["ready"], 3);
+        assert_eq!(reply["value"]["inProgress"], 0);
+        assert_eq!(reply["value"]["done"], 0);
+        assert_eq!(reply["value"]["total"], 3);
+    }
+
     /// Catches: counting stories of finished plans, counting won't-fix stories in the total, and
     /// counting stories abandoned behind a cancelled dependency, and leaking another project's plans into the summary.
     #[test]
@@ -1675,6 +1777,7 @@ mod tests {
             summary,
             StorySummary {
                 active_plans: 1,
+                ready: 0,
                 in_progress: 1,
                 qa: 0,
                 done: 0,

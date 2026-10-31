@@ -28,7 +28,16 @@ pub(crate) fn resolve_owning_project_in(
 
     let mut workspace_parents = HashMap::<PathBuf, PathBuf>::new();
     for (repo_path, repo) in repos {
-        let repo_root = canonical_if_present(Path::new(repo_path));
+        // Registrations can repeat the same shared Git inventory from a linked
+        // checkout. Infer one main-checkout owner rather than opposite edges.
+        let repo_path = Path::new(repo_path);
+        let repo_root = tuic_git::git::resolve_git_dir(repo_path)
+            .filter(|git_dir| git_dir.join("commondir").is_file())
+            .map(|_| tuic_git::git::canonical_repo_root(repo_path))
+            .filter(|main| main.join(".git").is_dir())
+            // An absorbed submodule's gitdir is administration storage, not a
+            // checkout parent. Only infer a main checkout for linked worktrees.
+            .unwrap_or_else(|| canonical_if_present(repo_path));
         let Some(workspaces) = repo
             .get("workspaces")
             .and_then(serde_json::Value::as_object)
@@ -166,6 +175,112 @@ mod tests {
         assert_eq!(
             registered_workspace_for_path_in(Path::new("/tmp"), &json!({})),
             None
+        );
+    }
+
+    /// Recorded duplicate inventories must not redirect the main checkout to a sibling.
+    #[test]
+    fn recorded_ego_inventory_does_not_make_main_ownership_cyclic() {
+        let (root, document) = recorded_ego_inventory();
+        let main = root.path().join("ego");
+        assert_eq!(
+            resolve_owning_project_in(main.to_str().unwrap(), &document).unwrap(),
+            main.canonicalize().unwrap()
+        );
+    }
+
+    /// A separately registered linked checkout still shares the primary journal.
+    #[test]
+    fn recorded_ego_linked_registration_does_not_own_a_second_journal() {
+        let (root, document) = recorded_ego_inventory();
+        let linked = root.path().join("ego__wt/feat-history-anchors");
+        assert_eq!(
+            resolve_owning_project_in(linked.to_str().unwrap(), &document).unwrap(),
+            root.path().join("ego").canonicalize().unwrap()
+        );
+    }
+
+    /// A sibling listed by two registrations must not inherit the last inventory's owner.
+    #[test]
+    fn recorded_ego_sibling_inventory_does_not_redirect_progress() {
+        let (root, document) = recorded_ego_inventory();
+        let sibling = root.path().join("ego__wt/fix-public-candidate-737");
+        assert_eq!(
+            resolve_owning_project_in(sibling.to_str().unwrap(), &document).unwrap(),
+            root.path().join("ego").canonicalize().unwrap()
+        );
+    }
+
+    fn recorded_ego_inventory() -> (tempfile::TempDir, serde_json::Value) {
+        let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let text = include_str!("ownership-ego-2583.json")
+            .replace("$ROOT", &root.path().to_string_lossy().replace('\\', "/"));
+        let fixture: serde_json::Value = serde_json::from_str(&text).unwrap();
+        let document = fixture["repositories"].clone();
+        for repo in document["repos"].as_object().unwrap().values() {
+            for workspace in repo["workspaces"].as_object().unwrap().values() {
+                std::fs::create_dir_all(workspace["worktreePath"].as_str().unwrap()).unwrap();
+            }
+        }
+        std::fs::create_dir_all(root.path().join("ego/.git")).unwrap();
+        for (path, contents) in fixture["gitFiles"].as_object().unwrap() {
+            let path = Path::new(path);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, contents.as_str().unwrap()).unwrap();
+        }
+        (root, document)
+    }
+
+    /// Catches: a registered submodule's journal moving into .git/modules.
+    #[test]
+    fn a_registered_submodule_keeps_its_checkout_as_journal_owner() {
+        use tuic_git::git_cli::git_cmd;
+
+        let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let source = root.path().join("source");
+        let project = root.path().join("project");
+        std::fs::create_dir_all(&source).unwrap();
+        std::fs::create_dir_all(&project).unwrap();
+        git_cmd(&source).args(["init"]).run().unwrap();
+        git_cmd(&source)
+            .args([
+                "-c",
+                "user.name=Test",
+                "-c",
+                "user.email=test@example.invalid",
+                "commit",
+                "--allow-empty",
+                "-m",
+                "submodule fixture",
+            ])
+            .run()
+            .unwrap();
+        git_cmd(&project).args(["init"]).run().unwrap();
+        git_cmd(&project)
+            .args([
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                &source.to_string_lossy(),
+                "deps/library",
+            ])
+            .run()
+            .unwrap();
+        let submodule = project.join("deps/library");
+        let document = json!({
+            "repos": {
+                submodule.to_string_lossy(): {
+                    "workspaces": {
+                        "main": { "worktreePath": submodule, "parentRepoPath": null }
+                    }
+                }
+            }
+        });
+        assert_eq!(
+            resolve_owning_project_in(submodule.to_str().unwrap(), &document).unwrap(),
+            submodule.canonicalize().unwrap(),
+            "an absorbed submodule gitdir is not its journal's owning checkout"
         );
     }
 

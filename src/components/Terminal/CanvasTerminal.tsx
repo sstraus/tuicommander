@@ -59,6 +59,7 @@ import {
 	type HoveredLink,
 	hoverSignature,
 	logicalCellToStringOffset,
+	logicalRows,
 	logicalStringSpanToCells,
 	readProjectedSelectionText,
 	rowStringSpanToCells,
@@ -288,14 +289,14 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	/** What the hovered link underlined when the probe resolved it; see pressSpanAt. */
 	let hoveredSignature = "";
 	const detectedLinks = linkController.detectedSpans;
-	// Spans of links that span soft-wrapped rows (web + file://), keyed by row.
-	// scanRowForLinks() merges these each time it rebuilds a row's dashed-underline
-	// spans, so multi-row underlines survive the per-frame rebuild at line ~1367.
-	// Recomputed by verifyVisibleFileLinks(); cleared with detectedLinks so it
-	// can't paint stale rows after a scroll/resize.
+	// Keep verified link identities across unrelated damage, not just their pixels.
+	// Each accepted frame projects them onto its current logical rows before painting.
 	const wrappedLinkSpans = linkController.wrappedSpans;
+	type WrappedLinkSource = { startRow: number; index: number; text: string; before: string; after: string };
+	let wrappedLinkSources: WrappedLinkSource[] = [];
 	function clearDetectedLinks() {
 		linkController.clearDetected();
+		wrappedLinkSources = [];
 	}
 
 	// Link context menu: right-clicking a detected link offers Open / Copy link.
@@ -1871,7 +1872,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// When backend sends all screen rows, replace rowMap to discard stale entries
 		if (decision.fullReplace) {
 			reconcileHealPending = false;
-			clearDetectedLinks();
+			if (scrollChanged) clearDetectedLinks();
 			// A full wire replacement is not a canvas invalidation. The renderer
 			// can retain matching pixels; geometry/screen/theme changes invalidate separately.
 		}
@@ -1888,10 +1889,17 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				}
 			}
 		}
+		const linkRows = new Set([...wrappedLinkSpans.keys(), ...frame.rows.map((row) => row.index)]);
 		installFrameRows(rowMap, frame, decision);
-		for (const row of frame.rows) {
-			pendingDirtyRows.add(row.index);
-			scanRowForLinks(row.index);
+		refreshWrappedLinkSpans();
+		if (hoveredLink && hoverSignature(rowMap, hoveredLink) !== hoveredSignature) {
+			hoveredLink = null;
+			canvasRef.style.cursor = "text";
+		}
+		for (const row of frame.rows) pendingDirtyRows.add(row.index);
+		for (const row of linkRows) scanRowForLinks(row);
+		for (const row of detectedLinks.keys()) {
+			if (!rowMap.has(row)) detectedLinks.delete(row);
 		}
 
 		// A partial row arrived for a line we do not hold — it was dropped rather
@@ -1997,10 +2005,66 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 	const FILE_PATH_RE = filePathRegex();
 	const FILE_URL_RE = fileUrlRegex();
 
-	// Per-session cache: row text → verified file link spans (null = checked, none exist)
+	// Per-session cache: cwd + candidate identities → verified spans (null = checked, none exist)
 	const fileLinkCache = linkController.fileCache;
 	const FILE_LINK_RECHECK_MS = 3_000;
 	const FILE_LINK_CACHE_MAX = 500;
+
+	function refreshWrappedLinkSpans() {
+		wrappedLinkSpans.clear();
+		wrappedLinkSources = wrappedLinkSources.filter((source) => {
+			const rows = logicalRows(rowMap, source.startRow);
+			const text = rows
+				.map(({ row }) => {
+					let text = "";
+					for (let col = 0; col < row.count; col++) {
+						if (row.codepoints[col] !== 0) text += cellText(row, col);
+					}
+					return text;
+				})
+				.join("")
+				.trimEnd();
+			const end = source.index + source.text.length;
+			if (
+				text.slice(source.index, end) !== source.text ||
+				text.slice(Math.max(0, source.index - 1), source.index) !== source.before ||
+				text.slice(end, end + 1) !== source.after
+			)
+				return false;
+			const spans = logicalStringSpanToCells(rowMap, source.startRow, text, source.index, end);
+			if (spans.length < 2) return false;
+			for (const span of spans) {
+				const existing = wrappedLinkSpans.get(span.row) ?? [];
+				existing.push({ colStart: span.colStart, colEnd: span.colEnd });
+				wrappedLinkSpans.set(span.row, existing);
+			}
+			return true;
+		});
+	}
+
+	function fileCandidates(rowIndex: number, text: string) {
+		const candidates: { colStart: number; colEnd: number; raw: string }[] = [];
+		for (const [regex, fileUrl] of [
+			[FILE_PATH_RE, false],
+			[FILE_URL_RE, true],
+		] as const) {
+			regex.lastIndex = 0;
+			let match: RegExpExecArray | null;
+			while ((match = regex.exec(text)) !== null) {
+				const index = fileUrl ? match.index : text.indexOf(match[1], match.index);
+				const end = fileUrl ? match.index + match[0].length : index + match[1].length;
+				const cells = rowStringSpanToCells(rowMap, rowIndex, index, end);
+				if (cells) candidates.push({ colStart: cells[0], colEnd: cells[1], raw: match[1] });
+			}
+		}
+		return candidates;
+	}
+
+	// Decorations depend on candidate text and cell positions, not a spinner elsewhere
+	// on the same row. Include cwd because the same relative path can resolve differently.
+	function fileCacheKey(candidates: ReturnType<typeof fileCandidates>) {
+		return JSON.stringify([terminalsStore.get(props.terminalId)?.cwd ?? "", candidates]);
+	}
 
 	function scanRowForLinks(rowIndex: number) {
 		const row = rowMap.get(rowIndex);
@@ -2017,7 +2081,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		}
 
 		// File paths: only underline if previously verified to exist
-		const cached = fileLinkCache.get(text);
+		const cached = fileLinkCache.get(fileCacheKey(fileCandidates(rowIndex, text)));
 		if (cached?.spans) {
 			spans.push(...cached.spans);
 		}
@@ -2042,33 +2106,22 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		const generation = screenGeneration;
 		const maxRow = currentFrame?.screenRows || lastResizeRows;
 		const now = Date.now();
-		const toCheck: { text: string; candidates: { colStart: number; colEnd: number; raw: string }[] }[] = [];
+		const toCheck: { key: string; candidates: { colStart: number; colEnd: number; raw: string }[] }[] = [];
 
 		for (let i = 0; i < maxRow; i++) {
 			const row = rowMap.get(i);
 			if (!row) continue;
 			const text = rowToText(row);
 
-			const cached = fileLinkCache.get(text);
+			const candidates = fileCandidates(i, text);
+			const key = fileCacheKey(candidates);
+			const cached = fileLinkCache.get(key);
 			if (cached) {
 				if (cached.spans !== null) continue;
 				if (now - cached.ts < FILE_LINK_RECHECK_MS) continue;
 			}
 
-			const candidates: { colStart: number; colEnd: number; raw: string }[] = [];
-			FILE_PATH_RE.lastIndex = 0;
-			let m: RegExpExecArray | null;
-			while ((m = FILE_PATH_RE.exec(text)) !== null) {
-				const idx = text.indexOf(m[1], m.index);
-				const cells = rowStringSpanToCells(rowMap, i, idx, idx + m[1].length);
-				if (cells) candidates.push({ colStart: cells[0], colEnd: cells[1], raw: m[1] });
-			}
-			FILE_URL_RE.lastIndex = 0;
-			while ((m = FILE_URL_RE.exec(text)) !== null) {
-				const cells = rowStringSpanToCells(rowMap, i, m.index, m.index + m[0].length);
-				if (cells) candidates.push({ colStart: cells[0], colEnd: cells[1], raw: m[1] });
-			}
-			if (candidates.length > 0) toCheck.push({ text, candidates });
+			if (candidates.length > 0) toCheck.push({ key, candidates });
 		}
 
 		const termId = terminalsStore.getTerminalForSession(props.sessionId);
@@ -2104,7 +2157,7 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 					const oldest = fileLinkCache.keys().next().value;
 					if (oldest !== undefined) fileLinkCache.delete(oldest);
 				}
-				fileLinkCache.set(item.text, { spans: verified.length > 0 ? verified : null, ts: Date.now() });
+				fileLinkCache.set(item.key, { spans: verified.length > 0 ? verified : null, ts: Date.now() });
 				if (verified.length > 0) anyFound = true;
 			}
 		}
@@ -2114,14 +2167,16 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		// logical line is scanned and any match that crosses a row boundary has
 		// its per-row spans recorded in wrappedLinkSpans (merged by scanRowForLinks
 		// so they survive the per-frame rebuild). Rebuilt fresh each pass.
-		wrappedLinkSpans.clear();
-		// Record a match's per-row spans into wrappedLinkSpans.
+		const nextWrappedSources: WrappedLinkSource[] = [];
+		// Publish the next verification atomically; never expose an empty map while IPC awaits.
 		const recordWrappedSpans = (startRow: number, text: string, matchIndex: number, matchEnd: number) => {
-			for (const span of logicalStringSpanToCells(rowMap, startRow, text, matchIndex, matchEnd)) {
-				const existing = wrappedLinkSpans.get(span.row) || [];
-				existing.push({ colStart: span.colStart, colEnd: span.colEnd });
-				wrappedLinkSpans.set(span.row, existing);
-			}
+			nextWrappedSources.push({
+				startRow,
+				index: matchIndex,
+				text: text.slice(matchIndex, matchEnd),
+				before: text.slice(Math.max(0, matchIndex - 1), matchIndex),
+				after: text.slice(matchEnd, matchEnd + 1),
+			});
 		};
 		const spansMultipleRows = (startRow: number, text: string, matchIndex: number, matchEnd: number) =>
 			logicalStringSpanToCells(rowMap, startRow, text, matchIndex, matchEnd).length > 1;
@@ -2215,8 +2270,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			}
 		}
 
-		if (anyFound) {
-			if (generation !== screenGeneration) return;
+		if (generation !== screenGeneration) return;
+		const hadWrapped = wrappedLinkSources.length > 0;
+		wrappedLinkSources = nextWrappedSources;
+		refreshWrappedLinkSpans();
+		if (anyFound || hadWrapped) {
 			for (let i = 0; i < maxRow; i++) scanRowForLinks(i);
 			scheduleRepaint();
 		}
@@ -3022,9 +3080,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				}
 			}
 
-			// Kitty keyboard protocol: encode special keys when flag 1 (disambiguate) is active
+			// Kitty keyboard protocol: encode special keys when flag 1 (disambiguate) is active.
 			const kbFlags = currentFrame?.keyboardFlags ?? 0;
-			if (kbFlags & 1) {
+			// DEFERRED (2026-10-31) — ego accepts BusySteer but does not negotiate Kitty yet.
+			// Keep only its Ctrl+Enter exception until ego enables the Reedline protocol guard.
+			const egoCtrlEnter = e.key === "Enter" && e.ctrlKey && terminalsStore.get(props.terminalId)?.agentType === "ego";
+			if (kbFlags & 1 || egoCtrlEnter) {
 				const seq = kittySequenceForKey(e.key, e.shiftKey, e.altKey, e.ctrlKey, e.metaKey);
 				if (seq !== null) {
 					e.preventDefault();

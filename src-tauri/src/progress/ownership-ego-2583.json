@@ -1,0 +1,146 @@
+{
+  "repositories": {
+    "repos": {
+      "$ROOT/ego": {
+        "workspaces": {
+          "master": {
+            "worktreePath": "$ROOT/ego",
+            "parentRepoPath": null,
+            "kind": "main",
+            "isMain": true
+          },
+          "feat/tool-header-mocks-739": {
+            "worktreePath": "$ROOT/ego__wt/feat-tool-header-mocks-739",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "fix/public-candidate-737": {
+            "worktreePath": "$ROOT/ego__wt/fix-public-candidate-737",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "feat/history-anchors": {
+            "worktreePath": "$ROOT/ego__wt/feat-history-anchors",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "fix/optiono-deadlock": {
+            "worktreePath": "$ROOT/ego__wt/fix-optiono-deadlock",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "fix/inline-diffs-relative-links": {
+            "worktreePath": "$ROOT/ego__wt/fix-inline-diffs-relative-links",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "feat/741-subagent-parallel-work": {
+            "worktreePath": "$ROOT/ego__wt/feat-741-subagent-parallel-work",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "fix/748-premature-turn-end": {
+            "worktreePath": "$ROOT/ego__wt/fix-748-premature-turn-end",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "fix/exec-keep-invoked-name": {
+            "worktreePath": "$ROOT/ego__wt/fix-exec-keep-invoked-name",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "fix/goal-paused-label": {
+            "worktreePath": "$ROOT/ego__wt/fix-goal-paused-label",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "feat/747-setup-revision": {
+            "worktreePath": "$ROOT/ego__wt/feat-747-setup-revision",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "feat/bang-and-root-grant": {
+            "worktreePath": "$ROOT/ego__wt/feat-bang-and-root-grant",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          }
+        }
+      },
+      "$ROOT/ego__wt/feat-history-anchors": {
+        "workspaces": {
+          "feat/history-anchors": {
+            "worktreePath": "$ROOT/ego__wt/feat-history-anchors",
+            "parentRepoPath": null,
+            "kind": "main",
+            "isMain": false
+          },
+          "fix/public-candidate-737": {
+            "worktreePath": "$ROOT/ego__wt/fix-public-candidate-737",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "feat/tool-header-mocks-739": {
+            "worktreePath": "$ROOT/ego__wt/feat-tool-header-mocks-739",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "master": {
+            "worktreePath": "$ROOT/ego",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": true
+          },
+          "fix/inline-diffs-relative-links": {
+            "worktreePath": "$ROOT/ego__wt/fix-inline-diffs-relative-links",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          },
+          "fix/optiono-deadlock": {
+            "worktreePath": "$ROOT/ego__wt/fix-optiono-deadlock",
+            "parentRepoPath": null,
+            "kind": "worktree",
+            "isMain": false
+          }
+        }
+      }
+    }
+  },
+  "gitFiles": {
+    "$ROOT/ego__wt/feat-tool-header-mocks-739/.git": "gitdir: $ROOT/ego/.git/worktrees/chore-gate-auto-04f5c45c-62e3f4ad8ee54755b6ea2c1df9d455a6\n",
+    "$ROOT/ego/.git/worktrees/chore-gate-auto-04f5c45c-62e3f4ad8ee54755b6ea2c1df9d455a6/commondir": "../..\n",
+    "$ROOT/ego__wt/fix-public-candidate-737/.git": "gitdir: $ROOT/ego/.git/worktrees/chore-apache-license-735\n",
+    "$ROOT/ego/.git/worktrees/chore-apache-license-735/commondir": "../..\n",
+    "$ROOT/ego__wt/feat-history-anchors/.git": "gitdir: $ROOT/ego/.git/worktrees/feat-history-anchors\n",
+    "$ROOT/ego/.git/worktrees/feat-history-anchors/commondir": "../..\n",
+    "$ROOT/ego__wt/fix-optiono-deadlock/.git": "gitdir: $ROOT/ego/.git/worktrees/docs-a2a-decision\n",
+    "$ROOT/ego/.git/worktrees/docs-a2a-decision/commondir": "../..\n",
+    "$ROOT/ego__wt/fix-inline-diffs-relative-links/.git": "gitdir: $ROOT/ego/.git/worktrees/refactor-remove-a2a\n",
+    "$ROOT/ego/.git/worktrees/refactor-remove-a2a/commondir": "../..\n",
+    "$ROOT/ego__wt/feat-741-subagent-parallel-work/.git": "gitdir: $ROOT/ego/.git/worktrees/fix-doctor-timeout\n",
+    "$ROOT/ego/.git/worktrees/fix-doctor-timeout/commondir": "../..\n",
+    "$ROOT/ego__wt/fix-748-premature-turn-end/.git": "gitdir: $ROOT/ego/.git/worktrees/fix-free-last-row-737\n",
+    "$ROOT/ego/.git/worktrees/fix-free-last-row-737/commondir": "../..\n",
+    "$ROOT/ego__wt/fix-exec-keep-invoked-name/.git": "gitdir: $ROOT/ego/.git/worktrees/feat-708-shell-colour\n",
+    "$ROOT/ego/.git/worktrees/feat-708-shell-colour/commondir": "../..\n",
+    "$ROOT/ego__wt/fix-goal-paused-label/.git": "gitdir: $ROOT/ego/.git/worktrees/fix-release-tree-checker-733\n",
+    "$ROOT/ego/.git/worktrees/fix-release-tree-checker-733/commondir": "../..\n",
+    "$ROOT/ego__wt/feat-747-setup-revision/.git": "gitdir: $ROOT/ego/.git/worktrees/feat-747-setup-revision\n",
+    "$ROOT/ego/.git/worktrees/feat-747-setup-revision/commondir": "../..\n",
+    "$ROOT/ego__wt/feat-bang-and-root-grant/.git": "gitdir: $ROOT/ego/.git/worktrees/feat-bang-and-root-grant\n",
+    "$ROOT/ego/.git/worktrees/feat-bang-and-root-grant/commondir": "../..\n"
+  }
+}
