@@ -11,6 +11,7 @@ export function useTasksDetail(props: {
 	provider: WorkItemProvider;
 	reference: WorkItemRef | null;
 	visible?: boolean;
+	focusComments?: object;
 	onItemChange?: (detail: WorkItemDetail) => void;
 }) {
 	const [detail, setDetail] = createSignal<WorkItemDetail>();
@@ -155,6 +156,24 @@ export function useTasksDetail(props: {
 			setError(undefined);
 			void refresh();
 		});
+	});
+	// The provider pages ordinary comments, reviews, then threads. Deep links advance
+	// to the first thread page; later pages stay behind the existing Load more action.
+	createEffect(() => {
+		const value = detail();
+		if (
+			props.focusComments &&
+			active() &&
+			value?.item.itemType === "pull" &&
+			value.comments.nextCursor &&
+			!value.comments.entries.some((entry) => entry.kind === "review_thread") &&
+			!loading() &&
+			!paging() &&
+			!pending() &&
+			!error()
+		) {
+			void loadMore();
+		}
 	});
 	createEffect(() => {
 		if (!active()) return;

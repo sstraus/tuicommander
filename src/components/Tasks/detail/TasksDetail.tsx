@@ -1,6 +1,8 @@
 import { createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import type { WorkItemProvider } from "../../../plugins/workItemProvider";
+import { taskWorkspaceOpener } from "../../../services/taskNavigation";
 import { tasksNotifications } from "../../../services/tasksNotifications";
+import { findTaskWorkspace } from "../../../services/taskWorkspace";
 import { appLogger } from "../../../stores/appLogger";
 import type { WorkItemDetail, WorkItemRef } from "../../../types/work-items.gen";
 import { writeClipboard } from "../../../utils/clipboard";
@@ -18,6 +20,8 @@ export interface TasksDetailProps {
 	provider: WorkItemProvider;
 	reference: WorkItemRef | null;
 	visible?: boolean;
+	/** A new request also scrolls an already-open conversation back to Comments. */
+	focusComments?: object;
 	/** Repository that Start work creates its worktree in. */
 	repoPath?: string;
 	onClose?: () => void;
@@ -37,6 +41,19 @@ export function TasksDetail(props: TasksDetailProps) {
 		props.provider;
 		setDraft("");
 		start.reset();
+	});
+	let commentsEl: HTMLElement | undefined;
+	let scrolledRequest: object | undefined;
+	createEffect(() => {
+		const request = props.focusComments;
+		if (request && model.detail() && request !== scrolledRequest && commentsEl) {
+			scrolledRequest = request;
+			commentsEl.scrollIntoView?.({ block: "start" });
+		}
+	});
+	const workspace = createMemo(() => {
+		const item = model.detail()?.item;
+		return item?.itemType === "pull" ? findTaskWorkspace(item.reference, item.url) : undefined;
 	});
 	const busy = () => Boolean(model.pending()) || model.paging() || start.pending();
 	const commentEntries = createMemo(
@@ -80,6 +97,18 @@ export function TasksDetail(props: TasksDetailProps) {
 								>
 									{tasksNotifications.followed(detail().item.reference) ? "Unfollow task" : "Follow task"}
 								</Button>
+								<Show when={taskWorkspaceOpener() && workspace()}>
+									{(target) => (
+										<Button
+											onClick={() => {
+												const current = workspace();
+												if (current) taskWorkspaceOpener()?.(current.repoPath, current.workspaceId);
+											}}
+										>
+											Open branch {target().branch}
+										</Button>
+									)}
+								</Show>
 								<Button type="button" onClick={() => handleOpenUrl(detail().item.url)}>
 									Open in provider
 								</Button>
@@ -206,7 +235,7 @@ export function TasksDetail(props: TasksDetailProps) {
 									</For>
 								</section>
 							</details>
-							<section aria-label="Comments">
+							<section ref={commentsEl} aria-label="Comments" tabIndex={-1}>
 								<h3>Comments</h3>
 								<Show when={commentEntries().size > 0} fallback={<p class={styles.muted}>No comments yet</p>}>
 									<For each={[...commentEntries().keys()]}>
