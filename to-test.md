@@ -1,3 +1,6 @@
+## Agent shim canonicalisation (2584-fdaa) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a new shell and run `ego models --help` through a canonicalising launcher. It must reach ego rather than exit 127 as `tuic-agent-shim`. Existing symlinks upgrade on new shell injection. The running app and installed shim directory were not changed during implementation; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
 ## Unrelated branch history (2611-6022) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a throwaway repository with an orphan branch and a related feature branch. Both must load; the orphan workspace must show Unrelated history in both sidebar densities without repeated refresh warnings. Removing its checkout must keep its branch unless a separate exact-tip archive authorizes deletion. Real-Git targeted tests cover the classification and deletion contract. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.

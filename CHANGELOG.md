@@ -23,6 +23,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Preserve agent shim names when launchers canonicalise executable paths; upgrade legacy Unix symlinks to atomic hard links (#2584-fdaa).
+
 - Let Design Mode start after a stale browser profile lock PID is reused by an unrelated process; preserve live profile ownership (#2591-937a).
 - Show an explicit unrelated-history branch state without failing repository refresh or treating independent commits as merged work. Keep the dirty-file count and Changes action in compact rows (#2611-6022).
 
