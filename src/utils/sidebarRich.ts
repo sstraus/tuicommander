@@ -44,7 +44,7 @@ export interface BranchFacts {
 	deletions: number;
 	dirtyFiles: number;
 	/** `unknown`: removal is blocked because the lifecycle status could not be read. */
-	state: "unknown" | "merged" | "stale" | null;
+	state: "unknown" | "unrelated_history" | "merged" | "stale" | null;
 }
 
 export function branchFacts(i: BranchFactsInput, nowMs: number): BranchFacts {
@@ -59,7 +59,15 @@ export function branchFacts(i: BranchFactsInput, nowMs: number): BranchFacts {
 		additions: i.additions,
 		deletions: i.deletions,
 		dirtyFiles: i.isMain ? 0 : (i.dirtyFiles ?? 0),
-		state: unknown ? "unknown" : merged ? "merged" : stale ? "stale" : null,
+		state: unknown
+			? "unknown"
+			: !i.isMain && i.commitStatus === "unrelated_history"
+				? "unrelated_history"
+				: merged
+					? "merged"
+					: stale
+						? "stale"
+						: null,
 	};
 }
 

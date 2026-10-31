@@ -1,3 +1,10 @@
+## Unrelated branch history (2611-6022) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a throwaway repository with an orphan branch and a related feature branch. Both must load; the orphan workspace must show Unrelated history in both sidebar densities without repeated refresh warnings. Removing its checkout must keep its branch unless a separate exact-tip archive authorizes deletion. Real-Git targeted tests cover the classification and deletion contract. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
+## Oversized plugin watcher lines (2607-678c) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm a long-running cursor-addressed TUI produces at most one oversized-line warning until its next LF, and plugin watchers still match subsequent normal output. Automated tests replay the recorded Codex idle animation and watcher registration changes. The daily app was not restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
 ## Shared globe artwork (2602-2e4d)
 
 - [ ] Inspect the global-workspace globe at default and enlarged sizes in light and dark themes. Confirm symmetric openings, a continuous rim and a clear equator. Headless geometry and before/after crops cover the shared component.
