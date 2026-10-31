@@ -139,7 +139,7 @@ pub(super) fn native_catalogue_for(dictation: bool) -> Result<Catalogue, Catalog
     catalogue.register(
         "voice",
         "machine",
-        Some(&DictationConfig::default()),
+        Some(&DictationConfig::fresh_defaults()),
         voice.clone(),
     )?;
     catalogue.register_schema(

@@ -283,8 +283,10 @@ Strict loads attempt to rename a config file that does not parse to
 `<name>.corrupt-<uuid>` before returning an error
 (`preserve_corrupt_config`). The UUID is fresh per occurrence on purpose: a fixed
 backup name would let a second corrupt load erase the document the first one
-saved, which is the same data loss one step removed. Nothing ever deletes these
-files — recovery is by hand.
+saved, which is the same data loss one step removed. Recovery is by hand.
+After each successful rename, a best-effort cleanup keeps at most five backups
+per config file, deleting the oldest ones first. The newly preserved backup
+is always kept; another config file's backups do not count toward this limit.
 
 Two strict entry points reach it. `load_json_config_strict` refuses to return
 `Default` for a broken file on the **read** side (`notes.json`, GH #107), and
@@ -357,7 +359,7 @@ needs an app restart is what that costs.
 | `attachment_max_bytes` | `u64` | `26214400` (25 MiB) | Binary upload cap per file; must be positive. |
 | `attachment_retention_days` | `u32` | `7` | Obsolete for uploads: attachment lifetime is now the session. This stored value has no effect on attachment cleanup. |
 | `mcp_server_enabled` | `bool` | `true` | Enable MCP HTTP server |
-| `mcp_port` | `u16` | `9876` | Fixed port for MCP server (0 = OS-assigned) |
+| `mcp_port` | `u16` | `3845` | Fixed port for MCP server (0 = OS-assigned) |
 | `mcp_capabilities` | `object` | `{denied:["settings","diagnostics"],migration_unknown_tools:[]}` | Native capability denials. Old `disabled_native_tools` migrates once; unknown names remain visible. Parent denials cover grouped actions; member denials remain scoped. Settings groups these keys by backend-owned domain, section and parent metadata; conditional availability is independent of denials. See MCP capability cutover documentation. |
 | `collapse_tools` | `bool` | `false` | Replace the full MCP tool list with 3 lazy-discovery meta-tools (`search_tools`, `get_tool_schema`, `call_tool`). Discovered native schemas are unchanged: managed commands still use one `call_tool` invocation of `session action=submit` and receive the bounded receipt in that response. Grok sessions use this surface automatically without changing the stored value — see [`mcp-http.md`](mcp-http.md#lazy-tool-discovery-collapse_tools). Size figures for both surfaces, and how to reproduce them, are in [Measuring the surfaces](mcp-http.md#measuring-the-surfaces) — the reduction is measured, never estimated |
 | `services` | `ServicesConfig` | `{}` | Nested remote-access config: `server`, `auth`, `tls`, `relay`, `push` (replaces the former flat `remote_access_*`/`push_enabled`/`relay_enabled` fields) |
@@ -397,7 +399,7 @@ cleartext copy does not survive on disk.
 | `suggest_followups` | `bool` | `true` | Show `suggest:` follow-up actions |
 | `issue_filter` | `Option<String>` | `"assigned"` | GitHub Issues filter: "assigned", "created", "mentioned", "all", "disabled" |
 | `experimental_features_enabled` | `bool` | `false` | Opts in to the AI Chat panel shell and SSH Tunnels. It has no sub-flags: `ai_chat_enabled`, `ai_triage_enabled` and `ai_watchers_enabled` went with the embedded AI engine (#784-0aec). A `config.json` written before that upgrade still carries them and still loads — `AppConfig` has no `deny_unknown_fields`, and `a_config_written_before_the_ai_engine_was_deleted_still_loads` holds that open |
-| `auto_show_pr_popover` | `bool` | `false` | Auto-show PR popover when switching to a branch with a PR |
+| `auto_show_pr_popover` | `bool` | `true` | Auto-show PR popover when switching to a branch with a PR |
 | `update_channel` | `String` | `"stable"` (`"beta"` in beta builds) | Update channel: "stable", "beta" or "nightly"; legacy stable choices migrate once on beta builds |
 | `inline_blame_enabled` | `bool` | `true` | Show GitLens-style inline git blame on the code editor's active line |
 | `show_block_timestamps` | `bool` | `true` | Label each command block with its elapsed time while Ctrl+Cmd is held. Frontend-gated (painted by the renderer); stored here for persistence |
@@ -672,10 +674,13 @@ inert, and removing a user's data on upgrade is a worse default than leaving it.
 
 **Type:** `UIPrefsConfig`
 
+The frontend initial sidebar and Settings navigation widths come from the
+Rust-generated settings catalogue. Explicit saved widths are not migrated.
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
 | `sidebar_visible` | `bool` | `true` | Sidebar visibility |
-| `sidebar_width` | `u32` | `260` | Sidebar width in pixels |
+| `sidebar_width` | `u32` | `300` | Sidebar width in pixels |
 | `diff_panel_visible` | `bool` | `false` | Diff panel open |
 | `markdown_panel_visible` | `bool` | `false` | Markdown panel open |
 | `notes_panel_visible` | `bool` | `false` | Notes panel open |
@@ -693,7 +698,7 @@ inert, and removing a user's data on upgrade is a worse default than leaving it.
 | `notes_panel_width` | `u32` | `350` | Notes panel width in pixels |
 | `plan_panel_width` | `u32` | `350` | Plan panel width in pixels |
 | `git_panel_width` | `u32` | `380` | Git panel width in pixels |
-| `settings_nav_width` | `u32` | `180` | Settings nav column width in pixels |
+| `settings_nav_width` | `u32` | `232` | Settings nav column width in pixels |
 | `settings_expert_mode` | `bool` | `false` | Settings "expert mode": off hides an expert control that is still at its default; on shows every control |
 | `diff_view_mode` | `String` | `"split"` | Diff viewer: `split` or `unified` |
 | `detached_panels` | `HashMap<String, String>` | `{}` | Panel id to detached window label |
