@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Recover malformed config fields without resetting valid settings; preserve valid legacy service credentials and show reset field names and the original backup path once per recovery (#2564-8455).
+- Migrate legacy disabled scrollback reflow once; preserve later explicit choices (#2565-8b3c).
 - Recall the latest host-owned text prompt with ArrowUp in an empty chat composer; native CLI Pending receipts remain non-cancellable (#2556-6065).
 - Keep short inline code chips together in Terminal Chat without changing transcript text (#2557-0f37).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).

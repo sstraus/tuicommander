@@ -884,8 +884,22 @@ pub(crate) struct ServicesConfig {
     pub(crate) push: PushConfig,
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, schemars::JsonSchema)]
+pub(crate) struct ConfigRecovery {
+    pub(crate) fields: Vec<String>,
+    pub(crate) backup_path: String,
+}
+
 #[derive(Clone, Serialize, Deserialize, schemars::JsonSchema)]
 pub(crate) struct AppConfig {
+    /// Read-only startup diagnostic, delivered through the normal config response.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[schemars(extend("x-not-setting" = "Transient config recovery diagnostic, never persisted."))]
+    pub(crate) config_recovery: Option<ConfigRecovery>,
+    /// Old files migrate once; fresh configs and explicit saves already express intent.
+    #[serde(default)]
+    #[schemars(extend("x-not-setting" = "Internal scrollback reflow migration marker"))]
+    pub(crate) scrollback_reflow_migrated: bool,
     /// Internal one-shot legacy-default migration state; never a user setting.
     #[serde(default)]
     #[schemars(extend("x-not-setting" = "Internal legacy session-duration migration marker"))]
@@ -1338,6 +1352,8 @@ fn default_remote_port() -> u16 {
 impl Default for AppConfig {
     fn default() -> Self {
         Self {
+            config_recovery: None,
+            scrollback_reflow_migrated: true,
             session_duration_migrated: true,
             shell: None,
             font_family: "JetBrains Mono".to_string(),
@@ -2629,6 +2645,8 @@ impl AppSecretSnapshot {
 fn config_for_disk(mut config: AppConfig) -> Result<AppConfig, String> {
     // All writes express current intent, including callers omitting this internal field.
     config.session_duration_migrated = true;
+    config.scrollback_reflow_migrated = true;
+    config.config_recovery = None;
     config.services.auth.session_token_exists = persist_secret(
         crate::credentials::Credential::RemoteSessionToken,
         &config.services.auth.session_token,
@@ -3354,24 +3372,141 @@ fn read_app_config_unlocked_for_version(
     };
     migrate_flat_services(&mut val);
     let migrated_capabilities = val.get("disabled_native_tools").is_some();
-    match serde_json::from_value(val) {
-        Ok(mut config) => {
-            let migrated_secret = hydrate_app_config_secrets(&mut config);
-            let migrated_duration = migrate_legacy_session_token_duration(&mut config);
-            let migrated_channel = migrate_legacy_beta_channel(&mut config, version);
-            Ok((
-                config,
-                migrated_secret || migrated_duration || migrated_channel || migrated_capabilities,
-            ))
-        }
-        Err(e) => {
-            tracing::error!(path = %path.display(), "Config deserialization failed after migration: {e}");
-            Err(AppConfigReadError::Corrupt(format!(
-                "Config deserialization failed for {}: {e}",
+    let (mut config, fields) = recover_app_config_fields(val).map_err(|e| {
+        AppConfigReadError::Corrupt(format!("Invalid config {}: {e}", path.display()))
+    })?;
+    config.config_recovery = None;
+    let recovered = !fields.is_empty();
+    if recovered {
+        // Preserve the exact original BEFORE hydration or any migration can rewrite it.
+        let aside = preserve_corrupt_config(path).ok_or_else(|| {
+            // DEFERRED (2026-10-31) — a failed backup rename returns defaults instead
+            // of recovered siblings. Recovery currently assumes rename succeeds;
+            // do not rewrite the original when its backup cannot be preserved.
+            AppConfigReadError::Unreadable(format!(
+                "Could not preserve damaged config {}",
                 path.display()
-            )))
+            ))
+        })?;
+        tracing::warn!(source = "config", fields = ?fields, backup = %aside.display(), "Recovered invalid config fields");
+        config.config_recovery = Some(ConfigRecovery {
+            fields,
+            backup_path: aside.display().to_string(),
+        });
+    }
+    let migrated_secret = hydrate_app_config_secrets(&mut config);
+    let migrated_duration = migrate_legacy_session_token_duration(&mut config);
+    let migrated_channel = migrate_legacy_beta_channel(&mut config, version);
+    let migrated_reflow = migrate_legacy_scrollback_reflow(&mut config);
+    Ok((
+        config,
+        recovered
+            || migrated_secret
+            || migrated_duration
+            || migrated_channel
+            || migrated_reflow
+            || migrated_capabilities,
+    ))
+}
+
+/// Use serde itself as the type oracle, not a second schema that can drift.
+/// Valid documents take one parse. Only damaged documents probe saved fields against
+/// a valid baseline; objects recurse so a bad service leaf cannot reset its siblings.
+fn recover_app_config_fields(
+    mut value: serde_json::Value,
+) -> Result<(AppConfig, Vec<String>), String> {
+    let defaults = serde_json::to_value(AppConfig::default()).map_err(|e| e.to_string())?;
+    let object = value
+        .as_object_mut()
+        .ok_or("config must be a JSON object")?;
+    let mut fields = Vec::new();
+    for key in ["font_family", "font_size", "theme"] {
+        if !object.contains_key(key) {
+            object.insert(key.to_string(), defaults[key].clone());
+            fields.push(key.to_string());
         }
     }
+    if let Ok(config) = serde_json::from_value(value.clone()) {
+        return Ok((config, fields));
+    }
+    // Retain serde's intentional missing-key semantics (notably the legacy
+    // migration markers and MCP opt-in), rather than filling the whole document
+    // with fresh-install defaults.
+    let baseline: AppConfig = serde_json::from_value(serde_json::json!({
+        "font_family": defaults["font_family"],
+        "font_size": defaults["font_size"],
+        "theme": defaults["theme"],
+    }))
+    .map_err(|e| e.to_string())?;
+    let mut repaired = serde_json::to_value(baseline).map_err(|e| e.to_string())?;
+    for (key, saved) in value.as_object().ok_or("config must be a JSON object")? {
+        let pointer = format!("/{}", key.replace('~', "~0").replace('/', "~1"));
+        recover_app_config_field(&mut repaired, &defaults, &pointer, saved, &mut fields);
+    }
+    let config = serde_json::from_value(repaired).map_err(|e| e.to_string())?;
+    fields.sort();
+    fields.dedup();
+    Ok((config, fields))
+}
+
+fn recover_app_config_field(
+    repaired: &mut serde_json::Value,
+    defaults: &serde_json::Value,
+    pointer: &str,
+    saved: &serde_json::Value,
+    fields: &mut Vec<String>,
+) {
+    // Serialized defaults omit some known fields (notably empty secrets).
+    // Insert before probing so serde, not pointer presence, validates the key.
+    // Unknown keys still pass the probe and are ignored by the final typed load.
+    let (parent_pointer, key) = pointer.rsplit_once('/').expect("field pointer");
+    let key = key.replace("~1", "/").replace("~0", "~");
+    let parent = repaired
+        .pointer_mut(parent_pointer)
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("field parent object");
+    let previous = parent.insert(key.clone(), saved.clone());
+    if serde_json::from_value::<AppConfig>(repaired.clone()).is_ok() {
+        return;
+    }
+    let parent = repaired
+        .pointer_mut(parent_pointer)
+        .and_then(serde_json::Value::as_object_mut)
+        .expect("field parent object");
+    if let Some(previous) = previous {
+        parent.insert(key, previous);
+    } else {
+        parent.remove(&key);
+    }
+    if let (Some(saved), Some(default)) = (
+        saved.as_object(),
+        defaults
+            .pointer(pointer)
+            .and_then(|v| v.as_object())
+            .filter(|object| !object.is_empty()),
+    ) {
+        *repaired.pointer_mut(pointer).expect("existing field") =
+            serde_json::Value::Object(default.clone());
+        for (key, child) in saved {
+            let child_pointer = format!("{pointer}/{}", key.replace('~', "~0").replace('/', "~1"));
+            recover_app_config_field(repaired, defaults, &child_pointer, child, fields);
+        }
+    } else {
+        if let Some(default) = defaults.pointer(pointer) {
+            *repaired.pointer_mut(pointer).expect("existing field") = default.clone();
+        }
+        fields.push(pointer.trim_start_matches('/').replace('/', "."));
+    }
+}
+
+/// Apply the approved changed default once, never overriding a later explicit false.
+fn migrate_legacy_scrollback_reflow(config: &mut AppConfig) -> bool {
+    if config.scrollback_reflow_migrated {
+        return false;
+    }
+    config.scrollback_reflow = true;
+    config.scrollback_reflow_migrated = true;
+    true
 }
 
 /// Enroll old beta installs once; later explicit channel choices remain authoritative.
@@ -5336,6 +5471,258 @@ mod tests {
             .collect()
     }
 
+    // Catches: one wrong type/enum or missing required field discards saved siblings.
+    #[test]
+    #[serial_test::serial]
+    fn damaged_app_fields_keep_saved_siblings() {
+        crate::credentials::reset_test_faults();
+        let mut failures = Vec::new();
+        for (field, bad) in [
+            ("font_size", Some(serde_json::json!("large"))),
+            ("close_behavior", Some(serde_json::json!("invalid"))),
+            ("font_family", None),
+            ("font_size", None),
+            ("theme", None),
+        ] {
+            let dir = TempDir::new().unwrap();
+            let _guard = set_config_dir_override(dir.path().to_path_buf());
+            let path = dir.path().join(APP_CONFIG_FILE);
+            let mut doc = serde_json::to_value(AppConfig::default()).unwrap();
+            doc["ide"] = serde_json::json!("saved-ide");
+            doc["shell"] = serde_json::json!("saved-shell");
+            doc["mcp_port"] = serde_json::json!(4567);
+            if let Some(bad) = bad {
+                doc[field] = bad;
+            } else {
+                doc.as_object_mut().unwrap().remove(field);
+            }
+            let original = doc.to_string();
+            fs::write(&path, &original).unwrap();
+            let loaded = load_app_config();
+            let recovery = loaded
+                .config_recovery
+                .as_ref()
+                .expect("visible recovery diagnostic");
+            assert_eq!(recovery.fields, [field]);
+            assert_eq!(fs::read_to_string(&recovery.backup_path).unwrap(), original);
+            let persisted: serde_json::Value =
+                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            assert!(
+                persisted.get("config_recovery").is_none(),
+                "diagnostic must not persist"
+            );
+            if loaded.ide != "saved-ide"
+                || loaded.shell.as_deref() != Some("saved-shell")
+                || loaded.mcp_port != 4567
+            {
+                failures.push(format!("{field}: saved siblings were reset"));
+            }
+            let backups = corrupt_backups(dir.path());
+            assert_eq!(backups.len(), 1, "{field}: preserve original");
+            assert_eq!(fs::read_to_string(&backups[0]).unwrap(), original);
+        }
+        assert!(failures.is_empty(), "{}", failures.join("; "));
+    }
+
+    // Catches: healthy saved false values or ignored keys trigger destructive recovery.
+    #[test]
+    #[serial_test::serial]
+    fn healthy_app_config_does_not_create_recovery_backups() {
+        crate::credentials::reset_test_faults();
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+        let path = dir.path().join(APP_CONFIG_FILE);
+        let mut doc = serde_json::to_value(AppConfig::default()).unwrap();
+        doc["scrollback_reflow"] = serde_json::json!(false);
+        doc["unknown_future_field"] = serde_json::json!({"x": 1});
+        let saved = doc.to_string();
+        fs::write(&path, &saved).unwrap();
+        let loaded = load_app_config();
+        assert!(!loaded.scrollback_reflow);
+        assert!(loaded.config_recovery.is_none());
+        assert_eq!(corrupt_backups(dir.path()), [] as [PathBuf; 0]);
+        assert_eq!(fs::read_to_string(path).unwrap(), saved);
+    }
+
+    // Catches: recovery resets an entire services object or loses another bad field.
+    #[test]
+    #[serial_test::serial]
+    fn damaged_nested_app_fields_keep_valid_service_siblings() {
+        crate::credentials::reset_test_faults();
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+        let path = dir.path().join(APP_CONFIG_FILE);
+        let mut doc = serde_json::to_value(AppConfig::default()).unwrap();
+        doc["services"]["server"]["port"] = serde_json::json!("broken");
+        doc["services"]["server"]["ipv6_enabled"] = serde_json::json!(true);
+        doc["font_weight"] = serde_json::json!(false);
+        doc["ide"] = serde_json::json!("saved-ide");
+        fs::write(&path, doc.to_string()).unwrap();
+        let loaded = load_app_config();
+        assert_eq!(loaded.ide, "saved-ide");
+        assert!(loaded.services.server.ipv6_enabled);
+        assert_eq!(loaded.font_weight, 400);
+        assert_eq!(loaded.services.server.port, 9876);
+        assert_eq!(
+            loaded.config_recovery.unwrap().fields,
+            ["font_weight", "services.server.port"]
+        );
+    }
+
+    // Catches: recursive repair drops secrets omitted from serialized defaults.
+    #[test]
+    #[serial_test::serial]
+    fn damaged_service_siblings_keep_legacy_secrets_in_vault_and_reload() {
+        use crate::credentials::{Credential, get};
+        crate::credentials::reset_test_faults();
+        let mut failures = Vec::new();
+        for (service, secret_field, bad_field, credential) in [
+            (
+                "auth",
+                "session_token",
+                "session_token_duration_secs",
+                Credential::RemoteSessionToken,
+            ),
+            ("relay", "token", "enabled", Credential::RelayToken),
+            (
+                "push",
+                "vapid_private_key",
+                "enabled",
+                Credential::PushVapidPrivateKey,
+            ),
+        ] {
+            let dir = TempDir::new().unwrap();
+            let _guard = set_config_dir_override(dir.path().to_path_buf());
+            crate::credentials::delete(credential.clone()).unwrap();
+            let path = dir.path().join(APP_CONFIG_FILE);
+            let mut doc = serde_json::to_value(AppConfig::default()).unwrap();
+            doc["services"][service][secret_field] = serde_json::json!("legacy-secret");
+            doc["services"][service][bad_field] = serde_json::json!("broken");
+            doc["services"][service]["unknown_future_field"] = serde_json::json!({"ignored": true});
+            fs::write(&path, doc.to_string()).unwrap();
+            let loaded = load_app_config();
+            assert_eq!(
+                loaded.config_recovery.unwrap().fields,
+                [format!("services.{service}.{bad_field}")]
+            );
+            let reloaded = load_app_config();
+            let value = serde_json::to_value(&reloaded).unwrap();
+            if value["services"][service][secret_field] != "legacy-secret"
+                || get(credential).unwrap().as_deref() != Some("legacy-secret")
+            {
+                failures.push(format!(
+                    "{service}: valid secret lost during recovery/migration/reload"
+                ));
+            }
+            let persisted: serde_json::Value =
+                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            assert!(
+                persisted["services"][service].get(secret_field).is_none(),
+                "plaintext must migrate to vault"
+            );
+            assert!(
+                persisted["services"][service]
+                    .get("unknown_future_field")
+                    .is_none()
+            );
+            assert!(reloaded.config_recovery.is_none(), "repair must not recur");
+        }
+        assert!(failures.is_empty(), "{}", failures.join("; "));
+    }
+
+    // Catches: malformed fields omitted from default JSON bypass validation/diagnostics.
+    #[test]
+    fn damaged_omitted_service_fields_are_reported() {
+        let mut doc = serde_json::to_value(AppConfig::default()).unwrap();
+        doc["services"]["auth"]["session_token"] = serde_json::json!(42);
+        doc["services"]["relay"]["token_exists"] = serde_json::json!("broken");
+        doc["services"]["push"]["vapid_private_key_exists"] = serde_json::json!("broken");
+        let (loaded, fields) = recover_app_config_fields(doc).unwrap();
+        assert_eq!(
+            fields,
+            [
+                "services.auth.session_token",
+                "services.push.vapid_private_key_exists",
+                "services.relay.token_exists"
+            ]
+        );
+        assert_eq!(loaded.services.auth.session_token, "");
+        assert!(!loaded.services.push.vapid_private_key_exists);
+        assert_eq!(loaded.services.relay.token_exists, None);
+    }
+
+    // Catches: malformed dynamic-map entries disappear without a backup or warning.
+    #[test]
+    #[serial_test::serial]
+    fn damaged_app_dynamic_map_reports_the_field() {
+        crate::credentials::reset_test_faults();
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+        let path = dir.path().join(APP_CONFIG_FILE);
+        let mut doc = serde_json::to_value(AppConfig::default()).unwrap();
+        doc["ai_chat_sessions"] = serde_json::json!({"workspace": false});
+        doc["ide"] = serde_json::json!("saved-ide");
+        fs::write(&path, doc.to_string()).unwrap();
+        let loaded = load_app_config();
+        assert_eq!(loaded.ide, "saved-ide");
+        assert_eq!(loaded.config_recovery.unwrap().fields, ["ai_chat_sessions"]);
+        assert_eq!(corrupt_backups(dir.path()).len(), 1);
+    }
+
+    // Catches: inherited false never migrates, or a later explicit false is overridden.
+    #[test]
+    #[serial_test::serial]
+    fn legacy_reflow_migrates_once_and_preserves_later_false() {
+        crate::credentials::reset_test_faults();
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+        let path = dir.path().join(APP_CONFIG_FILE);
+        let mut doc = serde_json::to_value(AppConfig::default()).unwrap();
+        doc.as_object_mut()
+            .unwrap()
+            .remove("scrollback_reflow_migrated");
+        doc["scrollback_reflow"] = serde_json::json!(false);
+        fs::write(&path, doc.to_string()).unwrap();
+        let mut loaded = load_app_config();
+        assert!(loaded.scrollback_reflow, "legacy false must migrate");
+        let persisted: serde_json::Value =
+            serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+        assert_eq!(persisted["scrollback_reflow_migrated"], true);
+        loaded.scrollback_reflow = false;
+        save_app_config(loaded).unwrap();
+        let saved = fs::read(&path).unwrap();
+        assert!(!load_app_config().scrollback_reflow);
+        assert_eq!(fs::read(&path).unwrap(), saved);
+    }
+
+    // Catches: an existing marker or an explicit first save still enrolls reflow.
+    #[test]
+    #[serial_test::serial]
+    fn marked_or_explicit_reflow_false_is_not_migrated() {
+        crate::credentials::reset_test_faults();
+        let dir = TempDir::new().unwrap();
+        let _guard = set_config_dir_override(dir.path().to_path_buf());
+        let path = dir.path().join(APP_CONFIG_FILE);
+        for marked in [true, false] {
+            let config = AppConfig {
+                scrollback_reflow: false,
+                scrollback_reflow_migrated: marked,
+                ..AppConfig::default()
+            };
+            if marked {
+                fs::write(&path, serde_json::to_vec(&config).unwrap()).unwrap();
+            } else {
+                save_app_config(config).unwrap();
+            }
+            assert!(!load_app_config().scrollback_reflow);
+            let persisted: serde_json::Value =
+                serde_json::from_slice(&fs::read(&path).unwrap()).unwrap();
+            assert_eq!(persisted["scrollback_reflow_migrated"], true);
+        }
+        fs::remove_file(&path).unwrap();
+        assert!(load_app_config().scrollback_reflow);
+    }
+
     /// `config.json` is the one config file whose load does NOT go through
     /// `load_json_config_strict_from_path`: `load_app_config` turns every
     /// `read_app_config_unlocked` error into `AppConfig::default()`. The defaults it
@@ -5594,6 +5981,8 @@ mod tests {
     fn app_config_round_trip() {
         let dir = TempDir::new().unwrap();
         let cfg = AppConfig {
+            config_recovery: None,
+            scrollback_reflow_migrated: true,
             session_duration_migrated: true,
             shell: Some("/bin/zsh".to_string()),
             progress_tracking: false,
@@ -5876,6 +6265,8 @@ mod tests {
                 let mut doc: serde_json::Value =
                     serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
                 doc["session_duration_migrated"] = serde_json::json!(true);
+                // Isolate channel policy from the independent one-shot reflow migration.
+                doc["scrollback_reflow_migrated"] = serde_json::json!(true);
                 doc["update_channel"] = serde_json::json!(channel);
                 fs::write(&path, doc.to_string()).unwrap();
                 let before = fs::read(&path).unwrap();
@@ -10176,6 +10567,7 @@ mod tests {
                 // A missing marker means a legacy file that still needs the
                 // one-shot duration migration; a fresh config has nothing to migrate.
                 "session_duration_migrated",
+                "scrollback_reflow_migrated",
                 // Old files must enroll once; fresh files already express current intent.
                 "beta_channel_migrated",
             ],
