@@ -2043,8 +2043,12 @@ mod tests {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
-        // 9: WF03 branch questions require old binaries to refuse the new projection.
-        assert_eq!(stored_schema_version(&db), 9, "fresh store records version");
+        // 10: WF05 command effects extend the WF03 branch-question layout.
+        assert_eq!(
+            stored_schema_version(&db),
+            10,
+            "fresh store records version"
+        );
         let run = store
             .start_plan(
                 project.path().to_str().unwrap(),
@@ -2054,9 +2058,9 @@ mod tests {
                 RunLimits::default(),
             )
             .unwrap();
-        // Catches: WF04 and WF02 reusing layout 7 without upgrading main's
+        // Catches: WF05 reusing layout 9 without upgrading main's
         // store, or an additive upgrade rewriting retained events/snapshots.
-        for old_version in [0, 6, 7, 8] {
+        for old_version in [0, 6, 7, 8, 9] {
             let conn = rusqlite::Connection::open(&db).unwrap();
             conn.pragma_update(None, "user_version", old_version)
                 .unwrap();
@@ -2064,7 +2068,7 @@ mod tests {
                 .unwrap();
             drop(conn);
             let upgraded = RunStore::open_at(&db).unwrap();
-            assert_eq!(stored_schema_version(&db), 9);
+            assert_eq!(stored_schema_version(&db), 10);
             assert_eq!(upgraded.snapshot(&run.id).unwrap(), run);
             assert_eq!(upgraded.replay(&run.id).unwrap(), run);
             assert_eq!(upgraded.report_dispositions(&run.id).unwrap(), vec![]);

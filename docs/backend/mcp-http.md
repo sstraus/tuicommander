@@ -217,7 +217,7 @@ Configuration via Settings > MCP and Settings > Remote Access, or `config.json`:
 ```json
 {
   "mcp_server_enabled": true,
-  "mcp_port": 9876
+  "mcp_port": 3845
 }
 ```
 

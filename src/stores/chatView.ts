@@ -205,7 +205,10 @@ export const chatViewStore = {
 		);
 	},
 
-	/** Presentation-only receipts; the CLI still owns its queue and execution. */
+	/** Presentation-only receipts; the CLI still owns its queue and execution.
+	 * DEFERRED (2026-10-31) — native CLI recall needs an acknowledged queue-id
+	 * withdrawal plus a reliable composer read. Sending Up/Esc alone cannot
+	 * retract a receipt safely: those keys may navigate history or interrupt. */
 	entries(sessionId: string): AcpTranscriptEntry[] {
 		return [
 			...acpTranscript.entries(chatViewKey(sessionId)),

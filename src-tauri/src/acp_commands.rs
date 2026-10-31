@@ -442,6 +442,20 @@ pub(crate) async fn acp_queued_prompt_cancel(
 
 #[cfg(feature = "desktop")]
 #[tauri::command]
+pub(crate) async fn acp_queued_prompt_recall(
+    state: State<'_, Arc<AppState>>,
+    connection_id: AcpConnectionId,
+    session_id: v1::SessionId,
+    turn_id: AcpTurnId,
+) -> Result<String, AcpClientError> {
+    state
+        .acp
+        .recall_queued(connection_id, session_id, turn_id)
+        .await
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
 pub(crate) async fn acp_session_set_config_option(
     state: State<'_, Arc<AppState>>,
     connection_id: AcpConnectionId,

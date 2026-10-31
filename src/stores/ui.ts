@@ -1,5 +1,6 @@
 import { batch } from "solid-js";
 import { createStore, reconcile } from "solid-js/store";
+import { settingsCatalogue } from "../generated/settingsCatalogue";
 import { invoke } from "../invoke";
 import { reportSettingsConflicts, settingsRefresh } from "../services/settingsRefresh";
 import type { TaskViewPreference } from "../types/taskPreferences";
@@ -28,11 +29,11 @@ function loadEditorWrapPrefs(): { text: boolean; code: boolean } {
 }
 
 export const SIDEBAR_MAX_WIDTH = 500;
-export const SIDEBAR_DEFAULT_WIDTH = 300;
+export const SIDEBAR_DEFAULT_WIDTH = settingsCatalogue.fields["preferences.sidebar_width"].default;
 /** The default is also the floor: the sidebar never gets narrower than it opens. */
 export const SIDEBAR_MIN_WIDTH = SIDEBAR_DEFAULT_WIDTH;
 
-const SETTINGS_NAV_DEFAULT_WIDTH = 232;
+const SETTINGS_NAV_DEFAULT_WIDTH = settingsCatalogue.fields["preferences.settings_nav_width"].default;
 
 /** Debounce window for persisting UI prefs, matching settingsStore. */
 const SAVE_DEBOUNCE_MS = 500;

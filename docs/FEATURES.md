@@ -1098,6 +1098,7 @@ Every terminal tab has a stable UUID (`tuicSession`) injected as the `TUIC_SESSI
 - **Durable task handles**: `agent action=spawn` returns `task_id` and `poll_interval_ms` alongside `session_id`. The `agent` MCP tool polls that handle without blocking — `agent action=task_get` returns `{task_id, status, status_message?, result?, error_detail?, poll_interval_ms}` where status is `working|input_required|completed|failed|cancelled` (the last three final), and `agent action=task_cancel` marks the task cancelled **without** killing the agent (`session action=kill` does that). Use this instead of `agent action=wait` / `session action=wait` when work runs past their 300 s cap or when the client may reconnect: the outcome is recorded by the session exit path whether or not anyone was listening. Tasks live for the TUICommander process only — they are deliberately not persisted, because a restart tears down every PTY
 
 ### 6.14 AI Chat Panel (`Cmd+Alt+A`) — ego over ACP
+- When no ego executable is configured, AI Chat offers the detected path with **Use this**. Only confirmation saves it; **Configure ego** remains available.
 
 AI Chat keeps the active conversation usable while saved-conversation discovery is pending or fails. Background saved-tab load failures do not replace the selected conversation’s state. **New chat** opens a fresh session without first replaying the saved conversation, so an old greeting title or refused replay cannot block it.
 
@@ -1857,6 +1858,7 @@ All data persisted to platform config directory via Rust:
 - Menu: Check for Updates (app menu and Help menu)
 
 ### 14.2 Sleep Prevention
+- With prevention disabled, an agent run lasting at least one minute shows dismissible idle-sleep guidance; short runs and plain shells do not. The guidance does not inspect battery or OS sleep policy. Dismissal persists in this client.
 - Backend-owned `keepawake` assertions cover active turns, meaningful background descendants, detached `tuic bg` runners and live managed agents marked `keep_open`
 - Sleep prevention does not depend on WebView activity; hidden, unloaded or blocked views cannot release it
 - The user setting still disables inhibition; idle agents without live work and closed sessions do not retain the hold
@@ -3591,6 +3593,10 @@ approves or merges. See [Incoming PR reviews](user-guide/automations.md#incoming
 
 Opt-in global and per-repository retention in days (0/Off by default). Repository refresh removes only eligible recorded checkouts under `__archived/`, keeps dirty or unsafe archives with named status reasons, and retains commit recovery refs. No new timer or branch deletion. See [Worktrees](user-guide/worktrees.md#archived-worktree-retention).
 
+
+### Typed workflow commands (WF05)
+
+Published Run command and versioned Tool nodes execute argv or explicit shell contracts in assigned workspaces. Durable resource waits and immutable source/target receipts reuse build-slot/rb admission; unknown effects retain resources until observed stop/release. Secret references and declared output schemas keep secrets out of receipts and refuse zero-match test proof. Native proof remains distinct from Linux execution. See `docs/backend/workflows.md` for the backend contract; Designer controls are not added by WF05.
 ### Typed workflow plan proposals (WF04 foundation)
 
 Contract-3 Create Stories visits accept a durable, activation- and plan-revision-
@@ -3625,6 +3631,18 @@ can flush a one-row cohort through a recovery pause. Activation pauses retain
 their deadlines; cancellation fences delivery. Question expiry never implies
 approval. This is internal infrastructure for later proof, provider and inbox
 consumers, not a new Designer control. See [workflows](backend/workflows.md#durable-timers-wf19).
+
+## Pending prompt recall and transcript cleanup
+
+ArrowUp in an empty desktop Compose or AI Chat composer recalls the latest
+host-owned user prompt after successful withdrawal. AI Chat supports text-only
+ACP prompts; desktop Compose supports the PTY idle-gate FIFO for every detected
+agent. Native CLI Pending receipts are not cancellation handles. Slash menus,
+nonempty drafts, and modified arrow keys retain their normal behavior. See
+[coverage and evidence](frontend/chat-wrap-recall-evidence.md).
+
+Terminal Chat keeps short inline code chips together. Empty ACP plan snapshots
+clear the prior steps without drawing a blank Plan card.
 
 
 ### Branch-local workflow decisions

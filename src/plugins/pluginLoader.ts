@@ -243,6 +243,10 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
 		mod = await import(/* @vite-ignore */ url);
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
+		// DEFERRED (2026-10-31) — the retained all-plugin failure batch is followed
+		// by successful startup, but has no URL/status or document-lifecycle evidence.
+		// Capture an isolated reproduction before classifying it as reload cancellation
+		// or adding retries; this path currently leaves the plugin failed until reload.
 		appLogger.error("plugin", `Failed to import plugin "${manifest.id}"`, err);
 		logger.error(`Import failed: ${msg}`, err);
 		pluginStore.updatePlugin(manifest.id, { error: msg });

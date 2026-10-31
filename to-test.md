@@ -2,6 +2,19 @@
 
 - [ ] After a manual rebuild/restart when losing current sessions is acceptable, use a throwaway instance config with one malformed field. Valid settings must remain, and the Settings recovered warning must name the reset field and original backup. Include a valid legacy service secret beside the malformed field: it must survive and migrate to the vault. Refocus a detached panel after six seconds: the recovery warning must not repeat. The installed app was not restarted; Rust does not hot-reload.
 - [ ] In a throwaway legacy config, set reflow false without its marker: first load enables it and writes the marker. Turn it off, restart, and confirm it remains off. Automated loader tests cover this persistence contract.
+## Typed workflow commands (2512-5a42) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a backend Run command graph in a throwaway project with an assigned workspace and inspect `command_executions`. Verify admission, target and immutable receipt; the daily instance was not restarted. Rust changes do not hot-reload.
+## Claude Unicode preview columns (2537-88a4) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, open a Claude question with CJK or wide emoji in an answer beside its preview. Confirm Chat labels contain no pane borders and the selected preview remains separate. The recorded-dialog regression also covers combining marks; the daily app was not restarted. Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+
+## Settings catalogue effective defaults (2566-f6d0) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use a throwaway instance to confirm the default sidebar is 300 px, Settings navigation is 232 px, and the Voice engine default is Edge. Existing saved widths and legacy voice choices must remain unchanged. Release MCP audit stays off; debug audit stays on. Automated catalogue/export and UI-store regressions cover these defaults. The daily app was not restarted; restart only when losing current sessions is acceptable.
+## Retained answer gutters (2560-b448) — Rust rebuild/restart required
+
+- [ ] After Boss installs a rebuilt app or restarts it when session loss is acceptable, create a throwaway 80-column terminal with reflow disabled, emit a long marked answer, and widen it to 200 columns. Existing fragments stay narrow by design; the green gutter must cover their continuation rows. The recorded-grid production renderer replay and targeted terminal regression cover the contract. The daily app was not restarted or reconfigured. Independently repaint the next row after widening: it must not remain joined to the answer; explicit CR/LF must also break the retained edge.
 
 ## Expanded Chat tool colours (2552-fd00)
 
@@ -3157,6 +3170,9 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   Targeted recorded-run and HTTP/service parity tests provide automated coverage;
   the running development backend does not hot-reload this Rust change.
 
+## WF05 critic fixes — load after a manual Rust rebuild (2512-5a42)
+
+- [ ] After Boss chooses to restart `make dev` (or rebuild release), inspect a paused remote typed command interrupted by daemon restart. Fenced stop/release must create a failed-proof receipt, release its named resources, and settle its uncertain effect without replay or automatic graph resume. Automated regression covers dirty-source recovery and lost output; the current live daemon does not contain this Rust change.
 - [ ] After a manual Rust restart (`make dev` or release rebuild), inspect a new daemon workflow launch: its `workspace_baseline` must retain pre-existing dirt and its attempt binding must retain `launchId` across retry. Do not restart an active daily instance for this check. Automated baseline, ACP and owned-close regressions passed on rb; the daily process still requires a rebuild/restart.
 
 - [ ] WF04 owned close: after a backend rebuild, inspect `close_agent` refusal/stop receipts and confirm dirty work, pending input, background receipts and test apps prevent closure. Workspaces must remain. Automated ACP stop-proof and real background-receipt refusal tests passed on rb. The daily app was not restarted.
@@ -3175,9 +3191,23 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] WF04 routing correction: after a manual Rust restart, confirm that unrelated profile and idle-close changes do not pause a pinned workflow. Contract-3 MCP launch must refuse caller-profile substitution; use the daemon run controls. Automated rb regressions cover both paths.
 - [ ] Terminal Chat queued prompt feedback: while Claude or Codex works, send two follow-ups from Chat; confirm muted Pending bubbles stay in send order and each disappears when its normal native transcript message arrives, without duplication. Repeat after a failed send and on mobile. Automated shared-host contracts and a worktree Vite appearance screenshot cover presentation; native busy-agent delivery remains owned by the CLI.
 
+- [ ] After the next manual backend restart, queue a text-only AI Chat prompt while busy, press ArrowUp in the empty composer, edit and resend once. Verify queue removal across desktop and phone. Rust changes do not hot-reload (#2556-6065).
 - [ ] PR conversation links (#2559-dc9e): with GitHub Work loaded, click a sidebar PR’s Comments action, unresolved-thread count and PR notification. Confirm the exact PR/account opens in Tasks with Comments and review threads; return through Open branch. Unload the provider and confirm the GitHub fallback.
 
 ## WF03 branch-local decisions (2510-14e7)
 
 - [ ] After a manual backend restart or release rebuild, ask on one workflow branch and confirm that its question remains visible while independent work advances; answer from a browser and confirm that only the bound worker continues. Rust changes do not hot-reload. Automated ledger, engine and transport checks are recorded in the story worklog.
 - [x] Session-only Progress popup mute: completion cards expose Mute; Terminal Progress retains reports and offers Unmute; blocked warnings remain visible. _(verified: isolated Vite real-component browser check and ProgressPopups.test.tsx; popup preference is in-memory only.)_
+
+- [ ] Fresh-install opt-in guidance (#2561-9861, #2562-d363): open inactive AI Chat with ego detected, confirm Use this, and check that the saved path activates Chat. Check a long active agent's sleep tip, a supported agent's setup hook tip, and a server-error retry tip; dismiss each and reopen to verify persistence. Defaults must stay off until explicitly changed.
+
+## App log fixes (2568-a5d5, 2569-b40f)
+
+- [ ] After the next manual `make dev` restart or release rebuild, confirm that
+  native notification bootstrap no longer logs a denied `is_permission_granted`
+  command and repository structure loads with `chore/ego-e2e-322-d` present.
+  The current running Rust backend and capabilities do not hot-reload.
+- [ ] Plugin investigation 2567-ee9c: capture an isolated module-load failure
+  with request URL/status and document lifecycle before selecting a fix. The
+  retained errors alone do not prove that the merge caused a reload race; all
+  twelve plugins were subsequently loaded. No running app reload was performed.

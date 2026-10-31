@@ -26,6 +26,9 @@ pub enum RunAction {
         definition_revision: i64,
         limits: RunLimits,
     },
+    CommandExecutions {
+        run_id: String,
+    },
     Incidents {
         run_id: String,
     },
@@ -95,6 +98,7 @@ pub enum RunReply {
     Events(Vec<RunEvent>),
     Receipt(Box<RunReceipt>),
     Incidents(Vec<super::RunIncident>),
+    CommandExecutions(Vec<crate::workflows::command::CommandObservation>),
     ReportDispositions(Vec<super::ReportDisposition>),
     Readiness(Vec<String>),
     AgentClose(serde_json::Value),
@@ -180,6 +184,12 @@ pub fn run_action(project: &str, action: RunAction) -> Result<RunReply, String> 
             definition_revision,
             limits,
         )?))),
+        RunAction::CommandExecutions { run_id } => {
+            scoped_snapshot(&store, &owner, &run_id)?;
+            Ok(RunReply::CommandExecutions(
+                store.command_journal().observations(&run_id)?,
+            ))
+        }
         RunAction::Incidents { run_id } => {
             let run = scoped_snapshot(&store, &owner, &run_id)?;
             Ok(RunReply::Incidents(super::incidents::read_incidents(
@@ -408,7 +418,8 @@ pub fn run_action_with_events(
                 &receipt.snapshot.id,
                 receipt.sequence,
             ),
-            RunReply::QuestionInbox(_)
+            RunReply::CommandExecutions(_)
+            | RunReply::QuestionInbox(_)
             | RunReply::Events(_)
             | RunReply::Runs(_)
             | RunReply::Incidents(_)

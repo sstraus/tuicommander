@@ -1,6 +1,8 @@
 # TUICommander Specification
 
 - [x] Config recovery (#2564-8455, #2565-8b3c): invalid fields fall back independently with a startup warning and preserved original backup. Legacy scrollback reflow enrolls once; subsequent explicit false values remain authoritative.
+- [x] Inactive AI Chat offers a detected ego path and saves it only after confirmation; configured paths and the no-detection empty state remain unchanged (#2561-9861).
+- [x] Disabled sleep prevention, global hook instrumentation and server-error retries have contextual, per-client dismissible tips without changing their defaults (#2562-d363).
 
 - [x] PR popovers, thread-count buttons and PR notifications open the exact Tasks conversation, reveal comments and the first review-thread page, fall back to GitHub without a provider, and return from PR detail to a matching existing sidebar workspace (#2559-dc9e).
 
@@ -787,6 +789,8 @@ Some frontend-only stores persist to localStorage:
 - [x] Collapsed terminal Compose shows the shared FIFO count in a muted pill, hidden at zero, with a command/message breakdown on hover or focus (#2339-056c).
 - [x] Terminal Compose starts at one control line, grows intrinsically up to its existing 96px editor maximum, scrolls longer drafts internally, and shrinks after clear or successful send through shared auto-grow bounds (#2447-9d28).
 - [x] Terminal Compose shows only Ctrl+Enter in the newline hint and hides shortcut hints in panels up to 640px wide instead of wrapping (#2411-c7c9).
+- [x] Empty-composer ArrowUp recalls the latest host-owned text prompt: ACP actor queue or desktop Compose PTY user-command FIFO. Native CLI Pending receipts and multimodal ACP restore remain unsupported (#2556-6065).
+- [x] Terminal Chat inline code chips remain whole when they fit the reading column; empty ACP plan snapshots render no blank card (#2557-0f37, #2558-2056).
 - [x] Terminal Compose sends on Enter, inserts a new line on Ctrl+Enter or Shift+Enter, and queues on Shift+Ctrl+Enter. IME confirmation does not send (#2395-ed27).
 - [x] Terminal Compose accepts ordered image drops and an image-only multi-file picker through the existing paste save path. Drop inserts at the pointer; unsupported images and failed saves show an error.
 - [x] Terminal Chat uses focused, docked Compose input with existing send/queue semantics; CLI open/pin preferences and shared unsent drafts survive view switches. Active exported native questions and permission choices render above Compose and use the same PTY key semantics as mobile, without submitting drafts; unexported/free-form prompts retain CLI fallback.
@@ -1544,6 +1548,10 @@ Deterministic checks and check-result publication are not part of this executor.
 
 `archive_retention_days` defaults to 0 (Off), with nullable repository overrides and repo-local configuration. Existing repository-refresh cleanup invokes a shared host-side sweep. Only registered, completed immediate `__archived` children with matching recorded path and sufficient Unix-second archive age are eligible. Legacy archives without timestamps are kept. Non-force Git removal preserves archive refs, refuses dirty files without archive-time recovery, and protects locked or live checkouts. The status line names deleted and kept archives.
 
+
+### Typed workflow commands (WF05)
+
+Published Run command and versioned Tool nodes execute argv or explicit shell contracts in assigned workspaces. Durable resource waits and immutable source/target receipts reuse build-slot/rb admission; unknown effects retain resources until observed stop/release. Secret references and declared output schemas keep secrets out of receipts and refuse zero-match test proof. Native proof remains distinct from Linux execution. See `docs/backend/workflows.md` for the backend contract; Designer controls are not added by WF05.
 ### Typed workflow plan proposals (WF04 foundation)
 
 Contract-3 and newer Create Stories visits accept a durable, activation- and plan-revision-

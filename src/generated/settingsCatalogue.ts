@@ -2658,10 +2658,10 @@ export const settingsCatalogue = {
       "schema": {
         "description": "Record and show body-free outcomes of MCP tools/call requests. Default on in debug builds only.",
         "type": "boolean",
-        "default": true
+        "default": false
       },
       "nullable": false,
-      "default": true,
+      "default": false,
       "availability": {
         "status": "available"
       },
@@ -6572,10 +6572,10 @@ export const settingsCatalogue = {
         "type": "integer",
         "format": "uint32",
         "minimum": 0,
-        "default": 180
+        "default": 232
       },
       "nullable": false,
-      "default": 180,
+      "default": 232,
       "availability": {
         "status": "available"
       },
@@ -6680,10 +6680,10 @@ export const settingsCatalogue = {
         "type": "integer",
         "format": "uint32",
         "minimum": 0,
-        "default": 260
+        "default": 300
       },
       "nullable": false,
-      "default": 260,
+      "default": 300,
       "availability": {
         "status": "available"
       },
@@ -11228,10 +11228,10 @@ export const settingsCatalogue = {
       "schema": {
         "description": "The engine that speaks replies: `edge` (Microsoft Edge neural voices,\nthe default), `pocket` (the bundled Pocket TTS) or `external` (the\ncommand in `speech_command`). Empty means \"not chosen yet\": a read\nanswers it from what the installation already holds, see\n`dictation::commands::legacy_speech_engine`.",
         "type": "string",
-        "default": ""
+        "default": "edge"
       },
       "nullable": false,
-      "default": "",
+      "default": "edge",
       "availability": {
         "status": "available"
       },

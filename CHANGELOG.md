@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - Recover malformed config fields without resetting valid settings; preserve valid legacy service credentials and show reset field names and the original backup path once per recovery (#2564-8455).
 - Migrate legacy disabled scrollback reflow once; preserve later explicit choices (#2565-8b3c).
+- Recall the latest host-owned text prompt with ArrowUp in an empty chat composer; native CLI Pending receipts remain non-cancellable (#2556-6065).
+- Keep short inline code chips together in Terminal Chat without changing transcript text (#2557-0f37).
+- Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
+### Fixed
+
+- Permit the native notification plugin's startup permission probe in every app-owned desktop window (#2568-a5d5).
+- Keep repository structure available when a local branch has unrelated history; retain that branch as unmerged (#2569-b40f).
+
+- Offer a detected ego executable in inactive AI Chat with an explicit Use this confirmation; preserve manual setup and existing paths (#2561-9861).
+- Add dismissible contextual tips for long-running agents, optional global hooks during agent setup and disabled temporary-server-error retries. Defaults stay unchanged (#2562-d363).
 
 - Connect PR popovers, unresolved-thread counts and PR notifications to the exact Tasks conversation, with a GitHub fallback and a return action to an existing branch/worktree (#2559-dc9e).
 
@@ -25,6 +35,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add backend typed workflow command/Tool nodes with durable resource waits, source/target receipts, secret-reference transport and fenced rb reconciliation (#2512-5a42).
 - Mute completion progress popups for the current app session and restore them from Terminal Progress. Journal entries and blocked warning popups remain available (#2553-6446).
 - Colour expanded Chat tool rows with shell syntax roles and separate tool/path styling. Reuse the existing Shell grammar and theme colours; collapsed summaries and sizing stay unchanged (#2552-fd00).
 
@@ -43,6 +54,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Reconcile paused typed workflow commands after restart without replay; stop local gate child groups, redact JSON-escaped secrets, bound remote result envelopes, release known no-start failures, and pass the wrapper freeze identity (#2512-5a42).
 - Keep collapsed Compose chrome in the shared Button primitive, without changing its idle, hover or keyboard-focus appearance (#2555-29b4).
 
 - Restore the collapsed Compose handle’s transparent idle chrome and muted label. Hover and keyboard focus reveal the button without fading its queue count (#2551-7a80).

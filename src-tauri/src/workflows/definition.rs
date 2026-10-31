@@ -44,6 +44,14 @@ pub enum NodeKind {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         execution: Option<AgentExecution>,
     },
+    RunCommand {
+        command: super::command::CommandDefinition,
+    },
+    Tool {
+        tool_id: String,
+        tool_revision: u16,
+        command: super::command::CommandDefinition,
+    },
     CreateStories,
     StoryDispatch {
         story_template_id: String,
@@ -141,7 +149,7 @@ fn required_outcomes(kind: &NodeKind) -> &'static [&'static str] {
         NodeKind::IfElse { .. } => &["yes", "no", "uncertain"],
         NodeKind::AllJoin { .. } => &["completed", "failed", "cancelled", "skipped"],
         NodeKind::Judge => &["yes", "no", "uncertain"],
-        NodeKind::Gate => &["pass", "fail"],
+        NodeKind::Gate | NodeKind::RunCommand { .. } | NodeKind::Tool { .. } => &["pass", "fail"],
         NodeKind::Loop { .. } => &["repeat", "exhausted"],
         NodeKind::StoryDispatch { .. } => &["completed", "blocked"],
         _ => &[],
@@ -173,6 +181,17 @@ pub fn validate_graph(graph: &WorkflowGraph, workflow_kind: WorkflowKind) -> Res
             return Err(format!("duplicate workflow node id: {}", node.id));
         }
         match &node.kind {
+            NodeKind::RunCommand { command } => command.validate()?,
+            NodeKind::Tool {
+                tool_id,
+                tool_revision,
+                command,
+            } => {
+                if tool_id.is_empty() || tool_id.len() > 128 || *tool_revision == 0 {
+                    return Err("Tool needs a pinned id/revision".into());
+                }
+                command.validate()?;
+            }
             NodeKind::Start => starts += 1,
             NodeKind::End => ends += 1,
             NodeKind::CreateStories if workflow_kind != WorkflowKind::Plan => {

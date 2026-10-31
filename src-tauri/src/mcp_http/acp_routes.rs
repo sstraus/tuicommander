@@ -97,6 +97,10 @@ pub(super) fn acp_routes() -> Router<Arc<AppState>> {
             delete(queued_prompt_cancel),
         )
         .route(
+            "/connections/{connection_id}/sessions/{session_id}/queue/{turn_id}/recall",
+            post(queued_prompt_recall),
+        )
+        .route(
             "/connections/{connection_id}/sessions/{session_id}/config",
             post(session_set_config_option),
         )
@@ -533,6 +537,18 @@ async fn queued_prompt_cancel(
         state
             .acp
             .cancel_queued(connection_id, session_id, turn_id)
+            .await,
+    )
+}
+
+async fn queued_prompt_recall(
+    Path((connection_id, session_id, turn_id)): Path<(AcpConnectionId, v1::SessionId, AcpTurnId)>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    answer(
+        state
+            .acp
+            .recall_queued(connection_id, session_id, turn_id)
             .await,
     )
 }

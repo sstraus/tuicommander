@@ -366,7 +366,11 @@ impl GraphExecution {
                 }
                 let mut repeats = 0;
                 let label = match kind {
-                    NodeKind::Judge | NodeKind::Gate | NodeKind::StoryDispatch { .. } => {
+                    NodeKind::Judge
+                    | NodeKind::Gate
+                    | NodeKind::RunCommand { .. }
+                    | NodeKind::Tool { .. }
+                    | NodeKind::StoryDispatch { .. } => {
                         let evidence = evidence.as_ref().ok_or("decision needs evidence")?;
                         evidence.validate()?;
                         Some(outcome.ok_or("decision needs one outcome")?.label())
