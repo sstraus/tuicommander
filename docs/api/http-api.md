@@ -2599,6 +2599,14 @@ before invoking git, matching MCP `repo action=worktree_create` validation.
 Creation always produces a linked worktree and refuses a branch that already
 has a checkout. Parent tracked and untracked changes are not carried over.
 
+An explicit `base_ref` is resolved to a commit before creation. A missing or
+non-commit ref fails without creating a checkout or branch. If the requested
+branch already exists at a different commit, creation fails instead of ignoring
+the base or resetting the branch. A matching existing branch remains reusable.
+Without `base_ref`, the existing branch or repository HEAD remains the default.
+Both HTTP and MCP return `base_commit`: the full checkout commit captured before
+the setup script runs. This also applies to recycled checkouts.
+
 `201` returns:
 
 ```json
@@ -2607,7 +2615,8 @@ has a checkout. Parent tracked and untracked changes are not carried over.
   "path": "/path__wt/feature-x",
   "workspace_id": "feature-x",
   "branch": "feature-x",
-  "base_repo": "/path"
+  "base_repo": "/path",
+  "base_commit": "<full resolved commit ID>"
 }
 ```
 

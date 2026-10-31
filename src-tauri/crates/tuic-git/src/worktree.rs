@@ -201,6 +201,27 @@ pub fn create_worktree_internal(
     config: &WorktreeConfig,
     base_ref: Option<&str>,
 ) -> Result<WorktreeInfo, String> {
+    // Resolve before any filesystem or ref mutation, including branch-collision
+    // recovery. The original ref below retains Git's upstream-tracking behavior.
+    let resolved_base = if config.create_branch {
+        base_ref
+            .map(|base| {
+                fetch_if_remote(&config.base_repo, base)?;
+                git_cmd(Path::new(&config.base_repo))
+                    .args([
+                        "rev-parse",
+                        "--verify",
+                        "--end-of-options",
+                        &format!("{base}^{{commit}}"),
+                    ])
+                    .run()
+                    .map(|out| out.stdout.trim().to_owned())
+                    .map_err(|error| format!("Cannot resolve worktree base '{base}': {error}"))
+            })
+            .transpose()?
+    } else {
+        None
+    };
     let worktree_name = sanitize_name(&config.task_name);
     let worktree_path = worktrees_dir.join(&worktree_name);
 
@@ -275,9 +296,7 @@ pub fn create_worktree_internal(
     if config.create_branch
         && let Some(start_point) = base_ref
     {
-        // Auto-fetch if the base ref is a remote tracking branch
-        fetch_if_remote(&config.base_repo, start_point)?;
-        args.push(start_point.to_string());
+        args.push(start_point.to_owned());
     }
 
     let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
@@ -296,6 +315,16 @@ pub fn create_worktree_internal(
                         .branch
                         .as_ref()
                         .expect("BranchExists implies -b was passed, so branch is Some");
+                    // Reusing a branch is not permission to ignore an explicit
+                    // start point. Never reset an existing branch to satisfy it.
+                    if let Some(expected) = &resolved_base {
+                        let actual = rev_at(&base_repo_path, &format!("refs/heads/{branch}"))?;
+                        if &actual != expected {
+                            return Err(format!(
+                                "Existing branch '{branch}' is at {actual}, not requested base {expected}"
+                            ));
+                        }
+                    }
                     let retry_args = [
                         "worktree",
                         "add",

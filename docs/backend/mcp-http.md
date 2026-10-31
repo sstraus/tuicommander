@@ -1524,6 +1524,13 @@ reports how many ignored directories arrived warm. Parent tracked changes are
 not copied. See `docs/api/http-api.md` § Create Worktree; both transports call
 the same shared core.
 
+`base_ref` accepts a commit, branch or tag. An invalid ref fails before checkout
+creation. An existing branch at another commit is a conflict, not a fallback.
+The HTTP, MCP and desktop creation responses include `base_commit`, captured
+from the allocated checkout before setup scripts run. `spawn_session=true`
+starts its PTY only after this allocation succeeds; it cannot bypass a base error.
+Connected daemons run this same handler on the repository-owning machine.
+
 The lifecycle event includes `creator_session` resolved from the MCP binding,
 never from a caller-supplied session id, and the requested `spawn_session` flag.
 Without a spawn request, the same-repository creator is reconciled from its
