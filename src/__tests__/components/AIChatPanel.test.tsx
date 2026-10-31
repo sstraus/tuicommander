@@ -113,6 +113,7 @@ const client = vi.hoisted(() => ({
 	prompt: vi.fn(),
 	cancel: vi.fn(),
 	cancelQueued: vi.fn(),
+	recallQueued: vi.fn().mockResolvedValue(null),
 	answerPermission: vi.fn(),
 	cancelPermission: vi.fn(),
 	answerElicitation: vi.fn(),
@@ -6026,4 +6027,92 @@ it("follows shared selection events and reconnect without republishing the adopt
 	expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "select_ai_chat_conversation")).toHaveLength(
 		writesBefore,
 	);
+});
+
+describe("queued prompt recall", () => {
+	async function queuedPanel() {
+		const view = await renderPanel();
+		acpStore.applySnapshot(
+			snapshot({
+				attachments: [
+					attachment({
+						state: "prompting",
+						activeTurn: { turnId: "running", state: "running", stopReason: null, usage: null },
+						queuedPrompts: [
+							{ turnId: "older", summary: "older" },
+							{ turnId: "latest", summary: "short preview" },
+						],
+					}),
+				],
+			}),
+		);
+		await settle();
+		return { ...view, textarea: view.container.querySelector("textarea") as HTMLTextAreaElement };
+	}
+
+	it("restores the latest full text only after withdrawal — catches summary recall and duplicate queued delivery", async () => {
+		const { textarea, container } = await queuedPanel();
+		let acknowledge!: (text: string) => void;
+		client.recallQueued.mockImplementationOnce(
+			() =>
+				new Promise<string>((resolve) => {
+					acknowledge = resolve;
+				}),
+		);
+		const event = new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true });
+		textarea.dispatchEvent(event);
+		expect(event.defaultPrevented).toBe(true);
+		expect(client.recallQueued).toHaveBeenCalledWith(CONNECTION, SESSION, "latest");
+		expect(textarea.value).toBe("");
+		expect(container.textContent).toContain("short preview");
+		const original = "complete prompt\n".repeat(30);
+		feed({ kind: "promptQueueChanged", queuedPrompts: [{ turnId: "older", summary: "older" }] });
+		acknowledge(original);
+		await settle();
+		expect(textarea.value).toBe(original);
+		expect(container.textContent).not.toContain("short preview");
+		expect(client.prompt).not.toHaveBeenCalled();
+		await typeAndSend(container, "edited prompt");
+		expect(client.prompt).toHaveBeenCalledTimes(1);
+	});
+
+	it("keeps native ArrowUp for text and slash menus — catches recall stealing caret or command navigation", async () => {
+		const { textarea } = await queuedPanel();
+		for (const text of ["already typing", "/"]) {
+			textarea.value = text;
+			textarea.dispatchEvent(new Event("input", { bubbles: true }));
+			textarea.setSelectionRange(0, 0);
+			textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+			expect(textarea.value).toBe(text);
+		}
+		expect(client.recallQueued).not.toHaveBeenCalled();
+	});
+
+	it("keeps edits made during withdrawal — catches acknowledged recall overwriting the next draft", async () => {
+		const { textarea } = await queuedPanel();
+		let acknowledge!: (text: string) => void;
+		client.recallQueued.mockImplementationOnce(
+			() =>
+				new Promise<string>((resolve) => {
+					acknowledge = resolve;
+				}),
+		);
+		textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+		textarea.value = "new typing";
+		textarea.dispatchEvent(new Event("input", { bubbles: true }));
+		acknowledge("recalled");
+		await settle();
+		expect(textarea.value).toBe("recalled\n\nnew typing");
+	});
+
+	it("leaves the queue and draft alone on refusal — catches already-dispatched or multimodal prompts being fabricated locally", async () => {
+		const { textarea, container } = await queuedPanel();
+		client.recallQueued.mockRejectedValueOnce(new Error("queued prompt not found"));
+		textarea.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+		await settle();
+		expect(textarea.value).toBe("");
+		expect(container.textContent).toContain("short preview");
+		expect(container.textContent).toContain("queued prompt not found");
+		expect(client.prompt).not.toHaveBeenCalled();
+	});
 });

@@ -207,3 +207,13 @@ explicit previous/next/select controls rather than guessed labels.
 ### Pending Chat prompts
 
 In an open terminal Chat view, a submitted composer prompt appears immediately as a muted **Pending** bubble. Several prompts stay in send order while the agent works. A matching new user message from the native transcript replaces its bubble and removes older unmatched bubbles, since the CLI handles sends in order. A local slash command or rewritten prompt therefore cannot block later receipts. Adapter-redacted or truncated text can remain pending until a later matching prompt arrives or Chat closes. Failed sends remove their own feedback; ordinary activity and idle signals do not. This applies to the shared Claude, Codex, Grok and ego transcript presentation, but does not add queueing support to a CLI that lacks it. TUIC cannot preview prompts typed in the hidden CLI or sent outside this client. The CLI owns its queue; pending bubbles have no Cancel action and are not persisted when Chat closes.
+
+### Recall a host-owned pending prompt
+
+With an empty desktop Compose editor, press **ArrowUp** to withdraw the newest
+user command from TUIC's idle-gate queue and edit it. Notices and initial prompts
+are not recalled. The command is restored only if queue removal succeeds before
+delivery. A normal Send's muted **Pending** bubble belongs to the native CLI and
+cannot be withdrawn by this action. AI Chat's shared ACP composer supports the
+same shortcut for text-only queued turns. Nonempty drafts and slash menus keep
+their normal arrow-key behavior. See [coverage and evidence](chat-wrap-recall-evidence.md).

@@ -10,6 +10,12 @@ const mod = isMacOS() ? "Cmd" : "Ctrl";
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Recall a queued prompt",
+		description:
+			"In an empty desktop Compose or AI Chat editor, press ArrowUp to withdraw the latest host-owned text prompt for editing. Native CLI Pending bubbles cannot be recalled this way.",
+		shortcut: "ArrowUp",
+	},
+	{
 		feature: "Mobile URL paste",
 		description:
 			"Paste a web link into a mobile terminal or AI Chat draft. A space separates the URL from your next words unless whitespace already follows it.",

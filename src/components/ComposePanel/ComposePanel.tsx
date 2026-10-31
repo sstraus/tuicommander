@@ -61,6 +61,8 @@ export interface ComposePanelProps {
 	onLoadQueue: () => Promise<QueuedCommand[]>;
 	/** Drop a single queued command by id. */
 	onRemoveQueued: (id: number) => void | Promise<void>;
+	/** Withdraw the newest host-owned user prompt, or return null if delivery already won. */
+	onRecallQueued?: () => Promise<string | null>;
 	onTextChange?: (text: string) => void;
 	/** Host applies successful-submit cleanup to its shared draft and current editor. */
 	onSubmitted?: (remainingDraft: string) => void;
@@ -163,6 +165,38 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 	let fileInput: HTMLInputElement | undefined;
 	createExtension(
 		keymap.of([
+			{
+				key: "ArrowUp",
+				run: (view) => {
+					if (
+						view.state.doc.length ||
+						view.state.selection.main.from !== 0 ||
+						!props.onRecallQueued ||
+						props.queuedCount() === 0
+					)
+						return false;
+					if (inFlight) return true;
+					inFlight = true;
+					void props
+						.onRecallQueued()
+						.then((text) => {
+							if (text === null) return;
+							const current = !disposed ? editorView() : undefined;
+							const draft = current?.state.doc.toString() ?? props.initialText();
+							const restored = draft ? `${text}\n\n${draft}` : text;
+							if (current)
+								current.dispatch({
+									changes: { from: 0, to: current.state.doc.length, insert: restored },
+									selection: { anchor: text.length },
+								});
+							else props.onTextChange?.(restored);
+						})
+						.finally(() => {
+							inFlight = false;
+						});
+					return true;
+				},
+			},
 			// Keep the queue chord distinct from both newline bindings.
 			{
 				key: "Shift-Ctrl-Enter",

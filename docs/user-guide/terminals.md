@@ -505,3 +505,13 @@ Mobile dictation edits the visible composer. On its first edit, the composer rec
 In session Chat, a Claude slash-command user message shows its command name and arguments. Complete command envelopes are presentation metadata; quoted or incomplete XML remains literal text. The Copy action retains the original transcript text.
 
 Terminal Chat removes a pending prompt bubble when the native transcript records its receipt, including prompts that the view truncates or redacts. The view keeps pending prompts in send order.
+
+### Recall a host-owned pending prompt
+
+With an empty desktop Compose editor, press **ArrowUp** to withdraw the newest
+user command from TUIC's idle-gate queue and edit it. Notices and initial prompts
+are not recalled. The command is restored only if queue removal succeeds before
+delivery. A normal Send's muted **Pending** bubble belongs to the native CLI and
+cannot be withdrawn by this action. AI Chat's shared ACP composer supports the
+same shortcut for text-only queued turns. Nonempty drafts and slash menus keep
+their normal arrow-key behavior. See [coverage and evidence](../frontend/chat-wrap-recall-evidence.md).

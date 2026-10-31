@@ -115,6 +115,7 @@ export type AcpChatClient = Pick<
 	| "prompt"
 	| "cancel"
 	| "cancelQueued"
+	| "recallQueued"
 	| "answerPermission"
 	| "cancelPermission"
 	| "answerElicitation"
@@ -900,6 +901,18 @@ export function createAcpChat(
 			const current = pair();
 			if (!current) return;
 			await guard("cancelling a queued prompt", () => client.cancelQueued(current.id, current.session, turnId));
+		},
+
+		async recallQueued(): Promise<{ sessionId: string; text: string } | null> {
+			const current = pair();
+			const queued = attachment()?.queuedPrompts.at(-1);
+			if (!current || !queued) return null;
+			const text = await guard("recalling a queued prompt", () =>
+				client.recallQueued(current.id, current.session, queued.turnId),
+			);
+			if (text === null) return null;
+			setSubmitted((pending) => pending.filter((prompt) => prompt.turnId !== queued.turnId));
+			return { sessionId: current.session, text };
 		},
 
 		async pause(): Promise<void> {
