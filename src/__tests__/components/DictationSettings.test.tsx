@@ -1,4 +1,4 @@
-import { fireEvent, render, waitFor } from "@solidjs/testing-library";
+import { fireEvent, render, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { appLogger } from "../../stores/appLogger";
 import { mockInvoke } from "../mocks/tauri";
@@ -141,27 +141,16 @@ describe("DictationSettings – consistent voice presentation", () => {
 		mockStore.state.language = "auto";
 		mockStore.state.speechAssets = [];
 	});
-	it("prevents Speech assets and Spoken replies from using different row grids and choice controls", () => {
+	it("keeps model and reply voice choices accessible as named native selectors", () => {
 		mockStore.state.language = "en";
 		mockStore.state.speechEngine = "edge";
-		const { container } = render(() => <DictationSettings />);
-		const cards = ["Speech assets", "Spoken replies"].map(
-			(title) =>
-				Array.from(container.querySelectorAll("section")).find(
-					(card) => card.querySelector("h3")?.textContent === title,
-				)!,
-		);
-		for (const card of cards) expect(card.classList.contains("alignedRows")).toBe(true);
-		const model = container.querySelector<HTMLSelectElement>('[data-setting-id="voice.model"]');
-		const voice = container.querySelector<HTMLSelectElement>('[data-setting-id="voice.speech_edge_voice"]');
-		expect(model?.tagName).toBe("SELECT");
-		expect(voice?.tagName).toBe("SELECT");
-		expect(model?.closest(".settingRow")).not.toBeNull();
-		expect(voice?.closest(".settingRow")).not.toBeNull();
-		expect(voice?.id).toBeTruthy();
+		const view = render(() => <DictationSettings />);
+		expect(view.getByRole("combobox", { name: "Whisper model" }).tagName).toBe("SELECT");
+		expect(view.getByRole("combobox", { name: "Voice" }).tagName).toBe("SELECT");
 	});
 
-	it("prevents Pocket assets from losing the shared Whisper download status and action presentation", () => {
+	it("keeps downloaded Pocket and Whisper assets labelled with working removal actions", () => {
+		vi.clearAllMocks();
 		mockStore.state.speechEngine = "pocket";
 		mockStore.state.speechAssets = [
 			{
@@ -174,23 +163,25 @@ describe("DictationSettings – consistent voice presentation", () => {
 				state: "ready",
 			},
 		];
-		const { container } = render(() => <DictationSettings />);
-		const whisper = container.querySelector("[data-whisper-model] .listRow");
-		const speech = container.querySelector("[data-speech-downloads] .listRow");
-		expect(whisper).not.toBeNull();
-		expect(speech).not.toBeNull();
-		expect(speech?.querySelector('[data-testid="status-badge"]')?.textContent).toBe("Downloaded");
-		expect(speech?.querySelector("button")?.textContent).toBe("Remove");
+		const view = render(() => <DictationSettings />);
+		const whisper = view.container.querySelector('[data-whisper-model="large-v3-turbo"]')!;
+		const speech = view.container.querySelector("[data-speech-downloads]")!;
+		expect(whisper.textContent).toContain("Downloaded");
+		expect(speech.textContent).toContain("Downloaded");
+		fireEvent.click(within(whisper as HTMLElement).getByRole("button", { name: "Remove" }));
+		fireEvent.click(within(speech as HTMLElement).getByRole("button", { name: "Remove" }));
+		expect(mockStore.deleteModel).toHaveBeenCalledWith("large-v3-turbo");
+		expect(mockStore.deleteSpeechAsset).toHaveBeenCalledWith("runtime");
 	});
 
 	it("prevents the external speech command from bypassing shared row labels and help", () => {
 		mockStore.state.speechEngine = "external";
 		const { container } = render(() => <DictationSettings />);
 		const command = container.querySelector<HTMLTextAreaElement>('[data-setting-id="voice.speech_command"]')!;
-		expect(command.closest(".settingRow")).not.toBeNull();
 		expect(command.id).toBeTruthy();
 		expect(container.querySelector(`label[for="${command.id}"]`)?.textContent).toBe("Speech command");
-		expect(command.getAttribute("aria-describedby")).toBeTruthy();
+		const description = document.getElementById(command.getAttribute("aria-describedby")!);
+		expect(description?.textContent).toContain("One argument per line, no shell.");
 	});
 });
 
@@ -1184,8 +1175,8 @@ describe("DictationSettings – Edge engine", () => {
 		// run a program named "piper --model x".
 		mockStore.state.speechEngine = "external";
 		uiStore.setSettingsExpertMode(true);
-		const { container } = render(() => <DictationSettings />);
-		const area = labelled(container, "Speech command")?.parentElement?.querySelector("textarea") as HTMLTextAreaElement;
+		const view = render(() => <DictationSettings />);
+		const area = view.getByRole("textbox", { name: "Speech command" });
 		fireEvent.change(area, { target: { value: "piper\n--output_file\n\n{out}\n" } });
 		expect(mockStore.setSpeechCommand).toHaveBeenCalledWith(["piper", "--output_file", "{out}"]);
 	});

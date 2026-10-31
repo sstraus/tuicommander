@@ -553,7 +553,11 @@ const SpeechRecognition: Component = () => {
 							</Show>
 							<For each={dictationStore.state.models}>
 								{(model) => (
-									<option value={model.name} disabled={!model.downloaded}>
+									<option
+										value={model.name}
+										selected={model.name === dictationStore.state.selectedModel}
+										disabled={!model.downloaded}
+									>
 										{model.display_name}
 									</option>
 								)}

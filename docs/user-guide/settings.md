@@ -639,7 +639,8 @@ AI Chat groups provider details in **Other providers and available models**. Wor
 Voice keeps downloadable models and voice management in **Speech assets**.
 **Speech assets** and **Spoken replies** use the same aligned label/control rows.
 Choose an installed Whisper model or reply voice with the shared dropdowns;
-unavailable Whisper models remain disabled until downloaded. Both asset lists
+unavailable Whisper models remain disabled until downloaded. The configured model
+stays selected while the model catalogue loads, even if it is not downloaded. Both asset lists
 use named Download, Repair, Cancel and Remove actions where supported, shared
 status badges and the same progress display. Voice processing and save rules do
 not change. Remote Access separates connection status, Tailscale HTTPS and token revocation. Plugin rows keep secondary controls in **Manage plugin**; plugin pages identify their source and plugin-owned scope.
