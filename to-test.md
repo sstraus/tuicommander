@@ -1,3 +1,7 @@
+## Early wake acknowledgement (2610-9b43) — Rust rebuild/restart required
+
+- [ ] After a manual rebuild/restart when losing current sessions is acceptable, use an isolated voice conversation with a configured phrase. Unrelated speech must stay **Listening**. Say the phrase and continue speaking: a recognized prefix should show **Go ahead** before final **Transcribing**. Repeat from a browser-owned microphone. Record real wake-to-display latency and the matching `prefix_ms`/`inference_ms` log; deterministic tests do not establish acoustic accuracy or native latency. The daily instance was not restarted; Rust does not hot-reload.
+
 ## Settings catalogue ledger coverage (2571-926a)
 
 - [x] Preserve generated settings descriptors while rejecting malformed and invalid owner ledgers, including pre-existing schema gaps. _(verified: rb `settings::catalogue::tests`, 13 passed; generated TypeScript matches the committed catalogue. This internal Rust refactor needs a rebuild to load, but changes no user-visible behavior. The daily app was not restarted.)_

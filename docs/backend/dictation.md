@@ -142,7 +142,7 @@ Both transports serialize the same structs, camelCase on the wire:
 `HandsFreeStatus { armed, phase, sessionId, owner, generation, pendingText, holdBackMs, error, deliveredTurns, droppedTurns }` and
 `HandsFreeDisarmed { wasArmed, generation, discardedPending, discardedCapture, status }`.
 `sessionId` and `owner` are bounded at 256 bytes and may not be blank.
-`phase` is one of `disarmed`, `waiting`, `capturing`, `transcribing`,
+`phase` is one of `disarmed`, `waiting`, `capturing`, `wake_confirmed`, `transcribing`,
 `holding_back`, `delivered`, `error`.
 `deliveredTurns` (bumped in `HandsFree::note_written`) and `droppedTurns`
 (bumped on `TranscriptOutcome::Rejected`) are monotonic for the process and
@@ -565,6 +565,31 @@ Since 832-e730 the Voice settings page (formerly the Dictation tab) renders in b
 `isTauri()`: the global hotkey, which the browser cannot register, and the
 microphone device list, which enumerates the *server's* devices — offering a
 browser user a device in another building is worse than offering nothing.
+
+### Early wake acknowledgement
+
+`waiting` and VAD-only `capturing` both display **Listening**. With a configured
+activation phrase, the shared continuous runtime recognizes prefixes of the open
+utterance at one-second audio intervals, up to four seconds. A recognized
+leading phrase changes the phase to `wake_confirmed` (**Go ahead**) while the
+utterance is still open. Recognition uses the same endpoint, model, language,
+speech gates and phrase matcher on desktop and browser capture. No extra model
+or parallel inference worker is created.
+
+There are at most four prefix passes per utterance, each borrowing at most
+64,000 samples (256 KB at 16 kHz mono f32). Backlogged cadence points are skipped
+rather than queued. Idle capture, an unset phrase and an already confirmed wake
+run no prefix inference. A failed prefix is best effort; final transcription
+still owns error reporting. Slow inference can delay the next capture-loop tick;
+this is not a dedicated keyword spotter or a fixed-latency guarantee.
+
+The acknowledgement does not open the activation window, schedule delivery or
+change the spoken language. The final transcript still passes through
+`Activation::admit`, including when it revises a matching partial. Closing the
+utterance changes the phase to **Transcribing**. A disarm or generation change
+invalidates an in-flight prefix, and an old capture cannot adopt a new arm.
+Successful acknowledgement logs `prefix_ms` and `inference_ms`; these are probe
+measurements, not a measured acoustic wake-to-display latency.
 
 ### The activation phrase
 

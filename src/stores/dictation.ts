@@ -101,6 +101,7 @@ export type HandsFreePhase =
 	| "disarmed"
 	| "waiting"
 	| "capturing"
+	| "wake_confirmed"
 	| "transcribing"
 	| "holding_back"
 	| "delivered"

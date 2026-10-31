@@ -53,6 +53,14 @@ While it runs, the panel shows the state, the bound terminal, where the audio
 comes from, and the text that is about to be sent. The dictation hotkey stops
 the conversation, and so does **Stop conversation**.
 
+With an activation phrase, **Listening** means the microphone is waiting or
+hearing speech that has not yet matched. **Go ahead** means local recognition
+matched your phrase during the open utterance. Prefix checks cover its first
+four seconds; their speed depends on your model and machine. **Transcribing**
+means the utterance has ended and the final pass is running. A partial wake
+match is only an acknowledgement: the final transcript still decides whether
+the speech is addressed here and can be sent.
+
 You do not need to watch the screen: two short rising notes mean your turn was
 sent to the agent, and two softer falling notes mean the activation phrase was
 missing and the turn was dropped. Only the device you are talking into plays

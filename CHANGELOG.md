@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Show “Go ahead” only after a recognized activation phrase during hands-free capture; keep unrelated voice activity at “Listening” and final recognition at “Transcribing”. Desktop and browser capture share bounded prefix checks with the existing model (#2610-9b43).
+
 - Honor dictation Auto-send in terminal Chat through the existing Compose Send path; keep review-only drafts when disabled and leave unrelated editors unchanged (#2585-dfc2).
 
 - Keep dotted link underlines and wrapped hover underlines aligned with terminal text during smooth scrolling (#2582-13dd).
