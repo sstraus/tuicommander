@@ -24,6 +24,8 @@ The composer border highlights only while its textarea has focus. Tapping the mi
 
 ## Keyboard Shortcuts
 
+With terminal input focused, Ctrl+Enter sends `ESC [ 13 ; 5 u`, including when the application has not enabled Kitty keyboard reporting. Control plus Shift or Alt retains those modifiers in the CSI u parameter. Plain Enter remains CR, Shift+Enter remains ESC CR, legacy Alt+Enter remains CR, and Cmd+Enter stays available to app shortcuts. This applies to desktop and browser/remote grid terminals; Compose has its own editor shortcuts.
+
 ### Terminal Management
 
 | Shortcut | Action | Notes |

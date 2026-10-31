@@ -1,5 +1,7 @@
 # TUICommander — Complete Feature Reference
 
+- **Terminal Ctrl+Enter** — Desktop and browser/remote CLI grids preserve the modified Enter as CSI u even without Kitty negotiation, enabling ego busy-turn steering. Plain Enter and Compose shortcuts stay unchanged (#2599-0a6b).
+
 - **Native integration trial (WF07)** — Disabled-by-default typed workflow integration checks and publishes one pinned no-ff merge, retains proof debt across restart, and keeps cleanup independent. Only isolated trial clones may enable it before repository parity approval; WF08 proof batching is not included (#2514-3d1e).
 
 - Mobile terminal and AI Chat composers add one space after a pasted HTTP(S) URL when neither the paste nor the following draft character supplies whitespace (#2494-921f).

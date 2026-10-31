@@ -80,3 +80,12 @@ Validation: the requested full Vitest run passed 8,722 tests and failed one
 new CSS-loading test. After fixing that test harness, the targeted Ctrl menu
 file passed 27/27; the other two keybar files passed 13/13 in the correction
 run. No full suite was repeated. The worktree headless build passed.
+
+## Current ego contract (2026-10-31)
+
+The ego 0.1.0 observations and fixture remain historical evidence. Current ego
+handles CSI u `ESC [ 13 ; 5 u` as Ctrl+Enter for busy-turn steering. Its
+`crates/ego-cli/src/repl/keys.rs` maps Enter with Control to `SteerBusy`, and
+`live_surface_ctrl_enter_steers_a_busy_turn_once` sends these exact bytes.
+The mobile ego control now uses this contract instead of the old LF fallback.
+Other agent mappings still use the recorded observations above.

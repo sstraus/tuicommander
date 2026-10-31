@@ -15,6 +15,8 @@ Adjacent `💬` answer paragraphs share one continuous tint and left bar, includ
 
 Link underlines use the same active viewport offset as selection and search before marker-row and marker-column projection. Backend-frame link rows (including each wrapped hover span) move with cached smooth-scroll text and are clipped when their text leaves the viewport. No additional scroll listener owns link decoration movement.
 
+Ctrl+Enter preserves Control in CSI u encoding even without Kitty flag 1; it must not collapse to CR. The mounted Enter-delivery regression asserts the actual `write_pty` payload for Control combinations and sibling Enter chords. Negotiated Kitty encoding remains unchanged.
+
 ## Incremental base-grid painting
 
 Whole-row forward viewport movement can copy retained base-canvas pixels once.
