@@ -522,3 +522,7 @@ delivery. A normal Send's muted **Pending** bubble belongs to the native CLI and
 cannot be withdrawn by this action. AI Chat's shared ACP composer supports the
 same shortcut for text-only queued turns. Nonempty drafts and slash menus keep
 their normal arrow-key behavior. See [coverage and evidence](../frontend/chat-wrap-recall-evidence.md).
+
+### Global Workspace membership
+
+Right-click a terminal tab or a session row in the sidebar and select **Add to Global Workspace**. For an existing member, select **Remove from Global Workspace** instead. This changes workspace membership without closing the terminal.

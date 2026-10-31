@@ -830,7 +830,7 @@ export const TIPS: Tip[] = [
 	{
 		feature: "Global Workspace",
 		description:
-			"Promote terminals from different repos into a single cross-repo view. Right-click a tab → Promote, then toggle the workspace with the shortcut. Tabs show a globe icon when promoted.",
+			"Promote terminals from different repos into a single cross-repo view. Right-click a tab or sidebar session row → Add to Global Workspace, then toggle the workspace with the shortcut. Tabs show a globe icon when promoted.",
 		shortcut: `${mod}+Shift+X`,
 	},
 	{

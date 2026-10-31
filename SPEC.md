@@ -765,6 +765,7 @@ Some frontend-only stores persist to localStorage:
 - [x] Split pane layout
 - [x] Touch branch action trays: left swipe reveals existing actions; vertical scrolling and desktop hover controls remain unchanged
 - [x] Multi-repository sidebar
+- [x] Sidebar session context menu adds or removes the clicked terminal through the existing Global Workspace action (#2590-2d63).
 - [x] Sidebar session context menu copies the PTY session ID, live child PID, and owning session-list alias through the shared clipboard path; unknown PID and absent alias entries are hidden.
 - [x] Rich parent-agent links reveal and select live children in other repositories without moving sessions
 - [x] Git diff panel
