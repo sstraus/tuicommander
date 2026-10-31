@@ -757,8 +757,11 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 		);
 	}
 
-	function paintLinkUnderline(_frame: DecodedFrame, m: CellMetrics) {
-		const maxRow = currentFrame?.screenRows || lastResizeRows;
+	function paintLinkUnderline(frame: DecodedFrame, m: CellMetrics) {
+		// Link spans belong to rowMap's backend viewport, while smooth scrolling
+		// paints cached text at a newer offset. Use the same row projection as search
+		// before applying marker layout, including each row of a wrapped hover.
+		const linkRowToViewport = (row: number) => absRowToViewport(frame.historySize - frame.displayOffset + row);
 		octx.strokeStyle = cachedFgDefault;
 		octx.lineWidth = 1;
 
@@ -767,8 +770,9 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 			octx.globalAlpha = 0.4;
 			octx.setLineDash([2, 3]);
 			octx.beginPath();
-			for (const [row, spans] of detectedLinks) {
-				if (row < 0 || row >= maxRow) continue;
+			for (const [sourceRow, spans] of detectedLinks) {
+				const row = linkRowToViewport(sourceRow);
+				if (row === null) continue;
 				const displayRow = viewportProjection.displayRow(row);
 				if (displayRow === null) continue;
 				const y = displayRow * m.cellHeight + m.cellHeight - 1 + 0.5;
@@ -788,11 +792,12 @@ const CanvasTerminal: Component<CanvasTerminalProps> = (props) => {
 				{ row: hoveredLink.row, colStart: hoveredLink.colStart, colEnd: hoveredLink.colEnd },
 			];
 			for (const span of rowSpans) {
-				if (span.row >= 0 && span.row < maxRow) {
-					const row = viewportProjection.displayRow(span.row);
+				const viewportRow = linkRowToViewport(span.row);
+				if (viewportRow !== null) {
+					const row = viewportProjection.displayRow(viewportRow);
 					if (row === null) continue;
-					const start = viewportProjection.displayCol(span.row, span.colStart);
-					const end = viewportProjection.displayCol(span.row, span.colEnd);
+					const start = viewportProjection.displayCol(viewportRow, span.colStart);
+					const end = viewportProjection.displayCol(viewportRow, span.colEnd);
 					const x = start * m.cellWidth;
 					const w = (end - start) * m.cellWidth;
 					const y = row * m.cellHeight + m.cellHeight - 1 + 0.5;

@@ -194,4 +194,6 @@ Default: `F5`
 
 ### Auto-Send
 
-Enable 'Auto-send' in Settings > Voice to automatically press Enter after the transcribed text is inserted into the terminal. Useful when dictating commands.
+Enable **Auto-send** in Settings → Voice to submit the terminal input after transcription. In terminal **Chat** mode, dictation inserts at the captured Compose selection and uses the normal Compose Send action exactly once, including draft cleanup after success. This works with Compose or transcript focus. With Auto-send off, the text stays in Compose for review. Other editors, search fields and form inputs never submit automatically.
+
+Mobile **Dictate into draft** uses browser speech recognition and stays review-only; tap Send when ready. The separate hands-free conversation sends through its existing server-owned path.
