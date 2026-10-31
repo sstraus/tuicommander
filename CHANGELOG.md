@@ -14,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Keep dotted link underlines and wrapped hover underlines aligned with terminal text during smooth scrolling (#2582-13dd).
+
 - Permit the native notification plugin's startup permission probe in every app-owned desktop window (#2568-a5d5).
 - Keep repository structure available when a local branch has unrelated history; retain that branch as unmerged (#2569-b40f).
 

@@ -3221,3 +3221,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   with request URL/status and document lifecycle before selecting a fix. The
   retained errors alone do not prove that the merge caused a reload race; all
   twelve plugins were subsequently loaded. No running app reload was performed.
+
+- [ ] Scroll through terminal web links and soft-wrapped file URLs: dotted underlines and Cmd-hover strokes must stay on their text, including when the backend viewport trails a smooth gesture (#2582-13dd).
