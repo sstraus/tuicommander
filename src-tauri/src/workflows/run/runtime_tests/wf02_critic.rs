@@ -568,6 +568,56 @@ async fn wf04_acp_fork_fix_stops_processes_before_one_repair() {
         2
     );
     assert_eq!(store.replay(&run.id).unwrap(), repaired);
+    // Repair activation is not scheduler quiescence: the actor still starts its
+    // implementer and binds the spawn effect. Wait for that durable boundary
+    // before cleanup, rather than racing Cancel against the launch transaction.
+    let repair_bound = tokio::time::timeout(std::time::Duration::from_secs(120), async {
+        loop {
+            let current = store.snapshot(&run.id).unwrap();
+            if current.attempts.iter().rev().any(|attempt| {
+                attempt.node_id == "implement"
+                    && attempt
+                        .agent
+                        .as_ref()
+                        .is_some_and(|binding| binding.acp.is_some())
+            }) {
+                break current;
+            }
+            assert_eq!(
+                current.status,
+                RunStatus::Running,
+                "{:?}",
+                current.pause_cause
+            );
+            hints.recv().await.unwrap();
+        }
+    })
+    .await
+    .expect("repair launch setup did not finish");
+    let repair = repair_bound
+        .attempts
+        .iter()
+        .rev()
+        .find(|a| a.node_id == "implement")
+        .unwrap();
+    let binding = repair.agent.as_ref().unwrap();
+    let mut stream = app
+        .acp
+        .subscribe(binding.acp.as_ref().unwrap().connection_id, 1)
+        .unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(120), async {
+        while let Some(frame) = stream.recv().await {
+            if matches!(
+                frame.unwrap().event,
+                crate::acp::AcpClientEvent::TurnSettled { .. }
+            ) {
+                return;
+            }
+        }
+        panic!("repair fixture ended before its recorded turn settled");
+    })
+    .await
+    .expect("repair turn setup did not finish");
     store
         .command(&run.id, "fixture-cleanup", RunCommand::Cancel)
         .unwrap();
@@ -580,4 +630,59 @@ async fn wf04_acp_fork_fix_stops_processes_before_one_repair() {
         app.session_maps.exit_codes.is_empty(),
         "ACP must not fabricate a PTY tombstone"
     );
+}
+
+// Catches: fixture cleanup assuming Cancel can commit a stale preflight snapshot,
+// or a conflict partially cancelling the run instead of preserving the other writer.
+#[test]
+fn wf04_fixture_cancel_preserves_preflight_revision_fences() {
+    for competing_writer in ["none", "run", "story"] {
+        let (config, project, plan, story, definition, _guard) = fixture();
+        let store = RunStore::open_at(&config.path().join("workflow_runs.sqlite3")).unwrap();
+        let run = store
+            .start_plan(
+                &project.path().canonicalize().unwrap().to_string_lossy(),
+                &plan,
+                &definition,
+                1,
+                RunLimits::default(),
+            )
+            .unwrap();
+        let racing_store = store.clone();
+        let racing_id = run.id.clone();
+        super::super::store::BEFORE_COMMIT.with(|slot| {
+            *slot.borrow_mut() = Some(Box::new(move || match competing_writer {
+                "run" => {
+                    racing_store
+                        .command(&racing_id, "other-writer", RunCommand::Pause)
+                        .unwrap();
+                }
+                "story" => {
+                    let stories = StoryStore::open().unwrap();
+                    let current = stories.get_story(&story).unwrap();
+                    stories
+                        .transition(&story, current.revision, StoryCommand::StartManual)
+                        .unwrap();
+                }
+                _ => {}
+            }));
+        });
+        let result = store.command(&run.id, "fixture-cleanup", RunCommand::Cancel);
+        let current = store.snapshot(&run.id).unwrap();
+        if competing_writer == "none" {
+            assert_eq!(result.unwrap().snapshot.status, RunStatus::Cancelled);
+        } else {
+            assert!(
+                result
+                    .unwrap_err()
+                    .contains("revisions changed during command preflight; retry")
+            );
+            assert_ne!(current.status, RunStatus::Cancelled);
+            assert_eq!(
+                current.sequence,
+                run.sequence + i64::from(competing_writer == "run")
+            );
+        }
+        assert_eq!(store.replay(&run.id).unwrap(), current);
+    }
 }
