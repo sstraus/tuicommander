@@ -1,5 +1,7 @@
 # TUICommander Specification
 
+- [x] Config recovery (#2564-8455, #2565-8b3c): invalid fields fall back independently with a startup warning and preserved original backup. Legacy scrollback reflow enrolls once; subsequent explicit false values remain authoritative.
+
 - [x] PR popovers, thread-count buttons and PR notifications open the exact Tasks conversation, reveal comments and the first review-thread page, fall back to GitHub without a provider, and return from PR detail to a matching existing sidebar workspace (#2559-dc9e).
 
 - [x] Desktop and mobile AI Chat and Session Chat use one theme-accent breathing orb while working, with accessible Working text and a static dot under reduced motion (#2535-8b6b).

@@ -11360,6 +11360,16 @@ export const settingsCatalogue = {
   "exclusions": [
     {
       "store": "app",
+      "path": "/config_recovery",
+      "reason": "Transient config recovery diagnostic, never persisted."
+    },
+    {
+      "store": "app",
+      "path": "/scrollback_reflow_migrated",
+      "reason": "Internal scrollback reflow migration marker"
+    },
+    {
+      "store": "app",
       "path": "/session_duration_migrated",
       "reason": "Internal legacy session-duration migration marker"
     },

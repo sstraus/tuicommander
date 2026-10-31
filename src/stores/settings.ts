@@ -35,6 +35,7 @@ export type TrayIconPreference = "always" | "background_only" | "never";
 export type CloseBehavior = "ask" | "background" | "quit";
 
 interface RustAppConfig {
+	config_recovery?: { fields: string[]; backup_path: string };
 	shell: string | null;
 	font_family: string;
 	font_size: number;
@@ -637,6 +638,13 @@ function createSettingsStore() {
 				const config = await invoke<RustAppConfig>("load_config");
 				baseConfig = config;
 				applyConfig(config, false);
+				if (config.config_recovery) {
+					toastsStore.add(
+						"Settings recovered",
+						`Reset invalid or missing settings: ${config.config_recovery.fields.join(", ")}. Original file: ${config.config_recovery.backup_path}`,
+						"warn",
+					);
+				}
 				savedFields = snapshotFields(ownedFields());
 				hydrated = true;
 				return true;

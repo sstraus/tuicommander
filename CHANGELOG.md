@@ -6,6 +6,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Recover malformed config fields without resetting valid settings; show reset field names and the original backup path (#2564-8455).
+- Migrate legacy disabled scrollback reflow once; preserve later explicit choices (#2565-8b3c).
+
 - Connect PR popovers, unresolved-thread counts and PR notifications to the exact Tasks conversation, with a GitHub fallback and a return action to an existing branch/worktree (#2559-dc9e).
 
 ## [2.0.0] - 2026-10-31

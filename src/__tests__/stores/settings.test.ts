@@ -43,6 +43,24 @@ describe("settingsStore", () => {
 		toast.mockRestore();
 	});
 
+	// Catches: backend field recovery remains invisible or omits the recoverable original.
+	it("shows recovered config fields and backup path through the existing warning toast", async () => {
+		const { toastsStore } = await import("../../stores/toasts");
+		const toast = vi.spyOn(toastsStore, "add");
+		mockInvoke.mockResolvedValueOnce({
+			ide: "cursor",
+			config_recovery: { fields: ["font_size", "services.server.port"], backup_path: "/config/config.corrupt-example" },
+		});
+		expect(await store.hydrate()).toBe(true);
+		expect(store.state.ide).toBe("cursor");
+		expect(toast).toHaveBeenCalledWith(
+			"Settings recovered",
+			"Reset invalid or missing settings: font_size, services.server.port. Original file: /config/config.corrupt-example",
+			"warn",
+		);
+		toast.mockRestore();
+	});
+
 	/** Hydrate the store so save() is unlocked — pre-hydrate saves are refused
 	 *  to avoid clobbering config.json with defaults. */
 	async function hydrateStore(): Promise<void> {

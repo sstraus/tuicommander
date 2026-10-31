@@ -1,5 +1,7 @@
 # HTTP API Reference
 
+App config reads (`GET /config` and `load_config`) can include the transient `config_recovery: { fields: string[], backup_path: string }` diagnostic after startup recovery. It names reset fields and the preserved original; it is never persisted.
+
 ## Build identity
 
 `GET /api/version` returns `version` and `git_hash` in all builds. The desktop

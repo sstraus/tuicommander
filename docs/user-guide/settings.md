@@ -1,5 +1,13 @@
 # Settings
 
+If a saved setting has an invalid type or enum value, TUIC resets that field and
+keeps valid settings. Missing font settings and theme use their defaults. A
+**Settings recovered** warning lists the reset fields and the backup path of the
+original file. Truncated or invalid JSON still uses whole-file recovery.
+
+Older installations receive a one-time scrollback reflow migration. You can turn
+reflow off again in Terminal settings; later starts keep that choice.
+
 Repository Settings separates identity, inherited worktree overrides, Design Mode, scripts, team sharing, and reset. Nullable controls retain their global-default choice. Reset clears override fields, including scripts, but retains repository identity and its Design Mode URL. Team exports never include scripts. The Dev Server URL and setup, run, and archive script fields have contextual help; hover or focus a help badge to read it, or click to keep it open.
 
 General places ego immediately after Local tools (the local tools card is desktop-only). MCP uses the shared Settings row typography and label/help spacing for capabilities and shows retained legacy denials as a warning.
