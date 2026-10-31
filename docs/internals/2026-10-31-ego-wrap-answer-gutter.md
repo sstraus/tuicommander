@@ -6,7 +6,7 @@ Status: Implemented with targeted rb GREEN. Reproduction and layer diagnosis are
 
 Investigate Italian answer fragments and the missing green continuation gutter in a wide TUIC pane. Preserve the user-selected reflow setting. Fix only lost serialized wrap provenance. Do not change ego output, the MCP dimension default, or persisted configuration. Do not restart the installed app, land, or push.
 
-Story: `2560-b448`. Worktree branch: `fix/ego-wrap-answer-bar`. Pre-fix HEAD: `664db9ace3260b3085f6a637e445a91874b50c0e`.
+Story: `2560-b448`. Worktree branch: `fix/ego-wrap-answer-bar`. Pre-fix HEAD: `664db9ace3260b3085f6a637e445a91874b50c0e`. Implementation commit: `2c210f9816a7fd446bd0e6eb096e0dead1dabc96` (later documentation-only evidence updates may follow). All five story criteria are checked in the main store; the story remains open for the parent's critic and integration.
 
 ## Real runtime evidence
 
@@ -39,7 +39,13 @@ The running installed app returned `{"scrollback_reflow":false}` through the rea
 - `production-marker-results.json`: production marker planner results. Answer gutter rows are `[0,1,2,3,4]` before resize, `[0]` after resize, and `[0,1]` in the wide control.
 - `answer.txt`, `requests.jsonl`, `provider.py`: deterministic provider input and requests.
 
-The `.ansi` captures contain only a short retained raw tail, not the complete answer stream. They must not be cited as full raw-answer evidence. The session output and binary grids are the complete answer evidence.
+The early `.ansi` captures contain only a short raw tail. A later explicit raw-output read recovered the complete retained streams: `ego80-full-raw.json` and `ego200-full-raw.json`, decoded as `ego80-full.ansi` and `ego200-full.ansi`. Both start at byte 0 with oldest offset 0, `has_more=false`, and `truncated=false` (3264 and 1966 source bytes). The extracted `ego80-answer-raw.txt` and `ego200-answer-raw.txt` are identical 385-byte marked answers with zero CR and zero LF between the marker and `END-WRAP-BAR`. This directly excludes ego-inserted row breaks as the cause.
+
+Capture command, repeated for the wide control session:
+
+```sh
+tuic mcp session '{"action":"output","session_id":"a71fe60e-3aaf-4fdf-9ce0-b4c72231da34","format":"raw","limit":200000,"from_byte":0}'
+```
 
 ## Rendered production evidence
 
@@ -108,3 +114,9 @@ Risk: medium. Shared row serialization affects all marker consumers, but the wir
 - Verify archived ego story details through the supported story CLI; earlier archive reads were unavailable.
 - Installed ego binary provenance is not established by source ancestry. The real tested output does contain the answer marker.
 - The original screenshot session launch path is not proven.
+
+## Handoff and cleanup
+
+`fmt-changed.sh <worktree> main...HEAD` passed. `story-close.sh --check <main> 2560-b448 <worktree>` passed without writing. No landing or push was performed.
+
+All five experiment/provider/Vite PTYs were closed after their captures. The named browser capture tab and its agent-browser daemon were closed without closing the shared Chrome browser. Ports 21682 and 21683 no longer accept connections. Required evidence and the Vite replay sources were retained under the evidence root.
