@@ -579,39 +579,35 @@ export const Composer: Component<{
 							onPaste={onPaste}
 							rows={1}
 						/>
+						<Show when={!props.mobileAttachments}>
+							<Show when={props.chat.busy()}>
+								<Button
+									type="button"
+									variant="danger"
+									geometry="stretch"
+									title="Stop"
+									onClick={() => void props.chat.cancel()}
+								>
+									Stop
+								</Button>
+							</Show>
+							<Button
+								variant="primary"
+								geometry="stretch"
+								aria-label={props.chat.busy() ? "Queue" : "Send"}
+								title={props.chat.busy() ? "Queue" : "Send"}
+								disabled={!hasContent()}
+								onClick={send}
+							>
+								<ComposeSendIcon />
+							</Button>
+						</Show>
 						<Show when={props.mobileAttachments}>
 							<MobileDictationButton dictation={browserDictation} disabled={uploading()} />
 						</Show>
 					</div>
 				</div>
-				<div class={props.mobileAttachments ? s.mobileComposerActions : s.composerActions}>
-					<Show when={props.chat.busy() && !props.mobileAttachments}>
-						<Button
-							type="button"
-							variant="danger"
-							class={s.stopBtn}
-							title="Stop"
-							onClick={() => void props.chat.cancel()}
-						>
-							Stop
-						</Button>
-					</Show>
-				</div>
-				<Show
-					when={props.mobileAttachments}
-					fallback={
-						<Button
-							variant="primary"
-							shape="icon"
-							aria-label={props.chat.busy() ? "Queue" : "Send"}
-							title={props.chat.busy() ? "Queue" : "Send"}
-							disabled={!hasContent()}
-							onClick={send}
-						>
-							<ComposeSendIcon />
-						</Button>
-					}
-				>
+				<Show when={props.mobileAttachments}>
 					<Button
 						type="button"
 						shape="icon"

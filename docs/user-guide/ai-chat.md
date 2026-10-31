@@ -35,7 +35,7 @@ existing warning notices. The repository cannot raise the machine policy.
 A repo selection requires an explicit machine profile and an ego build that
 acknowledges the ceiling. Without a repo selection, launch behavior is unchanged.
 
-The desktop composer uses one compact card. Its header shows **Repository · name** and an independent repository pin. The document button on the right parks the draft; its tooltip offers restore or swap when a draft is parked. The blue play button sends while idle and queues while ego is busy. Stop remains beside the input during a running turn.
+The desktop composer uses one compact card. Its header shows **Repository · name** and an independent repository pin. The document button on the right parks the draft; its tooltip offers restore or swap when a draft is parked. The blue play button sends while idle and queues while ego is busy. Stop remains beside the input during a running turn. The desktop input and its actions share the same top and bottom edges as the input grows. The header, input row and footer use the same content edges.
 
 Pasting an image starts ego when needed before checking image support. Finder image copies attach the image rather than its filename; mixed clipboard data with substantive text pastes as text, as in Ideas and terminal Compose. An empty text clipboard flavor does not suppress an available image.
 
