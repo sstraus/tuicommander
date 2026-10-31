@@ -1,5 +1,6 @@
 mod agent_policy;
 mod api;
+pub mod command;
 pub use agent_policy::*;
 mod definition;
 mod prompt;

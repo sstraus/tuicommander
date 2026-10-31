@@ -1545,6 +1545,10 @@ Deterministic checks and check-result publication are not part of this executor.
 
 `archive_retention_days` defaults to 0 (Off), with nullable repository overrides and repo-local configuration. Existing repository-refresh cleanup invokes a shared host-side sweep. Only registered, completed immediate `__archived` children with matching recorded path and sufficient Unix-second archive age are eligible. Legacy archives without timestamps are kept. Non-force Git removal preserves archive refs, refuses dirty files without archive-time recovery, and protects locked or live checkouts. The status line names deleted and kept archives.
 
+
+### Typed workflow commands (WF05)
+
+Published Run command and versioned Tool nodes execute argv or explicit shell contracts in assigned workspaces. Durable resource waits and immutable source/target receipts reuse build-slot/rb admission; unknown effects retain resources until observed stop/release. Secret references and declared output schemas keep secrets out of receipts and refuse zero-match test proof. Native proof remains distinct from Linux execution. See `docs/backend/workflows.md` for the backend contract; Designer controls are not added by WF05.
 ### Typed workflow plan proposals (WF04 foundation)
 
 Contract-3 and newer Create Stories visits accept a durable, activation- and plan-revision-

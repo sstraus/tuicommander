@@ -25,6 +25,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Add backend typed workflow command/Tool nodes with durable resource waits, source/target receipts, secret-reference transport and fenced rb reconciliation (#2512-5a42).
 - Mute completion progress popups for the current app session and restore them from Terminal Progress. Journal entries and blocked warning popups remain available (#2553-6446).
 - Colour expanded Chat tool rows with shell syntax roles and separate tool/path styling. Reuse the existing Shell grammar and theme colours; collapsed summaries and sizing stay unchanged (#2552-fd00).
 
@@ -43,6 +44,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Reconcile paused typed workflow commands after restart without replay; stop local gate child groups, redact JSON-escaped secrets, bound remote result envelopes, release known no-start failures, and pass the wrapper freeze identity (#2512-5a42).
 - Keep collapsed Compose chrome in the shared Button primitive, without changing its idle, hover or keyboard-focus appearance (#2555-29b4).
 
 - Restore the collapsed Compose handle’s transparent idle chrome and muted label. Hover and keyboard focus reveal the button without fading its queue count (#2551-7a80).

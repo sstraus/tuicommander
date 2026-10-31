@@ -3591,6 +3591,10 @@ approves or merges. See [Incoming PR reviews](user-guide/automations.md#incoming
 
 Opt-in global and per-repository retention in days (0/Off by default). Repository refresh removes only eligible recorded checkouts under `__archived/`, keeps dirty or unsafe archives with named status reasons, and retains commit recovery refs. No new timer or branch deletion. See [Worktrees](user-guide/worktrees.md#archived-worktree-retention).
 
+
+### Typed workflow commands (WF05)
+
+Published Run command and versioned Tool nodes execute argv or explicit shell contracts in assigned workspaces. Durable resource waits and immutable source/target receipts reuse build-slot/rb admission; unknown effects retain resources until observed stop/release. Secret references and declared output schemas keep secrets out of receipts and refuse zero-match test proof. Native proof remains distinct from Linux execution. See `docs/backend/workflows.md` for the backend contract; Designer controls are not added by WF05.
 ### Typed workflow plan proposals (WF04 foundation)
 
 Contract-3 Create Stories visits accept a durable, activation- and plan-revision-
