@@ -1,3 +1,6 @@
+## Progress ownership inventory (2583-fd08) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, report Progress from ego main and its separately registered history-anchors checkout. Both must resolve to the main project's history without an ownership-cycle error. The recorded live inventory covers the resolver automatically; no live config was changed and the daily app was not restarted. Restart only when losing current sessions is acceptable.
 ## Coordinator mail address (2580-dcbd) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, send `agent action=send to=orchestrator message=<text>` from a managed child and confirm receipt at its registered coordinator without `list_peers`. The daily app was not restarted; Rust changes do not hot-reload. Restart only when losing current sessions is acceptable.

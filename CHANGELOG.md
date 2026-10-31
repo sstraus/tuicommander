@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Resolve Progress to the main checkout when a separately registered linked checkout repeats the shared workspace inventory (#2583-fd08).
+
 - Keep AI Chat Stop and Send buttons at a fixed size and bottom-aligned as the draft grows (#2588-b8af).
 - Keep verified terminal link underlines visible during unrelated spinner redraws, including full frames and same-row file paths (#01a19332-aa59-7025-9cb0-071b909bf871).
 
