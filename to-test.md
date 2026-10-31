@@ -3196,3 +3196,14 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [x] Session-only Progress popup mute: completion cards expose Mute; Terminal Progress retains reports and offers Unmute; blocked warnings remain visible. _(verified: isolated Vite real-component browser check and ProgressPopups.test.tsx; popup preference is in-memory only.)_
 
 - [ ] Fresh-install opt-in guidance (#2561-9861, #2562-d363): open inactive AI Chat with ego detected, confirm Use this, and check that the saved path activates Chat. Check a long active agent's sleep tip, a supported agent's setup hook tip, and a server-error retry tip; dismiss each and reopen to verify persistence. Defaults must stay off until explicitly changed.
+
+## App log fixes (2568-a5d5, 2569-b40f)
+
+- [ ] After the next manual `make dev` restart or release rebuild, confirm that
+  native notification bootstrap no longer logs a denied `is_permission_granted`
+  command and repository structure loads with `chore/ego-e2e-322-d` present.
+  The current running Rust backend and capabilities do not hot-reload.
+- [ ] Plugin investigation 2567-ee9c: capture an isolated module-load failure
+  with request URL/status and document lifecycle before selecting a fix. The
+  retained errors alone do not prove that the merge caused a reload race; all
+  twelve plugins were subsequently loaded. No running app reload was performed.
