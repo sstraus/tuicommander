@@ -1,3 +1,7 @@
+## Expanded Chat tool colours (2552-fd00)
+
+- [x] Bash/execute shell roles and separate Read/Edit/Write tool/path colours render in the shared session Chat transcript. Collapsed summary text and six expanded row bounds match the pre-change default-dark baseline. _(verified: isolated worktree Vite, production Transcript via `sessionChatAppearance.html?toolColours`, agent-browser screenshots and computed-style/geometry logs in `~/Gits/.tmp/results/toolrows-2552-{before,after}-browser.log`.)_
+
 ## AI Chat desktop composer alignment (2550-e756)
 
 - [x] Empty, one-line and four-line drafts share the editor/Send top and bottom edges, with and without focus. Header, editor row and footer share content edges. Mobile editor and Send bounds match the recorded pre-fix baseline. _(verified: `src/__tests__/browser/AIChatComposerGeometry.test.ts`, mounted Chromium at 1400px/390px; screenshots and measurements in orchestrator `reports/tuicommander/img/2026-10-31-chat-composer-align/`)_

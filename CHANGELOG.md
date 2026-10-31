@@ -16,6 +16,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- Colour expanded Chat tool rows with shell syntax roles and separate tool/path styling. Reuse the existing Shell grammar and theme colours; collapsed summaries and sizing stay unchanged (#2552-fd00).
+
 - Add explicit workflow PTY/ACP execution routes and genuine ACP launch/conversation references, with binding-before-prompt journaling and channel-generation report fences (#2511-37f0, policy/handover/close still incomplete).
 
 - Retain workflow bound-report acceptance/refusal decisions across retry and restart, with atomic accepted-event recording and a read-only `report_dispositions` run action (#2511-37f0, lifecycle increment only).

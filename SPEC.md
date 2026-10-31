@@ -1282,6 +1282,8 @@ Chat is unavailable. Desktop and mobile reuse `TerminalChatTranscript`; no ACP
 connection or second event subscription is created. Compose, dictation targeting
 and answer marker rendering remain on the existing terminal paths.
 
+Expanded tool rows use theme colours for Bash/execute commands, flags, strings and operators. Read, Edit and Write keep the tool name separate from the path; other tools retain readable text. The collapsed activity summary and row sizing are unchanged.
+
 ## Mobile terminal Chat view
 
 The terminal stays mounted. Chat edit tool disclosures render bounded
