@@ -642,6 +642,16 @@
   color: var(--fg-primary);
 }
 
+/* Inline syntax roles reuse the current app theme; no row geometry changes. */
+.toolLabel,
+.shellCommand { color: var(--accent); }
+.toolPath,
+.shellString { color: var(--success); }
+.shellFlag { color: var(--warning); }
+.shellOperator { color: var(--attention); }
+.shellVariable { color: var(--fg-primary); }
+.shellComment { color: var(--fg-secondary); }
+
 .toolCallDuration {
   color: var(--fg-muted);
   font-size: var(--font-xs);
