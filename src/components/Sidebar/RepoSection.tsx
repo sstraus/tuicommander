@@ -2,6 +2,7 @@ import { type Component, createEffect, createMemo, createSignal, For, type JSX, 
 import { shortenHomePath } from "../../platform";
 import { appLogger } from "../../stores/appLogger";
 import { githubStore } from "../../stores/github";
+import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import type { RepositoryState, WorkspaceState } from "../../stores/repositories";
 import { repositoriesStore } from "../../stores/repositories";
 import { type TerminalState, terminalsStore } from "../../stores/terminals";
@@ -534,6 +535,16 @@ const BranchTabList: Component<{ terminalIds: string[]; repoPath: string }> = (p
 					},
 				]
 			: []),
+		{ label: "", separator: true, action: () => {} },
+		{
+			label: globalWorkspaceStore.isPromoted(menuTerminalId() ?? "")
+				? t("tabBar.removeFromWorkspace", "Remove from Global Workspace")
+				: t("tabBar.promoteToWorkspace", "Add to Global Workspace"),
+			action: () => {
+				const id = menuTerminalId();
+				if (id) globalWorkspaceStore.togglePromote(id);
+			},
+		},
 	];
 	const density = useSidebarDensity();
 	const rich = () => density() === "rich";

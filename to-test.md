@@ -1,6 +1,9 @@
 ## Progress ownership inventory (2583-fd08) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, report Progress from ego main and its separately registered history-anchors checkout. Both must resolve to the main project's history without an ownership-cycle error. The recorded live inventory covers the resolver automatically; no live config was changed and the daily app was not restarted. Restart only when losing current sessions is acceptable.
+## Coordinator mail address (2580-dcbd) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, send `agent action=send to=orchestrator message=<text>` from a managed child and confirm receipt at its registered coordinator without `list_peers`. The daily app was not restarted; Rust changes do not hot-reload. Restart only when losing current sessions is acceptable.
 
 ## Settings catalogue ledger coverage (2571-926a)
 
@@ -3225,3 +3228,15 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
   with request URL/status and document lifecycle before selecting a fix. The
   retained errors alone do not prove that the merge caused a reload race; all
   twelve plugins were subsequently loaded. No running app reload was performed.
+
+- [ ] After a backend rebuild, open Plans and Stories: drag a Ready card to an outlined destination, cancel with Escape, and use the List/detail Phase selectors. A stale move must show its backend error without moving the card. Native `available_transitions` requires the rebuilt Rust backend (#2578-69b4).
+- [ ] Scroll through terminal web links and soft-wrapped file URLs: dotted underlines and Cmd-hover strokes must stay on their text, including when the backend viewport trails a smooth gesture (#2582-13dd).
+- [ ] After a Rust rebuild/restart, inspect the generated Waiting and long work launch preview: continue independent work, yield only for a needed result or user answer, report running work without completion/suggestions, and use the launched mechanism’s wake. Existing sessions do not receive the new launch text automatically. (#2581-4824)
+
+- [ ] Sidebar session context menu: add a session to the Global Workspace, reopen the menu and remove it; existing copy actions remain available (#2590-2d63).
+- [x] AI Chat multiline composer: Stop and Send remain fixed-size at the bottom. _(verified: real Composer in worktree Vite, one-line/five-line idle/busy browser bounds and screenshots in orchestrator reports/tuicommander/img/2026-10-31-compose-buttons/.)_
+## Chat dictation auto-send (#2585-dfc2)
+
+- [ ] [HUMAN] With a real microphone, check held hotkey dictation in terminal Chat with Auto-send on and off, including transcript focus. Auto-send sends once and clears the submitted draft; off leaves editable text. Automated component evidence covers delivery and submit behavior, not audio capture.
+
+- [ ] Voice Settings: compare Speech assets and Spoken replies in Paper and Commander; check aligned rows, model/voice dropdowns and named asset actions. Confirm existing download, preview and recording actions still use the same state (#2608-f1c4).

@@ -92,7 +92,7 @@ describe("ComposePanel", () => {
 			view.dispatch({ selection: { anchor: 7, head: 11 } });
 			const target = captureDictationTarget();
 			const write = vi.fn();
-			await target.deliver("spoken words", write, true);
+			await target.deliver("spoken words", write, false);
 			expect(editorText(container)).toBe("before spoken words after");
 			expect(onTextChange).toHaveBeenLastCalledWith("before spoken words after");
 			expect(view.state.selection.main.anchor).toBe(19);
