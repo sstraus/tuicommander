@@ -3224,3 +3224,7 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 
 - [ ] Scroll through terminal web links and soft-wrapped file URLs: dotted underlines and Cmd-hover strokes must stay on their text, including when the backend viewport trails a smooth gesture (#2582-13dd).
 - [ ] After a Rust rebuild/restart, inspect the generated Waiting and long work launch preview: continue independent work, yield only for a needed result or user answer, report running work without completion/suggestions, and use the launched mechanism’s wake. Existing sessions do not receive the new launch text automatically. (#2581-4824)
+
+## Chat dictation auto-send (#2585-dfc2)
+
+- [ ] [HUMAN] With a real microphone, check held hotkey dictation in terminal Chat with Auto-send on and off, including transcript focus. Auto-send sends once and clears the submitted draft; off leaves editable text. Automated component evidence covers delivery and submit behavior, not audio capture.

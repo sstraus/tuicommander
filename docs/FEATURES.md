@@ -1480,7 +1480,7 @@ The `tuic-dictation` Rust crate implements audio, transcription and speech; the 
 - Default hotkey: `F5` (configurable, registered globally)
 - Mic button in status bar: hold to record, release to transcribe
 - On macOS, releasing Fn stops microphone capture in Rust before the WebView handles the event. A late Fn start is refused. DOM hotkeys release on blur if key-up was lost; native Fn follows physical key state. The file log records release-to-stop latency without storing spoken text.
-- The destination and selection are captured at key-press time, before asynchronous work. Explicit editors take priority. In terminal Chat, transcript or BODY focus delivers to Compose through a CodeMirror transaction; CLI uses the captured PTY session with existing auto-send behavior. Focus and tab changes do not redirect the text.
+- The destination and selection are captured at key-press time, before asynchronous work. Explicit editors take priority. In terminal Chat, Compose, transcript or BODY focus delivers to Compose through a CodeMirror transaction; Auto-send then uses its normal Send action once, while disabled Auto-send leaves an editable draft. Other fields stay review-only. CLI uses the captured PTY session with existing auto-send behavior. Focus and tab changes do not redirect the text.
 - Long Claude CLI dictation uses bracketed paste to preserve its beginning, with or without Auto-send. Short dialog answers remain key events.
 - If the target disappears or the draft changes before delivery, the transcript stays in a sticky error message and the Messages bell for recovery. Delivery logs contain metadata without spoken text.
 
