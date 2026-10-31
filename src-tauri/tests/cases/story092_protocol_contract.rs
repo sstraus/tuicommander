@@ -21,6 +21,7 @@ fn configured_ego_launch_is_direct_and_has_exact_argv() {
         &EgoAcpConfig {
             executable: executable.clone(),
             profile: String::new(),
+            master_prompt: String::new(),
         },
         &root,
     )
@@ -40,6 +41,7 @@ fn selected_user_profile_is_one_launch_argument() {
         &EgoAcpConfig {
             executable: acp_support::absolute("/opt/ego/bin/ego"),
             profile: "coordinator".to_string(),
+            master_prompt: String::new(),
         },
         &root,
     )
@@ -70,6 +72,7 @@ fn ambiguous_profile_names_are_refused_before_launch() {
             &EgoAcpConfig {
                 executable: acp_support::absolute("/opt/ego/bin/ego"),
                 profile: profile.to_string(),
+                master_prompt: String::new(),
             },
             &acp_support::absolute("/private/tmp/worktree"),
         )
@@ -82,6 +85,7 @@ fn ambiguous_profile_names_are_refused_before_launch() {
             &EgoAcpConfig {
                 executable: acp_support::absolute("/opt/ego/bin/ego"),
                 profile: too_long,
+                master_prompt: String::new(),
             },
             &acp_support::absolute("/private/tmp/worktree"),
         )

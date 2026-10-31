@@ -1,13 +1,13 @@
 import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { appLogger } from "../../../stores/appLogger";
-import { cleanupToasts } from "../../helpers/toasts";
-import "../../mocks/tauri";
-
 import { AiChatTab } from "../../../components/SettingsPanel/tabs/AiChatTab";
 import type { EgoCliClient } from "../../../services/egoCli";
+import { appLogger } from "../../../stores/appLogger";
+import { settingsStore } from "../../../stores/settings";
 import { HttpRpcError } from "../../../transport";
 import type { EgoCliError, EgoProvider, EgoProviders } from "../../../types/ego";
+import { cleanupToasts } from "../../helpers/toasts";
+import { mockInvoke } from "../../mocks/tauri";
 
 /** The projection `ego_cli.rs` sends, with only the parts a case cares about. */
 function snapshot(providers: EgoProvider[], defaultModel: string | null = null): EgoProviders {
@@ -89,6 +89,26 @@ describe("AiChatTab — diagnostic independence", () => {
 });
 
 describe("AiChatTab", () => {
+	// Catches: the textarea is disconnected from persistence or silently accepts an oversized draft.
+	it("edits the master prompt and explains a rejected oversized edit", async () => {
+		mockInvoke.mockResolvedValueOnce({});
+		await settingsStore.hydrate();
+		vi.useFakeTimers();
+		const setter = vi.spyOn(settingsStore, "setAiChatMasterPrompt");
+		render(() => <AiChatTab client={fakeClient()} />);
+		const input = screen.getByRole("textbox", { name: "Master prompt" });
+		fireEvent.input(input, { target: { value: "Delegate investigations." } });
+		expect(setter).toHaveBeenLastCalledWith("Delegate investigations.");
+		expect(settingsStore.state.aiChatMasterPrompt).toBe("Delegate investigations.");
+		fireEvent.input(input, { target: { value: "é".repeat(4097) } });
+		expect(screen.getByRole("alert").textContent).toContain("8192 UTF-8 bytes");
+		expect(settingsStore.state.aiChatMasterPrompt).toBe("Delegate investigations.");
+		mockInvoke.mockResolvedValueOnce({});
+		await vi.advanceTimersByTimeAsync(600);
+		vi.useRealTimers();
+		setter.mockRestore();
+	});
+
 	it("keeps model controls without exposing ownership and transport commentary", async () => {
 		const client = fakeClient({
 			providers: async () =>
@@ -456,8 +476,7 @@ describe("AiChatTab — interactive login", () => {
 });
 
 // Boss decision 2026-09-24: ego is configured like MDKB, on General. The AI
-// Chat page keeps only what ego itself stores: the default model and the
-// providers. GeneralTabTools.test.tsx proves the picker's new home.
+// Chat page keeps model/provider controls and the TUIC master prompt. GeneralTabTools.test.tsx proves the picker's new home.
 describe("AiChatTab — no ego executable control", () => {
 	it("keeps executable configuration in General while naming the AI Chat page", async () => {
 		const client = fakeClient();

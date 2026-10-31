@@ -275,6 +275,7 @@ impl AcpClientManager {
             &EgoAcpConfig {
                 executable,
                 profile: config.profile.clone(),
+                master_prompt: config.master_prompt.clone(),
             },
             &root,
         )?;
@@ -417,6 +418,7 @@ impl AcpClientManager {
             &EgoAcpConfig {
                 executable,
                 profile: config.profile.clone(),
+                master_prompt: config.master_prompt.clone(),
             },
             &root,
         )?;

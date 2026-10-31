@@ -3250,6 +3250,7 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] Scroll through terminal web links and soft-wrapped file URLs: dotted underlines and Cmd-hover strokes must stay on their text, including when the backend viewport trails a smooth gesture (#2582-13dd).
 - [ ] After a Rust rebuild/restart, inspect the generated Waiting and long work launch preview: continue independent work, yield only for a needed result or user answer, report running work without completion/suggestions, and use the launched mechanism’s wake. Existing sessions do not receive the new launch text automatically. (#2581-4824)
 
+- [ ] AI Chat master prompt (#2587-88de): after the next backend rebuild/restart, save instructions in Settings → AI → AI Chat, create a new conversation, and confirm it follows them while an existing conversation is unchanged. Also confirm Smart Prompts still produce their normal result when the chat instructions request delegation. Rust does not hot-reload; restart only when ready to lose current backend sessions.
 ## Design Mode stale profile ownership (2591-937a) — Rust restart required
 
 - [ ] After Boss restarts `make dev` or installs `make build`, start Edge Design Mode with the old stale profile lock and confirm the profile opens. Starting again while that profile is open must still ask you to close its browser window. TUIC must not remove a live profile lock. Backend changes do not hot-reload.

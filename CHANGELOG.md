@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- AI Chat master prompt in Settings: additive instructions for new conversations, with an 8192-byte limit.
 ### Fixed
 
 - Keep push-to-talk dictation in the focused detached AI Chat window instead of sending its transcript to the main window; preserve the captured composer across focus changes and scope native Fn listeners to their own WebView.
