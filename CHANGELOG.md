@@ -21,6 +21,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
+- Restore symmetric open meridians in the shared global-workspace globe icon (#2602-2e4d).
+
+- Match Droid and OpenCode identity artwork to sibling icon sizes in sidebar, Settings and mobile (#2601-0477).
+
 - Show a rounded Greek epsilon (ε), not an æ ligature or square E, in the ego identity circle across the sidebar and shared agent icons (#2598-8df7).
 
 - Resolve Progress to the main checkout when a separately registered linked checkout repeats the shared workspace inventory (#2583-fd08).

@@ -1,3 +1,10 @@
+## Shared globe artwork (2602-2e4d)
+
+- [ ] Inspect the global-workspace globe at default and enlarged sizes in light and dark themes. Confirm symmetric openings, a continuous rim and a clear equator. Headless geometry and before/after crops cover the shared component.
+
+## Visual identity artwork (2601-0477)
+
+- [ ] Inspect Droid and OpenCode beside Claude in sidebar, Settings agent tiles and mobile session cards. Confirm equal apparent height, no clipped artwork and theme-inherited color. Headless before/after crops are retained in `visual-audit-20`; no daily desktop interaction was used.
 ## Progress ownership inventory (2583-fd08) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, report Progress from ego main and its separately registered history-anchors checkout. Both must resolve to the main project's history without an ownership-cycle error. The recorded live inventory covers the resolver automatically; no live config was changed and the daily app was not restarted. Restart only when losing current sessions is acceptable.
