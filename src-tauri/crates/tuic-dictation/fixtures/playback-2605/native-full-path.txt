@@ -1,0 +1,129 @@
+=== pocket baseline ===
+engine=pocket load_workers=0 direct_device_output=false
+device_config=DeviceSinkConfig { channel_count: 2, sample_rate: 48000, buffer_size: Fixed(2048), sample_format: F32 }
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+112.173ms synthesis-start id=0
+479.463ms synthesis-end id=0 duration_ms=720.000
+479.604ms append id=0 prior_speaking=false
+479.618ms synthesis-start id=1
+494.262ms source-start id=0
+752.901ms synthesis-end id=1 duration_ms=2320.000
+753.616ms append id=1 prior_speaking=true
+753.638ms synthesis-start id=2
+1049.888ms synthesis-end id=2 duration_ms=2480.000
+1050.620ms append id=2 prior_speaking=true
+1177.082ms source-end id=0 max_consumption_gap_ms=42.623
+1177.111ms source-start id=1
+3481.276ms source-end id=1 max_consumption_gap_ms=42.630
+3481.292ms source-start id=2
+5998.315ms source-end id=2 max_consumption_gap_ms=42.681
+6000.405ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+probe_exit= 0
+=== pocket loaded ===
+engine=pocket load_workers=7 direct_device_output=false
+device_config=DeviceSinkConfig { channel_count: 2, sample_rate: 48000, buffer_size: Fixed(2048), sample_format: F32 }
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+65.451ms synthesis-start id=0
+383.336ms synthesis-end id=0 duration_ms=960.000
+383.518ms append id=0 prior_speaking=false
+383.529ms synthesis-start id=1
+404.820ms source-start id=0
+653.557ms synthesis-end id=1 duration_ms=2400.000
+653.999ms append id=1 prior_speaking=true
+654.009ms synthesis-start id=2
+978.852ms synthesis-end id=2 duration_ms=2720.000
+979.646ms append id=2 prior_speaking=true
+1343.510ms source-end id=0 max_consumption_gap_ms=42.585
+1343.515ms source-start id=1
+3732.955ms source-end id=1 max_consumption_gap_ms=42.638
+3732.961ms source-start id=2
+6463.506ms source-end id=2 max_consumption_gap_ms=42.609
+6492.863ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+probe_exit= 0
+=== pocket direct ===
+engine=pocket load_workers=0 direct_device_output=true
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+55.463ms synthesis-start id=0
+338.478ms synthesis-end id=0 duration_ms=560.000
+338.583ms append id=0 prior_speaking=false
+338.590ms synthesis-start id=1
+619.109ms synthesis-end id=1 duration_ms=2320.000
+619.519ms append id=1 prior_speaking=true
+619.543ms synthesis-start id=2
+923.414ms synthesis-end id=2 duration_ms=2800.000
+923.903ms append id=2 prior_speaking=true
+5993.190ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+probe_exit= 0
+=== edge baseline ===
+engine=edge load_workers=0 direct_device_output=false
+device_config=DeviceSinkConfig { channel_count: 2, sample_rate: 48000, buffer_size: Fixed(2048), sample_format: F32 }
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+70.775ms synthesis-start id=0
+2820.598ms synthesis-end id=0 duration_ms=2664.000
+2821.080ms append id=0 prior_speaking=false
+2821.132ms synthesis-start id=1
+2842.228ms source-start id=0
+4037.442ms synthesis-end id=1 duration_ms=3312.000
+4038.734ms append id=1 prior_speaking=true
+4038.810ms synthesis-start id=2
+5381.837ms synthesis-end id=2 duration_ms=3408.000
+5383.052ms append id=2 prior_speaking=true
+5487.590ms source-end id=0 max_consumption_gap_ms=42.674
+5487.596ms source-start id=1
+8773.111ms source-end id=1 max_consumption_gap_ms=42.655
+8773.120ms source-start id=2
+12186.296ms source-end id=2 max_consumption_gap_ms=42.673
+12216.949ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+probe_exit= 0
+=== edge loaded ===
+engine=edge load_workers=7 direct_device_output=false
+device_config=DeviceSinkConfig { channel_count: 2, sample_rate: 48000, buffer_size: Fixed(2048), sample_format: F32 }
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+65.908ms synthesis-start id=0
+1689.658ms synthesis-end id=0 duration_ms=2664.000
+1690.138ms append id=0 prior_speaking=false
+1690.177ms synthesis-start id=1
+1727.850ms source-start id=0
+2822.612ms synthesis-end id=1 duration_ms=3312.000
+2823.201ms append id=1 prior_speaking=true
+2823.230ms synthesis-start id=2
+3820.634ms synthesis-end id=2 duration_ms=3408.000
+3821.250ms append id=2 prior_speaking=true
+4373.209ms source-end id=0 max_consumption_gap_ms=42.653
+4373.223ms source-start id=1
+7658.580ms source-end id=1 max_consumption_gap_ms=42.635
+7658.593ms source-start id=2
+11071.907ms source-end id=2 max_consumption_gap_ms=42.630
+11092.379ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+probe_exit= 0
+=== edge direct ===
+engine=edge load_workers=0 direct_device_output=true
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Failed("Speech synthesis failed: cannot reach the Microsoft Edge speech service (IO error: Network is down (os error 50)); it needs an internet connection"))
+80.749ms synthesis-start id=0
+1412.226ms synthesis-end id=0 duration_ms=2664.000
+1412.713ms append id=0 prior_speaking=false
+1412.789ms synthesis-start id=1
+3874.217ms synthesis-end id=1 duration_ms=3312.000
+3874.956ms append id=1 prior_speaking=true
+3875.043ms synthesis-start id=2
+5486.703ms synthesis-error id=2 error=Speech synthesis failed: cannot reach the Microsoft Edge speech service (IO error: Network is down (os error 50)); it needs an internet connection
+7392.516ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+probe_exit= 0

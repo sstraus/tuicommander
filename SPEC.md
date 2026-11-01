@@ -1632,6 +1632,18 @@ Explicit run pause/cancel and historical NeedsInput replay remain available.
 IPC, HTTP and MCP use the same question/inbox service. See
 [workflow decisions](docs/backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).
 
+
+### Pinned reusable workflow Calls (WF09)
+
+Contract 6 stores transitive published definition and routing-policy pins. Bounded
+same-daemon decision/check Calls create activation-owned nested GraphExecutions
+inside the existing run, not another scheduler. Typed terminal Return receipts
+preserve five distinct outcomes and nullable boolean outputs; spawn is not
+completion. Recovery reuses the child ID. Cancellation requests owned command
+stop and preserves independent integration proof debt. Accounting uses unique
+execution identities with unknown usage coverage, never fabricated zero cost.
+Story Dispatch remains the only story-delivery fan-out; WF08 proof execution is
+separate. See the backend workflow contract for publication/runtime bounds.
 The Plans and Stories toolbar pill shows active-plan, Ready and In progress counts with distinct glyphs and a tooltip line for each number. Ready comes from the Rust `summary` action, not a frontend subtraction; Done/total remains the progress bar tooltip. Ready-only work therefore remains visible when no story is running.
 
 ### AI Chat hands-free target

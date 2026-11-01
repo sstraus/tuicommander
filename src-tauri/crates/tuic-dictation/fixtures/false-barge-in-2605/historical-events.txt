@@ -1,0 +1,87 @@
+# /Users/stefano.straus/Library/Application Support/com.tuic.commander/logs/tuic.log.2026-10-31; snapshot bytes=28618347; sha256=b26db89b880cebecc5714e8ab7a2308d0508b54eb755b6fb0a00b3a5797e51e3
+# last timestamp=2026-10-31T23:59:59.831364Z
+2026-10-31T12:34:30.308313Z  WARN ThreadId(26) tuicommander_lib::cpu_watchdog: CPU SPIKE 93.6% | threads=227 fds=166 sessions=22 index_building=[] sem_permits=1 in_flight_stuck=[] bus_subs=4 git_cache_ttl_fallbacks=7448 head_emits_suppressed=0 state_lane=0
+2026-10-31T13:16:22.431100Z  WARN ThreadId(26) tuicommander_lib::cpu_watchdog: CPU SPIKE 92.6% | threads=165 fds=133 sessions=15 index_building=[] sem_permits=1 in_flight_stuck=[] bus_subs=4 git_cache_ttl_fallbacks=7780 head_emits_suppressed=0 state_lane=0
+2026-10-31T17:18:39.532816Z ERROR ThreadId(158189) tuic_dictation::audio: Audio stream error: A buffer underrun or overrun occurred. source="dictation"
+2026-10-31T17:50:18.953201Z  WARN ThreadId(26) tuicommander_lib::cpu_watchdog: CPU SPIKE 131.6% | threads=222 fds=235 sessions=44 index_building=["/Users/stefano.straus/Gits/personal/orchestrator", "/Users/stefano.straus/Gits/personal", "/Users/stefano.straus/Gits/personal/tuicommander", "/Users/stefano.straus/Gits/personal/ego"] sem_permits=0 in_flight_stuck=[] bus_subs=5 git_cache_ttl_fallbacks=9352 head_emits_suppressed=0 state_lane=0
+2026-10-31T17:51:19.162515Z  WARN ThreadId(26) tuicommander_lib::cpu_watchdog: CPU SPIKE 112.3% | threads=208 fds=239 sessions=44 index_building=["/Users/stefano.straus/Gits/personal/orchestrator", "/Users/stefano.straus/Gits/personal", "/Users/stefano.straus/Gits/personal/tuicommander", "/Users/stefano.straus/Gits/personal/ego"] sem_permits=0 in_flight_stuck=[] bus_subs=5 git_cache_ttl_fallbacks=9361 head_emits_suppressed=0 state_lane=0
+2026-10-31T17:52:19.351112Z  WARN ThreadId(26) tuicommander_lib::cpu_watchdog: CPU SPIKE 112.5% | threads=213 fds=237 sessions=44 index_building=["/Users/stefano.straus/Gits/personal/orchestrator", "/Users/stefano.straus/Gits/personal", "/Users/stefano.straus/Gits/personal/tuicommander", "/Users/stefano.straus/Gits/personal/ego"] sem_permits=0 in_flight_stuck=[] bus_subs=5 git_cache_ttl_fallbacks=9365 head_emits_suppressed=0 state_lane=0
+2026-10-31T17:54:16.842839Z ERROR ThreadId(174905) tuic_dictation::audio: Audio stream error: A buffer underrun or overrun occurred. source="dictation"
+2026-10-31T18:12:54.694615Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:12:56.291217Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:12:57.810803Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:13:01.227198Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: hushed, turn 2 begins source="dictation" speaking=false into_playback_ms=None interrupted=0
+2026-10-31T18:13:01.227219Z  INFO ThreadId(185532) tuic_dictation::continuous: Hands-free turn accepted source="dictation" heard="computer a che punto"
+2026-10-31T18:14:54.671183Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:14:56.324363Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:15:20.991656Z ERROR ThreadId(188036) tuic_dictation::audio: Audio stream error: A buffer underrun or overrun occurred. source="dictation"
+2026-10-31T18:16:07.794264Z  INFO ThreadId(185531) tuicommander_lib::dictation::commands: Speech synthesis start source="dictation" engine="Pocket TTS" voice="giovanni" language=it
+2026-10-31T18:16:13.158549Z  INFO ThreadId(185531) tuicommander_lib::dictation::commands: Speech synthesis complete source="dictation" engine="Pocket TTS" voice="giovanni" language=it succeeded=true
+2026-10-31T18:16:15.625845Z  WARN ThreadId(26) tuicommander_lib::cpu_watchdog: CPU SPIKE 244.9% | threads=234 fds=243 sessions=46 index_building=[] sem_permits=1 in_flight_stuck=[] bus_subs=5 git_cache_ttl_fallbacks=9801 head_emits_suppressed=0 state_lane=0
+2026-10-31T18:16:17.542393Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:16:19.023939Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:16:28.740143Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:16:30.914168Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:16:31.797854Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:16:33.657126Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:16:35.215217Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:16:37.308434Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:16:51.205323Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:16:53.297005Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:17:00.426959Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:17:05.469683Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: hushed, turn 3 begins source="dictation" speaking=false into_playback_ms=None interrupted=0
+2026-10-31T18:17:05.469705Z  INFO ThreadId(185532) tuic_dictation::continuous: Hands-free turn accepted source="dictation" heard="Computer, ma che mutazione"
+2026-10-31T18:17:26.063983Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:17:34.089047Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:17:41.227005Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:17:49.269802Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:17:51.375247Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: hushed, turn 4 begins source="dictation" speaking=false into_playback_ms=None interrupted=0
+2026-10-31T18:17:51.375276Z  INFO ThreadId(185532) tuic_dictation::continuous: Hands-free turn accepted source="dictation" heard="Computer, di nuovo il"
+2026-10-31T18:18:05.505461Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:18:13.535097Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:18:24.673379Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: hushed, turn 5 begins source="dictation" speaking=false into_playback_ms=None interrupted=0
+2026-10-31T18:18:24.673401Z  INFO ThreadId(185532) tuic_dictation::continuous: Hands-free turn accepted source="dictation" heard="Computer, quando c'è"
+2026-10-31T18:19:11.012719Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:19:12.893373Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:19:16.174411Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:19:18.270722Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:19:57.421285Z  INFO ThreadId(185531) tuicommander_lib::dictation::commands: Speech synthesis start source="dictation" engine="Pocket TTS" voice="giovanni" language=it
+2026-10-31T18:20:01.445833Z  INFO ThreadId(185531) tuicommander_lib::dictation::commands: Speech synthesis complete source="dictation" engine="Pocket TTS" voice="giovanni" language=it succeeded=true
+2026-10-31T18:20:01.885858Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:20:03.415912Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:20:05.427755Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:20:05.882399Z  WARN ThreadId(26) tuicommander_lib::cpu_watchdog: CPU SPIKE 88.9% | threads=238 fds=263 sessions=48 index_building=[] sem_permits=1 in_flight_stuck=[] bus_subs=5 git_cache_ttl_fallbacks=9828 head_emits_suppressed=0 state_lane=0
+2026-10-31T18:20:07.460746Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:20:09.001338Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:20:11.093632Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:20:11.476987Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:20:13.454017Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:20:17.848941Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:20:19.931236Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:20:30.588989Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:20:32.641170Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:20:33.737238Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:20:35.800146Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:20:37.069386Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:20:39.125927Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:20:39.951300Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:20:41.908317Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:20:47.123006Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:20:49.120398Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:20:50.000770Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:20:51.362506Z  INFO ThreadId(185531) tuicommander_lib::dictation::commands: Speech synthesis start source="dictation" engine="Pocket TTS" voice="giovanni" language=it
+2026-10-31T18:20:52.057670Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:20:52.711914Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:20:53.451998Z  INFO ThreadId(185531) tuicommander_lib::dictation::commands: Speech synthesis complete source="dictation" engine="Pocket TTS" voice="giovanni" language=it succeeded=true
+2026-10-31T18:20:54.344853Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:20:55.221608Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:21:03.232262Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:21:48.580089Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: paused, voice activity source="dictation"
+2026-10-31T18:21:56.609106Z  INFO ThreadId(185532) tuic_dictation::continuous: speech: resumed, nothing addressed to us source="dictation"
+2026-10-31T18:21:59.207933Z  INFO ThreadId(185532) tuic_dictation::speaker: speech: hushed, turn 6 begins source="dictation" speaking=false into_playback_ms=None interrupted=0
+2026-10-31T18:21:59.207948Z  INFO ThreadId(185532) tuic_dictation::continuous: Hands-free turn accepted source="dictation" heard="computer la voce non"
+2026-10-31T20:01:42.741358Z  WARN ThreadId(26) tuicommander_lib::cpu_watchdog: CPU SPIKE 92.0% | threads=261 fds=206 sessions=32 index_building=[] sem_permits=1 in_flight_stuck=[] bus_subs=5 git_cache_ttl_fallbacks=10471 head_emits_suppressed=0 state_lane=0
+2026-10-31T20:45:06.487562Z  WARN ThreadId(26) tuicommander_lib::cpu_watchdog: CPU SPIKE 80.9% | threads=208 fds=178 sessions=24 index_building=[] sem_permits=1 in_flight_stuck=[] bus_subs=5 git_cache_ttl_fallbacks=11464 head_emits_suppressed=0 state_lane=0
+2026-10-31T21:16:59.379295Z  WARN ThreadId(26) tuicommander_lib::cpu_watchdog: CPU SPIKE 82.3% | threads=186 fds=162 sessions=20 index_building=[] sem_permits=1 in_flight_stuck=[] bus_subs=6 git_cache_ttl_fallbacks=11751 head_emits_suppressed=0 state_lane=0
+# /Users/stefano.straus/Library/Application Support/com.tuic.commander/logs/tuic.log.2026-11-01; snapshot bytes=1893502; sha256=ae032d60c7280d8836f2d3105ce9ff79876091e67a2ff11c9e835d80878557aa
+# last timestamp=2026-11-01T01:53:56.060438Z

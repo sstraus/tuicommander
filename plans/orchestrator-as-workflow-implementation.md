@@ -210,6 +210,10 @@ Problem: gate-queue, tested rows, batch Vitest and mutation evidence currently d
 
 ### WF09 — Pin same-daemon definitions and reuse existing Story Dispatch
 
+Decision (coordinator, 2026-10-31): a child run is a nested `GraphExecution` in the owning `RunSnapshot`, bound to its parent activation. It shares the existing scheduler, budgets and cancellation owner. Story Dispatch remains the only story-delivery fan-out. Reusable Calls execute bounded decision/check graphs, not another delivery scheduler.
+
+Bounds: publication rejects recursive definition paths, depth above 4 and more than 32 expanded Call instances per definition invocation. Reusable graphs cannot contain loops or parallel fan-out. Each graph retains the existing 128-node / 512-activation bounds; at most 33 executions and 16,896 activation slots are reachable for one root invocation before tighter shared runtime limits. Story Dispatch retains its independent existing story admission limits.
+
 Problem: B needs pinned reusable delivery definitions and visible nested ownership, not a second implementation of the story-level Call already provided by Story Dispatch.
 
 - [ ] Pin exact same-daemon definition/policy revisions and declared input/output receipts. Reuse Story Dispatch as the story-level Call, including its child binding, budgets and integration aggregation; do not add a Call for each already-dispatched story. Limit new Call use to same-daemon bounded reusable decision/check subflows where needed by WF13; no generic cross-daemon schema or placement implementation.

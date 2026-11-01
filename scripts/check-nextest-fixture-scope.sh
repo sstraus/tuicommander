@@ -12,7 +12,9 @@ trap 'rm -rf "$work"' EXIT
 
 marker="$work/fixture-bins-ran"
 config="$work/nextest.toml"
-sed "s|sh scripts/build-fixture-bins.sh|touch $marker|" "$tauri/.config/nextest.toml" > "$config"
+sed -e "s|sh scripts/build-fixture-bins.sh|touch $marker|" \
+  -e "s|powershell -NoProfile -File scripts/build-fixture-bins.ps1|touch $marker|" \
+  "$tauri/.config/nextest.toml" > "$config"
 grep -q "touch $marker" "$config" || { echo "nextest.toml no longer names build-fixture-bins.sh" >&2; exit 1; }
 
 # A filter that selects nothing leaves no marker either, so a run must have
@@ -25,7 +27,7 @@ run() {
 
 # Catches: a unit test that spawns a bin fixture but is missing from the setup filter.
 consumers="$(cd "$tauri" && grep -rlE 'tuic-(acp|mcp)-fixture' src crates/*/src | LC_ALL=C sort | tr '\n' ' ')"
-[ "$consumers" = "src/acp_chat.rs src/mcp_proxy/registry.rs src/mcp_proxy/stdio_client.rs src/state.rs " ] || {
+[ "$consumers" = "src/acp/oneshot.rs src/acp_chat.rs src/mcp_http/launch_transaction_acp_tests.rs src/mcp_proxy/registry.rs src/mcp_proxy/stdio_client.rs src/state.rs src/workflows/run/runtime_tests/acp_close.rs " ] || {
   echo "lib unit tests consuming bin fixtures changed: $consumers" >&2
   echo "update the fixture-bins filters in src-tauri/.config/nextest.toml and this list" >&2
   exit 1
@@ -58,6 +60,26 @@ run -p tuicommander --no-default-features --lib -E 'test(/^acp_chat::tests::cust
 [ -e "$marker" ] || { echo "fixture-bins setup did not run for ACP chat tests" >&2; exit 1; }
 rm -f "$marker"
 
+# Catches: unattended ACP prompts losing setup while chat consumers keep it.
+run -p tuicommander --no-default-features --lib -E 'test(=acp::oneshot::tests::unattended_prompt_does_not_inherit_ai_chat_master_instructions)'
+[ -e "$marker" ] || { echo "fixture-bins setup did not run for unattended ACP prompts" >&2; exit 1; }
+rm -f "$marker"
+
+# Catches: daemon ACP launch losing setup while chat consumers keep it.
+run -p tuicommander --no-default-features --lib -E 'test(=mcp_http::launch_transaction::acp_tests::lost_spawn_response_does_not_spawn_again)'
+[ -e "$marker" ] || { echo "fixture-bins setup did not run for daemon ACP launch" >&2; exit 1; }
+rm -f "$marker"
+
+# Catches: owned ACP close losing setup while daemon launch keeps it.
+# This test needs Unix process observation and is absent on Windows.
+if [ "${OS:-}" != Windows_NT ]; then
+  run -p tuicommander --no-default-features --lib -E 'test(=workflows::run::runtime_tests::acp_close::live_background_receipt_prevents_idle_reap)'
+  [ -e "$marker" ] || { echo "fixture-bins setup did not run for owned ACP close" >&2; exit 1; }
+  rm -f "$marker"
+fi
+
 # Catches: the filter widened to the whole lib binary.
 run -p tuicommander --no-default-features --lib -E 'test(=state::worktree_event_payloads::the_created_payload_spells_its_wire_fields)'
 [ ! -e "$marker" ] || { echo "fixture-bins setup ran for a lib run with no consumer" >&2; exit 1; }
+
+echo "nextest fixture setup scope passed"

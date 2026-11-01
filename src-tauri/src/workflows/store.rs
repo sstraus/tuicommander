@@ -404,7 +404,16 @@ impl WorkflowStore {
         }
         validate_graph(&draft.graph, draft.kind)?;
         validate_checks(&draft.required_checks)?;
-        if draft.kind == WorkflowKind::Story && draft.required_checks.is_empty() {
+        let reusable = draft
+            .graph
+            .nodes
+            .iter()
+            .any(|n| matches!(n.kind, NodeKind::Return { .. }));
+        if reusable && (!draft.required_checks.is_empty() || draft.graph.evidence_policy.is_some())
+        {
+            return Err("reusable Return definitions use explicit command/check nodes, not story final-check or approval policy".into());
+        }
+        if draft.kind == WorkflowKind::Story && !reusable && draft.required_checks.is_empty() {
             return Err("a story workflow needs at least one required check to publish".into());
         }
         if draft.closure == WorkflowClosure::Automatic {
@@ -659,6 +668,27 @@ fn read_published(conn: &Connection, id: &str, revision: i64) -> Result<Publishe
 }
 
 fn validate_pinned_templates(conn: &Connection, draft: &WorkflowDraft) -> Result<(), String> {
+    let definition = PublishedWorkflow {
+        id: draft.id.clone(),
+        project: draft.project.clone(),
+        name: draft.name.clone(),
+        kind: draft.kind,
+        closure: draft.closure,
+        required_checks: draft.required_checks.clone(),
+        graph: draft.graph.clone(),
+        revision: draft.latest_published_revision + 1,
+    };
+    if definition
+        .graph
+        .nodes
+        .iter()
+        .any(|n| matches!(n.kind, NodeKind::Return { .. }))
+    {
+        super::run::calls::reusable_signature(&definition)?;
+    }
+    super::run::calls::definition_closure(&definition, &|id, revision| {
+        read_published(conn, id, revision)
+    })?;
     for node in &draft.graph.nodes {
         if let NodeKind::StoryDispatch {
             story_template_id,

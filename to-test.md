@@ -2,6 +2,16 @@
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm Claude question titles, preview hints, Chat selection and clipped-form navigation remain unchanged. This is a behavior-preserving helper extraction. Recorded-fixture tests cover these contracts; no daily app was restarted. Rust changes do not hot-reload. Restart only when losing current sessions is acceptable.
 
+## Correlated barge-in hold diagnostics (2605-53fc) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build` when losing sessions is acceptable, inspect an authorized voice session's retained logs for `barge-in hold opened` and one matching `barge-in hold resolved`. Pair by hold ID, owner and generation. Check rejected/accepted/limit reasons rather than treating the old generic resume text as a recognition verdict. Fields report queued output and aggregate capture/reference state, not acoustic playback or an echo diagnosis. Targeted synthetic tests verify the event contract; no daily microphone or running app was accessed. Rust changes do not hot-reload. Do not enable microphone/PCM capture without separate authority.
+
+## Browser voice queue (2605-53fc) — Rust rebuild/restart required
+
+- [ ] After Boss manually rebuilds/restarts when losing current sessions is acceptable, reload the browser tab (the audio frame header changed). Queue several spoken replies and confirm each finishes without truncation. Talk over a reply without the activation phrase, then confirm its remainder and later replies resume in order; interrupt the turn and confirm none of its queued audio returns. Automated scheduling/ACK tests do not verify real speaker output or microphone/AEC behavior. No daily instance was restarted; Rust does not hot-reload. The original native stutter remains unproven.
+## Pinned reusable workflow Calls (2516-8fd1) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a decision/check Call in a throwaway project. Inspect nested pins and typed outputs, republish the callee, and confirm the live run keeps its original revision. Cancel a live child and inspect its stop request plus retained integration obligations. No daily instance was restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
 ## Design Mode lossless selected-element crops (2617-69a6)
 
 - [ ] After rebuilding the sidecar and reopening Design Mode to deploy the extension, select a small icon and a large element. Confirm feedback retains PNG crop references with the existing 800 × 600 pixel and 128 KiB limits, while agent screenshots still default to WebP and accept explicit PNG. Targeted worker tests verify PNG adapter calls, crop dimensions and oversized-image DOM fallback; live Chrome pixel fidelity is not claimed. No daily app was restarted.

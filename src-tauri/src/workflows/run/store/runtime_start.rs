@@ -67,6 +67,14 @@ impl RunStore {
         let definitions = WorkflowStore::open()?;
         let definition =
             definitions.get_published(&request.definition_id, request.definition_revision)?;
+        if definition
+            .graph
+            .nodes
+            .iter()
+            .any(|n| matches!(n.kind, NodeKind::Return { .. }))
+        {
+            return Err("reusable Return definitions execute only through a parent Call".into());
+        }
         if definition.project != owner || definition.kind != kind {
             return Err("published workflow does not match the root target".into());
         }
@@ -142,9 +150,14 @@ impl RunStore {
         if let Some(snapshot) = start_retry(&tx, &owner, &key, &hash)? {
             return Ok(snapshot);
         }
-        execution.contract = Some(super::super::contracts::GraphContract::with_agent_policy(
+        let pins =
+            super::super::calls::definition_closure(&execution.definition, &|id, revision| {
+                definitions.get_published(id, revision)
+            })?;
+        execution.contract = Some(super::super::calls::pin_contract(
             &execution.definition,
             definitions.agent_policy()?,
+            pins,
         )?);
         if kind == WorkflowKind::Story {
             require_available_story(&tx, &owner, &target_id)?;

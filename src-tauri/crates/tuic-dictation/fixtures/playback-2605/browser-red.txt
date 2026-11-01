@@ -1,0 +1,65 @@
+
+ RUN  v5.0.0 /Users/stefano.straus/Gits/personal/tuicommander__wt/fix-voice-tts-stutter
+
+ ❯ src/__tests__/utils/browserVoice.test.ts (24 tests | 1 failed | 23 skipped) 10ms
+   ↓ the browser audio wire format (3)
+     ↓ round-trips samples through the uplink frame
+     ↓ reads the reply's own sample rate off the frame
+     ↓ names the owner on the socket URL and follows the page's scheme
+   ↓ starting a browser voice session on iOS (4)
+     ↓ resumes a suspended context in the arming gesture, before the microphone prompt is answered
+     ↓ resumes again when the context fell back to suspended during the prompt
+     ↓ sets the audio session to play-and-record before the microphone opens
+     ↓ closes the socket and the context when the microphone is refused
+   ↓ a replies-only browser voice session (1)
+     ↓ opens the socket and the speaker but never the microphone
+   ↓ openMicrophone (2)
+     ↓ explains a non-secure origin instead of throwing a bare TypeError
+     ↓ does not blame the origin when the page is secure but the browser has no microphone API
+   ❯ a browser voice session (11)
+     × schedules consecutive replies without cutting active audio or waiting for ended callbacks 4ms
+     ↓ resumes the active remainder before replies appended during a hold
+     ↓ drops scheduled and held replies on server stop
+     ↓ drops scheduled and held replies on session stop
+     ↓ ships captured audio up the socket without deciding anything about it
+     ↓ sends silence too, rather than deciding the user stopped talking
+     ↓ plays a reply at the rate it was rendered at and reports the end
+     ↓ stops playback when the server says the turn is over
+     ↓ holds the reply on pause and continues from the same position on resume
+     ↓ keeps a reply that arrives during a pause until the resume
+     ↓ releases the microphone and the socket when it stops
+   ↓ the screen lock of a browser voice session (3)
+     ↓ holds the lock while the microphone is open and releases it on stop
+     ↓ takes no lock when the microphone fails to open
+     ↓ takes no lock in a replies-only conversation
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 23 skipped (24)
+   Start at  02:23:01
+   Duration  1.40s (environment 56%, setup 35%, transform 6%, import 1%, tests 1%)
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/__tests__/utils/browserVoice.test.ts > a browser voice session > schedules consecutive replies without cutting active audio or waiting for ended callbacks
+AssertionError: expected "vi.fn()" to not be called at all, but actually been called 1 times
+
+Received:
+
+  1st vi.fn() call:
+
+    Array []
+
+
+Number of calls: 1
+
+ ❯ src/__tests__/utils/browserVoice.test.ts:298:37
+    296|   socket.onmessage?.({ data: reply(2, 48_000) });
+    297|
+    298|   expect(nodes.sources[0].stop).not.toHaveBeenCalled();
+       |                                     ^
+    299|   expect(nodes.played.map(({ when, from }) => [when, from])).toEqual([…
+    300|   // Even if the main thread receives the ended callback late, the sec…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

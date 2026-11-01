@@ -1130,6 +1130,13 @@ fn apply_pending(
 }
 
 impl continuous::Interruptible for ArmedSpeaker {
+    fn output_snapshot(&self) -> continuous::OutputSnapshot {
+        self.slot
+            .try_lock()
+            .and_then(|slot| slot.as_ref().map(|armed| armed.speaker.output_snapshot()))
+            .unwrap_or_default()
+    }
+
     fn pause(&self) {
         self.send(SpeakerCommand::Pause);
     }
@@ -2362,6 +2369,8 @@ pub(crate) const DESKTOP_OWNER: &str = "desktop";
 /// `!Send` and stays in `DictationState`, which is also what keeps push-to-talk
 /// and hands-free on separate devices.
 struct DesktopVoiceEndpoint {
+    capture_batches: Arc<std::sync::atomic::AtomicUsize>,
+    dropped_samples: Arc<std::sync::atomic::AtomicUsize>,
     buffer: Arc<parking_lot::Mutex<std::collections::VecDeque<f32>>>,
     alive: Arc<AtomicBool>,
     transcriber: Arc<dyn transcribe::Transcriber>,
@@ -2370,6 +2379,14 @@ struct DesktopVoiceEndpoint {
 }
 
 impl continuous::VoiceEndpoint for DesktopVoiceEndpoint {
+    fn capture_snapshot(&self) -> continuous::CaptureSnapshot {
+        continuous::CaptureSnapshot {
+            backlog_samples: self.buffer.try_lock().map(|buffer| buffer.len()),
+            capture_batches: Some(self.capture_batches.load(Ordering::Relaxed)),
+            dropped_samples: Some(self.dropped_samples.load(Ordering::Relaxed)),
+        }
+    }
+
     fn drain(&mut self) -> Result<Vec<f32>, String> {
         Ok(self.buffer.lock().drain(..).collect())
     }
@@ -2485,6 +2502,7 @@ fn open_endpoint(
     let device_name = config.device.as_deref().filter(|name| !name.is_empty());
     let capture = audio::AudioCapture::start_with_device(device_name)?;
     let buffer = capture.buffer_handle();
+    let (capture_batches, dropped_samples) = capture.diagnostic_counters();
     // See the browser branch above: the canceller counts this backlog.
     let backlog = Arc::clone(&buffer);
     dictation
@@ -2496,6 +2514,8 @@ fn open_endpoint(
         .hands_free_owner_alive
         .store(true, Ordering::Release);
     Ok(Box::new(DesktopVoiceEndpoint {
+        capture_batches,
+        dropped_samples,
         buffer,
         alive: dictation.hands_free_owner_alive.clone(),
         transcriber,
@@ -3976,7 +3996,7 @@ mod tests {
         assert!(
             matches!(
                 client.try_recv().expect("the client was told"),
-                browser::Downlink::Speak(_)
+                browser::Downlink::Speak { .. }
             ),
             "the reply went to the browser"
         );
