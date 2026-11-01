@@ -12,6 +12,7 @@ use std::sync::Arc;
 mod acp_close;
 mod critic_c;
 mod default_install;
+mod effect_dispatch;
 #[cfg(unix)]
 mod lifecycle;
 mod parity;
