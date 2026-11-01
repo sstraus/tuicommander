@@ -151,7 +151,21 @@ describe("StoriesDialog", () => {
 	});
 
 	it("catches a failed read being presented as an empty project and supports retry", async () => {
-		vi.mocked(invoke).mockResolvedValueOnce(true).mockRejectedValueOnce(new Error("offline"));
+		const fallback = vi.mocked(invoke).getMockImplementation();
+		vi.mocked(invoke)
+			.mockImplementation(async (command, args) => {
+				const action = (args as { action?: { action: string } } | undefined)?.action;
+				if (command === "workflow_definition_action")
+					return {
+						type: "drafts",
+						value: [{ id: "flow-1", name: "Story delivery", kind: "story", latestPublishedRevision: 2 }],
+					};
+				if (command === "workflow_run_action" && action?.action === "start_readiness")
+					return { type: "readiness", value: ["effective host routing policy is not imported"] };
+				return fallback?.(command, args);
+			})
+			.mockResolvedValueOnce(true)
+			.mockRejectedValueOnce(new Error("offline"));
 		render(() => <StoriesDialog project="/repo" onClose={() => {}} />);
 		await screen.findByText(/offline/);
 		expect(screen.queryByText("Create a plan to begin.")).toBeNull();
@@ -159,6 +173,9 @@ describe("StoriesDialog", () => {
 		expect(screen.queryByText("This plan has no stories.")).toBeNull();
 		fireEvent.click(screen.getByRole("button", { name: "Retry" }));
 		await screen.findByRole("heading", { name: "Implement API" });
+		// Catches: failed initial story loading permanently bypassing the policy readiness check after Retry.
+		await screen.findByText("Workflow runs need a routing policy; its controls arrive in a later version.");
+		expect(screen.queryByRole("button", { name: "Start story workflow" })).toBeNull();
 	});
 
 	it("catches action failures hiding previously loaded stories as if their read failed", async () => {
@@ -910,8 +927,12 @@ describe("StoriesDialog", () => {
 		render(() => <StoriesDialog project="/repo" onClose={() => {}} />);
 		await screen.findByRole("heading", { name: "Implement API" });
 		expect(screen.queryByText(/Start plan workflow/)).toBeNull();
-		fireEvent.click(screen.getByRole("button", { name: "Start story workflow" }));
-		await screen.findByRole("button", { name: "Start published workflow" });
+		fireEvent.click(await screen.findByRole("button", { name: "Start story workflow" }));
+		await waitFor(() =>
+			expect((screen.getByRole("button", { name: "Start published workflow" }) as HTMLButtonElement).disabled).toBe(
+				false,
+			),
+		);
 		expect(screen.queryByRole("option", { name: /Draft only/ })).toBeNull();
 		fireEvent.click(screen.getByRole("button", { name: "Start published workflow" }));
 		await waitFor(() =>
@@ -928,6 +949,39 @@ describe("StoriesDialog", () => {
 			}),
 		);
 		await screen.findByRole("region", { name: "Run timeline" });
+	});
+
+	it.each([
+		["missing policy", ["effective host routing policy is not imported"], false],
+		["configured policy", [], true],
+		["other readiness problem", ["saved run profile is unavailable"], true],
+	])("hides workflow start without a routing policy: %s", async (_case, problems, visible) => {
+		// Catches: exposing an unusable Start or a red policy error, or hiding Start for an existing policy.
+		const fallback = vi.mocked(invoke).getMockImplementation();
+		vi.mocked(invoke).mockImplementation(async (command, args) => {
+			const action = (args as { action?: { action: string } } | undefined)?.action;
+			if (command === "workflow_definition_action")
+				return {
+					type: "drafts",
+					value: [{ id: "flow-1", name: "Story delivery", kind: "story", latestPublishedRevision: 2 }],
+				};
+			if (command === "workflow_run_action" && action?.action === "start_readiness")
+				return { type: "readiness", value: problems };
+			return fallback?.(command, args);
+		});
+		render(() => <StoriesDialog project="/repo" onClose={() => {}} />);
+		await screen.findByRole("heading", { name: "Implement API" });
+		if (visible) {
+			expect(await screen.findByRole("button", { name: "Start story workflow" })).toBeTruthy();
+			expect(screen.queryByText(/Workflow runs need a routing policy/)).toBeNull();
+		} else {
+			expect(
+				await screen.findByText("Workflow runs need a routing policy; its controls arrive in a later version."),
+			).toBeTruthy();
+			expect(screen.queryByRole("button", { name: "Start story workflow" })).toBeNull();
+			expect(screen.queryByRole("button", { name: "Start published workflow" })).toBeNull();
+			expect(screen.queryByRole("alert")).toBeNull();
+		}
 	});
 
 	describe("story workflow run on a default install (2138)", () => {
@@ -971,7 +1025,7 @@ describe("StoriesDialog", () => {
 			});
 			render(() => <StoriesDialog project="/repo" onClose={() => {}} />);
 			await screen.findByRole("heading", { name: "Implement API" });
-			fireEvent.click(screen.getByRole("button", { name: "Start story workflow" }));
+			fireEvent.click(await screen.findByRole("button", { name: "Start story workflow" }));
 			expect((await screen.findByRole("alert")).textContent).toContain("Settings > Agents");
 			expect((screen.getByRole("button", { name: "Start published workflow" }) as HTMLButtonElement).disabled).toBe(
 				true,
@@ -999,7 +1053,10 @@ describe("StoriesDialog", () => {
 			});
 			render(() => <StoriesDialog project="/repo" onClose={() => {}} />);
 			await screen.findByRole("heading", { name: "Implement API" });
-			fireEvent.click(screen.getByRole("button", { name: "Start story workflow" }));
+			await waitFor(() => expect(pending.length).toBe(1));
+			expect(screen.queryByRole("button", { name: "Start story workflow" })).toBeNull();
+			pending.shift()!([]);
+			fireEvent.click(await screen.findByRole("button", { name: "Start story workflow" }));
 			const start = (await screen.findByRole("button", { name: "Start published workflow" })) as HTMLButtonElement;
 			await waitFor(() => expect(pending.length).toBe(1));
 			expect(start.disabled).toBe(true);
