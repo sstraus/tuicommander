@@ -1,0 +1,130 @@
+=== pocket baseline ===
+engine=pocket load_workers=0 direct_device_output=false
+device_config=DeviceSinkConfig { channel_count: 2, sample_rate: 48000, buffer_size: Fixed(2048), sample_format: F32 }
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+230.884ms synthesis-start id=0
+662.089ms synthesis-end id=0 duration_ms=560.000
+662.091ms append id=0 prior_speaking=false
+662.104ms synthesis-start id=1
+696.006ms source-start id=0
+924.989ms synthesis-end id=1 duration_ms=2480.000
+924.990ms append id=1 prior_speaking=true
+925.002ms synthesis-start id=2
+1207.115ms synthesis-end id=2 duration_ms=2720.000
+1207.116ms append id=2 prior_speaking=true
+1208.182ms source-end id=0 max_consumption_gap_ms=42.614
+1208.190ms source-start id=1
+3682.888ms source-end id=1 max_consumption_gap_ms=42.734
+3682.913ms source-start id=2
+6413.340ms source-end id=2 max_consumption_gap_ms=42.656
+6439.183ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+probe_exit= 0
+=== pocket loaded ===
+engine=pocket load_workers=7 direct_device_output=false
+device_config=DeviceSinkConfig { channel_count: 2, sample_rate: 48000, buffer_size: Fixed(2048), sample_format: F32 }
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+79.751ms synthesis-start id=0
+421.917ms synthesis-end id=0 duration_ms=1200.000
+421.918ms append id=0 prior_speaking=false
+421.939ms synthesis-start id=1
+461.988ms source-start id=0
+718.269ms synthesis-end id=1 duration_ms=2320.000
+718.270ms append id=1 prior_speaking=true
+718.280ms synthesis-start id=2
+1001.281ms synthesis-end id=2 duration_ms=2720.000
+1001.282ms append id=2 prior_speaking=true
+1614.174ms source-end id=0 max_consumption_gap_ms=42.615
+1614.182ms source-start id=1
+3960.693ms source-end id=1 max_consumption_gap_ms=42.640
+3960.699ms source-start id=2
+6648.751ms source-end id=2 max_consumption_gap_ms=42.615
+6674.706ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+probe_exit= 0
+=== pocket direct ===
+engine=pocket load_workers=0 direct_device_output=true
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+61.847ms synthesis-start id=0
+421.494ms synthesis-end id=0 duration_ms=1200.000
+421.495ms append id=0 prior_speaking=false
+421.509ms synthesis-start id=1
+701.183ms synthesis-end id=1 duration_ms=2320.000
+701.185ms append id=1 prior_speaking=true
+701.205ms synthesis-start id=2
+1054.514ms synthesis-end id=2 duration_ms=2960.000
+1054.517ms append id=2 prior_speaking=true
+6901.774ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+probe_exit= 0
+=== edge baseline ===
+engine=edge load_workers=0 direct_device_output=false
+device_config=DeviceSinkConfig { channel_count: 2, sample_rate: 48000, buffer_size: Fixed(2048), sample_format: F32 }
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+60.896ms synthesis-start id=0
+2228.860ms synthesis-end id=0 duration_ms=2664.000
+2228.862ms append id=0 prior_speaking=false
+2228.898ms synthesis-start id=1
+2234.875ms source-start id=0
+3467.707ms synthesis-end id=1 duration_ms=3312.000
+3467.708ms append id=1 prior_speaking=true
+3467.754ms synthesis-start id=2
+4655.343ms synthesis-end id=2 duration_ms=3408.000
+4655.344ms append id=2 prior_speaking=true
+4880.223ms source-end id=0 max_consumption_gap_ms=42.641
+4880.230ms source-start id=1
+8165.767ms source-end id=1 max_consumption_gap_ms=42.660
+8165.786ms source-start id=2
+11578.970ms source-end id=2 max_consumption_gap_ms=42.645
+11605.318ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+probe_exit= 0
+=== edge loaded ===
+engine=edge load_workers=7 direct_device_output=false
+device_config=DeviceSinkConfig { channel_count: 2, sample_rate: 48000, buffer_size: Fixed(2048), sample_format: F32 }
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+62.109ms synthesis-start id=0
+2086.224ms synthesis-end id=0 duration_ms=2664.000
+2086.225ms append id=0 prior_speaking=false
+2086.260ms synthesis-start id=1
+2108.079ms source-start id=0
+3400.144ms synthesis-end id=1 duration_ms=3312.000
+3400.145ms append id=1 prior_speaking=true
+3400.188ms synthesis-start id=2
+4753.413ms source-end id=0 max_consumption_gap_ms=42.620
+4753.422ms source-start id=1
+4779.125ms synthesis-end id=2 duration_ms=3408.000
+4779.126ms append id=2 prior_speaking=true
+8038.821ms source-end id=1 max_consumption_gap_ms=42.659
+8038.828ms source-start id=2
+11452.121ms source-end id=2 max_consumption_gap_ms=42.642
+11455.518ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+probe_exit= 0
+=== edge direct ===
+engine=edge load_workers=0 direct_device_output=true
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+63.407ms synthesis-start id=0
+1590.951ms synthesis-end id=0 duration_ms=2664.000
+1590.953ms append id=0 prior_speaking=false
+1591.046ms synthesis-start id=1
+3110.639ms synthesis-end id=1 duration_ms=3312.000
+3110.646ms append id=1 prior_speaking=true
+3110.936ms synthesis-start id=2
+4351.881ms synthesis-end id=2 duration_ms=3408.000
+4351.882ms append id=2 prior_speaking=true
+10958.967ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+probe_exit= 0

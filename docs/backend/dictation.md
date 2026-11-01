@@ -242,6 +242,33 @@ than failing, so a caller can always ask.
 A model does not call these. It calls the `voice` MCP tool, which supplies its
 own identity so the binding can be checked — see "Who may speak" below.
 
+### Investigate gaps in spoken replies
+
+The speech port returns a complete utterance before output starts. Pocket text
+chunks and Edge response pieces are assembled inside their synthesis adapters;
+they are not device playback chunks. The speaker worker can render the next
+queued utterance while the preceding audio plays. Its 25 ms completion poll is
+not an inter-buffer scheduling timer. `Speaking` means handed to the output,
+not an acoustic start timestamp.
+
+For isolated native timing, build the `speech_gap_probe` example in
+`tuic-dictation` through the authorized native build slot and mbx. It opens no
+microphone or app instance and sends silence to the output while preserving
+synthesized rates and lengths. Default mode records synthesis, append, and
+mixer source-consumption boundaries; `--direct` uses production `DeviceOutput`
+and records append/drain state. Source-consumption times are not DAC or acoustic
+measurements. `--load` adds bounded synthetic load and needs explicit authority
+on a shared machine.
+
+The 2605-53fc measurements and repeat instructions are in
+`src-tauri/crates/tuic-dictation/fixtures/playback-2605/README.md`.
+Pocket and Edge did not reproduce a native boundary gap under the measured
+partial load. The report retains one Edge network failure and the limits of
+that result. Historical capture-loop pause/resume entries are a separate
+candidate mechanism, not proof of a synthesis or device-scheduling defect.
+Do not increase buffers or remove the activation-verdict hold without a failing
+capture that distinguishes those mechanisms.
+
 ### Configuration
 
 | Command | Description |

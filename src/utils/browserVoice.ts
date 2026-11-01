@@ -258,6 +258,9 @@ export async function connectBrowserVoice(
 		buffer.getChannelData(0).set(samples);
 		// A reply that arrives while held waits for the resume.
 		const held = paused;
+		// DEFERRED (2026-11-01) — consecutive downlinks replace active audio.
+		// A queue/ack correction needs a browser playback replay; the native
+		// timing probe in playback-2605 does not establish that transport's cause.
 		stopPlayback();
 		paused = held;
 		current = buffer;
