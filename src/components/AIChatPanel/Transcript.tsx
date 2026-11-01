@@ -336,6 +336,10 @@ export interface TranscriptProps {
 	muteIntermediate?: boolean;
 	/** Absent for a read-only transcript: suggested replies are then not drawn. */
 	onSuggestion?: (text: string) => void;
+	/** Only backend-owned PTY queue ids can be expedited or cancelled. */
+	onSendPendingNow?: (commandId: number) => void;
+	onCancelPending?: (commandId: number) => void;
+	pendingAction?: boolean;
 	/** Open questions, drawn at the end of the conversation they belong to. */
 	children?: JSX.Element;
 }
@@ -849,6 +853,44 @@ export const Transcript: Component<TranscriptProps> = (props) => {
 															text={user().text}
 															prose={(text) => <UserText text={text} onOpenFile={props.onOpenFile} />}
 														/>
+													</Show>
+													<Show when={user().queuedCommandId != null}>
+														<span class={s.pendingActions}>
+															<Show when={props.onSendPendingNow}>
+																<Button
+																	variant="ghost"
+																	size="compact"
+																	shape="icon"
+																	aria-label="Send now: stop the current request"
+																	title="Send now: stop the current request"
+																	disabled={props.pendingAction}
+																	onClick={() => props.onSendPendingNow?.(user().queuedCommandId!)}
+																>
+																	<svg
+																		aria-hidden="true"
+																		width="16"
+																		height="16"
+																		viewBox="0 0 24 24"
+																		fill="currentColor"
+																	>
+																		<path d="M19 4h2v7a5 5 0 0 1-5 5H6.8l3.6 3.6L9 21l-6-6 6-6 1.4 1.4L6.8 14H16a3 3 0 0 0 3-3z" />
+																	</svg>
+																</Button>
+															</Show>
+															<Show when={props.onCancelPending}>
+																<Button
+																	variant="ghost"
+																	size="compact"
+																	shape="icon"
+																	aria-label="Cancel pending prompt"
+																	title="Cancel pending prompt"
+																	disabled={props.pendingAction}
+																	onClick={() => props.onCancelPending?.(user().queuedCommandId!)}
+																>
+																	×
+																</Button>
+															</Show>
+														</span>
 													</Show>
 													<CopyButton label="Copy user message" text={user().text} />
 												</div>

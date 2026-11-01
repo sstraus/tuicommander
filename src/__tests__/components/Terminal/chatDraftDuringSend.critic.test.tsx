@@ -38,7 +38,7 @@ vi.mock("../../../invoke", () => ({
 		cmd === "get_session_foreground_process"
 			? "claude"
 			: cmd === "get_shell_state"
-				? "busy"
+				? "idle"
 				: cmd === "chat_view_snapshot"
 					? { epoch: 0, nextSeq: 0, reset: true, updates: [], unknownRows: 0, malformedRows: 0 }
 					: undefined,

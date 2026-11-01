@@ -1,6 +1,6 @@
-import { type Component, createEffect, createMemo, on, onCleanup, onMount } from "solid-js";
+import { type Component, createEffect, createMemo, createSignal, on, onCleanup, onMount } from "solid-js";
 import type { AgentType } from "../../agents";
-import { listen } from "../../invoke";
+import { invoke, listen } from "../../invoke";
 import { createVisibilityInterval } from "../../mobile/utils/visibilityInterval";
 import { type ChatViewWake, chatViewStore } from "../../stores/chatView";
 import { settingsStore } from "../../stores/settings";
@@ -44,9 +44,26 @@ export const TerminalChatTranscript: Component<{
 	let disposed = false;
 	let ready = false;
 	let unwatch: (() => void) | undefined;
+	const [pendingAction, setPendingAction] = createSignal<number | null>(null);
+	const [actionError, setActionError] = createSignal<string | null>(null);
+	async function actOnQueued(commandId: number, sendNow: boolean) {
+		if (pendingAction() !== null) return;
+		const sessionId = props.sessionId;
+		setPendingAction(commandId);
+		setActionError(null);
+		try {
+			await invoke(sendNow ? "send_queued_agent_command_now" : "remove_queued_agent_command", { sessionId, commandId });
+		} catch (error) {
+			if (!disposed) setActionError(error instanceof Error ? error.message : String(error));
+		} finally {
+			await chatViewStore.refreshQueue(sessionId).catch(() => {});
+			if (!disposed) setPendingAction(null);
+		}
+	}
 	const refresh = () => {
 		if (ready && !disposed && document.visibilityState !== "hidden") {
 			void chatViewStore.refresh(props.sessionId).catch(() => {});
+			void chatViewStore.refreshQueue(props.sessionId).catch(() => {});
 		}
 	};
 	createEffect(() => {
@@ -76,8 +93,18 @@ export const TerminalChatTranscript: Component<{
 		disposed = true;
 		unwatch?.();
 	});
+	createEffect(() => {
+		props.busy;
+		props.activityRevision;
+		if (ready && !disposed) void chatViewStore.refreshQueue(props.sessionId).catch(() => {});
+	});
 	return (
 		<div class={s.chatView} data-testid="terminal-chat-view">
+			{actionError() && (
+				<div role="alert" class={s.fallbackBanner}>
+					{actionError()}
+				</div>
+			)}
 			<Transcript
 				fontSize={props.fontSize}
 				terminalAgent={props.terminalAgent}
@@ -86,6 +113,13 @@ export const TerminalChatTranscript: Component<{
 				onRegisterScrollToBottom={props.onRegisterScrollToBottom}
 				onSearchRef={props.onSearchRef}
 				onOpenFile={props.onOpenFile}
+				onSendPendingNow={
+					["claude", "codex", "ego"].includes(props.terminalAgent ?? "") && !props.awaitingInput
+						? (id) => void actOnQueued(id, true)
+						: undefined
+				}
+				onCancelPending={(id) => void actOnQueued(id, false)}
+				pendingAction={pendingAction() !== null}
 				entries={() => chatViewStore.entries(props.sessionId)}
 				busy={() => !props.awaitingInput && (props.busy === true || !!chatViewStore.state.submissions[props.sessionId])}
 				busyLabel="Working…"

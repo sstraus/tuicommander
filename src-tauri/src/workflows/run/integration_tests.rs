@@ -183,6 +183,44 @@ fn trial() -> Trial {
 }
 
 #[test]
+fn integration_admission_validates_id_bytes_before_stale_sequence() {
+    // catches: accepting blank/oversized IDs, counting characters instead of bytes,
+    // or reporting a stale sequence before the invalid command identity.
+    let mut t = trial();
+    enable(&t);
+    t.request.expected_sequence -= 1;
+    for invalid in [
+        String::new(),
+        " \t".into(),
+        "a".repeat(257),
+        "é".repeat(129),
+    ] {
+        t.request.command_id = invalid;
+        assert_eq!(
+            t.store.integrate(&t.request).unwrap_err(),
+            "integration command id must contain 1..256 bytes"
+        );
+    }
+    t.request.command_id = "a".repeat(256);
+    assert_eq!(
+        t.store.integrate(&t.request).unwrap_err(),
+        "stale workflow sequence"
+    );
+    assert!(
+        t.store
+            .integration_progress(&t.request.run_id, &t.request.story_id)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        git(&t.project, &["rev-parse", "HEAD"]),
+        t.request.expected_base
+    );
+    t.request.expected_sequence += 1;
+    assert!(t.store.integrate(&t.request).unwrap().merged);
+}
+
+#[test]
 fn disabled_repository_policy_refuses_native_merge() {
     // catches: default-on integration and rollback erasing existing debt.
     let t = trial();
@@ -274,6 +312,89 @@ fn moving_base_requires_new_merge_checks() {
         "0"
     );
     assert!(t.store.integrate(&t.request).unwrap_err().contains("moved"));
+}
+
+#[test]
+fn synthetic_publication_rejects_changed_source_tip_or_either_branch_identity() {
+    // catches: publishing a checked candidate after a source edit or same-tip branch rename.
+    for case in ["source-tip", "source-ref", "canonical-ref"] {
+        let t = trial();
+        enable(&t);
+        let workspace = t.workspace.clone();
+        let project = t.project.clone();
+        super::store::integration::before_publish(move || match case {
+            "source-tip" => {
+                git(
+                    &workspace,
+                    &["commit", "--allow-empty", "-qm", "late source edit"],
+                );
+            }
+            "source-ref" => {
+                git(&workspace, &["branch", "-m", "renamed-source"]);
+            }
+            "canonical-ref" => {
+                git(&project, &["branch", "-m", "renamed-canonical"]);
+            }
+            _ => unreachable!(),
+        });
+        assert_eq!(
+            t.store.integrate(&t.request).unwrap_err(),
+            "base or source moved after synthetic merge checks",
+            "{case}"
+        );
+        assert_eq!(
+            git(&t.project, &["rev-parse", "HEAD"]),
+            t.request.expected_base
+        );
+        assert_eq!(
+            git(&t.project, &["rev-list", "--count", "--merges", "HEAD"]),
+            "0"
+        );
+        let progress = t
+            .store
+            .integration_progress(&t.request.run_id, &t.request.story_id)
+            .unwrap()
+            .unwrap();
+        assert!(!progress.merged, "{case}");
+        assert_eq!(t.store.integration_obligations(&t.project).unwrap(), vec![]);
+        assert_eq!(
+            std::fs::read_to_string(t.workspace.join("work.txt")).unwrap(),
+            "accepted work\n"
+        );
+    }
+}
+
+#[test]
+fn post_merge_checks_refuse_a_clean_canonical_descendant_without_recertification() {
+    // catches: certifying the original merge after canonical HEAD advances cleanly.
+    let t = trial();
+    enable(&t);
+    super::store::integration::fault(IntegrationFault::AfterMerge);
+    assert_eq!(t.store.integrate(&t.request).unwrap_err(), "injected crash");
+    git(
+        &t.project,
+        &["commit", "--allow-empty", "-qm", "later canonical work"],
+    );
+    let current = git(&t.project, &["rev-parse", "HEAD"]);
+    let pending = t.store.integrate(&t.request).unwrap();
+    assert_eq!(
+        pending.outcome,
+        IntegrationOutcome::IntegratedObligationPending
+    );
+    assert_eq!(
+        pending.reason.as_deref(),
+        Some(
+            "canonical ref moved before post-integration checks; explicit recertification required"
+        )
+    );
+    assert!(pending.merged && pending.obligation_published);
+    assert!(!pending.receipt_recorded);
+    assert_eq!(pending.receipt.unwrap().post_checks, vec![]);
+    assert_eq!(git(&t.project, &["rev-parse", "HEAD"]), current);
+    assert_eq!(
+        git(&t.project, &["rev-list", "--count", "--merges", "HEAD"]),
+        "1"
+    );
 }
 
 #[test]
@@ -725,6 +846,87 @@ fn only_declared_append_only_documents_union_and_malformed_or_code_conflicts_req
             );
             assert!(t.workspace.exists());
         }
+    }
+}
+
+#[test]
+fn document_union_rejects_deletions_on_either_tip_and_executable_blobs() {
+    // catches: checking only one tip for deletions or unioning a non-regular blob.
+    for case in ["base-deletion", "source-deletion", "executable"] {
+        let mut t = trial();
+        let name = "CHANGELOG.md";
+        std::fs::write(t.project.join(name), "shared history\n").unwrap();
+        git(&t.project, &["add", name]);
+        git(&t.project, &["commit", "-qm", "shared document"]);
+        git(&t.workspace, &["merge", "--no-edit", "main"]);
+        let canonical = if case == "base-deletion" {
+            "canonical addition\n"
+        } else {
+            "shared history\ncanonical addition\n"
+        };
+        let source = if case == "source-deletion" {
+            "source addition\n"
+        } else {
+            "shared history\nsource addition\n"
+        };
+        for (path, text) in [(&t.project, canonical), (&t.workspace, source)] {
+            std::fs::write(path.join(name), text).unwrap();
+            git(path, &["add", name]);
+            if case == "executable" {
+                git(path, &["update-index", "--chmod=+x", name]);
+            }
+            git(path, &["commit", "-qm", "divergent document"]);
+            // Preserve the executable index entry without a host chmod requirement.
+            if case == "executable" {
+                git(path, &["config", "core.filemode", "false"]);
+            }
+        }
+        t.request.expected_base = git(&t.project, &["rev-parse", "HEAD"]);
+        t.request.expected_source = git(&t.workspace, &["rev-parse", "HEAD"]);
+        let sequence = t.store.snapshot(&t.request.run_id).unwrap().sequence;
+        t.request.expected_sequence = t
+            .store
+            .execute_check(
+                &t.request.run_id,
+                &t.request.story_id,
+                "git",
+                "check-rejected-document",
+                sequence,
+            )
+            .unwrap()
+            .sequence;
+        t.store
+            .set_integration_policy(&t.project, true, &[name.into()])
+            .unwrap();
+        let outcome = t.store.integrate(&t.request).unwrap();
+        assert_eq!(
+            outcome.outcome,
+            IntegrationOutcome::RepairRequired,
+            "{case}"
+        );
+        let reason = if case == "executable" {
+            "repair required: union requires a regular Markdown file"
+        } else {
+            "repair required: declared document is not append-only"
+        };
+        assert_eq!(outcome.reason.as_deref(), Some(reason), "{case}");
+        assert!(!outcome.merged, "{case}");
+        assert_eq!(
+            git(&t.project, &["rev-parse", "HEAD"]),
+            t.request.expected_base
+        );
+        assert_eq!(
+            git(&t.workspace, &["rev-parse", "HEAD"]),
+            t.request.expected_source
+        );
+        assert_eq!(
+            std::fs::read_to_string(t.project.join(name)).unwrap(),
+            canonical
+        );
+        assert_eq!(
+            std::fs::read_to_string(t.workspace.join(name)).unwrap(),
+            source
+        );
     }
 }
 

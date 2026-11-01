@@ -1,5 +1,6 @@
 import { batch } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import type { QueuedCommand } from "../hooks/usePty";
 import { invoke, listen } from "../invoke";
 import type { AcpSessionUpdate } from "../types/acp";
 import { type AcpTranscriptEntry, acpTranscript } from "./acpTranscript";
@@ -45,14 +46,22 @@ interface ChatViewState {
 	/** UI-only bridge from Send until the next existing activity/transcript update. */
 	submissions: Record<string, symbol>;
 	pending: Record<string, PendingPrompt[]>;
+	queued: Record<string, QueuedCommand[]>;
 }
 
 let nextPendingId = 0;
 
 const inFlight = new Map<string, { again: boolean }>();
 const watchOwners = new Map<string, symbol>();
+const queueReads = new Map<string, symbol>();
 
-const [state, setState] = createStore<ChatViewState>({ cursors: {}, unavailable: {}, submissions: {}, pending: {} });
+const [state, setState] = createStore<ChatViewState>({
+	cursors: {},
+	unavailable: {},
+	submissions: {},
+	pending: {},
+	queued: {},
+});
 
 /** The key a terminal's conversation is filed under in `acpTranscript`. */
 export function chatViewKey(sessionId: string): string {
@@ -205,13 +214,29 @@ export const chatViewStore = {
 		);
 	},
 
-	/** Presentation-only receipts; the CLI still owns its queue and execution.
-	 * DEFERRED (2026-10-31) — native CLI recall needs an acknowledged queue-id
-	 * withdrawal plus a reliable composer read. Sending Up/Esc alone cannot
-	 * retract a receipt safely: those keys may navigate history or interrupt. */
+	/** Refresh the same queue Compose and the idle gate own. Newer reads win. */
+	async refreshQueue(sessionId: string): Promise<void> {
+		const token = Symbol();
+		queueReads.set(sessionId, token);
+		const commands = await invoke<QueuedCommand[]>("list_queued_agent_commands", { sessionId });
+		if (queueReads.get(sessionId) !== token) return;
+		if (!Array.isArray(commands)) throw new Error("Invalid queued command response");
+		setState("queued", sessionId, commands);
+	},
+
+	/** Idle-send receipts are display-only; queued prompts carry backend ids. */
 	entries(sessionId: string): AcpTranscriptEntry[] {
 		return [
 			...acpTranscript.entries(chatViewKey(sessionId)),
+			...(state.queued[sessionId] ?? [])
+				.filter((command) => command.kind === "user_command")
+				.map(({ id, text }) => ({
+					id: `queue-${id}`,
+					kind: "user" as const,
+					text,
+					pending: true,
+					queuedCommandId: id,
+				})),
 			...(state.pending[sessionId] ?? []).map(({ id, text }) => ({ id, kind: "user" as const, text, pending: true })),
 		];
 	},
@@ -281,6 +306,8 @@ export const chatViewStore = {
 					delete s.cursors[sessionId];
 					delete s.submissions[sessionId];
 					delete s.pending[sessionId];
+					delete s.queued[sessionId];
+					queueReads.delete(sessionId);
 				}),
 			);
 			acpTranscript.clear(chatViewKey(sessionId));
@@ -289,8 +316,9 @@ export const chatViewStore = {
 
 	/** Tests only. */
 	reset(): void {
+		queueReads.clear();
 		inFlight.clear();
 		watchOwners.clear();
-		setState({ cursors: {}, unavailable: {}, submissions: {}, pending: {} });
+		setState({ cursors: {}, unavailable: {}, submissions: {}, pending: {}, queued: {} });
 	},
 };

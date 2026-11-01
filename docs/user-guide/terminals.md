@@ -77,6 +77,8 @@ Terminals are **never unmounted** from the DOM. When you switch branches or tabs
 
 ### CLI / Chat view
 
+Busy Session Chat sends wait in TUIC’s existing idle-gate queue on desktop and mobile. Each host-owned Pending prompt has Cancel and, for Claude, Codex and ego, a compact return-key action labelled **Send now: stop the current request**. Send now claims its queue id once; a prompt already taken by the idle gate is not sent again. Claude and Codex use Escape followed by confirmed idle; ego uses native Ctrl+Enter. Native CLI receipts from earlier direct sends remain read-only.
+
 Session Chat and its composer belong to their terminal tab. **Go to repo** on a
 progress toast opens the reporting terminal when it is still open. Otherwise it
 selects a surviving tab in the destination workspace, or clears the terminal area

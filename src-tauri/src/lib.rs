@@ -2268,6 +2268,7 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             pty::clear_queued_agent_commands,
             pty::list_queued_agent_commands,
             pty::remove_queued_agent_command,
+            pty::send_queued_agent_command_now,
             pty::get_process_stats,
             pty::subscribe_terminal_grid,
             pty::unsubscribe_terminal_grid,

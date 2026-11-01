@@ -4298,3 +4298,142 @@ fn queued_progress_reply_preserves_other_delivery_gates() {
         );
     }
 }
+
+// Catches: Send now replaying receipt text after the queue item already drained.
+#[cfg(unix)]
+#[test]
+fn chat_pending_send_now_and_idle_drain_deliver_exactly_once() {
+    for idle_wins in [false, true] {
+        let state = crate::state::tests_support::make_test_app_state();
+        agent_session(&state, "chat-pending", SHELL_BUSY);
+        let bytes = insert_recording_session(&state, "chat-pending");
+        enqueue_user_command(&state, "chat-pending", "Review now", None).unwrap();
+        let id = list_queued_commands(&state, "chat-pending")[0].id;
+        state
+            .session_maps
+            .shell_states
+            .get("chat-pending")
+            .unwrap()
+            .store(SHELL_IDLE, Ordering::Release);
+        state
+            .session_maps
+            .silence_states
+            .get("chat-pending")
+            .unwrap()
+            .lock()
+            .confirm_idle();
+        if idle_wins {
+            flush_pending_injections_blocking(&state, "chat-pending");
+        }
+        assert_eq!(
+            send_queued_command_now(&state, "chat-pending", id),
+            Ok(!idle_wins)
+        );
+        flush_pending_injections_blocking(&state, "chat-pending");
+        assert_eq!(
+            send_queued_command_now(&state, "chat-pending", id),
+            Ok(false)
+        );
+        assert_eq!(
+            *bytes.lock().unwrap(),
+            b"\x15Review now\r",
+            "idle_wins={idle_wins}"
+        );
+        assert!(list_queued_commands(&state, "chat-pending").is_empty());
+    }
+}
+
+// Catches: ego receiving plain Enter (queue) or Esc (interrupt) instead of native steer.
+#[cfg(unix)]
+#[test]
+fn chat_pending_ego_uses_native_ctrl_enter_and_leaves_other_items_queued() {
+    let state = crate::state::tests_support::make_test_app_state();
+    agent_session(&state, "chat-ego", SHELL_BUSY);
+    state
+        .session_maps
+        .session_states
+        .get_mut("chat-ego")
+        .unwrap()
+        .agent_type = Some("ego".into());
+    let bytes = insert_recording_session(&state, "chat-ego");
+    enqueue_user_command(&state, "chat-ego", "older", None).unwrap();
+    enqueue_user_command(&state, "chat-ego", "chosen", None).unwrap();
+    let id = list_queued_commands(&state, "chat-ego")[1].id;
+    assert_eq!(send_queued_command_now(&state, "chat-ego", id), Ok(true));
+    assert_eq!(*bytes.lock().unwrap(), b"\x15chosen\x1b[13;5u");
+    assert_eq!(list_queued_commands(&state, "chat-ego")[0].text, "older");
+    assert_eq!(send_queued_command_now(&state, "chat-ego", id), Ok(false));
+}
+
+// Catches: unsupported or dialog-owned composers losing the queued prompt before refusal.
+#[cfg(unix)]
+#[test]
+fn chat_pending_refusal_preserves_queue_and_writes_nothing() {
+    for agent in ["grok", "claude"] {
+        let state = crate::state::tests_support::make_test_app_state();
+        agent_session(&state, "chat-refused", SHELL_BUSY);
+        let bytes = insert_recording_session(&state, "chat-refused");
+        enqueue_user_command(&state, "chat-refused", "keep this", None).unwrap();
+        let id = list_queued_commands(&state, "chat-refused")[0].id;
+        {
+            let mut session = state
+                .session_maps
+                .session_states
+                .get_mut("chat-refused")
+                .unwrap();
+            session.agent_type = Some(agent.into());
+            session.question_confident = agent == "claude";
+        }
+        assert!(send_queued_command_now(&state, "chat-refused", id).is_err());
+        assert!(bytes.lock().unwrap().is_empty());
+        assert_eq!(list_queued_commands(&state, "chat-refused")[0].id, id);
+    }
+}
+
+// Catches: the idle gate reserving a stale head while Send now removes it,
+// causing either a duplicate write or a lost composer claim at the turn boundary.
+#[cfg(unix)]
+#[test]
+fn chat_pending_concurrent_turn_end_and_steer_have_one_writer() {
+    let state = Arc::new(crate::state::tests_support::make_test_app_state());
+    agent_session(&state, "chat-race", SHELL_BUSY);
+    state
+        .session_maps
+        .session_states
+        .get_mut("chat-race")
+        .unwrap()
+        .agent_type = Some("ego".into());
+    let bytes = insert_recording_session(&state, "chat-race");
+    enqueue_user_command(&state, "chat-race", "once", None).unwrap();
+    let id = list_queued_commands(&state, "chat-race")[0].id;
+    state
+        .session_maps
+        .shell_states
+        .get("chat-race")
+        .unwrap()
+        .store(SHELL_IDLE, Ordering::Release);
+    state
+        .session_maps
+        .silence_states
+        .get("chat-race")
+        .unwrap()
+        .lock()
+        .confirm_idle();
+    let barrier = Arc::new(std::sync::Barrier::new(2));
+    let worker_state = Arc::clone(&state);
+    let worker_barrier = Arc::clone(&barrier);
+    let idle = std::thread::spawn(move || {
+        worker_barrier.wait();
+        flush_pending_injections_blocking(&worker_state, "chat-race");
+    });
+    barrier.wait();
+    let sent = send_queued_command_now(&state, "chat-race", id).unwrap();
+    idle.join().unwrap();
+    let expected: &[u8] = if sent {
+        b"\x15once\x1b[13;5u"
+    } else {
+        b"\x15once\r"
+    };
+    assert_eq!(&*bytes.lock().unwrap(), expected);
+    assert!(list_queued_commands(&state, "chat-race").is_empty());
+}

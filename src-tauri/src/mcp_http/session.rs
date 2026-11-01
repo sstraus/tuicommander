@@ -309,6 +309,25 @@ pub(super) async fn remove_queued_command(
     (StatusCode::OK, Json(serde_json::json!(removed)))
 }
 
+/// HTTP twin of send_queued_agent_command_now; ids, not receipt text, own delivery.
+pub(super) async fn send_queued_command_now(
+    State(state): State<Arc<AppState>>,
+    Path((session_id, command_id)): Path<(String, u64)>,
+) -> Response {
+    let result = tokio::task::spawn_blocking(move || {
+        crate::pty::send_queued_command_now(&state, &session_id, command_id)
+    })
+    .await;
+    match result {
+        Ok(result) => super::json_result(result),
+        Err(error) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": error.to_string()})),
+        )
+            .into_response(),
+    }
+}
+
 pub(crate) fn write_pty_input(
     state: &Arc<AppState>,
     session_id: &str,

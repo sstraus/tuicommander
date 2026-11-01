@@ -727,6 +727,20 @@ pub(crate) fn remove_queued_agent_command(
     remove_queued_command(&state, &session_id, command_id)
 }
 
+/// Send one queue-owned prompt now; blocking interruption stays off the UI thread.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) async fn send_queued_agent_command_now(
+    state: State<'_, Arc<AppState>>,
+    session_id: String,
+    command_id: u64,
+) -> Result<bool, String> {
+    let state = state.inner().clone();
+    tokio::task::spawn_blocking(move || send_queued_command_now(&state, &session_id, command_id))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
 /// List all active PTY sessions for reconnection after frontend reload.
 ///
 /// Sessions a connected remote machine runs are in the list too, each carrying

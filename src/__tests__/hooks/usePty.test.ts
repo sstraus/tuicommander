@@ -265,10 +265,13 @@ describe("usePty", () => {
 			mockInvoke.mockResolvedValueOnce({ typed: false, queued: 2 });
 			const outcome = await pty.enqueueCommand("sess-1", "run the tests");
 			expect(outcome).toEqual({ typed: false, queued: 2 });
-			expect(mockInvoke).toHaveBeenCalledWith("enqueue_agent_command", {
-				sessionId: "sess-1",
-				text: "run the tests",
-			});
+			expect(mockInvoke).toHaveBeenCalledWith(
+				"enqueue_agent_command",
+				expect.objectContaining({
+					sessionId: "sess-1",
+					text: "run the tests",
+				}),
+			);
 		});
 
 		it("propagates a rejection so the caller can surface it", async () => {
