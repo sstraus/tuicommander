@@ -301,6 +301,7 @@ mod tests {
         let server = tokio::spawn(async move {
             for result in [
                 json!({"instance_id":"test"}),
+                json!({"instance_id":"test"}),
                 json!({"ok":true,"result":{"armed":true,"reloadSeq":2}}),
             ] {
                 let (mut stream, _) = listener.accept().await.unwrap();
@@ -345,6 +346,35 @@ mod tests {
                     .unwrap();
             }
         });
+        // Catches: deploying the worker without the files its relative imports need.
+        let installed = install(
+            &dir.path().join("profile"),
+            Path::new(env!("CARGO_MANIFEST_DIR")),
+            endpoint.to_str().unwrap(),
+            Some("test-session"),
+        )
+        .await
+        .unwrap();
+        let extension = Path::new(installed["extensionPath"].as_str().unwrap());
+        assert!(
+            !std::fs::read(extension.join("captureEncoding.js"))
+                .unwrap()
+                .is_empty()
+        );
+        for module in ["worker.js", "browserCommands.js"] {
+            let source = std::fs::read_to_string(extension.join(module)).unwrap();
+            for import in source.lines().filter_map(|line| {
+                line.split_once("from '")
+                    .and_then(|(_, rest)| rest.split_once("'"))
+                    .map(|(path, _)| path)
+            }) {
+                let dependency = extension.join(import);
+                assert!(
+                    dependency.is_file(),
+                    "{module} import {import} is missing from the deployed extension"
+                );
+            }
+        }
         assert_eq!(
             dispatch(
                 &json!({"repoPath":"/repo","endpoint":endpoint,"instanceId":"test"}),
@@ -355,11 +385,6 @@ mod tests {
             json!({"armed":true,"reloadSeq":2})
         );
         server.await.unwrap();
-        assert!(
-            super::super::native_assets::ASSETS
-                .iter()
-                .any(|(name, _)| *name == "heartbeat.js")
-        );
     }
 
     // Catches: fragmented reads truncating Unicode or interpreting the next frame as payload.

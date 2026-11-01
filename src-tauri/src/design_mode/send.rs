@@ -29,22 +29,12 @@ pub(crate) fn feedback(
             .get("image")
             .filter(|value| !value.is_null())
             .map(|value| {
-                use base64::Engine;
-                let encoded = value
-                    .as_str()
-                    .and_then(|value| value.strip_prefix("data:image/png;base64,"))
-                    .ok_or("Screenshot must be a PNG data URI")?;
-                // Extension crops are bounded to 128 KiB before native framing.
-                if encoded.len() > (128 * 1024_usize).div_ceil(3) * 4 {
-                    return Err("Screenshot exceeds 128 KiB".to_owned());
-                }
-                let bytes = base64::engine::general_purpose::STANDARD
-                    .decode(encoded)
-                    .map_err(|_| "Invalid screenshot base64")?;
-                if bytes.len() > 128 * 1024 || !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-                    return Err("Invalid or oversized PNG screenshot".to_owned());
-                }
-                super::captures::save_png(grab_dir, &bytes)?
+                let capture = super::captures::Capture::from_data_url(
+                    value.as_str().ok_or("Screenshot must be a data URI")?,
+                    128 * 1024,
+                )?;
+                capture
+                    .save(grab_dir)?
                     .ok_or_else(|| "Screenshot is empty".to_owned())
             })
             .transpose()?;
@@ -166,6 +156,29 @@ mod tests {
             Some(repo.to_string_lossy().into_owned());
         (state, repo, sid, bytes)
     }
+    // Catches: WebP rejected by a PNG-only prefix or saved with a misleading PNG name.
+    #[tokio::test]
+    async fn webp_capture_is_saved_and_sent_as_webp() {
+        use base64::Engine;
+        let (state, repo, sid, recorded) = recipient();
+        let bytes = include_bytes!("fixtures/cft-panel-0.webp");
+        let image = format!(
+            "data:image/webp;base64,{}",
+            base64::engine::general_purpose::STANDARD.encode(bytes)
+        );
+        let reply = send(state.clone(), json!({"repoPath":repo,"sessionId":sid,"idempotencyKey":"webp", "picks":[{"comment":"Read this crop", "image":image,"raw":{"url":"http://localhost/","tagName":"button"}}]})).await.unwrap();
+        assert_eq!(reply["typed"], true);
+        let text = String::from_utf8(recorded.lock().unwrap().clone()).unwrap();
+        let path = text
+            .lines()
+            .find_map(|line| {
+                line.strip_prefix("[image: ")
+                    .and_then(|line| line.strip_suffix(']'))
+            })
+            .expect("image sent to agent");
+        assert_eq!(std::path::Path::new(path).extension().unwrap(), "webp");
+        assert_eq!(std::fs::read(path).unwrap(), bytes);
+    }
     // Catches: page text escaping evidence to masquerade as the next trusted comment.
     #[cfg(unix)]
     #[tokio::test]
@@ -246,7 +259,7 @@ mod tests {
         assert!(text.contains("1. User comment:\n```text\nFix the black page\n```"));
         assert!(text.contains("[error] x is not defined"));
     }
-    // Catches: unbounded or non-PNG extension payloads being persisted as image evidence.
+    // Catches: unbounded or unsupported extension payloads being persisted as image evidence.
     #[cfg(unix)]
     #[tokio::test]
     async fn feedback_rejects_invalid_or_oversized_screenshot_data() {
@@ -255,6 +268,8 @@ mod tests {
             json!("data:image/jpeg;base64,aGVsbG8="),
             json!("data:image/png;base64,!!!!"),
             json!("data:image/png;base64,aGVsbG8="),
+            json!("data:image/webp;base64,aGVsbG8="),
+            json!("data:image/webp;base64,iVBORw0KGgo="),
             json!(format!("data:image/png;base64,{}", "A".repeat(180_000))),
             json!(42),
         ] {
