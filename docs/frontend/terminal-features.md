@@ -181,6 +181,10 @@ Clickable file paths in terminal output resolve against the terminal working dir
 | `bell_style` | `"visual"` | Terminal bell: "none", "visual", "sound", "both" |
 | `prevent_sleep_when_busy` | `false` | Prevent system sleep while terminal is busy |
 
+### Mobile queued prompt disclosure
+
+The mobile CLI/Chat queued panel shows only entries whose server origin is `user_command`; server notices and spawned initial prompts stay in the FIFO but do not appear or count here. Clear all removes only the listed user prompt IDs. Hide/Show folds the item list into one count control. It retains the existing server FIFO snapshot and count, with no second queue. Successful snapshots with no user prompts reset the local disclosure; newly queued work opens again. Cancel and Clear all remain available after reopening, and read/action errors remain visible while hidden.
+
 ### Collapsed Compose queue count
 
 The collapsed handle has transparent chrome and muted text at rest. Hover or keyboard focus reveals its background and border. The label and queue count stay fully opaque.

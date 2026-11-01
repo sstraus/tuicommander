@@ -103,6 +103,82 @@ it("shows queued text immediately before the lifecycle count arrives, then clear
 	await waitFor(() => expect(view.queryByRole("region", { name: "Queued prompts" })).toBeNull());
 });
 
+// Catches: Hide leaves queue rows visible or removes the only remaining queue count.
+it("hides queued rows but keeps the live count and reopens the queue", async () => {
+	const view = mount();
+	await enqueue(view, "Hidden task");
+	fireEvent.click(view.getByRole("button", { name: "Hide queued prompts" }));
+	expect(view.queryByText("Hidden task")).toBeNull();
+	expect(view.queryByRole("button", { name: "Clear all" })).toBeNull();
+	expect(view.getByRole("status").textContent).toBe("Queued · 1");
+	queue.push({ id: nextId++, text: "Another task", kind: "user_command" });
+	view.updateCount(2);
+	await waitFor(() => expect(view.getByRole("status").textContent).toBe("Queued · 2"));
+	expect(view.queryByText("Another task")).toBeNull();
+	fireEvent.click(view.getByRole("button", { name: "Show queued prompts" }));
+	expect(view.getByText("Hidden task")).toBeTruthy();
+	expect(view.getByText("Another task")).toBeTruthy();
+});
+
+// Catches: a hidden empty queue leaves the next accepted prompt invisible.
+it("opens new queued work after the hidden queue empties", async () => {
+	const view = mount();
+	await enqueue(view, "Delivered task");
+	view.updateCount(1);
+	fireEvent.click(view.getByRole("button", { name: "Hide queued prompts" }));
+	queue = [];
+	view.updateCount(0);
+	await waitFor(() => expect(view.queryByRole("region", { name: "Queued prompts" })).toBeNull());
+	await enqueue(view, "New task");
+	expect(await view.findByText("New task")).toBeTruthy();
+	expect(view.getByRole("button", { name: "Hide queued prompts" })).toBeTruthy();
+});
+
+// Catches: local disclosure state leaks from one selected session into another.
+it("opens another session's queued work after hiding the previous session", async () => {
+	const view = mount();
+	await enqueue(view, "Previous task");
+	fireEvent.click(view.getByRole("button", { name: "Hide queued prompts" }));
+	queue = [{ id: 97, text: "Other session task", kind: "user_command" }];
+	view.setSession((s) => ({ ...s, session_id: "other-session" }));
+	expect(await view.findByText("Other session task")).toBeTruthy();
+});
+
+// Catches: server mail wakes and spawned tasks leak into the user's mobile queue/count.
+it("excludes agent mail by origin without hiding user text that resembles a mail wake", async () => {
+	const view = mount();
+	const userText = "[TUIC] message available — read it with: agent action=inbox";
+	queue = [
+		{ id: 101, text: "Server mail wake", kind: "notice" },
+		{ id: 102, text: "Spawned task", kind: "initial_prompt" },
+		{ id: 103, text: userText, kind: "user_command" },
+	];
+	view.updateCount(3);
+	expect(await view.findByText(userText)).toBeTruthy();
+	expect(view.queryByText("Server mail wake")).toBeNull();
+	expect(view.queryByText("Spawned task")).toBeNull();
+	expect(view.getByRole("status").textContent).toBe("Queued · 1");
+	fireEvent.click(view.getByRole("button", { name: "Hide queued prompts" }));
+	expect(view.getByRole("status").textContent).toBe("Queued · 1");
+	fireEvent.click(view.getByRole("button", { name: "Show queued prompts" }));
+	fireEvent.click(view.getByRole("button", { name: "Clear all" }));
+	await waitFor(() => expect(view.queryByRole("region", { name: "Queued prompts" })).toBeNull());
+	expect(queue.map((item) => item.id)).toEqual([101, 102]);
+});
+
+// Catches: a raw FIFO count resurrects a badge for server-only work.
+it("has no mobile queue for background-only work and reopens new user work", async () => {
+	const view = mount();
+	await enqueue(view, "User work");
+	fireEvent.click(view.getByRole("button", { name: "Hide queued prompts" }));
+	queue = [{ id: 104, text: "Background only", kind: "notice" }];
+	view.updateCount(1);
+	await waitFor(() => expect(view.queryByRole("region", { name: "Queued prompts" })).toBeNull());
+	await enqueue(view, "Next user work");
+	expect(await view.findByText("Next user work")).toBeTruthy();
+	expect(view.getByRole("status").textContent).toBe("Queued · 1");
+});
+
 // Catches: Chat invents its own empty queue and loses entries added in CLI or desktop.
 it("keeps queued CLI text on switching to Chat and adopts desktop queue count changes", async () => {
 	const view = mount();
@@ -125,7 +201,10 @@ it("cancels stable queue ids and clears remaining entries from the server snapsh
 	];
 	view.updateCount(2);
 	fireEvent.click(view.getByRole("tab", { name: "Chat" }));
-	fireEvent.click(await view.findByRole("button", { name: "Cancel queued prompt First task" }));
+	await view.findByRole("button", { name: "Cancel queued prompt First task" });
+	fireEvent.click(view.getByRole("button", { name: "Hide queued prompts" }));
+	fireEvent.click(view.getByRole("button", { name: "Show queued prompts" }));
+	fireEvent.click(view.getByRole("button", { name: "Cancel queued prompt First task" }));
 	await waitFor(() => expect(view.queryByText("First task")).toBeNull());
 	expect(rpc).toHaveBeenCalledWith("remove_queued_agent_command", {
 		sessionId: view.session().session_id,
@@ -204,7 +283,7 @@ it("keeps a missing endpoint visible when the session reports pending prompts", 
 	const view = mount();
 	view.updateCount(1);
 	expect((await view.findByRole("alert")).textContent).toContain("Could not load queued prompts.");
-	expect(view.getByRole("status").textContent).toBe("Queued · 1");
+	expect(view.getByRole("status").textContent).toBe("Queued");
 });
 
 // Catches: hiding a queued prompt after local acceptance but before the lifecycle count arrives.
@@ -217,4 +296,27 @@ it("keeps a missing endpoint visible after a successful local enqueue", async ()
 	const view = mount();
 	await enqueue(view, "Do not lose this task");
 	expect((await view.findByRole("alert")).textContent).toContain("Could not load queued prompts.");
+});
+
+// Catches: a partly failed Clear all leaves removed rows stale or deletes unseen mail.
+it("refreshes user prompts after a partial clear failure while preserving background work", async () => {
+	const view = mount();
+	queue = [
+		{ id: 111, text: "First visible", kind: "user_command" },
+		{ id: 112, text: "Second visible", kind: "user_command" },
+		{ id: 113, text: "Hidden mail", kind: "notice" },
+	];
+	view.updateCount(3);
+	await view.findByText("Second visible");
+	const handler = vi.mocked(rpc).getMockImplementation()!;
+	vi.mocked(rpc).mockImplementation(async (command, args, ...rest) => {
+		if (command === "remove_queued_agent_command" && args?.commandId === 112) throw new Error("offline");
+		return handler(command, args, ...rest);
+	});
+	fireEvent.click(view.getByRole("button", { name: "Clear all" }));
+	await waitFor(() => expect(view.queryByText("First visible")).toBeNull());
+	expect(view.getByText("Second visible")).toBeTruthy();
+	expect(view.getByRole("alert").textContent).toContain("Could not remove queued prompts");
+	expect(view.getByRole("status").textContent).toBe("Queued · 1");
+	expect(queue.map((item) => item.id)).toEqual([112, 113]);
 });
