@@ -1,0 +1,33 @@
+# Targeted Linux rb run of source f2db9811a024c17f375781828409422f65750a35
+# Exact command and result lines; dependency compilation progress omitted.
+# Outer process exit=0. No native run, microphone, application or load probe.
+tuic bg: command=env TUIC_SESSION=2ea28818-3d77-4202-b8ce-f5dd6a9711cf env RB_REF=f2db9811a024c17f375781828409422f65750a35 TMPDIR=/Users/stefano.straus/Gits/.tmp/tuic-tests/ /Users/stefano.straus/Gits/personal/orchestrator/tools/build/build-slot.sh --remote ./scripts/with-test-tmp.sh cargo nextest run --manifest-path src-tauri/Cargo.toml -p tuicommander -p tuic-dictation --lib --features dictation -E test(barge_in_hold_) | test(speech_without_the_wake_word_pauses) | test(the_wake_word_over_a_reply) | test(a_pause_) | test(an_utterance_opened_and_closed) | test(capture_waiting_to_be_drained) | test(a_paused_reply_is_matched) | test(stopped_capture_rejects) | test(test_process_audio_chunk_try_lock) | test(captured_audio_is_handed_over_once) | test(capture_that_nobody_drains) | test(barge_in_interrupts_the_voice_that_is_open)
+RB_CARGO_BUILD_JOBS=5
+    Finished `test` profile [unoptimized] target(s) in 7m 04s
+ Nextest run ID b4755abe-4942-43af-9f19-35eb06592999 with nextest profile: default
+    Starting 22 tests across 2 binaries (7227 tests skipped)
+        PASS [   0.024s] ( 1/22) tuic-dictation speaker::tests::a_pause_by_the_user_survives_the_capture_loops_resume
+        PASS [   0.024s] ( 2/22) tuic-dictation audio::tests::stopped_capture_rejects_late_audio_callbacks
+        PASS [   0.024s] ( 3/22) tuic-dictation audio::tests::test_process_audio_chunk_try_lock
+        PASS [   0.027s] ( 4/22) tuic-dictation echo::tests::the_reply_after_a_stop_that_interrupted_a_pause_reaches_the_canceller
+        PASS [   0.027s] ( 5/22) tuic-dictation echo::tests::critic_1376::capture_recorded_before_a_pause_is_matched_against_the_reply_it_heard
+        PASS [   0.027s] ( 6/22) tuic-dictation echo::tests::a_paused_reply_is_matched_against_silence_and_kept_for_later
+        PASS [   0.027s] ( 7/22) tuic-dictation echo::tests::capture_waiting_to_be_drained_when_a_reply_starts_is_matched_against_silence
+        PASS [   0.027s] ( 8/22) tuic-dictation echo::tests::critic_1376::a_pause_the_output_cannot_honour_does_not_mute_the_reference
+        PASS [   0.027s] ( 9/22) tuic-dictation continuous::tests::a_phrase_that_ends_in_a_pause_closes_and_keeps_its_speech
+        PASS [   0.028s] (10/22) tuic-dictation continuous::tests::a_pause_is_held_up_to_and_including_the_pause_limit
+        PASS [   0.028s] (11/22) tuic-dictation continuous::tests::an_utterance_opened_and_closed_in_one_chunk_pauses_and_then_stops_the_reply_once
+        PASS [   0.028s] (12/22) tuic-dictation continuous::tests::a_pause_never_outlives_the_loop_or_the_pause_limit
+        PASS [   0.028s] (13/22) tuic-dictation continuous::tests::the_wake_word_over_a_reply_stops_it_and_takes_the_turn
+        PASS [   0.038s] (14/22) tuicommander dictation::browser::tests::captured_audio_is_handed_over_once_and_in_order
+        PASS [   0.039s] (15/22) tuic-dictation continuous::tests::speech_without_the_wake_word_pauses_the_reply_and_lets_it_carry_on
+        PASS [   0.039s] (16/22) tuic-dictation continuous::tests::barge_in_hold_events_distinguish_a_stale_final_recognition
+        PASS [   0.041s] (17/22) tuic-dictation continuous::tests::barge_in_hold_events_name_the_actual_resolution_without_changing_the_verdict
+        PASS [   0.044s] (18/22) tuic-dictation continuous::tests::barge_in_hold_events_snapshot_the_edge_once_before_a_rejected_hold_resumes
+        PASS [   0.055s] (19/22) tuicommander dictation::commands::tests::barge_in_interrupts_the_voice_that_is_open_at_the_time
+        PASS [   0.059s] (20/22) tuicommander dictation::browser::tests::capture_that_nobody_drains_keeps_the_newest_audio_and_not_the_oldest
+        PASS [   0.059s] (21/22) tuicommander dictation::browser::tests::barge_in_hold_snapshot_counts_browser_capture_loss_and_drain
+        PASS [   0.066s] (22/22) tuicommander dictation::commands::tests::a_pause_waiting_for_the_slot_is_dropped_when_the_arm_ends
+     Summary [   0.094s] 22 tests run: 22 passed, 7227 skipped
+RB_BOX_DIRTY=no
+rb: result=/Users/stefano.straus/Gits/.tmp/rb/20261101T020557Z-18610

@@ -214,3 +214,34 @@ Production now emits the events described in `docs/backend/dictation.md`, with
 no new transcript or PCM retention and no change to the hold/admission rules.
 This does not retroactively supply the missing historical measurements or prove
 a false-trigger cause. Runtime deployment still needs Boss's manual Rust restart.
+
+### Diagnostic verification
+
+`diagnostic-tests.txt` retains the exact named feature-enabled rb command and
+result lines at source commit `f2db9811a024c17f375781828409422f65750a35`.
+The Linux test-profile build completed in 7m 04s. Nextest ran 22 selected tests
+across the domain and application library binaries: all 22 passed, in 0.094s;
+outer exit 0 and `RB_BOX_DIRTY=no`. No native/macOS execution is claimed.
+
+New tests observe the actual structured tracing fields from production `tick`:
+
+- `barge_in_hold_events_snapshot_the_edge_once_before_a_rejected_hold_resumes`
+  catches a missing/duplicated edge, confusion between raw and cleaned energy,
+  lost inference time, uncorrelated resolution and unavailable probes reported
+  as false/zero. A deliberately delayed canned recognizer is internal test
+  timing, not measured Whisper performance.
+- `barge_in_hold_events_name_the_actual_resolution_without_changing_the_verdict`
+  covers accepted, activated, empty, limit and release reasons, preserving the
+  original pause/hush/resume calls and avoiding a duplicate on cleanup.
+- `barge_in_hold_events_distinguish_a_stale_final_recognition` catches a result
+  withdrawn during recognition being mislabeled as ordinary rejection.
+- `barge_in_hold_snapshot_counts_browser_capture_loss_and_drain` drives the real
+  browser capture buffer and checks cumulative batches, overflow samples,
+  post-drain backlog and unknown rather than blocking on a busy buffer.
+
+The other selected cases cover existing hold limits, user pause, reference
+pause/backlog alignment, capture loss and browser queue ordering. No test
+expectation was weakened or changed. Format checks and `git diff --check` pass.
+No retries, Clippy, full suites, synthetic load, PCM recording or daily-instance
+access were needed. The original native failure cause and regression provenance
+remain unproven; the original story criteria therefore remain unchecked.
