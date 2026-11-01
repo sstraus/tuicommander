@@ -9,7 +9,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { invoke, settings, terminals, repositories, markAsUsed, writeClipboard, warn } = vi.hoisted(() => ({
+const { invoke, settings, terminals, repositories, markAsUsed, writeClipboard, warn, toast } = vi.hoisted(() => ({
 	invoke: vi.fn(),
 	settings: { configured: true },
 	terminals: { active: null as { id: string; cwd?: string; agentType?: string } | null },
@@ -17,9 +17,11 @@ const { invoke, settings, terminals, repositories, markAsUsed, writeClipboard, w
 	markAsUsed: vi.fn(),
 	writeClipboard: vi.fn(async () => {}),
 	warn: vi.fn(),
+	toast: vi.fn(),
 }));
 
 vi.mock("../../invoke", () => ({ invoke }));
+vi.mock("../../stores/toasts", () => ({ toastsStore: { add: toast } }));
 
 vi.mock("../../stores/settings", () => ({
 	settingsStore: { isAcpConfigured: () => settings.configured },
@@ -62,6 +64,7 @@ vi.mock("../../hooks/usePty", () => ({ usePty: () => ({ sendCommand: vi.fn() }) 
 
 import { useSmartPrompts } from "../../hooks/useSmartPrompts";
 import type { SavedPrompt } from "../../stores/promptLibrary";
+import { runWithFeedback } from "../../utils/promptContext";
 
 /** A saved prompt with only the fields a case here cares about. */
 function prompt(over: Partial<SavedPrompt> = {}): SavedPrompt {
@@ -96,6 +99,27 @@ beforeEach(() => {
 });
 
 describe("Smart Prompts api mode", () => {
+	// Catches: a structured ACP rejection reaches the toast as [object Object].
+	it.each([
+		[
+			{ code: "agent_error", message: "Internal error: write-scoped probe failed", retryable: false },
+			"agent_error: Internal error: write-scoped probe failed",
+		],
+		[{ message: "The agent could not start" }, "The agent could not start"],
+		["agent unavailable", "agent unavailable"],
+		[new Error("turn timed out"), "Error: turn timed out"],
+	])("structured_prompt_failure_reaches_toast: %s", async (failure, expected) => {
+		invoke.mockImplementation(async (command: string) => {
+			if (command === "resolve_prompt_variables") return { vars: {}, needed: [] };
+			throw failure;
+		});
+		const saved = prompt({ name: "Merge in main" });
+		await runWithFeedback(saved, () => useSmartPrompts().executeSmartPrompt(saved));
+		expect(toast).toHaveBeenCalledWith("Merge in main", expected, "warn");
+		expect(markAsUsed).not.toHaveBeenCalled();
+		expect(writeClipboard).not.toHaveBeenCalled();
+	});
+
 	it("refuses before launching anything when no ego binary is named", () => {
 		settings.configured = false;
 

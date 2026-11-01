@@ -397,6 +397,17 @@ impl StreamLines {
     /// Push a chunk, returning the complete lines it closed. The partial
     /// trailing line is held until a newline arrives.
     pub fn push(&mut self, chunk: &str) -> Vec<String> {
+        // PTY reads can contain only cursor-addressed repaints for minutes.
+        // Once this physical line is dropped, do not assemble it again.
+        let chunk = if self.overflowed {
+            let Some(end) = chunk.find('\n') else {
+                return Vec::new();
+            };
+            self.overflowed = false;
+            &chunk[end + 1..]
+        } else {
+            chunk
+        };
         self.buffer.push_str(chunk);
         if !self.buffer.contains('\n') {
             self.cap_pending();
@@ -412,14 +423,6 @@ impl StreamLines {
         // `\r\n` the next chunk completes.
         let tail = lines.pop().unwrap_or_default();
         self.buffer = tail;
-        // The first complete line is the end of the one that overflowed. It is
-        // not a line that was on the wire, so it never reaches a watcher.
-        if self.overflowed {
-            self.overflowed = false;
-            if !lines.is_empty() {
-                lines.remove(0);
-            }
-        }
         self.cap_pending();
         lines
     }
@@ -435,7 +438,8 @@ impl StreamLines {
                 self.buffer.push_str(&chunk[idx + 1..]);
                 self.overflowed = false;
             }
-            None => self.buffer.push_str(chunk),
+            None if !self.overflowed => self.buffer.push_str(chunk),
+            None => return,
         }
         self.cap_pending();
     }
@@ -1001,6 +1005,84 @@ mod tests {
             lines.push(&chunk);
         }
         assert_eq!(lines.flush(), None);
+    }
+
+    // Catches: cursor-addressed repaint bytes after overflow are buffered and
+    // warned about repeatedly, including across watcher registration changes.
+    #[test]
+    fn oversized_repaint_warns_once_until_newline_2607() {
+        use std::sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        };
+        struct Warnings(Arc<AtomicUsize>);
+        impl tracing::Subscriber for Warnings {
+            fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+                true
+            }
+            fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+                tracing::span::Id::from_u64(1)
+            }
+            fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+            fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+            fn event(&self, event: &tracing::Event<'_>) {
+                if *event.metadata().level() == tracing::Level::WARN {
+                    self.0.fetch_add(1, Ordering::Relaxed);
+                }
+            }
+            fn enter(&self, _: &tracing::span::Id) {}
+            fn exit(&self, _: &tracing::span::Id) {}
+        }
+        // Recorded installed Codex animation: 635 output records with no LF.
+        // Retain the real chunks, not a fabricated terminal escape fixture.
+        let capture = include_bytes!(
+            "../../../src/fixtures/agent_prompts/codex-idle-animation-20260921.tcap"
+        );
+        assert_eq!(&capture[..9], b"TUICCAP2\n");
+        let mut records = &capture[13..];
+        let mut chunks = Vec::new();
+        while !records.is_empty() {
+            assert!(records.len() >= 13);
+            let size = u32::from_le_bytes(records[9..13].try_into().unwrap()) as usize;
+            let payload = &records[13..13 + size];
+            if records[0] == 0 {
+                assert!(!payload.contains(&b'\n'));
+                chunks.push(String::from_utf8_lossy(payload).into_owned());
+            }
+            records = &records[13 + size..];
+        }
+        assert_eq!(chunks.len(), 635);
+        assert_eq!(chunks.iter().map(String::len).sum::<usize>(), 380_667);
+        for mode in ["watching", "idle", "registration_changes"] {
+            let warnings = Arc::new(AtomicUsize::new(0));
+            tracing::subscriber::with_default(Warnings(warnings.clone()), || {
+                let mut lines = StreamLines::new();
+                for cycle in 0..4 {
+                    for (index, chunk) in chunks.iter().enumerate() {
+                        if mode == "idle" || (mode == "registration_changes" && index % 2 == 0) {
+                            lines.push_discarding(chunk);
+                        } else {
+                            assert!(lines.push(chunk).is_empty(), "{mode}");
+                        }
+                    }
+                    assert_eq!(warnings.load(Ordering::Relaxed), 1, "{mode}, cycle={cycle}");
+                    assert!(
+                        lines.buffer.is_empty(),
+                        "{mode}: overflow continuation retained"
+                    );
+                }
+                assert_eq!(lines.push("discarded tail\r\nvalid\r\npar"), vec!["valid"]);
+                lines.push_discarding("tial");
+                assert_eq!(lines.push("\n"), vec!["partial"]);
+                // A distinct oversized line has its own warning, not a
+                // session-wide mute; EOF must not publish its surviving tail.
+                lines.push(&"x".repeat(262_145));
+                lines.push("tail");
+                assert_eq!(lines.flush(), None);
+                assert_eq!(warnings.load(Ordering::Relaxed), 2, "{mode}");
+                assert_eq!(lines.push("after EOF\n"), vec!["after EOF"]);
+            });
+        }
     }
 
     // ── WatcherLineBatcher: throttle without losing a line ──

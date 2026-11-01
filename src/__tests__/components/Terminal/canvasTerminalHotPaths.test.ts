@@ -1,3 +1,4 @@
+import ts from "@typescript/typescript6";
 import { describe, expect, it } from "vitest";
 import { sourceFormats } from "../../utils/sourceFormats";
 
@@ -79,12 +80,29 @@ describe.each(sourceFormats("src/components/Terminal/CanvasTerminal.tsx"))(
 			});
 
 			it("resolves every wrapped file:// candidate in one batched call, not one per match", () => {
-				const start = source.indexOf("const wrapCandidateRows: number[] = [];");
-				const end = source.indexOf("if (anyFound) {", start);
-				expect(end).toBeGreaterThan(start);
-				const block = source.slice(start, end);
-				expect(block).toMatch(/"resolve_terminal_paths"/);
-				expect(block).not.toMatch(/"resolve_terminal_path"/);
+				// Catches per-match resolution without depending on the repaint guard's spelling.
+				const file = ts.createSourceFile("CanvasTerminal.tsx", source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+				const batches: ts.IfStatement[] = [];
+				const findBatch = (node: ts.Node) => {
+					if (ts.isIfStatement(node) && /^wrapCandidateRows\.length\s*>\s*0$/.test(node.expression.getText(file))) {
+						batches.push(node);
+					}
+					ts.forEachChild(node, findBatch);
+				};
+				findBatch(file);
+				expect(batches).toHaveLength(1);
+				const resolvers: string[] = [];
+				const findResolvers = (node: ts.Node) => {
+					if (ts.isCallExpression(node)) {
+						const command = node.arguments[0];
+						if (command && ts.isStringLiteral(command) && /^resolve_terminal_paths?$/.test(command.text)) {
+							resolvers.push(command.text);
+						}
+					}
+					ts.forEachChild(node, findResolvers);
+				};
+				findResolvers(batches[0].thenStatement);
+				expect(resolvers).toEqual(["resolve_terminal_paths"]);
 			});
 		});
 	},

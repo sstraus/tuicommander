@@ -360,6 +360,15 @@ Detected as a plain-prefix token at the start of a row: `intent: <text> (<title>
 `crates/tuic-terminal/src/intent_marker.json` and consumed by both Rust capture
 and the frontend tint classifier. All agent types use this grammar.
 
+A missing newline before `💬` is recovered only when that marker follows a
+closed `(title)`, with optional horizontal whitespace. The shared grammar bounds
+the intent before the answer; parentheses inside the answer cannot replace the
+title. `splitIntentAnswer` supplies the same boundary to terminal overlays,
+marker projection, answers-only extraction, mobile output and Chat projection.
+The intent tint ends at its title and the answer gutter starts at the recovered
+marker. A bubble inside an untitled intent or before its title stays literal.
+A second bubble inside the recovered answer stays text, not a new row.
+
 Ego chrome is bounded by its native status-row/composer pair, shared with the
 ready-screen adapter. A historical submitted `> prompt` or transcript separator
 is not a live composer. When a soft-wrapped response temporarily overwrites the

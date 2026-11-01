@@ -53,6 +53,14 @@ While it runs, the panel shows the state, the bound terminal, where the audio
 comes from, and the text that is about to be sent. The dictation hotkey stops
 the conversation, and so does **Stop conversation**.
 
+With an activation phrase, **Listening** means the microphone is waiting or
+hearing speech that has not yet matched. **Go ahead** means local recognition
+matched your phrase during the open utterance. Prefix checks cover its first
+four seconds; their speed depends on your model and machine. **Transcribing**
+means the utterance has ended and the final pass is running. A partial wake
+match is only an acknowledgement: the final transcript still decides whether
+the speech is addressed here and can be sent.
+
 You do not need to watch the screen: two short rising notes mean your turn was
 sent to the agent, and two softer falling notes mean the activation phrase was
 missing and the turn was dropped. Only the device you are talking into plays
@@ -197,3 +205,7 @@ Default: `F5`
 Enable **Auto-send** in Settings → Voice to submit the terminal input after transcription. In terminal **Chat** mode, dictation inserts at the captured Compose selection and uses the normal Compose Send action exactly once, including draft cleanup after success. This works with Compose or transcript focus. With Auto-send off, the text stays in Compose for review. Other editors, search fields and form inputs never submit automatically.
 
 Mobile **Dictate into draft** uses browser speech recognition and stays review-only; tap Send when ready. The separate hands-free conversation sends through its existing server-owned path.
+
+## AI Chat voice targets
+
+In Settings → Voice → Hands-free conversation, choose an **AI Chat** entry in **Target**, then select **Start conversation**. Attached chats are available whether the panel is docked or detached. Spoken turns use the same ACP prompt queue as typed turns. The chat can answer through the existing voice tool and speech engine. Changing the voice target stops the previous conversation; select Start to bind the new target. Closing the bound tab or its last panel view, selecting another chat, or stopping ego also stops its voice binding. Moving the panel between docked and detached views does not change the target.

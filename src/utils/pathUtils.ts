@@ -77,3 +77,16 @@ export function replaceBasename(p: string, newName: string): string {
 	if (lastSep < 0) return newName;
 	return p.slice(0, lastSep + 1) + newName;
 }
+
+/** Resolve dot segments for a local asset URL, without consulting the host OS. */
+export function normalizePathSegments(path: string): string {
+	const normalized = normalizeSep(path);
+	const root = /^(?:[A-Za-z]:\/|\/\/[^/]+\/[^/]+(?:\/|$)|\/)/.exec(normalized)?.[0] ?? "";
+	const parts: string[] = [];
+	for (const part of normalized.slice(root.length).split("/")) {
+		if (!part || part === ".") continue;
+		if (part === ".." && parts.length && parts.at(-1) !== "..") parts.pop();
+		else if (part !== ".." || !root) parts.push(part);
+	}
+	return root + (root && !root.endsWith("/") && parts.length ? "/" : "") + parts.join("/");
+}

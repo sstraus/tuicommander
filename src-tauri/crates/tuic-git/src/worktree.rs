@@ -201,6 +201,27 @@ pub fn create_worktree_internal(
     config: &WorktreeConfig,
     base_ref: Option<&str>,
 ) -> Result<WorktreeInfo, String> {
+    // Resolve before any filesystem or ref mutation, including branch-collision
+    // recovery. The original ref below retains Git's upstream-tracking behavior.
+    let resolved_base = if config.create_branch {
+        base_ref
+            .map(|base| {
+                fetch_if_remote(&config.base_repo, base)?;
+                git_cmd(Path::new(&config.base_repo))
+                    .args([
+                        "rev-parse",
+                        "--verify",
+                        "--end-of-options",
+                        &format!("{base}^{{commit}}"),
+                    ])
+                    .run()
+                    .map(|out| out.stdout.trim().to_owned())
+                    .map_err(|error| format!("Cannot resolve worktree base '{base}': {error}"))
+            })
+            .transpose()?
+    } else {
+        None
+    };
     let worktree_name = sanitize_name(&config.task_name);
     let worktree_path = worktrees_dir.join(&worktree_name);
 
@@ -275,9 +296,7 @@ pub fn create_worktree_internal(
     if config.create_branch
         && let Some(start_point) = base_ref
     {
-        // Auto-fetch if the base ref is a remote tracking branch
-        fetch_if_remote(&config.base_repo, start_point)?;
-        args.push(start_point.to_string());
+        args.push(start_point.to_owned());
     }
 
     let args_str: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
@@ -296,6 +315,16 @@ pub fn create_worktree_internal(
                         .branch
                         .as_ref()
                         .expect("BranchExists implies -b was passed, so branch is Some");
+                    // Reusing a branch is not permission to ignore an explicit
+                    // start point. Never reset an existing branch to satisfy it.
+                    if let Some(expected) = &resolved_base {
+                        let actual = rev_at(&base_repo_path, &format!("refs/heads/{branch}"))?;
+                        if &actual != expected {
+                            return Err(format!(
+                                "Existing branch '{branch}' is at {actual}, not requested base {expected}"
+                            ));
+                        }
+                    }
                     let retry_args = [
                         "worktree",
                         "add",
@@ -454,6 +483,8 @@ pub fn create_worktree_with_stale_recovery(
 #[serde(rename_all = "snake_case")]
 pub enum WorkspaceCommitStatus {
     Unmerged,
+    /// No default-branch candidate shares a commit ancestor with this branch.
+    UnrelatedHistory,
     /// Not merged, but every commit exists on the branch's own remote-tracking
     /// ref, so deleting the local branch loses nothing.
     PushedUnmerged,
@@ -1022,6 +1053,18 @@ fn classify_branch_merge(
         return Err(format!("default branch '{default_branch}' was not found"));
     }
     let merged = is_ancestor_of_any(repo, tip, &bases)?;
+    // An unrelated root is a known graph state, even when reflogs expired.
+    // Reuse this scan's proof below instead of running merge-base twice.
+    let integration = if merged {
+        None
+    } else {
+        match integrated_in_defaults(repo, &bases, tip)? {
+            DefaultIntegration::Unrelated => {
+                return Ok((WorkspaceCommitStatus::UnrelatedHistory, None));
+            }
+            DefaultIntegration::Related(proof) => proof,
+        }
+    };
     // Ancestry alone cannot distinguish own commits from a branch that merely
     // followed the default branch. The branch reflog records both its source
     // and how its ref moved after creation.
@@ -1079,7 +1122,7 @@ fn classify_branch_merge(
             WorkspaceCommitStatus::Merged,
             Some("integration_ancestry".into()),
         ))
-    } else if let Some(proof) = integrated_in_defaults(repo, &bases, tip)? {
+    } else if let Some(proof) = integration {
         let proof = if proof == "content_superset" && pr_proves_tip(repo, branch, tip) {
             "github_pr"
         } else {
@@ -1095,14 +1138,20 @@ fn classify_branch_merge(
     }
 }
 
+enum DefaultIntegration {
+    Unrelated,
+    Related(Option<&'static str>),
+}
+
 /// Subjects alone never prove integration. Squash messages corroborate a
 /// structural no-op; context-free twins and content require a recovery ref.
 fn integrated_in_defaults(
     repo: &Path,
     bases: &[String],
     tip: &str,
-) -> Result<Option<&'static str>, String> {
+) -> Result<DefaultIntegration, String> {
     let mut content_targets = Vec::new();
+    let mut related = false;
     for base in bases {
         let target = rev_at(repo, base)?;
         // Unrelated histories have no fork delta and cannot prove content
@@ -1113,6 +1162,7 @@ fn integrated_in_defaults(
             Err(crate::git_cli::GitError::NonZeroExit { code: Some(1), .. }) => continue,
             Err(error) => return Err(format!("could not inspect branch merge base: {error}")),
         };
+        related = true;
         // A fresh empty start commit also produces a no-op merge, but nothing
         // was integrated. Content heuristics require a delta from the fork;
         // ancestry and verified PR evidence are handled by the caller.
@@ -1131,7 +1181,7 @@ fn integrated_in_defaults(
         }
         content_targets.push(target.clone());
         if patches_integrated_in(repo, &target, tip)? {
-            return Ok(Some("patch_equivalence"));
+            return Ok(DefaultIntegration::Related(Some("patch_equivalence")));
         }
         let merged = git_cmd(repo)
             .args(["merge-tree", "--write-tree", &target, tip])
@@ -1156,19 +1206,23 @@ fn integrated_in_defaults(
                         })
                     })
                 });
-            return Ok(Some(if squash {
+            return Ok(DefaultIntegration::Related(Some(if squash {
                 "squash_message"
             } else {
                 "noop_merge"
-            }));
+            })));
         }
     }
     for target in content_targets {
         if same_subject_twins(repo, &target, tip)? || content_superset(repo, &target, tip)? {
-            return Ok(Some("content_superset"));
+            return Ok(DefaultIntegration::Related(Some("content_superset")));
         }
     }
-    Ok(None)
+    Ok(if related {
+        DefaultIntegration::Related(None)
+    } else {
+        DefaultIntegration::Unrelated
+    })
 }
 
 /// The audit's "twin 0" rule: every unique non-merge commit must have a
@@ -3327,6 +3381,9 @@ pub fn remove_worktree_by_workspace_id_with_missing_confirmation_and_pr(
     if delete_branch {
         let branch_proof = (|| -> Result<String, String> {
             match lifecycle.commit_status {
+                WorkspaceCommitStatus::UnrelatedHistory => Err(format!(
+                    "Cannot remove {branch_name}: branch has unrelated history; remove the worktree while keeping the branch"
+                )),
                 WorkspaceCommitStatus::Unmerged => {
                     let default_branch = get_remote_default_branch(repo_path)?;
                     let bases = integration_bases(&base_repo, &default_branch);
@@ -3868,6 +3925,15 @@ fn delete_integrated_local_branch_inner(
         WorkspaceCommitStatus::InSync => "in_sync".to_string(),
         WorkspaceCommitStatus::Merged => merge_proof
             .ok_or_else(|| format!("Cannot verify merged commits for '{branch_name}'"))?,
+        WorkspaceCommitStatus::UnrelatedHistory => {
+            if archived_at_tip(repo, branch_name, &tip) {
+                "archived".to_string()
+            } else {
+                return Err(format!(
+                    "Cannot delete '{branch_name}': unrelated history requires an archive at the current tip"
+                ));
+            }
+        }
         WorkspaceCommitStatus::Unmerged => {
             if archived_at_tip(repo, branch_name, &tip) {
                 "archived".to_string()
@@ -5526,6 +5592,10 @@ mod tests {
             let verdict = branch_integration_with_pr(&repo, "unrelated", |_, _, _| false)
                 .expect("unrelated history is a valid unmerged branch");
             assert!(!verdict.integrated, "same_tree={same_tree}: {verdict:?}");
+            assert_eq!(
+                verdict.commit_status,
+                WorkspaceCommitStatus::UnrelatedHistory
+            );
             let merged = crate::git::get_merged_branches_impl(&repo).unwrap();
             assert!(
                 merged.contains(&"integrated-related".to_owned()),
@@ -5540,6 +5610,78 @@ mod tests {
                     .stdout,
                 default
             );
+        }
+    }
+
+    // Catches: unrelated roots remain generic/unknown, PR refresh fabricates
+    // integration, or removing their checkout loses an unarchived branch tip.
+    #[test]
+    fn unrelated_history_is_explicit_and_preserves_branch_tips_2611() {
+        for (same_tree, expire_reflog) in [(true, false), (false, false), (true, true)] {
+            let (_temp, repo, _) = workspace_fixture();
+            let tree = rev_at(&repo, "HEAD^{tree}").unwrap();
+            let root = git_cmd(&repo)
+                .args(["commit-tree", &tree, "-m", "independent history"])
+                .run()
+                .unwrap()
+                .stdout;
+            git_cmd(&repo)
+                .args(["branch", "--create-reflog", "unrelated", root.trim()])
+                .run()
+                .unwrap();
+            if !same_tree {
+                commit_file(&repo, "default.txt", "default work\n");
+            }
+            let wt = repo.parent().unwrap().join("unrelated");
+            git_cmd(&repo)
+                .args(["worktree", "add", &wt.to_string_lossy(), "unrelated"])
+                .run()
+                .unwrap();
+            if expire_reflog {
+                git_cmd(&repo)
+                    .args(["reflog", "expire", "--expire=all", "refs/heads/unrelated"])
+                    .run()
+                    .unwrap();
+            }
+            let query = branch_integration_with_pr(&repo, "unrelated", |_, _, _| true).unwrap();
+            assert_eq!(query.commit_status, WorkspaceCommitStatus::UnrelatedHistory);
+            assert!(!query.integrated);
+            assert!(query.error.is_none(), "{query:?}");
+            let workspace = resolve_removable_workspace(&repo, "unrelated").unwrap();
+            for _ in 0..2 {
+                let status =
+                    inspect_workspace_monitoring_with_pr(&repo, &workspace, |_, _, _| true);
+                assert_eq!(
+                    status.commit_status,
+                    WorkspaceCommitStatus::UnrelatedHistory
+                );
+                assert!(status.error.is_none(), "{status:?}");
+            }
+            assert_eq!(
+                inspect_workspace_lifecycle(&repo, "unrelated").commit_status,
+                WorkspaceCommitStatus::UnrelatedHistory
+            );
+            let error = remove_worktree_by_workspace_id(
+                &repo.to_string_lossy(),
+                "unrelated",
+                true,
+                None,
+                false,
+            )
+            .unwrap_err();
+            assert!(error.contains("unrelated history"), "{error}");
+            assert!(wt.exists());
+            assert_eq!(rev_at(&repo, "refs/heads/unrelated").unwrap(), root.trim());
+            git_cmd(&repo)
+                .args(["worktree", "remove", &wt.to_string_lossy()])
+                .run()
+                .unwrap();
+            assert!(delete_integrated_local_branch(&repo.to_string_lossy(), "unrelated").is_err());
+            preserve_archive_tip(&repo, "unrelated", root.trim()).unwrap();
+            let deleted =
+                delete_integrated_local_branch(&repo.to_string_lossy(), "unrelated").unwrap();
+            assert_eq!(deleted.proof, "archived");
+            assert!(deleted.archive_ref.is_some());
         }
     }
 
@@ -15421,6 +15563,7 @@ branch refs/heads/feat
     fn commit_status_serializes_as_the_frontend_spells_it() {
         let spellings = [
             (WorkspaceCommitStatus::Unmerged, "unmerged"),
+            (WorkspaceCommitStatus::UnrelatedHistory, "unrelated_history"),
             (WorkspaceCommitStatus::PushedUnmerged, "pushed_unmerged"),
             (WorkspaceCommitStatus::InSync, "in_sync"),
             (WorkspaceCommitStatus::Merged, "merged"),

@@ -120,6 +120,15 @@ journal, and then dual-emits `progress-recorded`. A per-agent
 `progress_tracking: false` answers `progress_tracking_disabled` instead of
 hiding the tool — the tool index is global and has no session context.
 
+Managed children (a bound peer with a `session_parent` entry) cannot report
+through `progress`. The handler refuses the call before journal writes, user
+notifications, or waiting-state changes, and returns `agent action=send` guidance
+with the actual parent id. Both direct and collapsed calls use this handler.
+MCP instructions and native launch guidance tell children to mail their parent;
+root and unbound callers keep the existing reporting behavior. Refusal is explicit
+rather than automatic mail forwarding, so `progress` does not become a second
+mail API.
+
 The journal's third kind, `intent`, is written by TUIC from the agent's
 `intent:` marker in `pty.rs`. An agent that reports one is refused: the point of
 the kind is that it is observed rather than claimed.
@@ -1516,6 +1525,13 @@ shared with the parent, while `instructions.warm_artifacts.warmed_directories`
 reports how many ignored directories arrived warm. Parent tracked changes are
 not copied. See `docs/api/http-api.md` § Create Worktree; both transports call
 the same shared core.
+
+`base_ref` accepts a commit, branch or tag. An invalid ref fails before checkout
+creation. An existing branch at another commit is a conflict, not a fallback.
+The HTTP, MCP and desktop creation responses include `base_commit`, captured
+from the allocated checkout before setup scripts run. `spawn_session=true`
+starts its PTY only after this allocation succeeds; it cannot bypass a base error.
+Connected daemons run this same handler on the repository-owning machine.
 
 The lifecycle event includes `creator_session` resolved from the MCP binding,
 never from a caller-supplied session id, and the requested `spawn_session` flag.

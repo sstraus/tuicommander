@@ -163,6 +163,7 @@ pub(crate) fn valid_peer_id(id: &str) -> bool {
 pub struct EgoAcpConfig {
     pub executable: PathBuf,
     pub profile: String,
+    pub master_prompt: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -202,10 +203,31 @@ pub fn launch_spec(config: &EgoAcpConfig, root: &Path) -> Result<LaunchSpec, Acp
         args.extend(["--profile".to_string(), profile.clone()]);
     }
 
+    validate_master_prompt(&config.master_prompt).map_err(AcpClientError::invalid_input)?;
+    if !config.master_prompt.is_empty() {
+        // A fixed heading keeps a literal leading @ from becoming ego's @file input.
+        args.extend([
+            "--append-system".into(),
+            format!("AI Chat master instructions:\n{}", config.master_prompt),
+        ]);
+    }
+
     Ok(LaunchSpec {
         program: config.executable.clone(),
         args,
     })
+}
+
+pub const MASTER_PROMPT_MAX_BYTES: usize = 8192;
+
+pub(crate) fn validate_master_prompt(value: &str) -> Result<(), String> {
+    if value.len() > MASTER_PROMPT_MAX_BYTES {
+        return Err("AI Chat master prompt must be at most 8192 UTF-8 bytes".into());
+    }
+    if value.contains('\0') {
+        return Err("AI Chat master prompt must not contain NUL characters".into());
+    }
+    Ok(())
 }
 
 pub fn build_initialize_request() -> v1::InitializeRequest {

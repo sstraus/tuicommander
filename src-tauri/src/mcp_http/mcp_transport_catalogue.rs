@@ -34,6 +34,7 @@ pub(super) struct InstructionContext {
     pub(super) upstreams: Vec<(String, usize)>,
     /// A spawned child: its suggestion buttons are never shown to anyone.
     pub(super) spawned_child: bool,
+    pub(super) parent_session: Option<String>,
 }
 
 /// What the instructions say about the registered repositories: counts only,
@@ -111,22 +112,15 @@ fn instruction_context(state: &Arc<AppState>, mcp_session_id: Option<&str>) -> I
         .upstream_registry
         .ready_upstreams(allowed.as_deref());
 
+    let parent_session =
+        super::mcp_transport_ancillary::resolve_mcp_parent_session(state, mcp_session_id);
     InstructionContext {
         repos,
         native_tools,
         upstreams,
-        spawned_child: mcp_session_id.is_some_and(|id| is_spawned_child(state, id)),
+        spawned_child: parent_session.is_some(),
+        parent_session,
     }
-}
-
-/// An MCP session bound to a peer that has a parent session: it was spawned
-/// by another agent rather than started by the user.
-fn is_spawned_child(state: &AppState, mcp_session_id: &str) -> bool {
-    state
-        .mcp
-        .to_session
-        .get(mcp_session_id)
-        .is_some_and(|peer| state.session_maps.session_parent.contains_key(peer.value()))
 }
 
 pub(super) fn build_mcp_instructions_for_mode(
@@ -249,7 +243,7 @@ pub(super) fn render_mcp_instructions(
         // repositories recorded zero events. Rendered only when the flag is on, so
         // a listed tool without an obligation and an obligation naming an unlisted
         // tool are both unreachable.
-        if progress_tracking {
+        if progress_tracking && !ctx.spawned_child {
             out.push_str("## Progress — mandatory\n\n");
             out.push_str(
                 "Call `progress` to record finished or blocked work; the user reads it later. \
@@ -257,6 +251,13 @@ pub(super) fn render_mcp_instructions(
              `type=blocked` only when you stop and wait because you need the user.\n\n",
             );
         }
+    }
+
+    if ctx.spawned_child {
+        let parent = ctx.parent_session.as_deref().unwrap_or("<parent>");
+        out.push_str(&format!(
+            "## Child reporting\n\nManaged children must not call `progress`: it reports to the user, not your parent. Send final RESULT or BLOCKED reports with `agent action=send to={parent} message=<report>` instead.\n\n"
+        ));
     }
 
     // ── Multi-agent work — what the tool descriptions cannot say ─────
@@ -576,7 +577,7 @@ fn native_reference_tool_definitions() -> serde_json::Value {
         },
         {
             "name": "repo",
-            "description": "Repository and version control. Query workspace repos, their GitHub PR/CI status, and manage git worktrees.\n\nActions:\n- add: Register and activate an existing local directory. Requires absolute path. Persists a usable Git or shell workspace, preserves existing terminals/settings on repeat calls, and broadcasts repositories-changed. No desktop URL handler required; does not spawn a terminal. Returns ok, path, name, branch, is_git_repo, and an optional watcher warning.\n- list: Open repos with branch, dirty status, worktrees.\n- active: Focused repo path, branch, group.\n- status: Cross-repo GitHub PR and CI summary {path, branch, ahead, behind, open_prs, failing_ci}. Optional path limits it to that registered repo; an unregistered path is an error.\n- branch_integrations: Integration status and proof for every local branch, including worktree_paths. Requires path.\n- branch_integration: Same verdict for one branch. Requires path and branch. Returns tip, integrated, proof, archive_required, archived and archive_ref. Content-based proof requires an archive at that tip before deletion; unknown is never proof.\n- worktree_list: Worktrees for a repo. Requires path. Each entry includes lifecycle_status {commit_status: merged|unmerged|in_sync|unknown, dirty_files, removal_safety: safe|requires_force|unknown}, the same verdict worktree_lifecycle and the sidebar use.\n- worktree_lifecycle: Fresh safety, fingerprint and submodule commit counts. Requires path and branch.\n- worktree_create: Create a linked worktree. Requires path. Optional: branch, base_ref, spawn_session (starts a bare shell PTY, not an agent). Refs and objects are shared with the parent; parent tracked changes are not copied. Git-ignored build directories warm in the background. Wait for warm_artifacts.status in worktree_list to become done or failed before installing dependencies or building.\n- worktree_remove: Remove worktree. Requires path and branch, or path and worktree_path for a detached checkout (removed only when clean, reachable from a branch and free of live sessions).\n- orphan_cleanup_answer: Answer the pending orphan-removal dialog for path with decision=remove|keep; remove rechecks every worktree for uncommitted/untracked files and branch reachability.\n- branch_delete: Delete only a local branch with no checkout after proving its commits are integrated or preserved. Requires path and branch. Proof is in_sync, a merge proof, patch_equivalence, or archived (refs/archive/<branch> points at the exact tip; the response then carries archive_ref and the archive ref is kept). Refuses current/default branches, unmerged commits with no exact archive, and unsafe or changed refs; never touches a remote.\n- work_item: Read Tasks detail and comments. Omit the target for the caller worktree link, or pass reference {providerId,accountId,id}, url, or key with provider_id/account_id. Pass cursor from comments.nextCursor for another comment page (limit 1..100, default 50). All provider text is returned in an untrusted-content block. Requires a running frontend with the provider loaded.\n- work_item_act: Comment or transition through the Tasks provider. Requires mcp_work_item_writes=true (default false) and operation {kind:comment|transition,value:string}; transition values are provider action IDs, not labels. Uses the same target selection. A timed-out write may have completed: read before retrying.\n- progress_list: The project's journal, newest first, paged with total and nextCursor. Requires path. Optional input.blockedOnly, input.ptyId, input.limit (default 8, maximum 100), input.cursor (previous nextCursor). Record a NEW outcome with the `progress` tool, not here.",
+            "description": "Repository and version control. Query workspace repos, their GitHub PR/CI status, and manage git worktrees.\n\nActions:\n- add: Register and activate an existing local directory. Requires absolute path. Persists a usable Git or shell workspace, preserves existing terminals/settings on repeat calls, and broadcasts repositories-changed. No desktop URL handler required; does not spawn a terminal. Returns ok, path, name, branch, is_git_repo, and an optional watcher warning.\n- list: Open repos with branch, dirty status, worktrees.\n- active: Focused repo path, branch, group.\n- status: Cross-repo GitHub PR and CI summary {path, branch, ahead, behind, open_prs, failing_ci}. Optional path limits it to that registered repo; an unregistered path is an error.\n- branch_integrations: Integration status and proof for every local branch, including worktree_paths. Requires path.\n- branch_integration: Same verdict for one branch. Requires path and branch. Returns tip, integrated, proof, archive_required, archived and archive_ref. Content-based proof requires an archive at that tip before deletion; unknown is never proof.\n- worktree_list: Worktrees for a repo. Requires path. Each entry includes lifecycle_status {commit_status: merged|unmerged|in_sync|unknown, dirty_files, removal_safety: safe|requires_force|unknown}, the same verdict worktree_lifecycle and the sidebar use.\n- worktree_lifecycle: Fresh safety, fingerprint and submodule commit counts. Requires path and branch.\n- worktree_create: Create a linked worktree. Requires path. Optional: branch, base_ref, spawn_session (starts a bare shell PTY, not an agent). Returns base_commit (resolved checkout commit before setup). An invalid base or an existing branch at a conflicting tip fails without resetting that branch. Refs and objects are shared with the parent; parent tracked changes are not copied. Git-ignored build directories warm in the background. Wait for warm_artifacts.status in worktree_list to become done or failed before installing dependencies or building.\n- worktree_remove: Remove worktree. Requires path and branch, or path and worktree_path for a detached checkout (removed only when clean, reachable from a branch and free of live sessions).\n- orphan_cleanup_answer: Answer the pending orphan-removal dialog for path with decision=remove|keep; remove rechecks every worktree for uncommitted/untracked files and branch reachability.\n- branch_delete: Delete only a local branch with no checkout after proving its commits are integrated or preserved. Requires path and branch. Proof is in_sync, a merge proof, patch_equivalence, or archived (refs/archive/<branch> points at the exact tip; the response then carries archive_ref and the archive ref is kept). Refuses current/default branches, unmerged commits with no exact archive, and unsafe or changed refs; never touches a remote.\n- work_item: Read Tasks detail and comments. Omit the target for the caller worktree link, or pass reference {providerId,accountId,id}, url, or key with provider_id/account_id. Pass cursor from comments.nextCursor for another comment page (limit 1..100, default 50). All provider text is returned in an untrusted-content block. Requires a running frontend with the provider loaded.\n- work_item_act: Comment or transition through the Tasks provider. Requires mcp_work_item_writes=true (default false) and operation {kind:comment|transition,value:string}; transition values are provider action IDs, not labels. Uses the same target selection. A timed-out write may have completed: read before retrying.\n- progress_list: The project's journal, newest first, paged with total and nextCursor. Requires path. Optional input.blockedOnly, input.ptyId, input.limit (default 8, maximum 100), input.cursor (previous nextCursor). Record a NEW outcome with the `progress` tool, not here.",
             "inputSchema": { "type": "object", "properties": {
                 "action": { "type": "string", "description": "One of: list, add, active, status, branch_integrations, branch_integration, worktree_list, worktree_lifecycle, worktree_create, worktree_remove, orphan_cleanup_answer, branch_delete, progress_list, work_item, work_item_act" },
                 "path": { "type": "string", "description": "Absolute path to git repository (required for worktree_list, worktree_lifecycle, worktree_create, worktree_remove, branch_delete, progress_list; optional filter for status)" },
@@ -618,7 +619,7 @@ fn native_reference_tool_definitions() -> serde_json::Value {
             // Claude Code defers MCP tools behind ToolSearch unless told not to;
             // a deferred `progress` is a tool Claude agents never call.
             "_meta": { "anthropic/alwaysLoad": true },
-            "description": "Record what happened, for the user who walked away. Mandatory: type=done when the work an `intent:` announced is finished, type=blocked when you stop and wait for the user because you cannot proceed without them. A blocked report marks your tab as waiting for an answer until the user replies or you report done. If you keep working while the user does something in parallel, report that with type=done, not blocked.",
+            "description": "Managed children must not call this tool; send RESULT or BLOCKED to their parent with agent action=send to=<parent> message=<report>. Root sessions: record what happened, for the user who walked away. Mandatory: type=done when the work an `intent:` announced is finished, type=blocked when you stop and wait for the user because you cannot proceed without them. A blocked report marks your tab as waiting for an answer until the user replies or you report done. If you keep working while the user does something in parallel, report that with type=done, not blocked.",
             "inputSchema": { "type": "object", "properties": {
                 "type": { "type": "string", "enum": ["done", "blocked"] },
                 "text": { "type": "string", "maxLength": 500, "description": "Outcome, not implementation." },

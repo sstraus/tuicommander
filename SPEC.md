@@ -865,6 +865,7 @@ Some frontend-only stores persist to localStorage:
 - [x] Notes/Ideas: image paste support (Ctrl+V), thumbnails, send absolute paths to terminal
 - [x] Inter-Agent Messaging (`messaging` MCP tool: register, list_peers, send, inbox with channel push + polling fallback)
 - [x] Opt-in interrupting mail (`agent send urgency=interrupt`): safe Esc, ten-second confirmed-idle wait, full input submission and explicit urgent fallback; interrupted tools may leave partial work.
+- [x] Settings and the Prompt Library dialog share one aligned Smart Prompt editor with readable placements and conditional fields; Settings saves immediately, while the dialog retains Save/Cancel (#2603-8a87).
 - [x] Smart Prompts (29 built-in AI prompts with context variable resolution, shell/inject/headless-CLI execution, toolbar dropdown, SmartButtonStrip, Command Palette integration). The `api` execution mode runs one unattended ego turn over ACP (#787-ee50): a session with no MCP server, every question refused, the final text routed to the prompt's output target. Its old executor — a direct provider call from TUICommander — went with the embedded engine (#784-0aec) and did not come back
 - [x] AI Chat panel (`Cmd+Alt+A`) — ego over ACP (#785-58ca), bound to a repository and ACP session rather than a terminal. TUICommander renders the journal, permissions, elicitation forms, plans and session controls while carrying no LLM client or provider API key of its own. The selected session is saved per root and restored after restart; the picker lists ego's durable sessions by title and activity time (#1071-46c9)
 - [x] AI Chat conversation deletion — capability-gated row controls confirm the conversation name, call ACP session/delete, remove successful deletions from tabs and the list, and retain refused conversations with the agent error (#1917).
@@ -1623,3 +1624,7 @@ IPC, HTTP and MCP use the same question/inbox service. See
 [workflow decisions](docs/backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).
 
 The Plans and Stories toolbar pill shows active-plan, Ready and In progress counts with distinct glyphs and a tooltip line for each number. Ready comes from the Rust `summary` action, not a frontend subtraction; Done/total remains the progress bar tooltip. Ready-only work therefore remains visible when no story is running.
+
+### AI Chat hands-free target
+
+Implemented: the hands-free target picker includes attached host-managed ACP chats. Opaque ACP binding ids stay separate from PTY identity. Spoken text follows the existing ACP prompt submission and queue path, with the same live pinned-or-viewed repository hint as typed input. MCP speech requires the bound native ACP connection and generation. Closing or leaving the bound chat releases its microphone and speaker binding.

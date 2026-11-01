@@ -572,6 +572,49 @@ async fn refuse(state: &AppState, connection_id: AcpConnectionId, refusal: Refus
 mod tests {
     use super::*;
 
+    /// Catches: AI Chat delegation instructions leaking into unrelated unattended Smart Prompts.
+    #[tokio::test]
+    async fn unattended_prompt_does_not_inherit_ai_chat_master_instructions() {
+        let dir = tempfile::TempDir::new_in(tuic_test_support::test_temp_root()).unwrap();
+        for (source, target) in [
+            ("prompt-turn.jsonl", "scenario.jsonl"),
+            ("ego-initialize.json", "ego-initialize.json"),
+        ] {
+            std::fs::copy(
+                std::path::Path::new("tests/fixtures/acp").join(source),
+                dir.path().join(target),
+            )
+            .unwrap();
+        }
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let executable = std::env::current_exe()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join(format!(
+                "tuic-acp-fixture-agent{}",
+                std::env::consts::EXE_SUFFIX
+            ));
+        assert!(
+            executable.is_file(),
+            "fixture agent must be built by nextest setup"
+        );
+        state.config.write().ego_executable = executable.to_string_lossy().into_owned();
+        state.config.write().ai_chat_master_prompt =
+            "Delegate all work to terminal agents; do not answer directly.".into();
+        // The fixture refuses extra launch instructions and returns two recorded text chunks.
+        let turn = run_prompt(
+            &state,
+            dir.path().to_owned(),
+            "Transform selected text".into(),
+        )
+        .await
+        .expect("AI Chat instructions must not alter an unattended launch");
+        assert_eq!(turn.text, "onetwo");
+    }
+
     fn chunk(text: &str) -> AcpClientEvent {
         AcpClientEvent::SessionUpdate {
             update: Box::new(v1::SessionUpdate::AgentMessageChunk(v1::ContentChunk::new(

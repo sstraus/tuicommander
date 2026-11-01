@@ -33,6 +33,7 @@ import { randomUuid } from "../utils/randomId";
 import { type AcpStreamHandle, type AcpStreamOpener, openAcpStream } from "./acpStream";
 
 export interface ChatLaunch {
+	masterPrompt: string;
 	executable: string;
 	profile: string;
 	workspace: string;
