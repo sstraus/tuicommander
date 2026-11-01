@@ -1,0 +1,5 @@
+build-slot: admitted after 0s (running=0 free=64%)
+   Compiling tuic-dictation v2.0.0 (/Users/stefano.straus/Gits/personal/tuicommander__wt/fix-voice-tts-stutter/src-tauri/crates/tuic-dictation)
+    Finished `dev` profile [optimized + debuginfo] target(s) in 5.60s
+mbx[cache]: 0 hits, 1 misses, 2 bypassed; 0 B downloaded, 0 B uploaded, 1.7 KiB stored locally
+mbx[savings]: 2.3 TiB on loan to every checkout simultaneously. the paperwork is an inode.

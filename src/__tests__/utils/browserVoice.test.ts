@@ -38,9 +38,9 @@ function fakeContext() {
 		connect: vi.fn(),
 		disconnect: vi.fn(),
 	};
-	const played: { rate: number; samples: Float32Array; started: boolean; from?: number }[] = [];
+	const played: { rate: number; samples: Float32Array; started: boolean; when?: number; from?: number }[] = [];
 	const clock = { now: 0 };
-	const sources: { stop: ReturnType<typeof vi.fn> }[] = [];
+	const sources: { stop: ReturnType<typeof vi.fn>; onended: (() => void) | null }[] = [];
 	// iOS creates a context suspended; it runs only once resumed in a gesture.
 	const lifecycle = { state: "running" as "running" | "suspended" };
 	const resume = vi.fn(async () => {
@@ -68,6 +68,7 @@ function fakeContext() {
 				const samples = new Float32Array(length);
 				return {
 					getChannelData: () => samples,
+					duration: length / rate,
 					__rate: rate,
 					__samples: samples,
 				};
@@ -77,11 +78,12 @@ function fakeContext() {
 					buffer: null as { __rate: number; __samples: Float32Array } | null,
 					connect: vi.fn(),
 					onended: null as (() => void) | null,
-					start: (_when?: number, from?: number) => {
+					start: (when?: number, from?: number) => {
 						played.push({
 							rate: node.buffer?.__rate ?? 0,
 							samples: node.buffer?.__samples ?? new Float32Array(),
 							started: true,
+							when,
 							from,
 						});
 					},
@@ -108,13 +110,15 @@ describe("the browser audio wire format", () => {
 	 * assertion about lengths.
 	 */
 	it("reads the reply's own sample rate off the frame", () => {
-		const frame = new ArrayBuffer(4 + 8);
+		const frame = new ArrayBuffer(12 + 8);
 		new DataView(frame).setUint32(0, 24_000, true);
-		new Float32Array(frame, 4).set([0.5, -0.5]);
+		new DataView(frame).setBigUint64(4, 9_007_199_254_740_993n, true);
+		new Float32Array(frame, 12).set([0.5, -0.5]);
 
 		const decoded = decodeReply(frame);
 
 		expect(decoded.sampleRate).toBe(24_000);
+		expect(decoded.sequence).toBe("9007199254740993");
 		expect(Array.from(decoded.samples)).toEqual([0.5, -0.5]);
 	});
 
@@ -267,6 +271,7 @@ describe("a browser voice session", () => {
 
 	beforeEach(() => {
 		socket = new FakeSocket();
+		sequence = 0n;
 		nodes = fakeContext();
 		tracks = [{ stop: vi.fn() }];
 		deps = {
@@ -275,6 +280,76 @@ describe("a browser voice session", () => {
 			createContext: () => nodes.context,
 			audioSession: () => undefined,
 		};
+	});
+
+	let sequence = 0n;
+	const reply = (seconds = 4, rate = 24_000) => {
+		const frame = new ArrayBuffer(12 + seconds * rate * 4);
+		new DataView(frame).setUint32(0, rate, true);
+		new DataView(frame).setBigUint64(4, ++sequence, true);
+		return frame;
+	};
+
+	// Catches: a second downlink stops the first reply instead of appending it.
+	it("schedules consecutive replies without cutting active audio or waiting for ended callbacks", async () => {
+		await connectBrowserVoice("b1", deps);
+		socket.onmessage?.({ data: reply() });
+		nodes.clock.now = 1;
+		socket.onmessage?.({ data: reply(2, 48_000) });
+
+		expect(nodes.sources[0].stop).not.toHaveBeenCalled();
+		expect(nodes.played.map(({ when, from }) => [when, from])).toEqual([
+			[0, 0],
+			[4, 0],
+		]);
+		// Even if the main thread receives the ended callback late, the second
+		// source is already scheduled at the first source's exact audio-clock end.
+		nodes.clock.now = 4.5;
+		nodes.sources[0].onended?.();
+		expect(socket.sent).toEqual([JSON.stringify({ type: "playback-ended", sequence: "1" })]);
+		nodes.sources[1].onended?.();
+		expect(socket.sent).toEqual([
+			JSON.stringify({ type: "playback-ended", sequence: "1" }),
+			JSON.stringify({ type: "playback-ended", sequence: "2" }),
+		]);
+	});
+
+	// Catches: holding the queue loses the active remainder or overlaps later audio.
+	it("resumes the active remainder before replies appended during a hold", async () => {
+		await connectBrowserVoice("b1", deps);
+		socket.onmessage?.({ data: reply() });
+		socket.onmessage?.({ data: reply(2) });
+		nodes.clock.now = 1.5;
+		socket.onmessage?.({ data: JSON.stringify({ type: "pause" }) });
+		for (const source of nodes.sources) expect(source.stop).toHaveBeenCalledOnce();
+		socket.onmessage?.({ data: reply(3) });
+		nodes.clock.now = 10;
+		socket.onmessage?.({ data: JSON.stringify({ type: "resume" }) });
+		expect(nodes.played.slice(2).map(({ when, from }) => [when, from])).toEqual([
+			[10, 1.5],
+			[12.5, 0],
+			[14.5, 0],
+		]);
+		// Stopped nodes can report ended after the replacement nodes started.
+		nodes.sources[0].onended?.();
+		nodes.sources[1].onended?.();
+		expect(socket.sent).toEqual([]);
+	});
+
+	// Catches: stop/teardown leaves a future source audible or sends a stale ACK.
+	it.each(["server stop", "session stop"])("drops scheduled and held replies on %s", async (kind) => {
+		const voice = await connectBrowserVoice("b1", deps);
+		socket.onmessage?.({ data: reply() });
+		socket.onmessage?.({ data: reply(2) });
+		if (kind === "server stop") socket.onmessage?.({ data: JSON.stringify({ type: "stop" }) });
+		else voice.stop();
+		for (const source of nodes.sources) {
+			expect(source.stop).toHaveBeenCalledOnce();
+			source.onended?.();
+		}
+		socket.onmessage?.({ data: JSON.stringify({ type: "resume" }) });
+		expect(nodes.played).toHaveLength(2);
+		expect(socket.sent).toEqual([]);
 	});
 
 	it("ships captured audio up the socket without deciding anything about it", async () => {
@@ -305,9 +380,9 @@ describe("a browser voice session", () => {
 
 	it("plays a reply at the rate it was rendered at and reports the end", async () => {
 		await connectBrowserVoice("b1", deps);
-		const frame = new ArrayBuffer(4 + 8);
+		const frame = new ArrayBuffer(12 + 8);
 		new DataView(frame).setUint32(0, 24_000, true);
-		new Float32Array(frame, 4).set([0.5, -0.5]);
+		new Float32Array(frame, 12).set([0.5, -0.5]);
 
 		socket.onmessage?.({ data: frame });
 
@@ -322,7 +397,7 @@ describe("a browser voice session", () => {
 	 */
 	it("stops playback when the server says the turn is over", async () => {
 		await connectBrowserVoice("b1", deps);
-		const frame = new ArrayBuffer(4 + 4);
+		const frame = new ArrayBuffer(12 + 4);
 		new DataView(frame).setUint32(0, 24_000, true);
 		socket.onmessage?.({ data: frame });
 
@@ -341,8 +416,7 @@ describe("a browser voice session", () => {
 	 */
 	it("holds the reply on pause and continues from the same position on resume", async () => {
 		await connectBrowserVoice("b1", deps);
-		const frame = new ArrayBuffer(4 + 4);
-		new DataView(frame).setUint32(0, 24_000, true);
+		const frame = reply();
 		socket.onmessage?.({ data: frame });
 		nodes.clock.now = 2.5;
 
@@ -361,7 +435,7 @@ describe("a browser voice session", () => {
 	it("keeps a reply that arrives during a pause until the resume", async () => {
 		await connectBrowserVoice("b1", deps);
 		socket.onmessage?.({ data: JSON.stringify({ type: "pause" }) });
-		const frame = new ArrayBuffer(4 + 4);
+		const frame = new ArrayBuffer(12 + 4);
 		new DataView(frame).setUint32(0, 24_000, true);
 		socket.onmessage?.({ data: frame });
 		expect(nodes.played).toHaveLength(0);

@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Add an opt-in, silent native speech timing probe and retain the Pocket/Edge partial-load measurements for #2605-53fc. The measured native buffer gap did not reproduce; playback behavior and buffer sizes are unchanged.
 - Pin transitive same-daemon workflow Calls with bounded nested identities, typed terminal receipts and recovery/cancellation ownership; keep Story Dispatch as the delivery fan-out (#2516-8fd1).
 - Let agents choose WebP (default quality 25) or PNG per Design Mode screenshot, with optional quality and long-edge downsize. Return image media type, format, quality and byte size; selected-element crops remain lossless PNG (#2617-69a6).
 
@@ -13,6 +14,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - AI Chat master prompt in Settings: additive instructions for new conversations, with an 8192-byte limit.
 ### Fixed
+
+- Queue browser voice replies on the audio clock instead of cutting off the active reply. Preserve holds and queued durations; sequence playback acknowledgements so an old reply cannot finish newer audio (#2605-53fc). Reload browser tabs after updating the backend. This fixes a separate browser defect, not a proven cause of the reported native stutter.
 
 - Honor explicit worktree bases when a branch name already exists: reject conflicting tips instead of checking out the wrong commit. Report the resolved `base_commit` over MCP, HTTP and desktop IPC (#2613-9ad7).
 
