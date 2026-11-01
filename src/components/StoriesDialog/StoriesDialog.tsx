@@ -432,6 +432,8 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 	>([]);
 	const [workflowChoice, setWorkflowChoice] = createSignal("");
 	const [startProblems, setStartProblems] = createSignal<string[]>([]);
+	const [checkingStart, setCheckingStart] = createSignal(true);
+	const routingPolicyMissing = () => startProblems().includes("effective host routing policy is not imported");
 	// The definition whose readiness answer is in; Start waits for it.
 	const [readyFor, setReadyFor] = createSignal("");
 	const [recoveryExecution, setRecoveryExecution] = createSignal("");
@@ -676,9 +678,11 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 		}
 	}
 
-	async function openStart(): Promise<void> {
-		setBusy(true);
-		setError("");
+	async function openStart(open = true): Promise<void> {
+		if (open) {
+			setBusy(true);
+			setError("");
+		}
 		const selected = storyId();
 		try {
 			const reply = await invoke<{
@@ -686,7 +690,7 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 				value: { id: string; name: string; kind: string; latestPublishedRevision: number | null }[];
 			}>("workflow_definition_action", { project: props.project, action: { action: "list_drafts" } });
 			if (reply.type !== "drafts") throw new Error("Invalid workflow response");
-			if (selected !== storyId()) return;
+			if (open && selected !== storyId()) return;
 			const choices = reply.value.filter(
 				(item): item is typeof item & { latestPublishedRevision: number } =>
 					item.kind === "story" && item.latestPublishedRevision !== null,
@@ -694,12 +698,13 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 			setPublishedChoices(choices);
 			setWorkflowChoice(choices[0]?.id ?? "");
 			startRequestId = crypto.randomUUID();
-			setStartOpen(true);
-			void checkStartReadiness(choices[0]?.id ?? "");
+			if (open) setStartOpen(true);
+			await checkStartReadiness(choices[0]?.id ?? "");
 		} catch (cause) {
-			fail(cause);
+			if (open) fail(cause);
 		} finally {
-			setBusy(false);
+			if (open) setBusy(false);
+			setCheckingStart(false);
 		}
 	}
 
@@ -848,6 +853,7 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 			setStoryId(
 				preferredStory && selectableIds.includes(preferredStory) ? preferredStory : (selectableIds[0] ?? null),
 			);
+			if (checkingStart()) void openStart(false);
 		} catch (cause) {
 			if (current === request) {
 				setReadFailed(true);
@@ -1182,20 +1188,22 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 						>
 							Stories
 						</Button>
-						<Button
-							size="compact"
-							type="button"
-							disabled={
-								busy() ||
-								storyPlan()?.archived ||
-								selectedStory()?.archived ||
-								selectedStory()?.status !== "ready" ||
-								!!selectedStory()?.claimSession
-							}
-							onClick={() => void openStart()}
-						>
-							Start story workflow
-						</Button>
+						<Show when={!checkingStart() && !routingPolicyMissing()}>
+							<Button
+								size="compact"
+								type="button"
+								disabled={
+									busy() ||
+									storyPlan()?.archived ||
+									selectedStory()?.archived ||
+									selectedStory()?.status !== "ready" ||
+									!!selectedStory()?.claimSession
+								}
+								onClick={() => void openStart()}
+							>
+								Start story workflow
+							</Button>
+						</Show>
 						{/* DEFERRED (2026-10-22) — "Start plan workflow" is hidden until the slice E plan dispatch entry point exists (audit 2137 A11). */}
 						<Button
 							size="compact"
@@ -1246,7 +1254,10 @@ export const StoriesDialog: Component<StoriesDialogProps> = (props) => {
 						{t("stories.loading", "Loading plans and stories…")}
 					</div>
 				</Show>
-				<Show when={startOpen()}>
+				<Show when={routingPolicyMissing()}>
+					<p class={s.message}>Workflow runs need a routing policy; its controls arrive in a later version.</p>
+				</Show>
+				<Show when={startOpen() && !routingPolicyMissing()}>
 					<form class={s.form} onSubmit={(event) => void startStoryWorkflow(event)}>
 						<p>Start · {selectedStory()?.title}</p>
 						<Show
