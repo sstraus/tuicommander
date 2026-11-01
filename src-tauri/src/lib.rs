@@ -1967,10 +1967,12 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
                     .state::<Arc<AppState>>()
                     .desktop_window_focused
                     .store(*focused, std::sync::atomic::Ordering::Relaxed);
-                #[cfg(all(target_os = "macos", feature = "dictation"))]
-                if !focused {
-                    dictation::fn_key_monitor::release_on_focus_loss(window.app_handle());
-                }
+            }
+            #[cfg(all(target_os = "macos", feature = "dictation"))]
+            if matches!(event, tauri::WindowEvent::Focused(false))
+                && dictation::fn_key_monitor::DICTATION_WINDOWS.contains(&window.label())
+            {
+                dictation::fn_key_monitor::release_on_focus_loss(window.app_handle());
             }
             if matches!(event, tauri::WindowEvent::Focused(true)) && window.label() == "main" {
                 background_mode::desktop::shown(window.app_handle());
@@ -2524,6 +2526,8 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             dictation::commands::disarm_hands_free_dictation,
             #[cfg(feature = "dictation")]
             dictation::commands::get_hands_free_status,
+            #[cfg(feature = "dictation")]
+            dictation::commands::get_voice_targets,
             global_hotkey::set_global_hotkey,
             config::load_app_config,
             save_app_config,
@@ -2716,6 +2720,7 @@ pub fn run(mut context: tauri::Context<tauri::Wry>) {
             acp_commands::acp_session_delete,
             acp_commands::acp_session_close,
             acp_commands::acp_session_prompt,
+            acp_commands::acp_session_set_viewed_repo,
             acp_commands::acp_session_cancel,
             acp_commands::acp_queued_prompt_cancel,
             acp_commands::acp_queued_prompt_recall,

@@ -528,49 +528,9 @@ async fn wf04_acp_fork_fix_stops_processes_before_one_repair() {
             binding.acp.clone().unwrap(),
         )
         .unwrap();
-    // Drive the deterministic FIX and external stop directly, so the pre-fix
-    // failure reports the stop fence rather than waiting for an actor timeout.
-    let cancelling = drive_turn(&store, &run.id).unwrap();
-    let stopped = drive_effect(&app, &store, &cancelling).await;
-    let observed = crate::pty::process_tree_snapshot().unwrap();
-    let absent = pids
-        .iter()
-        .all(|pid| !crate::pty::workflow_process_observed(&observed, *pid));
-    // Catches: a retry requiring the already-stopped child to remain live.
-    if stopped.is_ok() {
-        for binding in &bindings {
-            crate::mcp_http::launch_transaction::stop_superseded_workflow_agent(
-                &app, &run.id, binding,
-            )
-            .await
-            .unwrap();
-        }
-    }
-    // Stop only our fixture children even when the regression fails.
-    for binding in &bindings {
-        let _ = app
-            .acp
-            .disconnect(binding.acp.as_ref().unwrap().connection_id)
-            .await;
-    }
-    assert!(stopped.is_ok(), "ACP FIX stop failed: {stopped:?}");
-    assert!(
-        absent,
-        "repair was released while a superseded ACP process remained live"
-    );
-    let repaired = drive_turn(&store, &run.id).unwrap();
-    assert_eq!(
-        repaired.graph_executions[0]
-            .activations
-            .iter()
-            .filter(|a| a.node_id == "implement")
-            .count(),
-        2
-    );
-    assert_eq!(store.replay(&run.id).unwrap(), repaired);
-    // Repair activation is not scheduler quiescence: the actor still starts its
-    // implementer and binds the spawn effect. Wait for that durable boundary
-    // before cleanup, rather than racing Cancel against the launch transaction.
+    // Catches: direct turn/effect calls racing the spawned actor's sequence.
+    // The actor alone drives FIX, stop and repair; observe its durable binding.
+    app.workflow_runtime.wake(&run.id);
     let repair_bound = tokio::time::timeout(std::time::Duration::from_secs(120), async {
         loop {
             let current = store.snapshot(&run.id).unwrap();
@@ -594,6 +554,26 @@ async fn wf04_acp_fork_fix_stops_processes_before_one_repair() {
     })
     .await
     .expect("repair launch setup did not finish");
+    let observed = crate::pty::process_tree_snapshot().unwrap();
+    assert!(
+        pids.iter()
+            .all(|pid| !crate::pty::workflow_process_observed(&observed, *pid)),
+        "repair was released while a superseded ACP process remained live"
+    );
+    assert_eq!(
+        repair_bound.graph_executions[0]
+            .activations
+            .iter()
+            .filter(|a| a.node_id == "implement")
+            .count(),
+        2
+    );
+    // Catches: a retry requiring the already-stopped child to remain live.
+    for binding in &bindings {
+        crate::mcp_http::launch_transaction::stop_superseded_workflow_agent(&app, &run.id, binding)
+            .await
+            .unwrap();
+    }
     let repair = repair_bound
         .attempts
         .iter()
@@ -618,10 +598,12 @@ async fn wf04_acp_fork_fix_stops_processes_before_one_repair() {
     })
     .await
     .expect("repair turn setup did not finish");
-    store
+    let cancelled = store
         .command(&run.id, "fixture-cleanup", RunCommand::Cancel)
         .unwrap();
     app.acp.shutdown_all().await;
+    // A running actor may advance between read and replay; terminal Cancel cannot.
+    assert_eq!(store.replay(&run.id).unwrap(), cancelled.snapshot);
     assert!(
         app.session_maps.sessions.is_empty(),
         "ACP must not fabricate a terminal"

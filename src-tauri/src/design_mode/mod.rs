@@ -6,6 +6,8 @@ mod command_channel;
 pub(crate) mod commands;
 pub(crate) mod extension;
 #[cfg(feature = "desktop")]
+mod extension_process;
+#[cfg(feature = "desktop")]
 mod legacy;
 #[cfg(feature = "desktop")]
 mod liveness;

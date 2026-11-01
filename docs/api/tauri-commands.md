@@ -267,7 +267,7 @@ reached is an error carrying ego's own sentence, never an empty result.
 
 | Command | Args | Returns | Description |
 |---------|------|---------|-------------|
-| `create_worktree` | `base_repo, branch_name, create_branch?, base_ref?` | `{ status: "ok", name, path, workspace_id, branch, base_repo, instructions }` | Create a linked worktree and start warming in the background. `instructions.warm_artifacts.status` is `pending`, matching HTTP/MCP. Parent tracked changes are not carried over. |
+| `create_worktree` | `base_repo, branch_name, create_branch?, base_ref?` | `{ status: "ok", name, path, workspace_id, branch, base_repo, base_commit, instructions }` | Create a linked worktree and start warming in the background. `instructions.warm_artifacts.status` is `pending`, matching HTTP/MCP. Parent tracked changes are not carried over. |
 | `remove_worktree` | `repo_path, workspace_id, delete_branch?, force?, override_lock?, expected_fingerprint?, confirm_missing_checkout?, permanent_delete?` | `{ branch_delete_warning?: string, branch: string, removal_rule: string }` | Remove a linked worktree by `workspace_id`. Branch deletion defaults to true, or false when force is true. `permanent_delete=true` explicitly opts out of recycling, requires branch deletion, a fresh clean and integrated lifecycle and no live sessions, and rejects force or lock overrides. Without force, a clean checkout and submodules with no Git operation in progress are required even when the branch is kept. `force` permits discarding dirty files but does not skip branch proof or override a lock; `override_lock` is separate. A live checkout requires `expected_fingerprint` for force removal. A missing registered checkout instead requires `force` and explicit `confirm_missing_checkout`; its absence is rechecked before cleanup and module refs are preserved before pruning. Branch deletion uses the same integration proof as MCP, including no-op merges, corroborated squash messages and archived content heuristics, alongside ancestry, patch equivalence and verified merged GitHub PRs fetched over account-aware, fully paginated HTTP GraphQL; it uses the captured OID and warns if the proof fails or the ref moves. Keeping the branch skips only branch proof. Before Git removes a live checkout, owner write permission is restored inside it so read-only ignored artifacts cannot block deletion. A leftover unregistered directory is reported with its path. `removal_rule` names the matching rule. |
 | `delete_local_branch` | `repo_path, branch_name, workspace_id, keep_worktree?` | `()` | Delete a local branch and dispose of the workspace `workspace_id` names. Two identifiers because there are two objects: `branch_name` is the ref to delete, `workspace_id` the checkout holding it. Refuses to delete the default branch, and refuses when the resolved workspace is on a different branch than the one asked for. Uses safe `git branch -d` |
 | `check_worktree_dirty` | `repo_path, workspace_id` | `bool` | Check if the workspace `workspace_id` names has uncommitted changes. Addressed by id because the answer gates an irreversible cleanup — a sibling on the same branch being clean must never authorise destroying this one. Returns false if the id resolves to no checkout. When git cannot answer (the `worktree list` or `status` call fails) it returns an **error**, never `false` — callers that gate a destructive action must see the failure |
@@ -546,6 +546,7 @@ These commands stay in the root `dictation/commands.rs` adapter; their audio and
 | `set_correction_map` | `map` | `()` | Save corrections |
 | `list_audio_devices` | -- | `Vec<AudioDevice>` | List input devices |
 | `get_dictation_config` | -- | `DictationConfig` | Load saved config. With an activation phrase, the hands-free runtime applies at least 5000 ms of hold-back even when the saved `hands_free_hold_back_ms` is shorter; hands-free status reports the effective value |
+| `get_voice_targets` | -- | `ChatVoiceTarget[]` | List live host-managed AI Chat attachments as `{ id, name, chatSessionId }`; ids are opaque voice targets, not PTY ids |
 | `get_hands_free_default_notice` | -- | `string` | The built-in hands-free start notice, sent while `hands_free_start_notice` is empty |
 | `set_dictation_config` | `base, config` | `()` | Save only the changes between the loaded base and edited config. A changed `language`, `speechCommand` or `speech_voice` also drops the voice built for the previous one, cancelling what it was speaking; hands_free_spoken_replies=false also cancels it and refuses new speech while dictation stays armed. Edge 401/403 rejection makes speech unavailable for five minutes. Other fields leave the voice alone. `hands_free_listening` (default true, read at arm time only; false arms a replies-only conversation with no microphone, and arming with it and `hands_free_spoken_replies` both false is refused). `hands_free_earcons` (default true) turns the hands-free earcons off; only the frontend reads it. `hands_free_notify_model` (default true) is read at arm time only — turning it off mid-conversation does not cancel the end notice the model is already owed. `hands_free_start_notice` (default empty = built-in text) replaces the start notice, also at arm time only, folded to one line |
 | `check_microphone_permission` | -- | `String` | Check macOS microphone TCC permission status |
@@ -786,6 +787,7 @@ can choose what the host runs.
 | `acp_session_fork` | `connectionId, sessionId, authority` | `AcpAttachmentSnapshot` | `session/fork` |
 | `acp_session_delete` | `connectionId, sessionId` | `()` | `session/delete` — the session is gone for good |
 | `acp_session_close` | `connectionId, sessionId` | `()` | Detach without deleting |
+| `acp_session_set_viewed_repo` | `connectionId, sessionId, viewedRepo?` | `()` | Update or clear the attached chat's effective repository hint for spoken prompts; no prompt is submitted and cwd is unchanged |
 | `acp_session_prompt` | `connectionId, sessionId, prompt, viewedRepo?` | `AcpTurnId` | Start a turn or accept it into the server-owned FIFO when one is running. `viewedRepo` is sent as `_meta.tuicommander/viewedRepo`, a hint for that turn only |
 | `acp_session_cancel` | `connectionId, sessionId` | `()` | Cancel the running turn |
 | `acp_queued_prompt_cancel` | `connectionId, sessionId, turnId` | `()` | Remove one queued prompt before it reaches ego |
@@ -829,6 +831,8 @@ Four rules hold this surface down:
 - A model value may not look like a flag, carry whitespace or a control character, or
   contain `"` or `\` — the last two would break out of ego's TOML string.
 - A failure carries what ego printed.
+
+`ego_providers` and `ego_set_default_model` return an optional `EgoProviders.diagnostic` alongside usable model data when the health check fails. Doctor exit 1 does not reject the whole response; IPC and HTTP use the same projection.
 
 | Command | Args | Returns | Description |
 |---------|------|---------|-------------|
@@ -1175,3 +1179,9 @@ requires `run_id`, `command_id` and `expected_sequence`. IPC
 `workflow action=run input=<RunAction>` use the same service. The inbox needs no
 coordinator. See the backend workflow decision contract for shapes, deadline
 outcomes, retained legacy replay and continuation semantics.
+
+Native story phase previews use the existing story action envelope: `available_transitions {story_id,expected_revision}` returns `{type:"available_transitions",value:{revision,moves:[{status,command}]}}`. It uses the committed-transition evaluator without saving the story or history. Destinations include automatic QA and dependency-derived outcomes, with archived records and actor/workflow restrictions enforced. Previews do not reserve a move; the caller submits `transition` with the returned revision and command, and refreshes after any conflict. IPC, HTTP, CLI and managed MCP share this action.
+
+### Unrelated branch integration status
+
+Branch integration queries and workspace lifecycle/monitoring payloads serialize `commit_status: "unrelated_history"` when no default-branch candidate shares a common ancestor. The response remains successful with no inspection error and `integrated: false` in branch integration queries. IPC and HTTP use the same backend classifier. Missing refs and other Git errors remain errors; an absent common ancestor is not one.

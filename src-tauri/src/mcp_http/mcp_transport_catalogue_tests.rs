@@ -2814,3 +2814,50 @@ fn instructions_name_tools_unambiguously() {
         }
     }
 }
+
+/// Catches: child instructions demand user progress reporting, including launch-capable clients.
+#[test]
+fn managed_child_progress_instructions_route_to_parent_for_every_client() {
+    let state = test_state();
+    state
+        .mcp
+        .to_session
+        .insert("child-progress".into(), "child-peer".into());
+    state
+        .session_maps
+        .session_parent
+        .insert("child-peer".into(), "parent-peer".into());
+    for client in [None, Some("ego"), Some("claude-code"), Some("codex")] {
+        for collapse in [false, true] {
+            let text = build_mcp_instructions_for_session(
+                &state,
+                client,
+                collapse,
+                Some("child-progress"),
+            );
+            assert!(
+                text.contains("agent action=send to=parent-peer"),
+                "missing child route for {client:?}: {text}"
+            );
+            assert!(
+                !text.contains("Call `progress`"),
+                "child receives root reporting duty"
+            );
+        }
+    }
+}
+
+/// Catches: the always-loaded progress description overriding child-specific instructions.
+#[test]
+fn managed_child_progress_tool_description_excludes_children_from_user_duty() {
+    let tools = native_tool_definitions();
+    let tool = tools
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|tool| tool["name"] == "progress")
+        .unwrap();
+    let description = tool["description"].as_str().unwrap();
+    assert!(description.contains("Managed children must not call"));
+    assert!(description.contains("agent action=send"));
+}

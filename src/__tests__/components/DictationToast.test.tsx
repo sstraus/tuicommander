@@ -236,6 +236,30 @@ describe("DictationToast", () => {
 			});
 		});
 
+		it("acknowledges only a recognized wake, not microphone activity", async () => {
+			// catches: VAD or unrelated speech displaying a false wake acknowledgement.
+			vi.useFakeTimers();
+			const hands = { armed: true, phase: "capturing" };
+			backend(hands, 0.4);
+			await testInScopeAsync(async () => {
+				const { container } = render(() => <DictationToast />);
+				await dictationStore.armHandsFree("s1");
+				expect(container.textContent).toContain("Listening");
+				expect(container.textContent).not.toContain("Go ahead");
+				for (const [phase, label] of [
+					["wake_confirmed", "Go ahead"],
+					["transcribing", "Transcribing"],
+					["waiting", "Listening"],
+				]) {
+					hands.phase = phase;
+					await vi.advanceTimersByTimeAsync(400);
+					expect(container.textContent).toContain(label);
+					if (phase !== "wake_confirmed") expect(container.textContent).not.toContain("Go ahead");
+				}
+				await dictationStore.disarmHandsFree();
+			});
+		});
+
 		it("follows the phase and says when the reply is being spoken", async () => {
 			vi.useFakeTimers();
 			const hands = { armed: true, phase: "waiting" };

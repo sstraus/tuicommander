@@ -318,7 +318,7 @@ export const AGENTS: Record<AgentType, AgentConfig> = {
 		defaultHeadlessTemplate: 'ego run "{prompt}"',
 		// `ego resume` with no id continues the latest session of this workspace.
 		resumeCommand: "ego resume",
-		ctrlEnterSequence: "\n",
+		ctrlEnterSequence: "\x1b[13;5u",
 		sessionDiscovery: { resumeWithId: (id) => `ego resume ${id}` },
 		spawnArgs: (prompt) => [prompt],
 		outputFormat: "text",

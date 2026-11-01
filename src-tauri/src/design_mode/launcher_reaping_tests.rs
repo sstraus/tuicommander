@@ -19,6 +19,10 @@ fn design_launch_reaps_child_after_runtime_shutdown() {
             .build()
             .unwrap();
         let target = "http://localhost:5173/page?x=1#element";
+        let acknowledge = {
+            let _entered = runtime.enter();
+            acknowledge_test_launch(state.clone(), root.join("repo"))
+        };
         let response = runtime
             .block_on(launch(
                 &state,
@@ -28,6 +32,7 @@ fn design_launch_reaps_child_after_runtime_shutdown() {
                 Some(target),
             ))
             .unwrap();
+        runtime.block_on(acknowledge).unwrap();
         assert_eq!(response["url"], target);
         assert_eq!(response["status"], "armed");
         let setup = Instant::now() + Duration::from_secs(120);

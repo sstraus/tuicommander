@@ -84,6 +84,7 @@ scripts/fixtures/*
 !scripts/record-chat-fixtures.py
 !scripts/chat-view-follow-proof.mjs
 !scripts/design-mode-tokens.test.mjs
+!scripts/design-mode-panel-layout.test.mjs
 !scripts/fixtures/design-mode-chrome149-capture-denial.json
 !scripts/build-docs.sh
 !scripts/dev-install.sh

@@ -556,3 +556,20 @@ fn waiting_rule_does_not_end_turn_on_background_start() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// Catches: launch guidance appending root progress duty to managed children.
+#[test]
+fn managed_child_progress_launch_guidance_uses_parent_mail_not_user_reports() {
+    let (app, agents) = (AppConfig::default(), AgentsConfig::default());
+    for agent in AGENTS {
+        let child = effective_text_with(&app, &agents, agent, true, false);
+        assert!(child.contains("agent action=send to=<parent>"));
+        assert!(
+            !child.contains("progress type=done"),
+            "root duty leaked to {agent}"
+        );
+        assert!(
+            effective_text_with(&app, &agents, agent, false, false).contains("progress type=done")
+        );
+    }
+}

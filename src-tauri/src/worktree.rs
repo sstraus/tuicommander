@@ -304,6 +304,10 @@ pub(crate) fn inspect_worktree_removal(
         WorkspaceCommitStatus::Unmerged => {
             warnings.push("This branch has unmerged commits".to_string())
         }
+        WorkspaceCommitStatus::UnrelatedHistory => warnings.push(
+            "This branch has unrelated history: no common ancestor with the default branch"
+                .to_string(),
+        ),
         WorkspaceCommitStatus::PushedUnmerged => {
             warnings.push("This branch is not merged, but all its commits are pushed".to_string())
         }
@@ -749,6 +753,15 @@ pub(crate) fn allocate_workspace(
     Ok((workspace, rename))
 }
 
+/// Read the allocation commit before setup scripts or callers can change HEAD.
+pub(crate) fn workspace_base_commit(path: &Path) -> Result<String, String> {
+    git_cmd(path)
+        .args(["rev-parse", "--verify", "HEAD^{commit}"])
+        .run()
+        .map(|out| out.stdout.trim().to_owned())
+        .map_err(|error| format!("Cannot read worktree base commit: {error}"))
+}
+
 /// Create a linked worktree without a PTY session.
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -768,13 +781,15 @@ pub(crate) async fn create_worktree(
     let worktrees_dir =
         resolve_worktree_dir_for_repo(Path::new(&config.base_repo), &state.worktrees_dir);
     let allocation_state = Arc::clone(&state);
-    let (workspace, recycled) = tokio::task::spawn_blocking(move || {
-        allocate_workspace(
+    let (workspace, recycled, base_commit) = tokio::task::spawn_blocking(move || {
+        let (workspace, recycled) = allocate_workspace(
             &allocation_state,
             &worktrees_dir,
             &config,
             base_ref.as_deref(),
-        )
+        )?;
+        let base_commit = workspace_base_commit(&workspace.path)?;
+        Ok::<_, String>((workspace, recycled, base_commit))
     })
     .await
     .map_err(|error| format!("Task panic: {error}"))??;
@@ -796,6 +811,7 @@ pub(crate) async fn create_worktree(
     }
     state.invalidate_repo_caches(&base_repo);
     let mut response = ipc_worktree_response(&workspace, &base_repo);
+    response["base_commit"] = serde_json::json!(base_commit);
     response["worktree_rename"] = serde_json::json!(recycled);
     Ok(response)
 }
@@ -2149,6 +2165,46 @@ mod tests {
                 .warnings
                 .iter()
                 .any(|warning| warning.contains("2 untracked"))
+        );
+    }
+
+    // Catches: the IPC/HTTP removal preview loses the explicit graph verdict
+    // or authorizes deleting an orphan history that has not been archived.
+    #[test]
+    fn unrelated_history_removal_preview_is_explicit_2611() {
+        let config = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let repo = setup_test_repo();
+        let worktree = worktree_with(repo.path(), "unrelated-preview", false);
+        let tree = git_cmd(repo.path())
+            .args(["rev-parse", "HEAD^{tree}"])
+            .run()
+            .unwrap()
+            .stdout;
+        let root = git_cmd(repo.path())
+            .args(["commit-tree", tree.trim(), "-m", "independent root"])
+            .run()
+            .unwrap()
+            .stdout;
+        git_cmd(&worktree)
+            .args(["reset", "--hard", root.trim()])
+            .run()
+            .unwrap();
+        let state = Arc::new(crate::state::tests_support::make_test_app_state());
+        let preview = inspect_worktree_removal(&state, repo.path(), "unrelated-preview");
+        assert_eq!(
+            preview.lifecycle.commit_status,
+            WorkspaceCommitStatus::UnrelatedHistory
+        );
+        assert!(preview.lifecycle.error.is_none(), "{preview:?}");
+        assert!(!preview.archive_checklist.can_delete, "{preview:?}");
+        assert!(
+            preview
+                .warnings
+                .iter()
+                .any(|warning| warning.contains("unrelated history")
+                    && warning.contains("no common ancestor")),
+            "{preview:?}"
         );
     }
 

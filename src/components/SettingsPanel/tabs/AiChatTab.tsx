@@ -4,11 +4,13 @@ import { type EgoCliClient, egoCli } from "../../../services/egoCli";
 import { startEgoLogin } from "../../../services/egoLogin";
 import { settingsRefresh } from "../../../services/settingsRefresh";
 import { appLogger } from "../../../stores/appLogger";
+import { settingsStore } from "../../../stores/settings";
 import { toastsStore } from "../../../stores/toasts";
 import type { EgoCliError, EgoCredential, EgoProviders } from "../../../types/ego";
 import { asEgoCliError } from "../../../types/ego";
 import { Button } from "../../ui/Button";
 import { Select } from "../../ui/Select";
+import { Textarea } from "../../ui/Textarea";
 import s from "../Settings.module.css";
 import { ListRow, SectionCard, SettingPageHeader, SettingRow } from "../SettingsPrimitives";
 import layout from "./AiChatTab.module.css";
@@ -18,8 +20,8 @@ import { EgoPerimeterSection } from "./EgoPerimeterSection";
  * Which model ego runs by default, and whether each provider can be used.
  *
  * The ego executable itself is a TUICommander setting and lives on General,
- * next to MDKB. Everything on this tab comes from ego's own command line and
- * goes back to it. TUICommander stores no API key, keeps nothing in its
+ * next to MDKB. Provider and perimeter settings come from ego's own command line and
+ * go back to it. TUICommander stores no API key, keeps nothing in its
  * keyring, and speaks to no provider: the one network call anywhere near this
  * tab is `ego models --refresh`, which ego makes, and only when a person
  * presses Refresh.
@@ -45,6 +47,7 @@ export const AiChatTab: Component<{
 	const [data, setData] = createSignal<EgoProviders | null>(null);
 	const [error, setError] = createSignal<EgoCliError | null>(null);
 	const [busy, setBusy] = createSignal(false);
+	const [promptError, setPromptError] = createSignal(false);
 	const [loginError, setLoginError] = createSignal<string | null>(null);
 
 	/** Run one ego call, keeping whatever it printed when it fails. */
@@ -122,6 +125,13 @@ export const AiChatTab: Component<{
 				breadcrumb="AI / AI Chat"
 			/>
 			<SectionCard title="Agent and model">
+				<Show when={data()?.diagnostic}>
+					{(message) => (
+						<p class={s.warning} role="status">
+							{message()}
+						</p>
+					)}
+				</Show>
 				<Switch>
 					{/* No ego binary is named at all. The fix is on another page, so say
 					    which one rather than leaving an empty list on screen. */}
@@ -284,6 +294,32 @@ export const AiChatTab: Component<{
 						</For>
 					</details>
 				</Show>
+			</SectionCard>
+			<SectionCard title="Chat behavior">
+				<SettingRow
+					label="Master prompt"
+					hint="Extra instructions for new AI Chat conversations. Added to the existing TUIC rules. Leave empty for no extra instructions. Maximum 8192 UTF-8 bytes."
+				>
+					{(id, descriptionId) => (
+						<div>
+							<Textarea
+								id={id}
+								data-setting-id="app.ai_chat_master_prompt"
+								aria-describedby={descriptionId()}
+								aria-invalid={promptError()}
+								rows={6}
+								value={settingsStore.state.aiChatMasterPrompt}
+								onInput={(event) => setPromptError(!settingsStore.setAiChatMasterPrompt(event.currentTarget.value))}
+							/>
+							<Show when={promptError()}>
+								<p class={s.warning} role="alert">
+									Master prompt must be at most 8192 UTF-8 bytes and must not contain NUL characters. This edit was not
+									saved.
+								</p>
+							</Show>
+						</div>
+					)}
+				</SettingRow>
 			</SectionCard>
 			<EgoPerimeterSection />
 		</div>
