@@ -298,7 +298,7 @@ mod tests {
                 .as_array()
                 .unwrap()
         );
-        assert!(trust_edits(&selected(4)).is_empty());
+        assert_eq!(trust_edits(&selected(4)), [] as [serde_json::Value; 0]);
     }
 
     #[test]
