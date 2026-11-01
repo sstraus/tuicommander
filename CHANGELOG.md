@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Fixed
 
 - Show a neutral API key usage label for Claude sessions authenticated with an API key instead of a stale OAuth token error, including browser/PWA and remote-owned desktop sessions over HTTP (#2672-78a1).
+- Draw one border-hugging focus band on shared selects and bordered buttons, and remove the empty trailing divider in the Edit Prompt dialog (#2670-08c7).
 
 - Keep mobile sessions usable when the host returns non-array queued prompt data; treat it as an empty list without changing request error handling (#2639-173b).
 

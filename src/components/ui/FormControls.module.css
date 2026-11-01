@@ -47,15 +47,15 @@
 	outline-offset: 2px;
 	border-color: var(--accent);
 }
-/* Text-entry focus is one continuous band, not a second offset ring. */
-:is(input, textarea).control:focus-visible {
+/* Bordered controls use one continuous band, not a second offset ring. */
+:is(input, select, textarea, button:not(.ghost, .hint, .circleButton)).control:focus-visible {
 	outline: none;
 	outline-offset: 0;
 	box-shadow: inset 0 0 0 1px var(--accent);
 }
 /* Forced-colour modes suppress shadows; keep a border-hugging system ring. */
 @media (forced-colors: active) {
-	:is(input, textarea).control:focus-visible {
+	:is(input, select, textarea, button:not(.ghost, .hint, .circleButton)).control:focus-visible {
 		outline: 2px solid Highlight;
 		outline-offset: 0;
 	}

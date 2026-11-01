@@ -518,16 +518,16 @@ export const SmartPromptEditor: Component<{
 			</SettingRow>
 
 			{/* Actions */}
-			<div class={sp.editorActions}>
-				<Show when={props.onReset && isBuiltIn() && isOverridden()}>
+			<Show when={props.onReset && isBuiltIn() && isOverridden()}>
+				<div class={sp.editorActions}>
 					<Button
 						data-non-setting="Reset, remove or create a stable Smart Prompt through its owner"
 						onClick={props.onReset}
 					>
 						Reset to Default
 					</Button>
-				</Show>
-			</div>
+				</div>
+			</Show>
 		</SectionCard>
 	);
 };
