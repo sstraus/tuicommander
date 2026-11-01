@@ -355,6 +355,12 @@ mod tests {
             json!({"armed":true,"reloadSeq":2})
         );
         server.await.unwrap();
+        // Catches: deploying the worker without its capture encoder dependency.
+        assert!(
+            super::super::native_assets::ASSETS
+                .iter()
+                .any(|(name, _)| *name == "captureEncoding.js")
+        );
         assert!(
             super::super::native_assets::ASSETS
                 .iter()

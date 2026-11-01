@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Let agents choose WebP (default quality 25) or PNG per Design Mode screenshot, with optional quality and long-edge downsize. Return image media type, format, quality and byte size; selected-element crops use WebP (#2617-69a6).
+
 - Add AI Chat to the hands-free voice target picker, including detached chats. Spoken prompts keep the pinned-or-viewed repository hint and use the existing ACP prompt queue, replies use the bound voice tool, and closing or switching the chat releases the binding (native story 01a19335-a29d-7376-ac67-9bf64639edee).
 
 - AI Chat master prompt in Settings: additive instructions for new conversations, with an 8192-byte limit.

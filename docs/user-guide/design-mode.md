@@ -29,7 +29,7 @@ When errors exist, the sidebar shows an **Errors** section with a count badge. T
 
 The native host pins the extension identity, repository and exact TUIC instance. It relays a bounded set of operations over that instance’s local socket or named pipe. Reopen Design Mode after restarting TUIC to refresh its binding. Connection failures show the endpoint and reason. An older running backend can list agents but returns an explicit restart error for the new feedback/discovery route.
 
-Cards retain selectors, DOM paths, snippets, selected styles, CSS tokens and available framework source hints. CSS tokens include references in shorthand declarations such as `padding: var(--gap)`, inline styles and adopted sheets in open shadow roots; unrelated theme tokens are excluded. Rust bounds and sanitises page evidence, redacts recognised secrets, strips terminal controls and fences it as untrusted content. Captured PNG crops are saved in `design-grabs` and sent as readable `[image: path]` references. Screenshot capture is optional: permission errors and oversized crops retain DOM evidence. Cross-origin frame picks currently retain DOM evidence without frame screenshots.
+Cards retain selectors, DOM paths, snippets, selected styles, CSS tokens and available framework source hints. CSS tokens include references in shorthand declarations such as `padding: var(--gap)`, inline styles and adopted sheets in open shadow roots; unrelated theme tokens are excluded. Rust bounds and sanitises page evidence, redacts recognised secrets, strips terminal controls and fences it as untrusted content. Captured WebP crops are saved in `design-grabs` and sent as readable `[image: path]` references. Screenshot capture is optional: permission errors and oversized crops retain DOM evidence. Cross-origin frame picks currently retain DOM evidence without frame screenshots.
 
 Discovery lists only the dev servers of the agent selected in the side panel (initially the session that launched Design Mode; the list refreshes when you pick another agent): the configured **Dev Server URL**, live listeners attributed by process directory or an absolute command path to that session’s worktree, and URLs that session printed in its own terminal. Other worktrees of the repository and other sessions are not listed. Live listeners must answer HTTP GET `/` successfully with a `text/html` Content-Type within 750 ms. TUIC itself is excluded. Probes do not follow redirects; the scan has a 3-second budget. Fresh PTY URLs are accepted only when their port has a verified live owned HTML listener. Multiple candidates are listed instead of automatically choosing one. Windows native host registration currently targets Edge and awaits Chrome/multi-profile validation. Windows discovery offers configured URLs and the address bar; listener attribution is not claimed there. Repo-local `.tuic.json` cannot silently supply executable scripts.
 
@@ -48,8 +48,19 @@ If the sidebar icon is hidden, open the Extensions (puzzle) menu and pin **TUICo
 Agents can request `design_navigate`, `design_reload`, `design_screenshot`,
 `design_errors`, and `design_eval` through `ui`. The native port returns a request-id-matched reply, with a ten-second
 timeout. Start selects the launched page after an extension acknowledgment, without requiring the sidebar. Opening the sidebar on another page selects that page for later commands. Screenshot fails
-if that tab is not visible; it never captures a different active tab. PNG files are
-stored in the instance's `design-grabs` directory.
+if that tab is not visible; it never captures a different active tab. Captures are
+stored in the instance's `design-grabs` directory with the correct `.webp` or `.png` suffix.
+
+The agent chooses the encoding on each `ui action=design_screenshot` call:
+- `format`: `webp` (default) for text and layout, or `png` for pixel-exact detail.
+- `quality`: WebP quality from 1 to 100, default 25. Use 50 or more for small glyphs and icons. PNG ignores quality.
+- `max_long_edge`: optional positive pixel limit. The extension downsizes before encoding and never upscales.
+
+The response includes the image, path, format, quality (`null` for PNG), byte size
+and media type. There is no user setting. Token cost follows pixel dimensions,
+not format or byte size: Claude uses about 1,296 tokens per megapixel, capped at
+1,568 standard / 4,784 high-res. Selected-element crops use WebP quality 25 and
+keep their existing 800 × 600 pixel bounds.
 
 For screenshots without repeated browser-action gestures, click **Let agents capture any site**
 in the extension sidebar, then accept Chrome's optional all-sites permission prompt.

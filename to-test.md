@@ -3284,3 +3284,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 
 - [ ] After the next manual backend restart, launch a child agent and confirm its progress call returns parent mail guidance without a user notice or waiting badge; confirm root progress still notifies. Rust changes require a manual `make dev` restart or release rebuild; do not restart an active session for this check. (#2597-76c6)
 - [ ] Voice Settings: compare Speech assets and Spoken replies in Paper and Commander; check aligned rows, model/voice dropdowns and named asset actions. Confirm existing download, preview and recording actions still use the same state (#2608-f1c4).
+
+- [ ] After a manual backend restart and extension reinstall, use Design Mode `ui action=design_screenshot` with default WebP, PNG and `quality:55,max_long_edge:800`. Confirm readable images, matching file suffix/media type and reported metadata. Selected-element crops use WebP; launch-tab readiness must remain unchanged (#2617-69a6).

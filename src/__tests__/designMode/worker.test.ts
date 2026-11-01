@@ -44,7 +44,27 @@ async function boot(
 	const store: Record<string, unknown> = {};
 	const sessionStore: Record<string, unknown> = {};
 	const tabsUpdate = vi.fn(async () => {});
-	vi.stubGlobal("fetch", async () => ({ ok: true, json: async () => ({ repoPath: "/repo", sessionId: "A" }) }));
+	vi.stubGlobal("fetch", async () => ({
+		ok: true,
+		json: async () => ({ repoPath: "/repo", sessionId: "A" }),
+		blob: async () => new Blob(),
+	}));
+	vi.stubGlobal("createImageBitmap", async () => ({ width: 100, height: 50, close: () => {} }));
+	vi.stubGlobal(
+		"OffscreenCanvas",
+		class {
+			constructor(
+				public width: number,
+				public height: number,
+			) {}
+			getContext() {
+				return { drawImage: () => {} };
+			}
+			async convertToBlob({ type }: { type: string }) {
+				return new Blob([new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])], { type });
+			}
+		},
+	);
 	vi.stubGlobal("chrome", {
 		runtime: {
 			getURL: (p: string) => `chrome-extension://ext/${p}`,
@@ -131,7 +151,7 @@ describe("Design Mode worker dev-server wiring", () => {
 		offeredCommands.push(
 			{ requestId: "ready", sessionId: "A", action: "ready", args: { url: "http://localhost:5173/" } },
 			{ requestId: "eval", sessionId: "A", action: "eval", args: { script: "1+1" } },
-			{ requestId: "screenshot", sessionId: "A", action: "screenshot" },
+			{ requestId: "screenshot", sessionId: "A", action: "screenshot", args: { format: "png" } },
 			{ requestId: "errors", sessionId: "A", action: "errors" },
 		);
 		await boot();
@@ -145,7 +165,15 @@ describe("Design Mode worker dev-server wiring", () => {
 		});
 		expect(replies[2].reply).toEqual({
 			ok: true,
-			result: { image: "data:image/png;base64,iVBORw0KGgo=", url: "http://localhost:5173/" },
+			result: {
+				image: "data:image/png;base64,iVBORw0KGgo=",
+				url: "http://localhost:5173/",
+				format: "png",
+				quality: null,
+				bytes: 8,
+				width: 100,
+				height: 50,
+			},
 		});
 		expect(replies[3].reply).toEqual({ ok: true, result: { errors: [] } });
 	});

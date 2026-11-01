@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 // @ts-expect-error plain MV3 module
 import { browserCommand } from "../../../browser-extension/design-mode/browserCommands.js";
 
@@ -16,6 +16,72 @@ function browser(origins: string[] = []) {
 	};
 }
 describe("native browser command boundary", () => {
+	afterEach(() => vi.unstubAllGlobals());
+	// Catches: default PNG, ignored quality/downsize, upscaling, or re-encoding PNG lossily.
+	it("encodes each screenshot with the requested format, quality and pixel bounds", async () => {
+		const draw = vi.fn();
+		const encode = vi.fn(async ({ type }: { type: string }) => new Blob([new Uint8Array([1, 2, 3])], { type }));
+		const dimensions: number[][] = [];
+		vi.stubGlobal("fetch", async () => ({ blob: async () => new Blob() }));
+		vi.stubGlobal("createImageBitmap", async () => ({ width: 1600, height: 900, close: () => {} }));
+		vi.stubGlobal(
+			"OffscreenCanvas",
+			class {
+				constructor(
+					public width: number,
+					public height: number,
+				) {
+					dimensions.push([width, height]);
+				}
+				getContext() {
+					return { drawImage: draw };
+				}
+				convertToBlob = encode;
+			},
+		);
+		const defaults = await browserCommand({ action: "screenshot" }, browser(), 7);
+		expect(defaults).toMatchObject({
+			format: "webp",
+			quality: 25,
+			bytes: 3,
+			width: 1600,
+			height: 900,
+			image: "data:image/webp;base64,AQID",
+		});
+		expect(encode).toHaveBeenLastCalledWith({ type: "image/webp", quality: 0.25 });
+		const smaller = await browserCommand(
+			{ action: "screenshot", args: { quality: 55, max_long_edge: 800 } },
+			browser(),
+			7,
+		);
+		expect(smaller).toMatchObject({ quality: 55, width: 800, height: 450 });
+		expect(encode).toHaveBeenLastCalledWith({ type: "image/webp", quality: 0.55 });
+		expect(draw.mock.calls[1].slice(1)).toEqual([0, 0, 1600, 900, 0, 0, 800, 450]);
+		const png = await browserCommand(
+			{ action: "screenshot", args: { format: "png", max_long_edge: 2000 } },
+			browser(),
+			7,
+		);
+		expect(png).toMatchObject({ format: "png", quality: null, image: "data:image/png;base64,AQID" });
+		expect(encode).toHaveBeenLastCalledWith({ type: "image/png" });
+		expect(dimensions).toEqual([
+			[1600, 900],
+			[800, 450],
+			[1600, 900],
+		]);
+		for (const args of [
+			{ format: "jpeg" },
+			{ quality: 0 },
+			{ quality: 101 },
+			{ quality: 1.5 },
+			{ max_long_edge: 0 },
+			{ max_long_edge: 1.5 },
+		]) {
+			const chrome = browser();
+			await expect(browserCommand({ action: "screenshot", args }, chrome, 7)).rejects.toThrow(/invalid_/);
+			expect(chrome.tabs.captureVisibleTab).not.toHaveBeenCalled();
+		}
+	});
 	it("refuses remote navigation without a grant and accepts a granted host", async () => {
 		// Catches: optional host permissions ignored or silently bypassed.
 		const chrome = browser();
