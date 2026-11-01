@@ -35,7 +35,7 @@ describe.skipIf(!url)("browser-rendered shared control focus", () => {
 		expect.soft(sample.shadow, sample.name).toContain("inset");
 		expect.soft(sample.shadow, sample.name).toContain("0px 0px 0px 1px");
 		expect.soft(sample.shadow, sample.name).toContain(sample.accent);
-		expect.soft(sample.border, sample.name).toBe(sample.name === "Invalid description" ? sample.error : sample.accent);
+		expect.soft(sample.border, sample.name).toBe(sample.name.startsWith("Invalid") ? sample.error : sample.accent);
 	};
 
 	it("hugs mounted Input and Textarea borders — catches offset outlines doubling text-field focus", () => {
@@ -54,6 +54,13 @@ describe.skipIf(!url)("browser-rendered shared control focus", () => {
 			"Workflow title",
 			"Workflow description",
 			"Comment popover",
+			"Compact choice",
+			"Invalid choice",
+			"Primary action",
+			"Ghost action",
+			"Hint action",
+			"Circular action",
+			"Execution",
 		]);
 		for (const sample of [...samples.slice(0, 4), samples[13]]) expectTextFocus(sample);
 	});
@@ -62,8 +69,21 @@ describe.skipIf(!url)("browser-rendered shared control focus", () => {
 		for (const sample of samples.slice(9, 13)) expectTextFocus(sample);
 	});
 
+	it("hugs Select and bordered Button borders — catches detached outlines beside accent borders", () => {
+		for (const sample of [samples[4], samples[5], ...samples.slice(14, 17), samples[20]]) expectTextFocus(sample);
+	});
+
+	it("omits the final Edit Prompt divider — catches separators below Shortcut and empty reset actions", () => {
+		const directory = process.env.TUIC_FOCUS_EVIDENCE_DIR!;
+		const rows = JSON.parse(readFileSync(join(directory, "prompt-rows.json"), "utf8"));
+		expect(rows.lastLabel).toBe("Shortcut");
+		expect.soft(rows.lastBorder).toBe("0px");
+		expect.soft(rows.previousBorder).toBe("1px");
+		expect.soft(rows.trailingBorders).toEqual([]);
+	});
+
 	it("retains non-text keyboard rings — catches a broad focus reset hiding action focus", () => {
-		for (const sample of samples.slice(4, 9)) {
+		for (const sample of [...samples.slice(6, 9), ...samples.slice(17, 20)]) {
 			expect.soft(sample.focused, sample.name).toBe(true);
 			expect.soft(sample.outline, sample.name).toBe("solid");
 			expect.soft(sample.offset, sample.name).toBe("2px");

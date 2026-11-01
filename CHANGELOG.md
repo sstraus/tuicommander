@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Draw one border-hugging focus band on shared selects and bordered buttons, and remove the empty trailing divider in the Edit Prompt dialog (#2670-08c7).
+
 - Keep mobile sessions usable when the host returns non-array queued prompt data; treat it as an empty list without changing request error handling (#2639-173b).
 
 ## [2.0.0] - 2026-11-01
