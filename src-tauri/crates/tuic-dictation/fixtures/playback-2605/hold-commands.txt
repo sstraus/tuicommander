@@ -1,0 +1,30 @@
+Source HEAD before evidence: 4dfd3f99999798b7f0190104a5540eba9cd982df
+CWD: /Users/stefano.straus/Gits/personal/tuicommander__wt/fix-voice-tts-stutter
+No Git mutation commands, production edits, app/microphone launch, or --load runs.
+
+Environment inspection:
+PATH resolves cargo to /Users/stefano.straus/Library/Application Support/mbx/bin/cargo
+Inherited CARGO_TARGET_DIR empty. src-tauri/target already symlinks into Gits/.mbx/targets/v1.
+Read orchestrator/tools/build/build-slot.sh and tools/agents/tuic-bg.sh before build.
+
+First build attempt used TMPDIR/TMP/TEMP=$PWD/.tmp and TUIC_TEST_TMP_ROOT=$PWD/.tmp.
+It failed before Cargo compilation with:
+mbx[error]: failed to bind cache session listener at /Users/stefano.straus/Gits/personal/tuicommander__wt/fix-voice-tts-stutter/.tmp/mbx-session-bzJ6xl/cache-agent.sock: path must be shorter than SUN_LEN: path must be shorter than SUN_LEN
+
+Successful build (same authorized slot + mbx; only socket temp prefix shortened; no new target directory):
+env TMPDIR="$HOME/Gits/.tmp" TMP="$HOME/Gits/.tmp" TEMP="$HOME/Gits/.tmp" TUIC_TEST_TMP_ROOT="$PWD/.tmp" /Users/stefano.straus/Gits/personal/orchestrator/tools/build/build-slot.sh cargo build --manifest-path src-tauri/Cargo.toml -p tuic-dictation --example speech_gap_probe --message-format=json-render-diagnostics
+Exit 0. hold-build.stderr omits transient progress lines; hold-build.jsonl retains example artifact, diagnostics, and build-finished only.
+
+Native executions, sequential, each with:
+env TMPDIR="$PWD/.tmp" TMP="$PWD/.tmp" TEMP="$PWD/.tmp" TUIC_TEST_TMP_ROOT="$PWD/.tmp"
+1. src-tauri/target/debug/examples/speech_gap_probe pocket "$HOME/Library/Application Support/com.tuic.commander/models/speech/italian" --capture-hold
+   stdout/stderr -> hold-pocket.txt; shell appends exit_code
+2. src-tauri/target/debug/examples/speech_gap_probe edge --capture-hold
+   stdout/stderr -> hold-edge.txt; shell appends exit_code
+3. src-tauri/target/debug/examples/speech_gap_probe pocket "$HOME/Library/Application Support/com.tuic.commander/models/speech/italian"
+   stdout/stderr -> hold-pocket-control.txt; shell appends exit_code
+
+The default-device output is deliberately muted by the source iterator. Real synthesis was not replaced. Near-end PCM and all recognition responses ARE synthetic.
+
+Final probe refinement: the >=1000ms stable-plateau assertion now uses Instant elapsed wall time rather than tick-index distance.
+Rebuilt using the identical successful build command above (hold-final-build.stderr/jsonl), then repeated native command 1 with output hold-final-pocket.txt. Exit 0; all three Finished; stable plateau and resumed consumption both true.

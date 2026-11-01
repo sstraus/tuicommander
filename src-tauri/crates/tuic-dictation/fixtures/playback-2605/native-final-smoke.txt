@@ -1,0 +1,15 @@
+engine=pocket load_workers=0 direct_device_output=true
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+96.457ms synthesis-start id=0
+466.311ms synthesis-end id=0 duration_ms=1040.000
+466.504ms append id=0 prior_speaking=false
+466.523ms synthesis-start id=1
+725.287ms synthesis-end id=1 duration_ms=2320.000
+725.992ms append id=1 prior_speaking=true
+726.019ms synthesis-start id=2
+1026.227ms synthesis-end id=2 duration_ms=2800.000
+1026.747ms append id=2 prior_speaking=true
+6638.820ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink

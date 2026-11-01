@@ -3996,7 +3996,7 @@ mod tests {
         assert!(
             matches!(
                 client.try_recv().expect("the client was told"),
-                browser::Downlink::Speak(_)
+                browser::Downlink::Speak { .. }
             ),
             "the reply went to the browser"
         );
