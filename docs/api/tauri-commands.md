@@ -96,7 +96,8 @@ grid-cell coordinates. Both match the stored sequence without normalization.
 | `write_pty_parts` | `session_id, parts: Vec<String>` | `()` | Write several inputs under one writer lock. The parts stay separate on purpose: post-write bookkeeping runs once per part, and it is not a function of the joined bytes (a lone `/` opens slash mode, an exact option key answers a choice prompt) |
 | `enqueue_agent_command` | `session_id, text, idempotency_key?, expected_draft?` | `{ accepted, typed, queued }` | Queue for the next idle window; optional `expectedDraft` validates and clears the live composer first (errors after clearing are uncertain; do not retry automatically); optional key (1–128 UTF-8 bytes, wire name `idempotencyKey`) recognizes the last 128 accepted keys per live PTY without resubmitting; acceptance is not a model-turn receipt |
 | `clear_queued_agent_commands` | `session_id` | `usize` | Drop every queued command; returns how many |
-| `list_queued_agent_commands` | `session_id` | `[{ id, text }]` | The queued user commands in delivery order; peer messages excluded |
+| `list_queued_agent_commands` | `session_id` | `[{ id, text, kind }]` | Every parked entry in delivery order, including notices and initial prompts |
+| `send_queued_agent_command_now` | `session_id, command_id` | `bool` | Claim one pending item and send now: ego native steer or Claude/Codex interrupt then confirmed idle; false when already claimed; failures never retry ambiguous writes |
 | `remove_queued_agent_command` | `session_id, command_id` | `bool` | Drop one queued command by id; false when it already drained |
 | `resize_pty` | `session_id, rows, cols` | `()` | Resize PTY; alternate-screen resizes preserve primary-log continuity |
 | `pause_pty` | `session_id` | `()` | Pause reader thread |

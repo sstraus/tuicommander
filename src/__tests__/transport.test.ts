@@ -4437,3 +4437,11 @@ it("maps archive retention to the owning repository with no caller threshold", (
 		body: { repoPath: "/repo" },
 	});
 });
+
+// Catches: browser Send now reaching no route or passing receipt text instead of a stable id.
+it("maps a queue claim to the send-now HTTP route", () => {
+	expect(mapCommandToHttp("send_queued_agent_command_now", { sessionId: "pending", commandId: 17 })).toEqual({
+		method: "POST",
+		path: "/sessions/pending/queue/17/send-now",
+	});
+});

@@ -146,82 +146,7 @@ pub(in crate::workflows::run) async fn drive_effect(
             .iter()
             .find(|f| f.state == super::super::parallel::ForkState::Cancelling)
         {
-            require_known_check_owner(graph, &fork.id, fork.generation)?;
-            // Cancellation is already durable and reports already fenced. Scope the
-            // process registry to this generation, so a late old spawn cannot pass.
-            let token = super::super::parallel::BranchToken {
-                fork_id: fork.id.clone(),
-                generation: fork.generation,
-                branch_id: String::new(),
-            };
-            store.cancel_owned_checks(&super::super::parallel::check_owner(
-                &run.id, &graph.id, &token,
-            ));
-            for nested in graph.forks.iter().filter(|f| {
-                f.parent
-                    .iter()
-                    .any(|t| t.fork_id == fork.id && t.generation == fork.generation)
-            }) {
-                let token = super::super::parallel::BranchToken {
-                    fork_id: nested.id.clone(),
-                    generation: nested.generation,
-                    branch_id: String::new(),
-                };
-                store.cancel_owned_checks(&super::super::parallel::check_owner(
-                    &run.id, &graph.id, &token,
-                ));
-            }
-            for activation in graph.activations.iter().filter(|a| {
-                a.tokens
-                    .iter()
-                    .any(|t| t.fork_id == fork.id && t.generation == fork.generation)
-            }) {
-                let Some(attempt) = activation_attempt(run, graph, activation) else {
-                    continue;
-                };
-                if run.effects.iter().any(|effect| {
-                    effect.key == format!("spawn:{}", attempt.id)
-                        && matches!(effect.state, EffectState::Intended | EffectState::Uncertain)
-                        && attempt.agent.is_none()
-                }) {
-                    return Err(
-                        "Superseded spawn outcome is unknown; reconcile before repair".into(),
-                    );
-                }
-                if let Some(binding) = &attempt.agent {
-                    if binding.acp.is_some() {
-                        crate::mcp_http::launch_transaction::stop_superseded_workflow_agent(
-                            state, &run.id, binding,
-                        )
-                        .await?;
-                    } else {
-                        crate::pty::kill_pty_core(state, &binding.session_id);
-                        if !state
-                            .session_maps
-                            .exit_codes
-                            .contains_key(&binding.session_id)
-                        {
-                            return Err(
-                                "Superseded agent stop is unproven; repair remains fenced".into()
-                            );
-                        }
-                    }
-                }
-            }
-            let stopped = store.command_expected(
-                &run.id,
-                &format!("fork-stopped:{}:{}", fork.id, fork.generation),
-                run.sequence,
-                RunCommand::Graph {
-                    transition: GraphTransition::ForkStopped {
-                        execution_id: graph.id.clone(),
-                        fork_id: fork.id.clone(),
-                        generation: fork.generation,
-                    },
-                },
-            )?;
-            emit_run_changed(state, &run.project, &run.id, stopped.sequence);
-            return Ok(true);
+            return stop_cancelled_fork(state, store, run, graph, fork).await;
         }
         for activation in graph
             .activations
@@ -235,142 +160,9 @@ pub(in crate::workflows::run) async fn drive_effect(
                 .iter()
                 .find(|n| n.id == activation.node_id)
                 .ok_or("activation node missing")?;
-            match &node.kind {
+            let progressed = match &node.kind {
                 NodeKind::RunCommand { command } | NodeKind::Tool { command, .. } => {
-                    let identity = command_identity(run, graph, activation);
-                    let effect = if let Some(effect) = run
-                        .effects
-                        .iter()
-                        .find(|effect| effect.key == identity.effect)
-                    {
-                        effect.clone()
-                    } else {
-                        let receipt = store.command(
-                            &run.id,
-                            &format!("reserve:{}", identity.effect),
-                            super::super::RunCommand::ReserveEffect {
-                                key: identity.effect.clone(),
-                                kind: EffectKind::RunCommand,
-                            },
-                        )?;
-                        receipt
-                            .snapshot
-                            .effects
-                            .iter()
-                            .find(|effect| effect.key == identity.effect)
-                            .ok_or("command intent missing")?
-                            .clone()
-                    };
-                    if let Some(receipt) = store.command_journal().receipt(&identity.effect)? {
-                        if effect.state == EffectState::Intended {
-                            store.command(
-                                &run.id,
-                                &format!("settle:{}", identity.effect),
-                                super::super::RunCommand::MarkEffect {
-                                    effect_id: effect.id,
-                                    succeeded: receipt.succeeded,
-                                },
-                            )?;
-                            return Ok(true);
-                        }
-                        continue;
-                    }
-                    if effect.state != EffectState::Intended {
-                        return Err("command intent needs stop-proof reconciliation; never replay a resolved or uncertain effect".into());
-                    }
-                    let workspace = run
-                        .stories
-                        .iter()
-                        .find(|s| s.story_id == graph.target_id)
-                        .and_then(|s| s.worktree_path.clone());
-                    let workspace = if let Some(workspace) = workspace {
-                        workspace
-                    } else {
-                        if graph.target_id == run.plan_id {
-                            // DEFERRED (2026-10-30) — WF04 owns durable plan workspace bindings.
-                            // Never guess a canonical checkout or derive one from a PTY identity.
-                            return Err(
-                                "typed plan command needs an assigned plan artifact/workspace"
-                                    .into(),
-                            );
-                        }
-                        let key = format!("command-workspace:{}:{}", run.id, graph.id);
-                        let snapshot = store.snapshot(&run.id)?;
-                        if snapshot.effects.iter().any(|existing| existing.key == key) {
-                            return Err(
-                                "workspace preparation already intended; reconcile before retry"
-                                    .into(),
-                            );
-                        }
-                        let reserved = store.command(
-                            &run.id,
-                            &format!("reserve:{key}"),
-                            super::super::RunCommand::ReserveEffect {
-                                key: key.clone(),
-                                kind: EffectKind::PrepareWorkspace,
-                            },
-                        )?;
-                        let workspace_effect = reserved
-                            .snapshot
-                            .effects
-                            .iter()
-                            .find(|effect| effect.key == key)
-                            .ok_or("workspace intent missing")?;
-                        let branch = format!("workflow/{}-{}", run.id, graph.target_id);
-                        let workspace =
-                            crate::mcp_http::mcp_transport::create_daemon_workflow_worktree(
-                                state,
-                                &run.project,
-                                &branch,
-                                None,
-                            )
-                            .await?;
-                        store.command(
-                            &run.id,
-                            &format!("assign:{key}"),
-                            super::super::RunCommand::AssignWorktree {
-                                story_id: graph.target_id.clone(),
-                                path: workspace.path.clone(),
-                            },
-                        )?;
-                        store.command(
-                            &run.id,
-                            &format!("settle:{key}"),
-                            super::super::RunCommand::MarkEffect {
-                                effect_id: workspace_effect.id.clone(),
-                                succeeded: true,
-                            },
-                        )?;
-                        workspace.path
-                    };
-                    let command = command.clone();
-                    let workspace = std::path::PathBuf::from(workspace);
-                    let journal = store.command_journal();
-                    let db = store.database_path().to_owned();
-                    tokio::task::spawn_blocking(move || {
-                        journal.execute(
-                            &command,
-                            &identity,
-                            &workspace,
-                            &db,
-                            &crate::workflows::command::executor::CommandAdapters::installed(),
-                        )
-                    })
-                    .await
-                    .map_err(|_| "typed command task interrupted")??;
-                    let receipt = store
-                        .command_journal()
-                        .receipt(&command_identity(run, graph, activation).effect)?
-                        .ok_or("command receipt missing after execution")?;
-                    store.command(
-                        &run.id,
-                        &format!("settle:{}", receipt.identity.effect),
-                        super::super::RunCommand::MarkEffect {
-                            effect_id: effect.id,
-                            succeeded: receipt.succeeded,
-                        },
-                    )?;
-                    return Ok(true);
+                    drive_command(state, store, run, graph, activation, command).await?
                 }
                 NodeKind::CreateStories if run.event_contract_version >= 3 => {
                     let Some(batch) = super::super::proposals::batch_for(run, graph, activation)
@@ -382,214 +174,10 @@ pub(in crate::workflows::run) async fn drive_effect(
                         emit_run_changed(state, &run.project, &run.id, current.sequence);
                         return Ok(true);
                     }
+                    false
                 }
                 NodeKind::Agent { .. } | NodeKind::CreateStories => {
-                    let agent_id = agent_node_id(graph, activation)?;
-                    let NodeKind::Agent {
-                        role, execution, ..
-                    } = &graph
-                        .definition
-                        .graph
-                        .nodes
-                        .iter()
-                        .find(|n| n.id == agent_id)
-                        .ok_or("agent node missing")?
-                        .kind
-                    else {
-                        return Err("agent node missing".into());
-                    };
-                    let Some(attempt) = activation_attempt(run, graph, activation) else {
-                        continue;
-                    };
-                    if attempt.state != super::super::AttemptState::Running {
-                        continue;
-                    }
-                    if let Some(binding) = &attempt.agent {
-                        if attempt.continuation.is_some()
-                            && continuation::deliver(state, store, run, attempt).await?
-                        {
-                            return Ok(true);
-                        }
-                        if binding.acp.is_some() {
-                            let state = state.clone();
-                            let run_id = run.id.clone();
-                            let attempt_id = attempt.id.clone();
-                            let progressed = tokio::task::spawn_blocking(move || {
-                                crate::mcp_http::mcp_transport::resume_daemon_workflow_delivery(
-                                    &state,
-                                    &run_id,
-                                    &attempt_id,
-                                )
-                            })
-                            .await
-                            .map_err(|e| format!("ACP delivery task: {e}"))??;
-                            if progressed {
-                                return Ok(true);
-                            }
-                        }
-                        continue;
-                    }
-                    if *role == AgentRole::Implementer {
-                        let status = store.begin_graph_story(
-                            run,
-                            &graph.target_id,
-                            &format!("workflow:{}", attempt.id),
-                        )?;
-                        if status == crate::stories::StoryStatus::Done {
-                            // Approval can win after the deterministic turn but before this effect.
-                            let settled = super::drive_turn(store, &run.id)?;
-                            emit_run_changed(state, &run.project, &run.id, settled.sequence);
-                            return Ok(settled.sequence != run.sequence);
-                        }
-                        if status != crate::stories::StoryStatus::InProgress {
-                            let cause = if status == crate::stories::StoryStatus::Qa {
-                                format!("Story {} awaits manual QA", graph.target_id)
-                            } else {
-                                format!(
-                                    "Story {} cannot start implementation in {status:?}",
-                                    graph.target_id
-                                )
-                            };
-                            let receipt = store.command_expected(
-                                &run.id,
-                                &format!("story-not-startable:{}:{}", attempt.id, run.sequence),
-                                run.sequence,
-                                RunCommand::PauseFor { cause },
-                            )?;
-                            emit_run_changed(state, &run.project, &run.id, receipt.sequence);
-                            return Ok(true);
-                        }
-                    }
-                    let key = format!("spawn:{}", attempt.id);
-                    if run.effects.iter().any(|e| e.key == key) {
-                        return Err(
-                            "Agent spawn intent needs reconciliation; it will not be retried"
-                                .into(),
-                        );
-                    }
-                    let pinned_execution = if run.event_contract_version >= 3 {
-                        Some(
-                            crate::workflows::pinned_agent_route(run, attempt)?
-                                .1
-                                .route
-                                .execution
-                                .clone(),
-                        )
-                    } else {
-                        execution.clone()
-                    };
-                    let profile = match &pinned_execution {
-                        Some(crate::workflows::AgentExecution::Acp { .. }) => "ego".to_owned(),
-                        Some(crate::workflows::AgentExecution::Pty { profile }) => {
-                            crate::config::load_agents_config()
-                                .require_named_run_config(profile)?;
-                            profile.clone()
-                        }
-                        None => resolve_run_profile(&crate::config::load_agents_config(), role)?,
-                    };
-                    let receipt = store.command_expected(
-                        &run.id,
-                        &format!("spawn-intent:{}", attempt.id),
-                        run.sequence,
-                        RunCommand::ReserveEffect {
-                            key,
-                            kind: EffectKind::SpawnAgent,
-                        },
-                    )?;
-                    let super::super::RunEventKind::EffectReserved { effect } = receipt.event.kind
-                    else {
-                        return Err("workflow changed before effect reservation".into());
-                    };
-                    emit_run_changed(state, &run.project, &run.id, receipt.sequence);
-                    let existing = run
-                        .stories
-                        .iter()
-                        .find(|s| s.story_id == graph.target_id)
-                        .and_then(|s| s.worktree_path.clone());
-                    let worktree = match existing {
-                        Some(path) => path,
-                        None => {
-                            let branch = if graph.target_id == run.plan_id {
-                                format!("workflow/{}-{}", run.id, attempt.id)
-                            } else {
-                                format!("workflow/{}-{}", run.id, graph.target_id)
-                            };
-                            match crate::mcp_http::mcp_transport::create_daemon_workflow_worktree(
-                                state,
-                                &run.project,
-                                &branch,
-                                None,
-                            )
-                            .await
-                            {
-                                Ok(workspace) => workspace.path,
-                                Err(error) => {
-                                    fail_effect(store, &run.id, &effect.id)?;
-                                    return Err(error);
-                                }
-                            }
-                        }
-                    };
-                    let mut feedback = run
-                    .attempts
-                    .iter()
-                    .rev()
-                    .filter(|a| a.story_id == graph.target_id)
-                    .find_map(|a| a.report.as_ref())
-                    .map(|r| {
-                        if *role == AgentRole::Implementer
-                            && let Some(typed) = r.review.as_ref().and_then(|r| r.evidence.as_ref()) {
-                            let fixes: Vec<_> = typed.findings.iter().filter(|f| f.decision() == super::super::evidence::TriageDecision::Fix).collect();
-                            return format!("Repair only these FIX findings; STORY proposals are separate work and ACCEPT risks are not repair scope: {fixes:?}");
-                        }
-                        if *role == AgentRole::Reviewer && graph.definition.graph.evidence_policy.is_some() {
-                            let prior: Vec<_> = run.attempts.iter().filter(|a| a.story_id == graph.target_id)
-                                .filter_map(|a| a.report.as_ref()?.review.as_ref()?.evidence.as_ref())
-                                .collect();
-                            return format!("Implementation: {}\nPrior typed reviews (resolve or repeat each FIX): {prior:?}", r.summary);
-                        }
-                        format!(
-                            "{}\nReview: {:?}\nEvidence: {:?}",
-                            r.summary, r.review, r.evidence
-                        )
-                    });
-                    if let Some(item) = activation.tokens.last().and_then(|token| {
-                        graph
-                            .forks
-                            .iter()
-                            .find(|f| f.id == token.fork_id)
-                            .and_then(|f| f.branches.iter().find(|b| b.id == token.branch_id))
-                            .and_then(|b| b.item.as_ref())
-                    }) {
-                        let context = format!("Declared For each item: {item}");
-                        feedback =
-                            Some(feedback.map_or(context.clone(), |previous| {
-                                format!("{previous}\n{context}")
-                            }));
-                    }
-                    let state_bg = state.clone();
-                    let id = run.id.clone();
-                    let attempt_id = attempt.id.clone();
-                    let result = tokio::task::spawn_blocking(move || {
-                        crate::mcp_http::mcp_transport::launch_daemon_workflow_agent(
-                            &state_bg,
-                            &id,
-                            &attempt_id,
-                            &worktree,
-                            &profile,
-                            feedback,
-                        )
-                    })
-                    .await
-                    .map_err(|e| format!("workflow launch task: {e}"))?;
-                    if let Err(error) = result {
-                        // Cancellation may have already fenced this intent.
-                        if store.snapshot(&run.id)?.status == RunStatus::Running {
-                            fail_effect(store, &run.id, &effect.id)?;
-                        }
-                        return Err(error);
-                    }
-                    return Ok(true);
+                    drive_agent(state, store, run, graph, activation).await?
                 }
                 NodeKind::Judge | NodeKind::Gate
                     if graph.definition.kind == crate::workflows::WorkflowKind::Plan =>
@@ -598,217 +186,732 @@ pub(in crate::workflows::run) async fn drive_effect(
                     let run = run.clone();
                     let graph = graph.clone();
                     let activation = activation.clone();
-                    let progressed = tokio::task::spawn_blocking(move || {
+                    tokio::task::spawn_blocking(move || {
                         super::plan::drive_checks(&store, &run, &graph, &activation)
                     })
                     .await
-                    .map_err(|e| format!("plan check task: {e}"))??;
-                    if progressed {
-                        return Ok(true);
-                    }
+                    .map_err(|e| format!("plan check task: {e}"))??
                 }
                 NodeKind::Judge | NodeKind::Gate => {
-                    if !activation.tokens.is_empty() {
-                        let used = run
-                            .attempts
-                            .iter()
-                            .filter(|a| attempt_holds_slot(run, a))
-                            .count()
-                            + run
-                                .graph_executions
-                                .iter()
-                                .flat_map(|g| &g.activations)
-                                .filter(|a| a.resource_claim.is_some())
-                                .count();
-                        if activation.resource_claim.is_some() {
-                            continue;
-                        }
-                        if used >= usize::from(run.limits.max_parallel_stories) {
-                            if activation.resource_wait.is_none() {
-                                store.command_expected(
-                                    &run.id,
-                                    &format!("check-wait:{}:{}", activation.id, run.sequence),
-                                    run.sequence,
-                                    RunCommand::Graph {
-                                        transition: GraphTransition::ResourceWait {
-                                            execution_id: graph.id.clone(),
-                                            activation_id: activation.id.clone(),
-                                            reason: Some(
-                                                "Parallel activity capacity is occupied".into(),
-                                            ),
-                                        },
-                                    },
-                                )?;
-                                return Ok(true);
-                            }
-                            continue;
-                        }
-                        let claimed = store.command_expected(
-                            &run.id,
-                            &format!("check-claim:{}:{}", activation.id, run.sequence),
-                            run.sequence,
-                            RunCommand::Graph {
-                                transition: GraphTransition::ResourceClaim {
-                                    execution_id: graph.id.clone(),
-                                    activation_id: activation.id.clone(),
-                                    key: Some(current_check_claim().into()),
-                                },
-                            },
-                        )?;
-                        let claim_sequence = claimed.sequence;
-                        let graph_id = graph.id.clone();
-                        let activation_id = activation.id.clone();
-                        let state = state.clone();
-                        let store = store.clone();
-                        let run = claimed.snapshot;
-                        let graph = run
-                            .graph_executions
-                            .iter()
-                            .find(|g| g.id == graph_id)
-                            .expect("claimed graph")
-                            .clone();
-                        let activation = graph
-                            .activations
-                            .iter()
-                            .find(|a| a.id == activation_id)
-                            .expect("claimed activation")
-                            .clone();
-                        tokio::spawn(async move {
-                            let store_bg = store.clone();
-                            let run_bg = run.clone();
-                            let graph_bg = graph.clone();
-                            let activation_bg = activation.clone();
-                            let result = tokio::task::spawn_blocking(move || {
-                                super::policy::drive_policy(
-                                    &store_bg,
-                                    &run_bg,
-                                    &graph_bg,
-                                    &activation_bg,
-                                )
-                            })
-                            .await;
-                            let current = store.snapshot(&run.id);
-                            if let Ok(current) = current {
-                                let current_generation = current
-                                    .graph_executions
-                                    .iter()
-                                    .find(|g| g.id == graph.id)
-                                    .and_then(|g| {
-                                        g.activations.iter().find(|a| a.id == activation.id)
-                                    })
-                                    .is_some_and(|a| a.state == ActivationState::Running);
-                                if current_generation
-                                    && let Err(error) = store.command(
-                                        &run.id,
-                                        &format!(
-                                            "check-release:{}:{claim_sequence}",
-                                            activation.id
-                                        ),
-                                        RunCommand::Graph {
-                                            transition: GraphTransition::ResourceClaim {
-                                                execution_id: graph.id.clone(),
-                                                activation_id: activation.id.clone(),
-                                                key: None,
-                                            },
-                                        },
-                                    )
-                                {
-                                    super::pause_failure(&state, &store, &run.id, &error);
-                                }
-                                match result {
-                                    Ok(Ok(_)) => {}
-                                    // Release the claim and wake the actor to re-evaluate
-                                    // ordinary sibling/preflight contention, just as a sync turn does.
-                                    Ok(Err(error)) if super::is_contention(&error) => {}
-                                    Ok(Err(error)) if current_generation => {
-                                        super::pause_failure(&state, &store, &run.id, &error)
-                                    }
-                                    Err(error) if current_generation => super::pause_failure(
-                                        &state,
-                                        &store,
-                                        &run.id,
-                                        &error.to_string(),
-                                    ),
-                                    _ => {}
-                                }
-                                emit_run_changed(&state, &run.project, &run.id, current.sequence);
-                            }
-                        });
-                        return Ok(true);
-                    }
-                    let store = store.clone();
-                    let run = run.clone();
-                    let graph = graph.clone();
-                    let activation = activation.clone();
-                    let progressed = tokio::task::spawn_blocking(move || {
-                        super::policy::drive_policy(&store, &run, &graph, &activation)
-                    })
-                    .await
-                    .map_err(|e| format!("workflow policy task: {e}"))??;
-                    if progressed {
-                        return Ok(true);
-                    }
+                    drive_policy_effect(state, store, run, graph, activation).await?
                 }
+                // A succeeded Notify ends this turn, rather than inspecting later activations.
                 NodeKind::Notify => {
-                    let key = format!("notify:{}:{}", graph.id, activation.id);
-                    if let Some(effect) = run.effects.iter().find(|e| e.key == key) {
-                        return match effect.state {
-                        EffectState::Succeeded => Ok(false),
-                        _ => Err(
-                            "Notify intent needs explicit reconciliation; delivery is not replayed"
-                                .into(),
-                        ),
-                    };
-                    }
-                    let receipt = store.command_expected(
-                        &run.id,
-                        &format!("daemon:{key}:intent"),
-                        run.sequence,
-                        RunCommand::ReserveEffect {
-                            key: key.clone(),
-                            kind: EffectKind::Notify,
-                        },
-                    )?;
-                    let super::super::RunEventKind::EffectReserved { effect } = receipt.event.kind
-                    else {
-                        return Err("workflow changed before notification".into());
-                    };
-                    if store.snapshot(&run.id)?.status != RunStatus::Running {
-                        return Ok(true);
-                    }
-                    let notice = crate::mcp_http::mcp_transport::report_progress(
-                        state,
-                        Some(&run.project),
-                        crate::progress::ProgressReportInput {
-                            kind: crate::progress::ProgressKind::Done,
-                            text: format!(
-                                "Workflow {} visited {} for {}",
-                                run.id, node.id, graph.target_id
-                            ),
-                            step: Some(key),
-                        },
-                        Some("Workflow daemon".into()),
-                        None,
-                        None,
-                        None,
-                    );
-                    let marked = store.command(
-                        &run.id,
-                        &format!("daemon:notify-receipt:{}", effect.id),
-                        RunCommand::MarkEffect {
-                            effect_id: effect.id,
-                            succeeded: notice.is_ok(),
-                        },
-                    )?;
-                    emit_run_changed(state, &run.project, &run.id, marked.sequence);
-                    notice?;
-                    return Ok(true);
+                    return drive_notification(state, store, run, graph, &node.id, activation)
+                        .await;
                 }
-                _ => {}
+                _ => false,
+            };
+            if progressed {
+                return Ok(true);
             }
         }
     }
     Ok(false)
+}
+
+async fn stop_cancelled_fork(
+    state: &Arc<AppState>,
+    store: &RunStore,
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+    fork: &super::super::parallel::ForkInstance,
+) -> Result<bool, String> {
+    require_known_check_owner(graph, &fork.id, fork.generation)?;
+    // Cancellation is already durable and reports already fenced. Scope the
+    // process registry to this generation, so a late old spawn cannot pass.
+    let token = super::super::parallel::BranchToken {
+        fork_id: fork.id.clone(),
+        generation: fork.generation,
+        branch_id: String::new(),
+    };
+    store.cancel_owned_checks(&super::super::parallel::check_owner(
+        &run.id, &graph.id, &token,
+    ));
+    for nested in graph.forks.iter().filter(|f| {
+        f.parent
+            .iter()
+            .any(|t| t.fork_id == fork.id && t.generation == fork.generation)
+    }) {
+        let token = super::super::parallel::BranchToken {
+            fork_id: nested.id.clone(),
+            generation: nested.generation,
+            branch_id: String::new(),
+        };
+        store.cancel_owned_checks(&super::super::parallel::check_owner(
+            &run.id, &graph.id, &token,
+        ));
+    }
+    for activation in graph.activations.iter().filter(|a| {
+        a.tokens
+            .iter()
+            .any(|t| t.fork_id == fork.id && t.generation == fork.generation)
+    }) {
+        let Some(attempt) = activation_attempt(run, graph, activation) else {
+            continue;
+        };
+        stop_superseded_attempt(state, run, attempt).await?;
+    }
+    let stopped = store.command_expected(
+        &run.id,
+        &format!("fork-stopped:{}:{}", fork.id, fork.generation),
+        run.sequence,
+        RunCommand::Graph {
+            transition: GraphTransition::ForkStopped {
+                execution_id: graph.id.clone(),
+                fork_id: fork.id.clone(),
+                generation: fork.generation,
+            },
+        },
+    )?;
+    emit_run_changed(state, &run.project, &run.id, stopped.sequence);
+    Ok(true)
+}
+
+async fn stop_superseded_attempt(
+    state: &Arc<AppState>,
+    run: &RunSnapshot,
+    attempt: &NodeAttempt,
+) -> Result<(), String> {
+    if run.effects.iter().any(|effect| {
+        effect.key == format!("spawn:{}", attempt.id)
+            && matches!(effect.state, EffectState::Intended | EffectState::Uncertain)
+            && attempt.agent.is_none()
+    }) {
+        return Err("Superseded spawn outcome is unknown; reconcile before repair".into());
+    }
+    if let Some(binding) = &attempt.agent {
+        if binding.acp.is_some() {
+            crate::mcp_http::launch_transaction::stop_superseded_workflow_agent(
+                state, &run.id, binding,
+            )
+            .await?;
+        } else {
+            crate::pty::kill_pty_core(state, &binding.session_id);
+            if !state
+                .session_maps
+                .exit_codes
+                .contains_key(&binding.session_id)
+            {
+                return Err("Superseded agent stop is unproven; repair remains fenced".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+async fn drive_command(
+    state: &Arc<AppState>,
+    store: &RunStore,
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+    activation: &Activation,
+    command: &crate::workflows::command::CommandDefinition,
+) -> Result<bool, String> {
+    let identity = command_identity(run, graph, activation);
+    let effect = if let Some(effect) = run
+        .effects
+        .iter()
+        .find(|effect| effect.key == identity.effect)
+    {
+        effect.clone()
+    } else {
+        let receipt = store.command(
+            &run.id,
+            &format!("reserve:{}", identity.effect),
+            super::super::RunCommand::ReserveEffect {
+                key: identity.effect.clone(),
+                kind: EffectKind::RunCommand,
+            },
+        )?;
+        receipt
+            .snapshot
+            .effects
+            .iter()
+            .find(|effect| effect.key == identity.effect)
+            .ok_or("command intent missing")?
+            .clone()
+    };
+    if let Some(receipt) = store.command_journal().receipt(&identity.effect)? {
+        if effect.state == EffectState::Intended {
+            store.command(
+                &run.id,
+                &format!("settle:{}", identity.effect),
+                super::super::RunCommand::MarkEffect {
+                    effect_id: effect.id,
+                    succeeded: receipt.succeeded,
+                },
+            )?;
+            return Ok(true);
+        }
+        return Ok(false);
+    }
+    if effect.state != EffectState::Intended {
+        return Err("command intent needs stop-proof reconciliation; never replay a resolved or uncertain effect".into());
+    }
+    let workspace = command_workspace(state, store, run, graph).await?;
+    let command = command.clone();
+    let workspace = std::path::PathBuf::from(workspace);
+    let journal = store.command_journal();
+    let db = store.database_path().to_owned();
+    tokio::task::spawn_blocking(move || {
+        journal.execute(
+            &command,
+            &identity,
+            &workspace,
+            &db,
+            &crate::workflows::command::executor::CommandAdapters::installed(),
+        )
+    })
+    .await
+    .map_err(|_| "typed command task interrupted")??;
+    let receipt = store
+        .command_journal()
+        .receipt(&command_identity(run, graph, activation).effect)?
+        .ok_or("command receipt missing after execution")?;
+    store.command(
+        &run.id,
+        &format!("settle:{}", receipt.identity.effect),
+        super::super::RunCommand::MarkEffect {
+            effect_id: effect.id,
+            succeeded: receipt.succeeded,
+        },
+    )?;
+    Ok(true)
+}
+
+async fn command_workspace(
+    state: &Arc<AppState>,
+    store: &RunStore,
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+) -> Result<String, String> {
+    let workspace = run
+        .stories
+        .iter()
+        .find(|s| s.story_id == graph.target_id)
+        .and_then(|s| s.worktree_path.clone());
+    let workspace = if let Some(workspace) = workspace {
+        workspace
+    } else {
+        if graph.target_id == run.plan_id {
+            // DEFERRED (2026-10-30) — WF04 owns durable plan workspace bindings.
+            // Never guess a canonical checkout or derive one from a PTY identity.
+            return Err("typed plan command needs an assigned plan artifact/workspace".into());
+        }
+        prepare_command_workspace(state, store, run, graph).await?
+    };
+    Ok(workspace)
+}
+
+fn reserve_command_workspace(
+    store: &RunStore,
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+) -> Result<(String, String), String> {
+    let key = format!("command-workspace:{}:{}", run.id, graph.id);
+    let snapshot = store.snapshot(&run.id)?;
+    if snapshot.effects.iter().any(|existing| existing.key == key) {
+        return Err("workspace preparation already intended; reconcile before retry".into());
+    }
+    let reserved = store.command(
+        &run.id,
+        &format!("reserve:{key}"),
+        super::super::RunCommand::ReserveEffect {
+            key: key.clone(),
+            kind: EffectKind::PrepareWorkspace,
+        },
+    )?;
+    let workspace_effect = reserved
+        .snapshot
+        .effects
+        .iter()
+        .find(|effect| effect.key == key)
+        .ok_or("workspace intent missing")?;
+    Ok((key, workspace_effect.id.clone()))
+}
+
+async fn prepare_command_workspace(
+    state: &Arc<AppState>,
+    store: &RunStore,
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+) -> Result<String, String> {
+    let (key, effect_id) = reserve_command_workspace(store, run, graph)?;
+    let branch = format!("workflow/{}-{}", run.id, graph.target_id);
+    let workspace = crate::mcp_http::mcp_transport::create_daemon_workflow_worktree(
+        state,
+        &run.project,
+        &branch,
+        None,
+    )
+    .await?;
+    store.command(
+        &run.id,
+        &format!("assign:{key}"),
+        super::super::RunCommand::AssignWorktree {
+            story_id: graph.target_id.clone(),
+            path: workspace.path.clone(),
+        },
+    )?;
+    store.command(
+        &run.id,
+        &format!("settle:{key}"),
+        super::super::RunCommand::MarkEffect {
+            effect_id,
+            succeeded: true,
+        },
+    )?;
+    Ok(workspace.path)
+}
+
+async fn drive_agent(
+    state: &Arc<AppState>,
+    store: &RunStore,
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+    activation: &Activation,
+) -> Result<bool, String> {
+    let agent_id = agent_node_id(graph, activation)?;
+    let NodeKind::Agent {
+        role, execution, ..
+    } = &graph
+        .definition
+        .graph
+        .nodes
+        .iter()
+        .find(|n| n.id == agent_id)
+        .ok_or("agent node missing")?
+        .kind
+    else {
+        return Err("agent node missing".into());
+    };
+    let Some(attempt) = activation_attempt(run, graph, activation) else {
+        return Ok(false);
+    };
+    if attempt.state != super::super::AttemptState::Running {
+        return Ok(false);
+    }
+    if let Some(binding) = &attempt.agent {
+        if attempt.continuation.is_some()
+            && continuation::deliver(state, store, run, attempt).await?
+        {
+            return Ok(true);
+        }
+        if binding.acp.is_some() {
+            let state = state.clone();
+            let run_id = run.id.clone();
+            let attempt_id = attempt.id.clone();
+            let progressed = tokio::task::spawn_blocking(move || {
+                crate::mcp_http::mcp_transport::resume_daemon_workflow_delivery(
+                    &state,
+                    &run_id,
+                    &attempt_id,
+                )
+            })
+            .await
+            .map_err(|e| format!("ACP delivery task: {e}"))??;
+            if progressed {
+                return Ok(true);
+            }
+        }
+        return Ok(false);
+    }
+    if *role == AgentRole::Implementer {
+        let status =
+            store.begin_graph_story(run, &graph.target_id, &format!("workflow:{}", attempt.id))?;
+        if status == crate::stories::StoryStatus::Done {
+            // Approval can win after the deterministic turn but before this effect.
+            let settled = super::drive_turn(store, &run.id)?;
+            emit_run_changed(state, &run.project, &run.id, settled.sequence);
+            return Ok(settled.sequence != run.sequence);
+        }
+        if status != crate::stories::StoryStatus::InProgress {
+            let cause = if status == crate::stories::StoryStatus::Qa {
+                format!("Story {} awaits manual QA", graph.target_id)
+            } else {
+                format!(
+                    "Story {} cannot start implementation in {status:?}",
+                    graph.target_id
+                )
+            };
+            let receipt = store.command_expected(
+                &run.id,
+                &format!("story-not-startable:{}:{}", attempt.id, run.sequence),
+                run.sequence,
+                RunCommand::PauseFor { cause },
+            )?;
+            emit_run_changed(state, &run.project, &run.id, receipt.sequence);
+            return Ok(true);
+        }
+    }
+    spawn_agent(
+        state,
+        store,
+        run,
+        graph,
+        activation,
+        attempt,
+        (role, execution),
+    )
+    .await
+}
+
+async fn spawn_agent(
+    state: &Arc<AppState>,
+    store: &RunStore,
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+    activation: &Activation,
+    attempt: &NodeAttempt,
+    route: (&AgentRole, &Option<crate::workflows::AgentExecution>),
+) -> Result<bool, String> {
+    let (role, execution) = route;
+    let key = format!("spawn:{}", attempt.id);
+    if run.effects.iter().any(|e| e.key == key) {
+        return Err("Agent spawn intent needs reconciliation; it will not be retried".into());
+    }
+    let pinned_execution = if run.event_contract_version >= 3 {
+        Some(
+            crate::workflows::pinned_agent_route(run, attempt)?
+                .1
+                .route
+                .execution
+                .clone(),
+        )
+    } else {
+        execution.clone()
+    };
+    let profile = match &pinned_execution {
+        Some(crate::workflows::AgentExecution::Acp { .. }) => "ego".to_owned(),
+        Some(crate::workflows::AgentExecution::Pty { profile }) => {
+            crate::config::load_agents_config().require_named_run_config(profile)?;
+            profile.clone()
+        }
+        None => resolve_run_profile(&crate::config::load_agents_config(), role)?,
+    };
+    let receipt = store.command_expected(
+        &run.id,
+        &format!("spawn-intent:{}", attempt.id),
+        run.sequence,
+        RunCommand::ReserveEffect {
+            key,
+            kind: EffectKind::SpawnAgent,
+        },
+    )?;
+    let super::super::RunEventKind::EffectReserved { effect } = receipt.event.kind else {
+        return Err("workflow changed before effect reservation".into());
+    };
+    emit_run_changed(state, &run.project, &run.id, receipt.sequence);
+    let existing = run
+        .stories
+        .iter()
+        .find(|s| s.story_id == graph.target_id)
+        .and_then(|s| s.worktree_path.clone());
+    let worktree = match existing {
+        Some(path) => path,
+        None => {
+            let branch = if graph.target_id == run.plan_id {
+                format!("workflow/{}-{}", run.id, attempt.id)
+            } else {
+                format!("workflow/{}-{}", run.id, graph.target_id)
+            };
+            match crate::mcp_http::mcp_transport::create_daemon_workflow_worktree(
+                state,
+                &run.project,
+                &branch,
+                None,
+            )
+            .await
+            {
+                Ok(workspace) => workspace.path,
+                Err(error) => {
+                    fail_effect(store, &run.id, &effect.id)?;
+                    return Err(error);
+                }
+            }
+        }
+    };
+    let feedback = agent_feedback(run, graph, activation, role);
+    let state_bg = state.clone();
+    let id = run.id.clone();
+    let attempt_id = attempt.id.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        crate::mcp_http::mcp_transport::launch_daemon_workflow_agent(
+            &state_bg,
+            &id,
+            &attempt_id,
+            &worktree,
+            &profile,
+            feedback,
+        )
+    })
+    .await
+    .map_err(|e| format!("workflow launch task: {e}"))?;
+    if let Err(error) = result {
+        // Cancellation may have already fenced this intent.
+        if store.snapshot(&run.id)?.status == RunStatus::Running {
+            fail_effect(store, &run.id, &effect.id)?;
+        }
+        return Err(error);
+    }
+    Ok(true)
+}
+
+fn agent_feedback(
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+    activation: &Activation,
+    role: &AgentRole,
+) -> Option<String> {
+    let mut feedback = run
+.attempts
+.iter()
+.rev()
+.filter(|a| a.story_id == graph.target_id)
+.find_map(|a| a.report.as_ref())
+.map(|r| {
+    if *role == AgentRole::Implementer
+        && let Some(typed) = r.review.as_ref().and_then(|r| r.evidence.as_ref()) {
+        let fixes: Vec<_> = typed.findings.iter().filter(|f| f.decision() == super::super::evidence::TriageDecision::Fix).collect();
+        return format!("Repair only these FIX findings; STORY proposals are separate work and ACCEPT risks are not repair scope: {fixes:?}");
+    }
+    if *role == AgentRole::Reviewer && graph.definition.graph.evidence_policy.is_some() {
+        let prior: Vec<_> = run.attempts.iter().filter(|a| a.story_id == graph.target_id)
+            .filter_map(|a| a.report.as_ref()?.review.as_ref()?.evidence.as_ref())
+            .collect();
+        return format!("Implementation: {}\nPrior typed reviews (resolve or repeat each FIX): {prior:?}", r.summary);
+    }
+    format!(
+        "{}\nReview: {:?}\nEvidence: {:?}",
+        r.summary, r.review, r.evidence
+    )
+});
+    if let Some(item) = activation.tokens.last().and_then(|token| {
+        graph
+            .forks
+            .iter()
+            .find(|f| f.id == token.fork_id)
+            .and_then(|f| f.branches.iter().find(|b| b.id == token.branch_id))
+            .and_then(|b| b.item.as_ref())
+    }) {
+        let context = format!("Declared For each item: {item}");
+        feedback =
+            Some(feedback.map_or(context.clone(), |previous| format!("{previous}\n{context}")));
+    }
+    feedback
+}
+
+async fn drive_policy_effect(
+    state: &Arc<AppState>,
+    store: &RunStore,
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+    activation: &Activation,
+) -> Result<bool, String> {
+    if !activation.tokens.is_empty() {
+        let used = run
+            .attempts
+            .iter()
+            .filter(|a| attempt_holds_slot(run, a))
+            .count()
+            + run
+                .graph_executions
+                .iter()
+                .flat_map(|g| &g.activations)
+                .filter(|a| a.resource_claim.is_some())
+                .count();
+        if activation.resource_claim.is_some() {
+            return Ok(false);
+        }
+        if used >= usize::from(run.limits.max_parallel_stories) {
+            if activation.resource_wait.is_none() {
+                store.command_expected(
+                    &run.id,
+                    &format!("check-wait:{}:{}", activation.id, run.sequence),
+                    run.sequence,
+                    RunCommand::Graph {
+                        transition: GraphTransition::ResourceWait {
+                            execution_id: graph.id.clone(),
+                            activation_id: activation.id.clone(),
+                            reason: Some("Parallel activity capacity is occupied".into()),
+                        },
+                    },
+                )?;
+                return Ok(true);
+            }
+            return Ok(false);
+        }
+        let claimed = store.command_expected(
+            &run.id,
+            &format!("check-claim:{}:{}", activation.id, run.sequence),
+            run.sequence,
+            RunCommand::Graph {
+                transition: GraphTransition::ResourceClaim {
+                    execution_id: graph.id.clone(),
+                    activation_id: activation.id.clone(),
+                    key: Some(current_check_claim().into()),
+                },
+            },
+        )?;
+        let claim_sequence = claimed.sequence;
+        let graph_id = graph.id.clone();
+        let activation_id = activation.id.clone();
+        let state = state.clone();
+        let store = store.clone();
+        let run = claimed.snapshot;
+        let graph = run
+            .graph_executions
+            .iter()
+            .find(|g| g.id == graph_id)
+            .expect("claimed graph")
+            .clone();
+        let activation = graph
+            .activations
+            .iter()
+            .find(|a| a.id == activation_id)
+            .expect("claimed activation")
+            .clone();
+        tokio::spawn(run_claimed_policy(
+            state,
+            store,
+            run,
+            graph,
+            activation,
+            claim_sequence,
+        ));
+        return Ok(true);
+    }
+    let store = store.clone();
+    let run = run.clone();
+    let graph = graph.clone();
+    let activation = activation.clone();
+    let progressed = tokio::task::spawn_blocking(move || {
+        super::policy::drive_policy(&store, &run, &graph, &activation)
+    })
+    .await
+    .map_err(|e| format!("workflow policy task: {e}"))??;
+    if progressed {
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+async fn run_claimed_policy(
+    state: Arc<AppState>,
+    store: RunStore,
+    run: RunSnapshot,
+    graph: GraphExecution,
+    activation: Activation,
+    claim_sequence: i64,
+) {
+    let store_bg = store.clone();
+    let run_bg = run.clone();
+    let graph_bg = graph.clone();
+    let activation_bg = activation.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        super::policy::drive_policy(&store_bg, &run_bg, &graph_bg, &activation_bg)
+    })
+    .await;
+    let current = store.snapshot(&run.id);
+    if let Ok(current) = current {
+        let current_generation = current
+            .graph_executions
+            .iter()
+            .find(|g| g.id == graph.id)
+            .and_then(|g| g.activations.iter().find(|a| a.id == activation.id))
+            .is_some_and(|a| a.state == ActivationState::Running);
+        if current_generation
+            && let Err(error) = store.command(
+                &run.id,
+                &format!("check-release:{}:{claim_sequence}", activation.id),
+                RunCommand::Graph {
+                    transition: GraphTransition::ResourceClaim {
+                        execution_id: graph.id.clone(),
+                        activation_id: activation.id.clone(),
+                        key: None,
+                    },
+                },
+            )
+        {
+            super::pause_failure(&state, &store, &run.id, &error);
+        }
+        match result {
+            Ok(Ok(_)) => {}
+            // Release the claim and wake the actor to re-evaluate
+            // ordinary sibling/preflight contention, just as a sync turn does.
+            Ok(Err(error)) if super::is_contention(&error) => {}
+            Ok(Err(error)) if current_generation => {
+                super::pause_failure(&state, &store, &run.id, &error)
+            }
+            Err(error) if current_generation => {
+                super::pause_failure(&state, &store, &run.id, &error.to_string())
+            }
+            _ => {}
+        }
+        emit_run_changed(&state, &run.project, &run.id, current.sequence);
+    }
+}
+
+async fn drive_notification(
+    state: &Arc<AppState>,
+    store: &RunStore,
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+    node_id: &str,
+    activation: &Activation,
+) -> Result<bool, String> {
+    let key = format!("notify:{}:{}", graph.id, activation.id);
+    if let Some(effect) = run.effects.iter().find(|e| e.key == key) {
+        return match effect.state {
+            EffectState::Succeeded => Ok(false),
+            _ => {
+                Err("Notify intent needs explicit reconciliation; delivery is not replayed".into())
+            }
+        };
+    }
+    let receipt = store.command_expected(
+        &run.id,
+        &format!("daemon:{key}:intent"),
+        run.sequence,
+        RunCommand::ReserveEffect {
+            key: key.clone(),
+            kind: EffectKind::Notify,
+        },
+    )?;
+    let super::super::RunEventKind::EffectReserved { effect } = receipt.event.kind else {
+        return Err("workflow changed before notification".into());
+    };
+    if store.snapshot(&run.id)?.status != RunStatus::Running {
+        return Ok(true);
+    }
+    let notice = crate::mcp_http::mcp_transport::report_progress(
+        state,
+        Some(&run.project),
+        crate::progress::ProgressReportInput {
+            kind: crate::progress::ProgressKind::Done,
+            text: format!(
+                "Workflow {} visited {} for {}",
+                run.id, node_id, graph.target_id
+            ),
+            step: Some(key),
+        },
+        Some("Workflow daemon".into()),
+        None,
+        None,
+        None,
+    );
+    let marked = store.command(
+        &run.id,
+        &format!("daemon:notify-receipt:{}", effect.id),
+        RunCommand::MarkEffect {
+            effect_id: effect.id,
+            succeeded: notice.is_ok(),
+        },
+    )?;
+    emit_run_changed(state, &run.project, &run.id, marked.sequence);
+    notice?;
+    Ok(true)
 }
 
 fn fail_effect(store: &RunStore, run_id: &str, effect_id: &str) -> Result<(), String> {

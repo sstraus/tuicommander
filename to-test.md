@@ -1,6 +1,9 @@
+## Pending Session Chat Send now (2589-4bc4) — Rust rebuild/restart required
+
+- [ ] After Boss rebuilds and manually restarts when losing current sessions is acceptable, send two prompts while a throwaway Claude, Codex or ego terminal is busy. Cancel one Pending item; send another now with the return-key button. Confirm one execution and no later duplicate. Repeat from mobile Chat. The daily app was not restarted; Rust does not hot-reload.
 ## Windows CI workflow paths — Rust rebuild/restart required
 
-- [ ] After rebuilding, use a throwaway Windows project to request available story transitions for a plan stored with a non-canonical project path. The same project must succeed and a different project must fail. Confirm Windows CI passes workflow integration and byte-exact stdin tests. Linux rb runner checks run on POSIX hosts; local secret-redaction receipt coverage still runs on Windows. No daily instance was restarted. Rust changes require a manual restart when losing current sessions is acceptable.
+- [ ] After rebuilding, use a throwaway Windows project to request available story transitions for a plan stored with a non-canonical project path. The same project must succeed and a different project must fail. Confirm Windows CI passes workflow integration and byte-exact stdin tests. In a throwaway workflow run, assign a registered isolated checkout using its portable Windows spelling; assignment must succeed and retain a canonical path, while the project checkout and a duplicate assignment remain rejected. Linux rb runner checks run on POSIX hosts; local secret-redaction receipt coverage still runs on Windows. No daily instance was restarted. Rust changes require a manual restart when losing current sessions is acceptable.
 
 ## Claude question parser simplification (2572-20a4) — Rust rebuild/restart required
 

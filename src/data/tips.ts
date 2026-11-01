@@ -37,6 +37,12 @@ export const TIPS: Tip[] = [
 		shortcut: null,
 	},
 	{
+		feature: "Send a pending Chat prompt now",
+		description:
+			"While an agent is busy, Session Chat keeps your next prompt in the host queue. Use the return-key button beside Pending to stop the current request and send it now, or Cancel to remove it. Send now supports Claude, Codex and ego.",
+		shortcut: null,
+	},
+	{
 		feature: "Move a native story between phases",
 		description:
 			"Drag a Kanban card to an outlined legal destination, or choose a Phase in its List row. Story detail keeps Phase beside Edit. Backend refusals leave the story in place.",

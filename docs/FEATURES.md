@@ -1,5 +1,7 @@
 # TUICommander — Complete Feature Reference
 
+- **Pending Chat prompt controls** — Busy Session Chat sends wait in TUIC’s existing idle-gate queue on desktop and mobile. Each host-owned Pending prompt has Cancel and, for Claude, Codex and ego, a compact return-key action labelled **Send now: stop the current request**. Send now claims its queue id once; a prompt already taken by the idle gate is not sent again. Claude and Codex use Escape followed by confirmed idle; ego uses native Ctrl+Enter. Native CLI receipts from earlier direct sends remain read-only. (#2589-4bc4).
+
 - **Terminal Ctrl+Enter** — Desktop and browser/remote CLI grids use CSI u for negotiated Kitty reporting and identified ego sessions, enabling ego busy-turn steering. Legacy shells and other nonnegotiating agents receive CR. Plain Enter and Compose shortcuts stay unchanged (#2599-0a6b).
 
 - **Native integration trial (WF07)** — Disabled-by-default typed workflow integration checks and publishes one pinned no-ff merge, retains proof debt across restart, and keeps cleanup independent. Only isolated trial clones may enable it before repository parity approval; WF08 proof batching is not included (#2514-3d1e).

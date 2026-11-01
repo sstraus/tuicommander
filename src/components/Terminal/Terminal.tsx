@@ -1678,6 +1678,19 @@ export const Terminal: Component<TerminalProps> = (props) => {
 							}
 						}}
 						onSend={async (text) => {
+							if (
+								chatActive() &&
+								terminalsStore.get(props.id)?.shellState === "busy" &&
+								terminalsStore.get(props.id)?.agentType &&
+								!terminalsStore.get(props.id)?.awaitingInput
+							) {
+								await submitCompose("enqueue", sessionId, async (id) => {
+									const outcome = await pty.enqueueCommand(id, text);
+									terminalsStore.update(props.id, { queuedCommands: outcome.queued });
+									void chatViewStore.refreshQueue(id).catch(() => {});
+								});
+								return;
+							}
 							const rollback = sessionId ? chatViewStore.beginSubmission(sessionId, text) : () => {};
 							try {
 								await submitCompose("send", sessionId, (id) =>

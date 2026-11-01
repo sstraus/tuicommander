@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Queue busy Session Chat prompts in TUIC and add per-prompt Cancel and Send now controls without duplicate idle delivery (#2589-4bc4).
 - Add correlated barge-in hold diagnostics with aggregate capture/reference snapshots and explicit resolution reasons; keep the existing voice hold policy unchanged (#2605-53fc).
 
 - Add an opt-in, silent native speech timing probe and retain the Pocket/Edge partial-load measurements for #2605-53fc. The measured native buffer gap did not reproduce; playback behavior and buffer sizes are unchanged.
