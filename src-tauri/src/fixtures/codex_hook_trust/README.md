@@ -8,7 +8,7 @@ No daily config, credentials or hook files were read or changed.
 `codex-0.166.0.jsonl` is the actual sent/received JSONL from a bounded Python
 stdio client. It initialized with experimental API support and sent:
 
-1. `hooks/list` for the scratch directory: one probe hook and one unrelated
+1. `hooks/list` for the scratch home: one probe hook and one unrelated
    user hook, both untrusted. The command probe carries the TUIC sentinel but
    does not execute or reproduce production terminal behavior.
 2. `config/read` with layers: native user config version and path.
@@ -33,7 +33,7 @@ trust verification for profile-specific definitions.
 
 SHA-256:
 
-- `codex-0.166.0.jsonl`: `8e542202cd2c63f6209c989e1f9f2a82364ac66d5099910b4a2dbefe4f12beb0`
+- `codex-0.166.0.jsonl`: `ffcd24eb938eddaf43fa0fab4ba739b7cd9efb5ae9312fc53aa2cc0dc2473945`
 - `profile-unsupported.txt`: `8bc3aad7c32c9d76d6972cd1ad422734e6502d399d162731c0bb13f6fea3ee62`
 
 These are protocol fixtures, not PTY captures. This change adds no awaiting
