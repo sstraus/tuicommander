@@ -370,3 +370,59 @@ No activation policy, native buffer size or synthesis scheduler was changed.
   `tsc --noEmit`, changed Rust/TypeScript format checks and `git diff --check`
   pass. Read-only independent static review found no actionable defects;
   this does not replace the coordinator's critic or hardware acceptance.
+
+## Hold intent and history audit (2026-11-01)
+
+The measured freeze is **intentional active-playback barge-in behavior**, not
+an accidental gate on the next append. The coordinator requested that this
+policy stay unchanged if history and requirements confirm that intent.
+
+Evidence:
+
+1. `git blame` attributes the current `continuous::tick` pause branch and
+   explanatory comments (lines 1716–1741) to
+   `51a856db805dda876066ef436f68893fd4c9a275`, 2026-10-02:
+   **“barge-in pauses on voice and stops only for the wake word (1376-f33e)”**.
+   Its commit message explicitly says: “tick: pause on voice; hush only when
+   the transcript is accepted (HeldBack/Activated); resume when rejected,
+   empty, at loop end or after 8 s”. It also adds real rodio pause/resume and
+   silences the far-end reference while paused.
+2. Follow-up `5c9e02cbd9c6c5aa63b57dc14ae5e21d101f6577` explicitly requires
+   browser-owned replies to pause on the client and says the AEC reference
+   goes silent **only when the output really paused**. It documents capture
+   backlog alignment and preserves a separate user pause across auto-resume.
+   Both commits and integration `741bbf8437960d7f0f8e96510b00b213da4b16ff`
+   are ancestors of this branch (each ancestry check returned 0).
+3. The current backend guide, “Barge-in: pause on voice, stop on the wake
+   word (1376-f33e)” (`docs/backend/dictation.md:1603–1637`), states:
+   **“Voice pauses. … pause() holds the reply where it is.”** Nothing queued
+   is dropped and no turn changes. The transcript decides whether to hush
+   or resume. This is not a requirement to keep speaking until recognition.
+4. Archived story 1376-f33e has a checked acceptance criterion:
+   **“voice activity during playback pauses the reply; the reply stops only
+   when the segment carries the wake word, otherwise it resumes from where
+   it paused.”** Its historical worklog records the deliberate change from
+   raw voice activity permanently hushing replies at 606/939 ms to reversible
+   pause plus activation-gated hush. Physical acoustic acceptance was moved
+   to `to-test.md`; it was not established by that story audit.
+5. Current regression `speech_without_the_wake_word_pauses_the_reply_and_lets_it_carry_on`
+   (`continuous.rs:5102`) asserts one pause before recognition, then one
+   resume and zero hushes for unrelated speech. Adjacent
+   `the_wake_word_over_a_reply_stops_it_and_takes_the_turn` (`:5124`) asserts
+   pause plus hush for activation; `a_pause_never_outlives_the_loop_or_the_pause_limit`
+   (`:5142`) protects release. These were inspected, not freshly run in this
+   documentation-only audit.
+
+Decision: **do not change the hold**. Keeping the current source consumption
+interval at hardware block span while a capture hold is active would directly
+contradict the checked barge-in requirement and its regression oracle. Pausing
+only future appends would also leave the already-playing reply talking over
+someone who is trying to interrupt it. Muting only FarEndTap while the device
+kept playing would violate the documented echo-reference/output alignment.
+
+The probe's ~1.6 s halt therefore verifies the intended reversible hold, not
+a new scheduling regression to remove. Historical false activation by echo,
+room speech or another cause remains unproven. No production code, test,
+activation policy or reference timing changes accompany this audit, and no
+new RED/GREEN claim is made. The independent browser truncation fix remains
+in `9a8241390b8485853aea4dba4cf920143cda2ef4`.
