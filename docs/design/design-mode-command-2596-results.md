@@ -75,3 +75,11 @@ During the capture run, an AppleScript accessibility read failed with `osascript
 Stop closed the dedicated Edge launch. The throwaway PTY was deleted, Vite was closed, and the named agent-test instance was stopped. Final probes found no listener on the Vite port or `19876`, and no process using this instance's Design Mode profile.
 
 The daily instance was not rebuilt or restarted. Loading the change there requires a Rust and sidecar rebuild and a manual restart when losing its current sessions is acceptable.
+
+## Critic R1: redirects before startup acknowledgment
+
+The worker now captures the active launch tab ID in the dedicated profile before the native handshake. Readiness checks that ID, not the original URL. Redirects remain attached to the launched tab; another tab at the original URL cannot replace it. A closed launch tab fails readiness even if a same-URL sibling remains. No retry or persistent startup state was added.
+
+On pre-fix `0c2078a0ef`, all three real-worker regressions failed: redirect readiness returned `page_not_ready`, a same-URL sibling replaced the redirected tab, and a closed launch tab incorrectly succeeded through its sibling. Evidence: `Gits/.tmp/results/tuic-2596-r1-red.log`. This is local worker-module test evidence, not a new desktop/browser replay.
+
+R1 GREEN: the named worker and browser-command files passed all 15 tests locally in 1.35 seconds. Evidence: `Gits/.tmp/results/tuic-2596-r1-green.log`. No Rust change or new desktop launch was required.

@@ -11,6 +11,8 @@ type NativePayload = {
 };
 const calls: NativePayload[] = [];
 const offeredCommands: object[] = [];
+let beforeCommand: (() => void) | undefined;
+type Tab = { id: number; windowId: number; active: boolean; url: string };
 const suspendWorkers: (() => void)[] = [];
 const serversOf: Record<string, string[]> = { A: ["http://localhost:3001/"], B: ["http://localhost:3002/"] };
 
@@ -18,7 +20,11 @@ vi.mock("../../../browser-extension/design-mode/native.js", () => ({
 	connectNative: () => {},
 	nativeRequest: async (payload: NativePayload) => {
 		calls.push(payload);
-		if (payload.action === "command_next") return offeredCommands.shift() ?? null;
+		if (payload.action === "command_next") {
+			beforeCommand?.();
+			beforeCommand = undefined;
+			return offeredCommands.shift() ?? null;
+		}
 		if (payload.action === "command_reply") return { accepted: true };
 		if (payload.action === "hello") return { endpoint: "test" };
 		if (payload.action === "list_agents")
@@ -30,7 +36,10 @@ vi.mock("../../../browser-extension/design-mode/native.js", () => ({
 	},
 }));
 
-async function boot(historyUnavailable = false) {
+async function boot(
+	historyUnavailable = false,
+	tabs: Tab[] = [{ id: 7, windowId: 2, active: true, url: "http://localhost:5173/" }],
+) {
 	let listener: (m: unknown, s: unknown, r: (x: Reply) => void) => boolean | undefined = () => undefined;
 	const store: Record<string, unknown> = {};
 	const sessionStore: Record<string, unknown> = {};
@@ -72,8 +81,13 @@ async function boot(historyUnavailable = false) {
 			},
 		},
 		tabs: {
-			query: async () => [{ id: 7, windowId: 2, active: true, url: "http://localhost:5173/" }],
-			get: async () => ({ id: 7, windowId: 2, active: true, url: "http://localhost:5173/" }),
+			query: async (query: { active?: boolean }) =>
+				tabs.filter((tab) => !query.active || tab.active).map((tab) => ({ ...tab })),
+			get: async (id: number) => {
+				const tab = tabs.find((tab) => tab.id === id);
+				if (!tab) throw new Error("No tab with id");
+				return { ...tab };
+			},
 			captureVisibleTab: async () => "data:image/png;base64,iVBORw0KGgo=",
 			sendMessage: async () => {},
 			update: tabsUpdate,
@@ -94,6 +108,7 @@ describe("Design Mode worker dev-server wiring", () => {
 		vi.useFakeTimers();
 		calls.length = 0;
 		offeredCommands.length = 0;
+		beforeCommand = undefined;
 	});
 
 	afterEach(async () => {
@@ -133,6 +148,69 @@ describe("Design Mode worker dev-server wiring", () => {
 			result: { image: "data:image/png;base64,iVBORw0KGgo=", url: "http://localhost:5173/" },
 		});
 		expect(replies[3].reply).toEqual({ ok: true, result: { errors: [] } });
+	});
+
+	// Catches: URL equality rejecting a launch tab that redirected before startup acknowledgment.
+	it("acknowledges the launch tab after it redirects before ready", async () => {
+		const tabs = [{ id: 7, windowId: 2, active: true, url: "http://localhost:5173/" }];
+		beforeCommand = () => {
+			tabs[0].url = "http://localhost:5173/login";
+		};
+		offeredCommands.push({
+			requestId: "ready",
+			sessionId: "A",
+			action: "ready",
+			args: { url: "http://localhost:5173/" },
+		});
+		await boot(false, tabs);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(calls.find((call) => call.action === "command_reply")?.reply).toEqual({
+			ok: true,
+			result: { tabId: 7, windowId: 2 },
+		});
+	});
+
+	// Catches: a different tab at the original URL stealing readiness after the launch tab redirects.
+	it("does not substitute a same-URL sibling for the redirected launch tab", async () => {
+		const tabs = [
+			{ id: 7, windowId: 2, active: true, url: "http://localhost:5173/" },
+			{ id: 8, windowId: 2, active: false, url: "http://localhost:5173/" },
+		];
+		beforeCommand = () => {
+			tabs[0].url = "http://localhost:5173/login";
+		};
+		offeredCommands.push({
+			requestId: "ready",
+			sessionId: "A",
+			action: "ready",
+			args: { url: "http://localhost:5173/" },
+		});
+		await boot(false, tabs);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(calls.find((call) => call.action === "command_reply")?.reply).toEqual({
+			ok: true,
+			result: { tabId: 7, windowId: 2 },
+		});
+	});
+
+	// Catches: a same-URL sibling acknowledging startup when the launch tab no longer exists.
+	it("rejects readiness when the launch tab closed despite a same-URL sibling", async () => {
+		const tabs = [
+			{ id: 7, windowId: 2, active: true, url: "http://localhost:5173/" },
+			{ id: 8, windowId: 2, active: false, url: "http://localhost:5173/" },
+		];
+		beforeCommand = () => {
+			tabs.shift();
+		};
+		offeredCommands.push({
+			requestId: "ready",
+			sessionId: "A",
+			action: "ready",
+			args: { url: "http://localhost:5173/" },
+		});
+		await boot(false, tabs);
+		await vi.advanceTimersByTimeAsync(0);
+		expect(calls.find((call) => call.action === "command_reply")?.reply?.ok).toBe(false);
 	});
 
 	// Catches: an optional action-history write swallowing an otherwise completed command reply.

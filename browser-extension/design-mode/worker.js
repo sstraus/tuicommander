@@ -34,6 +34,9 @@ async function refreshConnection(tabId) {
     catch(error) { serversBySession.set(sessionId, {...noServers,scanNotice:error.message}); }
   } catch (error) { agents = []; connection = error.message; }
 }
+// This dedicated profile launches one active page. Capture its identity before the
+// native handshake: redirects must not replace it with another tab at the old URL.
+const launchTab = chrome.tabs.query({active:true,lastFocusedWindow:true}).then(([tab]) => tab?.id).catch(() => undefined);
 let reviewedTab;
 let beating = false;
 let commandLoopStarted = false;
@@ -49,8 +52,8 @@ async function commands() {
         const mode = (await request('mode_status')).find((mode) => mode.repoPath === bound.repoPath);
         if (mode?.status !== 'armed' || mode.sessionId !== command.sessionId) throw new Error('not_armed: Design Mode is not armed for this session.');
         if (command.action === 'ready') {
-          const target = new URL(command.args.url).href;
-          const tab = (await chrome.tabs.query({})).find((tab) => [tab.url, tab.pendingUrl].some((raw) => raw && new URL(raw).href === target));
+          const tabId = await launchTab;
+          const tab = tabId ? await chrome.tabs.get(tabId).catch(() => undefined) : undefined;
           if (!tab?.id) throw new Error('page_not_ready: The launched Design Mode page is not available.');
           reviewedTab = tab.id;
           await chrome.storage.session.set({reviewedTab});
