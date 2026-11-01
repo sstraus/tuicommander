@@ -31,7 +31,7 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 use dashmap::DashMap;
@@ -72,6 +72,8 @@ pub enum Downlink {
 /// lifetime: the socket that feeds `capture` is the socket that carries
 /// `playback`, and when it goes both stop being true at the same instant.
 pub struct BrowserLink {
+    capture_batches: AtomicUsize,
+    dropped_samples: AtomicUsize,
     capture: Mutex<VecDeque<f32>>,
     playback: tokio::sync::broadcast::Sender<Downlink>,
     alive: AtomicBool,
@@ -92,6 +94,8 @@ impl BrowserLink {
     fn new() -> Self {
         let (playback, _) = tokio::sync::broadcast::channel(8);
         Self {
+            capture_batches: AtomicUsize::new(0),
+            dropped_samples: AtomicUsize::new(0),
             capture: Mutex::new(VecDeque::new()),
             playback,
             alive: AtomicBool::new(true),
@@ -107,10 +111,12 @@ impl BrowserLink {
     /// across the socket to downsample on this side would triple the bytes for
     /// a result the segmenter throws away.
     pub fn push_capture(&self, samples: &[f32]) {
+        self.capture_batches.fetch_add(1, Ordering::Relaxed);
         let mut buffer = self.capture.lock();
         buffer.extend(samples.iter().copied());
         let overflow = buffer.len().saturating_sub(MAX_CAPTURE_SAMPLES);
         buffer.drain(..overflow);
+        self.dropped_samples.fetch_add(overflow, Ordering::Relaxed);
     }
 
     /// Everything captured since the last call.
@@ -216,6 +222,14 @@ impl BrowserVoiceEndpoint {
 }
 
 impl VoiceEndpoint for BrowserVoiceEndpoint {
+    fn capture_snapshot(&self) -> super::continuous::CaptureSnapshot {
+        super::continuous::CaptureSnapshot {
+            backlog_samples: self.link.capture.try_lock().map(|buffer| buffer.len()),
+            capture_batches: Some(self.link.capture_batches.load(Ordering::Relaxed)),
+            dropped_samples: Some(self.link.dropped_samples.load(Ordering::Relaxed)),
+        }
+    }
+
     fn drain(&mut self) -> Result<Vec<f32>, String> {
         Ok(self.link.drain_capture())
     }
@@ -485,6 +499,32 @@ mod tests {
             "the live socket keeps the name"
         );
         assert!(new.connected());
+    }
+
+    // Catches: the diagnostic hiding dropped capture or reporting a stale pre-drain backlog.
+    #[test]
+    fn barge_in_hold_snapshot_counts_browser_capture_loss_and_drain() {
+        let link = Arc::new(BrowserLink::new());
+        let mut endpoint = BrowserVoiceEndpoint::new(
+            link.clone(),
+            Arc::new(SilentTranscriber),
+            None,
+            transcribe::VoiceGates::default(),
+        );
+        link.push_capture(&vec![0.25; MAX_CAPTURE_SAMPLES + 160]);
+        link.push_capture(&[0.5; 160]);
+        let snapshot = endpoint.capture_snapshot();
+        assert_eq!(snapshot.backlog_samples, Some(960_000));
+        assert_eq!(snapshot.capture_batches, Some(2));
+        assert_eq!(snapshot.dropped_samples, Some(320));
+        assert_eq!(endpoint.drain().unwrap().len(), 960_000);
+        let snapshot = endpoint.capture_snapshot();
+        assert_eq!(snapshot.backlog_samples, Some(0));
+        assert_eq!(snapshot.capture_batches, Some(2));
+        assert_eq!(snapshot.dropped_samples, Some(320));
+        // A busy buffer must report unknown instead of blocking the audio loop.
+        let _busy = link.capture.lock();
+        assert_eq!(endpoint.capture_snapshot().backlog_samples, None);
     }
 
     /// Capture is a queue the runtime empties, and `drain` must hand over

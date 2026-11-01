@@ -1613,6 +1613,60 @@ The queue is built in `arm_hands_free_with` **before** the runtime is spawned
 whenever a language is already known, for this reason alone: a loop started
 first would spend its first ticks unable to interrupt anything.
 
+### Correlated hold diagnostics (2605-53fc)
+
+After a Rust rebuild/restart, each capture hold writes two structured INFO events
+with `source="dictation"`: `barge-in hold opened` and `barge-in hold resolved`.
+Pair them by `hold_id`, `owner` and `generation` within the same process run.
+The process-local hold ID starts again after a restart. No new transcript text
+or PCM is retained. Existing admission logs are unchanged.
+
+The opening event is sampled before requesting the output pause:
+
+| Fields | Meaning and limits |
+|---|---|
+| `output_nonempty`, `can_pause` | Best-effort output probe. `Some(true)` for nonempty means queued or paused audio, **not** acoustic activity. `None` means the slot is busy, absent, or has no probe. The probe does not wait for a voice rebuild. |
+| `raw_rms`, `raw_peak` | Mono 16 kHz energy of the drained batch before cancellation. This is not the normalized UI level. |
+| `cleaned_rms_max`, `cleaned_active_frames` | Maximum RMS and active count over complete 20 ms frames of this cleaned batch. Frames follow this batch's start; they can differ from the segmenter's carried-frame boundaries. |
+| `longest_run_ms`, `activity_rms`, `min_speech_ms` | Longest sustained run in the open/closed utterance and the actual segmenter thresholds that caused the edge. A long batch can open and close an utterance in one tick. |
+| `drained_samples`, `backlog_samples`, `partial_samples` | Batch size, best-effort endpoint backlog after drain, and echo cleaner's carried partial 10 ms frame. `None` backlog means the capture buffer was busy or unavailable; it is not zero. |
+| `capture_batches`, `dropped_samples` | Cumulative capture counters: native CPAL callback batches/lost 16 kHz samples, or browser received WS batches/server overflow samples. Browser counters do not measure hardware callbacks or audio lost before receipt. An old drop count alone does not date the loss. |
+| `far_end_samples`, `far_end_position`, `far_end_dropped` | Reference queue length, capture-sample cursor and cumulative reference overflow, sampled under the echo lock just after cleaning this batch. Queue length can include alignment silence, not only reply PCM. |
+| `last_render_age_ms` | Time since reference registration, not time since DAC onset; `None` if no reply has registered for this capture. |
+| `drain_to_clean_us`, `tick_interval_ms` | Time from drain completion until the echo lock is acquired, and wall time between tick entries (`None` on the first tick). The latter includes inline recognition and scheduling, not just scheduler delay. |
+
+The resolution event has the same identity plus `reason`, monotonic `elapsed_ms`
+since opening, and cumulative `inference_us` spent in prefix/final recognition
+while that hold was pending. `inference_us=0` is valid when no recognition ran.
+Resolution reasons are:
+
+| Reason | Existing decision |
+|---|---|
+| `accepted` | Final transcript was admitted with content; hush the old reply. |
+| `activated` | Final transcript was the activation phrase alone; hush the old reply. |
+| `rejected` | Final transcript did not pass activation; resume. |
+| `empty` | Final recognition returned no text, including downstream speech-gate skips; resume. |
+| `stale` | Final recognition belonged to a withdrawn/unarmed generation; resume. |
+| `discard` | Capture returned to no open utterance without a qualifying closed result; resume. |
+| `limit` | A tick observed elapsed capture time strictly greater than the 8000 ms hold limit; resume. |
+| `release` | Runtime cleanup released a still-pending hold, including a device/recognition failure, stop, or prefix-generation withdrawal. |
+
+Only the first resolution of a pending hold is recorded. Runtime release after
+an admitted/rejected/limited hold does not add another event. The existing
+`speech: resumed, nothing addressed to us` message stays for compatibility;
+use the new `reason` rather than inferring rejection from that old text.
+The eight-second limit still runs on ticks and cannot preempt synchronous
+recognition. Diagnostics do not change VAD, admission or output policy.
+
+Read the existing instance-local daily `logs/tuic.log.YYYY-MM-DD`, or use the
+existing log panel/API when enabled, and filter for `barge-in hold `. Compare
+raw and cleaned energy, the reference queue and capture-drop counters at an
+edge, then its actual verdict. A nonempty output plus high residual and a
+capture discontinuity is useful evidence, not proof that the residual is echo.
+Numeric aggregates cannot distinguish room speech from TTS echo or reconstruct
+reference alignment. PCM replay requires a separate, explicitly authorized,
+bounded opt-in capture; this diagnostic does not record or open a microphone.
+
 ### What barge-in measures (816-cbbf)
 
 The barge-in tests above this one all use `Subtract`, a perfect non-adaptive

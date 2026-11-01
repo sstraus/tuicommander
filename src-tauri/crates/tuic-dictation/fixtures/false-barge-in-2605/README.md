@@ -205,3 +205,12 @@ RED/GREEN pair. No diagnostic behavior has been added in this branch.
   documentation/evidence-only result; there are no RED/GREEN output lines.
 - No production source, config, transport, dependencies, or existing test was
   changed. No app restart is needed for these artifacts.
+
+## Approved diagnostic continuation
+
+The investigation above is the evidence-only snapshot committed as `053be5678`.
+The coordinator subsequently approved the numeric edge/resolution diagnostic.
+Production now emits the events described in `docs/backend/dictation.md`, with
+no new transcript or PCM retention and no change to the hold/admission rules.
+This does not retroactively supply the missing historical measurements or prove
+a false-trigger cause. Runtime deployment still needs Boss's manual Rust restart.

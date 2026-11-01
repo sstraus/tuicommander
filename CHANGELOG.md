@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Add correlated barge-in hold diagnostics with aggregate capture/reference snapshots and explicit resolution reasons; keep the existing voice hold policy unchanged (#2605-53fc).
+
 - Pin transitive same-daemon workflow Calls with bounded nested identities, typed terminal receipts and recovery/cancellation ownership; keep Story Dispatch as the delivery fan-out (#2516-8fd1).
 - Let agents choose WebP (default quality 25) or PNG per Design Mode screenshot, with optional quality and long-edge downsize. Return image media type, format, quality and byte size; selected-element crops remain lossless PNG (#2617-69a6).
 

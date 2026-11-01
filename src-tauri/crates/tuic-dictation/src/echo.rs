@@ -250,6 +250,15 @@ fn resample(samples: &[f32], from_rate: u32) -> Vec<f32> {
 /// whatever feeds the capture loop.
 pub type Backlog = Box<dyn Fn() -> usize + Send>;
 
+/// Sample-count reference state at a hold edge, not a playback clock.
+pub struct EchoSnapshot {
+    pub queued_samples: usize,
+    pub position: usize,
+    pub partial_samples: usize,
+    pub dropped_samples: u64,
+    pub last_render_age_ms: Option<u64>,
+}
+
 /// The far-end buffer and the canceller behind it, kept in step.
 ///
 /// One of these is shared by [`speaker`](super::speaker), which fills it, and
@@ -263,6 +272,7 @@ pub struct EchoGuard {
     /// Capture not yet drained, for aligning the start of a reply. `None`
     /// until a capture stream is attached.
     backlog: Option<Backlog>,
+    last_rendered: Option<std::time::Instant>,
 }
 
 impl EchoGuard {
@@ -272,6 +282,7 @@ impl EchoGuard {
             canceller,
             remainder: Vec::new(),
             backlog: None,
+            last_rendered: None,
         }
     }
 
@@ -283,6 +294,7 @@ impl EchoGuard {
         self.far_end.clear();
         self.remainder.clear();
         self.backlog = Some(backlog);
+        self.last_rendered = None;
     }
 
     /// A reply about to be played. Called by the render thread, before the
@@ -298,6 +310,7 @@ impl EchoGuard {
     /// A reply queued behind one still playing follows it with no gap,
     /// because that is how the device plays it.
     pub fn note_rendered(&mut self, audio: &SpeechAudio) {
+        self.last_rendered = Some(std::time::Instant::now());
         // Not while paused: the reply starts when playback continues, and the
         // capture recorded until then is not ahead of it.
         if self.far_end.is_empty() && !self.far_end.is_paused() {
@@ -372,6 +385,16 @@ impl EchoGuard {
     /// to tell "the user is talking" from "we are still hearing ourselves".
     pub fn is_playing(&self) -> bool {
         !self.far_end.is_empty()
+    }
+
+    pub fn snapshot(&self) -> EchoSnapshot {
+        EchoSnapshot {
+            queued_samples: self.far_end.samples.len(),
+            position: self.far_end.position,
+            partial_samples: self.remainder.len(),
+            dropped_samples: self.far_end.dropped(),
+            last_render_age_ms: self.last_rendered.map(|at| at.elapsed().as_millis() as u64),
+        }
     }
 
     pub fn dropped_far_end(&self) -> u64 {
