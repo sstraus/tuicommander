@@ -8038,8 +8038,9 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
             .iter()
             .position(|row| row.trim_start().starts_with("2."))
             .unwrap();
+        let insertion = second + 1;
         rows.splice(
-            second + 1..second + 1,
+            insertion..insertion,
             [
                 "Note outside the answer column".to_string(),
                 "    This is not part of the answer".to_string(),
