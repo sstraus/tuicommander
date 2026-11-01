@@ -82,7 +82,7 @@ pub(in crate::workflows::run) fn dispatch(
     if run
         .graph_executions
         .iter()
-        .any(|g| g.target_id != run.plan_id && !g.completed)
+        .any(|g| g.call_binding.is_none() && g.target_id != run.plan_id && !g.completed)
     {
         return Ok(Dispatch::Waiting);
     }

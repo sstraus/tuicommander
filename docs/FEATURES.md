@@ -3677,6 +3677,16 @@ suspends its activation, not disjoint delivery. The project inbox counts pending
 and expired questions without a coordinator; all transports use the same service.
 No timeout grants consent. See [workflow decisions](backend/workflows.md#branch-local-questions-and-decision-inbox-wf03).
 
+
+### Pinned reusable workflow Calls
+
+Contract-6 workflows can call bounded same-daemon decision/check definitions with
+transitive definition/routing-policy pins, declared boolean input/output receipts
+and stable activation-owned child identities. Completed, blocked, failed,
+cancelled and uncertain remain distinct. Recovery reuses the child; cancellation
+requests stop without erasing independent integration proof debt. Story Dispatch
+remains the delivery fan-out. Usage coverage stays unknown until measured.
+See [backend contract](backend/workflows.md#pinned-reusable-subflows-wf09).
 AI Chat settings includes a persisted **Master prompt** textarea for additive behavior
 instructions on new conversations (8192 UTF-8 bytes maximum). Existing conversations
 keep their original launch instructions. Empty adds nothing.

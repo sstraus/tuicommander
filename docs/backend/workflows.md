@@ -692,3 +692,65 @@ questions remain read-only records and do not hide the next pending question.
 The form shows choices from the current structured schema; only historical
 requests use legacy option suggestions. Boolean and multiple-choice values can
 be entered as JSON in that existing form.
+
+
+## Pinned reusable subflows (WF09)
+
+Contract 6 adds same-daemon `call` and terminal `return` nodes. Contracts 2–5
+retain their replay rules. Run-store schema 12 refuses older binaries before they
+can recover a new Call ledger.
+
+Story Dispatch remains the only story-delivery fan-out. A Call targets an exact
+published **story-kind reusable decision/check definition**, not an independent
+story assignment. Its child is a nested `GraphExecution` in the same run, with a
+stable hashed ID bound to the parent execution and activation. It shares the
+existing scheduler, duration, loop, command and cancellation ownership. No new
+cross-daemon placement or second scheduler is introduced.
+
+Publication resolves the complete definition closure, including Story Dispatch
+and nested Calls. It rejects recursive paths, more than four Call levels and
+more than 32 expanded calls (including conservative root-loop expansion).
+Reusable graphs allow Start, If/else, Run command, Tool, Notify, Call and Return;
+they cannot contain Agents, delivery, loops, parallel regions, Pause or End.
+Return marks the reusable form in the existing story-kind publication namespace;
+it has no implicit story final-check/evidence policy. Checks execute as explicit
+Run command/Tool nodes and bind their actual receipts before a Return path.
+Ordinary story-delivery publications still require their final checks.
+A run also admits at most 32 Call children. Each graph retains its existing
+512-activation limit. The 33 Call/root executions therefore reserve at most
+16,896 activation slots; separately dispatched stories retain existing admission
+limits. These are storage/admission bounds, not evidence of process completion.
+
+A Call declares `definition_id`, `revision`, up to 16 nullable boolean `inputs`
+and up to 16 unique `outputs`. Input names exactly match the reusable graph's
+unbound If/else input declarations. Each Return declares the same output names
+and one of `completed`, `blocked`, `failed`, `cancelled`, `uncertain`. The parent
+must publish a distinct edge for each outcome. A typed Return can carry an
+unknown boolean; unknown is not success. Return definitions cannot start as
+standalone delivery roots or through Story Dispatch.
+
+Root start persists every transitive publication and the imported routing policy.
+A later dispatch or Call reads these persisted pins, never the latest draft or
+policy. Each delivery publication includes its exact repository checks, closure and
+evidence policy; each reusable definition pins its explicit command/check policy. Only explicitly imported routing policy is a routing grant;
+absence of a publication-authority import does not authorize publication.
+
+A child start is not a completion receipt. The reducer permits parent completion
+only after the exact child reaches Return and supplies the exact typed outcome
+and receipt reference. Reopen/retry reuses the same child identity. Receipts retain
+a set of accounting execution IDs: use set union, never add an inclusive parent
+and its descendants twice. Provider money/tokens remain **unknown**, not zero;
+WF12 owns ingestion of the absent usage ledger.
+
+Parent cancellation marks live nested bindings `stopRequested`, fences further
+scheduling and requests stop through the existing run-owned command process-tree
+registry. This is a request, not fabricated stop proof or a successful Return.
+Uncertain effects remain in the run ledger for inspection. Run-wide pause/failure uses the existing shared run scope: it admits no new
+child work or Return transitions until explicit resume. An already running owned
+command can settle its journal receipt while paused; pause does not claim to
+stop it. Explicit cancellation requests process-tree stop. A child terminal
+failure follows its declared parent edge. The independent integration outbox is not deleted by cancellation.
+WF08 remains the owner of post-land proof execution and is not implemented by
+Call. Full implement/critic/repair/integrate/proof-batch end-to-end evidence still
+requires that service; the WF09 regressions cover pinned nesting, typed outcomes,
+replay, retry and real-Git proof-debt retention.

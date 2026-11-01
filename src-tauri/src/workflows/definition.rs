@@ -57,6 +57,17 @@ pub enum NodeKind {
         story_template_id: String,
         story_revision: i64,
     },
+    /// Bounded reusable same-daemon decision/check graph, not story delivery.
+    Call {
+        definition_id: String,
+        revision: i64,
+        inputs: std::collections::BTreeMap<String, Option<bool>>,
+        outputs: Vec<String>,
+    },
+    Return {
+        outcome: super::run::calls::CallOutcome,
+        outputs: std::collections::BTreeMap<String, Option<bool>>,
+    },
     Judge,
     Gate,
     Pause {
@@ -146,6 +157,7 @@ pub struct WorkflowGraph {
 
 fn required_outcomes(kind: &NodeKind) -> &'static [&'static str] {
     match kind {
+        NodeKind::Call { .. } => &["completed", "blocked", "failed", "cancelled", "uncertain"],
         NodeKind::IfElse { .. } => &["yes", "no", "uncertain"],
         NodeKind::AllJoin { .. } => &["completed", "failed", "cancelled", "skipped"],
         NodeKind::Judge => &["yes", "no", "uncertain"],
@@ -191,6 +203,29 @@ pub fn validate_graph(graph: &WorkflowGraph, workflow_kind: WorkflowKind) -> Res
                     return Err("Tool needs a pinned id/revision".into());
                 }
                 command.validate()?;
+            }
+            NodeKind::Call {
+                definition_id,
+                revision,
+                inputs,
+                outputs,
+            } => {
+                super::run::calls::validate_fields(definition_id, *revision, inputs, outputs)?;
+            }
+            NodeKind::Return { outputs, .. } => {
+                if workflow_kind != WorkflowKind::Story {
+                    return Err(
+                        "reusable Return definitions use the story-kind publication namespace"
+                            .into(),
+                    );
+                }
+                super::run::calls::validate_fields(
+                    "return",
+                    1,
+                    &Default::default(),
+                    &outputs.keys().cloned().collect::<Vec<_>>(),
+                )?;
+                ends += 1;
             }
             NodeKind::Start => starts += 1,
             NodeKind::End => ends += 1,
@@ -315,7 +350,10 @@ pub fn validate_graph(graph: &WorkflowGraph, workflow_kind: WorkflowKind) -> Res
             if edges.iter().any(|edge| edge.outcome.is_some()) {
                 return Err("parallel branch links must be unlabeled".into());
             }
-        } else if matches!(node.kind, NodeKind::End | NodeKind::Pause { .. }) {
+        } else if matches!(
+            node.kind,
+            NodeKind::End | NodeKind::Return { .. } | NodeKind::Pause { .. }
+        ) {
             if !edges.is_empty() {
                 return Err(format!(
                     "terminal node {} cannot have an outgoing edge",
@@ -434,7 +472,12 @@ pub fn validate_executable_graph(
     has_final_checks: bool,
 ) -> Result<(), String> {
     validate_graph(graph, kind)?;
-    if !has_final_checks {
+    if !has_final_checks
+        && !graph
+            .nodes
+            .iter()
+            .any(|n| matches!(n.kind, NodeKind::Return { .. }))
+    {
         return Err("executable workflows require deterministic final checks".into());
     }
     for node in &graph.nodes {
@@ -485,16 +528,21 @@ fn validate_regions(graph: &WorkflowGraph) -> Result<(), String> {
                 Predicate::Input { name, .. } if name.trim().is_empty() || name.len() > 80 => {
                     return Err("If/else requires a bounded declared input name".into());
                 }
-                Predicate::Receipt { node_id, outcome }
-                    if !graph.nodes.iter().any(|n| n.id == *node_id)
-                        || !matches!(
-                            outcome.as_str(),
-                            "completed" | "failed" | "cancelled" | "skipped"
-                        ) =>
-                {
-                    return Err(
-                        "If/else receipt must reference a declared node and typed outcome".into(),
-                    );
+                Predicate::Receipt { node_id, outcome } => {
+                    let source = graph.nodes.iter().find(|n| n.id == *node_id).ok_or(
+                        "If/else receipt must reference a declared node and typed outcome",
+                    )?;
+                    let allowed: &[&str] = if matches!(source.kind, NodeKind::Call { .. }) {
+                        &["completed", "blocked", "failed", "cancelled", "uncertain"]
+                    } else {
+                        &["completed", "failed", "cancelled", "skipped"]
+                    };
+                    if !allowed.contains(&outcome.as_str()) {
+                        return Err(
+                            "If/else receipt must reference a declared node and typed outcome"
+                                .into(),
+                        );
+                    }
                 }
                 _ => {}
             }
@@ -633,6 +681,8 @@ fn validate_regions(graph: &WorkflowGraph) -> Result<(), String> {
                     current.kind,
                     NodeKind::Start
                         | NodeKind::End
+                        | NodeKind::Call { .. }
+                        | NodeKind::Return { .. }
                         | NodeKind::StoryDispatch { .. }
                         | NodeKind::Loop { .. }
                 ) || id == node.id

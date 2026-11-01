@@ -18,6 +18,7 @@ mod parity;
 mod proposals;
 mod routing;
 mod typed_commands;
+mod wf09;
 
 fn fixture() -> (
     tempfile::TempDir,
