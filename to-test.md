@@ -3311,3 +3311,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] Voice Settings: compare Speech assets and Spoken replies in Paper and Commander; check aligned rows, model/voice dropdowns and named asset actions. Confirm existing download, preview and recording actions still use the same state (#2608-f1c4).
 
 - [ ] After a manual backend restart and extension reinstall, use Design Mode `ui action=design_screenshot` with default WebP, PNG and `quality:55,max_long_edge:800`. Confirm readable images, matching file suffix/media type and reported metadata. Selected-element crops use WebP; launch-tab readiness must remain unchanged (#2617-69a6).
+
+- [x] Mobile queued panel: hide while user work stays queued, retain the live count, reopen for Cancel/Clear all, reset at zero, and exclude server mail/task origins while preserving their queue entries (#2639-173b). _(verified: SessionDetailScreen.queue.test.tsx, 17 targeted tests passed; production-component browser captures at 390x844, dark/light, in ~/Gits/.tmp/tuic-2639/browser-final/.)_

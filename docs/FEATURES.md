@@ -2428,6 +2428,8 @@ Unsupported actions are hidden. Menus close on outside tap or Escape and use
 - iOS standalone detection: shows "Add to Home Screen" guidance when not installed
 - HTTP detection: shows "Push requires HTTPS (enable Tailscale)" when not on HTTPS
 
+Mobile terminal queued prompts have a **Hide** action beside the existing FIFO count. The hidden panel keeps one compact count/Show control that updates as work changes. Tap it to restore Cancel and Clear all. An empty user queue resets the disclosure for new work. Server mail wakes and spawned task prompts stay out of this mobile list/count; Clear all preserves them (#2639-173b).
+
 ### 18.9 Notification Sounds
 - Session notification sounds play only while the Sessions list and PWA document are visible; session detail, Chat, Files, Progress, Activity, and Settings remain silent. Muted transitions are tracked without replay, and deferred completions recheck visibility and the host subagent-silence setting before playback. Parented sessions follow **Silence subagent sounds and notifications** without replaying muted transitions. Mobile startup loads the host notification snapshot before subscribing to settings refresh, so a fresh PWA respects the saved host preference.
 - Audio playback via Rust `rodio` crate (Tauri command `play_notification_sound`), replacing the previous Web Audio API approach
