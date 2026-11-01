@@ -231,6 +231,7 @@ describe("MarkdownTab agent review actions", () => {
 			expect(mockRpc).toHaveBeenCalledWith("enqueue_agent_command", {
 				sessionId: "session-two",
 				text: expect.stringContaining("/repo/docs/review.md"),
+				idempotencyKey: expect.stringMatching(/.+/),
 			}),
 		);
 		await waitFor(() => expect(screen.queryByRole("button", { name: "Send changes to agent" })).toBeNull());
@@ -359,6 +360,7 @@ describe("MarkdownTab agent review actions", () => {
 			expect(mockRpc).toHaveBeenCalledWith("enqueue_agent_command", {
 				sessionId: "session-one",
 				text: `Open ${path}, re-read the whole file: apply the 1 embedded tweak review comment, treat every other change since your last write (checkbox toggles, edited text) as the user's answer, remove each resolved tweak marker, and leave unrelated files unchanged.`,
+				idempotencyKey: expect.stringMatching(/.+/),
 			}),
 		);
 	});
@@ -658,6 +660,7 @@ describe("MarkdownTab agent review actions", () => {
 				text: expect.stringMatching(
 					/^Open \/repo\/docs\/answers\.md, re-read the whole file.*checkbox.*user's answer/s,
 				),
+				idempotencyKey: expect.stringMatching(/.+/),
 			}),
 		);
 		const sent = mockRpc.mock.calls.find(([method]) => method === "enqueue_agent_command")?.[1].text as string;
