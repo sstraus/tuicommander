@@ -2742,37 +2742,7 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
     }
     let (answer_rows, preview) = claude_question_preview(screen_rows, footer, &OPTION_RE);
     let screen_rows = answer_rows.as_ref();
-    // Claude replaces a clipped option's cursor with a column-zero scroll
-    // arrow. Hidden rows are not an ordered choice list: expose only the
-    // footer's native navigation instead of guessing labels or cursor offsets.
-    let last_first_option = (0..footer).rev().find(|&idx| {
-        OPTION_RE
-            .captures(&screen_rows[idx])
-            .is_some_and(|caps| &caps[2] == "1")
-    });
-    let clipped = (last_first_option.unwrap_or(0)..footer).rev().find(|&idx| {
-        let row = &screen_rows[idx];
-        row.strip_prefix('↑')
-            .or_else(|| row.strip_prefix('↓'))
-            .is_some_and(|rest| OPTION_RE.is_match(rest))
-    });
-    let clipped_start = clipped.map(|idx| {
-        screen_rows[..idx]
-            .iter()
-            .rposition(|row| row.starts_with("──"))
-            .map_or(0, |separator| separator + 1)
-    });
-    // Native titles can be imperative ("Pick a colour"). Locate the title
-    // from the active numbered form, not punctuation in earlier output or in
-    // an option description. The column-zero footer/review remains the anchor.
-    let first_option = if let Some(start) = clipped_start {
-        (start..footer).find(|&idx| {
-            let row = screen_rows[idx].trim_start_matches(['↑', '↓']);
-            OPTION_RE.is_match(row)
-        })
-    } else {
-        last_first_option
-    }?;
+    let (first_option, clipped) = claude_question_first_option(screen_rows, footer, &OPTION_RE)?;
     let (title, title_text) = claude_question_title(screen_rows, first_option)?;
     let navigation = || ParsedEvent::ChoicePrompt {
         title: title_text.to_string(),
@@ -2794,7 +2764,7 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
         dismiss_key: Some("cancel".to_string()),
         amend_key: None,
     };
-    if clipped.is_some() {
+    if clipped {
         return Some(navigation());
     }
     let mut options: Vec<ChoiceOption> = Vec::new();
@@ -2896,6 +2866,46 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
         dismiss_key: Some("cancel".to_string()),
         amend_key: None,
     })
+}
+
+/// Locate the active form and detect clipped choices before deriving answer labels.
+fn claude_question_first_option(
+    screen_rows: &[String],
+    footer: usize,
+    option_re: &regex::Regex,
+) -> Option<(usize, bool)> {
+    // Claude replaces a clipped option's cursor with a column-zero scroll
+    // arrow. Hidden rows are not an ordered choice list: expose only the
+    // footer's native navigation instead of guessing labels or cursor offsets.
+    let last_first_option = (0..footer).rev().find(|&idx| {
+        option_re
+            .captures(&screen_rows[idx])
+            .is_some_and(|caps| &caps[2] == "1")
+    });
+    let clipped = (last_first_option.unwrap_or(0)..footer).rev().find(|&idx| {
+        let row = &screen_rows[idx];
+        row.strip_prefix('↑')
+            .or_else(|| row.strip_prefix('↓'))
+            .is_some_and(|rest| option_re.is_match(rest))
+    });
+    let clipped_start = clipped.map(|idx| {
+        screen_rows[..idx]
+            .iter()
+            .rposition(|row| row.starts_with("──"))
+            .map_or(0, |separator| separator + 1)
+    });
+    // Native titles can be imperative ("Pick a colour"). Locate the title
+    // from the active numbered form, not punctuation in earlier output or in
+    // an option description. The column-zero footer/review remains the anchor.
+    let first_option = if let Some(start) = clipped_start {
+        (start..footer).find(|&idx| {
+            let row = screen_rows[idx].trim_start_matches(['↑', '↓']);
+            option_re.is_match(row)
+        })
+    } else {
+        last_first_option
+    }?;
+    Some((first_option, clipped.is_some()))
 }
 
 /// Remove the native preview rectangle from answer rows, preserving cell columns.
