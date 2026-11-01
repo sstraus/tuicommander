@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Preserve the name and TUIC address when Telegram replies fall back from an exited agent; identify the receiving session or unavailable target, and document coordinator registration after restart (#2640-1cbf).
+
 - Queue busy Session Chat prompts in TUIC and add per-prompt Cancel and Send now controls without duplicate idle delivery (#2589-4bc4).
 - Add correlated barge-in hold diagnostics with aggregate capture/reference snapshots and explicit resolution reasons; keep the existing voice hold policy unchanged (#2605-53fc).
 

@@ -3311,3 +3311,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 - [ ] Voice Settings: compare Speech assets and Spoken replies in Paper and Commander; check aligned rows, model/voice dropdowns and named asset actions. Confirm existing download, preview and recording actions still use the same state (#2608-f1c4).
 
 - [ ] After a manual backend restart and extension reinstall, use Design Mode `ui action=design_screenshot` with default WebP, PNG and `quality:55,max_long_edge:800`. Confirm readable images, matching file suffix/media type and reported metadata. Selected-element crops use WebP; launch-tab readiness must remain unchanged (#2617-69a6).
+
+- [ ] After the next backend rebuild/restart, verify #2640-1cbf: non-owner Telegram messages show the session name and terminal alias (stable peer ID without a terminal); replies after sender exit reach the registered coordinator with quoted context and name the recipient. With no owner or live AI Chat, the notice names the unavailable sender. Re-register the coordinator after restart. Offline runtime tests use only the existing loopback Bot API; no real message was sent during implementation.

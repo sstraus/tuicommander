@@ -1,6 +1,6 @@
 # Telegram channel for TUICommander
 
-**Stories:** 1438-79b4, 1959-162a, 1983-1b47, 2119-d5de. **Updated:** 2026-10-22.
+**Stories:** 1438-79b4, 1959-162a, 1983-1b47, 2119-d5de, 2640-1cbf. **Updated:** 2026-11-01.
 Offline implementation is available; live mint deployment remains pending.
 
 ## Consumer contract and registration
@@ -79,8 +79,8 @@ The destination remains the single allowlisted chat. Non-owner buttons are refus
 with `telegram_non_owner_buttons`: this preserves the existing owner-only callback
 contract without a second callback-routing map.
 
-The server derives `[<session name>] ` from the caller identity and adds it to
-every outgoing non-owner chunk. The agent cannot choose the attribution. Names must
+The server derives `[<session name>] [alias: <TUIC address>] ` from the caller identity and adds it to
+every outgoing non-owner chunk. The address is the native terminal alias, or the stable TUIC peer ID for an agent without a terminal. The agent cannot choose the attribution. Names must
 be non-empty, contain no brackets or control characters, and use at most 128 UTF-16
 units; invalid names return `telegram_invalid_sender_name`. Each non-owner peer
 may send once per 30 seconds; an earlier attempt returns
@@ -94,7 +94,17 @@ peer: this ambiguity is accepted instead of changing the authored text.
 For Telegram Reply, the adapter reads `message.reply_to_message.text`. A leading
 `[<name>] ` selects a unique live peer with that exact name. New messages, unprefixed
 replies, unknown names, dead peers and duplicate live names use the
-current inbound owner. Reply routing does not register the sender; the request’s
+current inbound owner, then the latest-connected live AI Chat. If a prefixed target
+cannot receive directly, native mail adds `reply_to_agent: {name, alias}` alongside
+the exact `reply_to_text` and reply `text`. The identity comes from the quote, so it
+survives peer removal and restart without a historical lookup. Old name-only
+quotes have `alias: null`; the adapter does not invent a missing address.
+After successful native delivery, the bot names the actual receiving session and
+its TUIC address. This means accepted inbox delivery, not proof that the session
+has read the reply. An acknowledgement failure does not reoffer accepted mail.
+With no owner or live AI Chat, the no-agent instruction names the unavailable
+quoted target. Unprefixed messages retain the existing generic instruction.
+Reply routing does not register the sender; the request’s
 begin/activity/finish authority follows its delivered recipient as before. No sent
 message-ID cache is kept. Renamed or replaced peers therefore use current names,
 not historical sender identity.
