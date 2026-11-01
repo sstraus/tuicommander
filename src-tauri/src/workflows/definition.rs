@@ -233,10 +233,7 @@ fn validate_node_kind(
             tool_revision,
             command,
         } => {
-            if tool_id.is_empty() || tool_id.len() > 128 || *tool_revision == 0 {
-                return Err("Tool needs a pinned id/revision".into());
-            }
-            command.validate()?;
+            validate_tool_fields(tool_id, *tool_revision, command)?;
         }
         NodeKind::Call {
             definition_id,
@@ -294,6 +291,18 @@ fn validate_node_kind(
         }
         _ => {}
     }
+    Ok(())
+}
+
+fn validate_tool_fields(
+    tool_id: &str,
+    tool_revision: u16,
+    command: &super::command::CommandDefinition,
+) -> Result<(), String> {
+    if tool_id.is_empty() || tool_id.len() > 128 || tool_revision == 0 {
+        return Err("Tool needs a pinned id/revision".into());
+    }
+    command.validate()?;
     Ok(())
 }
 
