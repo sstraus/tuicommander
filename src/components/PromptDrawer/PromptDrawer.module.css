@@ -220,38 +220,14 @@
 }
 
 .editor {
-  width: 500px;
+  max-height: 90vh;
+  overflow-y: auto;
+  width: 640px;
   max-width: 90vw;
   background: var(--bg-secondary);
   border-radius: var(--radius-md);
   border: 1px solid var(--border);
   padding: 16px;
-}
-
-.editor h4 {
-  margin: 0 0 16px;
-  font-size: var(--font-lg);
-}
-
-.editorField {
-  margin-bottom: 12px;
-}
-
-.editorField label {
-  display: block;
-  font-size: var(--font-sm);
-  font-weight: 600;
-  color: var(--fg-secondary);
-  margin-bottom: 4px;
-}
-
-.editorField input,
-.editorField textarea,
-.editorField select { width: 100%; }
-
-.editorField textarea {
-  resize: vertical;
-  font-family: var(--font-mono);
 }
 
 .editorActions {
@@ -268,61 +244,6 @@
   color: var(--error);
   background: rgba(var(--error-rgb, 220, 53, 69), 0.1);
   border-radius: var(--radius-md);
-}
-
-/* Placement checkbox grid */
-.placementGrid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-}
-
-.placementCheck {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: var(--font-sm);
-  color: var(--fg-secondary);
-  cursor: pointer;
-}
-
-.placementCheck input {
-  cursor: pointer;
-}
-
-/* Toggle row for auto-execute */
-.toggleRow {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-
-.toggleRow input {
-  width: auto;
-  flex-shrink: 0;
-  margin: 0 2px 0 0;
-}
-
-/* Reset button */
-.resetBtn {
-  background: transparent !important;
-  color: var(--warning) !important;
-}
-
-/* Badge */
-.badge {
-  display: inline-block;
-  font-size: var(--font-2xs);
-  padding: 1px 5px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-tertiary);
-  color: var(--fg-muted);
-  border: 1px solid var(--border);
-  margin-left: 6px;
-  vertical-align: middle;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
 }
 
 /* Tag badges on prompt rows */
@@ -369,90 +290,6 @@
 
 .toggleOff {
   opacity: 0.4;
-}
-
-/* Side-by-side fields (execution mode + auto-execute) */
-.editorFieldRow {
-  display: flex;
-  gap: 16px;
-}
-
-.editorFieldRow > .editorField {
-  flex: 1;
-}
-
-/* Variable insertion dropdown */
-.varDropdownWrap {
-  position: relative;
-  margin-top: 4px;
-}
-
-.varChevron {
-  font-size: 8px;
-  transition: transform 0.15s;
-}
-
-.varChevronOpen {
-  transform: rotate(180deg);
-}
-
-.varDropdownList {
-  position: absolute;
-  left: 0;
-  right: 0;
-  top: 100%;
-  margin-top: 2px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  box-shadow: var(--shadow-popup);
-  z-index: 10;
-  max-height: 280px;
-  overflow-y: auto;
-}
-
-.varGroupLabel {
-  padding: 4px 10px 2px;
-  font-size: var(--font-2xs);
-  font-weight: 700;
-  color: var(--fg-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  background: var(--bg-secondary);
-  position: sticky;
-  top: 0;
-}
-
-button[data-control-layout="row"].varItem {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  width: 100%;
-  padding: 4px 10px;
-  background: none;
-  border: none;
-  color: var(--fg-primary);
-  font-size: var(--font-sm);
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.1s;
-}
-
-.varItem:hover {
-  background: var(--bg-highlight);
-}
-
-.varItemName {
-  font-family: var(--font-mono);
-  font-size: var(--font-xs);
-  color: var(--accent);
-  flex-shrink: 0;
-  min-width: 120px;
-}
-
-.varItemDesc {
-  color: var(--fg-muted);
-  font-size: var(--font-xs);
 }
 
 /* Variable dialog enhancements */

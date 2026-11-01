@@ -15,11 +15,11 @@ async fn first_run_page_is_useful_without_a_server_and_escapes_paths() {
         let profile = super::super::browser::profile_dir(&root.join("repo")).join("chrome");
         if std::env::var_os("TUIC_DESIGN_RUNNING").is_some() {
             std::fs::create_dir_all(&profile).unwrap();
-            std::os::unix::fs::symlink(
-                format!("test-host-{}", std::process::id()),
-                profile.join("SingletonLock"),
-            )
-            .unwrap();
+            let socket_dir =
+                tempfile::tempdir_in(crate::test_support::short_socket_test_temp_root()).unwrap();
+            let socket = socket_dir.path().join("s");
+            let _listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+            std::os::unix::fs::symlink(&socket, profile.join("SingletonSocket")).unwrap();
             let error = launch(
                 &state,
                 &root.join("repo"),
@@ -34,7 +34,7 @@ async fn first_run_page_is_useful_without_a_server_and_escapes_paths() {
                 "{error}"
             );
             assert!(!root.join("browser-args").exists());
-            std::fs::remove_file(profile.join("SingletonLock")).unwrap();
+            std::fs::remove_file(profile.join("SingletonSocket")).unwrap();
             return;
         }
         if let Ok(url) = std::env::var("TUIC_DESIGN_DISCOVERED") {
@@ -53,6 +53,8 @@ async fn first_run_page_is_useful_without_a_server_and_escapes_paths() {
             );
             crate::config::save_repo_settings(base, settings).unwrap();
         }
+        let acknowledge = (std::env::var_os("TUIC_DESIGN_SILENT").is_none())
+            .then(|| acknowledge_test_launch(state.clone(), root.join("repo")));
         let response = launch(
             &state,
             &root.join("repo"),
@@ -60,8 +62,17 @@ async fn first_run_page_is_useful_without_a_server_and_escapes_paths() {
             Some("chrome"),
             std::env::var("TUIC_DESIGN_LAUNCH_URL").ok().as_deref(),
         )
-        .await
-        .unwrap();
+        .await;
+        if std::env::var_os("TUIC_DESIGN_SILENT").is_some() {
+            assert!(response.unwrap_err().contains("browser_not_ready"));
+            assert_eq!(
+                super::super::legacy::statuses(&state).await[0]["status"],
+                "stopped"
+            );
+            return;
+        }
+        acknowledge.unwrap().await.unwrap();
+        let response = response.unwrap();
         let target = response["url"].as_str().unwrap();
         if let Ok(requested) = std::env::var("TUIC_DESIGN_LAUNCH_URL")
             .or_else(|_| std::env::var("TUIC_DESIGN_DISCOVERED"))
@@ -113,10 +124,13 @@ async fn first_run_page_is_useful_without_a_server_and_escapes_paths() {
     for path in [&bridge, &browser] {
         std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
     }
-    for mode in ["setup", "explicit", "discovered", "running"] {
+    for mode in ["setup", "explicit", "discovered", "running", "silent"] {
         let _ = std::fs::remove_file(root.join("browser-args"));
         let mut command = tokio::process::Command::new(std::env::current_exe().unwrap());
         match mode {
+            "silent" => {
+                command.env("TUIC_DESIGN_SILENT", "1");
+            }
             "explicit" => {
                 command.env(
                     "TUIC_DESIGN_LAUNCH_URL",
@@ -163,4 +177,126 @@ fn branded_chrome_returns_actionable_error_before_launch() {
     ] {
         assert!(ensure_autoload_supported(Path::new(executable)).is_ok());
     }
+}
+
+// Catches: PID reuse by an unrelated live process permanently blocking Design Mode.
+#[tokio::test]
+async fn profile_running_reused_pid_is_stale() {
+    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let hostname = std::process::Command::new("hostname").output().unwrap();
+    assert!(hostname.status.success());
+    let owner = format!(
+        "{}-{}",
+        String::from_utf8(hostname.stdout).unwrap().trim(),
+        std::process::id()
+    );
+    std::os::unix::fs::symlink(&owner, dir.path().join("SingletonLock")).unwrap();
+    assert!(ensure_profile_closed(dir.path()).await.is_ok());
+    assert_eq!(
+        std::fs::read_link(dir.path().join("SingletonLock")).unwrap(),
+        PathBuf::from(owner)
+    );
+}
+
+struct ProfileOwner(std::process::Child);
+
+impl Drop for ProfileOwner {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
+}
+
+// The child is an OS process with real argv, not a mocked process-table response.
+// It claims a profile using the browser-only --user-data-dir argument.
+fn profile_owner(profile: &Path, split_flag: bool) -> ProfileOwner {
+    let mut command = std::process::Command::new("/bin/sh");
+    command.args(["-c", "read value"]);
+    if split_flag {
+        command.arg("--user-data-dir").arg(profile);
+    } else {
+        command.arg(format!("--user-data-dir={}", profile.display()));
+    }
+    ProfileOwner(command.stdin(std::process::Stdio::piped()).spawn().unwrap())
+}
+
+fn write_owner_lock(profile: &Path, pid: u32, foreign: bool) -> PathBuf {
+    let hostname = std::process::Command::new("hostname").output().unwrap();
+    assert!(hostname.status.success());
+    let hostname = String::from_utf8(hostname.stdout).unwrap();
+    let host = if foreign {
+        format!("other-{}", hostname.trim())
+    } else {
+        hostname.trim().to_owned()
+    };
+    let owner = PathBuf::from(format!("{host}-{pid}"));
+    std::os::unix::fs::symlink(&owner, profile.join("SingletonLock")).unwrap();
+    owner
+}
+
+// Catches: treating a live owner's not-yet-listening socket as a stale profile.
+#[tokio::test]
+async fn profile_running_live_owner_blocks_without_deleting_lock() {
+    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    for split in [false, true] {
+        let child = profile_owner(dir.path(), split);
+        let owner = write_owner_lock(dir.path(), child.0.id(), false);
+        let error = ensure_profile_closed(dir.path()).await.unwrap_err();
+        assert!(
+            error.contains("Close the Design Mode browser window"),
+            "{error}"
+        );
+        assert_eq!(
+            std::fs::read_link(dir.path().join("SingletonLock")).unwrap(),
+            owner
+        );
+        std::fs::remove_file(dir.path().join("SingletonLock")).unwrap();
+    }
+}
+
+// Catches: a browser PID using a different profile being accepted as this profile's owner.
+#[tokio::test]
+async fn profile_running_other_profile_is_stale() {
+    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let other = dir.path().join("other");
+    let child = profile_owner(&other, false);
+    write_owner_lock(dir.path(), child.0.id(), false);
+    assert!(ensure_profile_closed(dir.path()).await.is_ok());
+}
+
+// Catches: interpreting a foreign host's PID as a local owner after PID reuse.
+#[tokio::test]
+async fn profile_running_foreign_host_uses_chromium_platform_policy() {
+    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let child = profile_owner(dir.path(), false);
+    let owner = write_owner_lock(dir.path(), child.0.id(), true);
+    let result = ensure_profile_closed(dir.path()).await;
+    #[cfg(target_os = "macos")]
+    assert!(result.is_ok());
+    #[cfg(not(target_os = "macos"))]
+    assert!(result.unwrap_err().contains("locked by host other-"));
+    assert_eq!(
+        std::fs::read_link(dir.path().join("SingletonLock")).unwrap(),
+        owner
+    );
+}
+
+// Catches: ignoring a live profile when its lock PID is absent, stale or foreign.
+#[tokio::test]
+async fn profile_running_listening_socket_blocks_without_pid_ownership() {
+    let dir = tempfile::tempdir_in(crate::test_support::short_socket_test_temp_root()).unwrap();
+    let socket = dir.path().join("s");
+    let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+    std::os::unix::fs::symlink(&socket, dir.path().join("SingletonSocket")).unwrap();
+    assert!(ensure_profile_closed(dir.path()).await.is_err());
+    let owner = write_owner_lock(dir.path(), std::process::id(), true);
+    assert!(ensure_profile_closed(dir.path()).await.is_err());
+    assert_eq!(
+        std::fs::read_link(dir.path().join("SingletonLock")).unwrap(),
+        owner
+    );
+    drop(listener);
+    std::fs::remove_file(dir.path().join("SingletonLock")).unwrap();
+    // Catches: the filesystem socket node being mistaken for a listening owner.
+    assert!(ensure_profile_closed(dir.path()).await.is_ok());
 }

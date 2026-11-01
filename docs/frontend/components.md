@@ -529,7 +529,7 @@ The two voice sections:
   (see `docs/backend/dictation.md` → "The language of the conversation"). A
   voice row is **Active** when it is the selected voice; only a language row is
   active for the language.
-- **Hands-free conversation** (`HandsFreeControls`) — a terminal picker, Start /
+- **Hands-free conversation** (`HandsFreeControls`) — a terminal-or-AI-Chat target picker, Start /
   Stop (accent Start, distinct Stop), a coloured Running/Stopped indicator, the polled phase, the activation phrase, the hold-back slider, the
   earcons toggle, the "notify model" toggle and, while that is on, the start
   notice textarea. Its placeholder is `getDefaultHandsFreeStartNotice()` — Rust
@@ -723,7 +723,7 @@ system and never turns an absent provider value into zero.
 
 | Component | Description |
 |-----------|-------------|
-| `AgentIcon` | Agent type icon with consistent sizing and coloring |
+| `AgentIcon` | Agent identity SVG with consistent sizing and inherited color; ego uses a rounded Greek small epsilon (ε, U+03B5) inside a ring, independent of provider and installed fonts |
 | `CiRing` | SVG circular CI status indicator with proportional segments |
 | `DiffViewer` | Syntax-highlighted unified diff renderer |
 | `Dropdown` | Reusable dropdown select component |
@@ -928,6 +928,8 @@ A non-empty composer refuses the retry; the status bar displays the error.
 Voice correction controls carry `corrections.replacements.{from}.from` and
 `corrections.replacements.{from}.to` catalogue identities. Import, add and remove
 retain the existing TextCorrector workflow; export does not change settings.
+
+Progress toast repository navigation uses `navigateToTerminal` for both a live origin and a surviving destination-workspace tab. With no destination tab, it clears terminal activation and the previous pane layout. Chat and Compose stay owned by their terminal; no second navigation listener retargets them.
 
 Desktop `TerminalChatView` renders active native questions from the existing session lifecycle store below the shared transcript. `ChoicePromptOverlay` has an embedded layout; desktop and mobile share `sendNativeChoice` for agent-specific PTY keys. Compose drafts and ACP interaction state are not involved.
 

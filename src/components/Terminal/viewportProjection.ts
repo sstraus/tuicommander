@@ -1,4 +1,5 @@
-import type { DecodedRow } from "./canvasTerminalUtils";
+import { type DecodedRow, rowText, utf16SpanToCellRange } from "./canvasTerminalUtils";
+import { answerMarkerOffset } from "./suggestOverlay";
 
 /** A frontend-only view of backend cells. Stored rows and PTY coordinates never change. */
 export class ViewportProjection {
@@ -66,7 +67,10 @@ export class ViewportProjection {
 }
 
 function answerMarkerSpan(row: DecodedRow): [number, number] | null {
-	const start = row.codepoints.indexOf(0x1f4ac);
+	const offset = answerMarkerOffset(rowText(row));
+	// Soft-wrapped marker rows have no intent anchor in this physical fragment.
+	const start =
+		offset === undefined ? row.codepoints.indexOf(0x1f4ac) : utf16SpanToCellRange(row, offset, offset + 2)[0];
 	if (start < 0) return null;
 	let end = start + 1;
 	if (row.codepoints[end] === 0) end++; // wide-cell spacer

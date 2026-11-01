@@ -871,6 +871,7 @@ async fn telegram_latest_connected_ai_chat_wins_without_registration() {
         crate::acp_chat::ChatLaunch {
             executable: "ego".into(),
             profile: String::new(),
+            master_prompt: String::new(),
             workspace: crate::test_support::test_temp_root(),
             peer_id: other.into(),
         },

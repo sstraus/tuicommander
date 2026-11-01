@@ -71,6 +71,7 @@ pub(super) struct CreatedWorktree {
     /// dirtiness and finalize all take an id.
     pub workspace_id: String,
     pub branch: String,
+    pub base_commit: String,
     pub setup_script: Option<serde_json::Value>,
     pub setup_script_error: Option<serde_json::Value>,
 }
@@ -156,6 +157,7 @@ pub(super) async fn create_worktree_http(
         // explicit display data even though linked worktree ids currently match it.
         "workspace_id": &created.workspace_id,
         "branch": created.worktree.branch,
+        "base_commit": created.base_commit,
         "base_repo": created.worktree.base_repo.to_string_lossy(),
     });
     if let Some(setup_script) = created.setup_script {
@@ -198,12 +200,16 @@ pub(super) async fn create_worktree_shared(
     let worktrees_dir_bg = worktrees_dir.clone();
     let allocation_state = Arc::clone(state);
     let result = match tokio::task::spawn_blocking(move || {
-        crate::worktree::allocate_workspace(
+        let (workspace, recycled) = crate::worktree::allocate_workspace(
             &allocation_state,
             &worktrees_dir_bg,
             &config_bg,
             base_ref.as_deref(),
-        )
+        )?;
+        // Read before setup scripts can commit or switch branches. Both transports
+        // report the actual allocation commit, including recycled checkouts.
+        let base_commit = crate::worktree::workspace_base_commit(&workspace.path)?;
+        Ok::<_, String>((workspace, recycled, base_commit))
     })
     .await
     {
@@ -216,7 +222,7 @@ pub(super) async fn create_worktree_shared(
         }
     };
     match result {
-        Ok((workspace, recycled)) => {
+        Ok((workspace, recycled, base_commit)) => {
             let wt_path = workspace.path.to_string_lossy().to_string();
             let branch_name = workspace.branch.clone();
             let workspace_id = workspace.workspace_id.clone();
@@ -280,6 +286,7 @@ pub(super) async fn create_worktree_shared(
                 instructions,
                 workspace_id,
                 branch: branch_name,
+                base_commit,
                 setup_script,
                 setup_script_error,
             })

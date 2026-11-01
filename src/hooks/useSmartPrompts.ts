@@ -9,6 +9,7 @@ import { terminalsStore } from "../stores/terminals";
 import type { EgoTurn } from "../types/acp";
 import { writeClipboard } from "../utils/clipboard";
 import { prContextVariables } from "../utils/promptContext";
+import { promptError } from "../utils/promptError";
 import { usePty } from "./usePty";
 
 export interface SmartPromptResult {
@@ -245,7 +246,7 @@ export function useSmartPrompts() {
 				});
 			} catch (err) {
 				appLogger.warn("prompts", `Cannot read the open review threads for "${prompt.name}"`, err);
-				return { ok: false, reason: String(err) };
+				return { ok: false, reason: promptError(err) };
 			}
 		}
 		const unresolved = varNames.filter((v) => !(v in allVars));
@@ -296,7 +297,7 @@ export function useSmartPrompts() {
 			return { ok: true };
 		} catch (err) {
 			appLogger.error("prompts", `Failed to inject prompt "${prompt.name}"`, err);
-			return { ok: false, reason: String(err) };
+			return { ok: false, reason: promptError(err) };
 		}
 	}
 
@@ -323,7 +324,7 @@ export function useSmartPrompts() {
 			return { ok: true, output: turn.text };
 		} catch (err) {
 			appLogger.error("prompts", `API execution failed for "${prompt.name}"`, err);
-			return { ok: false, reason: String(err) };
+			return { ok: false, reason: promptError(err) };
 		}
 	}
 
@@ -390,7 +391,7 @@ export function useSmartPrompts() {
 			return { ok: true, output };
 		} catch (err) {
 			appLogger.error("prompts", `Headless execution failed for "${prompt.name}"`, err);
-			return { ok: false, reason: String(err) };
+			return { ok: false, reason: promptError(err) };
 		}
 	}
 
@@ -408,7 +409,7 @@ export function useSmartPrompts() {
 			return { ok: true, output };
 		} catch (err) {
 			appLogger.error("prompts", `Shell execution failed for "${prompt.name}"`, err);
-			return { ok: false, reason: String(err) };
+			return { ok: false, reason: promptError(err) };
 		}
 	}
 

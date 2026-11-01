@@ -44,6 +44,8 @@ pub(crate) fn ego_config(state: &AppState) -> Result<EgoAcpConfig, AcpClientErro
     Ok(EgoAcpConfig {
         executable: PathBuf::from(executable),
         profile: settings.ego_profile.clone(),
+        // AI Chat instructions belong to its conversation-specific ChatLaunch snapshot.
+        master_prompt: String::new(),
     })
 }
 
@@ -399,6 +401,19 @@ pub(crate) async fn acp_session_close(
         .acp
         .detach(connection_id, AcpDetachKind::Close, session_id)
         .await
+}
+
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn acp_session_set_viewed_repo(
+    state: State<'_, Arc<AppState>>,
+    connection_id: AcpConnectionId,
+    session_id: v1::SessionId,
+    viewed_repo: Option<String>,
+) -> Result<(), AcpClientError> {
+    state
+        .acp
+        .set_viewed_repo(connection_id, session_id, viewed_repo)
 }
 
 #[cfg(feature = "desktop")]

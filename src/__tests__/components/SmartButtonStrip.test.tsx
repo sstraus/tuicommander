@@ -12,6 +12,7 @@ vi.mock("../../hooks/useSmartPrompts", () => ({
 }));
 
 import { SmartButtonStrip } from "../../components/SmartButtonStrip/SmartButtonStrip";
+import { appLogger } from "../../stores/appLogger";
 import { promptLibraryStore } from "../../stores/promptLibrary";
 
 const prompt = (name: string, enabled = true) =>
@@ -96,6 +97,20 @@ describe("SmartButtonStrip shared controls preserve actions", () => {
 		finish({ ok: true });
 		await Promise.resolve();
 		expect(mainAction).not.toBeDisabled();
+	});
+
+	// Catches: the strip's outer rejection bypasses the shared prompt result path.
+	it("reports structured execution rejections through onError", async () => {
+		prompt("Merge in main");
+		const onError = vi.fn();
+		const failure = { code: "agent_error", message: "Agent could not start" };
+		const logged = vi.spyOn(appLogger, "error").mockImplementation(() => 0);
+		execute.mockRejectedValue(failure);
+		const { getByRole } = mount({ onError });
+		fireEvent.click(getByRole("button", { name: "Merge in main" }));
+		await Promise.resolve();
+		expect(onError).toHaveBeenLastCalledWith("agent_error: Agent could not start");
+		expect(logged).toHaveBeenCalledWith("prompts", 'SmartButtonStrip "Merge in main" failed', failure);
 	});
 
 	it("dismisses the menu on an outside click without executing a prompt", () => {

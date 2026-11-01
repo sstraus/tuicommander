@@ -1254,6 +1254,66 @@ pub(crate) async fn local_peer_call_with_message_id(
     }
 }
 
+/// Resolve the reserved role address from managed ancestry, then repository scope.
+/// Names are not roles: a peer named "orchestrator" cannot capture this address.
+fn resolve_orchestrator_recipient(
+    state: &AppState,
+    mcp_session_id: Option<&str>,
+) -> Result<String, String> {
+    let caller = mcp_session_id
+        .and_then(|sid| state.mcp.to_session.get(sid).map(|id| id.value().clone()))
+        .filter(|id| state.peer_agents.contains_key(id))
+        .ok_or_else(|| "Register before sending to orchestrator".to_string())?;
+    let mut ancestors = std::collections::BTreeSet::new();
+    let mut visited = std::collections::HashSet::new();
+    let mut current = caller.clone();
+    while visited.insert(current.clone()) {
+        let terminal = state.live_pty_for_peer(&current);
+        let parent = state
+            .session_maps
+            .session_parent
+            .get(&current)
+            .or_else(|| {
+                terminal
+                    .as_deref()
+                    .and_then(|id| state.session_maps.session_parent.get(id))
+            })
+            .map(|id| id.value().clone());
+        let Some(parent) = parent else { break };
+        if let Some(peer) = state.resolve_peer_ref_checked(&parent)?
+            && state.orchestrator_peers.contains(&peer)
+        {
+            ancestors.insert(peer);
+        }
+        current = parent;
+    }
+    let candidates = if ancestors.is_empty() {
+        let project = state
+            .peer_agents
+            .get(&caller)
+            .and_then(|peer| peer.project.clone());
+        state
+            .peer_agents
+            .iter()
+            .filter(|peer| {
+                state.orchestrator_peers.contains(peer.key())
+                    && project
+                        .as_ref()
+                        .is_none_or(|path| peer.project.as_ref() == Some(path))
+            })
+            .map(|peer| peer.key().clone())
+            .collect::<std::collections::BTreeSet<_>>()
+    } else {
+        ancestors
+    };
+    let candidates: Vec<_> = candidates.into_iter().collect();
+    match candidates.as_slice() {
+        [] => Err("No registered orchestrator for this caller; register the coordinator with orchestrator=true".into()),
+        [recipient] => Ok(recipient.clone()),
+        _ => Err(format!("Orchestrator address is ambiguous; use a peer UUID: {}", candidates.join(", "))),
+    }
+}
+
 pub(super) fn handle_messaging(
     state: &Arc<AppState>,
     args: &serde_json::Value,
@@ -1499,7 +1559,7 @@ fn handle_messaging_with_message_id(
                     "spawn_isolated": "repo action=worktree_create path=<repo> branch=<name> spawn_session=true — worktree + PTY in one call.",
                     "monitor": "Use blocking waits instead of polling: agent action=wait (wakes on new mail; the cursor is kept server-side) or session action=wait session_id=<id> until=idle|exited. Task results arrive through agent send/inbox. Use session output only as an anomaly fallback when a child failed to send.",
                     "auto_state_change": "Spawned peers auto-post state only: {type:state_change, state:idle|completed|exited|awaiting_input, session_id, exit_code?, prompt?}. This is not task output. awaiting_input means the child hit an interactive prompt and is parked with nobody at its keyboard — it will NOT progress until you answer it with session action=input (the `prompt` field carries the question). Every child must report its result or blocker with agent action=send; use session output only when a child anomalously failed to send.",
-                    "send": "agent action=send to=<peer tuic_session | its registered name | its PTY id | that terminal's alias, e.g. tu-1> message=<text, max 64KB> [urgency=normal|urgent|interrupt]. Normal is the default; urgent writes only a payload-free inbox notice to a safe busy Claude/Codex/ego composer for its next tool boundary and returns urgent_delivered or urgent_fallback_reason. The message is always buffered in the inbox. Opt-in urgency=interrupt sends Esc to a safe working Claude Code, Codex or ego, waits up to 10 seconds for confirmed idle, then submits the full message as one new input (including for an orchestrator). An already idle recipient needs no Esc. A dialog/approval or draft blocks both Esc and payload. Unsupported agents, no PTY and idle timeout use the existing urgent notice/inbox fallback. The result adds interrupt_delivered and interrupt_fallback_reason; delivery_path=interrupt_payload_and_inbox means the full input was written, not that the model acted. Interrupted tools can leave partial work; child processes may continue. An active waiter owns delivery and needs no interrupt. A peer explicitly registered with orchestrator=true keeps payloads out of its active turn and composer; managed idle/completed lifecycle, or a confirmed-ready empty composer held working only by background work, may submit one coalesced, payload-free wake instructing `agent action=inbox`. Busy, questioning, partially typed, external without a subscribed ACP inbox, or unknown state stays inbox-only. An active agent wait owns delivery and suppresses that wake. Check `delivered` and `delivery_path` (the only route field); a message reaching the inbox is not delivery.",
+                    "send": "agent action=send to=<orchestrator | peer tuic_session | its registered name | its PTY id | that terminal's alias, e.g. tu-1> message=<text, max 64KB> [urgency=normal|urgent|interrupt]. Normal is the default; urgent writes only a payload-free inbox notice to a safe busy Claude/Codex/ego composer for its next tool boundary and returns urgent_delivered or urgent_fallback_reason. The message is always buffered in the inbox. Opt-in urgency=interrupt sends Esc to a safe working Claude Code, Codex or ego, waits up to 10 seconds for confirmed idle, then submits the full message as one new input (including for an orchestrator). An already idle recipient needs no Esc. A dialog/approval or draft blocks both Esc and payload. Unsupported agents, no PTY and idle timeout use the existing urgent notice/inbox fallback. The result adds interrupt_delivered and interrupt_fallback_reason; delivery_path=interrupt_payload_and_inbox means the full input was written, not that the model acted. Interrupted tools can leave partial work; child processes may continue. An active waiter owns delivery and needs no interrupt. A peer explicitly registered with orchestrator=true keeps payloads out of its active turn and composer; managed idle/completed lifecycle, or a confirmed-ready empty composer held working only by background work, may submit one coalesced, payload-free wake instructing `agent action=inbox`. Busy, questioning, partially typed, external without a subscribed ACP inbox, or unknown state stays inbox-only. An active agent wait owns delivery and suppresses that wake. Check `delivered` and `delivery_path` (the only route field); a message reaching the inbox is not delivery.",
                     "list_peers": "agent action=list_peers path=<optional filter> — see who else is connected.",
                     "conflict_control": "Use send/inbox to serialize shared-file edits: child sends 'claim <path>', orchestrator replies 'ack'/'deny'; child sends 'release <path>' on commit. Orchestrator is the arbiter — children never ack each other directly.",
                     "cleanup": "On MCP session close, peer routes and inbox are drained. Managed PTY lifecycle remains separate; an MCP-scoped external identity has no PTY to reap."
@@ -1619,9 +1679,16 @@ fn handle_messaging_with_message_id(
             // Mail is filed under the peer key, so an address that names the
             // terminal has to be walked back to the peer that owns it — otherwise
             // "notify tu-1" is a dead letter with a valid-looking address.
-            let retained_to = match crate::session_wake::retained(requested_to) {
-                Ok(record) => record.map(|record| record.tuic_session),
-                Err(error) => return serde_json::json!({"error": error}),
+            let retained_to = if requested_to == "orchestrator" {
+                match resolve_orchestrator_recipient(state, mcp_session_id) {
+                    Ok(recipient) => Some(recipient),
+                    Err(error) => return serde_json::json!({"error": error}),
+                }
+            } else {
+                match crate::session_wake::retained(requested_to) {
+                    Ok(record) => record.map(|record| record.tuic_session),
+                    Err(error) => return serde_json::json!({"error": error}),
+                }
             };
             let resolved_to = match state
                 .resolve_peer_ref_checked(retained_to.as_deref().unwrap_or(requested_to))

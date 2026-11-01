@@ -37,6 +37,12 @@ to 500 characters after redaction.
 
 ## How an agent reports
 
+The MCP `progress` tool is for root agents that report to you. Managed child
+agents send their final `RESULT` or `BLOCKED` report to the parent agent with
+`agent action=send`. A child that calls `progress` receives an error with its
+parent's address; it does not create a journal outcome, notification, or waiting
+badge. Host-observed intents and agent mail can still appear in the journal.
+
 The MCP `progress` tool takes three fields.
 
 | Field | Required | Limit | Meaning |
@@ -80,7 +86,9 @@ entry remains available when there are no unread updates; its badge counts
 entries that arrived since you last opened the dialog.
 An outcome toast's **Go to repo** action also opens the reporting terminal
 in its workspace when that terminal is still open. If it has closed, the
-action opens the repository instead.
+action selects a surviving terminal in the repository's active workspace, preferring
+the last active terminal. If none remains, it shows the empty terminal area.
+It never keeps another repository's Session Chat or composer active.
 Clicking the toast body closes it without changing the current repository or
 terminal. Use **Go to repo** when you want to navigate.
 
@@ -169,7 +177,10 @@ repositories** — no `.tuic` directory, nothing for Git to ignore, nothing for 
 file watcher to react to.
 
 A worktree's entries are filed under its parent project, so switching between a
-repository and its worktrees shows one history rather than several.
+repository and its worktrees shows one history rather than several. A linked
+checkout registered as a separate repository still shares that history when its
+workspace has no explicit parent project. A registered submodule keeps its own
+checkout's history; its Git administration directory is not a project owner.
 
 An agent running in a directory that belongs to no registered repository writes
 nothing. There is no project to file the entry under, and the repository you

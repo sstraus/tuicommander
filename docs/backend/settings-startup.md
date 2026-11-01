@@ -230,3 +230,5 @@ Each tip has a separate client-local dismissal key. Dismissal propagates to
 mounted copies and other windows through storage events and persists across
 reloads. If browser storage is unavailable, dismissal lasts for the document.
 These tips never enable settings, install hooks or submit a retry.
+
+The AI Chat legacy provider projection treats doctor as diagnostic enrichment, not a prerequisite for config and model reads. Exit 1 with valid JSON retains credential evidence and exposes a non-blocking `diagnostic`; unusable health output leaves credentials unknown. The shared Rust projection serves IPC and HTTP.

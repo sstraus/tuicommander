@@ -375,6 +375,7 @@ needs an app restart is what that costs.
 | `ide` | `String` | `""` | IDE for "Open in..." |
 | `ego_executable` | `String` | `""` | Absolute path to the one ego binary this host may launch for ACP or read for terminal Chat transcript exports. Terminal Chat requires local transcript v1 support (`ego export SESSION --format transcript --after SEQ`). Read at each ACP connect or Chat binding, so a correction takes effect without a restart. Empty means ACP is not configured and terminal ego Chat is unavailable. No ACP command carries it: a connect supplies a working directory and nothing else, so no request can choose which binary runs. It is edited in `Settings > General` and written through `save_config` like any other field |
 | `ai_chat_workspace` | `String` | `""` | Absolute directory every AI Chat conversation runs in. Empty means the home directory of the host that runs ego. A missing directory is created at connect; a relative path or an uncreatable one is refused with a message naming this setting. Conversations and peer identities are keyed by this path, so changing it starts from a fresh conversation list. Edited in `Settings > General > AI Chat workspace`, which refuses a non-absolute path |
+| `ai_chat_master_prompt` | `String` | `""` | Additive instructions for new AI Chat conversations. Maximum 8192 UTF-8 bytes; NUL is rejected. Saved per conversation in `ai_chat_launches.masterPrompt`, including across reopen and fork. Empty omits the extra argument. New ego processes receive `--append-system` with a fixed heading and the literal text, not a file reference. Existing TUIC MCP rules remain unchanged. Shared ACP connections and unattended Smart Prompts, PR reviews, changelog generation and story drafting do not receive these instructions. This private setting is not logged. |
 | `ego_profile` | `String` | `""` | Optional name of an ego user-config profile for AI Chat ACP launches. Empty omits `--profile`; a nonempty valid name adds `--profile <name>` after the repository root. Names with whitespace, control characters, a leading dash, or more than 64 UTF-8 bytes are refused before launch. TUICommander does not copy profile policy into ACP requests. When `.tuic.json` selects a repo profile, this explicit selection is also its non-relaxable ACP `ceilingProfile`. |
 | `ai_chat_sessions` | `Map<String, String>` | `{}` | Active ego session ID per canonical AI Chat workspace root, shared across devices. The backend selection API uses the locked config delta path; changed selections emit `ai-chat-selection-changed` over IPC and SSE. Reads restore the current selection after reconnect or restart. |
 | `ai_chat_peer_ids` | `Map<String, String>` | `{}` | Host-issued ACP orchestration peer UUID per canonical repository root. The backend persists it before launching ego and reuses it across reconnect and restart. It is not a PTY tab ID. |
@@ -1276,6 +1277,12 @@ Ownership resolution starts from an authoritative registered project and follows
 recorded linked and nested workspace parent records, so a worktree's entries land
 in its parent project's journal. It never uses the focused UI repository or a
 bare CWD; unbound callers fail with `project_required`.
+When `parentRepoPath` is absent or null, a linked-worktree registration's Git common
+directory identifies the main checkout as the inferred owner. Other registrations,
+including absorbed submodules, keep their checkout path as the owner. Registering a linked
+checkout separately can duplicate the shared workspace inventory without creating
+an ownership cycle. Explicit parent paths still take precedence, and real parent
+cycles fail with `project_unavailable`.
 
 The schema is one `entries` table (rowid identity, ordering and cursor in one,
 `AUTOINCREMENT` so a deleted id is never handed out again) plus a `project_views`

@@ -1,6 +1,10 @@
-import type { Component } from "solid-js";
+import { batch, type Component } from "solid-js";
 import { appLogger } from "../../stores/appLogger";
+import { globalWorkspaceStore } from "../../stores/globalWorkspace";
+import { paneLayoutStore } from "../../stores/paneLayout";
 import { repositoriesStore } from "../../stores/repositories";
+import { paneLayoutKey, savedPaneLayouts } from "../../stores/savedPaneLayouts";
+import { activatePaneExclusively } from "../../stores/tabManager";
 import { terminalsStore } from "../../stores/terminals";
 import { type Toast, toastsStore } from "../../stores/toasts";
 import { uiStore } from "../../stores/ui";
@@ -56,7 +60,33 @@ function toastRepoAction(toast: Toast): RepoAction | null {
 						sessionId: toast.sessionId,
 					});
 				}
-				repositoriesStore.setActive(repoPath);
+				// A repo-only switch must not leave a foreign terminal (and its Chat
+				// composer) active. Reuse terminal navigation for a surviving tab.
+				const repo = repositoriesStore.get(repoPath)!;
+				const workspace = repo.activeWorkspaceId ? repo.workspaces[repo.activeWorkspaceId] : undefined;
+				const liveIds = (workspace?.terminals ?? []).filter(
+					(id) => terminalsStore.get(id) && !terminalsStore.isDetached(id),
+				);
+				const remembered = workspace?.lastActiveTerminal;
+				const target = remembered && liveIds.includes(remembered) ? remembered : liveIds[0];
+				if (target) {
+					navigateToTerminal(target);
+				} else {
+					batch(() => {
+						globalWorkspaceStore.deactivate();
+						const previous = repositoriesStore.getActive();
+						if (paneLayoutStore.isSplit() && previous?.activeWorkspaceId) {
+							savedPaneLayouts.set(
+								paneLayoutKey(previous.path, previous.activeWorkspaceId),
+								paneLayoutStore.serialize(),
+							);
+						}
+						repositoriesStore.setActive(repoPath);
+						paneLayoutStore.reset();
+						activatePaneExclusively("terminals");
+						terminalsStore.setActive(null);
+					});
+				}
 				return true;
 			},
 		};

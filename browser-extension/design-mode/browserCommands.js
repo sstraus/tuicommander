@@ -33,7 +33,7 @@ export async function browserCommand(command, chrome, tabId, errors) {
   if (action === 'eval') {
     // Static localhost access is not consent to agent-supplied JavaScript.
     const hostGranted = hasExplicitHostGrant((await chrome.permissions.getAll()).origins, tab.url);
-    if (!hostGranted) throw new Error('eval_not_granted: Grant this host (or all sites) explicitly before agent eval.');
+    if (!hostGranted) throw new Error('eval_not_granted: grant needed: click Allow eval on this host in the Design Mode sidebar.');
     if (typeof args.script !== 'string' || args.script.length > 16384) throw new Error('invalid_script: Eval script must be at most 16 KiB.');
     const [reply] = await chrome.scripting.executeScript({target:{tabId},world:'MAIN',func:async (script) => {
       try {

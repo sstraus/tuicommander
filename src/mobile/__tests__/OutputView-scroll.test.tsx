@@ -368,3 +368,20 @@ it("keeps the detached reading row anchored when the font size changes", async (
 	mobileFontSizes.step("terminal", -1);
 	paint();
 });
+
+// Catches: the mobile renderer tints or removes the intent's literal bubble instead of its joined answer.
+it("renders joined intent and answer as separate mobile marker spans", async () => {
+	const text = "intent: Ti indico i passaggi ... (Configurazione Claude)💬 Per configurare la tua installazione ...";
+	vi.mocked(fetch).mockResolvedValue({
+		ok: true,
+		json: async () => ({ lines: [text], total_lines: 1, offset: 0 }),
+	} as Response);
+	const { container } = render(() => <OutputView sessionId="joined-intent" />);
+	await waitFor(() => expect(container.querySelector('[data-terminal-marker="answer"]')).not.toBeNull());
+	expect(container.querySelector('[data-terminal-marker="intent"]')?.textContent).toBe(
+		"intent: Ti indico i passaggi ... (Configurazione Claude)",
+	);
+	expect(container.querySelector('[data-terminal-marker="answer"]')?.textContent).toBe(
+		"Per configurare la tua installazione ...",
+	);
+});

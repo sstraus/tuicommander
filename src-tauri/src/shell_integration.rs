@@ -322,7 +322,7 @@ end
 
 /// POSIX sh shim for agents started by name in a TUIC shell (story 1810-c28c).
 ///
-/// Every agent name below is a symlink to this one file in a TUIC-owned dir that
+/// Every agent name below is a hard link to this one file in a TUIC-owned dir that
 /// `inject` puts first on `PATH`, and that the integration scripts move back to
 /// the front at every prompt (a user rc may prepend the agent's own dir later).
 /// So a typed command, an alias, a shell function's `command <agent>` and a
@@ -551,25 +551,58 @@ fn render_shim() -> String {
 /// scan is paid once per content change) and link every served agent to it.
 #[cfg(unix)]
 fn install_agent_shim(bin: &Path) -> std::io::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
     std::fs::create_dir_all(bin)?;
+    // Serialize the complete generation switch, including across processes.
+    // A concurrent rename can unlink the inode that link(2) just looked up,
+    // returning ENOENT even though the source path remains continuously present.
+    // Lock the existing directory: no extra executable or lock file is created.
+    let directory = std::fs::File::open(bin)?;
+    directory.lock()?;
     let shim = bin.join(SHIM_FILE);
     let content = render_shim();
     if std::fs::read_to_string(&shim).ok().as_deref() != Some(content.as_str()) {
         let staging = bin.join(format!("{SHIM_FILE}.{}", uuid::Uuid::new_v4()));
         std::fs::write(&staging, &content)?;
         std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o755))?;
-        std::fs::rename(&staging, &shim)?;
+        std::fs::rename(&staging, &shim).map_err(|error| {
+            std::io::Error::new(error.kind(), format!("install shim content: {error}"))
+        })?;
     }
+    let metadata = std::fs::metadata(&shim).map_err(|error| {
+        std::io::Error::new(
+            error.kind(),
+            format!("read installed shim metadata: {error}"),
+        )
+    })?;
     for agent in SHIM_AGENTS {
         let link = bin.join(agent);
-        if std::fs::read_link(&link).is_ok_and(|target| target == Path::new(SHIM_FILE)) {
+        // Do not follow legacy symlinks: they lose the agent basename when a
+        // launcher canonicalises the executable. Hard links preserve it without
+        // writing new executable content for each agent. Compare inode AND device
+        // so a shim content update also refreshes links to the previous inode.
+        if std::fs::symlink_metadata(&link).is_ok_and(|target| {
+            target.is_file() && target.dev() == metadata.dev() && target.ino() == metadata.ino()
+        }) {
             continue;
         }
         let staging = bin.join(format!("{agent}.{}", uuid::Uuid::new_v4()));
+        std::fs::hard_link(&shim, &staging).map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!("stage agent hard link {agent}: {error}"),
+            )
+        })?;
+        if let Err(error) = std::fs::rename(&staging, &link) {
+            let _ = std::fs::remove_file(&staging);
+            return Err(std::io::Error::new(
+                error.kind(),
+                format!("install agent hard link {agent}: {error}"),
+            ));
+        }
+        // POSIX rename is a no-op if a concurrent installer already linked the
+        // same inode at the destination. Remove the remaining staging name.
         let _ = std::fs::remove_file(&staging);
-        std::os::unix::fs::symlink(SHIM_FILE, &staging)?;
-        std::fs::rename(&staging, &link)?;
     }
     Ok(())
 }
@@ -808,10 +841,7 @@ mod tests {
             Some(path.as_str())
         );
         for agent in SHIM_AGENTS {
-            assert_eq!(
-                std::fs::read_link(bin.join(agent)).unwrap(),
-                Path::new(SHIM_FILE)
-            );
+            assert_shim_hard_link(&bin, agent);
         }
         assert!(
             !bin.join("opencode").exists(),
@@ -823,6 +853,111 @@ mod tests {
             cmd.get_env("PATH").and_then(|v| v.to_str()),
             Some(path.as_str())
         );
+    }
+
+    #[cfg(unix)]
+    fn assert_shim_hard_link(bin: &Path, agent: &str) {
+        use std::os::unix::fs::MetadataExt;
+        let shim = std::fs::metadata(bin.join(SHIM_FILE)).unwrap();
+        let link = std::fs::symlink_metadata(bin.join(agent)).unwrap();
+        assert!(link.is_file(), "{agent} must not be a symlink");
+        assert_eq!(
+            (link.dev(), link.ino()),
+            (shim.dev(), shim.ino()),
+            "{agent}"
+        );
+    }
+
+    /// Catches: the installer mistakes an old symlink for an up-to-date hard link.
+    #[cfg(unix)]
+    #[test]
+    fn shim_upgrade_replaces_legacy_symlinks_without_rewriting_content() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
+        let bin = dir.path();
+        install_agent_shim(bin).unwrap();
+        let before = std::fs::metadata(bin.join(SHIM_FILE)).unwrap().ino();
+        for agent in SHIM_AGENTS {
+            std::fs::remove_file(bin.join(agent)).unwrap();
+            std::os::unix::fs::symlink(SHIM_FILE, bin.join(agent)).unwrap();
+        }
+        install_agent_shim(bin).unwrap();
+        for agent in SHIM_AGENTS {
+            assert_shim_hard_link(bin, agent);
+        }
+        assert_eq!(
+            std::fs::metadata(bin.join(SHIM_FILE)).unwrap().ino(),
+            before
+        );
+        assert_eq!(
+            std::fs::read_dir(bin).unwrap().count(),
+            SHIM_AGENTS.len() + 1
+        );
+    }
+
+    /// Catches: an unchanged install replaces vetted executable inodes needlessly.
+    #[cfg(unix)]
+    #[test]
+    fn shim_reinstall_preserves_unchanged_inodes() {
+        use std::os::unix::fs::MetadataExt;
+        let dir = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
+        let bin = dir.path();
+        install_agent_shim(bin).unwrap();
+        let before = std::fs::metadata(bin.join(SHIM_FILE)).unwrap().ino();
+        install_agent_shim(bin).unwrap();
+        assert_eq!(
+            std::fs::metadata(bin.join(SHIM_FILE)).unwrap().ino(),
+            before
+        );
+        for agent in SHIM_AGENTS {
+            assert_shim_hard_link(bin, agent);
+        }
+    }
+
+    /// Catches: changed shim content leaves agent hard links on the obsolete inode.
+    #[cfg(unix)]
+    #[test]
+    fn shim_content_update_refreshes_links_and_unlinked_names_are_repaired() {
+        let dir = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
+        let bin = dir.path();
+        install_agent_shim(bin).unwrap();
+        // Keep the previous inode alive to prove replacement, not an in-place write.
+        let old = bin.join("previous-shim");
+        std::fs::hard_link(bin.join(SHIM_FILE), &old).unwrap();
+        std::fs::write(&old, "outdated shim").unwrap();
+        install_agent_shim(bin).unwrap();
+        assert_eq!(std::fs::read_to_string(&old).unwrap(), "outdated shim");
+        for agent in SHIM_AGENTS {
+            assert_shim_hard_link(bin, agent);
+            assert_eq!(
+                std::fs::read_to_string(bin.join(agent)).unwrap(),
+                render_shim()
+            );
+        }
+        // Removing one name must not remove the shared executable or its siblings.
+        std::fs::remove_file(bin.join("ego")).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(bin.join("claude")).unwrap(),
+            render_shim()
+        );
+        install_agent_shim(bin).unwrap();
+        assert_shim_hard_link(bin, "ego");
+    }
+
+    /// Catches: a failed atomic replacement leaves staging links or deletes its target.
+    #[cfg(unix)]
+    #[test]
+    fn shim_failed_replacement_preserves_target_and_removes_staging_link() {
+        let dir = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
+        let bin = dir.path();
+        std::fs::create_dir(bin.join("claude")).unwrap();
+        std::fs::write(bin.join("claude/keep"), "keep").unwrap();
+        assert!(install_agent_shim(bin).is_err());
+        assert_eq!(
+            std::fs::read_to_string(bin.join("claude/keep")).unwrap(),
+            "keep"
+        );
+        assert_eq!(std::fs::read_dir(bin).unwrap().count(), 2);
     }
 
     /// Catches: two tabs restored at once (PTY spawns run on parallel threads of
@@ -838,6 +973,13 @@ mod tests {
                     .starts_with(crate::test_support::test_temp_root())
             );
             let bin = std::sync::Arc::new(dir.path().join(format!("bin{round}")));
+            if round % 2 == 1 {
+                std::fs::create_dir_all(bin.as_ref()).unwrap();
+                std::fs::write(bin.join(SHIM_FILE), "outdated shim").unwrap();
+                for agent in SHIM_AGENTS {
+                    std::os::unix::fs::symlink(SHIM_FILE, bin.join(agent)).unwrap();
+                }
+            }
             let barrier = std::sync::Arc::new(std::sync::Barrier::new(8));
             let handles: Vec<_> = (0..8)
                 .map(|_| {
@@ -855,11 +997,12 @@ mod tests {
                     .unwrap_or_else(|error| panic!("round {round}: {error}"));
             }
             for agent in SHIM_AGENTS {
-                assert_eq!(
-                    std::fs::read_link(bin.join(agent)).unwrap(),
-                    Path::new(SHIM_FILE)
-                );
+                assert_shim_hard_link(&bin, agent);
             }
+            assert_eq!(
+                std::fs::read_dir(bin.as_ref()).unwrap().count(),
+                SHIM_AGENTS.len() + 1
+            );
         }
     }
 
@@ -1055,6 +1198,42 @@ mod tests {
             let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/fake-agent-shim");
             install_agent_shim(&dir).expect("install agent shim");
             dir
+        }
+
+        /// Catches: canonicalising a shim path loses its agent basename and exits 127.
+        #[test]
+        fn canonicalized_agent_shim_preserves_dispatch_name() {
+            let shim = shim_dir();
+            let real = agent_bin_dir();
+            let path = std::env::join_paths([&shim, &real]).unwrap();
+            for agent in super::super::SHIM_AGENTS {
+                // The launch harness normally needs only these agents. Gemini
+                // also needs a downstream executable for this installer contract.
+                if agent == "gemini" {
+                    let staging = staging_path(&real, agent);
+                    std::os::unix::fs::symlink(REAL_ECHO, &staging).unwrap();
+                    std::fs::rename(staging, real.join(agent)).unwrap();
+                }
+                let executable = std::fs::canonicalize(shim.join(agent)).unwrap();
+                let output = Command::new(executable)
+                    .args(["--version", "argument with spaces"])
+                    .env("PATH", &path)
+                    .env_remove("TUIC_AGENT_INSTRUCTIONS_DIR")
+                    .env_remove("TUIC_ATTACHMENTS_DIR")
+                    .output()
+                    .unwrap();
+                assert!(
+                    output.status.success(),
+                    "{agent}: status={}, stderr={}",
+                    output.status,
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                assert_eq!(
+                    output.stdout, b"--version argument with spaces\n",
+                    "{agent}"
+                );
+                assert!(output.stderr.is_empty(), "{agent}: {:?}", output.stderr);
+            }
         }
 
         /// One-line instruction files, so the echoed argv stays on one line.

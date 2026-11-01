@@ -25,9 +25,19 @@ const INTENT_RE = /^intent:\s+\S/;
 export const INTENT_HIGHLIGHT_RE = new RegExp(`${intentMarker.anchor}[\\t ]+`);
 /** Same title boundary as Rust capture; rendering never invents a second delimiter. */
 const INTENT_TITLE_RE = new RegExp(intentMarker.title);
-/** Boundary excludes the trailing prose consumed to reject an unfinished later group. */
+const INTENT_ANSWER_RE = new RegExp(intentMarker.answer);
+/** Recover a missing newline only after a closed intent title, never at a
+ * literal bubble in its description. Shared by terminal and Chat projection. */
+export function splitIntentAnswer(body: string): { intent: string; answerStart?: number } {
+	const answer = INTENT_ANSWER_RE.exec(body);
+	if (!answer) return { intent: body };
+	const answerStart = answer.index + answer[0].length - answer[1].length;
+	const intent = body.slice(0, answerStart).trimEnd();
+	return INTENT_TITLE_RE.test(intent) ? { intent, answerStart } : { intent: body };
+}
+/** Boundary excludes answer text before choosing the final parenthesized title. */
 export function intentTitleEnd(body: string): number | undefined {
-	const title = INTENT_TITLE_RE.exec(body);
+	const title = INTENT_TITLE_RE.exec(splitIntentAnswer(body).intent);
 	return title ? title[1].length + title[2].length + 2 : undefined;
 }
 /**
@@ -37,6 +47,14 @@ export function intentTitleEnd(body: string): number | undefined {
  * Like `intent:`, it may sit behind the agent's own bullet: an agent bullet (see [`AGENT_BULLETS`]).
  */
 export const ANSWER_MARKER_RE = new RegExp(`^[\\s${AGENT_BULLETS}]*(?:[-*+]\\s+|\\d+[.)]\\s+)?💬`);
+/** UTF-16 offset of a live answer marker on one logical line. */
+export function answerMarkerOffset(text: string): number | undefined {
+	if (ANSWER_MARKER_RE.test(text)) return text.indexOf("💬");
+	const anchor = INTENT_HIGHLIGHT_RE.exec(text);
+	if (!anchor) return undefined;
+	const offset = splitIntentAnswer(text.slice(anchor[0].length)).answerStart;
+	return offset === undefined ? undefined : anchor[0].length + offset;
+}
 /** The indentation of a marked list item bounds its answer, unlike a paragraph. */
 const ANSWER_LIST_RE = new RegExp(`^([\\t ${AGENT_BULLETS}]*)(?:[-*+]\\s+|\\d+[.)]\\s+)💬`);
 /** An agent output row: a bullet glyph at the start of the line. Codex's `•` also
@@ -268,6 +286,8 @@ export interface OverlayBlock {
 	kind: "suggest" | "continuation" | "intent" | "answer";
 	/** Present only when ordinary prose shares the final intent row. */
 	endColumn?: number;
+	/** An answer can begin after an intent on the same physical row. */
+	startColumn?: number;
 }
 
 /**
@@ -409,6 +429,23 @@ export function planSuggestOverlay(
 				);
 				parts.push(`i${part.row}${endColumn === undefined ? "" : `:${endColumn}`}`);
 			}
+			const answerStart = splitIntentAnswer(body).answerStart;
+			if (answerStart !== undefined) {
+				const first = extent.findLast((part) => part.start <= answerStart)!;
+				const offset = answerStart - first.start + first.prefix;
+				const startColumn = first.snapshot.endColumn?.(offset) ?? offset;
+				const last = answerExtent(first.row, totalRows, getRow, (marker) => answerMarkers.add(marker));
+				for (let answerRow = first.row; answerRow <= last; answerRow++) {
+					blocks.push(
+						answerRow === first.row
+							? { row: answerRow, kind: "answer", startColumn }
+							: { row: answerRow, kind: "answer" },
+					);
+					parts.push(`a${answerRow}${answerRow === first.row ? `:${startColumn}` : ""}`);
+				}
+				lastAnswerEnd = last;
+				row = last;
+			}
 		}
 	}
 	return { key: parts.join(","), blocks, answerMarkers };
@@ -458,6 +495,8 @@ export function paintOverlayBlocks(
 		} else if (block.kind === "answer") {
 			const div = overlayDiv(block.row * cellHeight, cellHeight, "transparent");
 			div.style.boxShadow = ANSWER_RULE_SHADOW;
+			if (block.startColumn !== undefined && cellWidth !== undefined)
+				div.style.left = `${block.startColumn * cellWidth}px`;
 			container.appendChild(div);
 		}
 	}

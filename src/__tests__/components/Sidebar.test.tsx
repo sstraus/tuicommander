@@ -152,6 +152,7 @@ import { Sidebar } from "../../components/Sidebar/Sidebar";
 import { appLogger } from "../../stores/appLogger";
 import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
 import { githubStore } from "../../stores/github";
+import { globalWorkspaceStore } from "../../stores/globalWorkspace";
 import { progressStore } from "../../stores/progress";
 import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
@@ -704,6 +705,57 @@ describe("Sidebar", () => {
 			...over,
 		});
 		const withBranch = (b: Record<string, unknown>) => setRepos({ "/repo1": makeRepo({ workspaces: { feat: b } }) });
+
+		// Catches: unrelated branches masquerade as merged/stale or generic unmerged.
+		it.each(["compact", "auto"] as const)("shows unrelated history in %s rows", (mode) => {
+			densityMode(mode);
+			withBranch(
+				richBranch({
+					isMerged: true,
+					lastCommitTs: Date.now() - 90 * 86400_000,
+					lifecycleStatus: { dirtyFiles: 0, commitStatus: "unrelated_history", removalSafety: "safe" },
+				}),
+			);
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			const row = container.querySelector(".branchItem") as HTMLElement;
+			expect(row.textContent).toContain("Unrelated history");
+			expect(row.textContent).not.toContain("Merged");
+			expect(row.textContent).not.toContain("Stale");
+			const badge = Array.from(row.querySelectorAll("[data-tooltip]")).find(
+				(node) => node.textContent === "Unrelated history",
+			);
+			expect(badge?.getAttribute("data-tooltip")).toContain("no common ancestor");
+			expect(badge?.getAttribute("data-tooltip")).toContain("archive");
+		});
+
+		// Catches: unrelated history replaces the only changes control for untracked-only worktrees.
+		it.each([0, 12])("keeps unrelated dirty rows actionable with %i tracked additions", (additions) => {
+			densityMode("compact");
+			withBranch(
+				richBranch({
+					additions,
+					deletions: 0,
+					lifecycleStatus: { dirtyFiles: 1, commitStatus: "unrelated_history", removalSafety: "requires_force" },
+				}),
+			);
+			const onBranchSelect = vi.fn();
+			const openChanges = vi.spyOn(uiStore, "openGitPanelOnTab").mockImplementation(() => {});
+			try {
+				const { container } = render(() => <Sidebar {...defaultProps({ onBranchSelect })} />);
+				const row = container.querySelector(".branchItem") as HTMLElement;
+				expect(row.textContent).toContain("Unrelated history");
+				const changes = Array.from(row.querySelectorAll('[role="button"]')).find((node) =>
+					node.textContent?.includes(additions ? "+12" : "1 dirty"),
+				);
+				expect(changes, "dirty worktree must retain a changes control").toBeDefined();
+				fireEvent.click(changes!);
+				expect(onBranchSelect).toHaveBeenCalledExactlyOnceWith("/repo1", "feat");
+				expect(openChanges).toHaveBeenCalledExactlyOnceWith("changes");
+				expect(onBranchSelect.mock.invocationCallOrder[0]).toBeLessThan(openChanges.mock.invocationCallOrder[0]);
+			} finally {
+				openChanges.mockRestore();
+			}
+		});
 
 		// Catches: the rich row printing nothing beyond the name (the bare list Boss rejected).
 		it("prints the PR title, commit age, diff stats and dirty count under the branch name", () => {
@@ -2715,6 +2767,55 @@ describe("Sidebar", () => {
 					"Refusing to persist settings: store not hydrated — would clobber config.json with defaults",
 				]);
 			errors.mockRestore();
+		});
+
+		// Catches: missing workspace actions, toggling the active tab instead of the clicked row,
+		// duplicate dispatch, or requiring a live PTY for workspace membership.
+		it.each(["idle", "suspended", "exited"])("sidebar_session_menu_toggles_clicked_workspace_member_%s", (state) => {
+			mockInvoke.mockImplementation(async (command: string) => (command === "list_active_sessions" ? [] : undefined));
+			mockTerminalsGet.mockImplementation((id) => ({
+				id,
+				name: id,
+				sessionId: state === "suspended" ? null : `pty-${id}`,
+				shellState: state === "exited" ? "exited" : "idle",
+				suspended: state === "suspended",
+			}));
+			setRepos({
+				"/repo1": makeRepo({
+					workspaces: {
+						main: {
+							workspaceId: "main",
+							branchName: "main",
+							isMain: true,
+							worktreePath: null,
+							terminals: ["workspace-menu-target"],
+							additions: 0,
+							deletions: 0,
+						},
+					},
+				}),
+			});
+			const toggle = vi.spyOn(globalWorkspaceStore, "togglePromote");
+			const view = render(() => <Sidebar {...defaultProps()} />);
+			const row = view.container.querySelector(".branchTabItem")!;
+			try {
+				fireEvent.contextMenu(row);
+				fireEvent.click(view.getByText("Add to Global Workspace"));
+				expect(toggle).toHaveBeenCalledExactlyOnceWith("workspace-menu-target");
+				expect(globalWorkspaceStore.getPromotedIds()).toEqual(["workspace-menu-target"]);
+				expect(view.queryByText("Add to Global Workspace")).not.toBeInTheDocument();
+
+				fireEvent.contextMenu(row);
+				fireEvent.click(view.getByText("Remove from Global Workspace"));
+				expect(toggle).toHaveBeenCalledTimes(2);
+				expect(globalWorkspaceStore.getPromotedIds()).toEqual([]);
+				fireEvent.contextMenu(row);
+				expect(view.getByText("Add to Global Workspace")).toBeInTheDocument();
+				expect(mockNavigateToTerminal).not.toHaveBeenCalled();
+			} finally {
+				globalWorkspaceStore.onTerminalRemoved("workspace-menu-target");
+				toggle.mockRestore();
+			}
 		});
 
 		// Catches: copying the active tab, a stale store alias, or a same-ID session on another host.

@@ -9,6 +9,7 @@ import { ComposePinIcon, ComposeSendIcon } from "../shared/ComposeActionIcons";
 import { Button } from "../ui/Button";
 import controls from "../ui/FormControls.module.css";
 import s from "./ComposePanel.module.css";
+import { composeSubmit } from "./composeSubmit";
 import { useComposeImages } from "./useComposeImages";
 
 const composeTheme = EditorView.theme(
@@ -333,6 +334,8 @@ export const ComposePanel: Component<ComposePanelProps> = (props) => {
 		const text = currentText();
 		if (text) submit(props.onSend, text);
 	};
+
+	createExtension(composeSubmit.of(handleSend));
 
 	const handleEnqueue = () => {
 		const text = currentText();

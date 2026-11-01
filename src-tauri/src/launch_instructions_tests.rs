@@ -507,3 +507,69 @@ fn launch_playbook_prevents_invisible_native_subagents() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// Catches: background launch unconditionally ending a turn despite ready independent work,
+/// or a legitimate yield claiming completion, inventing a TUIC wake, or polling.
+#[test]
+fn waiting_rule_does_not_end_turn_on_background_start() {
+    let (app, agents) = (AppConfig::default(), AgentsConfig::default());
+    let mut failures = Vec::new();
+    for agent in AGENTS {
+        for child in [false, true] {
+            for mdkb in [false, true] {
+                let text = effective_text_with(&app, &agents, agent, child, mdkb);
+                // Keep the default playbook under 4 KiB, including MDKB and child scope.
+                if text.len() > 4096 {
+                    failures.push(format!(
+                        "{agent} child={child} mdkb={mdkb}: launch text exceeds 4 KiB: {} bytes",
+                        text.len()
+                    ));
+                }
+                let waiting = text
+                    .split("## Waiting and long work\n")
+                    .nth(1)
+                    .and_then(|section| section.split("\n## ").next())
+                    .unwrap_or("");
+                for required in [
+                    "Continue ready, non-overlapping work while it runs.",
+                    "End the turn only when a background result blocks the next useful action and no independent work remains, or you need the user's answer.",
+                    "When yielding, state what runs and what it unblocks; do not claim completion or offer suggestions.",
+                    "Use the launched mechanism's completion wake.",
+                    "Never poll or use `sleep` to wait.",
+                    "Submit terminal commands with `session action=submit session_id=<id> input=<text>` once: text and Enter together, never split calls or poll afterward.",
+                ] {
+                    if !waiting.contains(required) {
+                        failures.push(format!(
+                            "{agent} child={child} mdkb={mdkb}: missing {required}"
+                        ));
+                    }
+                }
+                if waiting.contains("background and end the turn")
+                    || waiting.contains("TUIC wakes you")
+                {
+                    failures.push(format!(
+                        "{agent} child={child} mdkb={mdkb}: unconditional end or wake promise"
+                    ));
+                }
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// Catches: launch guidance appending root progress duty to managed children.
+#[test]
+fn managed_child_progress_launch_guidance_uses_parent_mail_not_user_reports() {
+    let (app, agents) = (AppConfig::default(), AgentsConfig::default());
+    for agent in AGENTS {
+        let child = effective_text_with(&app, &agents, agent, true, false);
+        assert!(child.contains("agent action=send to=<parent>"));
+        assert!(
+            !child.contains("progress type=done"),
+            "root duty leaked to {agent}"
+        );
+        assert!(
+            effective_text_with(&app, &agents, agent, false, false).contains("progress type=done")
+        );
+    }
+}

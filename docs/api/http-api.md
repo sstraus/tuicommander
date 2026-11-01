@@ -102,7 +102,7 @@ Story transition provenance comes from host-validated credentials: desktop IPC a
 
 `update_story` takes `story_id`, `expected_revision`, and a camel-case `patch`. Omitted fields stay unchanged. The patch accepts `title`, `priority` (1–3), `fileScope`, `origin` (including a plan step), nullable `storyType` (`feature`, `fix`, `refactor`, `chore`, `task`), optional `problem` and `risk` (`low`, `medium`, `high`), ordered `criteria`, and the final `dependencies` set. Null clears `storyType`, `problem` or `risk`; old story records default both to absent. Unknown fields, invalid values, cross-plan dependencies, duplicates, cycles and stale revisions are rejected without partial story writes. Only unclaimed Backlog/Ready stories without active or paused workflow ownership can be amended. Unique byte-identical criteria retain their checks after reorder; changed, new or ambiguous duplicate criteria become unchecked. A priority-only patch preserves all checks. Dependency changes recompute readiness. Planning and execution fingerprints include the amended requirements/revision, so existing evidence cannot certify changed work.
 
-`summary` returns `{type:"summary",value:{activePlans,inProgress,qa,done,total}}` for the project: plans whose derived state is active, and over their stories those `in_progress`, those waiting in `qa`, those `done`, and all except `wont_fix` and abandoned ones. The Plans and Stories toolbar button reads it; it is also available over IPC through `story_action_command`.
+`summary` returns `{type:"summary",value:{activePlans,ready,inProgress,qa,done,total}}` for the project: plans whose derived state is active, and over their stories those `in_progress`, those waiting in `qa`, those `done`, and all except `wont_fix` and abandoned ones. The Plans and Stories toolbar button reads it; it is also available over IPC through `story_action_command`.
 
 The project path is resolved to its canonical owner, so a managed worktree shares its parent project's plans. Unknown action and create-story fields are rejected. Claim requires a live PTY session in that project. `transition` accepts the `start_manual` command to begin a Ready story without a terminal. Actor identity is tracking only; managed, local API and human callers use the same transition rules. `remove_dependency` accepts only a Backlog dependent with a direct WontFix prerequisite; it returns the revised story, Ready only when all remaining prerequisites are Done. WontFix never satisfies dependencies. A nonempty plan with only Done/WontFix stories has `plan_state: done`, while an empty plan is `draft`. Reads and writes verify the stored plan's project; a story ID alone grants no cross-project access. Revisions are required for mutations to detect stale clients. The same service backs desktop IPC and MCP. There is no import or export endpoint.
 
@@ -2343,7 +2343,11 @@ With an activation phrase, `holdBackMs` reports the effective minimum of 5000
 ms, even when the saved hold-back setting is shorter. A continuation that
 starts before that deadline joins the same pending turn.
 
-`phase` is one of `disarmed`, `waiting`, `capturing`, `transcribing`,
+`wake_confirmed` acknowledges a recognized leading activation phrase during open
+capture; it does not admit or submit the final transcript. VAD alone remains
+`capturing`. Both capture sources use the same bounded prefix recognition.
+
+`phase` is one of `disarmed`, `waiting`, `capturing`, `wake_confirmed`, `transcribing`,
 `holding_back`, `delivered`, `error`.
 
 `deliveredTurns` counts spoken turns typed into the composer and
@@ -2595,6 +2599,14 @@ before invoking git, matching MCP `repo action=worktree_create` validation.
 Creation always produces a linked worktree and refuses a branch that already
 has a checkout. Parent tracked and untracked changes are not carried over.
 
+An explicit `base_ref` is resolved to a commit before creation. A missing or
+non-commit ref fails without creating a checkout or branch. If the requested
+branch already exists at a different commit, creation fails instead of ignoring
+the base or resetting the branch. A matching existing branch remains reusable.
+Without `base_ref`, the existing branch or repository HEAD remains the default.
+Both HTTP and MCP return `base_commit`: the full checkout commit captured before
+the setup script runs. This also applies to recycled checkouts.
+
 `201` returns:
 
 ```json
@@ -2603,7 +2615,8 @@ has a checkout. Parent tracked and untracked changes are not carried over.
   "path": "/path__wt/feature-x",
   "workspace_id": "feature-x",
   "branch": "feature-x",
-  "base_repo": "/path"
+  "base_repo": "/path",
+  "base_commit": "<full resolved commit ID>"
 }
 ```
 
@@ -2838,6 +2851,7 @@ POST   /acp/connections/{cid}/sessions/{session_id}/resume       {authority}    
 POST   /acp/connections/{cid}/sessions/{session_id}/fork         {authority}               -> AcpAttachmentSnapshot
 DELETE /acp/connections/{cid}/sessions/{session_id}                                        -> null
 POST   /acp/connections/{cid}/sessions/{session_id}/close                                  -> null
+POST   /acp/connections/{cid}/sessions/{session_id}/viewed-repo  {viewedRepo: string|null} -> null (live speech context; no prompt)
 POST   /acp/connections/{cid}/sessions/{session_id}/prompt       {prompt:[ContentBlock], viewedRepo?}   -> AcpTurnId
 POST   /acp/connections/{cid}/sessions/{session_id}/cancel                                 -> null
 DELETE /acp/connections/{cid}/sessions/{session_id}/queue/{turn_id}                       -> null
@@ -2943,6 +2957,8 @@ payload names the connection, generation, sequence and — when it has one — t
 session and request it is about.
 
 ## ego Command Line (`mcp_http/ego_routes.rs`)
+
+`EgoProviders` from `/ego/providers` and `/ego/providers/model` can include an optional `diagnostic` string. Health failures do not turn successful config/model reads into HTTP errors; valid doctor exit-1 JSON is still consumed. Without usable credential evidence, provider credentials are `unknown`.
 
 The browser half of the dedicated ego configuration commands — what the Settings →
 AI Chat page reads and writes. Same field names, same response body, same error
@@ -3397,6 +3413,8 @@ consumers reread after this event or SSE resynchronization.
 
 ### Immediate Design Mode browser commands
 
+`POST /design-mode/start` returns `armed` only after the extension acknowledges the requested page through a correlated internal `ready` command. Failed acknowledgment returns `browser_not_ready` and closes the owned launch. Stop closes and reaps that dedicated launch. The extension starts receiving at worker boot; a sidebar gesture is not required to choose the initial reviewed tab. Native disconnect closes the command queue, so later requests return `browser_disconnected` immediately instead of timing out. Eval without explicit host consent returns `eval_not_granted: grant needed: click Allow eval on this host`. This does not gate local errors or screenshots; capture permission remains separate.
+
 `POST /design-mode/command` accepts `{repoPath, action, args}`. Actions are
 `navigate` (`args.url`), `reload`, `screenshot`, `errors`, and `eval` (`args.script`).
 It shares the `design_mode_browser_command` IPC implementation. The extension's
@@ -3842,3 +3860,11 @@ requires `run_id`, `command_id` and `expected_sequence`. IPC
 `workflow action=run input=<RunAction>` use the same service. The inbox needs no
 coordinator. See the backend workflow decision contract for shapes, deadline
 outcomes, retained legacy replay and continuation semantics.
+
+Native story phase previews use the existing story action envelope: `available_transitions {story_id,expected_revision}` returns `{type:"available_transitions",value:{revision,moves:[{status,command}]}}`. It uses the committed-transition evaluator without saving the story or history. Destinations include automatic QA and dependency-derived outcomes, with archived records and actor/workflow restrictions enforced. Previews do not reserve a move; the caller submits `transition` with the returned revision and command, and refreshes after any conflict. IPC, HTTP, CLI and managed MCP share this action.
+
+The Plans and Stories toolbar pill shows active-plan, Ready and In progress counts with distinct glyphs and a tooltip line for each number. Ready comes from the Rust `summary` action, not a frontend subtraction; Done/total remains the progress bar tooltip. Ready-only work therefore remains visible when no story is running.
+
+### AI Chat voice targets
+
+`GET /dictation/hands-free/targets` returns `[{ id, name, chatSessionId }]` for attached host-managed AI Chat sessions. Pass the opaque `id` unchanged as `sessionId` to the existing hands-free arm endpoint. The arm, status, disarm and speech payloads remain unchanged. Terminal session ids continue to work.

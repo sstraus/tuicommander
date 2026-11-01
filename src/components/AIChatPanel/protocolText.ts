@@ -4,7 +4,7 @@
  * markdown text in the browser as well as Tauri, so this projection handles
  * logical lines and leaves fenced examples alone. See docs/backend/output-parser.md.
  */
-import { ANSWER_MARKER_RE } from "../Terminal/suggestOverlay";
+import { ANSWER_MARKER_RE, splitIntentAnswer } from "../Terminal/suggestOverlay";
 
 export interface ChatProtocolText {
 	body: string;
@@ -49,7 +49,9 @@ export function projectChatProtocolText(text: string): ChatProtocolText {
 		const line = index === 0 ? original.replace(ACK, "") : original;
 		const intentMatch = INTENT.exec(line);
 		if (intentMatch) {
-			const raw = intentMatch[1].trim();
+			const joined = intentMatch[1].trim();
+			const split = splitIntentAnswer(joined);
+			const raw = split.intent;
 			const titleMatch = TITLE.exec(raw);
 			// Unbalanced or nested marker parentheses have no reliable title boundary.
 			if (!titleMatch && /[()]/.test(raw)) {
@@ -59,7 +61,8 @@ export function projectChatProtocolText(text: string): ChatProtocolText {
 			const description = (titleMatch?.[1] ?? raw).trim();
 			if (description.length >= 3 && description !== "...") {
 				intent = { text: description, title: titleMatch?.[2].trim() || null };
-				if (titleMatch?.[3]?.trim()) body.push(titleMatch[3].trimStart());
+				if (split.answerStart !== undefined) body.push(joined.slice(split.answerStart));
+				else if (titleMatch?.[3]?.trim()) body.push(titleMatch[3].trimStart());
 				continue;
 			}
 		}

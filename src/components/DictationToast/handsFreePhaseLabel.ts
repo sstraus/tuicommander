@@ -5,9 +5,10 @@ import type { HandsFreePhase } from "../../stores/dictation";
 export function handsFreePhaseLabel(phase: HandsFreePhase | undefined): string {
 	switch (phase) {
 		case "waiting":
-			return t("dictation.phaseWaiting", "Listening");
 		case "capturing":
-			return t("dictation.phaseCapturing", "Hearing you");
+			return t("dictation.phaseWaiting", "Listening");
+		case "wake_confirmed":
+			return t("dictation.phaseWakeConfirmed", "Go ahead");
 		case "transcribing":
 			return t("dictation.phaseTranscribing", "Transcribing");
 		case "holding_back":

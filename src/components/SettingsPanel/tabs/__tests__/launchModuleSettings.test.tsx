@@ -41,7 +41,7 @@ it("catches missing module help or a help click changing the module switch", asy
 	for (const [label, text] of [
 		["Markers", "connection, intent and answer markers"],
 		["Working with the user", "checkbox choices"],
-		["Waiting and long work", "instead of polling"],
+		["Waiting and long work", "continues independent work"],
 		["Git and worktrees", "checkouts and sessions stay tracked"],
 		["Process safety", "recorded PIDs"],
 		["Children (spawned children only)", "one final RESULT or BLOCKED"],

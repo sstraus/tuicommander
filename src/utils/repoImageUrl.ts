@@ -2,7 +2,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { locateFile } from "../stores/repositories";
 import { isTauri } from "../transport";
 import { getRemoteBaseUrl, getRepoConnection, withRemoteToken } from "../transportRuntime";
-import { isAbsolutePath, joinPath, pathBasename, pathDirname } from "./pathUtils";
+import { isAbsolutePath, joinPath, normalizePathSegments, pathBasename, pathDirname } from "./pathUtils";
 
 /** Browser URL of a repository image, served by the authenticated `/fs/markdown-image` route. */
 export function repoImageUrl(repoPath: string, file: string, ownerRepoPath = repoPath): string {
@@ -45,7 +45,11 @@ export function rewriteLocalImages(html: string, baseDir?: string, imageSrc?: (p
 			const path = decodeImagePath(doubleQuoted ?? singleQuoted ?? unquoted ?? "");
 			if (/^(https?:\/\/|\/\/|data:|asset:\/\/)/i.test(path)) return tag;
 			const local = isAbsolutePath(path) ? path : baseDir ? joinPath(baseDir, path) : path;
-			const src = imageSrc ? imageSrc(path) : isTauri() ? convertFileSrc(local) : browserLocalImageUrl(local);
+			const src = imageSrc
+				? imageSrc(path)
+				: isTauri()
+					? convertFileSrc(normalizePathSegments(local))
+					: browserLocalImageUrl(local);
 			if (!src || (!isTauri() && !/^(https?:\/\/|\/\/|data:)/i.test(src))) {
 				return '<span role="img" aria-label="Image unavailable">Image unavailable: outside open repositories.</span>';
 			}

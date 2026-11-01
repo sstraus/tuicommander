@@ -89,6 +89,10 @@ pub(super) fn acp_routes() -> Router<Arc<AppState>> {
             )),
         )
         .route(
+            "/connections/{connection_id}/sessions/{session_id}/viewed-repo",
+            post(session_set_viewed_repo),
+        )
+        .route(
             "/connections/{connection_id}/sessions/{session_id}/cancel",
             post(session_cancel),
         )
@@ -203,6 +207,12 @@ struct PromptBody {
     prompt: Vec<v1::ContentBlock>,
     /// The repository on screen, a hint for this turn only.
     #[serde(default)]
+    viewed_repo: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ViewedRepoBody {
     viewed_repo: Option<String>,
 }
 
@@ -519,6 +529,18 @@ async fn session_prompt(
             .acp
             .prompt_with_context(connection_id, session_id, body.prompt, body.viewed_repo)
             .await,
+    )
+}
+
+async fn session_set_viewed_repo(
+    Path((connection_id, session_id)): Path<(AcpConnectionId, v1::SessionId)>,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<ViewedRepoBody>,
+) -> Response {
+    answer(
+        state
+            .acp
+            .set_viewed_repo(connection_id, session_id, body.viewed_repo),
     )
 }
 
