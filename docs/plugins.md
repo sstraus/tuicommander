@@ -1632,6 +1632,29 @@ Plugins can also write to their log via `host.log(level, message, data)`.
 
 View logs in Settings > Plugins > click "Logs" on any plugin row.
 
+Module import failures also produce an error-level application log with source
+`plugin`. Its data includes the exact `url`, `errorName`, `errorMessage`,
+`httpStatus` (null when the loader does not expose it), `attempt` (1 through 3),
+`documentId` (the document's performance time origin), and a unique `loadCycleId`.
+The message includes the load ID so consecutive failures retain separate data.
+These fields help distinguish repeated loads from document reloads; they do not
+prove why an import failed.
+
+An import rejection gets at most two retries, after 1 second and then 3 seconds.
+Each attempt uses a fresh numeric path version for the entire module graph;
+all attempts in one load share a load ID. A successful import is validated and
+activated once. Disabling the plugin or starting a replacement load retires
+pending import recovery. Module validation and activation failures are not retried.
+After the third import rejection, the plugin stays enabled but unloaded with its
+last error visible. The waits add at most 4 seconds, excluding time spent inside
+imports; a pending native import is not timed out. Avoid top-level side effects:
+a rejected graph can have evaluated some modules before the retry.
+
+The original all-plugin boot incident remains **unattributed**. No retained
+file-log entry establishes its URL, status or native cause. The protocol handler
+reads plugin files directly, not through the HTTP server. See
+[the investigation](evidence/plugin-import-2567.md) for evidence and limits.
+
 ## Preinstalled External Plugins
 
 Plan Tracker (`plan`) and Stories Ticker (`stories-ticker`) are external packages installed into the normal plugin directory by a one-time migration. They use only `PluginHost`, declare capabilities in their manifests, and can be disabled, uninstalled, or updated like any other external plugin. The migration marker prevents an explicitly uninstalled package from being recreated on later launches.

@@ -205,6 +205,17 @@ See the [Plugin Authoring Guide](../plugins.md) for the full API reference, mani
 | Changes not taking effect | Save the file again to trigger hot reload, or restart the app |
 | Plugin errors | Check Settings → Plugins → Logs for the plugin's error log |
 
+For a module import failure, retain the error-level application log from source
+`plugin`, including its data. It records the import URL, error name/message,
+status when known, attempt number, document ID and load ID. A null status means
+that the module loader did not expose a response status. An import failure is
+retried after 1 second and then 3 seconds, with at most three attempts per load.
+Success clears the load error through normal activation; a permanent failure stays
+visible with the plugin enabled but unloaded. Disabling or reloading the plugin
+retires pending import recovery. Validation and activation errors are not retried.
+These waits do not time out a pending native import. The reported all-plugin boot
+failure remains unattributed; a later successful startup does not establish its cause.
+
 Repository-aware plugins discard scans started before a repository switch or unload.
 The MDKB status ticker refreshes when you select another repository.
 When MDKB reports that hook telemetry is disabled, its dashboard shows
