@@ -654,6 +654,52 @@ mod tests {
         assert_eq!(store.get_story(&story.id).unwrap(), story);
     }
 
+    /// Catches: comparing a raw stored owner with a canonical request rejects the same project.
+    #[test]
+    fn available_transitions_accepts_canonical_project_for_stored_dot_path() {
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let _guard = crate::config::set_config_dir_override(dir.path().join("config"));
+        let project_dir = dir.path().join("project");
+        std::fs::create_dir(&project_dir).unwrap();
+        let canonical_project = project_dir.canonicalize().unwrap();
+        let stored_project = format!("{}/./project", dir.path().display());
+        let store = StoryStore::open().unwrap();
+        let plan = store
+            .create_plan(NewPlan {
+                project: stored_project.clone(),
+                title: "Stored owner spelling".into(),
+                source: "release.md".into(),
+            })
+            .unwrap();
+        assert_eq!(store.get_plan(&plan.id).unwrap().project, stored_project);
+        let story = store
+            .create_story(NewStory {
+                story_type: None,
+                plan_id: plan.id,
+                title: "Move".into(),
+                criteria: vec!["Delivered".into()],
+                priority: 1,
+                origin: StoryOrigin::Native,
+                file_scope: vec![],
+            })
+            .unwrap();
+
+        let reply = story_action(
+            canonical_project.to_str().unwrap(),
+            StoryAction::AvailableTransitions {
+                story_id: story.id,
+                expected_revision: story.revision,
+            },
+            None,
+        )
+        .expect("stored /./ owner must permit its canonical project's transitions");
+        let wire = serde_json::to_value(reply).unwrap();
+        assert_eq!(
+            wire["value"]["moves"][0],
+            serde_json::json!({"status":"in_progress", "command":"start_manual"})
+        );
+    }
+
     /// Catches: the missing update_plan action prevents correcting either stored field.
     #[test]
     fn update_plan_changes_title_and_source() {
