@@ -117,7 +117,11 @@ fn config_version(config: &Value, path: &Path) -> Result<String, String> {
         .iter()
         .find(|layer| {
             layer.pointer("/name/type").and_then(Value::as_str) == Some("user")
-                && layer.pointer("/name/file").and_then(Value::as_str) == path.to_str()
+                && layer
+                    .pointer("/name/file")
+                    .and_then(Value::as_str)
+                    .map(Path::new)
+                    == Some(path)
                 && layer.pointer("/name/profile").is_none_or(Value::is_null)
         })
         .ok_or(REVIEW_REQUIRED)?;
@@ -221,7 +225,9 @@ async fn verify_with_binary(binary: &Path, settings: &Path, trust: bool) -> Resu
         )
         .await?;
         let written: Value = result(&responses, 1)?;
-        if written["status"] != "ok" || written["filePath"].as_str() != config_path.to_str() {
+        if written["status"] != "ok"
+            || written["filePath"].as_str().map(Path::new) != Some(config_path.as_path())
+        {
             return Err(REVIEW_REQUIRED.into());
         }
     }
@@ -349,6 +355,30 @@ mod tests {
             }
             assert!(config_version(&config, &path).is_err(), "{change}");
         }
+    }
+
+    #[test]
+    fn codex_equivalent_config_paths_preserve_native_version() {
+        // Bug caught: string equality rejects the same file after host path joining.
+        let config = captured(2)["result"].clone();
+        let home = fixture_path().parent().unwrap();
+        for path in [
+            home.join("config.toml"),
+            home.join(".").join("config.toml"),
+            std::path::PathBuf::from(format!("{}//config.toml", home.display())),
+            #[cfg(windows)]
+            std::path::PathBuf::from(
+                "/Users/stefano.straus/Gits/.tmp/codex-hook-trust-2625/home/config.toml"
+                    .replace('/', "\\"),
+            ),
+        ] {
+            assert_eq!(
+                config_version(&config, &path).unwrap(),
+                "sha256:28fcee910d705969e049580a0bded0221705dae0ec6d34ad19e016001f05497b",
+                "{path:?}"
+            );
+        }
+        assert!(config_version(&config, &home.join("other/config.toml")).is_err());
     }
 
     #[test]
