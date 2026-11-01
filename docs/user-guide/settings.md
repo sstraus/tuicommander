@@ -527,6 +527,31 @@ Settings → Telegram configures the current machine. Bot setup, Chat access, Ag
 2. Enable Telegram. Ask an agent in the polling app to opt in with the Telegram MCP tool (`register`/`unregister`); Settings shows the registered agent read-only, or **No agent registered**. When the status is connected, select **Link chat**, then send the displayed six-character code to the bot within ten minutes. The code works once. Alternatively, type a positive private chat ID and select **Add chat ID**. Remove revokes authorization. The bot confirms a successful link with **Chat linked.**, and the consumed code hint disappears on the next Settings refresh. A bare `/start` explains how to get a code but does not authorize a chat. Wrong or expired six-character hexadecimal codes receive a safe retry instruction; other unauthorized text receives no reply. With no registered agent, an authorized message reaches the latest-connected live AI Chat agent (connection order, not tab selection). An explicit registration always takes priority. Connecting another AI Chat changes only future inbound delivery; existing requests keep their original reply peer. Request-specific reply tools require that peer’s MCP binding. Explicit registration takeover revokes pending requests. Only when neither exists does the bot send a short English registration instruction. An ordinary message after pairing in the same poll uses the new authorization; the pairing code never reaches the agent. Link confirmation is best-effort: if sending it fails, the chat stays linked and the consumed code is not replayed as agent mail. The failed reply appears in Recent messages.
 3. **Recent messages** shows the last 20 events in the process serving Settings, newest first: time, in/out direction, message/pairing/start/reply/button kind, outcome, and a preview of at most 60 characters. It refreshes while the page is open. Codes, tokens and unauthorized text are redacted before storage. This log stays in memory, clears when the app or daemon restarts, and is not shared between a polling owner and a standby process. Check connection status, safe error category and last accepted message time. Status identifies **this app**, **tuic-remote**, or another desktop owner. The desktop app starts the same adapter at boot; its process-held lock prevents a second local poller. A standby takes over when the owner exits. If no poller is connected, Settings explains the next action and disables **Link chat**. Config changes restart the owning adapter and retire its current transient draft state. Resolve any reported error, then disable and enable Telegram to retry a stopped adapter.
 
+#### Keep a coordinator as the Telegram owner
+
+Ask the coordinator in the app or daemon that owns Telegram polling to call the
+`telegram` MCP tool with `{"action":"register"}`. This registers that caller,
+not a named child. Settings shows its name under Agent registration. A second
+agent that registers replaces it, so child agents should use `send` without
+registering when the coordinator must keep inbound ownership.
+
+Registration is in memory. After TUIC or the polling daemon restarts, reconnect
+or resume the coordinator and ask it to call `{"action":"register"}` again.
+The same call is safe to repeat. `{"action":"unregister"}` releases its own
+registration. A role name alone does not register a Telegram owner.
+
+Non-owner messages show `[session name] [alias: TUIC address]` on every chunk.
+The address is the terminal alias, or the stable peer ID for a session without a
+terminal. You can quote both to the coordinator. Reply selects a unique live
+exact-name sender first, then the registered owner, then a live AI Chat.
+If the sender has exited, the fallback mail carries its quoted name and address,
+the original message and your reply. The bot names the session that received it;
+this confirms inbox delivery, not that the session has read it. The coordinator
+can use that context to find or recover the work; TUIC does not restart the child
+automatically. If nobody can receive it, the bot names the unavailable sender
+and asks you to register an agent. Older messages without an address retain the
+name but cannot supply a historical alias.
+
 ## Shared provider account storage
 
 Core now stores provider accounts and sites in one registry. Existing GitHub accounts retain their identities and repository bindings. Token values remain in the core credential store; account reads show only set, unset or unavailable status. The Accounts controls and private native add flow are integrated separately by the Settings extension. A failed account operation may need storage repair before retrying; see [migration and recovery](../backend/github.md#github-migration-and-recovery).

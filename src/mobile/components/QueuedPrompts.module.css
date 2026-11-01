@@ -34,9 +34,3 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-
-.kind {
-  display: block;
-  color: var(--fg-secondary);
-  font-size: var(--font-xs);
-}

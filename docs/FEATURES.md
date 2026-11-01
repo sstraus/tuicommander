@@ -2429,6 +2429,8 @@ Unsupported actions are hidden. Menus close on outside tap or Escape and use
 - iOS standalone detection: shows "Add to Home Screen" guidance when not installed
 - HTTP detection: shows "Push requires HTTPS (enable Tailscale)" when not on HTTPS
 
+Mobile terminal queued prompts have a **Hide** action beside the existing FIFO count. The hidden panel keeps one compact count/Show control that updates as work changes. Tap it to restore Cancel and Clear all. An empty user queue resets the disclosure for new work. Server mail wakes and spawned task prompts stay out of this mobile list/count; Clear all preserves them (#2639-173b).
+
 ### 18.9 Notification Sounds
 - Session notification sounds play only while the Sessions list and PWA document are visible; session detail, Chat, Files, Progress, Activity, and Settings remain silent. Muted transitions are tracked without replay, and deferred completions recheck visibility and the host subagent-silence setting before playback. Parented sessions follow **Silence subagent sounds and notifications** without replaying muted transitions. Mobile startup loads the host notification snapshot before subscribing to settings refresh, so a fresh PWA respects the saved host preference.
 - Audio playback via Rust `rodio` crate (Tauri command `play_notification_sound`), replacing the previous Web Audio API approach
@@ -3048,7 +3050,7 @@ MCP session end, PTY close, foreground-agent exit or daemon restart.
 Allowlisted private text arrives as native peer mail. Without an agent the bot
 replies "No agent is listening. Ask an agent in TUICommander to register for Telegram." and drops the text; strangers stay silent.
 The registered agent can stream concise activity, send exact replies and offer
-opaque buttons. Any live MCP-bound agent can send notifications without registering or taking inbound ownership. Non-owner sends carry a server-derived `[session name]` on every chunk, allow no buttons, and are limited to one send per 30 seconds per peer. Telegram Replies to that prefix reach the unique live exact-name sender; other replies and new messages use the inbound owner. Proactive sends use one allowlisted destination. Only the polling
+opaque buttons. Any live MCP-bound agent can send notifications without registering or taking inbound ownership. Non-owner sends carry server-derived `[session name] [alias: TUIC address]` on every chunk (terminal alias, or stable peer ID without a terminal), allow no buttons, and are limited to one send per 30 seconds per peer. Telegram Replies to that prefix reach the unique live exact-name sender; other replies and new messages use the inbound owner, then live AI Chat. Unavailable named targets retain their name, address, quoted original and reply in fallback mail; the bot names the receiving session, or the unavailable target when nobody can receive it. Proactive sends use one allowlisted destination. Only the polling
 cursor persists; live mint deployment remains pending. See
 [Telegram channel](design/telegram-channel.md).
 ### Telegram Settings

@@ -36,7 +36,7 @@ async fn non_owner_send_preserves_owner_and_prefixes_server_identity() {
     assert_eq!(runtime.registered_peer(), Some(PEER));
     assert_eq!(
         server.requests()[0].1["text"],
-        "[coordinator] [target-mcp] release ready"
+        "[coordinator] [alias: 33333333-3333-4333-8333-333333333333] [target-mcp] release ready"
     );
     assert_eq!(server.requests()[0].1["chat_id"], 1111111);
     // Complete the loopback boundary: reply to the bytes the fake Bot API received,
@@ -165,7 +165,7 @@ async fn every_non_owner_chunk_has_the_server_prefix() {
         .map(|(_, body)| {
             let text = body["text"].as_str().unwrap();
             assert!(text.encode_utf16().count() <= 4096);
-            text.strip_prefix("[coordinator] ")
+            text.strip_prefix("[coordinator] [alias: 33333333-3333-4333-8333-333333333333] ")
                 .expect("missing sender attribution")
         })
         .collect();
@@ -357,7 +357,10 @@ async fn sender_can_notify_without_any_inbound_owner() {
         )
         .await
         .unwrap();
-    assert_eq!(server.requests()[0].1["text"], "[coordinator] notice");
+    assert_eq!(
+        server.requests()[0].1["text"],
+        "[coordinator] [alias: 33333333-3333-4333-8333-333333333333] notice"
+    );
     assert!(runtime.recipient_peer().is_none());
 }
 
@@ -409,5 +412,220 @@ async fn invalid_sender_names_are_refused_before_outbound_delivery() {
         )
         .await
         .unwrap();
-    assert_eq!(server.requests()[0].1["text"], "[coordinator] notice");
+    assert_eq!(
+        server.requests()[0].1["text"],
+        "[coordinator] [alias: 33333333-3333-4333-8333-333333333333] notice"
+    );
+}
+
+// Catches: an exited sender's reply loses its name/address at the native mail boundary.
+#[tokio::test]
+async fn reply_to_exited_named_agent_reaches_owner_with_the_name() {
+    let (_dir, paths) = setup();
+    let server = FakeServer::start(vec![]).await;
+    let mut runtime = outbound_tests::runtime(paths, server.address).await;
+    add_sender(&runtime).await;
+    runtime
+        .tool(
+            SENDER,
+            "sender-mcp",
+            Input::Send {
+                text: "release ready".into(),
+                buttons: vec![],
+            },
+        )
+        .await
+        .unwrap();
+    let original = server.requests()[0].1["text"].clone();
+    runtime.state.mcp.to_session.remove("sender-mcp");
+    runtime.state.peer_agents.remove(SENDER);
+    let mut update: Value =
+        serde_json::from_str(include_str!("fixtures/reply-to-sender.json")).unwrap();
+    update["message"]["reply_to_message"]["text"] = original.clone();
+    let mail = Update::parse(
+        &update,
+        &runtime.outbound.paths.allowlist().unwrap(),
+        "test-bot",
+        "",
+    )
+    .unwrap()
+    .mail
+    .unwrap();
+    assert_eq!(runtime.deliver(mail).await.unwrap()["accepted"], true);
+    let inbox = crate::mcp_http::mcp_transport::local_peer_call_with_message_id(
+        &runtime.state,
+        &json!({"action":"inbox","since":0}),
+        Some("target-mcp"),
+        None,
+    )
+    .await;
+    assert_eq!(inbox["count"], 1, "{inbox}");
+    let body: Value =
+        serde_json::from_str(inbox["messages"][0]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        body["reply_to_agent"],
+        json!({"name":"coordinator","alias":SENDER})
+    );
+    assert_eq!(body["reply_to_text"], original);
+    assert_eq!(body["text"], "ship it");
+    let notices: Vec<_> = server
+        .requests()
+        .into_iter()
+        .filter(|(method, _)| method.ends_with("sendMessage"))
+        .collect();
+    let notice = notices.last().unwrap().1["text"].as_str().unwrap();
+    assert!(
+        notice.contains("coordinator") && notice.contains("target-mcp"),
+        "{notice}"
+    );
+    assert_eq!(runtime.registered_peer(), Some(PEER));
+}
+
+// Catches: terminal attribution uses the peer UUID instead of its native short alias,
+// or loses that alias once the terminal has exited.
+#[cfg(unix)]
+#[tokio::test]
+async fn terminal_sender_alias_survives_exit_in_owner_mail() {
+    let (_dir, paths) = setup();
+    let server = FakeServer::start(vec![]).await;
+    let mut runtime = outbound_tests::runtime(paths, server.address).await;
+    add_sender(&runtime).await;
+    let probe =
+        crate::test_support::ForegroundIdentityProbe::new(runtime.state.clone(), SENDER, "ego");
+    assert_eq!(
+        crate::pty::refresh_session_agent(&runtime.state, SENDER).as_deref(),
+        Some("ego")
+    );
+    let alias = runtime.state.assign_term_alias(SENDER, Some("tg-2640"));
+    assert_eq!(alias, "tg-2640");
+    runtime
+        .tool(
+            SENDER,
+            "sender-mcp",
+            Input::Send {
+                text: "release ready".into(),
+                buttons: vec![],
+            },
+        )
+        .await
+        .unwrap();
+    let original = server.requests()[0].1["text"].clone();
+    assert_eq!(original, "[coordinator] [alias: tg-2640] release ready");
+    drop(probe);
+    runtime.state.mcp.to_session.remove("sender-mcp");
+    runtime.state.peer_agents.remove(SENDER);
+    let mut update: Value =
+        serde_json::from_str(include_str!("fixtures/reply-to-sender.json")).unwrap();
+    update["message"]["reply_to_message"]["text"] = original;
+    let mail = Update::parse(
+        &update,
+        &runtime.outbound.paths.allowlist().unwrap(),
+        "test-bot",
+        "",
+    )
+    .unwrap()
+    .mail
+    .unwrap();
+    runtime.deliver(mail.clone()).await.unwrap();
+    let count = server.requests().len();
+    runtime.deliver(mail).await.unwrap();
+    assert_eq!(
+        server.requests().len(),
+        count,
+        "reoffered mail must not repeat its acknowledgement"
+    );
+    let inbox = crate::mcp_http::mcp_transport::local_peer_call_with_message_id(
+        &runtime.state,
+        &json!({"action":"inbox","since":0}),
+        Some("target-mcp"),
+        None,
+    )
+    .await;
+    let body: Value =
+        serde_json::from_str(inbox["messages"][0]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(
+        body["reply_to_agent"],
+        json!({"name":"coordinator","alias":"tg-2640"})
+    );
+}
+
+// Catches: a dead target suppresses AI Chat fallback, or a no-recipient error
+// erases the quoted target; legacy messages must not invent a missing alias.
+#[tokio::test]
+async fn unavailable_named_reply_uses_chat_or_names_the_target_when_nobody_listens() {
+    for (chat, tagged) in [(true, true), (true, false), (false, true), (false, false)] {
+        let (_dir, paths) = setup();
+        let server = FakeServer::start(vec![]).await;
+        let mut runtime = outbound_tests::runtime(paths, server.address).await;
+        runtime
+            .tool(PEER, "target-mcp", Input::Unregister {})
+            .await
+            .unwrap();
+        let _journal = chat.then(|| {
+            runtime
+                .state
+                .config
+                .write()
+                .ai_chat_peer_ids
+                .insert("/chat".into(), PEER.into());
+            runtime.state.acp.test_peer_journal(PEER)
+        });
+        let mut update: Value =
+            serde_json::from_str(include_str!("fixtures/reply-to-sender.json")).unwrap();
+        if tagged {
+            update["message"]["reply_to_message"]["text"] =
+                json!("[coordinator] [alias: tg-2640] release ready");
+        }
+        let mail = Update::parse(
+            &update,
+            &runtime.outbound.paths.allowlist().unwrap(),
+            "test-bot",
+            "",
+        )
+        .unwrap()
+        .mail
+        .unwrap();
+        assert_eq!(runtime.deliver(mail).await.unwrap()["accepted"], chat);
+        let requests = server.requests();
+        let notice = requests
+            .iter()
+            .find(|(method, _)| method.ends_with("sendMessage"))
+            .unwrap()
+            .1["text"]
+            .as_str()
+            .unwrap();
+        assert!(notice.contains("coordinator"), "{notice}");
+        assert_eq!(notice.contains("tg-2640"), tagged, "{notice}");
+        if chat {
+            assert!(notice.contains("target-mcp"), "{notice}");
+            let inbox = crate::mcp_http::mcp_transport::local_peer_call_with_message_id(
+                &runtime.state,
+                &json!({"action":"inbox","since":0}),
+                Some("target-mcp"),
+                None,
+            )
+            .await;
+            assert_eq!(inbox["count"], 1);
+            let body: Value =
+                serde_json::from_str(inbox["messages"][0]["content"].as_str().unwrap()).unwrap();
+            assert_eq!(body["reply_to_agent"]["name"], "coordinator");
+            assert_eq!(
+                body["reply_to_agent"]["alias"],
+                if tagged {
+                    json!("tg-2640")
+                } else {
+                    Value::Null
+                }
+            );
+            assert_eq!(
+                body["reply_to_text"],
+                update["message"]["reply_to_message"]["text"]
+            );
+            assert_eq!(body["text"], "ship it");
+            assert!(runtime.registration.is_none());
+        } else {
+            assert!(notice.contains("No agent is listening"), "{notice}");
+            assert!(runtime.requests.is_empty());
+        }
+    }
 }
