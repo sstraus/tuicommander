@@ -14,8 +14,8 @@
  * | Direction | Frame | Meaning |
  * |---|---|---|
  * | up | binary | `f32` little-endian samples, mono, 16 kHz |
- * | up | `{"type":"playback-ended"}` | the reply finished playing |
- * | down | binary | `u32` little-endian sample rate, then `f32` samples |
+ * | up | `{"type":"playback-ended","sequence":"1"}` | the reply finished playing |
+ * | down | binary | `u32` little-endian sample rate, `u64` little-endian reply sequence, then `f32` samples |
  * | down | `{"type":"stop"}` | stop playing and drop the queue |
  * | down | `{"type":"pause"}` | hold the reply where it is, and any that arrives |
  * | down | `{"type":"resume"}` | carry on from where it was held |
@@ -111,12 +111,14 @@ export function audioSocketUrl(owner: string, origin = window.location): string 
  */
 export function decodeReply(frame: ArrayBuffer): {
 	sampleRate: number;
+	sequence: string;
 	samples: Float32Array;
 } {
 	const view = new DataView(frame);
 	return {
 		sampleRate: view.getUint32(0, true),
-		samples: new Float32Array(frame.slice(4)),
+		sequence: view.getBigUint64(4, true).toString(),
+		samples: new Float32Array(frame.slice(12)),
 	};
 }
 
@@ -195,43 +197,49 @@ export async function connectBrowserVoice(
 		capture.connect(context.destination);
 	}
 
-	let playing: AudioBufferSourceNode | null = null;
-	// The reply being played or held, where it started and whether it is held.
-	// Pausing stops the node and remembers the position: suspending the
-	// context instead would stop the microphone with it.
-	let current: AudioBuffer | null = null;
-	let startedAt = 0;
-	let offset = 0;
+	// Schedule the complete queue on the audio clock. Starting the next reply
+	// from onended would insert a main-thread callback delay between buffers.
+	const replies: {
+		buffer: AudioBuffer;
+		sequence: string;
+		node: AudioBufferSourceNode | null;
+		startedAt: number;
+		offset: number;
+	}[] = [];
 	let paused = false;
-
-	const detach = () => {
-		const node = playing;
-		playing = null;
+	const detach = (reply: (typeof replies)[number]) => {
+		const node = reply.node;
+		reply.node = null;
 		node?.stop();
 	};
 	const stopPlayback = () => {
-		detach();
-		current = null;
-		offset = 0;
+		for (const reply of replies) detach(reply);
+		replies.length = 0;
 		paused = false;
 	};
-	const startPlayback = (buffer: AudioBuffer, from: number) => {
+	const startPlayback = (reply: (typeof replies)[number], when: number) => {
 		const node = context.createBufferSource();
-		node.buffer = buffer;
+		node.buffer = reply.buffer;
 		node.connect(context.destination);
 		node.onended = () => {
-			if (playing !== node) return;
-			playing = null;
-			current = null;
-			// The server cannot see the end of playback, and without this the
-			// reply stays `speaking` until its rendered duration elapses.
+			// stop/pause can deliver ended after this buffer has been rescheduled.
+			if (reply.node !== node) return;
+			reply.node = null;
+			replies.splice(replies.indexOf(reply), 1);
 			if (socket.readyState === WebSocket.OPEN) {
-				socket.send(JSON.stringify({ type: "playback-ended" }));
+				socket.send(JSON.stringify({ type: "playback-ended", sequence: reply.sequence }));
 			}
 		};
-		startedAt = context.currentTime - from;
-		node.start(0, from);
-		playing = node;
+		reply.startedAt = when - reply.offset;
+		reply.node = node;
+		node.start(when, reply.offset);
+	};
+	const schedule = () => {
+		let when = context.currentTime;
+		for (const reply of replies) {
+			if (!reply.node) startPlayback(reply, when);
+			when = Math.max(when, reply.startedAt + reply.buffer.duration);
+		}
 	};
 
 	socket.onmessage = (event) => {
@@ -240,31 +248,26 @@ export async function connectBrowserVoice(
 			if (type === "stop") stopPlayback();
 			if (type === "pause" && !paused) {
 				paused = true;
-				if (playing) offset = context.currentTime - startedAt;
-				detach();
+				for (const reply of replies) {
+					reply.offset = Math.min(reply.buffer.duration, Math.max(0, context.currentTime - reply.startedAt));
+					detach(reply);
+				}
 			}
 			if (type === "resume" && paused) {
 				paused = false;
-				if (current) startPlayback(current, offset);
+				schedule();
 			}
 			return;
 		}
-		const { sampleRate, samples } = decodeReply(event.data as ArrayBuffer);
+		const { sampleRate, sequence, samples } = decodeReply(event.data as ArrayBuffer);
 		if (!sampleRate || samples.length === 0) return;
 		// Its own rate, not the capture context's: the engine renders at 24 kHz
 		// and the browser resamples. Reusing the capture rate would play every
 		// reply 50% slow.
 		const buffer = context.createBuffer(1, samples.length, sampleRate);
 		buffer.getChannelData(0).set(samples);
-		// A reply that arrives while held waits for the resume.
-		const held = paused;
-		// DEFERRED (2026-11-01) — consecutive downlinks replace active audio.
-		// A queue/ack correction needs a browser playback replay; the native
-		// timing probe in playback-2605 does not establish that transport's cause.
-		stopPlayback();
-		paused = held;
-		current = buffer;
-		if (!held) startPlayback(buffer, 0);
+		replies.push({ buffer, sequence, node: null, startedAt: 0, offset: 0 });
+		if (!paused) schedule();
 	};
 
 	socket.onerror = () => {
@@ -273,6 +276,7 @@ export async function connectBrowserVoice(
 
 	return {
 		stop() {
+			socket.onmessage = null;
 			releaseScreen();
 			stopPlayback();
 			if (capture) {

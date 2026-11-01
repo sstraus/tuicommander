@@ -2380,11 +2380,20 @@ carries capture up and replies down on one socket, in both directions at once.
 | Direction | Frame | Meaning |
 |---|---|---|
 | up | binary | `f32` little-endian samples, mono, **16 kHz** |
-| up | `{"type":"playback-ended"}` | the reply finished playing |
-| down | binary | `u32` little-endian sample rate, then `f32` little-endian samples |
+| up | `{"type":"playback-ended","sequence":"1"}` | the reply finished playing |
+| down | binary | `u32` little-endian sample rate, `u64` little-endian reply sequence, then `f32` little-endian samples |
 | down | `{"type":"stop"}` | stop playing and drop anything queued |
 | down | `{"type":"pause"}` | hold the reply where it is, and any that arrives |
 | down | `{"type":"resume"}` | continue from where it was held |
+
+Replies append on the browser audio clock; they do not replace active audio or
+wait for a JavaScript `ended` callback to start the next buffer. Each completed
+reply acknowledges its sequence as a decimal string (preserving all 64 bits).
+Sequences increase for the socket lifetime, including across stop controls. Old,
+duplicate and unknown acknowledgements cannot finish newer queued audio. The
+server fallback deadline adds queued durations and preserves the remainder
+across pause/resume. Reload browser clients when updating the backend: the
+sequence-bearing binary format replaces the previous four-byte-only header.
 
 The downlink carries its own rate because it is not the uplink's: the engine
 renders at 24 kHz and the client resamples. A reply decoded at the capture rate

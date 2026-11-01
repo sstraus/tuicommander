@@ -11,6 +11,10 @@ use std::{
     time::{Duration, Instant},
 };
 use tuic_dictation::{
+    continuous::{
+        self, Capture, HandsFree, Interruptible, SegmenterConfig, TargetProbe, Transcript,
+        VoiceEndpoint, VoiceSink, VoiceWrite,
+    },
     speaker::{DeviceOutput, Output, Speaker, Utterance},
     speech::{
         Speech, SpeechAudio, SpeechCancel, SpeechError, edge::EdgeSpeech, pocket::PocketSpeech,
@@ -70,6 +74,7 @@ struct Marked {
     total: usize,
     last: Instant,
     maximum_gap: Duration,
+    consumed: Arc<AtomicUsize>,
 }
 impl Iterator for Marked {
     type Item = f32;
@@ -92,6 +97,7 @@ impl Iterator for Marked {
                 self.last = Instant::now();
             }
             self.read += 1;
+            self.consumed.fetch_add(1, Ordering::Relaxed);
             if self.read == self.total {
                 self.timeline.event(
                     self.origin,
@@ -131,6 +137,10 @@ struct MeasuredOutput {
     origin: Instant,
     timeline: Arc<Timeline>,
     next: AtomicUsize,
+    consumed: Arc<AtomicUsize>,
+    held: AtomicBool,
+    pauses: AtomicUsize,
+    resumes: AtomicUsize,
 }
 impl MeasuredOutput {
     fn open(origin: Instant, timeline: Arc<Timeline>, direct: bool) -> Result<Self, String> {
@@ -156,6 +166,10 @@ impl MeasuredOutput {
             origin,
             timeline,
             next: AtomicUsize::new(0),
+            consumed: Arc::new(AtomicUsize::new(0)),
+            held: AtomicBool::new(false),
+            pauses: AtomicUsize::new(0),
+            resumes: AtomicUsize::new(0),
         })
     }
 }
@@ -164,7 +178,11 @@ impl Output for MeasuredOutput {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         self.timeline.event(
             self.origin,
-            format!("append id={id} prior_speaking={}", self.is_speaking()),
+            format!(
+                "append id={id} prior_speaking={} held={}",
+                self.is_speaking(),
+                self.held.load(Ordering::SeqCst)
+            ),
         );
         if let Some(output) = &self.direct {
             let silent = SpeechAudio {
@@ -187,6 +205,7 @@ impl Output for MeasuredOutput {
             total: audio.samples.len(),
             last: Instant::now(),
             maximum_gap: Duration::ZERO,
+            consumed: Arc::clone(&self.consumed),
         });
         Ok(())
     }
@@ -205,6 +224,16 @@ impl Output for MeasuredOutput {
         )
     }
     fn pause(&self) {
+        self.held.store(true, Ordering::SeqCst);
+        self.pauses.fetch_add(1, Ordering::SeqCst);
+        self.timeline.event(
+            self.origin,
+            format!(
+                "output-pause consumed={} queue_nonempty={}",
+                self.consumed.load(Ordering::Relaxed),
+                self.is_speaking()
+            ),
+        );
         if let Some(d) = &self.direct {
             d.pause();
         } else {
@@ -212,6 +241,16 @@ impl Output for MeasuredOutput {
         }
     }
     fn resume(&self) {
+        self.timeline.event(
+            self.origin,
+            format!(
+                "output-resume consumed={} queue_nonempty={}",
+                self.consumed.load(Ordering::Relaxed),
+                self.is_speaking()
+            ),
+        );
+        self.held.store(false, Ordering::SeqCst);
+        self.resumes.fetch_add(1, Ordering::SeqCst);
         if let Some(d) = &self.direct {
             d.resume();
         } else {
@@ -220,6 +259,57 @@ impl Output for MeasuredOutput {
     }
     fn can_pause(&self) -> bool {
         true
+    }
+}
+// Synthetic near-end frames and a canned, unaddressed recognition verdict.
+// This exercises the REAL capture tick, not microphone capture or an AEC model.
+struct SyntheticEndpoint {
+    frame: Vec<f32>,
+    origin: Instant,
+    timeline: Arc<Timeline>,
+}
+impl VoiceEndpoint for SyntheticEndpoint {
+    fn drain(&mut self) -> Result<Vec<f32>, String> {
+        Ok(std::mem::take(&mut self.frame))
+    }
+    fn connected(&self) -> bool {
+        true
+    }
+    fn transcribe(&self, audio: &[f32]) -> Result<Transcript, String> {
+        self.timeline.event(
+            self.origin,
+            format!(
+                "synthetic-transcribe samples={} canned_verdict=unaddressed",
+                audio.len()
+            ),
+        );
+        Ok(Transcript {
+            text: "una frase non indirizzata".into(),
+            language: Some("it".into()),
+        })
+    }
+}
+struct ProbePort;
+impl TargetProbe for ProbePort {
+    fn accepts(&self, _: &str) -> bool {
+        true
+    }
+}
+impl VoiceSink for ProbePort {
+    fn write(&self, _: &str, _: &str) -> Result<VoiceWrite, String> {
+        panic!("unaddressed synthetic capture must never deliver")
+    }
+}
+struct CaptureSpeaker(Arc<Speaker>);
+impl Interruptible for CaptureSpeaker {
+    fn pause(&self) {
+        self.0.pause();
+    }
+    fn resume(&self) {
+        self.0.resume();
+    }
+    fn hush(&self) {
+        panic!("unaddressed synthetic capture must not hush");
     }
 }
 struct Load {
@@ -273,6 +363,11 @@ fn main() -> std::process::ExitCode {
     let engine_name = args.get(1).map(String::as_str).unwrap_or("pocket");
     let loaded = args.iter().any(|arg| arg == "--load");
     let direct = args.iter().any(|arg| arg == "--direct");
+    let capture_hold = args.iter().any(|arg| arg == "--capture-hold");
+    assert!(
+        !capture_hold || (!direct && !loaded),
+        "capture hold requires measured output and no load"
+    );
     let count = if loaded {
         (thread::available_parallelism().unwrap().get() / 2).max(1)
     } else {
@@ -310,8 +405,11 @@ fn main() -> std::process::ExitCode {
     let echo = Arc::new(Mutex::new(tuic_dictation::echo::EchoGuard::new(Box::new(
         tuic_dictation::echo::PassThrough,
     ))));
-    let tapped = Arc::new(tuic_dictation::echo::FarEndTap::new(output.clone(), echo));
-    let speaker = Speaker::new(engine, tapped, 0);
+    let tapped = Arc::new(tuic_dictation::echo::FarEndTap::new(
+        output.clone(),
+        echo.clone(),
+    ));
+    let speaker = Arc::new(Speaker::new(engine, tapped, 0));
     // Production defaults from DictationConfig. No capture stream is opened,
     // so this measures the tap's append cost, not acoustic echo cancellation.
     speaker.set_loudness(tuic_dictation::loudness::Loudness {
@@ -326,6 +424,30 @@ fn main() -> std::process::ExitCode {
     .iter()
     .map(|text| speaker.say(0, text, voice).unwrap())
     .collect();
+    let mode = Mutex::new(HandsFree::new(0));
+    mode.lock().set_activation("senti mac", 15_000);
+    mode.lock()
+        .arm("synthetic-probe", "synthetic", true)
+        .unwrap();
+    let mut capture = Capture::new(
+        SegmenterConfig::default(),
+        5_000,
+        0,
+        echo,
+        Some(Arc::new(CaptureSpeaker(speaker.clone()))),
+    );
+    let mut endpoint = SyntheticEndpoint {
+        frame: Vec::new(),
+        origin,
+        timeline: timeline.clone(),
+    };
+    let mut capture_started = None;
+    let mut next_tick = Instant::now();
+    let mut tick_index = 0usize;
+    let mut plateau: Option<(usize, Instant)> = None;
+    let mut stable_hold = false;
+    let mut resumed_at_count = None;
+    let mut resumed_growth = false;
     let until = Instant::now() + Duration::from_secs(90);
     while Instant::now() < until
         && !ids.iter().all(|id| {
@@ -335,7 +457,80 @@ fn main() -> std::process::ExitCode {
             )
         })
     {
+        if capture_hold
+            && capture_started.is_none()
+            && output.consumed.load(Ordering::Relaxed) >= 2400
+            && output.is_speaking()
+        {
+            capture_started = Some(Instant::now());
+            next_tick = Instant::now();
+            timeline.event(origin, "synthetic-capture-start real_playback_consumption_confirmed voiced_ms=300 silence_ms=1500 frame_ms=50".into());
+        }
+        if capture_hold
+            && capture_started.is_some()
+            && Instant::now() >= next_tick
+            && tick_index < 38
+        {
+            let voiced = tick_index < 6;
+            endpoint.frame = (0..800)
+                .map(|i| {
+                    if voiced {
+                        (2.0 * std::f32::consts::PI * 440.0 * (tick_index * 800 + i) as f32
+                            / 16_000.0)
+                            .sin()
+                            * 0.5
+                    } else {
+                        0.0
+                    }
+                })
+                .collect();
+            let result = continuous::tick(
+                &mut capture,
+                &mode,
+                &mut endpoint,
+                &ProbePort,
+                &ProbePort,
+                origin.elapsed().as_millis() as u64,
+            );
+            assert!(
+                matches!(result, continuous::Tick::Running { .. }),
+                "{result:?}"
+            );
+            let consumed = output.consumed.load(Ordering::Relaxed);
+            timeline.event(origin, format!("capture-tick index={tick_index} voiced={voiced} held={} consumed={consumed} phase={:?}", output.held.load(Ordering::SeqCst), mode.lock().phase()));
+            // Ignore the first 150ms after the pause request: the device mixer
+            // may already have prefetched samples. Require a long flat plateau.
+            if output.held.load(Ordering::SeqCst) && tick_index >= 7 {
+                if let Some((previous, at)) = plateau {
+                    assert_eq!(consumed, previous, "source advanced during settled hold");
+                    stable_hold |= at.elapsed() >= Duration::from_millis(1000);
+                } else {
+                    plateau = Some((consumed, Instant::now()));
+                }
+            }
+            if output.resumes.load(Ordering::SeqCst) > 0 && resumed_at_count.is_none() {
+                resumed_at_count = Some(consumed);
+            }
+            tick_index += 1;
+            next_tick += Duration::from_millis(50);
+        }
+        if let Some(count) = resumed_at_count {
+            resumed_growth |= output.consumed.load(Ordering::Relaxed) > count;
+        }
         thread::sleep(Duration::from_millis(2));
+    }
+    capture.release();
+    let hold_succeeded = !capture_hold
+        || (stable_hold
+            && resumed_growth
+            && output.pauses.load(Ordering::SeqCst) == 1
+            && output.resumes.load(Ordering::SeqCst) == 1);
+    if capture_hold {
+        println!(
+            "capture_hold_result stable_plateau_at_least_1000ms={stable_hold} resumed_consumption={resumed_growth} pauses={} resumes={} synthetic_only=true",
+            output.pauses.load(Ordering::SeqCst),
+            output.resumes.load(Ordering::SeqCst)
+        );
     }
     let succeeded = ids
         .iter()
@@ -348,7 +543,7 @@ fn main() -> std::process::ExitCode {
     for (ms, message) in timeline.events.lock().iter() {
         println!("{ms:.3}ms {message}");
     }
-    if succeeded {
+    if succeeded && hold_succeeded {
         std::process::ExitCode::SUCCESS
     } else {
         std::process::ExitCode::FAILURE

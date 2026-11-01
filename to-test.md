@@ -1,3 +1,7 @@
+## Browser voice queue (2605-53fc) — Rust rebuild/restart required
+
+- [ ] After Boss manually rebuilds/restarts when losing current sessions is acceptable, reload the browser tab (the audio frame header changed). Queue several spoken replies and confirm each finishes without truncation. Talk over a reply without the activation phrase, then confirm its remainder and later replies resume in order; interrupt the turn and confirm none of its queued audio returns. Automated scheduling/ACK tests do not verify real speaker output or microphone/AEC behavior. No daily instance was restarted; Rust does not hot-reload. The original native stutter remains unproven.
+
 ## Explicit worktree bases (2613-9ad7) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use a throwaway repository with two commits. Create a worktree from the older commit with MCP `repo worktree_create` and confirm HEAD and `base_commit` match it. Repeat with an existing branch at the newer commit: the request must fail without moving that branch. Rust changes do not hot-reload; restart only when losing current sessions is acceptable. The daily app was not restarted.

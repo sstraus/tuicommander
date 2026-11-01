@@ -2012,3 +2012,21 @@ An authorized `make agent-test AGENT_TEST_INSTANCE=agent-test-<name> AGENT_TEST_
 Voice saves normalize the latest locked engine selection before applying the caller’s field delta. An unchanged resolved Edge choice must not remain unset on disk and later migrate to an inactive external command or Pocket voice. A concurrent explicit engine choice is retained unless this caller changed that field.
 
 ACP channel origins do not identify an individual session within a shared connection. If another session on that connection has an unsettled turn, voice calls are unavailable rather than attributed to the wrong chat. Settled turn history does not mute the target.
+
+### Browser reply scheduling (2605-53fc)
+
+The browser appends complete downlink buffers on `AudioContext.currentTime`.
+Each source starts at the preceding source's end, without waiting for the
+main-thread `ended` callback. Pause stops scheduled sources and retains their
+positions; resume reschedules the active remainder before later replies. Stop
+and teardown invalidate every scheduled source and its stale callbacks.
+
+Each binary reply has a sample rate, a monotonically increasing 64-bit sequence,
+and PCM samples. Per-reply `playback-ended` controls echo the sequence as a
+string. The backend uses one locked playback state for appends, holds, stops and
+ACKs, adds queued durations, and ignores ACKs that would retire newer audio.
+Client and backend ship together; reload an old browser tab after updating.
+
+This fixes browser truncation present since `f03ec66af5`. It does not establish
+that browser playback caused the reported native stutter. The retained native
+probe and capture-hold evidence describe separate mechanisms and limitations.
