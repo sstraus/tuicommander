@@ -643,6 +643,52 @@ fn dual_stream_escaped_remote_output_fits_outer_capture() {
 }
 
 #[test]
+fn recorded_dual_stream_remote_envelopes_survive_client_capture() {
+    // Catches: the host truncates escaped dual-stream output before decoding the remote envelope.
+    // Recordings come from the Unix producer; replay never executes its POSIX-only runner.
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/workflows/command/fixtures");
+    for (name, stdout_char, stderr_char) in [
+        ("controls", '\u{1}', '\u{2}'),
+        ("ascii", 'a', 'b'),
+        ("unicode", '\u{1f600}', '\u{1f601}'),
+    ] {
+        let mut command = Command::new(python());
+        command
+            .args([
+                "-c",
+                "import gzip,sys; sys.stdout.buffer.write(gzip.open(sys.argv[1],'rb').read())",
+            ])
+            .arg(fixtures.join(format!("remote-dual-stream-{name}.txt.gz")))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let output = execute_process(command, Duration::from_secs(20), None, false).unwrap();
+        assert_eq!(output.exit_code, 0, "{name}");
+        assert!(output.stderr.is_empty(), "{name}: {:?}", output.stderr);
+        let envelope = String::from_utf8(output.stdout).unwrap();
+        let remote: serde_json::Value = serde_json::from_str(
+            envelope
+                .trim()
+                .strip_prefix("TUIC_COMMAND_RESULT=")
+                .unwrap(),
+        )
+        .expect("recorded remote envelope must survive the host's outer capture");
+        assert_eq!(remote["exit_code"], 0, "{name}");
+        for (stream, expected) in [("stdout", stdout_char), ("stderr", stderr_char)] {
+            let content = remote[stream]
+                .as_str()
+                .unwrap()
+                .strip_suffix("[TRUNCATED]")
+                .expect("producer truncation marker must survive capture and decoding");
+            assert!(!content.is_empty(), "{name}: {stream}");
+            assert!(
+                content.chars().all(|value| value == expected),
+                "{name}: {stream} changed during capture or decoding"
+            );
+        }
+    }
+}
+
+#[test]
 fn missing_secret_does_not_reserve_named_resource() {
     // catches F5: deterministic preflight failure permanently reserving GUI/mutation resources.
     let root = scratch();
