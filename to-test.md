@@ -1,3 +1,7 @@
+## Design Mode lossless selected-element crops (2617-69a6)
+
+- [ ] After rebuilding the sidecar and reopening Design Mode to deploy the extension, select a small icon and a large element. Confirm feedback retains PNG crop references with the existing 800 × 600 pixel and 128 KiB limits, while agent screenshots still default to WebP and accept explicit PNG. Targeted worker tests verify PNG adapter calls, crop dimensions and oversized-image DOM fallback; live Chrome pixel fidelity is not claimed. No daily app was restarted.
+
 ## Explicit worktree bases (2613-9ad7) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, use a throwaway repository with two commits. Create a worktree from the older commit with MCP `repo worktree_create` and confirm HEAD and `base_commit` match it. Repeat with an existing branch at the newer commit: the request must fail without moving that branch. Rust changes do not hot-reload; restart only when losing current sessions is acceptable. The daily app was not restarted.

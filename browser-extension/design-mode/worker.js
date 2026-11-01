@@ -151,7 +151,7 @@ async function capture(message, sender) {
     const width = Math.min(bitmap.width - x, r.width * ratio), height = Math.min(bitmap.height - y, r.height * ratio);
     if (width < 1 || height < 1) { bitmap.close(); return {}; }
     const scale = Math.min(1, 800 / width, 600 / height);
-    const capture = await encodeCapture(bitmap, {format:'webp',quality:25,max_long_edge:Math.max(1,Math.round(Math.max(width,height) * scale))}, {x,y,width,height});
+    const capture = await encodeCapture(bitmap, {format:'png',max_long_edge:Math.max(1,Math.round(Math.max(width,height) * scale))}, {x,y,width,height});
     if (capture.bytes > 128 * 1024) return {captureError:'Screenshot too large; DOM evidence retained.'};
     return capture;
   } catch (error) { return {captureError: `Screenshot unavailable: ${error.message}`}; }
