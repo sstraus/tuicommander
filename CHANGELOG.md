@@ -6,160 +6,105 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
-- Verify Codex global hook trust through the installed CLI. Explicit installation trusts only exact TUIC definitions; changed or unverified hooks require normal `/hooks` review instead of an installed badge (#2625-c4b5).
-- Preserve the name and TUIC address when Telegram replies fall back from an exited agent; identify the receiving session or unavailable target, and document coordinator registration after restart (#2640-1cbf).
-- Hide the mobile queued prompt list behind its live count. Tap Show to reopen it; an empty user queue resets the panel for new work. Exclude server mail/task entries by origin and preserve them when clearing listed user prompts (#2639-173b).
+## [2.0.0] - 2026-11-01
+
+### Added
 
 - Queue busy Session Chat prompts in TUIC and add per-prompt Cancel and Send now controls without duplicate idle delivery (#2589-4bc4).
-- Add correlated barge-in hold diagnostics with aggregate capture/reference snapshots and explicit resolution reasons; keep the existing voice hold policy unchanged (#2605-53fc).
+- Add correlated barge-in hold diagnostics with aggregate capture/reference snapshots and explicit resolution reasons; keep the existing voice hold policy unchanged (#2605-53fc). Add an opt-in, silent native speech timing probe and retain the Pocket/Edge partial-load measurements for #2605-53fc. The measured native buffer gap did not reproduce; playback behavior and buffer sizes are unchanged.
+- Add AI Chat to the hands-free voice target picker, including detached chats. Spoken prompts keep the pinned-or-viewed repository hint and use the existing ACP prompt queue, replies use the bound voice tool, and closing or switching the chat releases the binding (native story 01a19335-a29d-7376-ac67-9bf64639edee).
+- AI Chat master prompt in Settings: additive instructions for new conversations, with an 8192-byte limit.
+- Add disabled-by-default native workflow integration trials with checked no-ff merge publication, crash-recoverable proof debt and independently retriable non-force cleanup (#2514-3d1e).
+- Add backend typed workflow command/Tool nodes with durable resource waits, source/target receipts, secret-reference transport and fenced rb reconciliation (#2512-5a42).
+- Mute completion progress popups for the current app session and restore them from Terminal Progress. Journal entries and blocked warning popups remain available (#2553-6446).
+- Colour expanded Chat tool rows with shell syntax roles and separate tool/path styling. Reuse the existing Shell grammar and theme colours; collapsed summaries and sizing stay unchanged (#2552-fd00).
+- Add explicit workflow PTY/ACP execution routes and genuine ACP launch/conversation references, with binding-before-prompt journaling and channel-generation report fences (#2511-37f0, policy/handover/close still incomplete). Retain workflow bound-report acceptance/refusal decisions across retry and restart, with atomic accepted-event recording and a read-only `report_dispositions` run action (#2511-37f0, lifecycle increment only). Accept typed, revision-bound plan story proposals without requiring a Coordinator Agent node; retain contract-2 behavior (#2511-37f0, foundation only).
+- Add bounded, correlated workflow Fork/all-Join, For each and typed If/else execution, generation-fenced repair, and replay-safe branch readiness (#2509-0e2f).
+- Use a theme-accent breathing orb for working feedback in desktop and mobile Chat. Reduced motion shows a static dot; accessible Working text and provider retry status remain unchanged (#2535-8b6b).
+- Add opt-in pinned workflow evidence policy with source-bound proof, independent review, ordered FIX/STORY/ACCEPT triage and bounded review/repair budgets (#2513-c433).
+- Persist workflow timer wake receipts, bounded provider backoff, one-row cohort deadlines and fail-closed question expiry across daemon restart (#2529-844b).
+- Add a separating space after web URLs pasted into mobile terminal and AI Chat composers, unless whitespace already follows (#2494-921f).
 
-- Add an opt-in, silent native speech timing probe and retain the Pocket/Edge partial-load measurements for #2605-53fc. The measured native buffer gap did not reproduce; playback behavior and buffer sizes are unchanged.
+### Changed
+
+- Verify Codex global hook trust through the installed CLI. Explicit installation trusts only exact TUIC definitions; changed or unverified hooks require normal `/hooks` review instead of an installed badge (#2625-c4b5).
+- Hide the mobile queued prompt list behind its live count. Tap Show to reopen it; an empty user queue resets the panel for new work. Exclude server mail/task entries by origin and preserve them when clearing listed user prompts (#2639-173b).
 - Pin transitive same-daemon workflow Calls with bounded nested identities, typed terminal receipts and recovery/cancellation ownership; keep Story Dispatch as the delivery fan-out (#2516-8fd1).
 - Let agents choose WebP (default quality 25) or PNG per Design Mode screenshot, with optional quality and long-edge downsize. Return image media type, format, quality and byte size; selected-element crops remain lossless PNG (#2617-69a6).
+- Restyle mobile Files with saved groups, names, short paths and folder navigation; align mobile typography and readable Progress cards without changing desktop views (#2495-73c6).
+- Default mobile Progress to intent/done/blocked with backend filtering before pagination; keep messages and delegations in Filters and Flow (#2496-cbae).
+- Reduce mobile terminal command text, suggestion labels and key labels to 15px, trim input spacing, and retain 44px action targets (#2491-1ec2).
+- Workflow daemon launches now retain a pre-spawn workspace baseline and managed launch reference for attribution after retry/restart. This is not safe-close or complete WF04 lifecycle support.
 
-- Add AI Chat to the hands-free voice target picker, including detached chats. Spoken prompts keep the pinned-or-viewed repository hint and use the existing ACP prompt queue, replies use the bound voice tool, and closing or switching the chat releases the binding (native story 01a19335-a29d-7376-ac67-9bf64639edee).
-
-- AI Chat master prompt in Settings: additive instructions for new conversations, with an 8192-byte limit.
 ### Fixed
 
+- Fix workflow routing pins so unrelated profile and idle-close edits do not block an unchanged route. Keep contract-3 graph launches daemon-owned.
 - Accept stored story project paths that resolve to the same canonical directory, including Windows verbatim paths. Repair Windows workflow test clone paths and byte-exact stdin checks; keep Linux remote-runner tests separate from cross-platform local receipt checks.
 - Queue browser voice replies on the audio clock instead of cutting off the active reply. Preserve holds and queued durations; sequence playback acknowledgements so an old reply cannot finish newer audio (#2605-53fc). Reload browser tabs after updating the backend. This fixes a separate browser defect, not a proven cause of the reported native stutter.
-
 - Honor explicit worktree bases when a branch name already exists: reject conflicting tips instead of checking out the wrong commit. Report the resolved `base_commit` over MCP, HTTP and desktop IPC (#2613-9ad7).
-
 - Keep push-to-talk dictation in the focused detached AI Chat window instead of sending its transcript to the main window; preserve the captured composer across focus changes and scope native Fn listeners to their own WebView.
 - Label the per-reply conversation branch action **Fork**, distinct from **Copy**.
 - Keep AI Chat model settings available when ego doctor reports a health problem, and show the specific diagnostic instead of a generic refusal (#2586-6732).
 - Add or remove a session from the Global Workspace through its sidebar context menu (#2590-2d63).
 - Send to the registered coordinator with `agent action=send to=orchestrator` without peer discovery; missing or ambiguous roles return explicit errors (#2580-dcbd).
 - Move native stories between legal Kanban phases with pointer drag, or use keyboard-accessible Phase selectors in List and beside Edit. Backend rules and revisions remain authoritative; rejected moves retain their placement. The toolbar includes Ready counts with named glyphs and tooltip lines (#2578-69b4).
-
 - Preserve ignored canonical work during native integration and recover interrupted validation, receipts and branch retirement without blocking unrelated trial repositories (#2514-3d1e).
 - Recover malformed config fields without resetting valid settings; preserve valid legacy service credentials and show reset field names and the original backup path once per recovery (#2564-8455).
 - Migrate legacy disabled scrollback reflow once; preserve later explicit choices (#2565-8b3c).
 - Recall the latest host-owned text prompt with ArrowUp in an empty chat composer; native CLI Pending receipts remain non-cancellable (#2556-6065).
 - Keep short inline code chips together in Terminal Chat without changing transcript text (#2557-0f37).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
-### Fixed
-
 - Recover rejected user-plugin imports with at most two delayed retries and fresh module-graph URLs. Keep permanent errors visible and retire stale recovery on disable/reload. Preserve per-attempt diagnostics; the historical boot failure cause remains unattributed (#2567-ee9c).
 - Recognize an answer joined to an intent title without a newline. Keep answer parentheses out of the intent title and preserve terminal, Chat and answers-only rendering (#2612-b0ac).
 - Show “Go ahead” only after a recognized activation phrase during hands-free capture; keep unrelated voice activity at “Listening” and final recognition at “Transcribing”. Desktop and browser capture share bounded prefix checks with the existing model (#2610-9b43).
-
 - Preserve agent shim names when launchers canonicalise executable paths; upgrade legacy Unix symlinks to atomic hard links (#2584-fdaa).
-
 - Let Design Mode start after a stale browser profile lock PID is reused by an unrelated process; preserve live profile ownership (#2591-937a).
 - Show an explicit unrelated-history branch state without failing repository refresh or treating independent commits as merged work. Keep the dirty-file count and Changes action in compact rows (#2611-6022).
-
 - Stop buffering an oversized plugin watcher line after its first overflow; cursor-addressed TUI repaints now produce one warning until the next newline (#2607-678c).
-
 - Resolve local Markdown image parent paths before creating desktop asset URLs, so images in sibling folders load (#2604-0ec2).
-
 - Show the backend error message and code when a Smart Prompt fails, instead of `[object Object]` (#2600-1421).
 - Use one aligned Smart Prompt editor in Settings and the Edit Prompt dialog, with eight readable placement choices and consistent conditional fields (#2603-8a87).
-
 - Send Ctrl+Enter as CSI u only with negotiated Kitty reporting or an identified ego session, preserving legacy CR for shells and other agents; retain ego busy-turn steering and the mobile ego Ctrl menu correction (#2599-0a6b).
-
 - Refuse managed child progress reports before user notifications or waiting badges; direct child reports to their parent and keep root reporting unchanged (#2597-76c6).
-
 - Restore symmetric open meridians in the shared global-workspace globe icon (#2602-2e4d).
-
 - Match Droid and OpenCode identity artwork to sibling icon sizes in sidebar, Settings and mobile (#2601-0477).
-
 - Show a rounded Greek epsilon (ε), not an æ ligature or square E, in the ego identity circle across the sidebar and shared agent icons (#2598-8df7).
-
 - Resolve Progress to the main checkout when a separately registered linked checkout repeats the shared workspace inventory (#2583-fd08).
-
 - Keep AI Chat Stop and Send buttons at a fixed size and bottom-aligned as the draft grows (#2588-b8af).
 - Keep verified terminal link underlines visible during unrelated spinner redraws, including full frames and same-row file paths (#01a19332-aa59-7025-9cb0-071b909bf871).
-
 - Align Speech assets and Spoken replies in Voice Settings, with shared rows, model/voice selectors, asset badges and named download actions. Keep the configured Whisper choice selected when its catalogue arrives (#2608-f1c4).
-
 - Align Design Mode sidebar sections and keep permission and error action buttons separated when they wrap (#2592-2a7f).
 - Honor dictation Auto-send in terminal Chat through the existing Compose Send path; keep review-only drafts when disabled and leave unrelated editors unchanged (#2585-dfc2).
 - Require a browser acknowledgment before Design Mode start succeeds, receive commands without a sidebar, report missing eval consent immediately, reject disconnected command queues, and close the dedicated browser on Stop (#2596-b9c6).
-
 - Keep dotted link underlines and wrapped hover underlines aligned with terminal text during smooth scrolling (#2582-13dd).
 - Keep Session Chat and its composer on the destination repository when a progress toast's reporting terminal has closed (#2579-6271).
-
 - Permit the native notification plugin's startup permission probe in every app-owned desktop window (#2568-a5d5).
 - Keep repository structure available when a local branch has unrelated history; retain that branch as unmerged (#2569-b40f).
-
 - Offer a detected ego executable in inactive AI Chat with an explicit Use this confirmation; preserve manual setup and existing paths (#2561-9861).
 - Add dismissible contextual tips for long-running agents, optional global hooks during agent setup and disabled temporary-server-error retries. Defaults stay unchanged (#2562-d363).
-
 - Connect PR popovers, unresolved-thread counts and PR notifications to the exact Tasks conversation, with a GitHub fallback and a return action to an existing branch/worktree (#2559-dc9e).
-
-## [2.0.0] - 2026-10-31
-
+- Preserve the name and TUIC address when Telegram replies fall back from an exited agent; identify the receiving session or unavailable target, and document coordinator registration after restart (#2640-1cbf).
 - Restore Compose typing after clicking the session Chat transcript, without changing selection, copy or shortcuts (#2554-0ee4).
-
 - Retire Terminal Chat pending bubbles when native receipts truncate or redact the submitted prompt (#2542-49c3).
-
-- Fix workflow routing pins so unrelated profile and idle-close edits do not block an unchanged route. Keep contract-3 graph launches daemon-owned.
-
-- Workflow daemon launches now retain a pre-spawn workspace baseline and managed launch reference for attribution after retry/restart. This is not safe-close or complete WF04 lifecycle support.
-
 - Keep mobile Markdown images, review saves and Back navigation in the destination folder after opening a local link.
-
-### Added
-
-- Add disabled-by-default native workflow integration trials with checked no-ff merge publication, crash-recoverable proof debt and independently retriable non-force cleanup (#2514-3d1e).
-
-- Add backend typed workflow command/Tool nodes with durable resource waits, source/target receipts, secret-reference transport and fenced rb reconciliation (#2512-5a42).
-- Mute completion progress popups for the current app session and restore them from Terminal Progress. Journal entries and blocked warning popups remain available (#2553-6446).
-- Colour expanded Chat tool rows with shell syntax roles and separate tool/path styling. Reuse the existing Shell grammar and theme colours; collapsed summaries and sizing stay unchanged (#2552-fd00).
-
-- Add explicit workflow PTY/ACP execution routes and genuine ACP launch/conversation references, with binding-before-prompt journaling and channel-generation report fences (#2511-37f0, policy/handover/close still incomplete).
-
-- Retain workflow bound-report acceptance/refusal decisions across retry and restart, with atomic accepted-event recording and a read-only `report_dispositions` run action (#2511-37f0, lifecycle increment only).
-
-- Accept typed, revision-bound plan story proposals without requiring a Coordinator Agent node; retain contract-2 behavior (#2511-37f0, foundation only).
-- Add bounded, correlated workflow Fork/all-Join, For each and typed If/else execution, generation-fenced repair, and replay-safe branch readiness (#2509-0e2f).
-- Use a theme-accent breathing orb for working feedback in desktop and mobile Chat. Reduced motion shows a static dot; accessible Working text and provider retry status remain unchanged (#2535-8b6b).
-
-- Add opt-in pinned workflow evidence policy with source-bound proof, independent review, ordered FIX/STORY/ACCEPT triage and bounded review/repair budgets (#2513-c433).
-- Persist workflow timer wake receipts, bounded provider backoff, one-row cohort deadlines and fail-closed question expiry across daemon restart (#2529-844b).
-
-- Add a separating space after web URLs pasted into mobile terminal and AI Chat composers, unless whitespace already follows (#2494-921f).
-
-### Fixed
-
 - Reconcile paused typed workflow commands after restart without replay; stop local gate child groups, redact JSON-escaped secrets, bound remote result envelopes, release known no-start failures, and pass the wrapper freeze identity (#2512-5a42).
 - Keep collapsed Compose chrome in the shared Button primitive, without changing its idle, hover or keyboard-focus appearance (#2555-29b4).
-
 - Restore the collapsed Compose handle’s transparent idle chrome and muted label. Hover and keyboard focus reveal the button without fading its queue count (#2551-7a80).
-
 - Preserve `automations.json` during external in-place saves. Incomplete or invalid reads report errors without quarantining the live file or losing the completed edit (#2548-0bc7).
-
 - Restore session quota for Codex profiles with Codex 0.166 by loading the selected profile file through supported App Server configuration overrides. Preserve profile-relative paths, and reject App Server's invalid-configuration defaults fallback (#2541-18a3).
 - Discover and verify Gemini CLI JSONL sessions for the matching project, with legacy JSON resume support (#2543-4bbf).
 - Stop superseded ACP workflow reviewers through their managed connection and require OS process absence before repair (#2511-37f0).
 - Retire older unmatched terminal Chat prompt bubbles when a later send reaches the transcript, so local slash commands cannot block subsequent receipts (#2540-b929).
-
 - Keep terminal search below the Context and CLI/Chat switch row so navigation and close controls stay reachable in narrow panes (#2538-c082).
-
 - Keep Claude native question previews out of wrapped answer labels in desktop Chat and mobile; show the selected preview, question tabs and Chat about this action (#2536-8e18).
 - Preserve current-generation checks after workflow all-Join, honor each bound critic FIX, route typed join failures correctly, and re-evaluate concurrent check admission without pausing valid sibling work (#2509-0e2f).
-
 - Raise built-in secondary and muted text contrast on all neutral chrome surfaces, share desktop/mobile startup foregrounds, and remove the collapsed Compose label and queue-count fade (#2506-22b0).
-
 - Preserve the beginning of long Claude CLI dictation by framing it as a bracketed paste, including review-only delivery (#2502-571c).
-
 - Open local `tuic://open` links from Markdown in desktop and mobile/browser views. Route Markdown, images, HTML and directories to their proper views, including cross-worktree targets; keep network external-text reads restricted to registered repositories (#2497-ec72).
 - Apply collective zoom shortcuts to all open Markdown and code editor tabs as well as terminals (#2499-1156).
-
 - Truncate long mobile session and file names, preserve badges and actions, and wrap unbroken Progress text (#2493-061e).
-
 - Apply the mobile Chat font setting to all assistant prose, including earlier explanatory blocks (#2492-4944).
 - Keep mobile session Chat Copy below answer text instead of over its first line (#2490-276a).
-
-### Changed
-
-- Restyle mobile Files with saved groups, names, short paths and folder navigation; align mobile typography and readable Progress cards without changing desktop views (#2495-73c6).
-- Default mobile Progress to intent/done/blocked with backend filtering before pagination; keep messages and delegations in Filters and Flow (#2496-cbae).
-
-- Reduce mobile terminal command text, suggestion labels and key labels to 15px, trim input spacing, and retain 44px action targets (#2491-1ec2).
 
 ## [2.0.0-beta.5] - 2026-10-29
 
