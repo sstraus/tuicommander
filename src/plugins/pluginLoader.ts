@@ -14,6 +14,7 @@ import { terminalsStore } from "../stores/terminals";
 import { isTauri } from "../transport";
 import { compareAppVersion } from "../utils/semver";
 import { updateAppConfig } from "../utils/updateAppConfig";
+import { importPluginModule } from "./pluginModuleImport";
 import { pluginRegistry } from "./pluginRegistry";
 import type { PluginSettingsDefinition } from "./pluginSettings";
 import type { TuiPlugin } from "./types";
@@ -166,6 +167,8 @@ export async function setPluginEnabled(id: string, enabled: boolean): Promise<vo
 			}
 		}
 	} else {
+		// Retire pending imports before an asynchronous unregister can yield.
+		activeLoads.delete(id);
 		// Unload the plugin
 		if (builtIn) {
 			await pluginRegistry.unregister(id);
@@ -209,7 +212,21 @@ export function pluginModuleUrl(id: string, main: string, windows: boolean, vers
 	return pluginModuleBaseUrl(id, `~v${version}/${main}`, windows);
 }
 
+// A reload/disable supersedes the whole recovery cycle, not just one attempt.
+const activeLoads = new Map<string, symbol>();
+let lastModuleVersion = 0;
+
 async function loadPlugin(manifest: PluginManifest): Promise<void> {
+	const cycle = Symbol();
+	activeLoads.set(manifest.id, cycle);
+	try {
+		await loadPluginCycle(manifest, cycle);
+	} finally {
+		if (activeLoads.get(manifest.id) === cycle) activeLoads.delete(manifest.id);
+	}
+}
+
+async function loadPluginCycle(manifest: PluginManifest, cycle: symbol): Promise<void> {
 	const logger = pluginStore.getLogger(manifest.id);
 
 	// Register in pluginStore so UI can see it even before load completes
@@ -236,34 +253,45 @@ async function loadPlugin(manifest: PluginManifest): Promise<void> {
 	// supplies. A per-plugin token was considered and rejected: same-realm JS can
 	// read, proxy or monkey-patch it, so it would be a boundary in name only.
 	//
-	// A fresh `~v<n>` path version per load cache-busts the whole module graph for hot reload.
-	const url = pluginModuleUrl(manifest.id, manifest.main, isWindows(), Date.now());
 	const loadCycleId = crypto.randomUUID();
+	const isCurrent = () => activeLoads.get(manifest.id) === cycle && !disabledPluginIds.has(manifest.id);
 	let mod: unknown;
-	try {
-		mod = await import(/* @vite-ignore */ url);
-	} catch (err) {
-		// Read error fields across realms too; instanceof can miss a native loader error.
-		const importError = err as { name?: unknown; message?: unknown; status?: unknown } | null | undefined;
-		const msg = typeof importError?.message === "string" ? importError.message : String(err);
-		// DEFERRED (2026-10-31) — the historical all-plugin failure batch recovered,
-		// but its cause is unknown. Capture a recurrence before adding retries.
-		// Include the load id in the message: appLogger coalesces equal messages, not equal data.
-		appLogger.error("plugin", `Failed to import plugin "${manifest.id}" (load ${loadCycleId})`, {
-			url,
-			errorName: typeof importError?.name === "string" ? importError.name : null,
-			errorMessage: msg,
-			// Native import normally hides response status; do not issue a second request to guess it.
-			httpStatus: typeof importError?.status === "number" ? importError.status : null,
-			attempt: 1,
-			// timeOrigin identifies this document across HMR, unlike a module-scoped UUID.
-			documentId: performance.timeOrigin,
-			loadCycleId,
-			error: err,
-		});
-		logger.error(`Import failed: ${msg}`, err);
-		pluginStore.updatePlugin(manifest.id, { error: msg });
-		return;
+	// Three attempts total, with four seconds of scheduled delay. Only import
+	// rejection is retried: validation/onload may have permanent errors or effects.
+	const delays = [0, 1000, 3000];
+	for (const [index, delay] of delays.entries()) {
+		if (delay) await new Promise<void>((resolve) => setTimeout(resolve, delay));
+		if (!isCurrent()) return;
+		// A monotonic path version also avoids cached rejections when the wall clock
+		// is unchanged or moves backwards. Relative imports inherit this version.
+		lastModuleVersion = Math.max(Date.now(), lastModuleVersion + 1);
+		const url = pluginModuleUrl(manifest.id, manifest.main, isWindows(), lastModuleVersion);
+		try {
+			mod = await importPluginModule(url);
+			if (!isCurrent()) return;
+			break;
+		} catch (err) {
+			if (!isCurrent()) return;
+			// Read error fields across realms too; instanceof can miss a native loader error.
+			const importError = err as { name?: unknown; message?: unknown; status?: unknown } | null | undefined;
+			const msg = typeof importError?.message === "string" ? importError.message : String(err);
+			const attempt = index + 1;
+			// Include cycle and attempt: appLogger coalesces equal messages, not equal data.
+			appLogger.error("plugin", `Failed to import plugin "${manifest.id}" (load ${loadCycleId}, attempt ${attempt})`, {
+				url,
+				errorName: typeof importError?.name === "string" ? importError.name : null,
+				errorMessage: msg,
+				// Native import normally hides response status; do not probe to guess it.
+				httpStatus: typeof importError?.status === "number" ? importError.status : null,
+				attempt,
+				documentId: performance.timeOrigin,
+				loadCycleId,
+				error: err,
+			});
+			logger.error(`Import failed (attempt ${attempt}/${delays.length}): ${msg}`, err);
+			pluginStore.updatePlugin(manifest.id, { error: msg });
+			if (attempt === delays.length) return;
+		}
 	}
 
 	const moduleError = validateModule(mod, manifest.id);
@@ -299,7 +327,10 @@ let reloadInFlight: Promise<void> | null = null;
 
 function handlePluginChanged(event: { payload: string[] }): Promise<void> {
 	if (!Array.isArray(event.payload) || event.payload.length === 0) return Promise.resolve();
-	for (const id of event.payload) pendingReloadIds.add(id);
+	for (const id of event.payload) {
+		activeLoads.delete(id);
+		pendingReloadIds.add(id);
+	}
 	if (!reloadInFlight) {
 		reloadInFlight = Promise.resolve().then(async () => {
 			try {

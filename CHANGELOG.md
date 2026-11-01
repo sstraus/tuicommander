@@ -28,7 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Omit empty ACP Plan cards while retaining full-snapshot clearing and later plan steps (#2558-2056).
 ### Fixed
 
-- Record plugin import URLs, error details and document/load identifiers for failure diagnosis, without adding retries (#2567-ee9c).
+- Recover rejected user-plugin imports with at most two delayed retries and fresh module-graph URLs. Keep permanent errors visible and retire stale recovery on disable/reload. Preserve per-attempt diagnostics; the historical boot failure cause remains unattributed (#2567-ee9c).
 - Recognize an answer joined to an intent title without a newline. Keep answer parentheses out of the intent title and preserve terminal, Chat and answers-only rendering (#2612-b0ac).
 - Show “Go ahead” only after a recognized activation phrase during hands-free capture; keep unrelated voice activity at “Listening” and final recognition at “Transcribing”. Desktop and browser capture share bounded prefix checks with the existing model (#2610-9b43).
 
