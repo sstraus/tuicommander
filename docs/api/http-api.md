@@ -1447,7 +1447,7 @@ under `/repo/`.
 
 `GET`/`PUT /config/agents` read and write `agents.json`, including each agent's optional `prevent_alt_screen` override (`false` disables TUIC's screen control; absent means enabled). The route is in `shared_routes()`, so the `tuic-remote` daemon serves it too: a remote repository's agents run with that machine's `agents.json`, and the frontend loads it per connection. The `/config/agents/{agent}/…` sub-routes below stay desktop-only.
 
-`GET /config/agents/{agent}/native-status-signals` returns `{ "enabled": boolean }`. `PUT` accepts the same boolean field for Claude or Codex and changes launch behavior for new sessions only. The existing `/hook-instrumentation` route remains the explicit global installer.
+`GET /config/agents/{agent}/native-status-signals` returns `{ "enabled": boolean }`. `PUT` accepts the same boolean field for Claude or Codex and changes launch behavior for new sessions only. The existing `/hook-instrumentation` route remains the explicit global installer. Codex installation attempts exact native trust and preserves successful file installation if normal review remains necessary. Hook-state GET returns `{ "state": "reviewRequired" }` when canonical Codex files lack verified current native trust; `installed` requires CLI readback. Status reads never grant trust.
 
 ### No provider keyring routes
 

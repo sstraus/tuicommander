@@ -190,6 +190,20 @@ describe("AgentsTab expert controls", () => {
 		await waitFor(() => expect(mockInvoke).toHaveBeenCalledWith("remove_agent_mcp", { agentType: "claude" }));
 	});
 
+	// Catches: saved files or a pending native review are labelled operational.
+	it("shows Codex native hook review instead of an installed badge", async () => {
+		remoteRpc.mockImplementation((cmd: string) =>
+			Promise.resolve(cmd === "get_agent_hook_state" ? "reviewRequired" : undefined),
+		);
+		await setup({ codex: { run_configs: [], hook_instrumentation: true } });
+		const view = renderExpanded("codex");
+		await waitFor(() => expect(view.getByText("Hooks: review in /hooks")).toBeInTheDocument());
+		expect(view.queryByText("Hooks installed")).toBeNull();
+		expect(view.getByRole("checkbox", { name: /^Install hooks globally/ })).toBeChecked();
+		expect(remoteRpc).not.toHaveBeenCalledWith("set_agent_hook_instrumentation", expect.anything(), expect.anything());
+		remoteRpc.mockReset();
+	});
+
 	it("labels only amp, cursor and droid as limited support", async () => {
 		await setup();
 		const { container } = render(() => <AgentsTab />);

@@ -62,7 +62,11 @@ pub(crate) fn features_hooks_present(config: &Path) -> bool {
 /// Set (`enabled`) or clear `[features] hooks = true`, preserving the rest of the
 /// file. Idempotent. Creates the file/section as needed when enabling.
 pub(crate) fn set_features_hooks_flag(config: &Path, enabled: bool) -> Result<(), String> {
-    let contents = std::fs::read_to_string(config).unwrap_or_default();
+    let contents = match std::fs::read_to_string(config) {
+        Ok(contents) => contents,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => String::new(),
+        Err(error) => return Err(format!("read {}: {error}", config.display())),
+    };
     let out = if enabled {
         enable(&contents)
     } else {
@@ -145,6 +149,19 @@ mod tests {
         let p = dir.path().join("config.toml");
         std::fs::write(&p, body).unwrap();
         p
+    }
+
+    #[test]
+    fn codex_unreadable_config_is_not_replaced_with_only_a_hook_flag() {
+        // Bug caught: invalid UTF-8 is treated as a missing user config and lost.
+        let dir = TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
+        let config = dir.path().join("config.toml");
+        let original = [0xff, 0xfe, b'x'];
+        std::fs::write(&config, original).unwrap();
+        for enabled in [true, false] {
+            assert!(set_features_hooks_flag(&config, enabled).is_err());
+            assert_eq!(std::fs::read(&config).unwrap(), original);
+        }
     }
 
     #[test]

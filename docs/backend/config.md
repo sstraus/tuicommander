@@ -1,5 +1,26 @@
 # Configuration
 
+## Codex global hook trust
+
+The explicit global installer targets `CODEX_HOME/hooks.json` and its sibling
+`config.toml`, with `~/.codex` as the default. File state is not operational
+state. `agent_hook_codex_trust` asks the installed CLI for current definitions,
+keys and hashes, matches the exact TUIC command/event/matcher and execution
+settings, and writes only each matched `trusted_hash` through `config/batchWrite`.
+The write uses the native user-layer version as a compare-and-swap precondition.
+Fresh `hooks/list` readback must retain the same key/hash and report `trusted`.
+No local hash algorithm or trust-bypass option is used.
+
+A process-local async mutex serializes Codex install, uninstall and status reads.
+Other clients' config edits cause a version conflict rather than replacement.
+Status reads never write trust, and no trust cache can survive a definition edit.
+Unavailable RPCs, profiles not matching the base config, disabled hooks, parse
+errors and failed writes/readback produce `reviewRequired`; normal `/hooks`
+review remains the recovery path. The base configuration is not evidence for
+profile-specific hooks. Three RPC response waits are bounded to ten seconds
+each; binary detection and lock admission are separate. Native fixture evidence
+is in `src-tauri/src/fixtures/codex_hook_trust/`.
+
 ## App config recovery and scrollback migration
 
 `config.json` loads valid saved values even when another field has a wrong type

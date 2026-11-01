@@ -896,7 +896,7 @@ const AgentRow: Component<{
 	const supportsMcp = () => MCP_SUPPORT[props.agentType];
 	const supportsHooks = () => HOOK_SUPPORT[props.agentType];
 	const supportsLaunchSignals = () => props.agentType === "claude" || props.agentType === "codex";
-	const supportsGlobalHooks = () => ["gemini", "grok", "opencode"].includes(props.agentType);
+	const supportsGlobalHooks = () => ["codex", "gemini", "grok", "opencode"].includes(props.agentType);
 
 	/**
 	 * The MCP bridge is installed on this machine only.
@@ -1212,7 +1212,7 @@ const AgentRow: Component<{
 						when={supportsHooks() && supportsGlobalHooks() && !configStore.getHookInstrumentation(props.agentType)}
 					/>
 
-					{/* Explicit global installation remains available only where launch-scoped integration is unavailable. */}
+					{/* Explicit global installation is separate from launch-scoped status signals. */}
 					<Show when={supportsHooks() && supportsGlobalHooks()}>
 						<ExpertSetting
 							configKey="agent_settings.hook_instrumentation"
@@ -1228,15 +1228,26 @@ const AgentRow: Component<{
 										onChange={handleHookToggle}
 									/>
 									<span>Install hooks globally</span>
-									<Show when={hookState() === "installed" || hookState() === "outdated"}>
-										<span class={a.badge} data-type={hookState() === "outdated" ? "notfound" : "mcp"}>
-											{hookState() === "outdated" ? "Hooks: re-enable" : "Hooks installed"}
+									<Show
+										when={hookState() === "installed" || hookState() === "outdated" || hookState() === "reviewRequired"}
+									>
+										<span class={a.badge} data-type={hookState() === "installed" ? "mcp" : "notfound"}>
+											{hookState() === "reviewRequired"
+												? "Hooks: review in /hooks"
+												: hookState() === "outdated"
+													? "Hooks: re-enable"
+													: "Hooks installed"}
 										</span>
 									</Show>
 								</label>
 								<p class={s.hint}>
 									Drive busy/idle/waiting from {agent().name}'s own hooks instead of output heuristics. TUIC installs
 									and removes the hooks cleanly and never touches your own. Applies on next launch.
+									<Show when={props.agentType === "codex"}>
+										{" "}
+										Codex verifies current hook trust. If review is required, open /hooks in Codex. Review
+										profile-specific hooks in that profile.
+									</Show>
 								</p>
 							</div>
 						</ExpertSetting>

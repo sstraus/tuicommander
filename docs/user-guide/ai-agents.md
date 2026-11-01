@@ -149,7 +149,7 @@ session idle. New input and recognized active work can start another turn.
 An open interactive selection dialog restores the question badge even when
 hooks are enabled and another hook cleared it before you answered.
 
-Disable this per agent with **Settings → Agents → Native status signals** to restore screen-only heuristics. Gemini, Grok, and OpenCode retain a separate, explicit **Install hooks globally** toggle.
+Disable this per agent with **Settings → Agents → Native status signals** to restore screen-only heuristics. Codex, Gemini, Grok, and OpenCode have a separate, explicit **Install hooks globally** toggle.
 
 Instead of inferring busy/idle/waiting from terminal output, TUICommander can drive an agent's status directly from the agent's **own hook system**.
 
@@ -188,6 +188,23 @@ labels. An unanswered question keeps Input state through a delayed idle hook;
 answering it clears the controls. Only visible native options are exported.
 
 CLI-enforced command approvals are separate from native questions. Their title and numeric controls are available to desktop and mobile; a numeric refusal submits immediately, and Escape cancels.
+
+### Codex hook trust
+
+Codex global hook installation uses the installed CLI's `hooks/list` and
+`config/batchWrite` APIs. Codex 0.166.0 is verified. An explicit install/update
+trusts only exact TUIC definitions, using identities and hashes returned by
+Codex, then reads them back. Status checks never grant trust. User hook trust
+and unrelated configuration remain unchanged.
+
+**Hooks: review in /hooks** means that current trust cannot be verified. Open
+`/hooks` in Codex, review the current definitions, and reopen the agent settings.
+Missing CLI support, changed definitions, write conflicts and failed readback
+never count as installed. The setting targets the host's `CODEX_HOME`, or
+`~/.codex` when unset. It verifies the base configuration, not every named
+profile; review profile-specific hooks in that profile. Trust review is setup,
+not a terminal permission wait. Launch-scoped completion notifications remain
+separate and enabled by default.
 
 ### Codex terminal Chat
 

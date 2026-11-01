@@ -1,5 +1,7 @@
 # TUICommander Specification
 
+Codex global hook setup (#2625-c4b5): installed status requires native current-definition trust. Explicit installs use CLI-returned keys/hashes and versioned config writes; failed verification requires `/hooks` review. Base-config verification does not claim profile-specific hook trust.
+
 - [x] Busy Session Chat prompts use the host queue with Cancel and exactly-once Send now controls (#2589-4bc4).
 
 - [x] Config recovery (#2564-8455, #2565-8b3c): invalid fields fall back independently with a startup warning and preserved original backup. Legacy scrollback reflow enrolls once; subsequent explicit false values remain authoritative.
