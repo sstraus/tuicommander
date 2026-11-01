@@ -8,6 +8,9 @@ state. `agent_hook_codex_trust` asks the installed CLI for current definitions,
 keys and hashes, matches the exact TUIC command/event/matcher and execution
 settings, and writes only each matched `trusted_hash` through `config/batchWrite`.
 The write uses the native user-layer version as a compare-and-swap precondition.
+User-layer selection and write acknowledgements compare host paths, not string
+spellings. Equivalent Windows separators and dot components identify the same
+file; different files and profiles remain rejected.
 Fresh `hooks/list` readback must retain the same key/hash and report `trusted`.
 No local hash algorithm or trust-bypass option is used.
 

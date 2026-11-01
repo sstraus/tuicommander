@@ -1,1 +1,0 @@
-agent_pid=4524 hook_stdout_pipe=true

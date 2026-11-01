@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- Match native hook configuration paths with host path semantics so equivalent Windows separators do not require a new trust review (#2625-c4b5).
+
 - Hide workflow Start controls when the host routing policy is not imported, and explain that routing controls arrive in a later version (#2673-69fd).
 
 - Show a neutral API key usage label for Claude sessions authenticated with an API key instead of a stale OAuth token error, including browser/PWA and remote-owned desktop sessions over HTTP (#2672-78a1).
