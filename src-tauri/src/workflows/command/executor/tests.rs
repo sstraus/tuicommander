@@ -365,7 +365,7 @@ fn stdin_artifact_is_snapshotted_and_bound_to_receipt() {
         );
     }
     let journal = CommandJournal::for_runs(&root.path().join("runs.db"));
-    let mut command = definition("import sys; print(sys.stdin.read(),end='')");
+    let mut command = definition("import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())");
     command.stdin_artifact = Some("input.txt".into());
     let receipt = journal
         .execute(
@@ -514,8 +514,12 @@ fn tool_mutation_receipt_is_not_unchanged_artifact_proof_and_releases_slot() {
     }
 }
 
+// REMOTE_COMMAND runs only on Linux rb (CommandReceipt::proves_target), where
+// preexec_fn=os.setpgrp and os.killpg own the remote process group. Windows
+// clients submit it to rb; they never execute this POSIX runner locally.
+#[cfg(unix)]
 #[test]
-fn json_escaped_secrets_do_not_reach_remote_durable_output_or_local_receipts() {
+fn json_escaped_secrets_do_not_reach_remote_durable_output() {
     // catches F3: JSON-escaped quotes, slashes and controls bypassing raw redaction.
     let root = scratch();
     let workspace = root.path().join("repo");
@@ -551,9 +555,20 @@ fn json_escaped_secrets_do_not_reach_remote_durable_output_or_local_receipts() {
         decoded["credential"], "[REDACTED]",
         "secret recoverable from durable envelope"
     );
+}
+
+#[test]
+fn json_escaped_secrets_do_not_reach_local_receipts() {
+    // Catches: JSON escaping bypasses redaction before a local receipt is persisted.
+    let root = scratch();
+    let workspace = root.path().join("repo");
+    std::fs::create_dir(&workspace).unwrap();
+    repo(&workspace);
+    let secret = "wf05-\"quoted\\credential\n\t";
+    let script = "import json,os; print(json.dumps({'credential':os.environ['WF05_SECRET']}))";
     if std::env::var_os("WF05_LOCAL_SECRET").is_none() {
         let output = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "workflows::command::executor::tests::json_escaped_secrets_do_not_reach_remote_durable_output_or_local_receipts", "--nocapture"])
+            .args(["--exact", "workflows::command::executor::tests::json_escaped_secrets_do_not_reach_local_receipts", "--nocapture"])
             .env("WF05_LOCAL_SECRET", secret).output().unwrap();
         assert!(
             output.status.success(),
@@ -589,6 +604,8 @@ fn json_escaped_secrets_do_not_reach_remote_durable_output_or_local_receipts() {
     assert!(!encode(&reopened).unwrap().contains("quoted"));
 }
 
+// This exercises the POSIX-only runner on its executor, not the Windows client.
+#[cfg(unix)]
 #[test]
 fn dual_stream_escaped_remote_output_fits_outer_capture() {
     // catches F4: valid bounded streams becoming a truncated, undecodable receipt envelope.

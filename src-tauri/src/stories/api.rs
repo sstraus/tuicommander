@@ -231,7 +231,10 @@ fn story_action_with_source(
     let store = StoryStore::open()?;
     let plan_in_project = |plan_id: &str| -> Result<Plan, String> {
         let plan = store.get_plan(plan_id)?;
-        if plan.project != project {
+        // Stored plans can predate canonical owner spelling (notably the verbatim prefix on Windows).
+        if std::fs::canonicalize(&plan.project).ok().as_deref()
+            != Some(std::path::Path::new(&project))
+        {
             return Err("plan does not belong to project".into());
         }
         Ok(plan)
@@ -602,7 +605,9 @@ mod tests {
         let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
         let _guard = crate::config::set_config_dir_override(dir.path().join("config"));
         let repo = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let project = repo.path().to_str().unwrap();
+        // Catches raw versus canonical stored owners, including Windows verbatim paths.
+        let raw_project = repo.path().join(".");
+        let project = raw_project.to_str().unwrap();
         let store = StoryStore::open().unwrap();
         let plan = store
             .create_plan(NewPlan {

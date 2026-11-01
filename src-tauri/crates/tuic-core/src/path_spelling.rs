@@ -78,6 +78,8 @@ mod tests {
             windows_portable_spelling(r"\\?\C:\Users\me\repo"),
             "C:/Users/me/repo"
         );
+        // Clone destinations use the same spelling, including the CI runner drive.
+        assert_eq!(windows_portable_spelling(r"\\?\D:\a\repo"), "D:/a/repo");
         // A plain host path: separators only.
         assert_eq!(
             windows_portable_spelling(r"C:\Users\me\repo"),
