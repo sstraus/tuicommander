@@ -35,6 +35,9 @@
 ## Coordinator mail address (2580-dcbd) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, send `agent action=send to=orchestrator message=<text>` from a managed child and confirm receipt at its registered coordinator without `list_peers`. The daily app was not restarted; Rust changes do not hot-reload. Restart only when losing current sessions is acceptable.
+## Design Mode command lifecycle (2596-b9c6) — Rust and sidecar rebuild/restart required
+
+- [ ] After Boss restarts a rebuilt `make dev` or installs `make build`, start Design Mode on a throwaway local page with Edge. Start must wait for the extension acknowledgment. Without opening the sidebar, screenshot/errors must reply (a screenshot can ask for capture permission, but neither operation needs eval consent). Eval without host consent must name **Allow eval on this host** immediately. Stop must close only its dedicated browser window. The daily app was not restarted; Rust and embedded sidecar assets do not hot-reload. Restart only when losing current sessions is acceptable.
 
 ## Settings catalogue ledger coverage (2571-926a)
 

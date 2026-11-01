@@ -3413,6 +3413,8 @@ consumers reread after this event or SSE resynchronization.
 
 ### Immediate Design Mode browser commands
 
+`POST /design-mode/start` returns `armed` only after the extension acknowledges the requested page through a correlated internal `ready` command. Failed acknowledgment returns `browser_not_ready` and closes the owned launch. Stop closes and reaps that dedicated launch. The extension starts receiving at worker boot; a sidebar gesture is not required to choose the initial reviewed tab. Native disconnect closes the command queue, so later requests return `browser_disconnected` immediately instead of timing out. Eval without explicit host consent returns `eval_not_granted: grant needed: click Allow eval on this host`. This does not gate local errors or screenshots; capture permission remains separate.
+
 `POST /design-mode/command` accepts `{repoPath, action, args}`. Actions are
 `navigate` (`args.url`), `reload`, `screenshot`, `errors`, and `eval` (`args.script`).
 It shares the `design_mode_browser_command` IPC implementation. The extension's

@@ -136,6 +136,24 @@ fn response_timeout(body: &str) -> std::time::Duration {
     if is_ui_confirmation(&request) {
         return CONFIRM_RESPONSE_TIMEOUT;
     }
+    let design_arguments = match (name, arguments) {
+        (Some("ui"), arguments) => arguments,
+        (Some("call_tool"), Some(arguments)) if arguments["tool_name"] == "ui" => {
+            arguments.get("arguments")
+        }
+        _ => None,
+    };
+    match design_arguments.and_then(|args| args["action"].as_str()) {
+        Some("design_start") => return std::time::Duration::from_secs(30),
+        Some(
+            "design_screenshot" | "design_errors" | "design_eval" | "design_reload"
+            | "design_navigate",
+        ) => {
+            // Browser commands own a 10 s deadline; the transport must preserve its diagnostic reply.
+            return std::time::Duration::from_secs(15);
+        }
+        _ => {}
+    }
     wait_timeout_ms(&request)
         .map(|timeout| {
             std::time::Duration::from_millis(timeout.saturating_add(MCP_WAIT_RESPONSE_MARGIN_MS))
@@ -1555,6 +1573,31 @@ mod tests {
                     "arguments": {"action": action}}}});
             assert_eq!(response_timeout(&direct.to_string()).as_secs(), seconds);
             assert_eq!(response_timeout(&collapsed.to_string()).as_secs(), seconds);
+        }
+    }
+
+    // Catches: the bridge's 10 s read deadline hiding the browser's equally long error reply.
+    #[test]
+    fn design_command_transport_outlives_browser_deadlines() {
+        for (action, seconds) in [
+            ("design_start", 30),
+            ("design_screenshot", 15),
+            ("design_errors", 15),
+            ("design_eval", 15),
+            ("design_reload", 15),
+            ("design_navigate", 15),
+            ("design_status", 10),
+        ] {
+            for params in [
+                serde_json::json!({"name":"ui","arguments":{"action":action}}),
+                serde_json::json!({"name":"call_tool","arguments":{"tool_name":"ui","arguments":{"action":action}}}),
+            ] {
+                assert_eq!(
+                    response_timeout(&serde_json::json!({"params":params}).to_string()).as_secs(),
+                    seconds,
+                    "{action}"
+                );
+            }
         }
     }
 

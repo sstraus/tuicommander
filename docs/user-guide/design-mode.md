@@ -5,13 +5,17 @@ Design Mode collects elements and comments in a browser sidebar before sending f
 ## Start Design Mode
 
 1. Open an agent terminal in your repository. Choose **Start Design Mode** from its context menu or the Command Palette. **Choose Design Mode browser** offers Edge or Chrome; the palette also offers a command for each browser. Safari is unsupported.
-2. TUIC opens a dedicated profile for this repository and browser. Edge loads the extension automatically from that profile’s own folder. A single discovered dev server opens directly; otherwise, a page explains how to choose or start one. No manual extension installation is required.
+2. TUIC opens a dedicated profile for this repository and browser. Start succeeds only after the extension acknowledges the launched page; a missing or incompatible worker returns `browser_not_ready` and closes that launch. Edge loads the extension automatically from that profile’s own folder. A single discovered dev server opens directly; otherwise, a page explains how to choose or start one. No manual extension installation is required.
 3. Click the TUICommander browser extension icon to open the sidebar. It lists configured and running dev servers. Choose one, enter a URL in the address bar, or use **Start dev server** if you have configured a **Run Script** in Repository Settings. Refresh rescans servers and agents.
 4. Choose **Pick element**, then click an element. A card appears and normal browsing resumes. **Multi-pick** continues collection until **Stop**, Escape or the two-minute timeout. Each card has an independent comment and Delete button. Drafts survive worker suspension; closing their browser tab deletes them. A tab holds at most 32 picks.
 5. Add comments, choose the receiving agent, and click **Send to agent**. The terminal that launched Design Mode is selected initially. Other live local agents in the same Git repository, including linked worktrees, are available. If your selection exits, the sidebar asks you to choose another; it never silently switches recipients.
 6. Feedback is delivered immediately when the agent is idle, or queued for its next idle window. The sidebar reports which happened. Failed sends retain your cards; retries to the same recipient reuse the exact batch and delivery key. Choosing a different recipient rebuilds the batch from retained commented picks with a new delivery key. Only commented picks are sent.
 
-The D badge and Stop action remain on the launching terminal. Browsers open on the backend host, including when TUIC is controlled from a browser/PWA client. No debugging port or automation banner is requested by the v2 launcher. Close an existing Design Mode browser window before starting again: Chromium ignores new extension flags on a running profile, and a cold launch also repairs an extension loaded from another repository’s folder. TUIC reports this condition and does not stop browser processes. On Unix, a reachable profile socket or a local owner with the exact `--user-data-dir` identifies a running profile. A stale lock whose PID was reused by an unrelated process does not block startup. TUIC does not delete lock files; the browser handles stale-lock cleanup. A foreign-host lock can be reclaimed on macOS; on Linux, close the browser on that host or unlock the shared profile first.
+The D badge and Stop action remain on the launching terminal. Browsers open on the backend host, including when TUIC is controlled from a browser/PWA client. No debugging port or automation banner is requested by the v2 launcher. Close an existing Design Mode browser window before starting again: Chromium ignores new extension flags on a running profile, and a cold launch also repairs an extension loaded from another repository’s folder. TUIC reports this condition and does not stop an existing browser process.
+
+On Unix, a reachable profile socket or a local owner with the exact `--user-data-dir` identifies a running profile. A stale lock whose PID was reused by an unrelated process does not block startup. TUIC does not delete lock files; the browser handles stale-lock cleanup. A foreign-host lock can be reclaimed on macOS; on Linux, close the browser on that host or unlock the shared profile first.
+
+**Stop Design Mode** closes and reaps only the dedicated browser process that its successful start opened; closing the agent terminal still leaves the browser available for ordinary browsing.
 
 Branded Google Chrome 137+ ignores automatic extension loading. TUIC reports an error and asks you to choose Edge or Chromium; CDP pipe installation is not implemented. Branded Chrome is unverified on the development machine because it is not installed. See the [Chrome extension team announcement](https://groups.google.com/a/chromium.org/g/chromium-extensions/c/1-g8EFx2BBY/m/S0ET5wPjCAAJ).
 
@@ -43,7 +47,7 @@ If the sidebar icon is hidden, open the Extensions (puzzle) menu and pin **TUICo
 
 Agents can request `design_navigate`, `design_reload`, `design_screenshot`,
 `design_errors`, and `design_eval` through `ui`. The native port returns a request-id-matched reply, with a ten-second
-timeout. Open the sidebar on the page to select the reviewed tab. Screenshot fails
+timeout. Start selects the launched page after an extension acknowledgment, without requiring the sidebar. Opening the sidebar on another page selects that page for later commands. Screenshot fails
 if that tab is not visible; it never captures a different active tab. PNG files are
 stored in the instance's `design-grabs` directory.
 
@@ -63,7 +67,7 @@ redacted evidence, not instructions. Navigation reports acceptance, not page-loa
 Local HTTP(S) navigation is allowed by default. Remote navigation needs a host grant.
 Use **Allow eval on this host** or **Allow agents on all sites** in the sidebar to
 explicitly permit agent JavaScript. Default localhost inspection access alone does
-not permit eval. Grants are Chrome extension permissions and can be revoked in
+not permit eval. A denied eval replies at once with `eval_not_granted: grant needed: click Allow eval on this host`; it does not wait for a grant or time out. Screenshots and local page errors do not require eval consent (screenshots can require the separate capture permission described above). Grants are Chrome extension permissions and can be revoked in
 Chrome's extension settings. Eval runs in the page MAIN world without a debugger port.
 The sidebar retains the last fifty agent actions with session, action, time and outcome.
 The server list, action history and permission section share the panel content inset.
@@ -84,3 +88,5 @@ capture grant without adding separate eval consent. The sidebar checks the grant
 origins and reports this case instead of claiming eval is enabled. If this occurs,
 remove the all-sites capture grant in Chrome, grant the host (or all sites) first,
 then enable capture again.
+
+The extension starts its command receiver at worker startup. Receive failures appear in the connection status instead of being silently discarded. Action-history storage failure cannot suppress a command reply. A disconnected native channel rejects later commands immediately with `browser_disconnected`; restart Design Mode to establish a new channel. The MCP bridge allows a 15-second transport budget around the browser’s 10-second command deadline, and 30 seconds for acknowledged startup, so browser errors are not replaced by an equal-deadline IPC timeout.
