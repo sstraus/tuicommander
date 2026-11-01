@@ -416,18 +416,7 @@ impl RunStore {
                 "canonical repository has an unfinished integration; recover it first".into(),
             );
         }
-        let execution = run
-            .stories
-            .iter()
-            .find(|s| s.story_id == request.story_id)
-            .ok_or("story execution not found")?;
-        let revision = execution.accepted_revision.ok_or("story is not accepted")?;
-        let story = StoryStore::open()?.get_story(&request.story_id)?;
-        if story.status != StoryStatus::Done
-            || !story_work_revision_current(&story.id, revision, story.revision)?
-        {
-            return Err("integration requires the accepted story revision".into());
-        }
+        let (execution, revision) = accepted_integration_execution(run, request)?;
         let workspace = execution
             .worktree_path
             .clone()
@@ -540,62 +529,7 @@ impl RunStore {
             progress.merged = true;
             self.save_integration(progress)?;
         } else {
-            if current != receipt.base_commit {
-                return Err("canonical base moved; new merge checks required".into());
-            }
-            if !self.native_integration_enabled(&project)? {
-                return Err(
-                    "native_integration_enabled is false; pending admission suspended".into(),
-                );
-            }
-            let run = self.snapshot(&progress.request.run_id)?;
-            let execution = run
-                .stories
-                .iter()
-                .find(|s| s.story_id == progress.request.story_id)
-                .ok_or("story execution missing")?;
-            let story = StoryStore::open()?.get_story(&progress.request.story_id)?;
-            if execution.accepted_revision != Some(receipt.story_revision)
-                || story.status != StoryStatus::Done
-                || !story_work_revision_current(&story.id, receipt.story_revision, story.revision)?
-            {
-                return Err("accepted story changed; new merge checks required".into());
-            }
-            self.validate_candidate(progress)?;
-            #[cfg(test)]
-            BEFORE_PUBLISH.with(|slot| {
-                if let Some(hook) = slot.borrow_mut().take() {
-                    hook();
-                }
-            });
-            if clean_artifact(&project)?.0 != receipt.base_commit
-                || git_output(&project, &["symbolic-ref", "HEAD"])? != receipt.canonical_ref
-                || clean_artifact(Path::new(&progress.workspace))?
-                    != (receipt.source_commit.clone(), receipt.source_tree.clone())
-                || git_output(Path::new(&progress.workspace), &["symbolic-ref", "HEAD"])?
-                    != progress.source_ref
-            {
-                return Err("base or source moved after synthetic merge checks".into());
-            }
-            // Fast-forward to the already checked no-ff merge object. Git owns
-            // the index/worktree/ref transaction; no reset/force can discard dirt.
-            git_output(
-                &project,
-                &[
-                    "merge",
-                    "--ff-only",
-                    "--no-overwrite-ignore",
-                    "--no-edit",
-                    &progress.candidate,
-                ],
-            )?;
-            #[cfg(test)]
-            crash(IntegrationFault::AfterMerge)?;
-            if git_output(&project, &["rev-parse", "HEAD"])? != progress.candidate {
-                return Err("canonical ref moved during publication; recover refs".into());
-            }
-            progress.merged = true;
-            self.save_integration(progress)?;
+            self.publish_integration_candidate(progress, &project, &receipt, &current)?;
         }
         if !progress.obligation_published
             && let Err(error) = self.publish_obligation(progress)
@@ -613,26 +547,8 @@ impl RunStore {
                 .as_ref()
                 .is_none_or(|r| r.post_checks.is_empty())
             {
-                let post_checks = (|| -> Result<Vec<CheckReceipt>, String> {
-                    if clean_artifact(&project)?
-                        != (receipt.merge_commit.clone(), receipt.merge_tree.clone())
-                    {
-                        return Err("canonical ref moved before post-integration checks; explicit recertification required".into());
-                    }
-                    let run = self.snapshot(&progress.request.run_id)?;
-                    let definition = WorkflowStore::open()?
-                        .get_published(&run.story_definition_id, run.story_definition_revision)?;
-                    let mut checks = Vec::new();
-                    for check in &definition.required_checks {
-                        let checked =
-                            execute_run_check(check, &project, &self.db_path, &run.id, false)?;
-                        if checked.exit_code != 0 {
-                            return Err(format!("post-integration check {} failed", check.id));
-                        }
-                        checks.push(checked);
-                    }
-                    Ok(checks)
-                })();
+                let post_checks =
+                    self.post_integration_checks(&project, &receipt, &progress.request.run_id);
                 let checks = match post_checks {
                     Ok(checks) => checks,
                     Err(error) => {
@@ -689,6 +605,93 @@ impl RunStore {
         };
         progress.reason = None;
         self.save_integration(progress)
+    }
+
+    fn publish_integration_candidate(
+        &self,
+        progress: &mut IntegrationProgress,
+        project: &Path,
+        receipt: &IntegrationReceipt,
+        current: &str,
+    ) -> Result<(), String> {
+        if current != receipt.base_commit {
+            return Err("canonical base moved; new merge checks required".into());
+        }
+        if !self.native_integration_enabled(project)? {
+            return Err("native_integration_enabled is false; pending admission suspended".into());
+        }
+        let run = self.snapshot(&progress.request.run_id)?;
+        let execution = run
+            .stories
+            .iter()
+            .find(|s| s.story_id == progress.request.story_id)
+            .ok_or("story execution missing")?;
+        let story = StoryStore::open()?.get_story(&progress.request.story_id)?;
+        if execution.accepted_revision != Some(receipt.story_revision)
+            || story.status != StoryStatus::Done
+            || !story_work_revision_current(&story.id, receipt.story_revision, story.revision)?
+        {
+            return Err("accepted story changed; new merge checks required".into());
+        }
+        self.validate_candidate(progress)?;
+        #[cfg(test)]
+        BEFORE_PUBLISH.with(|slot| {
+            if let Some(hook) = slot.borrow_mut().take() {
+                hook();
+            }
+        });
+        if clean_artifact(project)?.0 != receipt.base_commit
+            || git_output(project, &["symbolic-ref", "HEAD"])? != receipt.canonical_ref
+            || clean_artifact(Path::new(&progress.workspace))?
+                != (receipt.source_commit.clone(), receipt.source_tree.clone())
+            || git_output(Path::new(&progress.workspace), &["symbolic-ref", "HEAD"])?
+                != progress.source_ref
+        {
+            return Err("base or source moved after synthetic merge checks".into());
+        }
+        // Fast-forward to the already checked no-ff merge object. Git owns
+        // the index/worktree/ref transaction; no reset/force can discard dirt.
+        git_output(
+            project,
+            &[
+                "merge",
+                "--ff-only",
+                "--no-overwrite-ignore",
+                "--no-edit",
+                &progress.candidate,
+            ],
+        )?;
+        #[cfg(test)]
+        crash(IntegrationFault::AfterMerge)?;
+        if git_output(project, &["rev-parse", "HEAD"])? != progress.candidate {
+            return Err("canonical ref moved during publication; recover refs".into());
+        }
+        progress.merged = true;
+        self.save_integration(progress)?;
+        Ok(())
+    }
+
+    fn post_integration_checks(
+        &self,
+        project: &Path,
+        receipt: &IntegrationReceipt,
+        run_id: &str,
+    ) -> Result<Vec<CheckReceipt>, String> {
+        if clean_artifact(project)? != (receipt.merge_commit.clone(), receipt.merge_tree.clone()) {
+            return Err("canonical ref moved before post-integration checks; explicit recertification required".into());
+        }
+        let run = self.snapshot(run_id)?;
+        let definition = WorkflowStore::open()?
+            .get_published(&run.story_definition_id, run.story_definition_revision)?;
+        let mut checks = Vec::new();
+        for check in &definition.required_checks {
+            let checked = execute_run_check(check, project, &self.db_path, &run.id, false)?;
+            if checked.exit_code != 0 {
+                return Err(format!("post-integration check {} failed", check.id));
+            }
+            checks.push(checked);
+        }
+        Ok(checks)
     }
 
     fn integration_tree(&self, project: &Path, base: &str, source: &str) -> Result<String, String> {
@@ -753,49 +756,7 @@ impl RunStore {
         };
         indexed(&["read-tree", tree])?;
         for path in conflicts {
-            for tip in [base, source] {
-                let delta =
-                    git_output(project, &["diff", "--numstat", &ancestor, tip, "--", path])?;
-                if delta
-                    .lines()
-                    .any(|line| line.split('\t').nth(1) != Some("0"))
-                {
-                    return Err("repair required: declared document is not append-only".into());
-                }
-            }
-            let entry = git_output(project, &["ls-tree", tree, "--", path])?;
-            if !entry.starts_with("100644 blob ") {
-                return Err("repair required: union requires a regular Markdown file".into());
-            }
-            let shown = Command::new("git")
-                .args(["show", &format!("{tree}:{path}")])
-                .current_dir(project)
-                .output()
-                .map_err(|e| e.to_string())?;
-            if !shown.status.success() {
-                return Err("repair required: cannot read conflicted document".into());
-            }
-            let conflicted = String::from_utf8(shown.stdout).map_err(|e| e.to_string())?;
-            let merged = union_document(&conflicted)?;
-            let mut child = Command::new("git")
-                .args(["hash-object", "-w", "--stdin"])
-                .current_dir(project)
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .spawn()
-                .map_err(|e| e.to_string())?;
-            child
-                .stdin
-                .take()
-                .ok_or("hash-object stdin missing")?
-                .write_all(merged.as_bytes())
-                .map_err(|e| e.to_string())?;
-            let output = child.wait_with_output().map_err(|e| e.to_string())?;
-            if !output.status.success() {
-                return Err("repair required: document blob write failed".into());
-            }
-            let blob = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+            let blob = conflicted_document_blob(project, tree, path, &ancestor, base, source)?;
             indexed(&[
                 "update-index",
                 "--cacheinfo",
@@ -1206,6 +1167,80 @@ impl RunStore {
         }
         Ok(())
     }
+}
+
+/// Resolve the execution and accepted story revision required for admission.
+fn accepted_integration_execution<'a>(
+    run: &'a RunSnapshot,
+    request: &IntegrateRequest,
+) -> Result<(&'a StoryExecution, i64), String> {
+    let execution = run
+        .stories
+        .iter()
+        .find(|s| s.story_id == request.story_id)
+        .ok_or("story execution not found")?;
+    let revision = execution.accepted_revision.ok_or("story is not accepted")?;
+    let story = StoryStore::open()?.get_story(&request.story_id)?;
+    if story.status != StoryStatus::Done
+        || !story_work_revision_current(&story.id, revision, story.revision)?
+    {
+        return Err("integration requires the accepted story revision".into());
+    }
+    Ok((execution, revision))
+}
+
+/// Validate one declared conflict and write its append-only union as a Git blob.
+fn conflicted_document_blob(
+    project: &Path,
+    tree: &str,
+    path: &str,
+    ancestor: &str,
+    base: &str,
+    source: &str,
+) -> Result<String, String> {
+    for tip in [base, source] {
+        let delta = git_output(project, &["diff", "--numstat", ancestor, tip, "--", path])?;
+        if delta
+            .lines()
+            .any(|line| line.split('\t').nth(1) != Some("0"))
+        {
+            return Err("repair required: declared document is not append-only".into());
+        }
+    }
+    let entry = git_output(project, &["ls-tree", tree, "--", path])?;
+    if !entry.starts_with("100644 blob ") {
+        return Err("repair required: union requires a regular Markdown file".into());
+    }
+    let shown = Command::new("git")
+        .args(["show", &format!("{tree}:{path}")])
+        .current_dir(project)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !shown.status.success() {
+        return Err("repair required: cannot read conflicted document".into());
+    }
+    let conflicted = String::from_utf8(shown.stdout).map_err(|e| e.to_string())?;
+    let merged = union_document(&conflicted)?;
+    let mut child = Command::new("git")
+        .args(["hash-object", "-w", "--stdin"])
+        .current_dir(project)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    child
+        .stdin
+        .take()
+        .ok_or("hash-object stdin missing")?
+        .write_all(merged.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err("repair required: document blob write failed".into());
+    }
+    let blob = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+    Ok(blob)
 }
 
 /// Strict native conflict grammar: malformed/nested/diff3 blocks refuse rather
