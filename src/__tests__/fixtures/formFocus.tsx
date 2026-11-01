@@ -47,3 +47,45 @@ render(() => {
 		</main>
 	);
 }, document.body);
+
+// Load the real drawer only after the isolated consumer stylesheet probes.
+Object.assign(window, {
+	async mountPromptFocus() {
+		const { PromptDrawer } = await import("../../components/PromptDrawer/PromptDrawer");
+		const { promptLibraryStore } = await import("../../stores/promptLibrary");
+		promptLibraryStore.createPrompt({
+			name: "Focus example",
+			content: "Review the current changes.",
+			category: "custom",
+			isFavorite: false,
+			executionMode: "inject",
+			injectTarget: "terminal",
+		});
+		// Fixture data is local to this page; do not persist it to a backend.
+		promptLibraryStore._testCancelPendingSave();
+		render(() => <PromptDrawer />, document.body.appendChild(document.createElement("div")));
+		promptLibraryStore.openDrawer();
+	},
+	mountSelectFocus() {
+		render(
+			() => (
+				<section data-select-focus>
+					<Button aria-label="Focus start">Start</Button>
+					<Select compact aria-label="Compact choice">
+						<option>One</option>
+					</Select>
+					<Select aria-label="Invalid choice" aria-invalid="true">
+						<option>One</option>
+					</Select>
+					<Button variant="primary">Primary action</Button>
+					<Button variant="ghost">Ghost action</Button>
+					<Button variant="hint">Hint action</Button>
+					<Button shape="icon" circular aria-label="Circular action">
+						X
+					</Button>
+				</section>
+			),
+			document.body.appendChild(document.createElement("div")),
+		);
+	},
+});
