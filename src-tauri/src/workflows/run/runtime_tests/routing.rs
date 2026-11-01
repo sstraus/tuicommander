@@ -1,7 +1,7 @@
 //! Policy is captured at start, never re-read during retry or replay.
 use super::*;
 
-fn policy(model: &str) -> crate::workflows::AgentPolicyInput {
+pub(super) fn policy(model: &str) -> crate::workflows::AgentPolicyInput {
     crate::workflows::AgentPolicyInput {
         source: "explicit fixture operator policy".into(),
         source_revision: "fixture-1".into(),

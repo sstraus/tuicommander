@@ -5,6 +5,7 @@ import { appLogger } from "../stores/appLogger";
 import { promptLibraryStore, type SavedPrompt } from "../stores/promptLibrary";
 import { toastsStore } from "../stores/toasts";
 import type { BranchPrStatus } from "../types";
+import { promptError } from "./promptError";
 
 /**
  * Shared helpers for `placement: "file-context"` smart prompts.
@@ -121,6 +122,6 @@ export async function runWithFeedback(prompt: SavedPrompt, run: () => Promise<Sm
 		}
 	} catch (err) {
 		appLogger.error("prompts", `Failed to execute "${prompt.name}"`, err);
-		toastsStore.add(prompt.name, String(err), "error");
+		toastsStore.add(prompt.name, promptError(err), "error");
 	}
 }

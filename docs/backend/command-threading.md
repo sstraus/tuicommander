@@ -411,3 +411,9 @@ publication warning; this boundary does not add retries or durable outcomes.
 ## Archive retention
 
 `sweep_archive_retention` is async and runs config reads, allocation locking, Git inspection and deletion on `spawn_blocking`. Its HTTP twin uses the same `sweep_archive_retention_impl` and also offloads: the desktop-gated command cannot be called by the headless router.
+
+### AI Chat voice target discovery
+
+`get_voice_targets` is a synchronous read of live ACP attachment snapshots; it performs no filesystem or process I/O. HTTP hands-free disarm uses a blocking worker because an ACP exit notice waits for the existing prompt queue acknowledgement.
+
+`acp_session_set_viewed_repo` is synchronous: it only validates an attached session and updates its in-memory repository hint under the ACP connection lock. It does no filesystem, network or process work. The HTTP handler uses the same manager method.

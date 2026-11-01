@@ -139,6 +139,7 @@ pub(crate) trait InspectBrowser: Send + Sync {
 struct Mode {
     status: ModeStatus,
     browser: Option<Arc<dyn InspectBrowser>>,
+    extension_process: Option<super::extension_process::ExtensionProcess>,
     listener: Option<JoinHandle<()>>,
     generation: u64,
 }
@@ -202,6 +203,7 @@ impl DesignModeManager {
             Mode {
                 status: status.clone(),
                 browser: None,
+                extension_process: None,
                 listener: None,
                 generation: 0,
             },
@@ -223,6 +225,21 @@ impl DesignModeManager {
             }
         }
         status
+    }
+
+    pub(crate) async fn attach_extension_process(
+        &self,
+        repo_path: &str,
+        session_id: &str,
+        process: super::extension_process::ExtensionProcess,
+    ) -> Result<(), String> {
+        let mut modes = self.modes.lock().await;
+        let mode = modes
+            .get_mut(repo_path)
+            .filter(|mode| mode.status.status == "armed" && mode.status.session_id == session_id)
+            .ok_or("Design Mode start was cancelled")?;
+        mode.extension_process = Some(process);
+        Ok(())
     }
 
     /// Extension heartbeat: the reload sequence, or `None` when nothing is armed.
@@ -335,6 +352,7 @@ impl DesignModeManager {
                                 status: STARTING,
                             },
                             browser: None,
+                            extension_process: None,
                             listener: None,
                             generation: 1,
                         },
@@ -552,7 +570,7 @@ impl DesignModeManager {
         if let Some(channel) = self.command_channels.lock().unwrap().remove(repo_path) {
             channel.cancel();
         }
-        let (browser, status, changed) = {
+        let (browser, process, status, changed) = {
             let mut modes = self.modes.lock().await;
             self.liveness.lock().unwrap().stopped(repo_path);
             let Some(mode) = modes.get_mut(repo_path) else {
@@ -564,10 +582,18 @@ impl DesignModeManager {
             if let Some(listener) = mode.listener.take() {
                 listener.abort();
             }
-            (mode.browser.take(), mode.status.clone(), changed)
+            (
+                mode.browser.take(),
+                mode.extension_process.take(),
+                mode.status.clone(),
+                changed,
+            )
         };
         if changed {
             (self.notify)(&status);
+        }
+        if let Some(process) = process {
+            process.close().await?;
         }
         if let Some(browser) = browser {
             browser.close().await?;

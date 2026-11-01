@@ -55,6 +55,7 @@
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-intent-1964.tcap","events":52}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-intent-aside-wrap-2060.tcap","events":13}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-intent-joined-2060.tcap","events":5}
+{"fixture":"src-tauri/src/fixtures/agent_prompts/ego-joined-intent-answer-2612.tcap","events":5}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-mcp-questions-2088-2089.tcap","events":187}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-multiple-120-1973.tcap","events":28}
 {"fixture":"src-tauri/src/fixtures/agent_prompts/ego-multiple-44-1973.tcap","events":32}

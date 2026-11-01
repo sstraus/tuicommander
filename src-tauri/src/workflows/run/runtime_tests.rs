@@ -12,12 +12,14 @@ use std::sync::Arc;
 mod acp_close;
 mod critic_c;
 mod default_install;
+mod effect_dispatch;
 #[cfg(unix)]
 mod lifecycle;
 mod parity;
 mod proposals;
 mod routing;
 mod typed_commands;
+mod wf09;
 
 fn fixture() -> (
     tempfile::TempDir,

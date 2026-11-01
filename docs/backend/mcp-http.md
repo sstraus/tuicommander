@@ -120,6 +120,15 @@ journal, and then dual-emits `progress-recorded`. A per-agent
 `progress_tracking: false` answers `progress_tracking_disabled` instead of
 hiding the tool — the tool index is global and has no session context.
 
+Managed children (a bound peer with a `session_parent` entry) cannot report
+through `progress`. The handler refuses the call before journal writes, user
+notifications, or waiting-state changes, and returns `agent action=send` guidance
+with the actual parent id. Both direct and collapsed calls use this handler.
+MCP instructions and native launch guidance tell children to mail their parent;
+root and unbound callers keep the existing reporting behavior. Refusal is explicit
+rather than automatic mail forwarding, so `progress` does not become a second
+mail API.
+
 The journal's third kind, `intent`, is written by TUIC from the agent's
 `intent:` marker in `pty.rs`. An agent that reports one is refused: the point of
 the kind is that it is observed rather than claimed.
@@ -303,6 +312,8 @@ keeping the row lock during that probe would deadlock a bound Codex terminal.
 | `DELETE` | `/sessions/:id` | Close session |
 
 ### Design Mode
+
+The extension launcher publishes its command queue before starting the dedicated browser, then awaits a request-id-matched `ready` reply identifying the launched tab. It retains an owned process controller after acknowledgment; Stop kills and reaps only that child. A failed startup closes its own launch. Native disconnect closes the queue and wakes both agent waiters and the outstanding extension poll. The worker replies before optional action-history persistence and exposes receive-loop errors in its connection status. MCP Design Mode command reads have a 15 s transport budget around the 10 s browser deadline; acknowledged start has 30 s.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -1124,6 +1135,19 @@ description body never mentioned — invisible to any client reading description
 alone. `debug` is the single exemption: its description points at `action=help`,
 which returns the full usage guide.
 
+#### Send to the coordinator without discovery
+
+Use `agent action=send to=orchestrator message=<text>` without `list_peers`.
+The reserved address selects registered `orchestrator=true` peers in the caller's
+managed parent chain. If that chain has no role, it selects a unique registered
+orchestrator with the caller's registered `path`; an unset caller path considers
+all registered roles on this server. No match or multiple matches returns an
+explicit error; ambiguity lists UUIDs for an explicit send. Display names do not
+claim the role address. Other recipient addresses keep their existing behavior.
+The compact tool description and full `agent action=help` guide put this address
+in their first line, so one `search_tools` response with `top_schema` followed by
+one send is enough. Registration declares the role; spawning does not infer it.
+
 #### One session, three addresses
 
 Every action that takes a `session_id` — and `agent action=send`'s `to` — accepts any
@@ -1501,6 +1525,13 @@ shared with the parent, while `instructions.warm_artifacts.warmed_directories`
 reports how many ignored directories arrived warm. Parent tracked changes are
 not copied. See `docs/api/http-api.md` § Create Worktree; both transports call
 the same shared core.
+
+`base_ref` accepts a commit, branch or tag. An invalid ref fails before checkout
+creation. An existing branch at another commit is a conflict, not a fallback.
+The HTTP, MCP and desktop creation responses include `base_commit`, captured
+from the allocated checkout before setup scripts run. `spawn_session=true`
+starts its PTY only after this allocation succeeds; it cannot bypass a base error.
+Connected daemons run this same handler on the repository-owning machine.
 
 The lifecycle event includes `creator_session` resolved from the MCP binding,
 never from a caller-supplied session id, and the requested `spawn_session` flag.
@@ -2589,6 +2620,15 @@ Credentials stay in Rust's existing account-authenticated HTTP path, which redac
 The desktop `close-dialog` event and its SSE copy include `background_available: boolean`. The desktop Ask dialog uses it to omit Background when the tray is disabled or unavailable. Browser clients continue to ignore native close prompts; tray actions add no public request surface.
 
 When the desktop WebViews are deliberately unloaded in background mode, `ui` actions return `{"error":"webview_unloaded"}` immediately. This does not affect PTYs or remote terminal streams. SSE emits `background-mode-changed` with `state` equal to `hidden`, `unloaded` or `visible`.
+
+Design Mode captures accept per-call `format` (`webp` by default or `png`),
+`quality` (WebP 1–100, default 25) and optional `max_long_edge` (positive pixels,
+downsize only). Use WebP for text/layout, quality 50+ for small glyphs/icons, or
+PNG for pixel-exact detail. Responses report path, format, quality (`null` for PNG),
+bytes and media type; MCP sends a correctly typed image block. Token cost follows
+pixel dimensions, not file format or bytes (Claude: about 1,296 tokens per
+megapixel, capped at 1,568 standard / 4,784 high-res). HTTP/IPC use the same
+screenshot fields in `args`; no user setting is added.
 
 Design Mode browser commands (`navigate`, `reload`, `screenshot`, `errors`, `eval`)
 return correlated native-port results with a ten-second timeout. Direct MCP tool

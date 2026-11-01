@@ -184,6 +184,28 @@ describe("settingsStore", () => {
 		});
 	});
 
+	// Catches: hydration/save omits the master prompt, or over-limit text replaces the saved value.
+	it("persists AI Chat master prompt and clears it without touching ACP", async () => {
+		mockInvoke.mockResolvedValueOnce({ ai_chat_master_prompt: "Saved instructions" });
+		await store.hydrate();
+		expect(store.state.aiChatMasterPrompt).toBe("Saved instructions");
+		expect(store.setAiChatMasterPrompt("Delegate investigations.\nReturn to chat.")).toBe(true);
+		await vi.advanceTimersByTimeAsync(600);
+		expect(
+			((saveConfigCalls().at(-1) as unknown[])[1] as { config: { ai_chat_master_prompt: string } }).config
+				.ai_chat_master_prompt,
+		).toBe("Delegate investigations.\nReturn to chat.");
+		expect(store.setAiChatMasterPrompt("é".repeat(4097))).toBe(false);
+		expect(store.state.aiChatMasterPrompt).toBe("Delegate investigations.\nReturn to chat.");
+		expect(store.setAiChatMasterPrompt("")).toBe(true);
+		await vi.advanceTimersByTimeAsync(600);
+		expect(
+			((saveConfigCalls().at(-1) as unknown[])[1] as { config: { ai_chat_master_prompt: string } }).config
+				.ai_chat_master_prompt,
+		).toBe("");
+		expect(mockInvoke.mock.calls.some(([command]) => String(command).startsWith("acp_"))).toBe(false);
+	});
+
 	describe("ego ACP profile", () => {
 		it("persists a selected profile and allows clearing it", async () => {
 			await testInScopeAsync(async () => {

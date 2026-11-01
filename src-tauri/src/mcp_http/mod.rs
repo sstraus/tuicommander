@@ -2389,6 +2389,10 @@ pub fn build_router(state: Arc<AppState>, remote_auth: bool, mcp_enabled: bool) 
             get(dictation_routes::get_hands_free_status_http),
         )
         .route(
+            "/dictation/hands-free/targets",
+            get(dictation_routes::get_voice_targets_http),
+        )
+        .route(
             "/dictation/hands-free/default-notice",
             get(dictation_routes::get_hands_free_default_notice_http),
         )
@@ -8680,6 +8684,204 @@ mod tests {
             )),
             "{listed}"
         );
+    }
+
+    // Catches: base_ref lost in handler allocation or base_commit echoed instead of resolved.
+    #[tokio::test]
+    async fn repo_worktree_base_ref_resolves_commit_branch_and_tag() {
+        let root = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        let repo = create_git_repo_at(tempfile::tempdir_in(root.path()).unwrap());
+        let config = tempfile::tempdir_in(root.path()).unwrap();
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let git = || crate::git_cli::git_cmd(repo.path());
+        let older = git()
+            .args(["rev-parse", "HEAD"])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .to_owned();
+        git().args(["branch", "older-base"]).run().unwrap();
+        git()
+            .args(["tag", "-a", "older-tag", "-m", "annotated base"])
+            .run()
+            .unwrap();
+        git()
+            .args(["commit", "--allow-empty", "-m", "newer"])
+            .run()
+            .unwrap();
+        let state = test_state();
+        for (index, base) in [older.as_str(), "older-base", "older-tag"]
+            .into_iter()
+            .enumerate()
+        {
+            let result = call_mcp_tool(
+                &state,
+                "repo",
+                serde_json::json!({
+                    "action": "worktree_create", "path": repo.path(),
+                    "branch": format!("from-base-{index}"), "base_ref": base,
+                    "spawn_session": index == 2
+                }),
+            )
+            .await;
+            if index == 2 {
+                // Close our throwaway PTY even if a later assertion fails.
+                let session_id = result["session_id"]
+                    .as_str()
+                    .unwrap_or_else(|| panic!("{result}"));
+                crate::pty::close_pty_core(&state, session_id, false);
+            }
+            let path = result["worktree_path"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{result}"));
+            let head = crate::git_cli::git_cmd(std::path::Path::new(path))
+                .args(["rev-parse", "HEAD"])
+                .run()
+                .unwrap()
+                .stdout;
+            assert_eq!(head.trim(), older, "{base}: {result}");
+            assert_eq!(result["base_commit"], older, "{base}: {result}");
+        }
+    }
+
+    // Catches: adding the MCP base_commit while leaving HTTP clients unable to verify their base.
+    #[tokio::test]
+    async fn repo_worktree_base_ref_http_reports_resolved_commit() {
+        let root = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        let repo = create_git_repo_at(tempfile::tempdir_in(root.path()).unwrap());
+        let config = tempfile::tempdir_in(root.path()).unwrap();
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let older = crate::git_cli::git_cmd(repo.path())
+            .args(["rev-parse", "HEAD"])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .to_owned();
+        crate::git_cli::git_cmd(repo.path())
+            .args(["commit", "--allow-empty", "-m", "newer"])
+            .run()
+            .unwrap();
+        // A matching existing branch must remain reusable; do not ban all collisions.
+        crate::git_cli::git_cmd(repo.path())
+            .args(["branch", "matching", &older])
+            .run()
+            .unwrap();
+        let response = build_router(test_state(), false, true)
+            .oneshot(mcp_post(
+                "/worktrees",
+                &serde_json::json!({
+                    "base_repo": repo.path(), "branch_name": "matching", "base_ref": older
+                }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::CREATED);
+        let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(result["base_commit"], older, "{result}");
+        let head = crate::git_cli::git_cmd(std::path::Path::new(result["path"].as_str().unwrap()))
+            .args(["rev-parse", "HEAD"])
+            .run()
+            .unwrap()
+            .stdout;
+        assert_eq!(head.trim(), older);
+    }
+
+    // Catches: branch-collision recovery silently checks out a newer existing branch.
+    #[tokio::test]
+    async fn repo_worktree_base_ref_rejects_conflicting_existing_branch() {
+        let root = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        let repo = create_git_repo_at(tempfile::tempdir_in(root.path()).unwrap());
+        let config = tempfile::tempdir_in(root.path()).unwrap();
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let git = || crate::git_cli::git_cmd(repo.path());
+        let older = git()
+            .args(["rev-parse", "HEAD"])
+            .run()
+            .unwrap()
+            .stdout
+            .trim()
+            .to_owned();
+        git()
+            .args(["commit", "--allow-empty", "-m", "newer"])
+            .run()
+            .unwrap();
+        git().args(["branch", "collision"]).run().unwrap();
+        let before = git()
+            .args(["worktree", "list", "--porcelain"])
+            .run()
+            .unwrap()
+            .stdout;
+        let tip = git().args(["rev-parse", "collision"]).run().unwrap().stdout;
+        let result = call_mcp_tool(
+            &test_state(),
+            "repo",
+            serde_json::json!({
+                "action": "worktree_create", "path": repo.path(),
+                "branch": "collision", "base_ref": older
+            }),
+        )
+        .await;
+        assert!(
+            result["error"].is_string(),
+            "must not ignore base_ref: {result}"
+        );
+        assert_eq!(
+            git()
+                .args(["worktree", "list", "--porcelain"])
+                .run()
+                .unwrap()
+                .stdout,
+            before
+        );
+        assert_eq!(
+            git().args(["rev-parse", "collision"]).run().unwrap().stdout,
+            tip
+        );
+    }
+
+    // Catches: invalid bases bypassed on a branch collision, including before PTY spawn.
+    #[tokio::test]
+    async fn repo_worktree_base_ref_invalid_creates_nothing() {
+        let root = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        let repo = create_git_repo_at(tempfile::tempdir_in(root.path()).unwrap());
+        let config = tempfile::tempdir_in(root.path()).unwrap();
+        let _guard = crate::config::set_config_dir_override(config.path().to_path_buf());
+        let git = || crate::git_cli::git_cmd(repo.path());
+        git().args(["branch", "collision"]).run().unwrap();
+        let before = git()
+            .args(["worktree", "list", "--porcelain"])
+            .run()
+            .unwrap()
+            .stdout;
+        let refs = git().args(["show-ref"]).run().unwrap().stdout;
+        let state = test_state();
+        for branch in ["new-invalid", "collision"] {
+            let result = call_mcp_tool(
+                &state,
+                "repo",
+                serde_json::json!({
+                    "action": "worktree_create", "path": repo.path(), "branch": branch,
+                    "base_ref": "does-not-resolve", "spawn_session": branch == "new-invalid"
+                }),
+            )
+            .await;
+            assert!(result["error"].is_string(), "{branch}: {result}");
+            assert!(state.session_maps.sessions.is_empty());
+            assert_eq!(
+                git()
+                    .args(["worktree", "list", "--porcelain"])
+                    .run()
+                    .unwrap()
+                    .stdout,
+                before
+            );
+            assert_eq!(git().args(["show-ref"]).run().unwrap().stdout, refs);
+        }
     }
 
     #[tokio::test]

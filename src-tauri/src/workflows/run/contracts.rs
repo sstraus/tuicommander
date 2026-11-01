@@ -9,7 +9,9 @@ pub const SERIAL_EVENT_CONTRACT_VERSION: u16 = 2;
 pub const PINNED_SERIAL_EVENT_CONTRACT_VERSION: u16 = 3;
 pub const PARALLEL_EVENT_CONTRACT_VERSION: u16 = 4;
 /// Version 5 adds durable branch-local input without changing versions 2–4 replay.
-pub const CURRENT_EVENT_CONTRACT_VERSION: u16 = 5;
+pub const BRANCH_INPUT_EVENT_CONTRACT_VERSION: u16 = 5;
+/// Version 6 adds bounded reusable Calls with immutable transitive pins.
+pub const CURRENT_EVENT_CONTRACT_VERSION: u16 = 6;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -41,6 +43,8 @@ pub struct GraphContract {
     pub policy_imports: Vec<PolicyImport>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_policy: Option<crate::workflows::AgentPolicy>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub definition_pins: Vec<PublishedWorkflow>,
 }
 
 impl GraphContract {
@@ -50,10 +54,10 @@ impl GraphContract {
         Ok(Self {
             version: CURRENT_EVENT_CONTRACT_VERSION,
             definition_sha256: hex::encode(Sha256::digest(bytes)),
-            // WF09 still owns transitive repository/publication policy imports.
-            // This is only the explicitly imported host routing authority.
+            // Only explicitly imported host routing authority is a routing grant.
             policy_imports: vec![],
             agent_policy: None,
+            definition_pins: vec![],
         })
     }
     pub(super) fn with_agent_policy(

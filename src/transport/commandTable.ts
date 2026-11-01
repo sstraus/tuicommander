@@ -118,6 +118,7 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 		map: (args) => ({ method: "POST", path: "/dictation/inject", body: { text: args.text } }),
 	},
 	get_dictation_config: { map: () => ({ method: "GET", path: "/dictation/config" }) },
+	get_voice_targets: { map: () => ({ method: "GET", path: "/dictation/hands-free/targets" }) },
 	get_hands_free_status: { map: () => ({ method: "GET", path: "/dictation/hands-free" }) },
 	get_hands_free_default_notice: {
 		map: () => ({ method: "GET", path: "/dictation/hands-free/default-notice" }),
@@ -289,6 +290,13 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			method: "POST",
 			path: `/acp/connections/${p("connectionId")}/sessions/${p("sessionId")}/prompt`,
 			body: { prompt: args.prompt, viewedRepo: args.viewedRepo ?? null },
+		}),
+	},
+	acp_session_set_viewed_repo: {
+		map: (args, p) => ({
+			method: "POST",
+			path: `/acp/connections/${p("connectionId")}/sessions/${p("sessionId")}/viewed-repo`,
+			body: { viewedRepo: args.viewedRepo ?? null },
 		}),
 	},
 	acp_session_cancel: {

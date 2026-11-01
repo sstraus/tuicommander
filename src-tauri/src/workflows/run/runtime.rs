@@ -736,6 +736,30 @@ pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, 
                             });
                             evidence = Some(decision.1);
                         }
+                        NodeKind::Call { .. } => {
+                            let child_id = super::calls::child_id(&graph.id, &activation.id);
+                            if !snapshot.graph_executions.iter().any(|g| g.id == child_id) {
+                                store.command_expected(
+                                    run_id,
+                                    &format!("daemon:{child_id}"),
+                                    snapshot.sequence,
+                                    RunCommand::Graph {
+                                        transition: GraphTransition::CallStart {
+                                            execution_id: graph.id.clone(),
+                                            activation_id: activation.id.clone(),
+                                        },
+                                    },
+                                )?;
+                                continue 'turn;
+                            }
+                            let Some(decision) =
+                                super::calls::decision(&snapshot, graph, &activation.id)
+                            else {
+                                continue 'activations;
+                            };
+                            outcome = Some(decision.0);
+                            evidence = Some(decision.1);
+                        }
                         NodeKind::StoryDispatch { .. } => {
                             match plan::dispatch(store, &snapshot, graph, activation)? {
                                 plan::Dispatch::Advanced => continue 'turn,
@@ -844,6 +868,7 @@ pub(super) fn drive_turn(store: &RunStore, run_id: &str) -> Result<RunSnapshot, 
                         | NodeKind::Loop { .. }
                         | NodeKind::Join {}
                         | NodeKind::End
+                        | NodeKind::Return { .. }
                         | NodeKind::Fork { .. }
                         | NodeKind::ForEach { .. }
                         | NodeKind::AllJoin { .. }

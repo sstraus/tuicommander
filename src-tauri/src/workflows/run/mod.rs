@@ -1,5 +1,6 @@
 mod api;
 pub use store::integration::{IntegrateRequest, IntegrationObligation, IntegrationProgress};
+pub mod calls;
 pub(super) mod check;
 mod contracts;
 pub mod evidence;
@@ -2046,10 +2047,10 @@ mod tests {
         let (config, project, plan_id, _story_id, definition_id, _guard) = fixture();
         let db = config.path().join("runs-versioned.sqlite3");
         let store = RunStore::open_at(&db).unwrap();
-        // 11: native integration debt extends the WF03 questions and WF05 command layout.
+        // 12: pinned reusable Calls extend the retained integration layout.
         assert_eq!(
             stored_schema_version(&db),
-            11,
+            12,
             "fresh store records version"
         );
         let run = store
@@ -2061,9 +2062,9 @@ mod tests {
                 RunLimits::default(),
             )
             .unwrap();
-        // Catches: WF07 reusing layout 10 without upgrading main's
-        // store, or an additive upgrade rewriting retained events/snapshots.
-        for old_version in [0, 6, 7, 8, 9, 10] {
+        // Catches: an additive upgrade failing to advance the layout version
+        // or rewriting retained events/snapshots.
+        for old_version in [0, 6, 7, 8, 9, 10, 11] {
             let conn = rusqlite::Connection::open(&db).unwrap();
             conn.pragma_update(None, "user_version", old_version)
                 .unwrap();
@@ -2071,7 +2072,7 @@ mod tests {
                 .unwrap();
             drop(conn);
             let upgraded = RunStore::open_at(&db).unwrap();
-            assert_eq!(stored_schema_version(&db), 11);
+            assert_eq!(stored_schema_version(&db), 12);
             assert_eq!(upgraded.snapshot(&run.id).unwrap(), run);
             assert_eq!(upgraded.replay(&run.id).unwrap(), run);
             assert_eq!(upgraded.report_dispositions(&run.id).unwrap(), vec![]);
@@ -2297,26 +2298,42 @@ mod tests {
                 )
                 .unwrap();
         }
+        // Catches: rejecting a registered checkout because its spelling differs from
+        // canonicalize (including portable versus verbatim Windows paths).
         let assign = |key: &str, story_id: String, path: &std::path::Path| {
             store.command(
                 &run.id,
                 key,
                 RunCommand::AssignWorktree {
                     story_id,
-                    path: path.canonicalize().unwrap().to_string_lossy().to_string(),
+                    path: tuic_core::path_spelling::portable_spelling(
+                        &path
+                            .parent()
+                            .unwrap()
+                            .join(".")
+                            .join(path.file_name().unwrap())
+                            .to_string_lossy(),
+                    ),
                 },
             )
         };
+        assert!(assign("assign-project", first.id.clone(), repo).is_err());
         let first_assignment = assign("assign-first", first.id.clone(), &path_a).unwrap();
         assert_eq!(
             assign("assign-first", first.id.clone(), &path_a).unwrap(),
             first_assignment
         );
         assert!(assign("assign-first", first.id.clone(), &path_b).is_err());
-        assert!(assign("assign-duplicate", second.id.clone(), &path_a).is_err());
+        assert_eq!(
+            assign("assign-duplicate", second.id.clone(), &path_a).unwrap_err(),
+            "worktree is assigned to another story"
+        );
         let unrelated = config.path().join("unrelated");
         std::fs::create_dir(&unrelated).unwrap();
-        assert!(assign("assign-unregistered", second.id.clone(), &unrelated).is_err());
+        assert_eq!(
+            assign("assign-unregistered", second.id.clone(), &unrelated).unwrap_err(),
+            "story worktree is not a registered checkout"
+        );
         let result = assign("assign-second", second.id.clone(), &path_b).unwrap();
         assert_eq!(
             result

@@ -447,7 +447,12 @@ impl GraphExecution {
                         return Err("If/else computes its typed predicate".into());
                     }
                     let value = match predicate {
-                        Predicate::Input { value, .. } => *value,
+                        Predicate::Input { name, value } => self
+                            .call_binding
+                            .as_ref()
+                            .and_then(|binding| binding.inputs.get(name))
+                            .copied()
+                            .unwrap_or(*value),
                         Predicate::Receipt { node_id, outcome } => self
                             .activations
                             .iter()
@@ -467,8 +472,23 @@ impl GraphExecution {
                                         })
                                     })
                             })
-                            .and_then(|a| self.receipt_outcome(a))
-                            .map(|actual| actual.label() == outcome),
+                            .and_then(|a| {
+                                if self.definition.graph.nodes.iter().any(|n| {
+                                    n.id == a.node_id && matches!(n.kind, NodeKind::Call { .. })
+                                }) {
+                                    self.decisions
+                                        .iter()
+                                        .find(|d| d.activation_id == a.id)
+                                        .and_then(|d| {
+                                            self.definition.graph.edges[d.edge_index]
+                                                .outcome
+                                                .as_deref()
+                                        })
+                                } else {
+                                    self.receipt_outcome(a).map(ArrivalOutcome::label)
+                                }
+                            })
+                            .map(|actual| actual == outcome),
                     };
                     let label = match value {
                         Some(true) => "yes",
@@ -542,6 +562,8 @@ impl GraphExecution {
                         super::graph::EdgeOutcome::Fail
                             | super::graph::EdgeOutcome::Uncertain
                             | super::graph::EdgeOutcome::Blocked
+                            | super::graph::EdgeOutcome::Failed
+                            | super::graph::EdgeOutcome::Cancelled
                     ),
                     ..
                 }

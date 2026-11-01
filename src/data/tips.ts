@@ -31,9 +31,21 @@ export const CONTEXTUAL_TIPS = {
 
 export const TIPS: Tip[] = [
 	{
+		feature: "Talk with AI Chat",
+		description:
+			"In Voice settings, choose an attached AI Chat as the hands-free Target. Docked and detached chats share the same prompt queue and spoken replies.",
+		shortcut: null,
+	},
+	{
 		feature: "Send a pending Chat prompt now",
 		description:
 			"While an agent is busy, Session Chat keeps your next prompt in the host queue. Use the return-key button beside Pending to stop the current request and send it now, or Cancel to remove it. Send now supports Claude, Codex and ego.",
+		shortcut: null,
+	},
+	{
+		feature: "Move a native story between phases",
+		description:
+			"Drag a Kanban card to an outlined legal destination, or choose a Phase in its List row. Story detail keeps Phase beside Edit. Backend refusals leave the story in place.",
 		shortcut: null,
 	},
 	{
@@ -836,7 +848,7 @@ export const TIPS: Tip[] = [
 	{
 		feature: "Global Workspace",
 		description:
-			"Promote terminals from different repos into a single cross-repo view. Right-click a tab → Promote, then toggle the workspace with the shortcut. Tabs show a globe icon when promoted.",
+			"Promote terminals from different repos into a single cross-repo view. Right-click a tab or sidebar session row → Add to Global Workspace, then toggle the workspace with the shortcut. Tabs show a globe icon when promoted.",
 		shortcut: `${mod}+Shift+X`,
 	},
 	{

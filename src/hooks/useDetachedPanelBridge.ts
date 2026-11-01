@@ -1,13 +1,17 @@
 import { createEffect, onCleanup, untrack } from "solid-js";
 import { invoke, listen } from "../invoke";
 import { panelRegistry } from "../panelRouter";
+import { stopChatVoice } from "../services/chatVoice";
 import { appLogger } from "../stores/appLogger";
 import { uiStore } from "../stores/ui";
 import { isTauri } from "../transport";
 import { createPanelSyncProvider, type PanelAction } from "../utils/panelSync";
 
 /** Owns main-window listeners, projection sync providers, and detached-window restoration. */
-export function useDetachedPanelBridge(onConfigureEgo?: () => void): { restoreDetachedPanels: () => void } {
+export function useDetachedPanelBridge(
+	onConfigureEgo?: () => void,
+	onConfigureDictation?: () => void,
+): { restoreDetachedPanels: () => void } {
 	/**
 	 * A panel comes home exactly once. `reattachPanel` emits `panel-action` and
 	 * then closes the window, and closing it emits `panel-window-closed`, so one
@@ -24,6 +28,9 @@ export function useDetachedPanelBridge(onConfigureEgo?: () => void): { restoreDe
 
 	let unlistenClosed: (() => void) | undefined;
 	listen<string>("panel-window-closed", (event) => {
+		// Explicit reattach has already cleared detached state. A native close
+		// must revoke audio even though the panel then returns to the main window.
+		if (event.payload === "ai-chat" && uiStore.isDetached("ai-chat")) void stopChatVoice();
 		bringPanelHome(event.payload);
 	}).then((unlisten) => {
 		unlistenClosed = unlisten;
@@ -35,6 +42,10 @@ export function useDetachedPanelBridge(onConfigureEgo?: () => void): { restoreDe
 		const { panelId, action, data } = event.payload;
 		if (panelId === "ai-chat" && action === "configure-ego") {
 			onConfigureEgo?.();
+			return;
+		}
+		if (panelId === "ai-chat" && action === "configure-dictation") {
+			onConfigureDictation?.();
 			return;
 		}
 		if (action === "reattach") {

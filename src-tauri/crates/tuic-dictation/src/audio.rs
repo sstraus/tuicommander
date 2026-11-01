@@ -94,6 +94,7 @@ pub struct AudioCapture {
     /// Latest normalized microphone level. Atomic so the UI meter never blocks audio capture.
     level: Arc<AtomicU32>,
     dropped_samples: Arc<AtomicUsize>,
+    capture_batches: Arc<AtomicUsize>,
     active: Arc<AtomicBool>,
     stream: Option<cpal::Stream>,
 }
@@ -145,6 +146,8 @@ impl AudioCapture {
         let level_clone = level.clone();
         let dropped_samples = Arc::new(AtomicUsize::new(0));
         let dropped_clone = dropped_samples.clone();
+        let capture_batches = Arc::new(AtomicUsize::new(0));
+        let batches_clone = capture_batches.clone();
         let active = Arc::new(AtomicBool::new(true));
         let active_clone = active.clone();
 
@@ -159,6 +162,7 @@ impl AudioCapture {
                     .build_input_stream(
                         config.into(),
                         move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                            batches_clone.fetch_add(1, Ordering::Relaxed);
                             process_audio_chunk(
                                 data,
                                 (sample_rate, channels),
@@ -182,6 +186,7 @@ impl AudioCapture {
                     .build_input_stream(
                         config.into(),
                         move |data: &[i16], _: &cpal::InputCallbackInfo| {
+                            batches_clone.fetch_add(1, Ordering::Relaxed);
                             float_buf.clear();
                             float_buf
                                 .extend(data.iter().map(|&s| f32::from(s) / f32::from(i16::MAX)));
@@ -211,6 +216,7 @@ impl AudioCapture {
             buffer,
             level,
             dropped_samples,
+            capture_batches,
             active,
             stream: Some(stream),
         })
@@ -262,6 +268,11 @@ impl AudioCapture {
 
     pub fn level(&self) -> f32 {
         f32::from_bits(self.level.load(Ordering::Relaxed))
+    }
+
+    /// Callback-batch and lost 16 kHz sample counters for the armed endpoint.
+    pub fn diagnostic_counters(&self) -> (Arc<AtomicUsize>, Arc<AtomicUsize>) {
+        (self.capture_batches.clone(), self.dropped_samples.clone())
     }
 
     pub fn dropped_samples(&self) -> usize {
@@ -677,6 +688,7 @@ mod tests {
             buffer: buf,
             level: Arc::new(AtomicU32::new(0)),
             dropped_samples: Arc::new(AtomicUsize::new(0)),
+            capture_batches: Arc::new(AtomicUsize::new(0)),
             active: Arc::new(AtomicBool::new(true)),
             stream: None,
         };
@@ -706,6 +718,7 @@ mod tests {
             buffer: buf,
             level: Arc::new(AtomicU32::new(0)),
             dropped_samples: Arc::new(AtomicUsize::new(0)),
+            capture_batches: Arc::new(AtomicUsize::new(0)),
             active: Arc::new(AtomicBool::new(true)),
             stream: None,
         };
@@ -725,6 +738,7 @@ mod tests {
             buffer: buf,
             level: Arc::new(AtomicU32::new(0)),
             dropped_samples: Arc::new(AtomicUsize::new(0)),
+            capture_batches: Arc::new(AtomicUsize::new(0)),
             active: Arc::new(AtomicBool::new(true)),
             stream: None,
         };
@@ -740,6 +754,7 @@ mod tests {
             buffer: Arc::new(Mutex::new(VecDeque::new())),
             level: Arc::new(AtomicU32::new(0)),
             dropped_samples: Arc::new(AtomicUsize::new(0)),
+            capture_batches: Arc::new(AtomicUsize::new(0)),
             active: Arc::new(AtomicBool::new(true)),
             stream: None,
         };

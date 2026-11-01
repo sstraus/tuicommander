@@ -13,7 +13,13 @@ type Kind =
 	| { type: "agent"; role: Role; capabilities: string[]; prompt_template: string }
 	| { type: "pause"; resume_to?: string | null }
 	| { type: "loop"; max_iterations: number }
-	| { type: "story_dispatch"; story_template_id: string; story_revision: number };
+	| { type: "story_dispatch"; story_template_id: string; story_revision: number }
+	| { type: "call"; definition_id: string; revision: number; inputs: Record<string, boolean | null>; outputs: string[] }
+	| {
+			type: "return";
+			outcome: "completed" | "blocked" | "failed" | "cancelled" | "uncertain";
+			outputs: Record<string, boolean | null>;
+	  };
 interface Node {
 	id: string;
 	kind: Kind;
@@ -71,6 +77,7 @@ function makeKind(item: PaletteItem): Kind {
 	}
 	if (item.type === "loop") return { type: "loop", max_iterations: 3 };
 	if (item.type === "story_dispatch") throw new Error("Story dispatch needs a published story template");
+	if (item.type === "call" || item.type === "return") throw new Error("Reusable calls need explicit pinned contracts");
 	return { type: item.type };
 }
 function copyGraph(graph: Graph): Graph {
@@ -89,6 +96,8 @@ function outcomes(kind: Kind): string[] {
 			return ["repeat", "exhausted"];
 		case "story_dispatch":
 			return ["completed", "blocked"];
+		case "call":
+			return ["completed", "blocked", "failed", "cancelled", "uncertain"];
 		default:
 			return [];
 	}

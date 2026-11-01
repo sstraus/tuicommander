@@ -20,6 +20,7 @@ import { createEffect, createSignal, onCleanup, untrack } from "solid-js";
 import { invoke } from "../../invoke";
 import { type AcpListedSession, acpClient, type ChatLaunch, type ChatOpenRequest } from "../../services/acpClient";
 import { createAiChatSelectionSync } from "../../services/aiChatSelection";
+import { stopChatVoice } from "../../services/chatVoice";
 import { acpStore } from "../../stores/acp";
 import { type AcpTranscriptEntry, acpTranscript } from "../../stores/acpTranscript";
 import { aiChatTabs } from "../../stores/aiChatTabs";
@@ -263,6 +264,7 @@ export function createAcpChat(
 	 *  Remounts preserve refused loads; explicit selections may retry them.
 	 *  Only the latest selection may change the visible tab. */
 	async function selectSession(session: AcpSessionId, explicit = true, publish = true): Promise<void> {
+		if (sessionId() && sessionId() !== session) await stopChatVoice(sessionId());
 		if (publish) {
 			await sharedSelection.ready;
 			sharedSelection.invalidate();
@@ -619,6 +621,36 @@ export function createAcpChat(
 
 	const pinnedRepo = () => aiChatTabs.pinnedRepo(TABS, sessionId() ?? "");
 	const operatingRepo = () => pinnedRepo() ?? viewedRepo();
+	// Publish the same effective hint typed sends use. Serialize context updates
+	// so a slower HTTP request cannot restore an older pin after a newer clear.
+	let contextUpdate = Promise.resolve();
+	let publishedContext: string | null = null;
+	createEffect(() => {
+		if (!active()) {
+			publishedContext = null;
+			return;
+		}
+		const current = pair();
+		const repo = operatingRepo();
+		if (!current) {
+			publishedContext = null;
+			return;
+		}
+		const contextKey = JSON.stringify([current.id, current.session, repo]);
+		if (contextKey === publishedContext) return;
+		publishedContext = contextKey;
+		contextUpdate = contextUpdate
+			.then(async () => {
+				await invoke("acp_session_set_viewed_repo", {
+					connectionId: current.id,
+					sessionId: current.session,
+					viewedRepo: repo,
+				});
+			})
+			.catch((failure: unknown) => {
+				appLogger.error("ai-chat", "Failed to update chat repository context", failure);
+			});
+	});
 	/** Button, slash command and overflow recovery all use this one transition. */
 	async function compact(): Promise<boolean> {
 		const current = pair();
@@ -805,6 +837,7 @@ export function createAcpChat(
 		},
 
 		async deleteSession(session: AcpSessionId): Promise<boolean> {
+			await stopChatVoice(session);
 			const id = connectionId();
 			if (!id || !connection()?.capabilities?.delete) return false;
 			// A custom launch may use another executable/store, so use its owner.
@@ -855,6 +888,7 @@ export function createAcpChat(
 		},
 
 		async closeTab(tab: AcpSessionId): Promise<void> {
+			await stopChatVoice(tab);
 			const active = aiChatTabs.close(TABS, tab);
 			// Closing another tab is not an explicit retry of the refused conversation.
 			if (!active || active === failedSession) return;
@@ -974,6 +1008,7 @@ export function createAcpChat(
 
 		/** Open another conversation tab, starting ego when none is running. */
 		async startSession(options?: ChatOpenRequest): Promise<void> {
+			if (sessionId()) await stopChatVoice(sessionId());
 			await sharedSelection.ready;
 			sharedSelection.invalidate();
 			const request = ++selection;
@@ -1092,6 +1127,7 @@ export function createAcpChat(
 		/** Stop ego for the app. The transcript stays: the panel is not where a
 		 *  conversation is deleted. */
 		async stop(): Promise<void> {
+			if (sessionId()) await stopChatVoice(sessionId());
 			const id = connectionId();
 			if (!id) return;
 			if (!binding?.launch) defaultBinding = null;

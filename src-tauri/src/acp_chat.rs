@@ -16,6 +16,12 @@ pub(crate) struct ChatLaunch {
     pub executable: String,
     #[schemars(extend("x-setting" = {"sensitivity":"private","apply":"next_session","effect":"Used when the next session or process starts; existing sessions retain their launch configuration.","operations":["get","set"],"confirmationClass":"ordinary"}))]
     pub profile: String,
+    #[serde(
+        default,
+        deserialize_with = "crate::config::deserialize_ai_chat_master_prompt"
+    )]
+    #[schemars(extend("x-not-setting" = "Saved conversation instruction snapshot; edited through ai_chat_master_prompt for new chats."))]
+    pub master_prompt: String,
     #[schemars(extend("x-setting" = {"sensitivity":"private","apply":"next_session","effect":"Used when the next session or process starts; existing sessions retain their launch configuration.","operations":["get","set"],"confirmationClass":"ordinary"}))]
     pub workspace: PathBuf,
     #[schemars(extend("x-not-setting" = "Host-issued conversation identity; not a configurable launch option."))]
@@ -45,6 +51,7 @@ impl ChatLaunch {
         EgoAcpConfig {
             executable: PathBuf::from(&self.executable),
             profile: self.profile.clone(),
+            master_prompt: self.master_prompt.clone(),
         }
     }
 }
@@ -106,6 +113,7 @@ async fn resolve(
     let launch = ChatLaunch {
         executable,
         profile,
+        master_prompt: state.config.read().ai_chat_master_prompt.clone(),
         workspace,
         peer_id: uuid::Uuid::new_v4().to_string(),
     };
@@ -371,6 +379,102 @@ mod tests {
         }
     }
 
+    /// Catches: the persisted setting never reaches ego, or editing defaults restarts a live chat.
+    #[tokio::test]
+    async fn custom_chat_master_prompt_reaches_new_process_only() {
+        let (dir, state) = profile_fixture("repo-profile-ceiling");
+        let _config = crate::config::set_config_dir_override(dir.path().join("config"));
+        state.config.write().ai_chat_master_prompt =
+            "Delegate investigations.\nReturn to chat.".into();
+        std::fs::write(dir.path().join("expected-profile.txt"), "machine").unwrap();
+        std::fs::write(
+            dir.path().join("expected-master-prompt.txt"),
+            "AI Chat master instructions:\nDelegate investigations.\nReturn to chat.",
+        )
+        .unwrap();
+        let opened = open(&state, ChatOpenRequest::default()).await.unwrap();
+        let saved = crate::config::load_app_config();
+        assert_eq!(
+            saved.ai_chat_master_prompt,
+            "Delegate investigations.\nReturn to chat."
+        );
+        assert_eq!(
+            saved.ai_chat_launches[&opened.session_id].master_prompt,
+            "Delegate investigations.\nReturn to chat."
+        );
+        state.config.write().ai_chat_master_prompt = "New instructions".into();
+        let reopened = open(
+            &state,
+            ChatOpenRequest {
+                session_id: Some(opened.session_id.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            reopened.connection.connection_id,
+            opened.connection.connection_id
+        );
+        assert_eq!(
+            reopened.launch.master_prompt,
+            "Delegate investigations.\nReturn to chat."
+        );
+        let next = resolve(&state, &ChatOpenRequest::default()).await.unwrap();
+        let spec = crate::acp::launch_spec(&next.ego_config(), &next.workspace).unwrap();
+        assert_eq!(
+            spec.args.last().unwrap(),
+            "AI Chat master instructions:\nNew instructions"
+        );
+        state
+            .acp
+            .disconnect(opened.connection.connection_id)
+            .await
+            .unwrap();
+    }
+
+    /// Catches: blank prompts inject an empty flag, @ text reads a file, or UTF-8 limits count characters.
+    #[tokio::test]
+    async fn master_prompt_launch_preserves_literals_and_enforces_byte_limit() {
+        let dir = tempfile::TempDir::new_in(tuic_test_support::test_temp_root()).unwrap();
+        let state = crate::state::tests_support::make_test_app_state();
+        state.config.write().ego_executable = std::env::current_exe()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        state.config.write().ai_chat_workspace = dir.path().to_string_lossy().into_owned();
+        for (text, expected) in [
+            ("", None),
+            (
+                "@private.txt\n--system",
+                Some("AI Chat master instructions:\n@private.txt\n--system"),
+            ),
+        ] {
+            state.config.write().ai_chat_master_prompt = text.into();
+            let launch = resolve(&state, &ChatOpenRequest::default()).await.unwrap();
+            let spec = crate::acp::launch_spec(&launch.ego_config(), &launch.workspace).unwrap();
+            assert!(!spec.args.iter().any(|arg| arg == "--system"));
+            let index = spec.args.iter().position(|arg| arg == "--append-system");
+            assert_eq!(index.map(|i| spec.args[i + 1].as_str()), expected);
+        }
+        for text in ["a".repeat(8192), "é".repeat(4096)] {
+            let mut document = serde_json::to_value(crate::config::AppConfig::default()).unwrap();
+            document["ai_chat_master_prompt"] = serde_json::json!(text);
+            let config: crate::config::AppConfig = serde_json::from_value(document).unwrap();
+            state.config.write().ai_chat_master_prompt = config.ai_chat_master_prompt;
+            assert!(resolve(&state, &ChatOpenRequest::default()).await.is_ok());
+        }
+        for text in ["a".repeat(8193), "é".repeat(4097), "secret\0text".into()] {
+            let mut document = serde_json::to_value(crate::config::AppConfig::default()).unwrap();
+            document["ai_chat_master_prompt"] = serde_json::json!(text);
+            let error = serde_json::from_value::<crate::config::AppConfig>(document)
+                .err()
+                .expect("invalid prompt must be refused");
+            assert!(error.to_string().contains("AI Chat master prompt"));
+            assert!(!error.to_string().contains(&text));
+        }
+    }
+
     /// Catches: a conversation override is mistaken for an explicit machine ceiling.
     #[tokio::test]
     async fn custom_chat_repo_profile_without_machine_ceiling_is_refused() {
@@ -472,6 +576,7 @@ mod tests {
                 .to_string_lossy()
                 .into_owned(),
             profile: "coordinator".into(),
+            master_prompt: "Saved instructions".into(),
             workspace: dir.path().to_owned(),
             peer_id: uuid::Uuid::new_v4().to_string(),
         };
@@ -492,6 +597,7 @@ mod tests {
         let restarted = crate::state::tests_support::make_test_app_state();
         *restarted.config.write() = saved;
         restarted.config.write().ego_profile = "other-default".into();
+        restarted.config.write().ai_chat_master_prompt = "Changed default".into();
         let restored = resolve(
             &restarted,
             &ChatOpenRequest {

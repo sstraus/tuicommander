@@ -1,3 +1,4 @@
+import {encodeCapture} from './captureEncoding.js';
 import {syncHostErrors} from './hostErrors.js';
 import {browserCommand, captureVisibleTab} from './browserCommands.js';
 import {addPick, editPick, deletePick, addError, clearErrors, draftForTab, recipient, deliverDraft, serverSession} from './cards.js';
@@ -34,33 +35,53 @@ async function refreshConnection(tabId) {
     catch(error) { serversBySession.set(sessionId, {...noServers,scanNotice:error.message}); }
   } catch (error) { agents = []; connection = error.message; }
 }
+// This dedicated profile launches one active page. Capture its identity before the
+// native handshake: redirects must not replace it with another tab at the old URL.
+const launchTab = chrome.tabs.query({active:true,lastFocusedWindow:true}).then(([tab]) => tab?.id).catch(() => undefined);
 let reviewedTab;
 let beating = false;
 let commandLoopStarted = false;
+let receivingCommands = true;
 async function commands() {
-  for (;;) {
+  while (receivingCommands) {
     try {
       const command = await request('command_next');
       if (!command) { await new Promise((resolve) => setTimeout(resolve, 250)); continue; }
-      const saved = await chrome.storage.session.get(['reviewedTab','actionHistory']);
-      const tabId = reviewedTab ?? saved.reviewedTab;
-      let reply;
+      let saved = {}, reply;
       try {
+        saved = await chrome.storage.session.get(['reviewedTab','actionHistory']);
         const mode = (await request('mode_status')).find((mode) => mode.repoPath === bound.repoPath);
         if (mode?.status !== 'armed' || mode.sessionId !== command.sessionId) throw new Error('not_armed: Design Mode is not armed for this session.');
-        let timer;
-        try {
-          const result = await Promise.race([
-            browserCommand(command, chrome, tabId, async (id) => draftForTab(await drafts(), id).errors ?? []),
-            new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('command_timeout: Browser operation exceeded 8 seconds.')), 8000); }),
-          ]);
-          reply = {ok:true,result};
-        } finally { clearTimeout(timer); }
+        if (command.action === 'ready') {
+          const tabId = await launchTab;
+          const tab = tabId ? await chrome.tabs.get(tabId).catch(() => undefined) : undefined;
+          if (!tab?.id) throw new Error('page_not_ready: The launched Design Mode page is not available.');
+          reviewedTab = tab.id;
+          await chrome.storage.session.set({reviewedTab});
+          reply = {ok:true,result:{tabId:tab.id,windowId:tab.windowId}};
+        } else {
+          let timer;
+          try {
+            const result = await Promise.race([
+              browserCommand(command, chrome, reviewedTab ?? saved.reviewedTab, async (id) => draftForTab(await drafts(), id).errors ?? []),
+              new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('command_timeout: Browser operation exceeded 8 seconds.')), 8000); }),
+            ]);
+            reply = {ok:true,result};
+          } finally { clearTimeout(timer); }
+        }
       } catch (error) { reply = {ok:false,error:error.message}; }
-      const actionHistory = [...(saved.actionHistory ?? []), {who:command.sessionId, action:command.action, when:Date.now(), ok:reply.ok}].slice(-50);
-      await chrome.storage.session.set({actionHistory}); notify();
+      // The correlated reply must not depend on optional action-history persistence.
       await request('command_reply', {requestId:command.requestId, reply});
-    } catch { await new Promise((resolve) => setTimeout(resolve, 1000)); }
+      try {
+        const actionHistory = [...(saved.actionHistory ?? []), {who:command.sessionId, action:command.action, when:Date.now(), ok:reply.ok}].slice(-50);
+        await chrome.storage.session.set({actionHistory}); notify();
+      } catch (error) { connection = `Action history unavailable: ${error.message}`; notify(); }
+    } catch (error) {
+      if (!receivingCommands) return;
+      // DEFERRED (2026-10-31) — the original missing replies had no worker-error capture; retain this diagnostic for attribution on recurrence.
+      connection = `Browser command channel unavailable: ${error.message}`; notify();
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
   }
 }
 async function beat() {
@@ -130,13 +151,9 @@ async function capture(message, sender) {
     const width = Math.min(bitmap.width - x, r.width * ratio), height = Math.min(bitmap.height - y, r.height * ratio);
     if (width < 1 || height < 1) { bitmap.close(); return {}; }
     const scale = Math.min(1, 800 / width, 600 / height);
-    const canvas = new OffscreenCanvas(Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)));
-    canvas.getContext('2d').drawImage(bitmap,x,y,width,height,0,0,canvas.width,canvas.height); bitmap.close();
-    const blob = await canvas.convertToBlob({type:'image/png'});
-    if (blob.size > 128 * 1024) return {captureError:'Screenshot too large; DOM evidence retained.'};
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte);
-    return {image: `data:image/png;base64,${btoa(binary)}`};
+    const capture = await encodeCapture(bitmap, {format:'png',max_long_edge:Math.max(1,Math.round(Math.max(width,height) * scale))}, {x,y,width,height});
+    if (capture.bytes > 128 * 1024) return {captureError:'Screenshot too large; DOM evidence retained.'};
+    return capture;
   } catch (error) { return {captureError: `Screenshot unavailable: ${error.message}`}; }
 }
 async function handle(message, sender) {
@@ -211,3 +228,8 @@ const syncErrors = () => {
 chrome.permissions.onAdded.addListener(syncErrors);
 chrome.permissions.onRemoved.addListener(syncErrors);
 syncErrors();
+
+// Start receiving before a sidebar opens or the first periodic heartbeat fires.
+void request('hello').catch((error) => { connection = error.message; notify(); });
+
+chrome.runtime.onSuspend.addListener(() => { receivingCommands = false; });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, type Mock, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from "vitest";
 import type { PluginManifest } from "../../plugins/pluginLoader";
 import {
 	loadPluginsConcurrently,
@@ -6,9 +6,16 @@ import {
 	pluginModuleBaseUrl,
 	pluginModuleUrl,
 	replayActiveAgents,
+	setPluginEnabled,
 	validateManifest,
 	validateModule,
 } from "../../plugins/pluginLoader";
+
+import { importPluginModule } from "../../plugins/pluginModuleImport";
+
+vi.mock("../../plugins/pluginModuleImport", () => ({
+	importPluginModule: vi.fn((url: string) => import(/* @vite-ignore */ url)),
+}));
 
 // Mock invoke
 vi.mock("../../invoke", () => ({
@@ -47,6 +54,7 @@ vi.mock("../../stores/appLogger", () => ({
 
 import { invoke, listen } from "../../invoke";
 import { pluginRegistry } from "../../plugins/pluginRegistry";
+import { appLogger } from "../../stores/appLogger";
 import { pluginStore } from "../../stores/pluginStore";
 
 // ---------------------------------------------------------------------------
@@ -201,6 +209,57 @@ describe("loadUserPlugins", () => {
 		(invoke as Mock).mockResolvedValue([]);
 	});
 
+	it("logs import URL and cause per load — catches import failures without actionable provenance", async () => {
+		const manifest = validManifest({ id: "missing-import-diagnostics" });
+		(invoke as Mock).mockResolvedValue([manifest]);
+		// Keep the native Node rejection as the diagnostic oracle, not an invented WebView error.
+		let nativeError: unknown;
+		try {
+			await importPluginModule("plugin://missing-import-diagnostics/main.js");
+		} catch (error) {
+			nativeError = error;
+		}
+		expect(nativeError).toBeDefined();
+		vi.mocked(importPluginModule).mockRejectedValue(nativeError);
+		vi.useFakeTimers();
+		const clock = vi.spyOn(Date, "now").mockReturnValue(1793461000000);
+		try {
+			for (let cycle = 0; cycle < 2; cycle++) {
+				const loading = loadUserPlugins(false);
+				await vi.runAllTimersAsync();
+				await loading;
+			}
+			const failures = (appLogger.error as Mock).mock.calls.filter(([, message]) =>
+				message.includes('Failed to import plugin "missing-import-diagnostics"'),
+			);
+			expect(failures).toHaveLength(6);
+			for (const [index, [source, message, data]] of failures.entries()) {
+				expect(source).toBe("plugin");
+				// Catches: appLogger coalesces a later attempt and drops its diagnostic data.
+				expect(message).toContain(`(load ${data.loadCycleId}, attempt ${data.attempt})`);
+				expect(data).toEqual(
+					expect.objectContaining({
+						url: expect.stringMatching(/^plugin:\/\/missing-import-diagnostics\/~v\d+\/main\.js$/),
+						errorName: "Error",
+						errorMessage: expect.stringContaining("Received protocol 'plugin:'"),
+						httpStatus: null,
+						attempt: (index % 3) + 1,
+						documentId: performance.timeOrigin,
+						loadCycleId: expect.any(String),
+					}),
+				);
+			}
+			expect(new Set(failures.map(([, , data]) => data.url)).size).toBe(6);
+			expect(new Set(failures.slice(0, 3).map(([, , data]) => data.loadCycleId)).size).toBe(1);
+			expect(failures[0][2].loadCycleId).not.toBe(failures[3][2].loadCycleId);
+			expect(pluginRegistry.register).not.toHaveBeenCalled();
+		} finally {
+			clock.mockRestore();
+			vi.useRealTimers();
+			vi.mocked(importPluginModule).mockImplementation((url) => import(/* @vite-ignore */ url));
+		}
+	});
+
 	it("calls list_user_plugins to discover plugins", async () => {
 		await loadUserPlugins();
 		expect(invoke).toHaveBeenCalledWith("list_user_plugins");
@@ -308,4 +367,101 @@ it("replays awaiting and agent type when reloading into an open question", async
 		"reload-question",
 	);
 	terminalsStore.remove(id);
+});
+
+describe("import recovery", () => {
+	const module = { default: { id: "recover", onload: () => {}, onunload: () => {} } };
+	beforeEach(async () => {
+		vi.clearAllMocks();
+		vi.useFakeTimers();
+		(invoke as Mock).mockImplementation(async (cmd: string) =>
+			cmd === "load_config"
+				? { disabled_plugin_ids: [] }
+				: cmd === "list_user_plugins"
+					? [validManifest({ id: "recover" })]
+					: undefined,
+		);
+		(pluginRegistry.register as Mock).mockResolvedValue(true);
+		await import("../../plugins/pluginLoader").then((loader) => loader.syncDisabledList());
+	});
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.mocked(importPluginModule).mockReset();
+	});
+
+	it("recovers a rejected import without duplicate activation — catches enabled plugins stranded unloaded", async () => {
+		vi.mocked(importPluginModule).mockRejectedValueOnce(new Error("temporary")).mockResolvedValue(module);
+		const loading = loadUserPlugins(false);
+		await vi.advanceTimersByTimeAsync(999);
+		expect(importPluginModule).toHaveBeenCalledTimes(1);
+		expect(pluginRegistry.register).not.toHaveBeenCalled();
+		await vi.advanceTimersByTimeAsync(1);
+		await loading;
+		expect(pluginRegistry.register).toHaveBeenCalledExactlyOnceWith(module.default, [], undefined);
+		expect(importPluginModule).toHaveBeenCalledTimes(2);
+		expect(new Set(vi.mocked(importPluginModule).mock.calls.map(([url]) => url)).size).toBe(2);
+	});
+
+	it("bounds permanent import failure and preserves its error — catches endless or silent recovery", async () => {
+		vi.mocked(importPluginModule).mockRejectedValue(new Error("permanent"));
+		const loading = loadUserPlugins(false);
+		await vi.runAllTimersAsync();
+		await loading;
+		expect(importPluginModule).toHaveBeenCalledTimes(3);
+		expect(pluginRegistry.register).not.toHaveBeenCalled();
+		expect(pluginStore.updatePlugin).toHaveBeenLastCalledWith("recover", { error: "permanent" });
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("does not retry invalid modules or failed activation — catches repeated plugin side effects", async () => {
+		vi.mocked(importPluginModule).mockResolvedValueOnce({ default: {} });
+		await loadUserPlugins(false);
+		expect(importPluginModule).toHaveBeenCalledTimes(1);
+		expect(pluginRegistry.register).not.toHaveBeenCalled();
+		vi.mocked(importPluginModule).mockResolvedValue(module);
+		(pluginRegistry.register as Mock).mockResolvedValue(false);
+		await loadUserPlugins(false);
+		expect(importPluginModule).toHaveBeenCalledTimes(2);
+		expect(pluginRegistry.register).toHaveBeenCalledTimes(1);
+	});
+
+	it("cancels recovery when disabled — catches delayed activation after an explicit disable", async () => {
+		vi.mocked(importPluginModule).mockRejectedValueOnce(new Error("temporary")).mockResolvedValue(module);
+		const loading = loadUserPlugins(false);
+		await vi.advanceTimersByTimeAsync(0);
+		await setPluginEnabled("recover", false);
+		await vi.runAllTimersAsync();
+		await loading;
+		expect(importPluginModule).toHaveBeenCalledTimes(1);
+		expect(pluginRegistry.register).not.toHaveBeenCalled();
+	});
+
+	it("ignores a successful pending import after disable — catches activation from a stale module result", async () => {
+		let finish!: (value: unknown) => void;
+		vi.mocked(importPluginModule).mockImplementation(
+			() =>
+				new Promise((resolve) => {
+					finish = resolve;
+				}),
+		);
+		const loading = loadUserPlugins(false);
+		await vi.advanceTimersByTimeAsync(0);
+		await setPluginEnabled("recover", false);
+		finish(module);
+		await loading;
+		expect(pluginRegistry.register).not.toHaveBeenCalled();
+		expect(vi.getTimerCount()).toBe(0);
+	});
+
+	it("retires the old recovery on reload — catches duplicate activation from stale imports", async () => {
+		vi.mocked(importPluginModule).mockRejectedValueOnce(new Error("temporary")).mockResolvedValue(module);
+		const loading = loadUserPlugins(false);
+		await vi.advanceTimersByTimeAsync(0);
+		const handler = (listen as Mock).mock.calls.find(([event]) => event === "plugin-changed")?.[1];
+		await handler({ payload: ["recover"] });
+		await vi.runAllTimersAsync();
+		await loading;
+		expect(importPluginModule).toHaveBeenCalledTimes(2);
+		expect(pluginRegistry.register).toHaveBeenCalledTimes(1);
+	});
 });

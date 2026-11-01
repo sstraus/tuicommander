@@ -30,6 +30,10 @@ loses its old Worktrees bell offer, so that offer cannot open the obsolete path.
 
 Worktree removal uses the same checkout identity as the sidebar. A symbolic branch name remains addressable even when Git reports its target branch. Deleting that alias after removal preserves the target branch. If a branch was renamed externally, refresh the repository before removal; the directory name does not define its identity.
 
+## Unrelated histories
+
+A branch with no common ancestor with the default branch shows **Unrelated history** in compact and rich sidebar rows. The repository and its other branches still load normally. In compact rows, a dirty-file badge keeps its count and opens Changes, including when the only changes are untracked files. This is not a failed refresh or merged work. Keep the branch when removing its checkout. Branch deletion requires an archive at the current tip so the independent history remains recoverable.
+
 ## Worktree Storage Strategies
 
 Configure where worktrees are stored (Settings → Git & GitHub → Worktree Defaults → Storage):
@@ -391,3 +395,11 @@ The status line names deleted archives and retained archives with their reasons.
 ### Native workflow integration trials
 
 The WF07 backend trial is disabled by default for each repository. Enable it only in an isolated trial clone until repository-specific parity approval. Integration and cleanup are separate: a merged story can retain proof debt or a workspace that needs attention. Cleanup keeps unknown or dirty work, checks successor/process ownership, and archives the exact branch tip before TUIC removes a clean workspace. This backend action does not add a sidebar click action. See [Native integration](../backend/workflows.md#opt-in-native-integration-wf07).
+
+### Explicit bases in automation
+
+For MCP `repo action=worktree_create`, set `base_ref` to a commit, branch or tag.
+Check the returned `base_commit` before using the checkout as test evidence.
+An invalid base fails without creating a branch or checkout. If the requested
+branch already exists at a different commit, choose another branch name; TUIC
+will not ignore the base or reset existing work.

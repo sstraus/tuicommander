@@ -1,0 +1,11 @@
+{
+  "source": {
+    "agent": "ego",
+    "version": "0.4.1",
+    "model": "openai-codex/gpt-6-sol",
+    "pty": "7109ba55-b45f-49ac-8673-f89dc205c9f5",
+    "rawSourceByte": 70567,
+    "capture": "src-tauri/src/fixtures/agent_prompts/ego-joined-intent-answer-2612.tcap"
+  },
+  "text": "intent: Ti indico i passaggi necessari per configurare il default globale della tua installazione, distinguendo il blocco dell’ambiente dalla parte che ego non supporta ancora (Configurazione Claude)💬 Per configurare la tua installazione come default, non basta copiare verify.py: è uno script di confronto, non un’estensione installabile. Il valore chiamato «header» viene inserito nel corpo JSON della richiesta e il CCH va ricalcolato sui byte finali a ogni invio. Gli script di cattura non servono nell’installazione."
+}

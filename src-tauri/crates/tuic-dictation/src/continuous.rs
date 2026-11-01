@@ -408,6 +408,8 @@ pub enum Phase {
     /// Armed, microphone open, nobody speaking.
     Waiting,
     Capturing,
+    /// A partial recognized the configured leading wake phrase; not admission.
+    WakeConfirmed,
     Transcribing,
     /// Transcribed and visible, counting down the hold-back before the write
     /// — or past it, held by a dialog or a draft in the composer.
@@ -425,6 +427,7 @@ impl Phase {
             Self::Disarmed => "disarmed",
             Self::Waiting => "waiting",
             Self::Capturing => "capturing",
+            Self::WakeConfirmed => "wake_confirmed",
             Self::Transcribing => "transcribing",
             Self::HoldingBack => "holding_back",
             Self::Delivered => "delivered",
@@ -934,15 +937,30 @@ impl HandsFree {
 
     /// An utterance opened.
     pub fn note_capturing(&mut self) {
-        if self.binding.is_some() {
+        if self.binding.is_some() && self.phase != Phase::WakeConfirmed {
             self.phase = Phase::Capturing;
+        }
+    }
+
+    /// A partial may acknowledge a wake phrase, never admit or deliver a turn.
+    fn confirm_wake(&mut self, generation: u64, text: &str) -> bool {
+        if self.generation == generation
+            && self.binding.is_some()
+            && self.phase == Phase::Capturing
+            && !self.activation.phrase.is_empty()
+            && strip_leading_phrase(&self.activation.phrase, text).is_some()
+        {
+            self.phase = Phase::WakeConfirmed;
+            true
+        } else {
+            false
         }
     }
 
     /// An utterance ended without reaching the transcriber, for too little
     /// speech: the capture is over, and the phase it set must not outlive it.
     pub fn note_capture_discarded(&mut self) {
-        if self.phase == Phase::Capturing {
+        if matches!(self.phase, Phase::Capturing | Phase::WakeConfirmed) {
             self.phase = if self.pending.is_some() {
                 Phase::HoldingBack
             } else {
@@ -1036,7 +1054,7 @@ impl HandsFree {
         // The continuation began before the deadline but its recogniser has
         // not returned yet. Keep the first phrase in the composer until the
         // speech closes, then accept_transcript joins both before rescheduling.
-        if self.phase == Phase::Capturing {
+        if matches!(self.phase, Phase::Capturing | Phase::WakeConfirmed) {
             return None;
         }
         let ready = self
@@ -1129,7 +1147,10 @@ impl HandsFree {
     /// Disarm the whole mode. Never re-arms itself; `arm` is the only way back.
     pub fn disarm(&mut self, reason: DisarmReason) -> Option<Disarmed> {
         let session_id = self.binding.as_ref()?.session_id.clone();
-        let discarded_capture = matches!(self.phase, Phase::Capturing | Phase::Transcribing);
+        let discarded_capture = matches!(
+            self.phase,
+            Phase::Capturing | Phase::WakeConfirmed | Phase::Transcribing
+        );
         let disarmed = Disarmed {
             generation: self.generation,
             session_id,
@@ -1309,7 +1330,7 @@ pub fn deliver_due(
 ///
 /// One line, for the reason [`compose_entry`] gives: the sink types this into
 /// a terminal and submits it, and a newline in the middle submits half of it.
-pub const MODE_ENTRY_HINT: &str = "Hands-free voice is now on for this terminal: what arrives from \
+pub const MODE_ENTRY_HINT: &str = "Hands-free voice is now on for this conversation: what arrives from \
      here on was spoken out loud, and you can answer out loud with the `voice` tool of the \
      TUICommander MCP server (tuicommander), called with action \"speak\". If that tool is not \
      loaded yet, search your deferred tools for \"voice\". Keep spoken replies short enough to \
@@ -1333,7 +1354,7 @@ pub fn entry_hint_text(configured: &str) -> String {
 
 /// What a replies-only conversation tells the model: nothing is heard, input
 /// is the user's push-to-talk dictation, and answers may be spoken.
-pub const REPLIES_ONLY_ENTRY_HINT: &str = "Spoken replies are now on for this terminal: the user \
+pub const REPLIES_ONLY_ENTRY_HINT: &str = "Spoken replies are now on for this conversation: the user \
      dictates by push-to-talk, and you can answer out loud with the `voice` tool of the \
      TUICommander MCP server (tuicommander), called with action \"speak\". If that tool is not \
      loaded yet, search your deferred tools for \"voice\". Keep spoken replies short enough to \
@@ -1361,7 +1382,7 @@ pub fn entry_hint_for_replies(configured: &str, spoken_replies: bool) -> String 
     if spoken_replies {
         entry_hint_text(configured)
     } else {
-        "Hands-free dictation is now on for this terminal. Spoken replies are off. Reply in text; do not call the voice tool to speak.".to_string()
+        "Hands-free dictation is now on for this conversation. Spoken replies are off. Reply in text; do not call the voice tool to speak.".to_string()
     }
 }
 
@@ -1370,7 +1391,7 @@ pub fn entry_hint_for_replies(configured: &str, spoken_replies: bool) -> String 
 /// Sent only to a model that read the entry hint — see [`deliver_exit_hint`].
 /// Its whole job is to undo that one, so it must not describe a capability or
 /// imply anything is still listening.
-pub const MODE_EXIT_HINT: &str = "Hands-free voice is off for this terminal. The voice tool can no \
+pub const MODE_EXIT_HINT: &str = "Hands-free voice is off for this conversation. The voice tool can no \
      longer speak here, so reply as text from now on.";
 
 /// Tell the bound model that a hands-free conversation just opened.
@@ -1477,8 +1498,28 @@ pub trait VoiceEndpoint: Send {
     fn drain(&mut self) -> Result<Vec<f32>, String>;
     /// False once the endpoint that armed the mode is gone.
     fn connected(&self) -> bool;
-    /// Transcribe one closed utterance. Called without the mode lock held.
+    /// Best-effort counters at a hold edge; unavailable on endpoints without capture.
+    fn capture_snapshot(&self) -> CaptureSnapshot {
+        CaptureSnapshot::default()
+    }
+    /// Recognize a bounded wake prefix or a closed utterance.
+    /// Called serially, without the mode lock held.
     fn transcribe(&self, audio: &[f32]) -> Result<Transcript, String>;
+}
+
+/// Endpoint counters, not hardware timing. Browser batches are received WS messages.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct CaptureSnapshot {
+    pub backlog_samples: Option<usize>,
+    pub capture_batches: Option<usize>,
+    pub dropped_samples: Option<usize>,
+}
+
+/// Output queue state, never proof of DAC or acoustic activity. `None` means unavailable.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct OutputSnapshot {
+    pub output_nonempty: Option<bool>,
+    pub can_pause: Option<bool>,
 }
 
 /// What a recogniser made of one closed utterance.
@@ -1520,6 +1561,11 @@ pub const DEVICE_SILENCE_TIMEOUT_MS: u64 = 5_000;
 /// loaded synthesis graph, and barge-in is a rule about *when* to interrupt,
 /// not about what interrupting does.
 pub trait Interruptible: Send + Sync {
+    /// Must not wait for a voice rebuild merely to collect diagnostics.
+    fn output_snapshot(&self) -> OutputSnapshot {
+        OutputSnapshot::default()
+    }
+
     /// Go quiet now, keeping the reply: somebody is talking and it is not yet
     /// known whether they are talking to us. Same constraint as `hush`.
     fn pause(&self);
@@ -1533,6 +1579,16 @@ pub trait Interruptible: Send + Sync {
     /// so it must not block: anything it waits for delays the next chunk of the
     /// user's own voice.
     fn hush(&self);
+}
+
+static NEXT_HOLD_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+
+struct HoldDiagnostic {
+    id: u64,
+    owner: String,
+    generation: u64,
+    started: std::time::Instant,
+    inference_us: u64,
 }
 
 /// Everything the loop carries between ticks.
@@ -1552,6 +1608,12 @@ pub struct Capture {
     /// When the speaker was paused for voice activity and has had no verdict
     /// yet. Every way out of this state is a verdict on the speech or a limit.
     paused_at_ms: Option<u64>,
+    hold_diagnostic: Option<HoldDiagnostic>,
+    last_tick_at: Option<std::time::Instant>,
+    /// The next prefix length to recognize, reset at every utterance boundary.
+    next_wake_probe_samples: usize,
+    /// The arm this capture belongs to, never adopted again after a rearm.
+    generation: Option<u64>,
 }
 
 impl Capture {
@@ -1569,13 +1631,40 @@ impl Capture {
             echo,
             speaker,
             paused_at_ms: None,
+            hold_diagnostic: None,
+            last_tick_at: None,
+            next_wake_probe_samples: SAMPLE_RATE as usize,
+            generation: None,
         }
     }
 
     /// Carry on speaking if the reply is held for a verdict that will no
     /// longer come: the loop is ending, or the speech outlasted
     /// [`PAUSE_LIMIT_MS`].
-    fn resume_speaker(&mut self) {
+    fn finish_hold(&mut self, reason: &'static str) {
+        if let Some(hold) = self.hold_diagnostic.take() {
+            tracing::info!(
+                source = "dictation",
+                hold_id = hold.id,
+                owner = %hold.owner,
+                generation = hold.generation,
+                reason,
+                elapsed_ms = hold.started.elapsed().as_millis() as u64,
+                inference_us = hold.inference_us,
+                "barge-in hold resolved"
+            );
+        }
+    }
+
+    fn note_inference(&mut self, started: std::time::Instant) {
+        if let Some(hold) = self.hold_diagnostic.as_mut() {
+            hold.inference_us = hold
+                .inference_us
+                .saturating_add(started.elapsed().as_micros() as u64);
+        }
+    }
+
+    fn resume_speaker(&mut self, reason: &'static str) {
         if self.paused_at_ms.take().is_some()
             && let Some(speaker) = self.speaker.as_ref()
         {
@@ -1585,11 +1674,12 @@ impl Capture {
             );
             speaker.resume();
         }
+        self.finish_hold(reason);
     }
 
     /// Call when the loop ends, so a reply is never left paused behind it.
     pub fn release(&mut self) {
-        self.resume_speaker();
+        self.resume_speaker("release");
     }
 
     /// Retained audio. Nothing in production needs this number; it exists so
@@ -1633,9 +1723,26 @@ pub fn tick(
     sink: &dyn VoiceSink,
     now_ms: u64,
 ) -> Tick {
-    let Some(binding) = mode.lock().binding().cloned() else {
-        return Tick::NotArmed;
+    let tick_at = std::time::Instant::now();
+    let tick_interval_ms = capture
+        .last_tick_at
+        .replace(tick_at)
+        .map(|at| tick_at.duration_since(at).as_millis() as u64);
+    let (binding, generation) = {
+        let mode = mode.lock();
+        let Some(binding) = mode.binding().cloned() else {
+            return Tick::NotArmed;
+        };
+        (binding, mode.generation())
     };
+
+    if capture
+        .generation
+        .is_some_and(|current| current != generation)
+    {
+        return Tick::NotArmed;
+    }
+    capture.generation = Some(generation);
 
     if !target.accepts(&binding.session_id) {
         return disarmed_or_not_armed(mode.lock().note_session_closed(&binding.session_id));
@@ -1644,11 +1751,12 @@ pub fn tick(
         return disarmed_or_not_armed(mode.lock().note_owner_disconnected(&binding.owner));
     }
 
-    let samples = match endpoint.drain() {
+    let raw_samples = match endpoint.drain() {
         Ok(samples) => samples,
         Err(error) => return disarmed_or_not_armed(mode.lock().note_device_failed(error)),
     };
-    if samples.is_empty() {
+    let drained_at = std::time::Instant::now();
+    if raw_samples.is_empty() {
         // A replies-only conversation opens no capture device, so silence from
         // it is the design and not a dead microphone.
         if mode.lock().listening()
@@ -1671,7 +1779,11 @@ pub fn tick(
     // canceller works in whole 10 ms frames and carries the rest, so it can
     // return nothing from a chunk that did arrive. "The device is dead" is a
     // question about the device.
-    let samples = capture.echo.lock().clean(&samples);
+    let mut echo = capture.echo.lock();
+    let drain_to_clean_us = drained_at.elapsed().as_micros() as u64;
+    let samples = echo.clean(&raw_samples);
+    let echo_snapshot = echo.snapshot();
+    drop(echo);
 
     // The other half of barge-in. Read before the push, because the edge is
     // what matters: a level trigger would pause once per tick.
@@ -1697,8 +1809,72 @@ pub fn tick(
                 .any(|utterance| capture.segmenter.is_voice(utterance)))
         && let Some(speaker) = capture.speaker.as_ref()
     {
+        let output = speaker.output_snapshot();
+        let endpoint_snapshot = endpoint.capture_snapshot();
+        let echo = echo_snapshot;
+        let raw_rms = frame_rms(&raw_samples);
+        let raw_peak = raw_samples
+            .iter()
+            .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
+        let mut cleaned_rms_max = 0.0_f32;
+        let mut cleaned_active_frames = 0_usize;
+        for frame in samples.as_chunks::<FRAME_SAMPLES>().0 {
+            let rms = frame_rms(frame);
+            cleaned_rms_max = cleaned_rms_max.max(rms);
+            cleaned_active_frames += usize::from(rms >= capture.segmenter.config.activity_rms);
+        }
+        let longest_run_ms = capture
+            .segmenter
+            .open
+            .as_ref()
+            .map_or(0, |open| open.longest_run_ms)
+            .max(
+                closed
+                    .iter()
+                    .map(|utterance| utterance.longest_run_ms)
+                    .max()
+                    .unwrap_or(0),
+            );
+        let hold = HoldDiagnostic {
+            id: NEXT_HOLD_ID.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            owner: binding.owner.clone(),
+            generation,
+            started: std::time::Instant::now(),
+            inference_us: 0,
+        };
+        tracing::info!(
+            source = "dictation",
+            hold_id = hold.id,
+            owner = %hold.owner,
+            generation,
+            output_nonempty = ?output.output_nonempty,
+            can_pause = ?output.can_pause,
+            raw_rms,
+            raw_peak,
+            cleaned_rms_max,
+            cleaned_active_frames,
+            longest_run_ms,
+            activity_rms = capture.segmenter.config.activity_rms,
+            min_speech_ms = capture.segmenter.config.min_speech_ms,
+            drained_samples = raw_samples.len(),
+            backlog_samples = ?endpoint_snapshot.backlog_samples,
+            capture_batches = ?endpoint_snapshot.capture_batches,
+            dropped_samples = ?endpoint_snapshot.dropped_samples,
+            partial_samples = echo.partial_samples,
+            far_end_samples = echo.queued_samples,
+            far_end_position = echo.position,
+            far_end_dropped = echo.dropped_samples,
+            last_render_age_ms = ?echo.last_render_age_ms,
+            drain_to_clean_us,
+            tick_interval_ms = ?tick_interval_ms,
+            "barge-in hold opened"
+        );
+        capture.hold_diagnostic = Some(hold);
         speaker.pause();
         capture.paused_at_ms = Some(now_ms);
+    }
+    if !closed.is_empty() || !capture.segmenter.is_capturing() {
+        capture.next_wake_probe_samples = SAMPLE_RATE as usize;
     }
     if closed.is_empty() {
         if capture.segmenter.is_capturing() {
@@ -1707,14 +1883,64 @@ pub fn tick(
             // An utterance that opened and closed on too little speech never
             // reaches the recogniser, so nothing else would end its phase.
             mode.lock().note_capture_discarded();
-            capture.resume_speaker();
+            capture.resume_speaker("discard");
         }
     }
     if capture
         .paused_at_ms
         .is_some_and(|at| now_ms.saturating_sub(at) > PAUSE_LIMIT_MS)
     {
-        capture.resume_speaker();
+        capture.resume_speaker("limit");
+    }
+
+    // Prefix inference shares the final endpoint and runs serially: no worker,
+    // queued snapshots, or second model. At most four passes (1/2/3/4 seconds)
+    // per utterance, and none without a configured phrase or after a match.
+    // The final transcript still owns admission; a partial can be revised.
+    let needs_wake = {
+        let mode = mode.lock();
+        mode.generation() == generation
+            && !mode.activation.phrase.is_empty()
+            && mode.phase == Phase::Capturing
+    };
+    if closed.is_empty()
+        && needs_wake
+        && capture.segmenter.has_voice()
+        && capture.next_wake_probe_samples <= 4 * SAMPLE_RATE as usize
+        && let Some(open) = capture.segmenter.open.as_ref()
+        && open.audio.len() >= capture.next_wake_probe_samples
+    {
+        let probe_samples = (open.audio.len() / SAMPLE_RATE as usize).min(4) * SAMPLE_RATE as usize;
+        let open_samples = open.audio.len();
+        let prefix = &open.audio[..probe_samples];
+        let started = std::time::Instant::now();
+        let result = endpoint.transcribe(prefix);
+        capture.note_inference(started);
+        let mut mode = mode.lock();
+        // A disarm/rearm during recognition must stop this old runtime, not
+        // publish acknowledgement into the new conversation or drain its audio.
+        if mode.generation() != generation || mode.binding().is_none() {
+            return Tick::NotArmed;
+        }
+        match result {
+            Ok(transcript) => {
+                if mode.confirm_wake(generation, &transcript.text) {
+                    tracing::info!(
+                        source = "dictation",
+                        prefix_ms = probe_samples * 1_000 / SAMPLE_RATE as usize,
+                        inference_ms = started.elapsed().as_millis() as u64,
+                        "Hands-free wake phrase confirmed before utterance closure"
+                    );
+                }
+            }
+            // Best effort: a failed partial is not a failed capture device.
+            // The ordinary final pass will report a persistent backend failure.
+            Err(error) => tracing::debug!(source = "dictation", "Wake probe failed: {error}"),
+        }
+        // Skip missed cadence points rather than run a burst of stale probes
+        // when the device delivered a backlog during the previous inference.
+        capture.next_wake_probe_samples =
+            (open_samples / SAMPLE_RATE as usize + 1) * SAMPLE_RATE as usize;
     }
 
     for utterance in closed {
@@ -1726,7 +1952,10 @@ pub fn tick(
             mode.note_transcribing();
             mode.generation()
         };
-        match endpoint.transcribe(&utterance.audio) {
+        let started = std::time::Instant::now();
+        let result = endpoint.transcribe(&utterance.audio);
+        capture.note_inference(started);
+        match result {
             Ok(transcript) => {
                 let outcome = mode.lock().accept_transcript(
                     generation,
@@ -1743,12 +1972,23 @@ pub fn tick(
                 // the user's turn begins. Anything else: not for us, carry on.
                 match outcome {
                     TranscriptOutcome::HeldBack { .. } | TranscriptOutcome::Activated { .. } => {
+                        capture.finish_hold(
+                            if matches!(outcome, TranscriptOutcome::Activated { .. }) {
+                                "activated"
+                            } else {
+                                "accepted"
+                            },
+                        );
                         capture.paused_at_ms = None;
                         if let Some(speaker) = capture.speaker.as_ref() {
                             speaker.hush();
                         }
                     }
-                    _ => capture.resume_speaker(),
+                    TranscriptOutcome::Rejected => capture.resume_speaker("rejected"),
+                    TranscriptOutcome::Empty => capture.resume_speaker("empty"),
+                    TranscriptOutcome::Stale | TranscriptOutcome::NotArmed => {
+                        capture.resume_speaker("stale")
+                    }
                 }
                 match outcome {
                     TranscriptOutcome::Rejected => tracing::debug!(
@@ -3723,6 +3963,141 @@ mod tests {
         parking_lot::Mutex::new(mode)
     }
 
+    fn wake_mode() -> parking_lot::Mutex<HandsFree> {
+        let mut mode = HandsFree::new(1_000);
+        mode.set_activation("computer", ACTIVATION_WINDOW_MS);
+        mode.arm("target", "desktop", true).expect("arm");
+        parking_lot::Mutex::new(mode)
+    }
+
+    #[test]
+    fn incremental_wake_acknowledges_before_closure_but_does_not_admit_final_speech() {
+        // catches: final-only recognition, or a partial opening the admission window.
+        let mode = wake_mode();
+        let mut capture = runtime_capture();
+        let mut endpoint = FakeEndpoint::new("Computer, run the tests");
+        let target = FakeTarget(std::cell::Cell::new(true));
+        let sink = FakeSink::default();
+        endpoint.feed(speech(1_000));
+        tick(&mut capture, &mode, &mut endpoint, &target, &sink, 1_000);
+        assert!(capture.segmenter.is_capturing());
+        assert_eq!(mode.lock().phase().as_wire(), "wake_confirmed");
+        assert!(mode.lock().pending_text().is_none());
+
+        // Later frames must not turn a confirmed wake back into neutral VAD.
+        endpoint.feed(speech(100));
+        tick(&mut capture, &mode, &mut endpoint, &target, &sink, 1_100);
+        assert_eq!(mode.lock().phase().as_wire(), "wake_confirmed");
+        assert_eq!(endpoint.calls.get(), 1);
+
+        // A revised final transcript is authoritative: the partial is not admission.
+        endpoint.transcript = "please pass the salt".into();
+        endpoint.feed(silence(500));
+        tick(&mut capture, &mode, &mut endpoint, &target, &sink, 1_600);
+        assert_eq!(endpoint.calls.get(), 2);
+        assert_eq!(mode.lock().phase().as_wire(), "waiting");
+        assert!(mode.lock().pending_text().is_none());
+        assert_eq!(mode.lock().dropped_turns(), 1);
+
+        endpoint.transcript = "Computer".into();
+        endpoint.feed(speech(1_000));
+        tick(&mut capture, &mode, &mut endpoint, &target, &sink, 2_600);
+        assert_eq!(
+            endpoint.calls.get(),
+            3,
+            "the next utterance gets a fresh probe budget"
+        );
+        assert_eq!(mode.lock().phase().as_wire(), "wake_confirmed");
+        assert!(
+            mode.lock()
+                .disarm(DisarmReason::Manual)
+                .unwrap()
+                .discarded_capture
+        );
+        assert_eq!(mode.lock().phase().as_wire(), "disarmed");
+    }
+
+    #[test]
+    fn incremental_wake_probes_are_bounded_and_unrelated_speech_stays_neutral() {
+        // catches: VAD acknowledging room speech, or an inference per 50ms tick.
+        let mode = wake_mode();
+        let mut capture = Capture::new(
+            SegmenterConfig {
+                max_utterance_ms: 10_000,
+                ..test_config()
+            },
+            5_000,
+            0,
+            echo_guard(),
+            None,
+        );
+        let mut endpoint = FakeEndpoint::new("please pass the salt");
+        let target = FakeTarget(std::cell::Cell::new(true));
+        let sink = FakeSink::default();
+        for now_ms in (50..=6_000).step_by(50) {
+            endpoint.feed(speech(50));
+            tick(&mut capture, &mode, &mut endpoint, &target, &sink, now_ms);
+            assert_eq!(mode.lock().phase().as_wire(), "capturing");
+        }
+        assert_eq!(
+            endpoint.calls.get(),
+            4,
+            "only the first four prefix windows are probed"
+        );
+        assert!(
+            endpoint
+                .heard
+                .borrow()
+                .iter()
+                .all(|audio| audio.len() <= 64_000)
+        );
+        assert!(mode.lock().pending_text().is_none());
+    }
+
+    #[test]
+    fn incremental_wake_result_cannot_acknowledge_a_rearmed_generation() {
+        // catches: a slow probe overwriting the phase of a different conversation.
+        let mode = std::sync::Arc::new(wake_mode());
+        let mut capture = runtime_capture();
+        let mut endpoint = FakeEndpoint::new("Computer");
+        let during = mode.clone();
+        *endpoint.during_transcribe.borrow_mut() = Some(Box::new(move || {
+            let mut mode = during.lock();
+            mode.disarm(DisarmReason::Manual);
+            mode.arm("other", "desktop", true).expect("rearm");
+        }));
+        endpoint.feed(speech(1_000));
+        let outcome = tick(
+            &mut capture,
+            &mode,
+            &mut endpoint,
+            &FakeTarget(std::cell::Cell::new(true)),
+            &FakeSink::default(),
+            1_000,
+        );
+        assert_eq!(endpoint.calls.get(), 1, "the probe must actually run");
+        assert!(matches!(outcome, Tick::NotArmed));
+        assert_eq!(mode.lock().phase().as_wire(), "waiting");
+        assert_eq!(mode.lock().binding().unwrap().session_id, "other");
+        *endpoint.during_transcribe.borrow_mut() = None;
+        endpoint.feed(speech(1_000));
+        let outcome = tick(
+            &mut capture,
+            &mode,
+            &mut endpoint,
+            &FakeTarget(std::cell::Cell::new(true)),
+            &FakeSink::default(),
+            2_000,
+        );
+        assert!(matches!(outcome, Tick::NotArmed));
+        assert_eq!(
+            endpoint.calls.get(),
+            1,
+            "old capture must not probe the new arm"
+        );
+        assert_eq!(mode.lock().phase().as_wire(), "waiting");
+    }
+
     /// Subtracts exactly what it is told was played. A real canceller is
     /// adaptive and never this clean; this one makes the question "did the
     /// far end reach the capture path" answerable without audio hardware.
@@ -4867,6 +5242,239 @@ mod tests {
             speaker,
             parking_lot::Mutex::new(armed_with_phrase("computer")),
         )
+    }
+
+    /// Captures structured fields from the production tracing boundary, not formatted text.
+    #[derive(Clone, Default)]
+    struct HoldEvents(std::sync::Arc<parking_lot::Mutex<Vec<serde_json::Value>>>);
+
+    impl tracing::Subscriber for HoldEvents {
+        fn enabled(&self, _: &tracing::Metadata<'_>) -> bool {
+            true
+        }
+        fn new_span(&self, _: &tracing::span::Attributes<'_>) -> tracing::span::Id {
+            tracing::span::Id::from_u64(1)
+        }
+        fn record(&self, _: &tracing::span::Id, _: &tracing::span::Record<'_>) {}
+        fn record_follows_from(&self, _: &tracing::span::Id, _: &tracing::span::Id) {}
+        fn enter(&self, _: &tracing::span::Id) {}
+        fn exit(&self, _: &tracing::span::Id) {}
+        fn event(&self, event: &tracing::Event<'_>) {
+            #[derive(Default)]
+            struct Fields(serde_json::Map<String, serde_json::Value>);
+            impl tracing::field::Visit for Fields {
+                fn record_u64(&mut self, field: &tracing::field::Field, value: u64) {
+                    self.0.insert(field.name().into(), value.into());
+                }
+                fn record_f64(&mut self, field: &tracing::field::Field, value: f64) {
+                    self.0.insert(field.name().into(), serde_json::json!(value));
+                }
+                fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                    self.0.insert(field.name().into(), value.into());
+                }
+                fn record_debug(
+                    &mut self,
+                    field: &tracing::field::Field,
+                    value: &dyn std::fmt::Debug,
+                ) {
+                    self.0
+                        .insert(field.name().into(), format!("{value:?}").into());
+                }
+            }
+            let mut fields = Fields::default();
+            event.record(&mut fields);
+            if fields
+                .0
+                .get("message")
+                .and_then(serde_json::Value::as_str)
+                .is_some_and(|message| message.starts_with("barge-in hold "))
+            {
+                self.0.lock().push(fields.0.into());
+            }
+        }
+    }
+
+    // Catches: missing/duplicated edge, post-clean raw energy, and unknown probes logged as zero.
+    #[test]
+    fn barge_in_hold_events_snapshot_the_edge_once_before_a_rejected_hold_resumes() {
+        let events = HoldEvents::default();
+        let (mut capture, speaker, mode) = capture_with_a_voice_and_a_phrase();
+        let generation = mode.lock().generation();
+        capture.echo = std::sync::Arc::new(parking_lot::Mutex::new(
+            super::super::echo::EchoGuard::new(Box::new(Subtract)),
+        ));
+        capture
+            .echo
+            .lock()
+            .note_rendered(&super::super::speech::SpeechAudio {
+                samples: vec![0.125; 6_400],
+                sample_rate: 16_000,
+            });
+        let mut endpoint = FakeEndpoint::new("unaddressed private text");
+        *endpoint.during_transcribe.borrow_mut() = Some(Box::new(|| {
+            // Models a recognizer that takes time; no setup deadline or performance bound.
+            std::thread::sleep(std::time::Duration::from_millis(2));
+        }));
+        let target = FakeTarget(std::cell::Cell::new(true));
+        let sink = FakeSink::default();
+        tracing::subscriber::with_default(events.clone(), || {
+            // Constant internal PCM makes the RMS oracle independent of the energy helper.
+            endpoint.feed(vec![0.25; 3_200]);
+            tick(&mut capture, &mode, &mut endpoint, &target, &sink, 200);
+            endpoint.feed(vec![0.25; 1_600]);
+            tick(&mut capture, &mode, &mut endpoint, &target, &sink, 300);
+            endpoint.feed(vec![0.0; 8_000]);
+            tick(&mut capture, &mode, &mut endpoint, &target, &sink, 800);
+            capture.release();
+        });
+        assert_eq!(
+            (speaker.pauses(), speaker.resumes(), speaker.hushes()),
+            (1, 1, 0)
+        );
+        let events = events.0.lock();
+        assert_eq!(
+            events.len(),
+            2,
+            "one edge and one resolution, including release dedup"
+        );
+        let edge = &events[0];
+        assert_eq!(edge["message"], "barge-in hold opened");
+        assert_eq!(edge["owner"], "desktop");
+        assert_eq!(edge["generation"], generation);
+        assert!(edge["hold_id"].as_u64().unwrap() > 0);
+        assert_eq!(edge["raw_rms"], 0.25);
+        assert_eq!(edge["raw_peak"], 0.25);
+        assert_eq!(edge["cleaned_rms_max"], 0.125);
+        assert_eq!(edge["cleaned_active_frames"], 10);
+        assert_eq!(edge["longest_run_ms"], 200);
+        assert_eq!(edge["drained_samples"], 3_200);
+        assert_eq!(edge["min_speech_ms"], 100);
+        assert!((edge["activity_rms"].as_f64().unwrap() - 0.01).abs() < 0.000_001);
+        for field in ["partial_samples", "far_end_dropped"] {
+            assert_eq!(edge[field], 0, "{field}");
+        }
+        assert_eq!(edge["far_end_position"], 3_200);
+        assert_eq!(edge["far_end_samples"], 3_200);
+        assert!(
+            edge["last_render_age_ms"]
+                .as_str()
+                .unwrap()
+                .starts_with("Some(")
+        );
+        assert_eq!(edge["tick_interval_ms"], "None");
+        for field in [
+            "backlog_samples",
+            "capture_batches",
+            "dropped_samples",
+            "output_nonempty",
+            "can_pause",
+        ] {
+            assert_eq!(edge[field], "None", "unavailable {field} must stay unknown");
+        }
+        assert!(edge["drain_to_clean_us"].is_u64());
+        let resolved = &events[1];
+        assert_eq!(resolved["message"], "barge-in hold resolved");
+        assert_eq!(resolved["hold_id"], edge["hold_id"]);
+        assert_eq!(resolved["owner"], "desktop");
+        assert_eq!(resolved["generation"], generation);
+        assert_eq!(resolved["reason"], "rejected");
+        assert!(resolved["elapsed_ms"].is_u64());
+        assert!(
+            resolved["inference_us"].as_u64().unwrap() >= 2_000,
+            "recognition time was lost"
+        );
+        for event in events.iter() {
+            assert!(event.get("heard").is_none() && event.get("text").is_none());
+            assert!(!event.to_string().contains("private text"));
+        }
+    }
+
+    // Catches: accepted/activated/empty/limit/release paths mislabeled as rejection or logged twice.
+    #[test]
+    fn barge_in_hold_events_name_the_actual_resolution_without_changing_the_verdict() {
+        for (text, close, limit, reason, expected) in [
+            ("computer stop", true, false, "accepted", (1, 0, 1)),
+            ("computer", true, false, "activated", (1, 0, 1)),
+            ("", true, false, "empty", (1, 1, 0)),
+            ("not addressed", false, true, "limit", (1, 1, 0)),
+            ("not addressed", false, false, "release", (1, 1, 0)),
+        ] {
+            let events = HoldEvents::default();
+            let (mut capture, speaker, mode) = capture_with_a_voice_and_a_phrase();
+            let mut endpoint = FakeEndpoint::new(text);
+            let target = FakeTarget(std::cell::Cell::new(true));
+            let sink = FakeSink::default();
+            tracing::subscriber::with_default(events.clone(), || {
+                endpoint.feed(vec![0.25; 3_200]);
+                tick(&mut capture, &mode, &mut endpoint, &target, &sink, 200);
+                if close {
+                    endpoint.feed(vec![0.0; 6_400]);
+                    tick(&mut capture, &mode, &mut endpoint, &target, &sink, 600);
+                } else if limit {
+                    endpoint.feed(vec![0.25; 320]);
+                    tick(&mut capture, &mode, &mut endpoint, &target, &sink, 8_201);
+                }
+                capture.release();
+            });
+            assert_eq!(
+                (speaker.pauses(), speaker.resumes(), speaker.hushes()),
+                expected,
+                "{reason}"
+            );
+            let events = events.0.lock();
+            assert_eq!(events.len(), 2, "{reason}: exactly one edge and resolution");
+            assert_eq!(events[1]["reason"], reason);
+            assert_eq!(events[1]["hold_id"], events[0]["hold_id"]);
+            assert_eq!(events[1]["owner"], events[0]["owner"]);
+            assert_eq!(events[1]["generation"], events[0]["generation"]);
+            assert!(events[1]["elapsed_ms"].is_u64());
+            assert!(events[1]["inference_us"].is_u64());
+            if reason == "release" || reason == "limit" {
+                assert_eq!(events[1]["inference_us"], 0);
+            }
+        }
+    }
+
+    // Catches: a recognizer result from a withdrawn generation being labeled as ordinary rejection.
+    #[test]
+    fn barge_in_hold_events_distinguish_a_stale_final_recognition() {
+        let events = HoldEvents::default();
+        let (mut capture, speaker, mode) = capture_with_a_voice_and_a_phrase();
+        let mode = std::sync::Arc::new(mode);
+        let mut endpoint = FakeEndpoint::new("computer stop");
+        let during = mode.clone();
+        *endpoint.during_transcribe.borrow_mut() = Some(Box::new(move || {
+            during.lock().disarm(DisarmReason::Manual);
+        }));
+        tracing::subscriber::with_default(events.clone(), || {
+            endpoint.feed(vec![0.25; 3_200]);
+            tick(
+                &mut capture,
+                &mode,
+                &mut endpoint,
+                &FakeTarget(std::cell::Cell::new(true)),
+                &FakeSink::default(),
+                200,
+            );
+            endpoint.feed(vec![0.0; 6_400]);
+            tick(
+                &mut capture,
+                &mode,
+                &mut endpoint,
+                &FakeTarget(std::cell::Cell::new(true)),
+                &FakeSink::default(),
+                600,
+            );
+            capture.release();
+        });
+        assert_eq!(
+            (speaker.pauses(), speaker.resumes(), speaker.hushes()),
+            (1, 1, 0)
+        );
+        let events = events.0.lock();
+        assert_eq!(events.len(), 2);
+        assert_eq!(events[1]["reason"], "stale");
+        assert_eq!(events[1]["hold_id"], events[0]["hold_id"]);
     }
 
     /// The log of 2026-10-02: replies cut with no turn accepted after them,

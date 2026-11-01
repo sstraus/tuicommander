@@ -64,6 +64,7 @@ vi.mock("../../../invoke", () => ({
 	invoke: vi.fn(async (command: string) => {
 		if (command === "get_session_foreground_process") return "claude";
 		if (command === "get_shell_state") return "idle";
+		if (command === "get_dictation_config") return {};
 		if (command !== "chat_view_snapshot") return undefined;
 		return { epoch: 0, nextSeq: 0, reset: true, updates: [], unknownRows: 0, malformedRows: 0 };
 	}),
@@ -71,8 +72,10 @@ vi.mock("../../../invoke", () => ({
 }));
 
 import { Terminal } from "../../../components/Terminal/Terminal";
+import { useDictation } from "../../../hooks/useDictation";
 import { invoke } from "../../../invoke";
 import { appLogger } from "../../../stores/appLogger";
+import { dictationStore } from "../../../stores/dictation";
 import { paneLayoutStore } from "../../../stores/paneLayout";
 import { terminalsStore } from "../../../stores/terminals";
 
@@ -618,4 +621,120 @@ describe("host-owned terminal queue recall", () => {
 		expect(cm.state.doc.toString()).toBe("");
 		expect(pty.sendCommand).not.toHaveBeenCalled();
 	});
+});
+
+describe("Chat dictation completion", () => {
+	// Catches: frozen Compose insertion ignores auto-send, or submits through a second PTY path.
+	it.each(["composer", "transcript"])("auto-sends exactly once from %s focus", async (focus) => {
+		const id = addTerminal();
+		const ui = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
+		fireEvent.click(ui.getByRole("tab", { name: "Chat" }));
+		const cm = await readyEditor(ui.container);
+		if (focus === "transcript") ui.getByLabelText("Chat transcript").focus();
+		await dictate(true);
+		await waitFor(() => expect(pty.sendCommand).toHaveBeenCalledTimes(1));
+		expect(pty.sendCommand).toHaveBeenCalledWith("live-session", "Dictated message", "claude");
+		await waitFor(() => expect(cm.state.doc.toString()).toBe(""));
+		expect(pty.enqueueCommand).not.toHaveBeenCalled();
+	});
+
+	// Catches: the auto-send fix also submits dictation that the operator wants to review.
+	it("retains the editable draft when auto-send is off", async () => {
+		const id = addTerminal();
+		const ui = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
+		fireEvent.click(ui.getByRole("tab", { name: "Chat" }));
+		const cm = await readyEditor(ui.container);
+		await dictate(false);
+		expect(cm.state.doc.toString()).toBe("Dictated message");
+		expect(pty.sendCommand).not.toHaveBeenCalled();
+	});
+
+	// Catches: treating an open native question as another submit listener or answer shortcut.
+	it("uses the normal Compose send while a native question is open", async () => {
+		const id = addTerminal();
+		const ui = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
+		fireEvent.click(ui.getByRole("tab", { name: "Chat" }));
+		await readyEditor(ui.container);
+		terminalsStore.update(id, { awaitingInput: "question", questionText: "Provide details" });
+		expect(ui.getByLabelText("Native terminal question")).toBeTruthy();
+		await dictate(true);
+		await waitFor(() => expect(pty.sendCommand).toHaveBeenCalledTimes(1));
+		expect(pty.sendCommand).toHaveBeenCalledWith("live-session", "Dictated message", "claude");
+		expect(invoke).not.toHaveBeenCalledWith("write_pty", expect.anything());
+	});
+
+	// Catches: reading auto-send for every CodeMirror editor submits unrelated input.
+	it("does not auto-send an explicit field while Chat is active", async () => {
+		const id = addTerminal();
+		const ui = render(() => (
+			<>
+				<Terminal id={id} cwd="/repo" alwaysVisible />
+				<input aria-label="Search" />
+			</>
+		));
+		fireEvent.click(ui.getByRole("tab", { name: "Chat" }));
+		const cm = await readyEditor(ui.container);
+		const search = ui.getByLabelText("Search");
+		search.focus();
+		await dictate(true);
+		expect(search).toHaveValue("Dictated message");
+		expect(cm.state.doc.toString()).toBe("");
+		expect(pty.sendCommand).not.toHaveBeenCalled();
+	});
+
+	// Catches: auto-send bypasses Compose's in-flight gate, duplicating a pending send.
+	it("keeps a second dictated draft while the first submit is pending", async () => {
+		let finish!: () => void;
+		pty.sendCommand.mockReturnValueOnce(
+			new Promise<void>((resolve) => {
+				finish = resolve;
+			}),
+		);
+		const id = addTerminal();
+		const ui = render(() => <Terminal id={id} cwd="/repo" alwaysVisible />);
+		fireEvent.click(ui.getByRole("tab", { name: "Chat" }));
+		const cm = await readyEditor(ui.container);
+		await dictate(true);
+		cm.dispatch({ selection: { anchor: cm.state.doc.length } });
+		await dictate(true);
+		expect(pty.sendCommand).toHaveBeenCalledTimes(1);
+		finish();
+		await waitFor(() => expect(cm.state.doc.toString()).toBe("Dictated message"));
+	});
+
+	async function dictate(autoSend: boolean) {
+		await dictationStore.saveConfig({ auto_send: autoSend });
+		expect(dictationStore.state.autoSend).toBe(autoSend);
+		const state = {
+			enabled: true,
+			recording: false,
+			processing: false,
+			loading: false,
+			modelStatus: "ready" as const,
+			handsFree: null,
+		};
+		const write = vi.fn();
+		const hook = useDictation({
+			pty: { write },
+			dictation: {
+				state,
+				refreshStatus: async () => {},
+				refreshHandsFree: async () => {},
+				disarmHandsFree: async () => {},
+				startRecording: async () => {
+					state.recording = true;
+				},
+				stopRecording: async () => {
+					state.recording = false;
+					return { text: "Dictated message", skip_reason: null, duration_s: 1, truncated_s: 0 };
+				},
+			},
+			setStatusInfo: vi.fn(),
+			openSettings: vi.fn(),
+		});
+		await hook.handleDictationStart();
+		await hook.handleDictationStop();
+		await hook.handleDictationStop(); // A repeated release must not submit the same take twice.
+		expect(write).not.toHaveBeenCalled();
+	}
 });

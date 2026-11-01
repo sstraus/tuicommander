@@ -25,7 +25,8 @@ beforeEach(() => {
 it("shows recorded cancelled status without offering Won't fix again", async () => {
 	render(() => <StoriesDialog project={recorded.plan.value.project} onClose={() => {}} />);
 	await screen.findByRole("heading", { name: "A prerequisite" });
-	expect(screen.getByText("Won't fix", { selector: "span" })).toBeTruthy();
+	const phase = within(screen.getByRole("region", { name: "Story details" })).getByRole("combobox", { name: "Phase" });
+	expect(within(phase).getByRole("option", { name: "Won't fix" })).toBeTruthy();
 	expect(screen.queryByRole("button", { name: "Won't fix" })).toBeNull();
 });
 

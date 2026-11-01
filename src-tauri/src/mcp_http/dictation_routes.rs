@@ -390,12 +390,20 @@ pub(super) async fn arm_hands_free_http(
 }
 
 pub(super) async fn disarm_hands_free_http(State(state): State<Arc<AppState>>) -> Response {
-    let app_handle = state.app_handle.read();
-    let Some(app) = app_handle.as_ref() else {
+    let Some(app) = state.app_handle.read().clone() else {
         return (StatusCode::SERVICE_UNAVAILABLE, "App not initialized").into_response();
     };
-    let dictation = app.state::<DictationState>();
-    Json(dictation::commands::disarm_hands_free(&state, &dictation)).into_response()
+    // ACP exit notices use the same synchronous voice sink as capture. Keep
+    // its prompt acknowledgement and runtime join off the async workers.
+    match tokio::task::spawn_blocking(move || {
+        let dictation = app.state::<DictationState>();
+        dictation::commands::disarm_hands_free(&state, &dictation)
+    })
+    .await
+    {
+        Ok(status) => Json(status).into_response(),
+        Err(error) => (StatusCode::INTERNAL_SERVER_ERROR, error.to_string()).into_response(),
+    }
 }
 
 pub(super) async fn get_hands_free_status_http(State(state): State<Arc<AppState>>) -> Response {
@@ -449,8 +457,8 @@ pub(super) async fn set_dictation_config_http(
 /// | Direction | Frame | Meaning |
 /// |---|---|---|
 /// | client → server | binary | `f32` little-endian samples, mono, 16 kHz |
-/// | client → server | text `{"type":"playback-ended"}` | the reply finished playing |
-/// | server → client | binary | `u32` little-endian sample rate, then `f32` samples |
+/// | client → server | text `{"type":"playback-ended","sequence":"1"}` | the reply finished playing |
+/// | server → client | binary | `u32` little-endian sample rate, `u64` little-endian reply sequence, then `f32` samples |
 /// | server → client | text `{"type":"stop"}` | stop playing and drop the queue |
 ///
 /// Binary for audio and text for control, so a frame's kind already says which
@@ -511,13 +519,8 @@ async fn serve_hands_free_audio(
         tokio::spawn(async move {
             while let Ok(message) = replies.recv().await {
                 let frame = match message {
-                    dictation::browser::Downlink::Speak(audio) => {
-                        let mut bytes = Vec::with_capacity(4 + audio.samples.len() * 4);
-                        bytes.extend_from_slice(&audio.sample_rate.to_le_bytes());
-                        for sample in &audio.samples {
-                            bytes.extend_from_slice(&sample.to_le_bytes());
-                        }
-                        Message::Binary(bytes.into())
+                    dictation::browser::Downlink::Speak { sequence, audio } => {
+                        Message::Binary(encode_reply(sequence, &audio).into())
                     }
                     dictation::browser::Downlink::Stop => {
                         Message::Text(r#"{"type":"stop"}"#.into())
@@ -549,8 +552,12 @@ async fn serve_hands_free_audio(
             // Ignored rather than fatal: a newer client must be able to send
             // one without losing its microphone.
             Message::Text(text) => {
-                if text.contains("playback-ended") {
-                    link.note_playback_ended();
+                if let Ok(control) = serde_json::from_str::<serde_json::Value>(&text)
+                    && control["type"] == "playback-ended"
+                    && let Some(sequence) =
+                        control["sequence"].as_str().and_then(|id| id.parse().ok())
+                {
+                    link.note_playback_ended(sequence);
                 }
             }
             Message::Close(_) => break,
@@ -560,6 +567,34 @@ async fn serve_hands_free_audio(
 
     endpoints.disconnect(&owner, &link);
     downlink.abort();
+}
+
+/// The server-owned downlink header, shared with browserVoice::decodeReply.
+fn encode_reply(sequence: u64, audio: &dictation::speech::SpeechAudio) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(12 + audio.samples.len() * 4);
+    bytes.extend_from_slice(&audio.sample_rate.to_le_bytes());
+    bytes.extend_from_slice(&sequence.to_le_bytes());
+    for sample in &audio.samples {
+        bytes.extend_from_slice(&sample.to_le_bytes());
+    }
+    bytes
+}
+
+// Catches: missing, truncated or misaligned sequence bytes play header bits as PCM.
+#[test]
+fn browser_reply_header_preserves_rate_sequence_and_pcm_bytes() {
+    let audio = dictation::speech::SpeechAudio {
+        sample_rate: 24_000,
+        samples: vec![0.5, -0.5],
+    };
+    assert_eq!(
+        encode_reply(9_007_199_254_740_993, &audio),
+        vec![
+            0xc0, 0x5d, 0, 0, // 24000 Hz
+            1, 0, 0, 0, 0, 0, 0x20, 0, // 2^53 + 1, not rounded through f64
+            0, 0, 0, 0x3f, 0, 0, 0, 0xbf, // +0.5, -0.5
+        ]
+    );
 }
 
 /// Little-endian `f32` samples, ignoring a trailing partial sample.
@@ -574,4 +609,11 @@ fn decode_samples(bytes: &[u8]) -> Vec<f32> {
         .iter()
         .map(|chunk| f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
         .collect()
+}
+
+/// Attached AI Chat targets are host state, independent of the panel window.
+pub(super) async fn get_voice_targets_http(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    Json(dictation::adapters::chat_targets(&state))
 }

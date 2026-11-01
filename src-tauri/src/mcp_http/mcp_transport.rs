@@ -546,7 +546,20 @@ async fn handle_design_mode_with_caller(
     {
         serde_json::json!({"error":"Design Mode not armed for this session"})
     } else {
-        crate::design_mode::mcp::handle(state, args).await
+        let mut result = crate::design_mode::mcp::handle(state, args).await;
+        if args["action"] == "screenshot"
+            && result.get("error").is_none()
+            && let Some(image) = result
+                .as_object_mut()
+                .and_then(|object| object.remove("image"))
+        {
+            // Reuse the rich-result envelope so collapsed and direct calls keep image media types.
+            return mark_upstream_tool_result(serde_json::json!({
+                "content":[{"type":"text","text":serialize_tool_result(&result)},image],
+                "structuredContent":result,"isError":false
+            }));
+        }
+        result
     }
 }
 
