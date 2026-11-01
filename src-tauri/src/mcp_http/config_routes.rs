@@ -558,7 +558,7 @@ pub(super) async fn put_agents_config(
 
 pub(super) async fn get_agent_hook_state(Path(agent): Path<String>) -> impl IntoResponse {
     Json(serde_json::json!({
-        "state": crate::agent_hook_commands::get_agent_hook_state(agent),
+        "state": crate::agent_hook_commands::get_agent_hook_state(agent).await,
     }))
 }
 
@@ -575,7 +575,7 @@ pub(super) async fn put_agent_hook_instrumentation(
         .get("enabled")
         .and_then(serde_json::Value::as_bool)
         .unwrap_or(false);
-    match crate::agent_hook_commands::set_agent_hook_instrumentation(agent, enabled) {
+    match crate::agent_hook_commands::set_agent_hook_instrumentation(agent, enabled).await {
         Ok(()) => (StatusCode::OK, Json(serde_json::json!({"ok": true}))),
         Err(e) => (
             StatusCode::INTERNAL_SERVER_ERROR,

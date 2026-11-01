@@ -1186,3 +1186,12 @@ Native story phase previews use the existing story action envelope: `available_t
 ### Unrelated branch integration status
 
 Branch integration queries and workspace lifecycle/monitoring payloads serialize `commit_status: "unrelated_history"` when no default-branch candidate shares a common ancestor. The response remains successful with no inspection error and `integrated: false` in branch integration queries. IPC and HTTP use the same backend classifier. Missing refs and other Git errors remain errors; an absent common ancestor is not one.
+
+### Codex global hook setup
+
+`set_agent_hook_instrumentation(agentType, enabled)` and `get_agent_hook_state(agentType)`
+run asynchronously. Codex installation attempts exact native trust; canonical
+files without verified current trust return `reviewRequired` from the state
+command. `installed` requires native readback. The HTTP hook-instrumentation and
+hook-state routes use the same owner. Status reads never grant trust. Normal
+`/hooks` review remains available when the installed CLI cannot verify setup.

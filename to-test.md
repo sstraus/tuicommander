@@ -1,3 +1,7 @@
+## Codex native hook trust (2625-c4b5) — Rust rebuild/restart required
+
+- [ ] After Boss rebuilds and manually restarts when losing current sessions is acceptable, use an isolated `CODEX_HOME` and enable Codex global hooks. Confirm exact TUIC definitions become trusted, unrelated hooks/config stay unchanged, and a changed definition reports review in `/hooks`. Review profile-specific hooks in that profile. Do not test against daily agent config. Rust does not hot-reload; the daily app was not restarted.
+
 ## Pending Session Chat Send now (2589-4bc4) — Rust rebuild/restart required
 
 - [ ] After Boss rebuilds and manually restarts when losing current sessions is acceptable, send two prompts while a throwaway Claude, Codex or ego terminal is busy. Cancel one Pending item; send another now with the return-key button. Confirm one execution and no later duplicate. Repeat from mobile Chat. The daily app was not restarted; Rust does not hot-reload.

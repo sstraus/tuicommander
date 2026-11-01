@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Verify Codex global hook trust through the installed CLI. Explicit installation trusts only exact TUIC definitions; changed or unverified hooks require normal `/hooks` review instead of an installed badge (#2625-c4b5).
+
 - Queue busy Session Chat prompts in TUIC and add per-prompt Cancel and Send now controls without duplicate idle delivery (#2589-4bc4).
 - Add correlated barge-in hold diagnostics with aggregate capture/reference snapshots and explicit resolution reasons; keep the existing voice hold policy unchanged (#2605-53fc).
 

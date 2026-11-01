@@ -1,0 +1,5 @@
+error: unexpected argument '--profile' found
+
+Usage: codex app-server [OPTIONS] [COMMAND]
+
+For more information, try '--help'.

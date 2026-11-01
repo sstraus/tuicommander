@@ -1283,3 +1283,8 @@ ring, WS, history, capture and watcher publication. Embedded base64 credentials
 use bounded aligned representations, including shared boundary-character bits,
 so arbitrary read splits do not lose decoding context. Retained overlap bytes
 keep their existing redaction marks while remaining available for future matches.
+
+Codex global hook trust is setup state, not a parsed terminal wait. Native
+`hooks/list` verification can report `reviewRequired` in Settings without
+emitting awaiting/busy/idle. Launch-scoped status notifications, PTY event
+accumulation and ego PTY/ACP request ownership are unchanged.

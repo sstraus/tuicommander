@@ -415,7 +415,7 @@ export interface AgentSettingsConfig {
 }
 
 /** Install state of an agent's TUIC hooks (mirrors Rust `InstallState::as_str`). */
-export type AgentHookState = "installed" | "outdated" | "notInstalled" | "unsupported";
+export type AgentHookState = "installed" | "outdated" | "reviewRequired" | "notInstalled" | "unsupported";
 
 /** Full agents config (matches Rust AgentsConfig) */
 export interface AgentsConfig {

@@ -923,3 +923,8 @@ added. The native question tab row stays in the title, and the unnumbered
 `Chat about this` action follows the numbered choices in navigation order.
 Desktop PTY Chat and mobile share `ChoicePromptOverlay`: multiline hints use a
 monospace block, while ordinary keyboard hints remain inline.
+
+Codex global hook trust is setup state, not a parsed terminal wait. Native
+`hooks/list` verification can report `reviewRequired` in Settings without
+emitting awaiting/busy/idle. Launch-scoped status notifications, PTY event
+accumulation and ego PTY/ACP request ownership are unchanged.

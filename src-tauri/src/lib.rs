@@ -13,6 +13,7 @@ pub(crate) mod acp_commands;
 pub(crate) mod agent;
 pub(crate) mod agent_hook;
 pub(crate) mod agent_hook_codex;
+pub(crate) mod agent_hook_codex_trust;
 pub(crate) mod agent_hook_commands;
 pub(crate) mod agent_hook_installer;
 pub(crate) mod agent_hook_launch;

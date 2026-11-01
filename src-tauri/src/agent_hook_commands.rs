@@ -34,7 +34,12 @@ fn hook_settings_path(agent_type: &str) -> Option<PathBuf> {
         "claude" => Some(home.join(".claude/settings.json")),
         "gemini" => Some(home.join(".gemini/settings.json")),
         "grok" => Some(home.join(".grok/hooks/tuic.json")),
-        "codex" => Some(home.join(".codex/hooks.json")),
+        "codex" => Some(
+            std::env::var_os("CODEX_HOME")
+                .map(PathBuf::from)
+                .unwrap_or_else(|| home.join(".codex"))
+                .join("hooks.json"),
+        ),
         "opencode" => Some(home.join(".config/opencode/plugin/tuic.ts")),
         _ => None,
     }
@@ -107,7 +112,7 @@ pub(crate) fn apply_at(
 /// commands for the sentinel regardless of how they were written.
 pub(crate) fn state_at(agent_type: &str, settings_path: &Path) -> InstallState {
     // Codex state combines the hooks file AND the config.toml enable flag — both
-    // present = installed, both absent = notInstalled, a mismatch = outdated.
+    // present = reviewRequired until native verification, both absent = notInstalled.
     if agent_type == "codex" {
         let hooks = agent_hook_installer::install_state(
             settings_path,
@@ -117,7 +122,7 @@ pub(crate) fn state_at(agent_type: &str, settings_path: &Path) -> InstallState {
             .map(|c| crate::agent_hook_codex::features_hooks_present(&c))
             .unwrap_or(false);
         return match (hooks, flag) {
-            (InstallState::Installed, true) => InstallState::Installed,
+            (InstallState::Installed, true) => InstallState::ReviewRequired,
             (InstallState::NotInstalled, false) => InstallState::NotInstalled,
             _ => InstallState::Outdated,
         };
@@ -152,16 +157,26 @@ fn persist_flag(agent_type: &str, enabled: bool) -> Result<(), String> {
 /// uninstall) the hooks in the agent's settings file. Effect applies on the next
 /// agent launch.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) fn set_agent_hook_instrumentation(
+pub(crate) async fn set_agent_hook_instrumentation(
     agent_type: String,
     enabled: bool,
 ) -> Result<(), String> {
     if crate::agent_test::active() {
         return Err("Global agent hook changes are disabled in agent-test".into());
     }
+    let _codex_guard = if agent_type == "codex" {
+        Some(crate::agent_hook_codex_trust::INSTALL_LOCK.lock().await)
+    } else {
+        None
+    };
     persist_flag(&agent_type, enabled)?;
     if let Some(path) = hook_settings_path(&agent_type) {
         apply_at(&agent_type, &path, enabled)?;
+        if agent_type == "codex" && enabled {
+            // Installation succeeded even if this CLI needs normal /hooks review.
+            // The following status read publishes reviewRequired, never installed.
+            let _ = crate::agent_hook_codex_trust::verify(&path, true).await;
+        }
     }
     Ok(())
 }
@@ -169,9 +184,25 @@ pub(crate) fn set_agent_hook_instrumentation(
 /// Report install state for the agent's hooks: `installed` / `outdated` /
 /// `notInstalled`, or `unsupported` for agents without a (wired) hook system.
 #[cfg_attr(feature = "desktop", tauri::command)]
-pub(crate) fn get_agent_hook_state(agent_type: String) -> String {
+pub(crate) async fn get_agent_hook_state(agent_type: String) -> String {
+    let _codex_guard = if agent_type == "codex" {
+        Some(crate::agent_hook_codex_trust::INSTALL_LOCK.lock().await)
+    } else {
+        None
+    };
     match hook_settings_path(&agent_type) {
-        Some(path) => state_at(&agent_type, &path).as_str().to_string(),
+        Some(path) => {
+            let state = state_at(&agent_type, &path);
+            if state == InstallState::ReviewRequired
+                && crate::agent_hook_codex_trust::verify(&path, false)
+                    .await
+                    .is_ok()
+            {
+                InstallState::Installed.as_str().to_string()
+            } else {
+                state.as_str().to_string()
+            }
+        }
         None => "unsupported".to_string(),
     }
 }
@@ -224,7 +255,11 @@ mod tests {
                 let codex_config = settings.with_file_name("config.toml");
                 let codex_before = std::fs::read(&codex_config).ok();
                 crate::agent_test::with_test_profile(dir.path(), || {
-                    let result = set_agent_hook_instrumentation(agent.into(), enabled);
+                    let result = tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .unwrap()
+                        .block_on(set_agent_hook_instrumentation(agent.into(), enabled));
                     assert_eq!(
                         std::fs::read_dir(&config).unwrap().count(),
                         0,
@@ -391,7 +426,7 @@ mod tests {
 
         apply_at("codex", &hooks, true).unwrap();
 
-        assert_eq!(state_at("codex", &hooks), InstallState::Installed);
+        assert_eq!(state_at("codex", &hooks), InstallState::ReviewRequired);
         let h = std::fs::read_to_string(&hooks).unwrap();
         assert!(h.contains("user-codex.sh"), "user Codex hook preserved");
         assert!(h.contains(r"7770;state=busy"));
@@ -412,7 +447,7 @@ mod tests {
         std::fs::write(&cfg, b"[features]\n").unwrap();
 
         apply_at("codex", &hooks, true).unwrap();
-        assert_eq!(state_at("codex", &hooks), InstallState::Installed);
+        assert_eq!(state_at("codex", &hooks), InstallState::ReviewRequired);
 
         apply_at("codex", &hooks, false).unwrap();
         assert_eq!(

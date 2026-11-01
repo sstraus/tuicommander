@@ -28,6 +28,8 @@ pub(crate) enum InstallState {
     Installed,
     /// TUIC hooks present but differ from the expected map (older version).
     Outdated,
+    /// Canonical Codex files need current native trust verification.
+    ReviewRequired,
 }
 
 impl InstallState {
@@ -37,6 +39,7 @@ impl InstallState {
             InstallState::NotInstalled => "notInstalled",
             InstallState::Installed => "installed",
             InstallState::Outdated => "outdated",
+            InstallState::ReviewRequired => "reviewRequired",
         }
     }
 }
