@@ -176,6 +176,25 @@ pub fn validate_graph(graph: &WorkflowGraph, workflow_kind: WorkflowKind) -> Res
     if graph.nodes.is_empty() || graph.nodes.len() > 128 || graph.edges.len() > 512 {
         return Err("workflow graph size is outside supported bounds".into());
     }
+    let nodes = validate_nodes(graph, workflow_kind)?;
+    let expanded = expanded_graph(graph)?;
+    let graph = &expanded;
+    let (outgoing, incoming, start) = index_edges(graph, &nodes)?;
+    validate_node_edges(graph, &outgoing, &incoming)?;
+    validate_reachability(start, &outgoing, nodes.len())?;
+    validate_bounded_cycles(graph, &nodes)?;
+    validate_regions(graph)?;
+    Ok(())
+}
+
+type NodeIndex<'a> = HashMap<&'a str, &'a NodeKind>;
+type OutgoingEdges<'a> = HashMap<&'a str, Vec<&'a Edge>>;
+type IncomingCounts<'a> = HashMap<&'a str, usize>;
+
+fn validate_nodes(
+    graph: &WorkflowGraph,
+    workflow_kind: WorkflowKind,
+) -> Result<NodeIndex<'_>, String> {
     let mut nodes = HashMap::new();
     let mut starts = 0;
     let mut ends = 0;
@@ -192,119 +211,137 @@ pub fn validate_graph(graph: &WorkflowGraph, workflow_kind: WorkflowKind) -> Res
         if nodes.insert(node.id.as_str(), &node.kind).is_some() {
             return Err(format!("duplicate workflow node id: {}", node.id));
         }
-        match &node.kind {
-            NodeKind::RunCommand { command } => command.validate()?,
-            NodeKind::Tool {
-                tool_id,
-                tool_revision,
-                command,
-            } => {
-                if tool_id.is_empty() || tool_id.len() > 128 || *tool_revision == 0 {
-                    return Err("Tool needs a pinned id/revision".into());
-                }
-                command.validate()?;
-            }
-            NodeKind::Call {
-                definition_id,
-                revision,
-                inputs,
-                outputs,
-            } => {
-                super::run::calls::validate_fields(definition_id, *revision, inputs, outputs)?;
-            }
-            NodeKind::Return { outputs, .. } => {
-                if workflow_kind != WorkflowKind::Story {
-                    return Err(
-                        "reusable Return definitions use the story-kind publication namespace"
-                            .into(),
-                    );
-                }
-                super::run::calls::validate_fields(
-                    "return",
-                    1,
-                    &Default::default(),
-                    &outputs.keys().cloned().collect::<Vec<_>>(),
-                )?;
-                ends += 1;
-            }
-            NodeKind::Start => starts += 1,
-            NodeKind::End => ends += 1,
-            NodeKind::CreateStories if workflow_kind != WorkflowKind::Plan => {
-                return Err("Create Stories is only valid in a plan workflow".into());
-            }
-            NodeKind::StoryDispatch {
-                story_template_id,
-                story_revision,
-            } => {
-                if workflow_kind != WorkflowKind::Plan
-                    || story_template_id.is_empty()
-                    || *story_revision < 1
-                {
-                    return Err(
-                        "Story Dispatch needs a published story template in a plan workflow".into(),
-                    );
-                }
-            }
-            NodeKind::Join {} if workflow_kind != WorkflowKind::Story => {
-                return Err("Join may combine only branches of one story attempt".into());
-            }
-            NodeKind::Loop { max_iterations } if !(1..=100).contains(max_iterations) => {
-                return Err("Loop max_iterations must be between 1 and 100".into());
-            }
-            NodeKind::Agent {
-                capabilities,
-                prompt_template,
-                execution,
-                ..
-            } => {
-                if let Some(execution) = execution {
-                    let fields = match execution {
-                        AgentExecution::Pty { profile } => vec![profile],
-                        AgentExecution::Acp {
-                            profile,
-                            model,
-                            effort,
-                        } => vec![profile, model, effort],
-                    };
-                    if fields.iter().any(|value| {
-                        value.is_empty()
-                            || value.len() > 256
-                            || value.trim() != value.as_str()
-                            || value.contains(['\0', '\r', '\n'])
-                    }) {
-                        return Err(
-                            "agent execution needs explicit bounded profile/model/effort values"
-                                .into(),
-                        );
-                    }
-                }
-                if prompt_template.trim().is_empty() || prompt_template.len() > 10_000 {
-                    return Err("agent prompt template is empty or too large".into());
-                }
-                if capabilities.len() > 16
-                    || capabilities.iter().any(|capability| {
-                        !matches!(
-                            capability.as_str(),
-                            "story_read"
-                                | "story_report"
-                                | "story_create"
-                                | "agent_spawn"
-                                | "notify"
-                        )
-                    })
-                {
-                    return Err("unsupported agent capability".into());
-                }
-            }
-            _ => {}
-        }
+        validate_node_kind(&node.kind, workflow_kind, &mut starts, &mut ends)?;
     }
     if starts != 1 || ends == 0 {
         return Err("workflow needs exactly one Start and at least one End".into());
     }
 
-    let expanded = expanded_graph(graph)?;
-    let graph = &expanded;
+    Ok(nodes)
+}
+
+fn validate_node_kind(
+    kind: &NodeKind,
+    workflow_kind: WorkflowKind,
+    starts: &mut usize,
+    ends: &mut usize,
+) -> Result<(), String> {
+    match kind {
+        NodeKind::RunCommand { command } => command.validate()?,
+        NodeKind::Tool {
+            tool_id,
+            tool_revision,
+            command,
+        } => {
+            if tool_id.is_empty() || tool_id.len() > 128 || *tool_revision == 0 {
+                return Err("Tool needs a pinned id/revision".into());
+            }
+            command.validate()?;
+        }
+        NodeKind::Call {
+            definition_id,
+            revision,
+            inputs,
+            outputs,
+        } => {
+            super::run::calls::validate_fields(definition_id, *revision, inputs, outputs)?;
+        }
+        NodeKind::Return { outputs, .. } => {
+            if workflow_kind != WorkflowKind::Story {
+                return Err(
+                    "reusable Return definitions use the story-kind publication namespace".into(),
+                );
+            }
+            super::run::calls::validate_fields(
+                "return",
+                1,
+                &Default::default(),
+                &outputs.keys().cloned().collect::<Vec<_>>(),
+            )?;
+            *ends += 1;
+        }
+        NodeKind::Start => *starts += 1,
+        NodeKind::End => *ends += 1,
+        NodeKind::CreateStories if workflow_kind != WorkflowKind::Plan => {
+            return Err("Create Stories is only valid in a plan workflow".into());
+        }
+        NodeKind::StoryDispatch {
+            story_template_id,
+            story_revision,
+        } => {
+            if workflow_kind != WorkflowKind::Plan
+                || story_template_id.is_empty()
+                || *story_revision < 1
+            {
+                return Err(
+                    "Story Dispatch needs a published story template in a plan workflow".into(),
+                );
+            }
+        }
+        NodeKind::Join {} if workflow_kind != WorkflowKind::Story => {
+            return Err("Join may combine only branches of one story attempt".into());
+        }
+        NodeKind::Loop { max_iterations } if !(1..=100).contains(max_iterations) => {
+            return Err("Loop max_iterations must be between 1 and 100".into());
+        }
+        NodeKind::Agent {
+            capabilities,
+            prompt_template,
+            execution,
+            ..
+        } => {
+            validate_agent_fields(capabilities, prompt_template, execution)?;
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
+fn validate_agent_fields(
+    capabilities: &[String],
+    prompt_template: &str,
+    execution: &Option<AgentExecution>,
+) -> Result<(), String> {
+    if let Some(execution) = execution {
+        let fields = match execution {
+            AgentExecution::Pty { profile } => vec![profile],
+            AgentExecution::Acp {
+                profile,
+                model,
+                effort,
+            } => vec![profile, model, effort],
+        };
+        if fields.iter().any(|value| {
+            value.is_empty()
+                || value.len() > 256
+                || value.trim() != value.as_str()
+                || value.contains(['\0', '\r', '\n'])
+        }) {
+            return Err(
+                "agent execution needs explicit bounded profile/model/effort values".into(),
+            );
+        }
+    }
+    if prompt_template.trim().is_empty() || prompt_template.len() > 10_000 {
+        return Err("agent prompt template is empty or too large".into());
+    }
+    if capabilities.len() > 16
+        || capabilities.iter().any(|capability| {
+            !matches!(
+                capability.as_str(),
+                "story_read" | "story_report" | "story_create" | "agent_spawn" | "notify"
+            )
+        })
+    {
+        return Err("unsupported agent capability".into());
+    }
+    Ok(())
+}
+
+fn index_edges<'a>(
+    graph: &'a WorkflowGraph,
+    nodes: &NodeIndex<'_>,
+) -> Result<(OutgoingEdges<'a>, IncomingCounts<'a>, &'a str), String> {
     let mut outgoing: HashMap<&str, Vec<&Edge>> = HashMap::new();
     let mut incoming: HashMap<&str, usize> = HashMap::new();
     let mut unique_edges = HashSet::new();
@@ -326,6 +363,14 @@ pub fn validate_graph(graph: &WorkflowGraph, workflow_kind: WorkflowKind) -> Res
     if incoming.get(start.id.as_str()).copied().unwrap_or(0) != 0 {
         return Err("Start cannot have an incoming edge".into());
     }
+    Ok((outgoing, incoming, start.id.as_str()))
+}
+
+fn validate_node_edges(
+    graph: &WorkflowGraph,
+    outgoing: &OutgoingEdges<'_>,
+    incoming: &IncomingCounts<'_>,
+) -> Result<(), String> {
     for node in &graph.nodes {
         let edges = outgoing
             .get(node.id.as_str())
@@ -376,8 +421,16 @@ pub fn validate_graph(graph: &WorkflowGraph, workflow_kind: WorkflowKind) -> Res
         }
     }
 
+    Ok(())
+}
+
+fn validate_reachability(
+    start: &str,
+    outgoing: &OutgoingEdges<'_>,
+    node_count: usize,
+) -> Result<(), String> {
     let mut reached = HashSet::new();
-    let mut queue = VecDeque::from([start.id.as_str()]);
+    let mut queue = VecDeque::from([start]);
     while let Some(id) = queue.pop_front() {
         if reached.insert(id) {
             for edge in outgoing.get(id).into_iter().flatten() {
@@ -385,10 +438,14 @@ pub fn validate_graph(graph: &WorkflowGraph, workflow_kind: WorkflowKind) -> Res
             }
         }
     }
-    if reached.len() != nodes.len() {
+    if reached.len() != node_count {
         return Err("workflow contains unreachable nodes".into());
     }
 
+    Ok(())
+}
+
+fn validate_bounded_cycles(graph: &WorkflowGraph, nodes: &NodeIndex<'_>) -> Result<(), String> {
     // A back edge is allowed only through a bounded Loop's repeat outcome.
     let non_repeat: Vec<&Edge> = graph
         .edges
@@ -441,7 +498,6 @@ pub fn validate_graph(graph: &WorkflowGraph, workflow_kind: WorkflowKind) -> Res
             return Err("Loop repeat edge must return through its Loop node".into());
         }
     }
-    validate_regions(graph)?;
     Ok(())
 }
 
@@ -752,4 +808,176 @@ fn validate_regions(graph: &WorkflowGraph) -> Result<(), String> {
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn linear_graph(kind: NodeKind) -> WorkflowGraph {
+        WorkflowGraph {
+            evidence_policy: None,
+            nodes: vec![
+                Node {
+                    id: "start".into(),
+                    kind: NodeKind::Start,
+                },
+                Node {
+                    id: "work".into(),
+                    kind,
+                },
+                Node {
+                    id: "end".into(),
+                    kind: NodeKind::End,
+                },
+            ],
+            edges: vec![
+                Edge {
+                    from: "start".into(),
+                    to: "work".into(),
+                    outcome: None,
+                },
+                Edge {
+                    from: "work".into(),
+                    to: "end".into(),
+                    outcome: None,
+                },
+            ],
+        }
+    }
+
+    // Catches: helper extraction reporting topology errors before invalid node fields.
+    #[test]
+    fn node_field_errors_precede_topology_errors() {
+        let mut graph = linear_graph(NodeKind::Agent {
+            role: AgentRole::Implementer,
+            capabilities: vec!["unsupported".into()],
+            prompt_template: " ".into(),
+            execution: Some(AgentExecution::Pty {
+                profile: " bad".into(),
+            }),
+        });
+        graph.edges[0].to = "missing".into();
+        assert_eq!(
+            validate_graph(&graph, WorkflowKind::Story).unwrap_err(),
+            "agent execution needs explicit bounded profile/model/effort values"
+        );
+        if let NodeKind::Agent { execution, .. } = &mut graph.nodes[1].kind {
+            *execution = None;
+        }
+        assert_eq!(
+            validate_graph(&graph, WorkflowKind::Story).unwrap_err(),
+            "agent prompt template is empty or too large"
+        );
+        if let NodeKind::Agent {
+            prompt_template, ..
+        } = &mut graph.nodes[1].kind
+        {
+            *prompt_template = "Implement".into();
+        }
+        assert_eq!(
+            validate_graph(&graph, WorkflowKind::Story).unwrap_err(),
+            "unsupported agent capability"
+        );
+    }
+
+    // Catches: bounded execution fields accepting control bytes or rejecting the inclusive limit.
+    #[test]
+    fn agent_execution_fields_keep_exact_bounds() {
+        for profile in [
+            String::new(),
+            "x".repeat(257),
+            "x\0y".into(),
+            "x\ry".into(),
+            "x\ny".into(),
+            " x".into(),
+            "x ".into(),
+        ] {
+            let graph = linear_graph(NodeKind::Agent {
+                role: AgentRole::Implementer,
+                capabilities: vec![],
+                prompt_template: "Implement".into(),
+                execution: Some(AgentExecution::Acp {
+                    profile,
+                    model: "model".into(),
+                    effort: "medium".into(),
+                }),
+            });
+            assert_eq!(
+                validate_graph(&graph, WorkflowKind::Story).unwrap_err(),
+                "agent execution needs explicit bounded profile/model/effort values"
+            );
+        }
+        let graph = linear_graph(NodeKind::Agent {
+            role: AgentRole::Implementer,
+            capabilities: vec!["notify".into(); 16],
+            prompt_template: "x".repeat(10_000),
+            execution: Some(AgentExecution::Pty {
+                profile: "x".repeat(256),
+            }),
+        });
+        assert_eq!(validate_graph(&graph, WorkflowKind::Story), Ok(()));
+    }
+
+    // Catches: index extraction losing node-id validation or the duplicate-before-kind check.
+    #[test]
+    fn invalid_and_duplicate_node_ids_keep_first_error() {
+        for id in [
+            String::new(),
+            "x".repeat(81),
+            "not.valid".into(),
+            "é".into(),
+        ] {
+            let mut graph = linear_graph(NodeKind::Notify);
+            graph.nodes[1].id = id.clone();
+            assert_eq!(
+                validate_graph(&graph, WorkflowKind::Story).unwrap_err(),
+                format!("invalid workflow node id: {id}")
+            );
+        }
+        let mut graph = linear_graph(NodeKind::Loop { max_iterations: 0 });
+        graph.nodes[1].id = "start".into();
+        assert_eq!(
+            validate_graph(&graph, WorkflowKind::Story).unwrap_err(),
+            "duplicate workflow node id: start"
+        );
+    }
+
+    // Catches: edge indexing checking connectivity before duplicates, or overlooking a missing source.
+    #[test]
+    fn edge_errors_keep_duplicate_and_endpoint_order() {
+        let mut graph = linear_graph(NodeKind::Notify);
+        graph.edges[0].from = "missing".into();
+        assert_eq!(
+            validate_graph(&graph, WorkflowKind::Story).unwrap_err(),
+            "workflow edge references a missing node"
+        );
+        let mut graph = linear_graph(NodeKind::Notify);
+        graph.edges.push(graph.edges[0].clone());
+        graph.edges[1].to = "start".into();
+        assert_eq!(
+            validate_graph(&graph, WorkflowKind::Story).unwrap_err(),
+            "duplicate workflow edge"
+        );
+    }
+
+    // Catches: treating a labeled repeat edge as sufficient without a path back to its bounded Loop.
+    #[test]
+    fn loop_repeat_requires_return_path_even_when_all_nodes_are_reachable() {
+        let mut graph = linear_graph(NodeKind::Loop {
+            max_iterations: 100,
+        });
+        graph.edges[1].outcome = Some("exhausted".into());
+        graph.edges.push(Edge {
+            from: "work".into(),
+            to: "end".into(),
+            outcome: Some("repeat".into()),
+        });
+        assert_eq!(
+            validate_graph(&graph, WorkflowKind::Story).unwrap_err(),
+            "Loop repeat edge must return through its Loop node"
+        );
+        graph.edges[2].to = "work".into();
+        assert_eq!(validate_graph(&graph, WorkflowKind::Story), Ok(()));
+    }
 }
