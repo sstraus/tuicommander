@@ -1818,7 +1818,7 @@ pub fn tick(
             .fold(0.0_f32, |peak, sample| peak.max(sample.abs()));
         let mut cleaned_rms_max = 0.0_f32;
         let mut cleaned_active_frames = 0_usize;
-        for frame in samples.chunks_exact(FRAME_SAMPLES) {
+        for frame in samples.as_chunks::<FRAME_SAMPLES>().0 {
             let rms = frame_rms(frame);
             cleaned_rms_max = cleaned_rms_max.max(rms);
             cleaned_active_frames += usize::from(rms >= capture.segmenter.config.activity_rms);
