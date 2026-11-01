@@ -1254,6 +1254,15 @@ Tasks small-list mode (#1851-7ade): when the provider reports at most 1,000 matc
 
 GitHub Tasks boards (#1846-55d7): the optional provider `listBoards(signal)` port discovers the current user Projects v2 when Board opens. The existing picker selects a project; paging preserves project identities. Missing `read:project` stays visible instead of claiming there are no boards. Providers without discovery retain their configured boards. Discovery does not persist selections or write to GitHub.
 
+Design Mode captures accept per-call `format` (`webp` by default or `png`),
+`quality` (WebP 1–100, default 25) and optional `max_long_edge` (positive pixels,
+downsize only). Use WebP for text/layout, quality 50+ for small glyphs/icons, or
+PNG for pixel-exact detail. Responses report path, format, quality (`null` for PNG),
+bytes and media type; MCP sends a correctly typed image block. Token cost follows
+pixel dimensions, not file format or bytes (Claude: about 1,296 tokens per
+megapixel, capped at 1,568 standard / 4,784 high-res). HTTP/IPC use the same
+screenshot fields in `args`; no user setting is added.
+
 Design Mode agent browser commands use bounded per-repository native-port requests
 and UUID replies, with ten-second timeouts and Stop cancellation. The extension
 owns reviewed-tab and host-permission checks. Eval needs explicit optional-origin

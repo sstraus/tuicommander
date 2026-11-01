@@ -2621,6 +2621,15 @@ The desktop `close-dialog` event and its SSE copy include `background_available:
 
 When the desktop WebViews are deliberately unloaded in background mode, `ui` actions return `{"error":"webview_unloaded"}` immediately. This does not affect PTYs or remote terminal streams. SSE emits `background-mode-changed` with `state` equal to `hidden`, `unloaded` or `visible`.
 
+Design Mode captures accept per-call `format` (`webp` by default or `png`),
+`quality` (WebP 1–100, default 25) and optional `max_long_edge` (positive pixels,
+downsize only). Use WebP for text/layout, quality 50+ for small glyphs/icons, or
+PNG for pixel-exact detail. Responses report path, format, quality (`null` for PNG),
+bytes and media type; MCP sends a correctly typed image block. Token cost follows
+pixel dimensions, not file format or bytes (Claude: about 1,296 tokens per
+megapixel, capped at 1,568 standard / 4,784 high-res). HTTP/IPC use the same
+screenshot fields in `args`; no user setting is added.
+
 Design Mode browser commands (`navigate`, `reload`, `screenshot`, `errors`, `eval`)
 return correlated native-port results with a ten-second timeout. Direct MCP tool
 lists, meta search and schema lookup filter Design Mode by the armed terminal

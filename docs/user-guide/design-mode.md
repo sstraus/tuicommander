@@ -48,8 +48,19 @@ If the sidebar icon is hidden, open the Extensions (puzzle) menu and pin **TUICo
 Agents can request `design_navigate`, `design_reload`, `design_screenshot`,
 `design_errors`, and `design_eval` through `ui`. The native port returns a request-id-matched reply, with a ten-second
 timeout. Start selects the launched page after an extension acknowledgment, without requiring the sidebar. Opening the sidebar on another page selects that page for later commands. Screenshot fails
-if that tab is not visible; it never captures a different active tab. PNG files are
-stored in the instance's `design-grabs` directory.
+if that tab is not visible; it never captures a different active tab. Captures are
+stored in the instance's `design-grabs` directory with the correct `.webp` or `.png` suffix.
+
+The agent chooses the encoding on each `ui action=design_screenshot` call:
+- `format`: `webp` (default) for text and layout, or `png` for pixel-exact detail.
+- `quality`: WebP quality from 1 to 100, default 25. Use 50 or more for small glyphs and icons. PNG ignores quality.
+- `max_long_edge`: optional positive pixel limit. The extension downsizes before encoding and never upscales.
+
+The response includes the image, path, format, quality (`null` for PNG), byte size
+and media type. There is no user setting. Token cost follows pixel dimensions,
+not format or byte size: Claude uses about 1,296 tokens per megapixel, capped at
+1,568 standard / 4,784 high-res. Selected-element crops remain lossless PNG and
+keep their existing 800 × 600 pixel bounds.
 
 For screenshots without repeated browser-action gestures, click **Let agents capture any site**
 in the extension sidebar, then accept Chrome's optional all-sites permission prompt.

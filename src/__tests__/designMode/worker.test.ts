@@ -1,6 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-type Snapshot = { selectedSessionId?: string; servers: { servers: { url: string }[] } };
+type Snapshot = {
+	selectedSessionId?: string;
+	servers: { servers: { url: string }[] };
+	picks: { image?: string; captureError?: string; raw: object; width?: number; height?: number }[];
+};
 type Reply = { ok: boolean; result?: Snapshot; error?: string };
 const PANEL = "chrome-extension://ext/panel.html";
 type NativePayload = {
@@ -39,12 +43,39 @@ vi.mock("../../../browser-extension/design-mode/native.js", () => ({
 async function boot(
 	historyUnavailable = false,
 	tabs: Tab[] = [{ id: 7, windowId: 2, active: true, url: "http://localhost:5173/" }],
+	capture = { width: 100, height: 50, bytes: 8 },
 ) {
 	let listener: (m: unknown, s: unknown, r: (x: Reply) => void) => boolean | undefined = () => undefined;
 	const store: Record<string, unknown> = {};
 	const sessionStore: Record<string, unknown> = {};
 	const tabsUpdate = vi.fn(async () => {});
-	vi.stubGlobal("fetch", async () => ({ ok: true, json: async () => ({ repoPath: "/repo", sessionId: "A" }) }));
+	vi.stubGlobal("fetch", async () => ({
+		ok: true,
+		json: async () => ({ repoPath: "/repo", sessionId: "A" }),
+		blob: async () => new Blob(),
+	}));
+	vi.stubGlobal("createImageBitmap", async () => ({ ...capture, close: () => {} }));
+	const draw = vi.fn();
+	const encode = vi.fn(
+		async ({ type }: { type: string }) =>
+			new Blob(
+				[capture.bytes === 8 ? new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]) : new Uint8Array(capture.bytes)],
+				{ type },
+			),
+	);
+	vi.stubGlobal(
+		"OffscreenCanvas",
+		class {
+			constructor(
+				public width: number,
+				public height: number,
+			) {}
+			getContext() {
+				return { drawImage: draw };
+			}
+			convertToBlob = encode;
+		},
+	);
 	vi.stubGlobal("chrome", {
 		runtime: {
 			getURL: (p: string) => `chrome-extension://ext/${p}`,
@@ -98,8 +129,9 @@ async function boot(
 	});
 	// @ts-expect-error plain MV3 module without declarations
 	await import("../../../browser-extension/design-mode/worker.js");
-	const send = (message: object) => new Promise<Reply>((resolve) => listener(message, { url: PANEL }, resolve));
-	return { send, tabsUpdate };
+	const send = (message: object, sender: object = { url: PANEL }) =>
+		new Promise<Reply>((resolve) => listener(message, sender, resolve));
+	return { send, tabsUpdate, draw, encode };
 }
 
 describe("Design Mode worker dev-server wiring", () => {
@@ -119,6 +151,51 @@ describe("Design Mode worker dev-server wiring", () => {
 		vi.unstubAllGlobals();
 	});
 
+	// Catches: user picks inheriting the lossy agent-screenshot default or losing crop size limits.
+	it.each([
+		{ width: 100, height: 50, rect: { x: 10, y: 5, width: 80, height: 40 }, output: [80, 40] },
+		{ width: 1600, height: 900, rect: { x: 0, y: 0, width: 1600, height: 900 }, output: [800, 450] },
+		{ width: 900, height: 1800, rect: { x: 0, y: 0, width: 900, height: 1800 }, output: [300, 600] },
+	])(
+		"keeps selected-element crops lossless PNG within bounds: $width x $height",
+		async ({ width, height, rect, output }) => {
+			const { send, encode, draw } = await boot(false, undefined, { width, height, bytes: 8 });
+			const url = "http://localhost:5173/";
+			const raw = { url, rect };
+			const reply = await send(
+				{ kind: "pick", documentUrl: url, viewport: { width }, raw },
+				{ tab: { id: 7 }, frameId: 0, documentId: "doc", url },
+			);
+			expect(reply.ok).toBe(true);
+			expect(encode).toHaveBeenCalledWith({ type: "image/png" });
+			expect(draw.mock.calls[0].slice(1)).toEqual([rect.x, rect.y, rect.width, rect.height, 0, 0, ...output]);
+			expect(reply.result?.picks).toEqual([
+				expect.objectContaining({
+					image: "data:image/png;base64,iVBORw0KGgo=",
+					raw,
+					width: output[0],
+					height: output[1],
+				}),
+			]);
+		},
+	);
+
+	// Catches: oversized lossless crops dropping DOM evidence or leaking an oversized attachment.
+	it("retains DOM evidence without an image when the PNG crop exceeds 128 KiB", async () => {
+		const { send } = await boot(false, undefined, { width: 100, height: 50, bytes: 128 * 1024 + 1 });
+		const url = "http://localhost:5173/";
+		const raw = { url, rect: { x: 0, y: 0, width: 100, height: 50 } };
+		const reply = await send(
+			{ kind: "pick", documentUrl: url, viewport: { width: 100 }, raw },
+			{ tab: { id: 7 }, frameId: 0, documentId: "doc", url },
+		);
+		expect(reply.ok).toBe(true);
+		expect(reply.result?.picks).toEqual([
+			expect.objectContaining({ raw, captureError: "Screenshot too large; DOM evidence retained." }),
+		]);
+		expect(reply.result?.picks[0].image).toBeUndefined();
+	});
+
 	// Catches: the command receiver depending on a sidebar request or a later heartbeat to start.
 	it("starts the native command receiver when the worker boots without a sidebar", async () => {
 		await boot();
@@ -131,7 +208,7 @@ describe("Design Mode worker dev-server wiring", () => {
 		offeredCommands.push(
 			{ requestId: "ready", sessionId: "A", action: "ready", args: { url: "http://localhost:5173/" } },
 			{ requestId: "eval", sessionId: "A", action: "eval", args: { script: "1+1" } },
-			{ requestId: "screenshot", sessionId: "A", action: "screenshot" },
+			{ requestId: "screenshot", sessionId: "A", action: "screenshot", args: { format: "png" } },
 			{ requestId: "errors", sessionId: "A", action: "errors" },
 		);
 		await boot();
@@ -145,7 +222,15 @@ describe("Design Mode worker dev-server wiring", () => {
 		});
 		expect(replies[2].reply).toEqual({
 			ok: true,
-			result: { image: "data:image/png;base64,iVBORw0KGgo=", url: "http://localhost:5173/" },
+			result: {
+				image: "data:image/png;base64,iVBORw0KGgo=",
+				url: "http://localhost:5173/",
+				format: "png",
+				quality: null,
+				bytes: 8,
+				width: 100,
+				height: 50,
+			},
 		});
 		expect(replies[3].reply).toEqual({ ok: true, result: { errors: [] } });
 	});
