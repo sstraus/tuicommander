@@ -262,7 +262,7 @@ When enabled, TUICommander polls the Claude API every 5 minutes and shows:
 - **Per-project breakdown** — All projects ranked by token usage. Click a project to filter the dashboard to that project.
 
 The dashboard opens as a tab in the Activity Center. You can also reach it by clicking the Claude usage badge in the status bar.
-When opened from the badge, its rate-limit data uses that session's credential profile. The transcript-based charts and project statistics currently scan the default Claude projects directory.
+When opened from the badge, its rate-limit data uses that session's credential profile. Sessions with a nonempty `ANTHROPIC_API_KEY` or `ANTHROPIC_AUTH_TOKEN` show a neutral **API key** label instead of subscription usage. TUICommander does not read OAuth credentials or call the usage API for these sessions, even when `CLAUDE_CONFIG_DIR` is set. The transcript-based charts and project statistics currently scan the default Claude projects directory.
 
 ## Agent Teams
 

@@ -1882,7 +1882,7 @@ Sandboxed filesystem operations for the file manager panel. `/fs/read-external` 
 ## Agent Usage Endpoints
 
 ```
-GET /claude/usage?sessionId=<id>               -> UsageApiResponse (session profile rate limits, 5-min cache per profile; omitted id selects default)
+GET /claude/usage?sessionId=<id>               -> UsageApiResponse (session profile rate limits, 5-min cache per profile; omitted id selects default; API-key sessions return the same `Claude API-key authentication` error as IPC without credential lookup or usage requests)
 GET /claude/projects                           -> ProjectEntry[]
 GET /claude/timeline?scope=all&days=7          -> TimelinePoint[] (hourly token aggregation)
 GET /claude/session-stats?scope=current        -> SessionStats

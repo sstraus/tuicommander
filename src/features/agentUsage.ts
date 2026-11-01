@@ -97,6 +97,7 @@ export function toUsageAgent(agentType: string | null | undefined): UsageAgent |
 
 /** Classify a poll failure into the short text the ticker shows. */
 export function describeUsageError(errStr: string, missingTokenHint: string): string {
+	if (errStr === "Claude API-key authentication" || errStr === "Error: Claude API-key authentication") return "API key";
 	if (errStr.toLowerCase().includes(missingTokenHint.toLowerCase()) || errStr.includes("No Codex credentials"))
 		return "no token";
 	if (errStr.includes("401") || errStr.includes("403")) return "token expired";
@@ -177,10 +178,10 @@ async function poll(agent: UsageAgent, sessionId: string | null): Promise<void> 
 			/No Claude OAuth token|Cannot (?:resolve|read) Claude session profile|Failed to parse credentials/.test(errStr)
 				? "unknown"
 				: describeUsageError(errStr, spec.missingTokenHint);
-		if (text !== "no token") {
+		if (text !== "no token" && text !== "API key") {
 			appLogger.warn("network", `${spec.label} usage poll: ${text}`, errStr);
 		}
-		write(agent === "ego" ? "" : text, 5);
+		write(agent === "ego" ? "" : text, text === "API key" ? 0 : 5);
 	}
 }
 
