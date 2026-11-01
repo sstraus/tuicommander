@@ -399,52 +399,70 @@ async fn command_workspace(
             // Never guess a canonical checkout or derive one from a PTY identity.
             return Err("typed plan command needs an assigned plan artifact/workspace".into());
         }
-        let key = format!("command-workspace:{}:{}", run.id, graph.id);
-        let snapshot = store.snapshot(&run.id)?;
-        if snapshot.effects.iter().any(|existing| existing.key == key) {
-            return Err("workspace preparation already intended; reconcile before retry".into());
-        }
-        let reserved = store.command(
-            &run.id,
-            &format!("reserve:{key}"),
-            super::super::RunCommand::ReserveEffect {
-                key: key.clone(),
-                kind: EffectKind::PrepareWorkspace,
-            },
-        )?;
-        let workspace_effect = reserved
-            .snapshot
-            .effects
-            .iter()
-            .find(|effect| effect.key == key)
-            .ok_or("workspace intent missing")?;
-        let branch = format!("workflow/{}-{}", run.id, graph.target_id);
-        let workspace = crate::mcp_http::mcp_transport::create_daemon_workflow_worktree(
-            state,
-            &run.project,
-            &branch,
-            None,
-        )
-        .await?;
-        store.command(
-            &run.id,
-            &format!("assign:{key}"),
-            super::super::RunCommand::AssignWorktree {
-                story_id: graph.target_id.clone(),
-                path: workspace.path.clone(),
-            },
-        )?;
-        store.command(
-            &run.id,
-            &format!("settle:{key}"),
-            super::super::RunCommand::MarkEffect {
-                effect_id: workspace_effect.id.clone(),
-                succeeded: true,
-            },
-        )?;
-        workspace.path
+        prepare_command_workspace(state, store, run, graph).await?
     };
     Ok(workspace)
+}
+
+fn reserve_command_workspace(
+    store: &RunStore,
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+) -> Result<(String, String), String> {
+    let key = format!("command-workspace:{}:{}", run.id, graph.id);
+    let snapshot = store.snapshot(&run.id)?;
+    if snapshot.effects.iter().any(|existing| existing.key == key) {
+        return Err("workspace preparation already intended; reconcile before retry".into());
+    }
+    let reserved = store.command(
+        &run.id,
+        &format!("reserve:{key}"),
+        super::super::RunCommand::ReserveEffect {
+            key: key.clone(),
+            kind: EffectKind::PrepareWorkspace,
+        },
+    )?;
+    let workspace_effect = reserved
+        .snapshot
+        .effects
+        .iter()
+        .find(|effect| effect.key == key)
+        .ok_or("workspace intent missing")?;
+    Ok((key, workspace_effect.id.clone()))
+}
+
+async fn prepare_command_workspace(
+    state: &Arc<AppState>,
+    store: &RunStore,
+    run: &RunSnapshot,
+    graph: &GraphExecution,
+) -> Result<String, String> {
+    let (key, effect_id) = reserve_command_workspace(store, run, graph)?;
+    let branch = format!("workflow/{}-{}", run.id, graph.target_id);
+    let workspace = crate::mcp_http::mcp_transport::create_daemon_workflow_worktree(
+        state,
+        &run.project,
+        &branch,
+        None,
+    )
+    .await?;
+    store.command(
+        &run.id,
+        &format!("assign:{key}"),
+        super::super::RunCommand::AssignWorktree {
+            story_id: graph.target_id.clone(),
+            path: workspace.path.clone(),
+        },
+    )?;
+    store.command(
+        &run.id,
+        &format!("settle:{key}"),
+        super::super::RunCommand::MarkEffect {
+            effect_id,
+            succeeded: true,
+        },
+    )?;
+    Ok(workspace.path)
 }
 
 async fn drive_agent(
