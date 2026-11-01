@@ -285,19 +285,19 @@ pub(crate) async fn browser_command(
         }
         "screenshot" => {
             use base64::Engine;
-            let encoded = result["image"]
-                .as_str()
-                .and_then(|s| s.strip_prefix("data:image/png;base64,"))
-                .ok_or("invalid_image: Browser returned no PNG")?;
-            let bytes = base64::engine::general_purpose::STANDARD
-                .decode(encoded)
-                .map_err(|e| e.to_string())?;
-            if !bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-                return Err("invalid_image: Browser returned no PNG".into());
-            }
-            let path = super::captures::save_png(&state.data_dir.join("design-grabs"), &bytes)?
-                .ok_or("result_too_large: PNG exceeds limit")?;
-            Ok(serde_json::json!({"path":path}))
+            let capture = super::captures::Capture::from_data_url(
+                result["image"]
+                    .as_str()
+                    .ok_or("invalid_image: Browser returned no image")?,
+                super::captures::MAX_PNG_BYTES,
+            )?;
+            let path = capture
+                .save(&state.data_dir.join("design-grabs"))?
+                .ok_or("result_too_large: Screenshot exceeds limit")?;
+            Ok(
+                serde_json::json!({"path":path,"format":capture.format,"quality":if capture.format == "webp" { result["quality"].clone() } else { serde_json::Value::Null },"bytes":capture.bytes.len(),"mediaType":capture.media_type,
+                "image":{"type":"image","mimeType":capture.media_type,"data":base64::engine::general_purpose::STANDARD.encode(&capture.bytes)}}),
+            )
         }
         _ => Ok(result.clone()),
     }

@@ -88,7 +88,15 @@ pub(super) fn complete_schema(tool: &mut Value) {
         }
         "ui" => {
             let design = crate::design_mode::mcp::tool_definition();
-            for field in ["session_id", "repo_path", "browser", "script"] {
+            for field in [
+                "session_id",
+                "repo_path",
+                "browser",
+                "script",
+                "format",
+                "quality",
+                "max_long_edge",
+            ] {
                 schema["properties"][field] = design["inputSchema"]["properties"][field].clone();
             }
             let tab_url = schema["properties"]["url"]["description"]

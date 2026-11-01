@@ -1,6 +1,12 @@
 ## Browser voice queue (2605-53fc) — Rust rebuild/restart required
 
 - [ ] After Boss manually rebuilds/restarts when losing current sessions is acceptable, reload the browser tab (the audio frame header changed). Queue several spoken replies and confirm each finishes without truncation. Talk over a reply without the activation phrase, then confirm its remainder and later replies resume in order; interrupt the turn and confirm none of its queued audio returns. Automated scheduling/ACK tests do not verify real speaker output or microphone/AEC behavior. No daily instance was restarted; Rust does not hot-reload. The original native stutter remains unproven.
+## Pinned reusable workflow Calls (2516-8fd1) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a decision/check Call in a throwaway project. Inspect nested pins and typed outputs, republish the callee, and confirm the live run keeps its original revision. Cancel a live child and inspect its stop request plus retained integration obligations. No daily instance was restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.
+## Design Mode lossless selected-element crops (2617-69a6)
+
+- [ ] After rebuilding the sidecar and reopening Design Mode to deploy the extension, select a small icon and a large element. Confirm feedback retains PNG crop references with the existing 800 × 600 pixel and 128 KiB limits, while agent screenshots still default to WebP and accept explicit PNG. Targeted worker tests verify PNG adapter calls, crop dimensions and oversized-image DOM fallback; live Chrome pixel fidelity is not claimed. No daily app was restarted.
 
 ## Explicit worktree bases (2613-9ad7) — Rust rebuild/restart required
 
@@ -3288,3 +3294,5 @@ Isolated Chrome screenshot capture timed out after 35 seconds; visual rendering 
 
 - [ ] After the next manual backend restart, launch a child agent and confirm its progress call returns parent mail guidance without a user notice or waiting badge; confirm root progress still notifies. Rust changes require a manual `make dev` restart or release rebuild; do not restart an active session for this check. (#2597-76c6)
 - [ ] Voice Settings: compare Speech assets and Spoken replies in Paper and Commander; check aligned rows, model/voice dropdowns and named asset actions. Confirm existing download, preview and recording actions still use the same state (#2608-f1c4).
+
+- [ ] After a manual backend restart and extension reinstall, use Design Mode `ui action=design_screenshot` with default WebP, PNG and `quality:55,max_long_edge:800`. Confirm readable images, matching file suffix/media type and reported metadata. Selected-element crops use WebP; launch-tab readiness must remain unchanged (#2617-69a6).

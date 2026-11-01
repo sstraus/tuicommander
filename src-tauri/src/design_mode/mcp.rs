@@ -6,12 +6,15 @@ use std::sync::Arc;
 pub(crate) fn tool_definition() -> Value {
     json!({
         "name": "design_mode",
-        "description": "Start or stop Design Mode on the host. Use start with session_id and url as the default path for layout work: it binds the browser to the agent that printed the link and opens that HTTP(S) URL directly. Omit url to use dev-server discovery/onboarding. Requires a live terminal agent; an ACP coordinator should name the target terminal agent. stop, reload and navigate use repo_path from start/status; reload makes the browser reload the reviewed tab once, after you change the page; navigate opens HTTP(S) pages (local by default; remote hosts require an extension host grant); screenshot returns a PNG path; errors returns captured page errors; eval runs JavaScript only with an explicit optional host grant, including an all-sites grant. Browser commands return correlated replies within 10 seconds; status lists repository bindings. Browser extension setup is required once per repository profile.",
+        "description": "Start or stop Design Mode on the host. Use start with session_id and url as the default path for layout work: it binds the browser to the agent that printed the link and opens that HTTP(S) URL directly. Omit url to use dev-server discovery/onboarding. Requires a live terminal agent; an ACP coordinator should name the target terminal agent. stop, reload and navigate use repo_path from start/status; reload makes the browser reload the reviewed tab once, after you change the page; navigate opens HTTP(S) pages (local by default; remote hosts require an extension host grant); screenshot returns an image and path with format, quality (null for PNG), and byte size; choose WebP (default, quality 25) to read text and layout, quality 50+ for small glyphs and icons, PNG for pixel-exact detail. Optional max_long_edge downsizes before encoding. Token cost follows pixel dimensions, not format or bytes (Claude: about 1,296 tokens per megapixel, capped at 1,568 standard / 4,784 high-res); errors returns captured page errors; eval runs JavaScript only with an explicit optional host grant, including an all-sites grant. Browser commands return correlated replies within 10 seconds; status lists repository bindings. Browser extension setup is required once per repository profile.",
         "inputSchema": {"type":"object", "additionalProperties":false, "required":["action"], "properties": {
             "action":{"type":"string","enum":["start","stop","status","reload","navigate","screenshot","errors","eval"]},
             "session_id":{"type":"string","description":"Live agent PTY id, TUIC session, alias, unique prefix or display name; required for start"},
             "repo_path":{"type":"string","description":"Repository path returned by start/status; required for stop, reload and navigate"},
             "script":{"type":"string","description":"JavaScript expression for eval; requires an explicit host permission grant"},
+            "format":{"type":"string","enum":["webp","png"],"default":"webp","description":"Screenshot encoding: WebP for text/layout, PNG for pixel-exact detail"},
+            "quality":{"type":"integer","minimum":1,"maximum":100,"default":25,"description":"WebP quality; use 50+ for small glyphs and icons. Ignored for PNG"},
+            "max_long_edge":{"type":"integer","minimum":1,"maximum":9007199254740991u64,"description":"Maximum screenshot long edge in pixels; downsize only, before encoding"},
             "browser":{"type":"string","enum":["chrome","edge"]},
             "url":{"type":"string","description":"Absolute HTTP or HTTPS URL, including localhost, opened directly on start; for navigate, the page to open"}
         }}
@@ -60,6 +63,15 @@ async fn execute(state: &Arc<AppState>, args: &Value) -> Result<Value, String> {
             let fields = match action {
                 "navigate" => json!({"url":required("url")?}),
                 "eval" => json!({"script":required("script")?}),
+                "screenshot" => {
+                    let mut fields = json!({});
+                    for key in ["format", "quality", "max_long_edge"] {
+                        if let Some(value) = args.get(key) {
+                            fields[key] = value.clone();
+                        }
+                    }
+                    fields
+                }
                 _ => json!({}),
             };
             super::browser_command(state, &repo, action, fields).await

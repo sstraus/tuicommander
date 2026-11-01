@@ -78,7 +78,7 @@ impl From<RunStartError> for String {
 // 9: WF03 branch-local questions and contract-5 input projection.
 // 10: WF05 typed command/Tool and workspace effect kinds.
 // 11: native integration saga, policy and proof-obligation outbox.
-const RUN_STORE_SCHEMA_VERSION: i64 = 11;
+const RUN_STORE_SCHEMA_VERSION: i64 = 12;
 
 mod approval;
 pub(super) mod integration;
@@ -2293,7 +2293,19 @@ fn choose_event(
             ) {
                 super::reducer::validate_resume(snapshot)?;
             }
-            let event = if let super::graph::GraphTransition::Start {
+            let event = if let super::graph::GraphTransition::CallStart {
+                execution_id,
+                activation_id,
+            } = &transition
+            {
+                super::graph::GraphEvent::Started {
+                    execution: Box::new(super::calls::start(
+                        snapshot,
+                        execution_id,
+                        activation_id,
+                    )?),
+                }
+            } else if let super::graph::GraphTransition::Start {
                 execution_id,
                 target_id,
             } = &transition
@@ -2332,9 +2344,43 @@ fn choose_event(
                         snapshot.story_definition_revision,
                     )
                 };
-                let definition = WorkflowStore::open()?.get_published(id, revision)?;
+                let persisted = snapshot.graph_executions.first().and_then(|root| {
+                    if root.definition.id == *id && root.definition.revision == revision {
+                        Some(root.definition.clone())
+                    } else {
+                        root.contract
+                            .as_ref()
+                            .and_then(|c| {
+                                c.definition_pins
+                                    .iter()
+                                    .find(|p| p.id == *id && p.revision == revision)
+                            })
+                            .cloned()
+                    }
+                });
+                let definition = if let Some(definition) = persisted {
+                    definition
+                } else if snapshot.event_contract_version >= 6
+                    && snapshot.root_target.is_some()
+                    && !snapshot.graph_executions.is_empty()
+                {
+                    return Err("dispatched definition pin missing".into());
+                } else {
+                    // Historical/manual plan starts predate the atomic graph-root boundary.
+                    WorkflowStore::open()?.get_published(id, revision)?
+                };
                 if definition.project != snapshot.project {
                     return Err("graph definition does not belong to run project".into());
+                }
+                if definition
+                    .graph
+                    .nodes
+                    .iter()
+                    .any(|n| matches!(n.kind, NodeKind::Return { .. }))
+                {
+                    return Err(
+                        "reusable Return definitions execute only through a parent Call".into(),
+                    );
                 }
                 let mut execution = super::graph::GraphExecution::start_for_contract(
                     execution_id.clone(),
@@ -2350,10 +2396,31 @@ fn choose_event(
                         .first()
                         .and_then(|graph| graph.contract.as_ref())
                         .and_then(|contract| contract.agent_policy.clone());
-                    execution.contract = Some(super::contracts::GraphContract::with_agent_policy(
-                        &definition,
-                        policy,
-                    )?);
+                    let mut contract = if snapshot.event_contract_version >= 6 {
+                        let pins = if let Some(root) = snapshot
+                            .graph_executions
+                            .first()
+                            .and_then(|g| g.contract.as_ref())
+                            .filter(|_| snapshot.root_target.is_some())
+                        {
+                            super::calls::definition_closure(&definition, &|id, revision| {
+                                root.definition_pins
+                                    .iter()
+                                    .find(|p| p.id == id && p.revision == revision)
+                                    .cloned()
+                                    .ok_or_else(|| "transitive definition pin missing".into())
+                            })?
+                        } else {
+                            super::calls::definition_closure(&definition, &|id, revision| {
+                                WorkflowStore::open()?.get_published(id, revision)
+                            })?
+                        };
+                        super::calls::pin_contract(&definition, policy, pins)?
+                    } else {
+                        super::contracts::GraphContract::with_agent_policy(&definition, policy)?
+                    };
+                    contract.version = snapshot.event_contract_version;
+                    execution.contract = Some(contract);
                 }
                 super::graph::GraphEvent::Started {
                     execution: Box::new(execution),
@@ -3472,7 +3539,7 @@ fn require_dispatch_slot(
         for graph in run
             .graph_executions
             .iter()
-            .filter(|g| g.target_id != run.plan_id && !g.completed)
+            .filter(|g| g.call_binding.is_none() && g.target_id != run.plan_id && !g.completed)
         {
             active += 1;
             let other = StoryStore::open()?.get_story(&graph.target_id)?;

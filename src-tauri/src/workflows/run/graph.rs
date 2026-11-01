@@ -46,6 +46,8 @@ pub enum EdgeOutcome {
     Fail,
     Completed,
     Blocked,
+    Failed,
+    Cancelled,
 }
 
 impl EdgeOutcome {
@@ -58,6 +60,8 @@ impl EdgeOutcome {
             Self::Fail => "fail",
             Self::Completed => "completed",
             Self::Blocked => "blocked",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
         }
     }
 }
@@ -133,6 +137,10 @@ pub struct GraphExecution {
     pub forks: Vec<super::parallel::ForkInstance>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub checks: Vec<super::parallel::ScopedCheck>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call_binding: Option<super::calls::CallBinding>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub call_receipt: Option<super::calls::CallReceipt>,
 }
 
 impl GraphExecution {
@@ -195,6 +203,8 @@ impl GraphExecution {
             completed: false,
             forks: vec![],
             checks: vec![],
+            call_binding: None,
+            call_receipt: None,
         })
     }
 
@@ -216,6 +226,7 @@ impl GraphExecution {
                     .version = version;
             }
             super::contracts::PARALLEL_EVENT_CONTRACT_VERSION
+            | super::contracts::BRANCH_INPUT_EVENT_CONTRACT_VERSION
             | super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {
                 execution
                     .contract
@@ -238,6 +249,7 @@ impl GraphExecution {
     ) -> Result<u16, String> {
         match version {
             super::contracts::PARALLEL_EVENT_CONTRACT_VERSION
+            | super::contracts::BRANCH_INPUT_EVENT_CONTRACT_VERSION
             | super::contracts::CURRENT_EVENT_CONTRACT_VERSION => {
                 self.apply_parallel(transition, remaining_loops)
             }
@@ -356,6 +368,32 @@ impl GraphExecution {
                     self.activations[index].state = ActivationState::Paused;
                     return Ok(0);
                 }
+                if let NodeKind::Return {
+                    outcome: result,
+                    outputs,
+                } = &kind
+                {
+                    let binding = self
+                        .call_binding
+                        .as_ref()
+                        .ok_or("Return is valid only in a child Call")?;
+                    if outcome.is_some() || evidence.is_some() || binding.stop_requested {
+                        return Err(
+                            "Return cannot override a result or a child stop request".into()
+                        );
+                    }
+                    self.call_receipt = Some(super::calls::CallReceipt {
+                        outcome: *result,
+                        outputs: outputs.clone(),
+                        accounting_execution_ids: std::collections::BTreeSet::from([self
+                            .id
+                            .clone()]),
+                        usage_coverage: super::calls::UsageCoverage::Unknown,
+                    });
+                    self.activations[index].state = ActivationState::Completed;
+                    self.completed = true;
+                    return Ok(0);
+                }
                 if matches!(kind, NodeKind::End) {
                     if outcome.is_some() || evidence.is_some() {
                         return Err("End has no outcome".into());
@@ -370,6 +408,7 @@ impl GraphExecution {
                     | NodeKind::Gate
                     | NodeKind::RunCommand { .. }
                     | NodeKind::Tool { .. }
+                    | NodeKind::Call { .. }
                     | NodeKind::StoryDispatch { .. } => {
                         let evidence = evidence.as_ref().ok_or("decision needs evidence")?;
                         evidence.validate()?;
@@ -465,6 +504,10 @@ impl GraphExecution {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum GraphTransition {
+    CallStart {
+        execution_id: String,
+        activation_id: String,
+    },
     Start {
         execution_id: String,
         target_id: String,
@@ -526,7 +569,8 @@ pub enum GraphTransition {
 impl GraphTransition {
     pub(super) fn execution_id(&self) -> &str {
         match self {
-            Self::Start { execution_id, .. }
+            Self::CallStart { execution_id, .. }
+            | Self::Start { execution_id, .. }
             | Self::Activate { execution_id, .. }
             | Self::Complete { execution_id, .. }
             | Self::ResolvePause { execution_id, .. }

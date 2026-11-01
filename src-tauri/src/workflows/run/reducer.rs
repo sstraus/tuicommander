@@ -33,6 +33,7 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
         super::contracts::SERIAL_EVENT_CONTRACT_VERSION
             | super::contracts::PINNED_SERIAL_EVENT_CONTRACT_VERSION
             | super::contracts::PARALLEL_EVENT_CONTRACT_VERSION
+            | super::contracts::BRANCH_INPUT_EVENT_CONTRACT_VERSION
             | super::contracts::CURRENT_EVENT_CONTRACT_VERSION
     ) {
         return Err("unsupported workflow graph event contract".into());
@@ -63,44 +64,86 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
         }
         RunEventKind::Graph { event } => match event {
             super::graph::GraphEvent::Started { execution } => {
+                let nested = execution.call_binding.as_ref();
                 if snapshot.graph_executions.iter().any(|existing| {
-                    existing.id == execution.id || existing.target_id == execution.target_id
+                    existing.id == execution.id
+                        || (nested.is_none()
+                            && existing.call_binding.is_none()
+                            && existing.target_id == execution.target_id)
                 }) {
                     return Err("graph target already has an execution".into());
                 }
-                let (id, revision) = if execution.target_id == snapshot.plan_id {
-                    (&snapshot.definition_id, snapshot.definition_revision)
+                let initial = if let Some(binding) = nested {
+                    super::calls::start(&snapshot, &binding.execution_id, &binding.activation_id)?
                 } else {
-                    (
-                        &snapshot.story_definition_id,
-                        snapshot.story_definition_revision,
-                    )
+                    let (id, revision) = if execution.target_id == snapshot.plan_id {
+                        (&snapshot.definition_id, snapshot.definition_revision)
+                    } else {
+                        (
+                            &snapshot.story_definition_id,
+                            snapshot.story_definition_revision,
+                        )
+                    };
+                    if execution.definition.id != *id
+                        || execution.definition.revision != revision
+                        || execution.definition.project != snapshot.project
+                    {
+                        return Err("graph execution has a foreign definition".into());
+                    }
+                    if snapshot.event_contract_version >= 6
+                        && snapshot.root_target.is_some()
+                        && let Some(root) = snapshot.graph_executions.first()
+                    {
+                        let root_contract = root
+                            .contract
+                            .as_ref()
+                            .ok_or("root definition pins missing")?;
+                        let pin = root_contract
+                            .definition_pins
+                            .iter()
+                            .find(|p| p.id == *id && p.revision == revision)
+                            .ok_or("dispatched definition pin missing")?;
+                        if pin != &execution.definition
+                            || execution
+                                .contract
+                                .as_ref()
+                                .and_then(|c| c.agent_policy.as_ref())
+                                != root_contract.agent_policy.as_ref()
+                        {
+                            return Err(
+                                "dispatched definition or policy differs from root pins".into()
+                            );
+                        }
+                    }
+                    let mut initial = super::graph::GraphExecution::pristine(
+                        execution.id.clone(),
+                        execution.target_id.clone(),
+                        execution.definition.clone(),
+                    )?;
+                    if snapshot.event_contract_version
+                        >= super::contracts::PINNED_SERIAL_EVENT_CONTRACT_VERSION
+                    {
+                        let supplied = execution
+                            .contract
+                            .as_ref()
+                            .ok_or("pinned graph contract missing")?;
+                        let mut contract = if snapshot.event_contract_version >= 6 {
+                            super::calls::pin_contract(
+                                &execution.definition,
+                                supplied.agent_policy.clone(),
+                                supplied.definition_pins.clone(),
+                            )?
+                        } else {
+                            super::contracts::GraphContract::with_agent_policy(
+                                &execution.definition,
+                                supplied.agent_policy.clone(),
+                            )?
+                        };
+                        contract.version = snapshot.event_contract_version;
+                        initial.contract = Some(contract);
+                    }
+                    initial
                 };
-                if execution.definition.id != *id
-                    || execution.definition.revision != revision
-                    || execution.definition.project != snapshot.project
-                {
-                    return Err("graph execution has a foreign definition".into());
-                }
-                let mut initial = super::graph::GraphExecution::pristine(
-                    execution.id.clone(),
-                    execution.target_id.clone(),
-                    execution.definition.clone(),
-                )?;
-                if snapshot.event_contract_version
-                    >= super::contracts::PINNED_SERIAL_EVENT_CONTRACT_VERSION
-                {
-                    let policy = execution
-                        .contract
-                        .as_ref()
-                        .and_then(|contract| contract.agent_policy.clone());
-                    initial.contract = Some(super::contracts::GraphContract::with_agent_policy(
-                        &execution.definition,
-                        policy,
-                    )?);
-                    initial.contract.as_mut().expect("pinned contract").version =
-                        snapshot.event_contract_version;
-                }
                 if **execution != initial {
                     return Err("graph start state is not pristine".into());
                 }
@@ -132,6 +175,7 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                 snapshot.graph_executions.push(initial);
             }
             super::graph::GraphEvent::Transition { transition } => {
+                super::calls::validate_completion(&snapshot, transition)?;
                 if matches!(
                     transition,
                     super::graph::GraphTransition::ResolvePause { .. }
@@ -240,6 +284,30 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                         snapshot.event_contract_version,
                     )?)
                     .ok_or("loop counter overflow")?;
+                if let Some(index) = snapshot
+                    .graph_executions
+                    .iter()
+                    .position(|g| g.id == transition.execution_id() && g.call_receipt.is_some())
+                {
+                    let id = snapshot.graph_executions[index].id.clone();
+                    let children: Vec<_> = snapshot
+                        .graph_executions
+                        .iter()
+                        .filter(|g| {
+                            g.call_binding
+                                .as_ref()
+                                .is_some_and(|b| b.execution_id == id)
+                        })
+                        .filter_map(|g| g.call_receipt.as_ref())
+                        .flat_map(|r| r.accounting_execution_ids.iter().cloned())
+                        .collect();
+                    snapshot.graph_executions[index]
+                        .call_receipt
+                        .as_mut()
+                        .expect("receipt")
+                        .accounting_execution_ids
+                        .extend(children);
+                }
                 for attempt in &mut snapshot.attempts {
                     if superseded_attempts.contains(&attempt.id)
                         && (attempt.state == AttemptState::Running
@@ -618,7 +686,15 @@ pub fn apply_event(previous: Option<RunSnapshot>, event: &RunEvent) -> Result<Ru
                     attempt.outcome = Some(AttemptOutcome::Interrupted);
                 }
             }
+            for graph in &mut snapshot.graph_executions {
+                if !graph.completed
+                    && let Some(binding) = &mut graph.call_binding
+                {
+                    binding.stop_requested = true;
+                }
+            }
             for timer in &mut snapshot.timers {
+                // Run-owned timers retire; the independent integration outbox is untouched.
                 timer.state = super::timer::TimerState::Cancelled;
             }
             snapshot.status = RunStatus::Cancelled;

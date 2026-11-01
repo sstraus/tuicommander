@@ -6335,6 +6335,66 @@ async fn ui_design_actions_preserve_caller_repository_and_saved_denials() {
     assert_eq!(status["error"], "Design Mode not armed for this session");
 }
 
+// Catches: image encoding lost between command args, saved suffix and the MCP image block.
+#[cfg(all(unix, feature = "desktop"))]
+#[tokio::test]
+async fn design_capture_options_and_media_type_survive_mcp_dispatch() {
+    use base64::Engine;
+    let state = test_state();
+    insert_managed_test_session(&state, "capture-owner", "/repo");
+    state
+        .mcp
+        .to_session
+        .insert("capture-mcp".into(), "capture-owner".into());
+    let manager = crate::design_mode::manager(&state).await;
+    manager
+        .arm_extension("/repo".into(), "capture-owner".into())
+        .await;
+    let channel = manager
+        .command_channels
+        .lock()
+        .unwrap()
+        .get("/repo")
+        .unwrap()
+        .clone();
+    for (format, quality, bytes) in [
+        (
+            "webp",
+            serde_json::json!(55),
+            include_bytes!("../design_mode/fixtures/cft-panel-0.webp").as_slice(),
+        ),
+        (
+            "png",
+            serde_json::Value::Null,
+            include_bytes!("../design_mode/fixtures/cft-panel-0.png").as_slice(),
+        ),
+    ] {
+        let owned = state.clone();
+        let call = tokio::spawn(async move {
+            handle_mcp_tool_call(&owned, loopback_addr(), "call_tool", &serde_json::json!({"tool_name":"ui","arguments":{"action":"design_screenshot","repo_path":"/repo","format":format,"quality":55,"max_long_edge":800}}), Some("capture-mcp")).await
+        });
+        let command = channel.next().await.unwrap();
+        assert_eq!(
+            command["args"],
+            serde_json::json!({"format":format,"quality":55,"max_long_edge":800})
+        );
+        let encoded = base64::engine::general_purpose::STANDARD.encode(bytes);
+        channel.reply(command["requestId"].as_str().unwrap(), serde_json::json!({"ok":true,"result":{"image":format!("data:image/{format};base64,{encoded}"),"quality":quality}}));
+        let result = call.await.unwrap();
+        let block = &result["content"][1];
+        assert_eq!(block["type"], "image");
+        assert_eq!(block["mimeType"], format!("image/{format}"));
+        assert_eq!(block["data"], encoded);
+        let metadata = &result["structuredContent"];
+        assert_eq!(metadata["format"], format);
+        assert_eq!(metadata["quality"], quality);
+        assert_eq!(metadata["bytes"], bytes.len());
+        let path = std::path::Path::new(metadata["path"].as_str().unwrap());
+        assert_eq!(path.extension().unwrap(), format);
+        assert_eq!(std::fs::read(path).unwrap(), bytes);
+    }
+}
+
 // Catches: flat advertised UI fields cannot express Design Mode requests, or
 // missing required fields reach the browser owner instead of static validation.
 #[tokio::test]
@@ -6359,7 +6419,16 @@ async fn ui_design_contract_is_discoverable_and_validates_before_dispatch() {
             "{action}"
         );
     }
-    for field in ["session_id", "repo_path", "browser", "script", "url"] {
+    for field in [
+        "session_id",
+        "repo_path",
+        "browser",
+        "script",
+        "url",
+        "format",
+        "quality",
+        "max_long_edge",
+    ] {
         assert!(
             schema["inputSchema"]["properties"].get(field).is_some(),
             "{field}"
@@ -6371,6 +6440,9 @@ async fn ui_design_contract_is_discoverable_and_validates_before_dispatch() {
         serde_json::json!({"action":"design_navigate","repo_path":"/repo"}),
         serde_json::json!({"action":"design_eval","repo_path":"/repo"}),
         serde_json::json!({"action":"design_start","session_id":"owner","browser":"unknown"}),
+        serde_json::json!({"action":"design_screenshot","repo_path":"/repo","format":"jpeg"}),
+        serde_json::json!({"action":"design_screenshot","repo_path":"/repo","quality":101}),
+        serde_json::json!({"action":"design_screenshot","repo_path":"/repo","max_long_edge":0}),
     ] {
         let reply = handle_mcp_tool_call(&state, loopback_addr(), "ui", &args, None).await;
         assert_eq!(reply["code"], "invalid_arguments", "{args}: {reply}");

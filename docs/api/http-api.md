@@ -3422,6 +3422,15 @@ consumers reread after this event or SSE resynchronization.
 
 ### Immediate Design Mode browser commands
 
+Design Mode captures accept per-call `format` (`webp` by default or `png`),
+`quality` (WebP 1–100, default 25) and optional `max_long_edge` (positive pixels,
+downsize only). Use WebP for text/layout, quality 50+ for small glyphs/icons, or
+PNG for pixel-exact detail. Responses report path, format, quality (`null` for PNG),
+bytes and media type; MCP sends a correctly typed image block. Token cost follows
+pixel dimensions, not file format or bytes (Claude: about 1,296 tokens per
+megapixel, capped at 1,568 standard / 4,784 high-res). HTTP/IPC use the same
+screenshot fields in `args`; no user setting is added.
+
 `POST /design-mode/start` returns `armed` only after the extension acknowledges the requested page through a correlated internal `ready` command. Failed acknowledgment returns `browser_not_ready` and closes the owned launch. Stop closes and reaps that dedicated launch. The extension starts receiving at worker boot; a sidebar gesture is not required to choose the initial reviewed tab. Native disconnect closes the command queue, so later requests return `browser_disconnected` immediately instead of timing out. Eval without explicit host consent returns `eval_not_granted: grant needed: click Allow eval on this host`. This does not gate local errors or screenshots; capture permission remains separate.
 
 `POST /design-mode/command` accepts `{repoPath, action, args}`. Actions are

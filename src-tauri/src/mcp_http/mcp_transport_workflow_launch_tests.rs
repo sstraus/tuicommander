@@ -246,23 +246,40 @@ async fn legacy_graph_launch_cannot_substitute_the_pinned_route() {
             crate::workflows::AgentPolicyInput {
                 source: "fixture operator".into(),
                 source_revision: "1".into(),
-                routes: vec![crate::workflows::RoleRoute {
-                    role: crate::workflows::AgentRole::Coordinator,
+                // The plan pins Story Dispatch too, so its delivery roles must be approved.
+                routes: [
+                    (
+                        crate::workflows::AgentRole::Coordinator,
+                        vec![
+                            "story_create".into(),
+                            "story_read".into(),
+                            "agent_spawn".into(),
+                        ],
+                    ),
+                    (
+                        crate::workflows::AgentRole::Implementer,
+                        vec!["story_read".into(), "story_report".into()],
+                    ),
+                    (
+                        crate::workflows::AgentRole::Reviewer,
+                        vec!["story_read".into(), "story_report".into()],
+                    ),
+                ]
+                .into_iter()
+                .map(|(role, capabilities)| crate::workflows::RoleRoute {
+                    role,
                     execution: crate::workflows::AgentExecution::Pty {
                         profile: "Workflow shell".into(),
                     },
                     acp_runtime: None,
                     model: "shell-model".into(),
                     effort: "high".into(),
-                    capabilities: vec![
-                        "story_create".into(),
-                        "story_read".into(),
-                        "agent_spawn".into(),
-                    ],
+                    capabilities,
                     scope: crate::workflows::AgentScope::IsolatedWorkspace,
                     output_contract_version: 1,
                     default_for_role: true,
-                }],
+                })
+                .collect(),
             },
         )
         .unwrap();
