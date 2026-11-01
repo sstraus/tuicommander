@@ -1,3 +1,7 @@
+## Claude question parser simplification (2572-20a4) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm Claude question titles, preview hints, Chat selection and clipped-form navigation remain unchanged. This is a behavior-preserving helper extraction. Recorded-fixture tests cover these contracts; no daily app was restarted. Rust changes do not hot-reload. Restart only when losing current sessions is acceptable.
+
 ## Correlated barge-in hold diagnostics (2605-53fc) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build` when losing sessions is acceptable, inspect an authorized voice session's retained logs for `barge-in hold opened` and one matching `barge-in hold resolved`. Pair by hold ID, owner and generation. Check rejected/accepted/limit reasons rather than treating the old generic resume text as a recognition verdict. Fields report queued output and aggregate capture/reference state, not acoustic playback or an echo diagnosis. Targeted synthetic tests verify the event contract; no daily microphone or running app was accessed. Rust changes do not hot-reload. Do not enable microphone/PCM capture without separate authority.
