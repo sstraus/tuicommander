@@ -2298,26 +2298,42 @@ mod tests {
                 )
                 .unwrap();
         }
+        // Catches: rejecting a registered checkout because its spelling differs from
+        // canonicalize (including portable versus verbatim Windows paths).
         let assign = |key: &str, story_id: String, path: &std::path::Path| {
             store.command(
                 &run.id,
                 key,
                 RunCommand::AssignWorktree {
                     story_id,
-                    path: path.canonicalize().unwrap().to_string_lossy().to_string(),
+                    path: tuic_core::path_spelling::portable_spelling(
+                        &path
+                            .parent()
+                            .unwrap()
+                            .join(".")
+                            .join(path.file_name().unwrap())
+                            .to_string_lossy(),
+                    ),
                 },
             )
         };
+        assert!(assign("assign-project", first.id.clone(), repo).is_err());
         let first_assignment = assign("assign-first", first.id.clone(), &path_a).unwrap();
         assert_eq!(
             assign("assign-first", first.id.clone(), &path_a).unwrap(),
             first_assignment
         );
         assert!(assign("assign-first", first.id.clone(), &path_b).is_err());
-        assert!(assign("assign-duplicate", second.id.clone(), &path_a).is_err());
+        assert_eq!(
+            assign("assign-duplicate", second.id.clone(), &path_a).unwrap_err(),
+            "worktree is assigned to another story"
+        );
         let unrelated = config.path().join("unrelated");
         std::fs::create_dir(&unrelated).unwrap();
-        assert!(assign("assign-unregistered", second.id.clone(), &unrelated).is_err());
+        assert_eq!(
+            assign("assign-unregistered", second.id.clone(), &unrelated).unwrap_err(),
+            "story worktree is not a registered checkout"
+        );
         let result = assign("assign-second", second.id.clone(), &path_b).unwrap();
         assert_eq!(
             result

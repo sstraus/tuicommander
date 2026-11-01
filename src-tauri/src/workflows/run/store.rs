@@ -2473,6 +2473,13 @@ fn choose_event(
             {
                 return Err("story has no running attempt or positioned command".into());
             }
+            // Normalize before identity checks: Windows callers and Git use portable
+            // paths, while canonicalize returns a verbatim path. Persist one spelling.
+            let path = Path::new(&path)
+                .canonicalize()
+                .map_err(|error| format!("resolve story worktree: {error}"))?
+                .to_string_lossy()
+                .into_owned();
             if snapshot
                 .stories
                 .iter()
@@ -2480,10 +2487,7 @@ fn choose_event(
             {
                 return Err("worktree is assigned to another story".into());
             }
-            let canonical = Path::new(&path)
-                .canonicalize()
-                .map_err(|error| format!("resolve story worktree: {error}"))?;
-            if canonical.to_string_lossy() != path || path == snapshot.project {
+            if path == snapshot.project {
                 return Err("story worktree must be a canonical isolated path".into());
             }
             let registered = crate::worktree::get_worktree_paths_raw(&snapshot.project)?;
