@@ -479,6 +479,9 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	list_queued_agent_commands: {
 		map: (args) => ({ method: "GET", path: `/sessions/${args.sessionId}/queue` }),
 	},
+	send_queued_agent_command_now: {
+		map: (args) => ({ method: "POST", path: `/sessions/${args.sessionId}/queue/${args.commandId}/send-now` }),
+	},
 	remove_queued_agent_command: {
 		map: (args) => ({ method: "DELETE", path: `/sessions/${args.sessionId}/queue/${args.commandId}` }),
 	},

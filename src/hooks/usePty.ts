@@ -163,7 +163,11 @@ export function usePty() {
 	 *  busy→idle transition, so a running turn is never steered.
 	 *  Rejects for non-agent sessions — a plain shell has no composer to wait for. */
 	async function enqueueCommand(sessionId: string, text: string): Promise<EnqueuedCommand> {
-		return await rpc<EnqueuedCommand>("enqueue_agent_command", { sessionId, text });
+		return await rpc<EnqueuedCommand>("enqueue_agent_command", {
+			sessionId,
+			text,
+			idempotencyKey: crypto.randomUUID(),
+		});
 	}
 
 	/** Drop every command still queued for a session. Returns how many were dropped. */

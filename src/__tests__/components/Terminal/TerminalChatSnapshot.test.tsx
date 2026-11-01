@@ -2,7 +2,7 @@ import { cleanup, render, waitFor } from "@solidjs/testing-library";
 import { createEffect } from "solid-js";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
-const { invokeMock } = vi.hoisted(() => ({ invokeMock: vi.fn() }));
+const { invokeMock, snapshotMock } = vi.hoisted(() => ({ invokeMock: vi.fn(), snapshotMock: vi.fn() }));
 vi.mock("../../../invoke", () => ({
 	invoke: (...args: unknown[]) => invokeMock(...args),
 	listen: async () => () => {},
@@ -17,6 +17,10 @@ beforeEach(() => {
 	chatViewStore.reset();
 	acpTranscript.reset();
 	invokeMock.mockReset();
+	snapshotMock.mockReset();
+	invokeMock.mockImplementation((command: string, ...args: unknown[]) =>
+		command === "list_queued_agent_commands" ? Promise.resolve([]) : snapshotMock(command, ...args),
+	);
 });
 afterEach(cleanup);
 
@@ -39,7 +43,7 @@ it.each([false, true])("reopening Chat twice never reports empty during replay (
 	};
 	for (let mount = 0; mount < 3; mount++) {
 		let resolve!: (snapshot: unknown) => void;
-		invokeMock.mockReturnValueOnce(
+		snapshotMock.mockReturnValueOnce(
 			new Promise((done) => {
 				resolve = done;
 			}),
@@ -47,7 +51,7 @@ it.each([false, true])("reopening Chat twice never reports empty during replay (
 		const view = render(() => (
 			<TerminalChatTranscript sessionId="reopen" mobile={mobile} terminalAgent="claude" onUnavailable={() => {}} />
 		));
-		await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(mount + 1));
+		await waitFor(() => expect(snapshotMock).toHaveBeenCalledTimes(mount + 1));
 		try {
 			expect(view.queryByText("No messages in this conversation yet.")).toBeNull();
 			expect(view.getByText("Loading conversation…")).toBeTruthy();
@@ -64,13 +68,13 @@ it.each([false, true])("reopening Chat twice never reports empty during replay (
 // Catches: the loading label hides a genuinely empty conversation after a successful snapshot.
 it("reports an empty conversation only after its first snapshot arrives", async () => {
 	let resolve!: (snapshot: unknown) => void;
-	invokeMock.mockReturnValueOnce(
+	snapshotMock.mockReturnValueOnce(
 		new Promise((done) => {
 			resolve = done;
 		}),
 	);
 	const view = render(() => <TerminalChatTranscript sessionId="empty" onUnavailable={() => {}} />);
-	await waitFor(() => expect(invokeMock).toHaveBeenCalledTimes(1));
+	await waitFor(() => expect(snapshotMock).toHaveBeenCalledTimes(1));
 	expect(view.queryByText("No messages in this conversation yet.")).toBeNull();
 	resolve({ epoch: 0, nextSeq: 0, reset: true, updates: [], unknownRows: 0, malformedRows: 0 });
 	await waitFor(() => expect(view.getByText("No messages in this conversation yet.")).toBeTruthy());
@@ -81,7 +85,7 @@ it("reports an empty conversation only after its first snapshot arrives", async 
 // preceding rows, making desktop/mobile first open quadratic at 2000 entries.
 it("snapshot replay publishes only the complete transcript", async () => {
 	let resolve!: (snapshot: unknown) => void;
-	invokeMock.mockReturnValue(
+	snapshotMock.mockReturnValue(
 		new Promise((done) => {
 			resolve = done;
 		}),

@@ -339,6 +339,7 @@
 /sessions/x/prompt-receipt
 /sessions/x/queue
 /sessions/x/queue/x
+/sessions/x/queue/x/send-now
 /sessions/x/resize
 /sessions/x/resume
 /sessions/x/shell-family
