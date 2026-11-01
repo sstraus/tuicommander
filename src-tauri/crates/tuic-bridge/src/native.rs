@@ -356,10 +356,9 @@ mod tests {
         .await
         .unwrap();
         let extension = Path::new(installed["extensionPath"].as_str().unwrap());
-        assert!(
-            !std::fs::read(extension.join("captureEncoding.js"))
-                .unwrap()
-                .is_empty()
+        assert_ne!(
+            std::fs::read(extension.join("captureEncoding.js")).unwrap(),
+            Vec::<u8>::new()
         );
         for module in ["worker.js", "browserCommands.js"] {
             let source = std::fs::read_to_string(extension.join(module)).unwrap();
