@@ -1,3 +1,4 @@
+import {captureOptions, encodeCapture} from './captureEncoding.js';
 // Chrome owns host permissions and reviewed-tab identity. No debugger/CDP access.
 export async function browserCommand(command, chrome, tabId, errors) {
   if (!tabId) throw new Error('no_reviewed_tab: Open the Design Mode sidebar on a page first.');
@@ -24,11 +25,13 @@ export async function browserCommand(command, chrome, tabId, errors) {
   }
   if (action === 'screenshot') {
     if (!tab.active) throw new Error('tab_not_visible: The reviewed tab must be visible.');
-    const image = await captureVisibleTab(chrome, tab.windowId);
+    const options = captureOptions(args);
+    const data = await captureVisibleTab(chrome, tab.windowId);
     const after = await chrome.tabs.get(tabId);
     if (!after.active || after.url !== tab.url) throw new Error('page_changed: Page changed during screenshot.');
-    if (image.length > 700 * 1024) throw new Error('result_too_large: Screenshot exceeds 700 KiB.');
-    return {image, url:tab.url};
+    const capture = await encodeCapture(await createImageBitmap(await (await fetch(data)).blob()), options);
+    if (capture.image.length > 700 * 1024) throw new Error('result_too_large: Screenshot exceeds 700 KiB.');
+    return {...capture, url:tab.url};
   }
   if (action === 'eval') {
     // Static localhost access is not consent to agent-supplied JavaScript.

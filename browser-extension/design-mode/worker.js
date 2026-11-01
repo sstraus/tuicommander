@@ -1,3 +1,4 @@
+import {encodeCapture} from './captureEncoding.js';
 import {syncHostErrors} from './hostErrors.js';
 import {browserCommand, captureVisibleTab} from './browserCommands.js';
 import {addPick, editPick, deletePick, addError, clearErrors, draftForTab, recipient, deliverDraft, serverSession} from './cards.js';
@@ -150,13 +151,9 @@ async function capture(message, sender) {
     const width = Math.min(bitmap.width - x, r.width * ratio), height = Math.min(bitmap.height - y, r.height * ratio);
     if (width < 1 || height < 1) { bitmap.close(); return {}; }
     const scale = Math.min(1, 800 / width, 600 / height);
-    const canvas = new OffscreenCanvas(Math.max(1, Math.round(width * scale)), Math.max(1, Math.round(height * scale)));
-    canvas.getContext('2d').drawImage(bitmap,x,y,width,height,0,0,canvas.width,canvas.height); bitmap.close();
-    const blob = await canvas.convertToBlob({type:'image/png'});
-    if (blob.size > 128 * 1024) return {captureError:'Screenshot too large; DOM evidence retained.'};
-    const bytes = new Uint8Array(await blob.arrayBuffer());
-    let binary = ''; for (const byte of bytes) binary += String.fromCharCode(byte);
-    return {image: `data:image/png;base64,${btoa(binary)}`};
+    const capture = await encodeCapture(bitmap, {format:'png',max_long_edge:Math.max(1,Math.round(Math.max(width,height) * scale))}, {x,y,width,height});
+    if (capture.bytes > 128 * 1024) return {captureError:'Screenshot too large; DOM evidence retained.'};
+    return capture;
   } catch (error) { return {captureError: `Screenshot unavailable: ${error.message}`}; }
 }
 async function handle(message, sender) {

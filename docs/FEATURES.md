@@ -3344,6 +3344,15 @@ Show recreates the main window from Tauri configuration, restores window geometr
 
 B0 measured WebContent exiting and about 1,090 MB released from a synthetic 1 GiB allocation on macOS. Actual TUIC workload savings, Windows and Linux are unmeasured. GPU and Networking processes may remain.
 
+Design Mode captures accept per-call `format` (`webp` by default or `png`),
+`quality` (WebP 1–100, default 25) and optional `max_long_edge` (positive pixels,
+downsize only). Use WebP for text/layout, quality 50+ for small glyphs/icons, or
+PNG for pixel-exact detail. Responses report path, format, quality (`null` for PNG),
+bytes and media type; MCP sends a correctly typed image block. Token cost follows
+pixel dimensions, not file format or bytes (Claude: about 1,296 tokens per
+megapixel, capped at 1,568 standard / 4,784 high-res). HTTP/IPC use the same
+screenshot fields in `args`; no user setting is added.
+
 Design Mode agent control: immediate native-port navigate, reload, screenshot,
 page-error read and explicitly host-granted MAIN-world eval. The extension sidebar
 shows the last fifty agent actions. Screenshots require the reviewed tab to be visible.

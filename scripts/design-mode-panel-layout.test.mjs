@@ -48,7 +48,7 @@ async function capture() {
         },500);
         </script>`);
       } else if (req.url === "/panel.html") res.end(html.replace('<script type="module"', `${stub}<script type="module"`));
-      else if (["/panel.css", "/panel.js", "/browserCommands.js"].includes(req.url)) res.end(await readFile(new URL(req.url.slice(1), root)));
+      else if (["/panel.css", "/panel.js", "/browserCommands.js", "/captureEncoding.js"].includes(req.url)) res.end(await readFile(new URL(req.url.slice(1), root)));
       else { res.statusCode = 404; res.end(); }
     } catch (error) { res.statusCode = 500; res.end(String(error)); }
   });

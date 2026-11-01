@@ -1,5 +1,9 @@
 pub(crate) const ASSETS: &[(&str, &str)] = &[
     (
+        "captureEncoding.js",
+        include_str!("../../../../browser-extension/design-mode/captureEncoding.js"),
+    ),
+    (
         "hostErrors.js",
         include_str!("../../../../browser-extension/design-mode/hostErrors.js"),
     ),
