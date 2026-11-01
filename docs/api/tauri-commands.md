@@ -504,7 +504,7 @@ The live registry exposes status via SSE events (`upstream_status_changed`). Val
 
 | Command | Args | Returns | Description |
 |---------|------|---------|-------------|
-| `get_claude_usage_api` | `sessionId?` | `UsageApiResponse` | Fetch rate-limit usage for the Claude session's credential profile; omitted session selects the default profile |
+| `get_claude_usage_api` | `sessionId?` | `UsageApiResponse` | Fetch rate-limit usage for the Claude session's credential profile; omitted session selects the default profile. API-key sessions return `Claude API-key authentication` without credential lookup or HTTP requests |
 | `get_claude_usage_timeline` | `scope, days?` | `Vec<TimelinePoint>` | Hourly token usage from session transcripts |
 | `get_claude_session_stats` | `scope` | `SessionStats` | Aggregated token/session stats from JSONL transcripts |
 | `get_claude_project_list` | -- | `Vec<ProjectEntry>` | List project slugs with session counts |
