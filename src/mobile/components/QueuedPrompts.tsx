@@ -1,4 +1,4 @@
-import { createResource, createSignal, For, onCleanup, Show } from "solid-js";
+import { createEffect, createResource, createSignal, For, onCleanup, Show } from "solid-js";
 import { Button } from "../../components/ui";
 import type { QueuedCommand } from "../../hooks/usePty";
 import { HttpRpcError, rpc } from "../../transport";
@@ -9,6 +9,7 @@ export function QueuedPrompts(props: { sessionId: string; count: number; revisio
 	let read: AbortController | undefined;
 	onCleanup(() => read?.abort());
 	const [pending, setPending] = createSignal(false);
+	const [hidden, setHidden] = createSignal(false);
 	const [actionError, setActionError] = createSignal<string | null>(null);
 	const [snapshot, { refetch }] = createResource(
 		() => ({ sessionId: props.sessionId, count: props.count, revision: props.revision }),
@@ -31,19 +32,29 @@ export function QueuedPrompts(props: { sessionId: string; count: number; revisio
 			}
 		},
 	);
-	const items = () => snapshot()?.items ?? [];
+	// Origin is supplied by the host; never infer ownership from prompt text.
+	const items = () => snapshot()?.items.filter((item) => item.kind === "user_command") ?? [];
+	createEffect(() => {
+		const current = snapshot();
+		// Reset only from a successful empty snapshot: the lifecycle count can
+		// still be zero just after this client has accepted a queued prompt.
+		if (current && !current.error && items().length === 0) setHidden(false);
+	});
 	async function remove(commandId?: number) {
 		if (pending()) return;
 		const sessionId = props.sessionId;
 		setPending(true);
 		setActionError(null);
 		try {
-			if (commandId === undefined) await rpc("clear_queued_agent_commands", { sessionId });
-			else await rpc("remove_queued_agent_command", { sessionId, commandId });
-			await refetch();
+			// Clear only visible stable IDs; the full FIFO also holds hidden mail.
+			const commandIds = commandId === undefined ? items().map((item) => item.id) : [commandId];
+			for (const id of commandIds) {
+				await rpc("remove_queued_agent_command", { sessionId, commandId: id });
+			}
 		} catch {
 			setActionError("Could not remove queued prompts. Check the queue before retrying.");
 		} finally {
+			await refetch();
 			setPending(false);
 		}
 	}
@@ -51,8 +62,18 @@ export function QueuedPrompts(props: { sessionId: string; count: number; revisio
 		<Show when={items().length > 0 || snapshot()?.error || actionError()}>
 			<section class={styles.queue} aria-label="Queued prompts">
 				<div class={styles.header}>
-					<span role="status">Queued · {items().length || props.count}</span>
-					<Show when={items().length > 0}>
+					<Button
+						variant="hint"
+						aria-label={hidden() ? "Show queued prompts" : "Hide queued prompts"}
+						aria-expanded={!hidden()}
+						onClick={() => setHidden(!hidden())}
+					>
+						<span role="status">
+							Queued<Show when={!snapshot()?.error}> · {items().length}</Show>
+						</span>
+						{hidden() ? "Show" : "Hide"}
+					</Button>
+					<Show when={!hidden() && items().length > 0}>
 						<Button variant="ghost" disabled={pending()} onClick={() => void remove()}>
 							Clear all
 						</Button>
@@ -66,28 +87,25 @@ export function QueuedPrompts(props: { sessionId: string; count: number; revisio
 						</Button>
 					</div>
 				</Show>
-				<div class={styles.items}>
-					<For each={items()}>
-						{(item) => (
-							<div class={styles.row}>
-								<div class={styles.text}>
-									<Show when={item.kind !== "user_command"}>
-										<span class={styles.kind}>{item.kind === "notice" ? "TUIC notice" : "Child's initial prompt"}</span>
-									</Show>
-									{item.text}
+				<Show when={!hidden()}>
+					<div class={styles.items}>
+						<For each={items()}>
+							{(item) => (
+								<div class={styles.row}>
+									<div class={styles.text}>{item.text}</div>
+									<Button
+										variant="ghost"
+										disabled={pending()}
+										aria-label={`Cancel queued prompt ${item.text}`}
+										onClick={() => void remove(item.id)}
+									>
+										Cancel
+									</Button>
 								</div>
-								<Button
-									variant="ghost"
-									disabled={pending()}
-									aria-label={`Cancel queued prompt ${item.text}`}
-									onClick={() => void remove(item.id)}
-								>
-									Cancel
-								</Button>
-							</div>
-						)}
-					</For>
-				</div>
+							)}
+						</For>
+					</div>
+				</Show>
 			</section>
 		</Show>
 	);

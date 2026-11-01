@@ -16,6 +16,7 @@
 - [x] Headless `--credential-file` selects a read-once JSON seed with process-local credential edits, fail-closed content-free boot diagnostics and restart-based rotation; desktop keyring defaults remain unchanged (#2343-5358).
 
 - [x] Mobile terminal CLI and Chat display the existing backend prompt queue, including CLI/desktop additions, and supports cancellation and clearing (#2463-ad1c).
+- [x] Mobile queued prompts collapse to a live count with Hide/Show. Empty user queues reset the disclosure; reopening retains Cancel and Clear all. Server mail/task entries are excluded by origin and preserved by mobile Clear all (#2639-173b).
 - [x] Session Chat shows working feedback from Send and existing terminal busy state on desktop and mobile, hidden for idle and awaiting input (#2397-06b6).
 
 - [x] AI Chat active conversation follows across desktop and mobile through backend workspace selection, IPC/SSE invalidation and reconnect catch-up; session CLI | Chat remains device-local (#2403-e711).
