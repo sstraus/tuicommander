@@ -753,49 +753,7 @@ impl RunStore {
         };
         indexed(&["read-tree", tree])?;
         for path in conflicts {
-            for tip in [base, source] {
-                let delta =
-                    git_output(project, &["diff", "--numstat", &ancestor, tip, "--", path])?;
-                if delta
-                    .lines()
-                    .any(|line| line.split('\t').nth(1) != Some("0"))
-                {
-                    return Err("repair required: declared document is not append-only".into());
-                }
-            }
-            let entry = git_output(project, &["ls-tree", tree, "--", path])?;
-            if !entry.starts_with("100644 blob ") {
-                return Err("repair required: union requires a regular Markdown file".into());
-            }
-            let shown = Command::new("git")
-                .args(["show", &format!("{tree}:{path}")])
-                .current_dir(project)
-                .output()
-                .map_err(|e| e.to_string())?;
-            if !shown.status.success() {
-                return Err("repair required: cannot read conflicted document".into());
-            }
-            let conflicted = String::from_utf8(shown.stdout).map_err(|e| e.to_string())?;
-            let merged = union_document(&conflicted)?;
-            let mut child = Command::new("git")
-                .args(["hash-object", "-w", "--stdin"])
-                .current_dir(project)
-                .stdin(std::process::Stdio::piped())
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped())
-                .spawn()
-                .map_err(|e| e.to_string())?;
-            child
-                .stdin
-                .take()
-                .ok_or("hash-object stdin missing")?
-                .write_all(merged.as_bytes())
-                .map_err(|e| e.to_string())?;
-            let output = child.wait_with_output().map_err(|e| e.to_string())?;
-            if !output.status.success() {
-                return Err("repair required: document blob write failed".into());
-            }
-            let blob = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+            let blob = conflicted_document_blob(project, tree, path, &ancestor, base, source)?;
             indexed(&[
                 "update-index",
                 "--cacheinfo",
@@ -1206,6 +1164,60 @@ impl RunStore {
         }
         Ok(())
     }
+}
+
+/// Validate one declared conflict and write its append-only union as a Git blob.
+fn conflicted_document_blob(
+    project: &Path,
+    tree: &str,
+    path: &str,
+    ancestor: &str,
+    base: &str,
+    source: &str,
+) -> Result<String, String> {
+    for tip in [base, source] {
+        let delta = git_output(project, &["diff", "--numstat", ancestor, tip, "--", path])?;
+        if delta
+            .lines()
+            .any(|line| line.split('\t').nth(1) != Some("0"))
+        {
+            return Err("repair required: declared document is not append-only".into());
+        }
+    }
+    let entry = git_output(project, &["ls-tree", tree, "--", path])?;
+    if !entry.starts_with("100644 blob ") {
+        return Err("repair required: union requires a regular Markdown file".into());
+    }
+    let shown = Command::new("git")
+        .args(["show", &format!("{tree}:{path}")])
+        .current_dir(project)
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !shown.status.success() {
+        return Err("repair required: cannot read conflicted document".into());
+    }
+    let conflicted = String::from_utf8(shown.stdout).map_err(|e| e.to_string())?;
+    let merged = union_document(&conflicted)?;
+    let mut child = Command::new("git")
+        .args(["hash-object", "-w", "--stdin"])
+        .current_dir(project)
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    child
+        .stdin
+        .take()
+        .ok_or("hash-object stdin missing")?
+        .write_all(merged.as_bytes())
+        .map_err(|e| e.to_string())?;
+    let output = child.wait_with_output().map_err(|e| e.to_string())?;
+    if !output.status.success() {
+        return Err("repair required: document blob write failed".into());
+    }
+    let blob = String::from_utf8(output.stdout).map_err(|e| e.to_string())?;
+    Ok(blob)
 }
 
 /// Strict native conflict grammar: malformed/nested/diff3 blocks refuse rather

@@ -729,6 +729,87 @@ fn only_declared_append_only_documents_union_and_malformed_or_code_conflicts_req
 }
 
 #[test]
+fn document_union_rejects_deletions_on_either_tip_and_executable_blobs() {
+    // catches: checking only one tip for deletions or unioning a non-regular blob.
+    for case in ["base-deletion", "source-deletion", "executable"] {
+        let mut t = trial();
+        let name = "CHANGELOG.md";
+        std::fs::write(t.project.join(name), "shared history\n").unwrap();
+        git(&t.project, &["add", name]);
+        git(&t.project, &["commit", "-qm", "shared document"]);
+        git(&t.workspace, &["merge", "--no-edit", "main"]);
+        let canonical = if case == "base-deletion" {
+            "canonical addition\n"
+        } else {
+            "shared history\ncanonical addition\n"
+        };
+        let source = if case == "source-deletion" {
+            "source addition\n"
+        } else {
+            "shared history\nsource addition\n"
+        };
+        for (path, text) in [(&t.project, canonical), (&t.workspace, source)] {
+            std::fs::write(path.join(name), text).unwrap();
+            git(path, &["add", name]);
+            if case == "executable" {
+                git(path, &["update-index", "--chmod=+x", name]);
+            }
+            git(path, &["commit", "-qm", "divergent document"]);
+            // Preserve the executable index entry without a host chmod requirement.
+            if case == "executable" {
+                git(path, &["config", "core.filemode", "false"]);
+            }
+        }
+        t.request.expected_base = git(&t.project, &["rev-parse", "HEAD"]);
+        t.request.expected_source = git(&t.workspace, &["rev-parse", "HEAD"]);
+        let sequence = t.store.snapshot(&t.request.run_id).unwrap().sequence;
+        t.request.expected_sequence = t
+            .store
+            .execute_check(
+                &t.request.run_id,
+                &t.request.story_id,
+                "git",
+                "check-rejected-document",
+                sequence,
+            )
+            .unwrap()
+            .sequence;
+        t.store
+            .set_integration_policy(&t.project, true, &[name.into()])
+            .unwrap();
+        let outcome = t.store.integrate(&t.request).unwrap();
+        assert_eq!(
+            outcome.outcome,
+            IntegrationOutcome::RepairRequired,
+            "{case}"
+        );
+        let reason = if case == "executable" {
+            "repair required: union requires a regular Markdown file"
+        } else {
+            "repair required: declared document is not append-only"
+        };
+        assert_eq!(outcome.reason.as_deref(), Some(reason), "{case}");
+        assert!(!outcome.merged, "{case}");
+        assert_eq!(
+            git(&t.project, &["rev-parse", "HEAD"]),
+            t.request.expected_base
+        );
+        assert_eq!(
+            git(&t.workspace, &["rev-parse", "HEAD"]),
+            t.request.expected_source
+        );
+        assert_eq!(
+            std::fs::read_to_string(t.project.join(name)).unwrap(),
+            canonical
+        );
+        assert_eq!(
+            std::fs::read_to_string(t.workspace.join(name)).unwrap(),
+            source
+        );
+    }
+}
+
+#[test]
 fn integration_cleanup_preserves_a_successor_workspace_even_without_a_live_pty() {
     // catches: using only PTY cwd to decide that a successor no longer owns an artifact.
     let t = trial();
