@@ -1,0 +1,68 @@
+engine=pocket load_workers=0 direct_device_output=false
+device_config=DeviceSinkConfig { channel_count: 2, sample_rate: 48000, buffer_size: Fixed(2048), sample_format: F32 }
+capture_hold_result stable_plateau_at_least_1000ms=true resumed_consumption=true pauses=1 resumes=1 synthetic_only=true
+utterance=1 state=Some(Finished)
+utterance=2 state=Some(Finished)
+utterance=3 state=Some(Finished)
+126.858ms synthesis-start id=0
+544.428ms synthesis-end id=0 duration_ms=1120.000
+544.630ms append id=0 prior_speaking=false held=false
+544.637ms synthesis-start id=1
+551.261ms source-start id=0
+637.636ms synthetic-capture-start real_playback_consumption_confirmed voiced_ms=300 silence_ms=1500 frame_ms=50
+637.654ms capture-tick index=0 voiced=true held=false consumed=3329 phase=Capturing
+689.755ms capture-tick index=1 voiced=true held=false consumed=4353 phase=Capturing
+738.486ms capture-tick index=2 voiced=true held=false consumed=5377 phase=Capturing
+788.447ms output-pause consumed=6401 queue_nonempty=true
+788.450ms capture-tick index=3 voiced=true held=true consumed=6401 phase=Capturing
+810.166ms synthesis-end id=1 duration_ms=2320.000
+810.886ms append id=1 prior_speaking=true held=true
+810.897ms synthesis-start id=2
+840.085ms capture-tick index=4 voiced=true held=true consumed=6480 phase=Capturing
+890.341ms capture-tick index=5 voiced=true held=true consumed=6480 phase=Capturing
+938.248ms capture-tick index=6 voiced=false held=true consumed=6480 phase=Capturing
+990.174ms capture-tick index=7 voiced=false held=true consumed=6480 phase=Capturing
+1038.288ms capture-tick index=8 voiced=false held=true consumed=6480 phase=Capturing
+1088.834ms capture-tick index=9 voiced=false held=true consumed=6480 phase=Capturing
+1131.255ms synthesis-end id=2 duration_ms=2560.000
+1131.725ms append id=2 prior_speaking=true held=true
+1137.782ms capture-tick index=10 voiced=false held=true consumed=6480 phase=Capturing
+1188.156ms capture-tick index=11 voiced=false held=true consumed=6480 phase=Capturing
+1240.445ms capture-tick index=12 voiced=false held=true consumed=6480 phase=Capturing
+1288.348ms capture-tick index=13 voiced=false held=true consumed=6480 phase=Capturing
+1338.478ms capture-tick index=14 voiced=false held=true consumed=6480 phase=Capturing
+1390.352ms capture-tick index=15 voiced=false held=true consumed=6480 phase=Capturing
+1439.745ms capture-tick index=16 voiced=false held=true consumed=6480 phase=Capturing
+1489.667ms capture-tick index=17 voiced=false held=true consumed=6480 phase=Capturing
+1539.253ms capture-tick index=18 voiced=false held=true consumed=6480 phase=Capturing
+1588.219ms synthetic-transcribe samples=16000 canned_verdict=unaddressed
+1588.225ms capture-tick index=19 voiced=false held=true consumed=6480 phase=Capturing
+1638.019ms capture-tick index=20 voiced=false held=true consumed=6480 phase=Capturing
+1690.198ms capture-tick index=21 voiced=false held=true consumed=6480 phase=Capturing
+1738.864ms capture-tick index=22 voiced=false held=true consumed=6480 phase=Capturing
+1787.684ms capture-tick index=23 voiced=false held=true consumed=6480 phase=Capturing
+1839.407ms capture-tick index=24 voiced=false held=true consumed=6480 phase=Capturing
+1890.010ms capture-tick index=25 voiced=false held=true consumed=6480 phase=Capturing
+1939.038ms capture-tick index=26 voiced=false held=true consumed=6480 phase=Capturing
+1989.909ms capture-tick index=27 voiced=false held=true consumed=6480 phase=Capturing
+2040.370ms capture-tick index=28 voiced=false held=true consumed=6480 phase=Capturing
+2089.049ms capture-tick index=29 voiced=false held=true consumed=6480 phase=Capturing
+2138.936ms capture-tick index=30 voiced=false held=true consumed=6480 phase=Capturing
+2190.453ms capture-tick index=31 voiced=false held=true consumed=6480 phase=Capturing
+2239.780ms capture-tick index=32 voiced=false held=true consumed=6480 phase=Capturing
+2288.569ms capture-tick index=33 voiced=false held=true consumed=6480 phase=Capturing
+2339.228ms capture-tick index=34 voiced=false held=true consumed=6480 phase=Capturing
+2389.326ms synthetic-transcribe samples=28800 canned_verdict=unaddressed
+2389.340ms output-resume consumed=6480 queue_nonempty=true
+2389.344ms capture-tick index=35 voiced=false held=false consumed=6480 phase=Waiting
+2437.738ms capture-tick index=36 voiced=false held=false consumed=7458 phase=Waiting
+2490.540ms capture-tick index=37 voiced=false held=false consumed=8482 phase=Waiting
+3239.369ms source-end id=0 max_consumption_gap_ms=1663.983
+3239.377ms source-start id=1
+5585.959ms source-end id=1 max_consumption_gap_ms=42.638
+5585.967ms source-start id=2
+8145.955ms source-end id=2 max_consumption_gap_ms=42.645
+8152.090ms all-drained-or-deadline
+Dropping DeviceSink, audio playing through this sink will stop, to prevent this message from appearing use tracing or call `.log_on_drop(false)` on this DeviceSink
+
+exit_code=0

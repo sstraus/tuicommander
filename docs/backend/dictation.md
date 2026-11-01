@@ -242,6 +242,33 @@ than failing, so a caller can always ask.
 A model does not call these. It calls the `voice` MCP tool, which supplies its
 own identity so the binding can be checked — see "Who may speak" below.
 
+### Investigate gaps in spoken replies
+
+The speech port returns a complete utterance before output starts. Pocket text
+chunks and Edge response pieces are assembled inside their synthesis adapters;
+they are not device playback chunks. The speaker worker can render the next
+queued utterance while the preceding audio plays. Its 25 ms completion poll is
+not an inter-buffer scheduling timer. `Speaking` means handed to the output,
+not an acoustic start timestamp.
+
+For isolated native timing, build the `speech_gap_probe` example in
+`tuic-dictation` through the authorized native build slot and mbx. It opens no
+microphone or app instance and sends silence to the output while preserving
+synthesized rates and lengths. Default mode records synthesis, append, and
+mixer source-consumption boundaries; `--direct` uses production `DeviceOutput`
+and records append/drain state. Source-consumption times are not DAC or acoustic
+measurements. `--load` adds bounded synthetic load and needs explicit authority
+on a shared machine.
+
+The 2605-53fc measurements and repeat instructions are in
+`src-tauri/crates/tuic-dictation/fixtures/playback-2605/README.md`.
+Pocket and Edge did not reproduce a native boundary gap under the measured
+partial load. The report retains one Edge network failure and the limits of
+that result. Historical capture-loop pause/resume entries are a separate
+candidate mechanism, not proof of a synthesis or device-scheduling defect.
+Do not increase buffers or remove the activation-verdict hold without a failing
+capture that distinguishes those mechanisms.
+
 ### Configuration
 
 | Command | Description |
@@ -1613,6 +1640,60 @@ The queue is built in `arm_hands_free_with` **before** the runtime is spawned
 whenever a language is already known, for this reason alone: a loop started
 first would spend its first ticks unable to interrupt anything.
 
+### Correlated hold diagnostics (2605-53fc)
+
+After a Rust rebuild/restart, each capture hold writes two structured INFO events
+with `source="dictation"`: `barge-in hold opened` and `barge-in hold resolved`.
+Pair them by `hold_id`, `owner` and `generation` within the same process run.
+The process-local hold ID starts again after a restart. No new transcript text
+or PCM is retained. Existing admission logs are unchanged.
+
+The opening event is sampled before requesting the output pause:
+
+| Fields | Meaning and limits |
+|---|---|
+| `output_nonempty`, `can_pause` | Best-effort output probe. `Some(true)` for nonempty means queued or paused audio, **not** acoustic activity. `None` means the slot is busy, absent, or has no probe. The probe does not wait for a voice rebuild. |
+| `raw_rms`, `raw_peak` | Mono 16 kHz energy of the drained batch before cancellation. This is not the normalized UI level. |
+| `cleaned_rms_max`, `cleaned_active_frames` | Maximum RMS and active count over complete 20 ms frames of this cleaned batch. Frames follow this batch's start; they can differ from the segmenter's carried-frame boundaries. |
+| `longest_run_ms`, `activity_rms`, `min_speech_ms` | Longest sustained run in the open/closed utterance and the actual segmenter thresholds that caused the edge. A long batch can open and close an utterance in one tick. |
+| `drained_samples`, `backlog_samples`, `partial_samples` | Batch size, best-effort endpoint backlog after drain, and echo cleaner's carried partial 10 ms frame. `None` backlog means the capture buffer was busy or unavailable; it is not zero. |
+| `capture_batches`, `dropped_samples` | Cumulative capture counters: native CPAL callback batches/lost 16 kHz samples, or browser received WS batches/server overflow samples. Browser counters do not measure hardware callbacks or audio lost before receipt. An old drop count alone does not date the loss. |
+| `far_end_samples`, `far_end_position`, `far_end_dropped` | Reference queue length, capture-sample cursor and cumulative reference overflow, sampled under the echo lock just after cleaning this batch. Queue length can include alignment silence, not only reply PCM. |
+| `last_render_age_ms` | Time since reference registration, not time since DAC onset; `None` if no reply has registered for this capture. |
+| `drain_to_clean_us`, `tick_interval_ms` | Time from drain completion until the echo lock is acquired, and wall time between tick entries (`None` on the first tick). The latter includes inline recognition and scheduling, not just scheduler delay. |
+
+The resolution event has the same identity plus `reason`, monotonic `elapsed_ms`
+since opening, and cumulative `inference_us` spent in prefix/final recognition
+while that hold was pending. `inference_us=0` is valid when no recognition ran.
+Resolution reasons are:
+
+| Reason | Existing decision |
+|---|---|
+| `accepted` | Final transcript was admitted with content; hush the old reply. |
+| `activated` | Final transcript was the activation phrase alone; hush the old reply. |
+| `rejected` | Final transcript did not pass activation; resume. |
+| `empty` | Final recognition returned no text, including downstream speech-gate skips; resume. |
+| `stale` | Final recognition belonged to a withdrawn/unarmed generation; resume. |
+| `discard` | Capture returned to no open utterance without a qualifying closed result; resume. |
+| `limit` | A tick observed elapsed capture time strictly greater than the 8000 ms hold limit; resume. |
+| `release` | Runtime cleanup released a still-pending hold, including a device/recognition failure, stop, or prefix-generation withdrawal. |
+
+Only the first resolution of a pending hold is recorded. Runtime release after
+an admitted/rejected/limited hold does not add another event. The existing
+`speech: resumed, nothing addressed to us` message stays for compatibility;
+use the new `reason` rather than inferring rejection from that old text.
+The eight-second limit still runs on ticks and cannot preempt synchronous
+recognition. Diagnostics do not change VAD, admission or output policy.
+
+Read the existing instance-local daily `logs/tuic.log.YYYY-MM-DD`, or use the
+existing log panel/API when enabled, and filter for `barge-in hold `. Compare
+raw and cleaned energy, the reference queue and capture-drop counters at an
+edge, then its actual verdict. A nonempty output plus high residual and a
+capture discontinuity is useful evidence, not proof that the residual is echo.
+Numeric aggregates cannot distinguish room speech from TTS echo or reconstruct
+reference alignment. PCM replay requires a separate, explicitly authorized,
+bounded opt-in capture; this diagnostic does not record or open a microphone.
+
 ### What barge-in measures (816-cbbf)
 
 The barge-in tests above this one all use `Subtract`, a perfect non-adaptive
@@ -1985,3 +2066,21 @@ An authorized `make agent-test AGENT_TEST_INSTANCE=agent-test-<name> AGENT_TEST_
 Voice saves normalize the latest locked engine selection before applying the caller’s field delta. An unchanged resolved Edge choice must not remain unset on disk and later migrate to an inactive external command or Pocket voice. A concurrent explicit engine choice is retained unless this caller changed that field.
 
 ACP channel origins do not identify an individual session within a shared connection. If another session on that connection has an unsettled turn, voice calls are unavailable rather than attributed to the wrong chat. Settled turn history does not mute the target.
+
+### Browser reply scheduling (2605-53fc)
+
+The browser appends complete downlink buffers on `AudioContext.currentTime`.
+Each source starts at the preceding source's end, without waiting for the
+main-thread `ended` callback. Pause stops scheduled sources and retains their
+positions; resume reschedules the active remainder before later replies. Stop
+and teardown invalidate every scheduled source and its stale callbacks.
+
+Each binary reply has a sample rate, a monotonically increasing 64-bit sequence,
+and PCM samples. Per-reply `playback-ended` controls echo the sequence as a
+string. The backend uses one locked playback state for appends, holds, stops and
+ACKs, adds queued durations, and ignores ACKs that would retire newer audio.
+Client and backend ship together; reload an old browser tab after updating.
+
+This fixes browser truncation present since `f03ec66af5`. It does not establish
+that browser playback caused the reported native stutter. The retained native
+probe and capture-hold evidence describe separate mechanisms and limitations.

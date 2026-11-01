@@ -2,6 +2,17 @@
 
 - [ ] After rebuilding, use a throwaway Windows project to request available story transitions for a plan stored with a non-canonical project path. The same project must succeed and a different project must fail. Confirm Windows CI passes workflow integration and byte-exact stdin tests. Linux rb runner checks run on POSIX hosts; local secret-redaction receipt coverage still runs on Windows. No daily instance was restarted. Rust changes require a manual restart when losing current sessions is acceptable.
 
+## Claude question parser simplification (2572-20a4) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm Claude question titles, preview hints, Chat selection and clipped-form navigation remain unchanged. This is a behavior-preserving helper extraction. Recorded-fixture tests cover these contracts; no daily app was restarted. Rust changes do not hot-reload. Restart only when losing current sessions is acceptable.
+
+## Correlated barge-in hold diagnostics (2605-53fc) — Rust rebuild/restart required
+
+- [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build` when losing sessions is acceptable, inspect an authorized voice session's retained logs for `barge-in hold opened` and one matching `barge-in hold resolved`. Pair by hold ID, owner and generation. Check rejected/accepted/limit reasons rather than treating the old generic resume text as a recognition verdict. Fields report queued output and aggregate capture/reference state, not acoustic playback or an echo diagnosis. Targeted synthetic tests verify the event contract; no daily microphone or running app was accessed. Rust changes do not hot-reload. Do not enable microphone/PCM capture without separate authority.
+
+## Browser voice queue (2605-53fc) — Rust rebuild/restart required
+
+- [ ] After Boss manually rebuilds/restarts when losing current sessions is acceptable, reload the browser tab (the audio frame header changed). Queue several spoken replies and confirm each finishes without truncation. Talk over a reply without the activation phrase, then confirm its remainder and later replies resume in order; interrupt the turn and confirm none of its queued audio returns. Automated scheduling/ACK tests do not verify real speaker output or microphone/AEC behavior. No daily instance was restarted; Rust does not hot-reload. The original native stutter remains unproven.
 ## Pinned reusable workflow Calls (2516-8fd1) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, publish a decision/check Call in a throwaway project. Inspect nested pins and typed outputs, republish the callee, and confirm the live run keeps its original revision. Cancel a live child and inspect its stop request plus retained integration obligations. No daily instance was restarted; Rust does not hot-reload. Restart only when losing current sessions is acceptable.

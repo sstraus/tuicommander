@@ -1,0 +1,38 @@
+RB_CARGO_BUILD_JOBS=3
+=== PRE-FIX RED 4dfd3f99999798b7f0190104a5540eba9cd982df (ACK driver adapted to old no-sequence signature) ===
+info: experimental features enabled: setup-scripts
+   Compiling tuic-core v2.0.0 (/home/rb/src/tuicommander-54a9d98c-slot2/src-tauri/crates/tuic-core)
+   Compiling tuic-dictation v2.0.0 (/home/rb/src/tuicommander-54a9d98c-slot2/src-tauri/crates/tuic-dictation)
+   Compiling tuicommander v2.0.0 (/home/rb/src/tuicommander-54a9d98c-slot2/src-tauri)
+   Compiling tuic-git v2.0.0 (/home/rb/src/tuicommander-54a9d98c-slot2/src-tauri/crates/tuic-git)
+    Finished `test` profile [unoptimized] target(s) in 6m 05s
+────────────
+ Nextest run ID a10a7315-c633-4dc1-aa7a-80781b05dd01 with nextest profile: default
+    Starting 1 test across 1 binary (6736 tests skipped)
+       SETUP [      1/1] repo-test-temp-unix: sh scripts/nextest-test-tmp.sh
+  SETUP PASS [   0.013s] repo-test-temp-unix: sh scripts/nextest-test-tmp.sh
+        FAIL [   0.038s] (1/1) tuicommander dictation::browser::tests::an_old_playback_ack_cannot_finish_a_later_append_or_new_turn
+  stdout ───
+
+    running 1 test
+    test dictation::browser::tests::an_old_playback_ack_cannot_finish_a_later_append_or_new_turn ... FAILED
+
+    failures:
+
+    failures:
+        dictation::browser::tests::an_old_playback_ack_cannot_finish_a_later_append_or_new_turn
+
+    test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 6736 filtered out; finished in 0.00s
+
+  stderr ───
+
+    thread 'dictation::browser::tests::an_old_playback_ack_cannot_finish_a_later_append_or_new_turn' (4114528) panicked at src/dictation/browser.rs:651:9:
+    first ACK must keep the second reply
+    note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+  Cancelling due to test failure: 
+────────────
+     Summary [   0.070s] 1 test run: 0 passed, 1 failed, 6736 skipped
+        FAIL [   0.038s] (1/1) tuicommander dictation::browser::tests::an_old_playback_ack_cannot_finish_a_later_append_or_new_turn
+error: test run failed
+
