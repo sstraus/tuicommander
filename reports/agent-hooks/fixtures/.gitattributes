@@ -1,0 +1,3 @@
+# Preserve original runner byte streams and host metadata, including CRLF.
+windows-conpty-2631*/**/*.bin binary
+windows-conpty-2631*/**/*.txt binary
