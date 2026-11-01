@@ -416,18 +416,7 @@ impl RunStore {
                 "canonical repository has an unfinished integration; recover it first".into(),
             );
         }
-        let execution = run
-            .stories
-            .iter()
-            .find(|s| s.story_id == request.story_id)
-            .ok_or("story execution not found")?;
-        let revision = execution.accepted_revision.ok_or("story is not accepted")?;
-        let story = StoryStore::open()?.get_story(&request.story_id)?;
-        if story.status != StoryStatus::Done
-            || !story_work_revision_current(&story.id, revision, story.revision)?
-        {
-            return Err("integration requires the accepted story revision".into());
-        }
+        let (execution, revision) = accepted_integration_execution(run, request)?;
         let workspace = execution
             .worktree_path
             .clone()
@@ -1164,6 +1153,26 @@ impl RunStore {
         }
         Ok(())
     }
+}
+
+/// Resolve the execution and accepted story revision required for admission.
+fn accepted_integration_execution<'a>(
+    run: &'a RunSnapshot,
+    request: &IntegrateRequest,
+) -> Result<(&'a StoryExecution, i64), String> {
+    let execution = run
+        .stories
+        .iter()
+        .find(|s| s.story_id == request.story_id)
+        .ok_or("story execution not found")?;
+    let revision = execution.accepted_revision.ok_or("story is not accepted")?;
+    let story = StoryStore::open()?.get_story(&request.story_id)?;
+    if story.status != StoryStatus::Done
+        || !story_work_revision_current(&story.id, revision, story.revision)?
+    {
+        return Err("integration requires the accepted story revision".into());
+    }
+    Ok((execution, revision))
 }
 
 /// Validate one declared conflict and write its append-only union as a Git blob.

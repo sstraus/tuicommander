@@ -183,6 +183,44 @@ fn trial() -> Trial {
 }
 
 #[test]
+fn integration_admission_validates_id_bytes_before_stale_sequence() {
+    // catches: accepting blank/oversized IDs, counting characters instead of bytes,
+    // or reporting a stale sequence before the invalid command identity.
+    let mut t = trial();
+    enable(&t);
+    t.request.expected_sequence -= 1;
+    for invalid in [
+        String::new(),
+        " \t".into(),
+        "a".repeat(257),
+        "é".repeat(129),
+    ] {
+        t.request.command_id = invalid;
+        assert_eq!(
+            t.store.integrate(&t.request).unwrap_err(),
+            "integration command id must contain 1..256 bytes"
+        );
+    }
+    t.request.command_id = "a".repeat(256);
+    assert_eq!(
+        t.store.integrate(&t.request).unwrap_err(),
+        "stale workflow sequence"
+    );
+    assert!(
+        t.store
+            .integration_progress(&t.request.run_id, &t.request.story_id)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        git(&t.project, &["rev-parse", "HEAD"]),
+        t.request.expected_base
+    );
+    t.request.expected_sequence += 1;
+    assert!(t.store.integrate(&t.request).unwrap().merged);
+}
+
+#[test]
 fn disabled_repository_policy_refuses_native_merge() {
     // catches: default-on integration and rollback erasing existing debt.
     let t = trial();
