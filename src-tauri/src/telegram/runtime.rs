@@ -267,7 +267,8 @@ impl Runtime {
         if !self.enabled() {
             return Err(Error::Config);
         }
-        let envelope: Value = serde_json::from_str(&mail.content).map_err(|_| Error::Protocol)?;
+        let mut envelope: Value =
+            serde_json::from_str(&mail.content).map_err(|_| Error::Protocol)?;
         let chat = envelope["chat_id"]
             .as_str()
             .and_then(|s| s.parse::<i64>().ok())
@@ -291,24 +292,42 @@ impl Runtime {
             .await
             .is_ok_and(|result| result == Value::Bool(true));
         self.stage("received");
+        let direct = self.reply_recipient(&envelope);
+        let fallback_target = direct
+            .is_none()
+            .then(|| self.reply_target(&envelope))
+            .flatten();
+        if let Some(target) = &fallback_target {
+            envelope["reply_to_agent"] =
+                serde_json::to_value(target).map_err(|_| Error::Protocol)?;
+            mail.content = serde_json::to_string(&envelope).map_err(|_| Error::Protocol)?;
+        }
         let text = envelope["text"].as_str();
-        let Some(peer) = self
-            .reply_recipient(&envelope)
-            .or_else(|| self.recipient_peer())
-        else {
+        let Some(peer) = direct.or_else(|| self.recipient_peer()) else {
             self.state
                 .telegram_recent
                 .lock()
                 .record("in", "message", "dropped: no agent", text);
-            self.outbound
-                .send(
-                    chat,
-                    "No agent is listening. Ask an agent in TUICommander to register for Telegram.",
-                    None,
-                )
-                .await?;
+            let notice = fallback_target.as_ref().map_or_else(
+                || "No agent is listening. Ask an agent in TUICommander to register for Telegram.".to_owned(),
+                |target| format!("Agent {} is not available. No agent is listening. Ask an agent in TUICommander to register for Telegram.", target.label()),
+            );
+            self.outbound.send(chat, &notice, None).await?;
             return Ok(json!({"accepted":false}));
         };
+        let fallback_notice = fallback_target.as_ref().map(|target| {
+            let name = self
+                .state
+                .peer_agents
+                .get(&peer)
+                .map(|p| p.name.clone())
+                .unwrap_or_else(|| peer.clone());
+            format!(
+                "Agent {} is not available. Reply delivered to \"{name}\" ({}).",
+                target.label(),
+                self.sender_address(&peer)
+            )
+        });
         mail.recipient = peer;
         // Subscribe before delivery: ACP may wake as soon as the mail is stored.
         let recipient = super::streaming::Recipient::capture(&self.state, &mail.recipient);
@@ -327,6 +346,12 @@ impl Runtime {
         let accepted = self.track(mail, recipient)?;
         if let Some(request) = self.requests.iter_mut().find(|r| r.id == id) {
             request.reaction_sent = received.then_some(0);
+        }
+        if let Some(notice) = fallback_notice {
+            // Mail is already accepted. A failed acknowledgement must not reoffer it.
+            if let Err(error) = self.outbound.send(chat, &notice, None).await {
+                alert(&self.state, error);
+            }
         }
         self.show_oldest().await;
         if delivery["delivery_path"] == "inbox_only" {

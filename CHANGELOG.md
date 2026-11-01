@@ -6,6 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+- Preserve the name and TUIC address when Telegram replies fall back from an exited agent; identify the receiving session or unavailable target, and document coordinator registration after restart (#2640-1cbf).
 - Hide the mobile queued prompt list behind its live count. Tap Show to reopen it; an empty user queue resets the panel for new work. Exclude server mail/task entries by origin and preserve them when clearing listed user prompts (#2639-173b).
 
 - Queue busy Session Chat prompts in TUIC and add per-prompt Cancel and Send now controls without duplicate idle delivery (#2589-4bc4).

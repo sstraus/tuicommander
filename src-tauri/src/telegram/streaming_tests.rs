@@ -1034,7 +1034,10 @@ async fn correlated_reply_tools_keep_the_original_chat_until_explicit_takeover()
         .unwrap();
     assert_eq!(
         finals(&server),
-        ["[target-mcp] Unsolicited", "Original answer"]
+        [
+            "[target-mcp] [alias: 11111111-1111-4111-8111-111111111111] Unsolicited",
+            "Original answer"
+        ]
     );
     runtime.deliver(mail(8)).await.unwrap();
     assert_eq!(runtime.requests[1].peer, other);
@@ -1056,7 +1059,10 @@ async fn correlated_reply_tools_keep_the_original_chat_until_explicit_takeover()
     );
     assert_eq!(
         finals(&server),
-        ["[target-mcp] Unsolicited", "Original answer"]
+        [
+            "[target-mcp] [alias: 11111111-1111-4111-8111-111111111111] Unsolicited",
+            "Original answer"
+        ]
     );
 }
 

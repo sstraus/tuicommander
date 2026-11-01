@@ -3,6 +3,21 @@ use serde_json::Value;
 use std::time::Duration;
 use tokio::time::Instant;
 
+#[derive(serde::Serialize)]
+pub(super) struct ReplyTarget {
+    pub name: String,
+    pub alias: Option<String>,
+}
+
+impl ReplyTarget {
+    pub fn label(&self) -> String {
+        match &self.alias {
+            Some(alias) => format!("\"{}\" ({alias})", self.name),
+            None => format!("\"{}\"", self.name),
+        }
+    }
+}
+
 const SEND_INTERVAL: Duration = Duration::from_secs(30);
 
 impl Runtime {
@@ -43,7 +58,52 @@ impl Runtime {
         {
             return Err(Error::InvalidSenderName);
         }
-        Ok(format!("[{name}] "))
+        Ok(format!(
+            "[{name}] [alias: {}] ",
+            self.sender_address(caller)
+        ))
+    }
+
+    pub(super) fn sender_address(&self, peer: &str) -> String {
+        self.state
+            .live_pty_for_peer(peer)
+            .and_then(|pty| {
+                self.state
+                    .session_maps
+                    .term_aliases
+                    .get(&pty)
+                    .map(|alias| alias.value().clone())
+            })
+            .unwrap_or_else(|| peer.to_owned())
+    }
+
+    pub(super) fn reply_target(&self, envelope: &Value) -> Option<ReplyTarget> {
+        let text = envelope["reply_to_text"].as_str()?;
+        let (name, rest) = text.strip_prefix('[')?.split_once("] ")?;
+        if name.trim().is_empty()
+            || name.encode_utf16().count() > 128
+            || name
+                .chars()
+                .any(|ch| ch.is_control() || matches!(ch, '[' | ']'))
+        {
+            return None;
+        }
+        let alias = rest
+            .strip_prefix("[alias: ")
+            .and_then(|rest| rest.split_once("] "))
+            .map(|(alias, _)| alias)
+            .filter(|alias| {
+                !alias.is_empty()
+                    && alias.encode_utf16().count() <= 128
+                    && !alias
+                        .chars()
+                        .any(|ch| ch.is_control() || matches!(ch, '[' | ']'))
+            })
+            .map(str::to_owned);
+        Some(ReplyTarget {
+            name: name.to_owned(),
+            alias,
+        })
     }
 
     pub(super) fn limit_sender(&mut self, caller: &str) -> Result<(), Error> {
@@ -60,8 +120,8 @@ impl Runtime {
     }
 
     pub(super) fn reply_recipient(&self, envelope: &Value) -> Option<String> {
-        let text = envelope["reply_to_text"].as_str()?;
-        let (name, _) = text.strip_prefix('[')?.split_once("] ")?;
+        let target = self.reply_target(envelope)?;
+        let name = target.name;
         let candidates: Vec<_> = self
             .state
             .peer_agents
