@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - AI Chat master prompt in Settings: additive instructions for new conversations, with an 8192-byte limit.
 ### Fixed
 
+- Accept stored story project paths that resolve to the same canonical directory, including Windows verbatim paths. Repair Windows workflow test clone paths and byte-exact stdin checks; keep Linux remote-runner tests separate from cross-platform local receipt checks.
 - Queue browser voice replies on the audio clock instead of cutting off the active reply. Preserve holds and queued durations; sequence playback acknowledgements so an old reply cannot finish newer audio (#2605-53fc). Reload browser tabs after updating the backend. This fixes a separate browser defect, not a proven cause of the reported native stutter.
 
 - Honor explicit worktree bases when a branch name already exists: reject conflicting tips instead of checking out the wrong commit. Report the resolved `base_commit` over MCP, HTTP and desktop IPC (#2613-9ad7).

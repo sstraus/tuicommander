@@ -365,7 +365,7 @@ fn stdin_artifact_is_snapshotted_and_bound_to_receipt() {
         );
     }
     let journal = CommandJournal::for_runs(&root.path().join("runs.db"));
-    let mut command = definition("import sys; print(sys.stdin.read(),end='')");
+    let mut command = definition("import sys; sys.stdout.buffer.write(sys.stdin.buffer.read())");
     command.stdin_artifact = Some("input.txt".into());
     let receipt = journal
         .execute(
@@ -514,8 +514,12 @@ fn tool_mutation_receipt_is_not_unchanged_artifact_proof_and_releases_slot() {
     }
 }
 
+// REMOTE_COMMAND runs only on Linux rb (CommandReceipt::proves_target), where
+// preexec_fn=os.setpgrp and os.killpg own the remote process group. Windows
+// clients submit it to rb; they never execute this POSIX runner locally.
+#[cfg(unix)]
 #[test]
-fn json_escaped_secrets_do_not_reach_remote_durable_output_or_local_receipts() {
+fn json_escaped_secrets_do_not_reach_remote_durable_output() {
     // catches F3: JSON-escaped quotes, slashes and controls bypassing raw redaction.
     let root = scratch();
     let workspace = root.path().join("repo");
@@ -551,9 +555,20 @@ fn json_escaped_secrets_do_not_reach_remote_durable_output_or_local_receipts() {
         decoded["credential"], "[REDACTED]",
         "secret recoverable from durable envelope"
     );
+}
+
+#[test]
+fn json_escaped_secrets_do_not_reach_local_receipts() {
+    // Catches: JSON escaping bypasses redaction before a local receipt is persisted.
+    let root = scratch();
+    let workspace = root.path().join("repo");
+    std::fs::create_dir(&workspace).unwrap();
+    repo(&workspace);
+    let secret = "wf05-\"quoted\\credential\n\t";
+    let script = "import json,os; print(json.dumps({'credential':os.environ['WF05_SECRET']}))";
     if std::env::var_os("WF05_LOCAL_SECRET").is_none() {
         let output = Command::new(std::env::current_exe().unwrap())
-            .args(["--exact", "workflows::command::executor::tests::json_escaped_secrets_do_not_reach_remote_durable_output_or_local_receipts", "--nocapture"])
+            .args(["--exact", "workflows::command::executor::tests::json_escaped_secrets_do_not_reach_local_receipts", "--nocapture"])
             .env("WF05_LOCAL_SECRET", secret).output().unwrap();
         assert!(
             output.status.success(),
@@ -589,6 +604,8 @@ fn json_escaped_secrets_do_not_reach_remote_durable_output_or_local_receipts() {
     assert!(!encode(&reopened).unwrap().contains("quoted"));
 }
 
+// This exercises the POSIX-only runner on its executor, not the Windows client.
+#[cfg(unix)]
 #[test]
 fn dual_stream_escaped_remote_output_fits_outer_capture() {
     // catches F4: valid bounded streams becoming a truncated, undecodable receipt envelope.
@@ -622,6 +639,52 @@ fn dual_stream_escaped_remote_output_fits_outer_capture() {
         .expect("complete envelope within outer capture");
         assert!(remote["stdout"].as_str().unwrap().ends_with("[TRUNCATED]"));
         assert!(remote["stderr"].as_str().unwrap().ends_with("[TRUNCATED]"));
+    }
+}
+
+#[test]
+fn recorded_dual_stream_remote_envelopes_survive_client_capture() {
+    // Catches: the host truncates escaped dual-stream output before decoding the remote envelope.
+    // Recordings come from the Unix producer; replay never executes its POSIX-only runner.
+    let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/workflows/command/fixtures");
+    for (name, stdout_char, stderr_char) in [
+        ("controls", '\u{1}', '\u{2}'),
+        ("ascii", 'a', 'b'),
+        ("unicode", '\u{1f600}', '\u{1f601}'),
+    ] {
+        let mut command = Command::new(python());
+        command
+            .args([
+                "-c",
+                "import gzip,sys; sys.stdout.buffer.write(gzip.open(sys.argv[1],'rb').read())",
+            ])
+            .arg(fixtures.join(format!("remote-dual-stream-{name}.txt.gz")))
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        let output = execute_process(command, Duration::from_secs(20), None, false).unwrap();
+        assert_eq!(output.exit_code, 0, "{name}");
+        assert!(output.stderr.is_empty(), "{name}: {:?}", output.stderr);
+        let envelope = String::from_utf8(output.stdout).unwrap();
+        let remote: serde_json::Value = serde_json::from_str(
+            envelope
+                .trim()
+                .strip_prefix("TUIC_COMMAND_RESULT=")
+                .unwrap(),
+        )
+        .expect("recorded remote envelope must survive the host's outer capture");
+        assert_eq!(remote["exit_code"], 0, "{name}");
+        for (stream, expected) in [("stdout", stdout_char), ("stderr", stderr_char)] {
+            let content = remote[stream]
+                .as_str()
+                .unwrap()
+                .strip_suffix("[TRUNCATED]")
+                .expect("producer truncation marker must survive capture and decoding");
+            assert!(!content.is_empty(), "{name}: {stream}");
+            assert!(
+                content.chars().all(|value| value == expected),
+                "{name}: {stream} changed during capture or decoding"
+            );
+        }
     }
 }
 
