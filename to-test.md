@@ -1,3 +1,7 @@
+## Windows CI workflow paths — Rust rebuild/restart required
+
+- [ ] After rebuilding, use a throwaway Windows project to request available story transitions for a plan stored with a non-canonical project path. The same project must succeed and a different project must fail. Confirm Windows CI passes workflow integration and byte-exact stdin tests. Linux rb runner checks run on POSIX hosts; local secret-redaction receipt coverage still runs on Windows. No daily instance was restarted. Rust changes require a manual restart when losing current sessions is acceptable.
+
 ## Claude question parser simplification (2572-20a4) — Rust rebuild/restart required
 
 - [ ] After Boss manually restarts a rebuilt `make dev` or installs `make build`, confirm Claude question titles, preview hints, Chat selection and clipped-form navigation remain unchanged. This is a behavior-preserving helper extraction. Recorded-fixture tests cover these contracts; no daily app was restarted. Rust changes do not hot-reload. Restart only when losing current sessions is acceptable.

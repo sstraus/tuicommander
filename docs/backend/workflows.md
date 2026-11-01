@@ -150,7 +150,10 @@ bindings remain part of WF04.
 build-slot/rb adapters, including freeze, source manifests, reservations and
 fair build admission. `rb_after_native {native_effect,os,arch}` additionally
 requires successful local proof for the exact source and command/schema before
-setting RB_FORCE. Linux proof cannot satisfy a native macOS requirement. The
+setting RB_FORCE. Linux proof cannot satisfy a native macOS requirement.
+The remote Python runner executes on Linux rb and uses POSIX process groups;
+a Windows client delegates to rb instead of running that script locally.
+Local command receipts and secret redaction remain available on Windows. The
 adapter root defaults to the orchestrator tools checkout and can be selected by
 `TUIC_WORKFLOW_ADAPTER_ROOT` on daemon startup. No SSH scheduler is added.
 

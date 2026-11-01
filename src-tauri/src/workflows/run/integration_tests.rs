@@ -38,7 +38,8 @@ fn trial() -> Trial {
             "-q",
             "--no-local",
             seed.to_str().unwrap(),
-            project.to_str().unwrap(),
+            // Git cannot clone into the verbatim path returned by Windows canonicalize.
+            &tuic_core::path_spelling::portable_spelling(project.to_str().unwrap()),
         ],
     );
     git(&project, &["config", "user.name", "WF07 Trial"]);
