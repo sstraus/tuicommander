@@ -315,6 +315,89 @@ fn moving_base_requires_new_merge_checks() {
 }
 
 #[test]
+fn synthetic_publication_rejects_changed_source_tip_or_either_branch_identity() {
+    // catches: publishing a checked candidate after a source edit or same-tip branch rename.
+    for case in ["source-tip", "source-ref", "canonical-ref"] {
+        let t = trial();
+        enable(&t);
+        let workspace = t.workspace.clone();
+        let project = t.project.clone();
+        super::store::integration::before_publish(move || match case {
+            "source-tip" => {
+                git(
+                    &workspace,
+                    &["commit", "--allow-empty", "-qm", "late source edit"],
+                );
+            }
+            "source-ref" => {
+                git(&workspace, &["branch", "-m", "renamed-source"]);
+            }
+            "canonical-ref" => {
+                git(&project, &["branch", "-m", "renamed-canonical"]);
+            }
+            _ => unreachable!(),
+        });
+        assert_eq!(
+            t.store.integrate(&t.request).unwrap_err(),
+            "base or source moved after synthetic merge checks",
+            "{case}"
+        );
+        assert_eq!(
+            git(&t.project, &["rev-parse", "HEAD"]),
+            t.request.expected_base
+        );
+        assert_eq!(
+            git(&t.project, &["rev-list", "--count", "--merges", "HEAD"]),
+            "0"
+        );
+        let progress = t
+            .store
+            .integration_progress(&t.request.run_id, &t.request.story_id)
+            .unwrap()
+            .unwrap();
+        assert!(!progress.merged, "{case}");
+        assert_eq!(t.store.integration_obligations(&t.project).unwrap(), vec![]);
+        assert_eq!(
+            std::fs::read_to_string(t.workspace.join("work.txt")).unwrap(),
+            "accepted work\n"
+        );
+    }
+}
+
+#[test]
+fn post_merge_checks_refuse_a_clean_canonical_descendant_without_recertification() {
+    // catches: certifying the original merge after canonical HEAD advances cleanly.
+    let t = trial();
+    enable(&t);
+    super::store::integration::fault(IntegrationFault::AfterMerge);
+    assert_eq!(t.store.integrate(&t.request).unwrap_err(), "injected crash");
+    git(
+        &t.project,
+        &["commit", "--allow-empty", "-qm", "later canonical work"],
+    );
+    let current = git(&t.project, &["rev-parse", "HEAD"]);
+    let pending = t.store.integrate(&t.request).unwrap();
+    assert_eq!(
+        pending.outcome,
+        IntegrationOutcome::IntegratedObligationPending
+    );
+    assert_eq!(
+        pending.reason.as_deref(),
+        Some(
+            "canonical ref moved before post-integration checks; explicit recertification required"
+        )
+    );
+    assert!(pending.merged && pending.obligation_published);
+    assert!(!pending.receipt_recorded);
+    assert_eq!(pending.receipt.unwrap().post_checks, vec![]);
+    assert_eq!(git(&t.project, &["rev-parse", "HEAD"]), current);
+    assert_eq!(
+        git(&t.project, &["rev-list", "--count", "--merges", "HEAD"]),
+        "1"
+    );
+}
+
+#[test]
 fn cleanup_failure_keeps_integrated_state() {
     // catches: cleanup refusal turns a successful integration into a second merge.
     let t = trial();
