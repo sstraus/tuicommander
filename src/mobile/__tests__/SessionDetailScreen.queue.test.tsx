@@ -263,6 +263,26 @@ it("does not alert for an unsupported queue endpoint without pending queue evide
 	expect(view.queryByRole("alert")).toBeNull();
 });
 
+// Catches: a non-array host reply crashes the queue computation instead of leaving the session usable.
+it.each([undefined, null, {}, "unavailable"])(
+	"ignores non-array queue replies (%j) and recovers on a valid snapshot",
+	async (reply) => {
+		vi.mocked(rpc).mockImplementation(async () => reply);
+		const view = mount();
+		await waitFor(() =>
+			expect(vi.mocked(rpc).mock.settledResults.some((result) => result.type === "fulfilled")).toBe(true),
+		);
+		expect(view.queryByRole("region", { name: "Queued prompts" })).toBeNull();
+		expect(view.queryByRole("alert")).toBeNull();
+		expect(view.getByRole("textbox")).toBeTruthy();
+
+		vi.mocked(rpc).mockResolvedValue([{ id: 121, text: "Recovered task", kind: "user_command" }]);
+		view.updateCount(1);
+		expect(await view.findByText("Recovered task")).toBeTruthy();
+		expect(view.getByRole("status").textContent).toBe("Queued · 1");
+	},
+);
+
 // Catches: treating authentication, server and network failures as unsupported queue capability.
 it.each([401, 500, "offline"] as const)("keeps queue read failure %s visible and retryable", async (failure) => {
 	vi.mocked(rpc).mockRejectedValue(

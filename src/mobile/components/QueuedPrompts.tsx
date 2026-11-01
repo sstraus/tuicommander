@@ -18,10 +18,9 @@ export function QueuedPrompts(props: { sessionId: string; count: number; revisio
 			read = new AbortController();
 			try {
 				// A fresh read must not share an older pre-mutation HTTP GET.
-				return {
-					items: await rpc<QueuedCommand[]>("list_queued_agent_commands", { sessionId }, undefined, read.signal),
-					error: null,
-				};
+				const items = await rpc<QueuedCommand[]>("list_queued_agent_commands", { sessionId }, undefined, read.signal);
+				// Missing or incompatible optional queue data must not break the session view.
+				return { items: Array.isArray(items) ? items : [], error: null };
 			} catch (error) {
 				// Older hosts may not expose queue reads. With no pending count or
 				// accepted local enqueue, that optional capability is not a session error.
