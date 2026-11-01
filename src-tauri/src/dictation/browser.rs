@@ -55,8 +55,8 @@ const MAX_CAPTURE_SAMPLES: usize = 16_000 * 60;
 /// What the server sends a client that owns a conversation.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Downlink {
-    /// Play this, now.
-    Speak(SpeechAudio),
+    /// Append this reply after any audio already playing or held.
+    Speak { sequence: u64, audio: SpeechAudio },
     /// Stop playing and drop whatever is queued.
     Stop,
     /// Hold what is playing where it is, and anything that arrives, until
@@ -75,17 +75,16 @@ pub struct BrowserLink {
     capture: Mutex<VecDeque<f32>>,
     playback: tokio::sync::broadcast::Sender<Downlink>,
     alive: AtomicBool,
-    /// When the audio handed to the client is expected to have finished.
-    ///
-    /// A browser cannot be asked "are you still speaking" the way a `rodio`
-    /// sink can, and a client that is told to play 3 seconds of audio and then
-    /// closes its tab would otherwise leave the reply `Speaking` for ever. The
-    /// deadline is the authority; a client that finishes early says so and
-    /// moves it to now.
-    speaking_until: Mutex<Option<Instant>>,
-    /// While the client is told to hold its audio: how much of it is left to
-    /// play. The deadline above is wall-clock, which a pause would run out.
-    paused_with: Mutex<Option<Duration>>,
+    playback_state: Mutex<PlaybackState>,
+}
+
+#[derive(Default)]
+struct PlaybackState {
+    sequence: u64,
+    retired_sequence: u64,
+    // Fallback when no ACK arrives: cumulative queued duration, frozen on hold.
+    speaking_until: Option<Instant>,
+    paused_with: Option<Duration>,
 }
 
 impl BrowserLink {
@@ -95,8 +94,7 @@ impl BrowserLink {
             capture: Mutex::new(VecDeque::new()),
             playback,
             alive: AtomicBool::new(true),
-            speaking_until: Mutex::new(None),
-            paused_with: Mutex::new(None),
+            playback_state: Mutex::new(PlaybackState::default()),
         }
     }
 
@@ -129,12 +127,21 @@ impl BrowserLink {
     }
 
     /// The client reported that it finished playing.
-    pub fn note_playback_ended(&self) {
-        *self.speaking_until.lock() = None;
-        // Nothing left to hold: a reply that ended while paused cannot happen
-        // on a client that honours the pause, and one that does not has
-        // finished.
-        *self.paused_with.lock() = None;
+    pub fn note_playback_ended(&self, sequence: u64) {
+        let mut state = self.playback_state.lock();
+        if sequence <= state.retired_sequence || sequence > state.sequence {
+            return;
+        }
+        state.retired_sequence = sequence;
+        // An earlier reply ending cannot retire audio appended after it.
+        if sequence == state.sequence {
+            state.speaking_until = None;
+            // Completion can cross a pause control in flight. The browser is
+            // still held, so later appends must remain held until resume too.
+            if let Some(left) = state.paused_with.as_mut() {
+                *left = Duration::ZERO;
+            }
+        }
     }
 
     /// Is the client still connected?
@@ -145,7 +152,7 @@ impl BrowserLink {
     /// The socket is gone.
     pub fn disconnect(&self) {
         self.alive.store(false, Ordering::Release);
-        *self.speaking_until.lock() = None;
+        self.playback_state.lock().speaking_until = None;
     }
 }
 
@@ -252,50 +259,51 @@ impl BrowserOutput {
 impl speaker::Output for BrowserOutput {
     fn play(&self, audio: &SpeechAudio) -> Result<(), String> {
         let duration = Duration::from_secs_f32(audio.duration_seconds());
-        // Armed before the send, so a client that answers instantly cannot have
-        // its "I finished" overwritten by the deadline it beat. While paused
-        // the client holds the audio instead of playing it, so what is armed
-        // is what is left to play, not a deadline.
-        {
-            let mut paused = self.link.paused_with.lock();
-            if paused.is_some() {
-                *paused = Some(duration);
-            } else {
-                *self.link.speaking_until.lock() = Some(Instant::now() + duration);
-            }
+        let mut state = self.link.playback_state.lock();
+        state.sequence += 1;
+        let sequence = state.sequence;
+        if let Some(left) = state.paused_with.as_mut() {
+            *left += duration;
+        } else {
+            let now = Instant::now();
+            state.speaking_until = Some(state.speaking_until.unwrap_or(now).max(now) + duration);
         }
+        // Arm before sending, and serialize appends and controls with the same
+        // state lock. A fast ACK cannot retire a later append or a new turn.
         if self
             .link
             .playback
-            .send(Downlink::Speak(audio.clone()))
+            .send(Downlink::Speak {
+                sequence,
+                audio: audio.clone(),
+            })
             .is_err()
         {
-            *self.link.speaking_until.lock() = None;
-            *self.link.paused_with.lock() = None;
+            state.speaking_until = None;
+            state.paused_with = None;
             return Err("the browser client that owns this conversation is gone".to_string());
         }
         Ok(())
     }
 
     fn pause(&self) {
-        let mut paused = self.link.paused_with.lock();
-        if paused.is_none() {
-            let left = self
-                .link
+        let mut state = self.link.playback_state.lock();
+        if state.paused_with.is_none() {
+            let left = state
                 .speaking_until
-                .lock()
                 .take()
                 .map_or(Duration::ZERO, |deadline| {
                     deadline.saturating_duration_since(Instant::now())
                 });
-            *paused = Some(left);
+            state.paused_with = Some(left);
         }
         let _ = self.link.playback.send(Downlink::Pause);
     }
 
     fn resume(&self) {
-        if let Some(left) = self.link.paused_with.lock().take() {
-            *self.link.speaking_until.lock() = (!left.is_zero()).then(|| Instant::now() + left);
+        let mut state = self.link.playback_state.lock();
+        if let Some(left) = state.paused_with.take() {
+            state.speaking_until = (!left.is_zero()).then(|| Instant::now() + left);
         }
         let _ = self.link.playback.send(Downlink::Resume);
     }
@@ -305,10 +313,10 @@ impl speaker::Output for BrowserOutput {
     }
 
     fn stop(&self) {
-        *self.link.speaking_until.lock() = None;
-        *self.link.paused_with.lock() = None;
-        // A closed receiver means there is nobody left to stop, which is the
-        // outcome asked for. `hush` runs on the capture loop and must not fail.
+        let mut state = self.link.playback_state.lock();
+        state.speaking_until = None;
+        state.paused_with = None;
+        state.retired_sequence = state.sequence;
         let _ = self.link.playback.send(Downlink::Stop);
     }
 
@@ -316,18 +324,11 @@ impl speaker::Output for BrowserOutput {
         if !self.link.connected() {
             return false;
         }
-        if self
-            .link
-            .paused_with
-            .lock()
-            .is_some_and(|left| !left.is_zero())
-        {
-            return true;
-        }
-        self.link
-            .speaking_until
-            .lock()
-            .is_some_and(|deadline| Instant::now() < deadline)
+        let state = self.link.playback_state.lock();
+        state.paused_with.is_some_and(|left| !left.is_zero())
+            || state
+                .speaking_until
+                .is_some_and(|deadline| Instant::now() < deadline)
     }
 }
 
@@ -533,7 +534,7 @@ mod tests {
 
         assert!(matches!(
             client.try_recv().expect("the client was told"),
-            Downlink::Speak(_)
+            Downlink::Speak { .. }
         ));
         assert!(output.is_speaking(), "half a second has not passed");
 
@@ -560,7 +561,7 @@ mod tests {
 
         output.pause();
         assert_eq!(client.try_recv().expect("told to hold"), Downlink::Pause);
-        *link.speaking_until.lock() = None;
+        link.playback_state.lock().speaking_until = None;
         assert!(output.is_speaking(), "a held reply is not finished");
 
         output.resume();
@@ -587,7 +588,7 @@ mod tests {
 
         output.play(&audio(30.0)).expect("sent");
         assert!(output.is_speaking());
-        link.note_playback_ended();
+        link.note_playback_ended(1);
         assert!(!output.is_speaking(), "the client finished early");
 
         output.play(&audio(30.0)).expect("sent");
@@ -614,6 +615,89 @@ mod tests {
             "the reason names the missing client"
         );
         assert!(!output.is_speaking());
+    }
+
+    // Catches: an old reply ACK retires newer queued or held audio.
+    #[test]
+    fn an_old_playback_ack_cannot_finish_a_later_append_or_new_turn() {
+        use speaker::Output;
+        let link = Arc::new(BrowserLink::new());
+        let mut client = link.subscribe();
+        let output = BrowserOutput::new(link.clone());
+        output.play(&audio(30.0)).unwrap();
+        output.play(&audio(20.0)).unwrap();
+        assert!(matches!(
+            client.try_recv().unwrap(),
+            Downlink::Speak { sequence: 1, .. }
+        ));
+        assert!(matches!(
+            client.try_recv().unwrap(),
+            Downlink::Speak { sequence: 2, .. }
+        ));
+        link.note_playback_ended(1);
+        assert!(output.is_speaking(), "first ACK must keep the second reply");
+        output.pause();
+        link.note_playback_ended(1);
+        assert!(output.is_speaking(), "duplicate ACK must keep held audio");
+        output.stop();
+        output.play(&audio(10.0)).unwrap();
+        link.note_playback_ended(2);
+        link.note_playback_ended(99);
+        assert!(
+            output.is_speaking(),
+            "old-turn and unknown ACKs cannot end a new turn"
+        );
+        link.note_playback_ended(3);
+        assert!(!output.is_speaking());
+    }
+
+    // Catches: completion crossing pause loses the hold on the next append.
+    #[test]
+    fn completion_during_a_hold_keeps_later_audio_held_until_resume() {
+        use speaker::Output;
+        let link = Arc::new(BrowserLink::new());
+        let _client = link.subscribe();
+        let output = BrowserOutput::new(link.clone());
+        output.play(&audio(30.0)).unwrap();
+        output.pause();
+        link.note_playback_ended(1);
+        assert!(
+            !output.is_speaking(),
+            "the completed reply has no remainder"
+        );
+        output.play(&audio(20.0)).unwrap();
+        assert_eq!(
+            link.playback_state.lock().paused_with,
+            Some(Duration::from_secs(20))
+        );
+        assert!(link.playback_state.lock().speaking_until.is_none());
+        output.resume();
+        assert!(output.is_speaking());
+    }
+
+    // Catches: appending resets the deadline and discards queued duration.
+    #[test]
+    fn browser_appends_extend_the_live_deadline_and_the_paused_remainder() {
+        use speaker::Output;
+        let link = Arc::new(BrowserLink::new());
+        let _client = link.subscribe();
+        let output = BrowserOutput::new(link.clone());
+        output.play(&audio(30.0)).unwrap();
+        let first = link.playback_state.lock().speaking_until.unwrap();
+        output.play(&audio(20.0)).unwrap();
+        assert_eq!(
+            link.playback_state.lock().speaking_until,
+            Some(first + Duration::from_secs(20))
+        );
+        output.pause();
+        let left = link.playback_state.lock().paused_with.unwrap();
+        output.play(&audio(10.0)).unwrap();
+        assert_eq!(
+            link.playback_state.lock().paused_with,
+            Some(left + Duration::from_secs(10))
+        );
+        output.resume();
+        assert!(output.is_speaking());
     }
 
     /// The runtime polls `connected` once a tick and disarms on false. That is
