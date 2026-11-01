@@ -138,7 +138,15 @@ describe("start work", () => {
 		for (const id of terminalsStore.getIds()) terminalsStore.remove(id);
 		for (const path of repositoriesStore.getPaths()) repositoriesStore.remove(path);
 		// Let the repositories store's 500ms debounced save fire instead of leaking it.
-		await new Promise((resolve) => setTimeout(resolve, 600));
+		if (vi.isFakeTimers()) {
+			try {
+				await vi.advanceTimersByTimeAsync(600);
+			} finally {
+				vi.useRealTimers();
+			}
+		} else {
+			await new Promise((resolve) => setTimeout(resolve, 600));
+		}
 	});
 
 	// Catches: hardcoded claude — the agent and its command ignore the repo machine's run config.
@@ -251,6 +259,7 @@ describe("start work", () => {
 	// Catches: the auto-fix prompt typed into a composer that may still show a startup dialog, instead of
 	// being the agent's first message (#1626-fdab). The argument must reach the agent byte for byte.
 	it("autofix_launches_the_agent_with_the_confirmed_prompt_as_its_first_message", async () => {
+		vi.useFakeTimers();
 		const { workflow } = coordinators();
 		await workflow.handleAutofixIssue(REPO, 12, "Fix issue 12; it's $(broken)");
 		const { id, term } = agentTerminal("autofix/issue-12");
@@ -278,7 +287,8 @@ describe("start work", () => {
 		}
 
 		agentReachesComposer(id);
-		await new Promise((resolve) => setTimeout(resolve, 300));
+		// Catches: wall-clock waits timing out under suite load; drive the full shell cooldown instead.
+		await vi.advanceTimersByTimeAsync(2000);
 		expect(writes).toEqual([]);
 	});
 
