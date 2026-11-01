@@ -192,18 +192,19 @@ describe("agent usage ticker — no vendor default", () => {
 		expect(appLogger.warn).not.toHaveBeenCalled();
 	});
 
-	it("shows neutral API key over HTTP — catches browser and remote sessions rendered offline", async () => {
-		setTerminals({ activeId: "t1", terminals: { t1: { agentType: "claude", sessionId: "api-session" } } });
-		invoke.mockRejectedValueOnce(
-			new HttpRpcError("get_claude_usage_api", 500, JSON.stringify({ error: "Claude API-key authentication" })),
-		);
-		const { appLogger } = await import("../../stores/appLogger");
-		vi.mocked(appLogger.warn).mockClear();
-		initAgentUsage();
-		await settle();
-		expect(statusBarTicker.getAll()[0]).toEqual(expect.objectContaining({ text: "API key", priority: 0 }));
-		expect(appLogger.warn).not.toHaveBeenCalled();
-	});
+	it.each([JSON.stringify({ error: "Claude API-key authentication" }), "Claude API-key authentication"])(
+		"shows neutral API key over HTTP — catches browser and remote sessions rendered offline (%s)",
+		async (body) => {
+			setTerminals({ activeId: "t1", terminals: { t1: { agentType: "claude", sessionId: "api-session" } } });
+			invoke.mockRejectedValueOnce(new HttpRpcError("get_claude_usage_api", 500, body));
+			const { appLogger } = await import("../../stores/appLogger");
+			vi.mocked(appLogger.warn).mockClear();
+			initAgentUsage();
+			await settle();
+			expect(statusBarTicker.getAll()[0]).toEqual(expect.objectContaining({ text: "API key", priority: 0 }));
+			expect(appLogger.warn).not.toHaveBeenCalled();
+		},
+	);
 
 	it("restores profile usage after an API-key tab — catches a sticky API-key label across focus changes", async () => {
 		setTerminals({
@@ -232,13 +233,16 @@ describe("agent usage ticker — no vendor default", () => {
 		expect(statusBarTicker.getAll()[0]?.text).toBe("5h: 23%");
 	});
 
-	it("keeps OAuth failures distinct — catches API-key handling hiding expired subscription tokens", async () => {
-		setTerminals({ activeId: "t1", terminals: { t1: { agentType: "claude", sessionId: "oauth-session" } } });
-		invoke.mockRejectedValueOnce("401 Invalid bearer token");
-		initAgentUsage();
-		await settle();
-		expect(statusBarTicker.getAll()[0]?.text).toBe("token expired");
-	});
+	it.each(["401 Invalid bearer token", new HttpRpcError("get_claude_usage_api", 401, "Unauthorized")])(
+		"keeps OAuth failures distinct — catches API-key handling hiding expired subscription tokens (%s)",
+		async (error) => {
+			setTerminals({ activeId: "t1", terminals: { t1: { agentType: "claude", sessionId: "oauth-session" } } });
+			invoke.mockRejectedValueOnce(error);
+			initAgentUsage();
+			await settle();
+			expect(statusBarTicker.getAll()[0]?.text).toBe("token expired");
+		},
+	);
 
 	it("shows unknown when the focused Claude profile cannot be read", async () => {
 		setTerminals({ activeId: "t1", terminals: { t1: { agentType: "claude", sessionId: "missing-profile" } } });

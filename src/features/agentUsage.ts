@@ -24,6 +24,7 @@ import { appLogger } from "../stores/appLogger";
 import { mdTabsStore } from "../stores/mdTabs";
 import { statusBarTicker } from "../stores/statusBarTicker";
 import { terminalsStore } from "../stores/terminals";
+import { HttpRpcError } from "../transport/http";
 import { buildTickerText, getTickerPriority, type UsageApiResponse } from "./claudeUsage";
 import { buildCodexTickerText, type CodexUsageApiResponse, getCodexTickerPriority } from "./codexUsage";
 import { buildGrokTickerText, type GrokUsageApiResponse, getGrokTickerPriority } from "./grokUsage";
@@ -96,8 +97,10 @@ export function toUsageAgent(agentType: string | null | undefined): UsageAgent |
 }
 
 /** Classify a poll failure into the short text the ticker shows. */
-export function describeUsageError(errStr: string, missingTokenHint: string): string {
-	if (errStr === "Claude API-key authentication" || errStr === "Error: Claude API-key authentication") return "API key";
+export function describeUsageError(error: unknown, missingTokenHint: string): string {
+	const errStr = String(error);
+	const detail = error instanceof HttpRpcError ? error.detail : errStr;
+	if (detail === "Claude API-key authentication" || detail === "Error: Claude API-key authentication") return "API key";
 	if (errStr.toLowerCase().includes(missingTokenHint.toLowerCase()) || errStr.includes("No Codex credentials"))
 		return "no token";
 	if (errStr.includes("401") || errStr.includes("403")) return "token expired";
@@ -177,7 +180,7 @@ async function poll(agent: UsageAgent, sessionId: string | null): Promise<void> 
 			agent === "claude" &&
 			/No Claude OAuth token|Cannot (?:resolve|read) Claude session profile|Failed to parse credentials/.test(errStr)
 				? "unknown"
-				: describeUsageError(errStr, spec.missingTokenHint);
+				: describeUsageError(err, spec.missingTokenHint);
 		if (text !== "no token" && text !== "API key") {
 			appLogger.warn("network", `${spec.label} usage poll: ${text}`, errStr);
 		}
