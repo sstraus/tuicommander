@@ -1,6 +1,7 @@
 import { createStore } from "solid-js/store";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { statusBarTicker } from "../../stores/statusBarTicker";
+import { HttpRpcError } from "../../transport/http";
 
 /**
  * The ticker must not name a vendor it has not seen. A Codex-only install polling
@@ -188,6 +189,19 @@ describe("agent usage ticker — no vendor default", () => {
 		await settle();
 		expect(invoke).toHaveBeenCalledExactlyOnceWith("get_claude_usage_api", { sessionId: "api-session" });
 		expect(addMessage).toHaveBeenCalledWith(expect.objectContaining({ label: "Claude", text: "API key", priority: 0 }));
+		expect(appLogger.warn).not.toHaveBeenCalled();
+	});
+
+	it("shows neutral API key over HTTP — catches browser and remote sessions rendered offline", async () => {
+		setTerminals({ activeId: "t1", terminals: { t1: { agentType: "claude", sessionId: "api-session" } } });
+		invoke.mockRejectedValueOnce(
+			new HttpRpcError("get_claude_usage_api", 500, JSON.stringify({ error: "Claude API-key authentication" })),
+		);
+		const { appLogger } = await import("../../stores/appLogger");
+		vi.mocked(appLogger.warn).mockClear();
+		initAgentUsage();
+		await settle();
+		expect(statusBarTicker.getAll()[0]).toEqual(expect.objectContaining({ text: "API key", priority: 0 }));
 		expect(appLogger.warn).not.toHaveBeenCalled();
 	});
 
