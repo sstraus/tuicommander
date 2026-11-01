@@ -2740,61 +2740,7 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
         static ref OPTION_RE: regex::Regex =
             regex::Regex::new(r"^\s*([❯›>]\s*)?(\d+)[.)]\s+(.+?)\s*$").unwrap();
     }
-    let active_first = screen_rows[..footer]
-        .iter()
-        .rposition(|row| OPTION_RE.captures(row).is_some_and(|caps| &caps[2] == "1"));
-    // A preview is a separate Ink column, not part of the option text. Use
-    // its native rectangle before matching rows, including when it is stacked
-    // below the answers. Never split on table pipes inside an answer label.
-    // DEFERRED (2026-10-30) — at 40 columns Claude 2.1.314 still uses side-by-side
-    // panes, wraps the option number below its label and truncates the pane.
-    // That clipped native shape needs separate capture-driven handling; this
-    // path handles complete preview rectangles (live narrow capture: 65 columns).
-    let mut answer_rows: std::borrow::Cow<'_, [String]> = std::borrow::Cow::Borrowed(screen_rows);
-    let mut preview = None;
-    if let Some((top, column)) =
-        screen_rows[..footer]
-            .iter()
-            .enumerate()
-            .rev()
-            .find_map(|(idx, row)| {
-                if idx < active_first? {
-                    return None;
-                }
-                let border_start = row.find('┌')?;
-                let column = row[..border_start]
-                    .chars()
-                    .map(|ch| unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0))
-                    .sum();
-                let border = &row[border_start..];
-                (border.starts_with("┌─") && border.trim_end().ends_with('┐'))
-                    .then_some((idx, column))
-            })
-    {
-        let bottom = (top + 1..footer).find(|&idx| {
-            let (_, border) = split_at_cell_column(&screen_rows[idx], column);
-            border.starts_with("└─") && border.trim_end().ends_with('┘')
-        });
-        if let Some(bottom) = bottom {
-            let text = screen_rows[top + 1..bottom]
-                .iter()
-                .map(|row| {
-                    let (_, pane) = split_at_cell_column(row, column);
-                    pane.trim_end()
-                        .strip_prefix('│')
-                        .and_then(|line| line.strip_suffix('│'))
-                        .unwrap_or("")
-                        .trim_end()
-                        .to_string()
-                })
-                .collect::<Vec<_>>()
-                .join("\n");
-            preview = Some(text);
-            for row in &mut answer_rows.to_mut()[top..=bottom] {
-                *row = split_at_cell_column(row, column).0.trim_end().to_string();
-            }
-        }
-    }
+    let (answer_rows, preview) = claude_question_preview(screen_rows, footer, &OPTION_RE);
     let screen_rows = answer_rows.as_ref();
     // Claude replaces a clipped option's cursor with a column-zero scroll
     // arrow. Hidden rows are not an ordered choice list: expose only the
@@ -2827,35 +2773,7 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
     } else {
         last_first_option
     }?;
-    let title = (0..first_option)
-        .rev()
-        .find(|&idx| !screen_rows[idx].trim().is_empty())?;
-    let mut title_start = title;
-    while title_start > 0
-        && !screen_rows[title_start - 1].trim().is_empty()
-        && !screen_rows[title_start - 1].starts_with('←')
-        && !screen_rows[title_start - 1].starts_with("──")
-    {
-        title_start -= 1;
-    }
-    let mut title_text = screen_rows[title_start..=title]
-        .iter()
-        .map(|row| row.trim())
-        .collect::<Vec<_>>()
-        .join(" ");
-    if title_text.starts_with("──") || title_text.starts_with('←') {
-        return None;
-    }
-    if let Some(tabs) = screen_rows[..title_start]
-        .iter()
-        .rev()
-        // The Submit review places its answer summary between the tabs and
-        // the title. Stay inside this dialog's full-bleed separator boundary.
-        .take_while(|row| !row.starts_with("──"))
-        .find(|row| row.starts_with('←') && row.contains("✔ Submit"))
-    {
-        title_text = format!("{}\n{title_text}", tabs.trim());
-    }
+    let (title, title_text) = claude_question_title(screen_rows, first_option)?;
     let navigation = || ParsedEvent::ChoicePrompt {
         title: title_text.to_string(),
         options: [
@@ -2978,6 +2896,104 @@ pub fn parse_claude_ask_user_question(screen_rows: &[String]) -> Option<ParsedEv
         dismiss_key: Some("cancel".to_string()),
         amend_key: None,
     })
+}
+
+/// Remove the native preview rectangle from answer rows, preserving cell columns.
+fn claude_question_preview<'a>(
+    screen_rows: &'a [String],
+    footer: usize,
+    option_re: &regex::Regex,
+) -> (std::borrow::Cow<'a, [String]>, Option<String>) {
+    let active_first = screen_rows[..footer]
+        .iter()
+        .rposition(|row| option_re.captures(row).is_some_and(|caps| &caps[2] == "1"));
+    // A preview is a separate Ink column, not part of the option text. Use
+    // its native rectangle before matching rows, including when it is stacked
+    // below the answers. Never split on table pipes inside an answer label.
+    // DEFERRED (2026-10-30) — at 40 columns Claude 2.1.314 still uses side-by-side
+    // panes, wraps the option number below its label and truncates the pane.
+    // That clipped native shape needs separate capture-driven handling; this
+    // path handles complete preview rectangles (live narrow capture: 65 columns).
+    let mut answer_rows = std::borrow::Cow::Borrowed(screen_rows);
+    let mut preview = None;
+    if let Some((top, column)) =
+        screen_rows[..footer]
+            .iter()
+            .enumerate()
+            .rev()
+            .find_map(|(idx, row)| {
+                if idx < active_first? {
+                    return None;
+                }
+                let border_start = row.find('┌')?;
+                let column = row[..border_start]
+                    .chars()
+                    .map(|ch| unicode_width::UnicodeWidthChar::width(ch).unwrap_or(0))
+                    .sum();
+                let border = &row[border_start..];
+                (border.starts_with("┌─") && border.trim_end().ends_with('┐'))
+                    .then_some((idx, column))
+            })
+    {
+        let bottom = (top + 1..footer).find(|&idx| {
+            let (_, border) = split_at_cell_column(&screen_rows[idx], column);
+            border.starts_with("└─") && border.trim_end().ends_with('┘')
+        });
+        if let Some(bottom) = bottom {
+            let text = screen_rows[top + 1..bottom]
+                .iter()
+                .map(|row| {
+                    let (_, pane) = split_at_cell_column(row, column);
+                    pane.trim_end()
+                        .strip_prefix('│')
+                        .and_then(|line| line.strip_suffix('│'))
+                        .unwrap_or("")
+                        .trim_end()
+                        .to_string()
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            preview = Some(text);
+            for row in &mut answer_rows.to_mut()[top..=bottom] {
+                *row = split_at_cell_column(row, column).0.trim_end().to_string();
+            }
+        }
+    }
+    (answer_rows, preview)
+}
+
+/// Read the contiguous title and optional multi-question progress within this dialog.
+fn claude_question_title(screen_rows: &[String], first_option: usize) -> Option<(usize, String)> {
+    let title = (0..first_option)
+        .rev()
+        .find(|&idx| !screen_rows[idx].trim().is_empty())?;
+    let mut title_start = title;
+    while title_start > 0
+        && !screen_rows[title_start - 1].trim().is_empty()
+        && !screen_rows[title_start - 1].starts_with('←')
+        && !screen_rows[title_start - 1].starts_with("──")
+    {
+        title_start -= 1;
+    }
+    let mut title_text = screen_rows[title_start..=title]
+        .iter()
+        .map(|row| row.trim())
+        .collect::<Vec<_>>()
+        .join(" ");
+    if title_text.starts_with("──") || title_text.starts_with('←') {
+        return None;
+    }
+    if let Some(tabs) = screen_rows[..title_start]
+        .iter()
+        .rev()
+        // The Submit review places its answer summary between the tabs and
+        // the title. Stay inside this dialog's full-bleed separator boundary.
+        .take_while(|row| !row.starts_with("──"))
+        .find(|row| row.starts_with('←') && row.contains("✔ Submit"))
+    {
+        title_text = format!("{}\n{title_text}", tabs.trim());
+    }
+    Some((title, title_text))
 }
 
 #[cfg(test)]
@@ -7929,6 +7945,97 @@ Enter to select · ↑/↓ to navigate · Esc to cancel";
         assert_eq!(selection_mode, Some(ChoiceSelectionMode::NavigateEnter));
         assert_eq!(dismiss_key.as_deref(), Some("cancel"));
         assert_eq!(amend_key, None);
+    }
+
+    // Catches: title extraction drops wrapped lines or absorbs the preceding separator/tab bar.
+    #[test]
+    fn claude_question_derived_wrapped_title_keeps_dialog_boundaries() {
+        let recorded = recorded_claude_question_rows();
+        let footer = recorded
+            .iter()
+            .find(|row| is_ink_dialog_footer_row(row))
+            .unwrap();
+        let separator = recorded.iter().find(|row| row.starts_with("──")).unwrap();
+        let preview = recorded_preview_rows("wide");
+        let tabs = preview
+            .iter()
+            .find(|row| row.starts_with('←') && row.contains("✔ Submit"))
+            .unwrap();
+        for boundary in [
+            None,
+            Some(""),
+            Some(separator.as_str()),
+            Some(tabs.as_str()),
+        ] {
+            let mut rows: Vec<String> = boundary.into_iter().map(str::to_string).collect();
+            rows.extend([
+                "Which color".to_string(),
+                "do you prefer?".to_string(),
+                "❯ 1. Red".to_string(),
+                "  2. Green".to_string(),
+                footer.clone(),
+            ]);
+            let Some(ParsedEvent::ChoicePrompt { title, options, .. }) =
+                parse_claude_ask_user_question(&rows)
+            else {
+                panic!("wrapped title must parse: {boundary:?}");
+            };
+            let expected = if boundary == Some(tabs.as_str()) {
+                format!("{}\nWhich color do you prefer?", tabs.trim())
+            } else {
+                "Which color do you prefer?".to_string()
+            };
+            assert_eq!(title, expected, "boundary: {boundary:?}");
+            assert_eq!(options[0].label, "Red");
+            assert_eq!(options[1].label, "Green");
+        }
+    }
+
+    // Catches: a separator or progress tab bar becomes a question title when the title is missing.
+    #[test]
+    fn claude_question_derived_missing_title_rejects_dialog_chrome() {
+        let recorded = recorded_claude_question_rows();
+        let footer = recorded
+            .iter()
+            .find(|row| is_ink_dialog_footer_row(row))
+            .unwrap();
+        let separator = recorded.iter().find(|row| row.starts_with("──")).unwrap();
+        let preview = recorded_preview_rows("wide");
+        let tabs = preview
+            .iter()
+            .find(|row| row.starts_with('←') && row.contains("✔ Submit"))
+            .unwrap();
+        for boundary in [separator, tabs] {
+            let rows = [
+                boundary.clone(),
+                String::new(),
+                "❯ 1. Red".to_string(),
+                "  2. Green".to_string(),
+                footer.clone(),
+            ];
+            assert!(
+                parse_claude_ask_user_question(&rows).is_none(),
+                "{boundary}"
+            );
+        }
+    }
+
+    // Catches: an out-of-column note fails to end a preview label and its next indented row leaks into the answer.
+    #[test]
+    fn claude_question_derived_preview_note_ends_wrapped_label() {
+        let mut rows = recorded_preview_rows("wide");
+        let second = rows
+            .iter()
+            .position(|row| row.trim_start().starts_with("2."))
+            .unwrap();
+        rows.splice(
+            second + 1..second + 1,
+            [
+                "Note outside the answer column".to_string(),
+                "    This is not part of the answer".to_string(),
+            ],
+        );
+        assert_preview_question(&rows);
     }
 
     // Catches: off-by-one minimum option counts, nonsequential numbering, and overwritten selection.
