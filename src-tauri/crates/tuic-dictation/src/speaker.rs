@@ -608,6 +608,14 @@ impl Speaker {
         }
     }
 
+    /// Queue/device proxy only: even a paused player can remain nonempty.
+    pub fn output_snapshot(&self) -> super::continuous::OutputSnapshot {
+        super::continuous::OutputSnapshot {
+            output_nonempty: Some(self.output.is_speaking()),
+            can_pause: Some(self.output.can_pause()),
+        }
+    }
+
     pub fn status(&self) -> SpeakerStatus {
         let paused = self.user_held.load(std::sync::atomic::Ordering::SeqCst);
         let state = self.shared.state.lock();
