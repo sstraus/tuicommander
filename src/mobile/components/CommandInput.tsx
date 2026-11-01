@@ -254,7 +254,11 @@ export function CommandInput(props: CommandInputProps) {
 	 *  whole line, which previously caused a keystroke storm and visible mess. */
 	function syncDelta(newText: string) {
 		inputRequest = null;
-		if (atomicReply() || localChatDraft() || props.sessionExists === false) return;
+		if (atomicReply() || props.sessionExists === false) return;
+		if (localChatDraft()) {
+			void parkChatDraft().catch(() => {});
+			return;
+		}
 		void syncNativeDraft(newText).catch(() => {});
 	}
 

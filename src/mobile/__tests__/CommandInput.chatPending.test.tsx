@@ -139,3 +139,23 @@ it("editing_chat_while_tab_transfers_the_old_draft_cancels_native_navigation", a
 	expect(input.value).toBe("different");
 	expect(writes()).not.toContain("\t");
 });
+
+// Catches: editing after Tab dispatch abandons a borrowed native draft and blocks the host FIFO.
+it("editing_chat_after_tab_dispatch_withdraws_the_borrowed_native_draft", async () => {
+	const [line, setLine] = createSignal("");
+	const screen = render(() => (
+		<CommandInput sessionId="chat-tab-dispatched-edit" agentType="claude" chatMode busy ptyInputLine={line()} />
+	));
+	const input = screen.container.querySelector("textarea")!;
+	fireEvent.input(input, { target: { value: "/he" } });
+	fireEvent.keyDown(input, { key: "Tab" });
+	await waitFor(() => expect(writes()).toEqual(["/he", "\t"]));
+	fireEvent.input(input, { target: { value: "different" } });
+	await waitFor(() => expect(writes()).toEqual(["/he", "\t", "\x7f\x7f\x7f"]));
+	setLine("/help");
+	expect(input.value).toBe("different");
+	fireEvent.click(screen.getByRole("button", { name: "Send" }));
+	await waitFor(() => expect(input.value).toBe(""));
+	expect(backend.rpc).toHaveBeenCalledWith("enqueue_agent_command", expect.objectContaining({ text: "different" }));
+	expect(writes()).toEqual(["/he", "\t", "\x7f\x7f\x7f"]);
+});
