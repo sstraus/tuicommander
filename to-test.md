@@ -1,3 +1,7 @@
+## Claude API-key usage label (2672-78a1) — Rust rebuild/restart required
+
+- [ ] After Boss manually rebuilds and restarts when losing sessions is acceptable, focus a throwaway Claude session with API-key authentication. Confirm the usage ticker shows neutral **API key**, including with a custom profile. Switch to an OAuth session and confirm its profile usage returns. No credentials were read and no daily app was restarted during implementation. Rust does not hot-reload.
+
 ## Codex native hook trust (2625-c4b5) — Rust rebuild/restart required
 
 - [ ] After Boss rebuilds and manually restarts when losing current sessions is acceptable, use an isolated `CODEX_HOME` and enable Codex global hooks. Confirm exact TUIC definitions become trusted, unrelated hooks/config stay unchanged, and a changed definition reports review in `/hooks`. Review profile-specific hooks in that profile. Do not test against daily agent config. Rust does not hot-reload; the daily app was not restarted.

@@ -832,15 +832,17 @@ struct ApiCache {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 enum CredentialProfile {
+    ApiKey,
     Default,
     ConfigDir(String),
 }
 
 impl CredentialProfile {
-    fn config_dir(&self) -> Option<&str> {
+    fn config_dir(&self) -> Result<Option<&str>, String> {
         match self {
-            Self::Default => None,
-            Self::ConfigDir(dir) => Some(dir),
+            Self::ApiKey => Err("Claude API-key authentication".into()),
+            Self::Default => Ok(None),
+            Self::ConfigDir(dir) => Ok(Some(dir)),
         }
     }
 }
@@ -860,15 +862,28 @@ fn profile_for_session(
 }
 
 fn profile_from_environment(environment: &[String]) -> CredentialProfile {
-    let config_dir = environment.iter().find_map(|entry| {
-        let (key, value) = entry.split_once('=')?;
-        let matches = if cfg!(windows) {
-            key.eq_ignore_ascii_case("CLAUDE_CONFIG_DIR")
-        } else {
-            key == "CLAUDE_CONFIG_DIR"
+    let mut config_dir = None;
+    for entry in environment {
+        let Some((key, value)) = entry.split_once('=') else {
+            continue;
         };
-        (matches && !value.is_empty()).then_some(value)
-    });
+        if value.is_empty() {
+            continue;
+        }
+        let matches = |name: &str| {
+            if cfg!(windows) {
+                key.eq_ignore_ascii_case(name)
+            } else {
+                key == name
+            }
+        };
+        if matches("ANTHROPIC_API_KEY") || matches("ANTHROPIC_AUTH_TOKEN") {
+            return CredentialProfile::ApiKey;
+        }
+        if matches("CLAUDE_CONFIG_DIR") && config_dir.is_none() {
+            config_dir = Some(value);
+        }
+    }
     match config_dir {
         Some(dir) => CredentialProfile::ConfigDir(dir.to_string()),
         None => CredentialProfile::Default,
@@ -1158,7 +1173,7 @@ pub(crate) async fn get_claude_usage_api_impl(
     session_id: Option<&str>,
 ) -> Result<UsageApiResponse, String> {
     let profile = profile_for_session(state, session_id)?;
-    let (token_opt, plan) = read_claude_credentials(profile.config_dir())?;
+    let (token_opt, plan) = read_claude_credentials(profile.config_dir()?)?;
     let token = token_opt.ok_or_else(|| "No Claude OAuth token found".to_string())?;
     // Return fresh cache if available
     if let Some(cached) = try_get_fresh_cache(&profile) {
@@ -1283,6 +1298,7 @@ where
     F: FnOnce(String) -> Fut,
     Fut: std::future::Future<Output = Result<UsageApiResponse, FetchError>>,
 {
+    let config_dir = profile.config_dir()?;
     if let Some(data) = try_get_fresh_cache(profile) {
         return Ok((data, false));
     }
@@ -1291,7 +1307,7 @@ where
         .get(profile)
         .is_some_and(|until| Instant::now() < *until);
     if !backing_off {
-        let (token, plan) = read_credentials(profile.config_dir())?;
+        let (token, plan) = read_credentials(config_dir)?;
         let token = token.ok_or("Claude account unavailable")?;
         match tokio::time::timeout(Duration::from_secs(15), fetch(token)).await {
             Ok(Ok(mut data)) => {
@@ -1779,6 +1795,38 @@ mod tests {
 
     use super::*;
 
+    /// Catches API-key sessions falling through to subscription credentials or HTTP.
+    #[tokio::test]
+    async fn api_key_session_never_reads_oauth_credentials_or_fetches_usage() {
+        for key in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] {
+            for config in [None, Some("CLAUDE_CONFIG_DIR=/fixture/private")] {
+                let mut environment: Vec<String> = config.into_iter().map(String::from).collect();
+                environment.push(format!("{key}=fixture-present"));
+                let profile = profile_from_environment(&environment);
+                let result = session_quota_for_profile(
+                    &profile,
+                    |_| panic!("API-key auth must not read subscription credentials"),
+                    |_| async { panic!("API-key auth must not fetch subscription usage") },
+                )
+                .await;
+                assert_eq!(result.unwrap_err(), "Claude API-key authentication");
+            }
+        }
+    }
+
+    /// Catches empty API-key variables incorrectly suppressing a valid OAuth profile.
+    #[test]
+    fn empty_api_keys_preserve_oauth_profile() {
+        assert_eq!(
+            profile_from_environment(&[
+                "ANTHROPIC_API_KEY=".into(),
+                "ANTHROPIC_AUTH_TOKEN=".into(),
+                "CLAUDE_CONFIG_DIR=/fixture/private".into(),
+            ]),
+            CredentialProfile::ConfigDir("/fixture/private".into())
+        );
+    }
+
     #[test]
     fn session_environment_selects_credential_profile() {
         assert_eq!(profile_from_environment(&[]), CredentialProfile::Default);
@@ -1790,6 +1838,34 @@ mod tests {
             profile_from_environment(&["CLAUDE_CONFIG_DIR=".into()]),
             CredentialProfile::Default
         );
+    }
+
+    /// Catches API-key detection routing an OAuth session to default credentials.
+    #[tokio::test]
+    async fn oauth_session_keeps_its_profile_credential_read() {
+        let profile = profile_from_environment(&["CLAUDE_CONFIG_DIR=/fixture/oauth-2672".into()]);
+        let (usage, stale) = session_quota_for_profile(
+            &profile,
+            |dir| {
+                assert_eq!(dir, Some("/fixture/oauth-2672"));
+                Ok((Some("fixture-oauth-token".into()), None))
+            },
+            |token| async move {
+                assert_eq!(token, "fixture-oauth-token");
+                Ok(UsageApiResponse {
+                    five_hour: Some(RateBucket {
+                        utilization: 23.0,
+                        resets_at: None,
+                    }),
+                    ..Default::default()
+                })
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(usage.five_hour.unwrap().utilization, 23.0);
+        assert!(!stale);
+        API_CACHE.lock().remove(&profile);
     }
 
     #[cfg(target_os = "macos")]
