@@ -359,16 +359,101 @@ Produces platform-specific installers:
 
 ## Testing
 
-Rust socket tests use `tuic-test-support::short_socket_test_temp_root()`. If the
-checkout's test path exceeds the Unix socket limit, the helper uses a short
-checkout-specific directory under the nearest short `Gits/.tmp/s<checkout-hash>`.
-Outside `Gits`, or when all such ancestors are too long, it uses
-`/tmp/tuic-s<checkout-hash>`. It measures every candidate against the socket
-budget, including the full mdkb staging filename and eight bytes of margin. The
-`scripts/with-test-tmp.sh` wrapper removes abandoned Gits socket directories and
-test-run directories under `~/Gits/.tmp/tuic-tests` and the checkout's
-`.tmp/tuic-tests` after they have been unused for more than seven days. Run
-standalone Rust tests through that wrapper.
+Test scratch comes from your temp directory, never from `$HOME`:
+
+| Root | Resolution (first match wins) |
+|---|---|
+| host temp | `TUIC_TEST_HOST_TMPDIR` (exported by every entry point before it repoints `TMPDIR`, so a default never nests) → `$TMPDIR` → the OS temp dir |
+| base | `TUIC_TEST_TMP_BASE` (opt-in) → `<host temp>/tuic-tests` |
+| root | an inherited `TUIC_TEST_TMP_ROOT`, used as is and never deleted → `scripts/with-test-tmp.sh`: a fresh `<base>/tuic-run.XXXXXX`, removed on exit; nextest without the wrapper, a bare test binary and the shell tests: the per-checkout `<base>/tuic-co-<checkout hash>` |
+| Unix sockets | `TUIC_TEST_SOCKET_ROOT` → a private, random `<host temp>/t.XXXXXX` per test process (mode 0700, removed when the process exits) → fail; never `/tmp` |
+
+`scripts/with-test-tmp.sh`, `src-tauri/scripts/nextest-test-tmp.{sh,ps1}`,
+`scripts/mutants.sh` and the shell tests (all through `scripts/test-tmp-lib.sh`),
+`tuic-test-support` all
+apply that order. The checkout hash is FNV-1a 64 of the checkout's physical path,
+the same in every one, so parallel worktrees never share a default root.
+
+Two opt-ins of `scripts/with-test-tmp.sh` change what a wrapped command sees
+beyond its temp dirs:
+
+| Variable | Effect | Set by |
+|---|---|---|
+| `TUIC_TEST_FAKE_HOME=1` | `HOME=<root>/home` for the command. `CARGO_HOME`/`RUSTUP_HOME` are pinned to the real home first (from the passwd entry when `HOME` is unset), so cargo keeps its registry and toolchains. The nextest setup script applies the same flag to the test processes only, so `TUIC_TEST_FAKE_HOME=1 cargo nextest run` works without the wrapper too. On Windows the setup script sets `HOME` alone (the `dirs` crate reads Known Folders there) | `make check`'s and `make cov`'s Rust test steps, `scripts/mutants.sh`, CI's Linux/macOS Rust test steps |
+| `TUIC_TEST_ISOLATE_GIT_CONFIG=1` | git reads `<root>/gitconfig` (the same content as `tuic-test-support`'s `TEST_GITCONFIG`) and no system config, instead of yours. Not the default: `pnpm audit`, `cargo audit` and the submodule checks need your credential helper, `url.*.insteadOf` and proxy settings | `make test-shell` |
+
+On macOS with `sccache` on `PATH` the wrapper also exports `CC=cc CXX=c++` (unless
+you set them), so meson does not wrap its compiler with sccache, whose socket
+would not fit `sun_path` under the long per-run `TMPDIR`. Nowhere else: `CC` is
+part of the native build fingerprint.
+
+On macOS the wrapper also exports `AR` as the real toolchain `ar` (what `xcrun --find ar`
+prints), unless you set it. `/usr/bin/ar` is a shim that runs `xcrun`; where `xcrun` cannot
+write its lookup cache (the agent sandbox) a cache miss prints `couldn't create cache file`
+*before* the usage text, and meson accepts Apple's `ar` only when stderr starts with
+`usage` — so the bundled WebRTC build (`tuic-dictation`) fails with `Unknown linker(s): ar`
+whenever the environment is one `xcrun` has not cached. Which environments are cached
+changes over time, so this does not depend on the cache. (A separate, intermittent sandbox
+failure: the proxy sometimes truncates meson's abseil download, which surfaces as
+`Incorrect hash for source`; re-running the build succeeds.)
+
+`TUIC_TEST_TMP_BASE=<checkout>/.tmp/tuic-tests` still puts scratch in the
+checkout, but only as an explicit opt-in: it is unsafe wherever writes to the
+checkout's `.git/hooks` or `.git/config` are denied (observed in the agent
+sandbox), and a fixture created inside the checkout can reach the real
+repository through `find_repo_root`. Nothing defaults there any more.
+
+Rust socket tests bind in `tuic_test_support::socket_dir()` (a fresh 4-character
+directory in the socket root) or `short_socket_path(name)`. Rust's std binds at
+most 103 bytes (104-byte `sun_path` minus the NUL), and the longest name a test
+binds is 16 bytes (`mcp-<7-digit pid>.sock`), so the socket root may be at most 81
+bytes and the host temp dir at most 72:
+
+| `$TMPDIR` | bytes | longest test socket | result |
+|---|---|---|---|
+| macOS default (`/var/folders/xx/…/T`) | 49 | 80 | fits, 23 bytes spare |
+| agent sandbox | 72 | 103 | fits, 0 bytes spare — for self-named sockets only (fixed-name ones go `UNCHECKED`, below) |
+| long CI-like | 90 | 121 | fails with the budget message |
+| agent sandbox, short symlink (`/tmp/srtmon.XXXXXXXX`) | 20 | 51 | fits, 52 bytes spare |
+
+The host temp dir can be spelled two ways for the same directory: the sandbox's
+real path (72 bytes) and a short symlink to it (20 bytes). Both hold every socket
+this repo names itself, but only the short one holds mdkb's own staging socket
+(`HOME/.mdkb/daemon-hook.sock.<pid>.tmp`, a name the tests cannot shorten; it needs
+a host temp dir of at most 54 bytes). In the long spelling that test (and any other
+entry in `tuic_test_support::FIXED_NAME_SOCKETS`) would print `UNCHECKED` and pass
+without running. `tuic-test-support`'s `socket_environment` test is the runtime
+blocker for that: it fails, naming the sockets, the host temp dir and its length,
+unless the run uses a shorter `TMPDIR`, sets `TUIC_TEST_SOCKET_ROOT`, or accepts
+the gap with `TUIC_ALLOW_UNCHECKED_SOCKET_TESTS=1`. It also pins the outcome for
+both layouts, so a change to the budget constants cannot move the line silently.
+Add every new fixed-name socket test's path to `FIXED_NAME_SOCKETS`.
+
+Over budget, the panic names the host temp dir and its length, the would-be root
+length, the 81/72-byte budgets and `TUIC_TEST_SOCKET_ROOT=<short private dir>`;
+nothing falls back to `/tmp`. The root is created with `mkdir` (no symlink is
+followed) at a random name, checked to be ours and 0700, and marked with
+`.tuic-socket-root`. Three sockets have names the tests cannot shorten: the
+named-instance tests (`tuic-cli`/`tuic-bridge` `named_instance.rs`) bind
+`tuic-mcp-<16 hex>[-<pid>].sock` by a relative name with the working directory
+in its dir (`SocketSpelling`, `in_dir`: process-wide, so it panics unless the
+process runs one test at a time, under `cargo nextest` or `RUST_TEST_THREADS=1`);
+`remote_runtime`'s named Local-identity test and mdkb's contract test
+(`HOME/.mdkb/daemon-hook.sock.<pid>.tmp`, mdkb's own name) print `UNCHECKED …`
+and return when the path cannot fit.
+
+The wrapper prunes, after more than six days unused, only what this tooling
+creates: `tuic-run.*` and the per-checkout `tuic-co-*` (and the older
+`tuic-proc-*`/`tuic-nextest-*`) under the base, the old
+`<checkout>/.tmp/tuic-tests` and an inherited root,
+your own `tuic-s<16 hex>` socket directories in the host temp dir, and after a
+day a `t.XXXXXX` socket root there that a killed test process left (only one that
+is ours, not a symlink and carries `.tuic-socket-root`). Nothing in `/tmp`.
+A prune it cannot complete prints a warning and never fails the command. Earlier
+versions used `~/Gits/.tmp/tuic-tests`, `~/Gits/.tmp/s<16 hex>` and
+`<checkout>/.tmp/tuic-tests`; nothing touches those any more, and you may delete
+them by hand. Run standalone Rust tests through the
+wrapper.
 
 Rust coverage uses `make cov` (`cargo llvm-cov nextest`). Nextest builds the ACP
 and MCP fixture executables once for the library tests that launch them. Under
