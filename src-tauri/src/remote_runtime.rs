@@ -3269,7 +3269,10 @@ mod tests {
     // Catches: DNS fallback loops or retries dotted names and TCP failures.
     #[tokio::test]
     async fn direct_recovery_excludes_fqdns_and_resets_and_bounds_missing_peers() {
+        // Name resolution is what is under test: an environment proxy (an agent sandbox sets
+        // one) would answer for the host and turn "cannot resolve" into an HTTP 403.
         let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let no_proxy_client = client.clone();
         let error = read_direct_health_with_lookup(
             &client,
             "http://no-such-host.invalid:9877",
@@ -3297,7 +3300,7 @@ mod tests {
         .unwrap_err();
         assert!(error.contains("Cannot connect to short-peer"), "{error}");
         let error = read_direct_health_with_lookup(
-            &test_client(),
+            &no_proxy_client,
             "http://unknown-short-peer:9877",
             |_| async { None },
         )
@@ -3308,7 +3311,7 @@ mod tests {
             "{error}"
         );
         let error = read_direct_health_with_lookup(
-            &test_client(),
+            &no_proxy_client,
             "http://unknown-short-peer:9877",
             |_| async { Some("no-such-host.invalid".to_owned()) },
         )
