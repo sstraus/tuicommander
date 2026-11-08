@@ -118,6 +118,18 @@ describe("repository refresh interval (#1491)", () => {
 		expect(structure).toHaveBeenCalledTimes(2);
 	});
 
+	it("drops a queued remote refresh if the path is registered locally during the wait", async () => {
+		repositoriesStore.remove("/repo");
+		repositoriesStore.add({ path: "/repo", displayName: "Remote", connectionId: "host" });
+		await refresh("/repo");
+		const pending = refresh("/repo");
+		repositoriesStore.remove("/repo");
+		repositoriesStore.add({ path: "/repo", displayName: "Local" });
+		await vi.advanceTimersByTimeAsync(5_000);
+		await pending;
+		expect(structure).toHaveBeenCalledTimes(1);
+	});
+
 	it("skips a repo parked during the wait instead of waking a dormant repo", async () => {
 		await refresh("/repo");
 		const pending = refresh("/repo");

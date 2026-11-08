@@ -560,6 +560,7 @@ export function createRepositoryRefreshCoordinator(deps: RepositoryRefreshCoordi
 	const refreshImmediate = new Set<string>();
 	const wakeRefresh = new Map<string, () => void>();
 	const refreshRepo = async (repoPath: string, immediate: boolean): Promise<void> => {
+		const connectionId = repositoriesStore.getConnectionId(repoPath);
 		if (immediate) {
 			refreshImmediate.add(repoPath);
 			wakeRefresh.get(repoPath)?.();
@@ -592,8 +593,13 @@ export function createRepositoryRefreshCoordinator(deps: RepositoryRefreshCoordi
 				refreshImmediate.delete(repoPath);
 				// Requests received while waiting belong to this pass, not another rerun.
 				refreshQueued.delete(repoPath);
-				// A repo may have been removed or parked during the trailing wait.
-				if (!repositoriesStore.getActivePaths().includes(repoPath)) break;
+				// A repo may have been removed, parked or assigned to another host
+				// during the wait. A remote hint must never become local git work.
+				if (
+					!repositoriesStore.getActivePaths().includes(repoPath) ||
+					repositoriesStore.getConnectionId(repoPath) !== connectionId
+				)
+					break;
 				const start = Date.now();
 				refreshStartedAt.set(repoPath, start);
 				try {

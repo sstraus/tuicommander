@@ -6,6 +6,7 @@ import { listenForWorkItemMcpRequests } from "../plugins/workItemMcpBridge";
 import { presentAutomationNotice, startAutomationProfileNotices } from "../services/automationNotifications";
 import { persistBackgroundSnapshot } from "../services/backgroundSnapshot";
 import { listenForNativeNoticeClicks } from "../services/nativeNotificationNavigation";
+import { startRemoteRepositorySync } from "../services/remoteRepositorySync";
 import { activityStore } from "../stores/activityStore";
 import { startAgentSettingsSync } from "../stores/agentConfigs";
 import { appLogger } from "../stores/appLogger";
@@ -452,7 +453,7 @@ export async function initApp(deps: AppInitDeps) {
 	// from a dead one — including the repos registered on it, whose every
 	// operation fails while the sidebar still shows them as ordinary.
 	// `hydrate()` is idempotent, so the panel may still call it.
-	void remoteConnectionsStore.hydrate();
+	ownSettingsSync(() => startRemoteRepositorySync(deps.refreshAllBranchStats));
 
 	// Load themes from Rust backend, then apply immediately — the createEffect
 	// in App.tsx fires synchronously before this async onMount completes.
@@ -578,7 +579,8 @@ export async function initApp(deps: AppInitDeps) {
 	const revisionCoalescer = createRevisionCoalescer((repoPath, isGitState) =>
 		isGitState ? repositoriesStore.bumpGitRevision(repoPath) : repositoriesStore.bumpRevision(repoPath),
 	);
-	listen<{ repo_path: string; kind: RepoChangeKind }>("repo-changed", (event) => {
+	listen<{ repo_path: string; kind: RepoChangeKind; __tuic_origin?: unknown }>("repo-changed", (event) => {
+		if (event.payload.__tuic_origin !== undefined) return;
 		const { repo_path, kind } = event.payload;
 		// No cache invalidation here: every backend producer of this event calls
 		// `invalidate_repo_caches` before sending it, and `clear_repo_caches` does
