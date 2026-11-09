@@ -11,6 +11,8 @@
     "bundle:report": "node scripts/report-frontend-bundles.mjs",
     "architecture:cycles": "node scripts/check-frontend-cycles.mjs",
     "architecture:cycles:test": "node scripts/check-frontend-cycles.mjs --self-test",
+    "check:no-process-exec": "node scripts/check-no-process-exec.mjs",
+    "check:no-process-exec:test": "node scripts/check-no-process-exec.mjs --self-test",
     "build:watch": "vite build --watch",
     "preview": "vite preview",
     "tauri": "tauri",

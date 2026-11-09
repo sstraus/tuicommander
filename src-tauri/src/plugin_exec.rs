@@ -1265,21 +1265,21 @@ mod tests {
         assert!(status.success());
         #[cfg(unix)]
         {
-            let pid = std::fs::read_to_string(&markers[0]).expect("pid");
-            let pid = pid.trim();
+            let pid_text = std::fs::read_to_string(&markers[0]).expect("pid");
+            let pid_text = pid_text.trim();
+            let pid: u32 = pid_text.parse().expect("numeric pid");
             let deadline = Instant::now() + Duration::from_secs(10);
             loop {
-                let stat = std::process::Command::new("ps")
-                    .args(["-o", "stat=", "-p", pid])
-                    .output()
-                    .expect("ps");
-                let stat = String::from_utf8_lossy(&stat.stdout);
-                if stat.trim().is_empty() || stat.trim_start().starts_with('Z') {
+                // Gone, or an unreaped zombie of this process: either way it no longer runs.
+                // Natively, not via `ps`, which sandboxed hosts cannot exec.
+                let zombies = tuic_core::process_info::zombie_children(std::process::id())
+                    .unwrap_or_default();
+                if !tuic_core::process_info::is_alive(pid) || zombies.contains(&pid) {
                     break;
                 }
                 assert!(
                     Instant::now() < deadline,
-                    "cancelled child {pid} still runs"
+                    "cancelled child {pid_text} still runs"
                 );
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }

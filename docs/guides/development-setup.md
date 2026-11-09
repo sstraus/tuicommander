@@ -438,6 +438,20 @@ Every Rust test binary that links `tuic-test-support` runs its git processes aga
 
 When a named instance's Unix socket path does not fit `sun_path`, the error names the path length, the 103-byte limit, the longest `TMPDIR` that would fit and `TUIC_SOCKET`; the bind is not retried.
 
+A test that needs a process with a particular name in the foreground (`claude`,
+`bash`, `tuic-remote`, a `claude/versions/2.1.5` layout) installs
+`tuic_test_support::install_identity_probe(dir, name)`: a small std-only program
+(`src-tauri/crates/tuic-test-support/src/identity_probe_main.rs`) that the
+crate's `build.rs` compiles with the build's own `rustc`. Never copy `/bin/cat`,
+`/bin/sh` or `/bin/sleep` instead: the agent sandbox SIGKILLs a relocated Apple
+platform binary ("Killed: 9"), and a symlink, a script or `exec -a` reports the
+wrong executable to `proc_pidpath`/`/proc/<pid>/exe`. The probe needs no
+`codesign`. With no arguments it echoes stdin until EOF (alive while its stdin is
+open, like `cat`); `--print <words…>` prints them; installed as `ps` (or run with
+`--ps`) it answers `-p <pid> -o comm=` natively, standing in for `ps` where
+`/bin/ps` cannot run.
+Covered by `crates/tuic-test-support/tests/identity_probe.rs`.
+
 ### Live peer-mail wake canary
 
 After a Rust rebuild, run this against the isolated test instance, not the

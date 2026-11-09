@@ -600,6 +600,16 @@ When changing how `make mutants` selects, builds or runs mutants:
 | `AGENTS.md` | "Tests" section bullet (per-change rule, who runs it, surviving-mutant policy) |
 | `CONTRIBUTING.md` | The install line and the one-paragraph mention |
 
+### Process inspection (no `ps`/`pgrep`/`pkill` exec)
+When adding or removing a process-inspection call site, or the logged `ps` fallback:
+
+| File | What to update |
+|------|----------------|
+| `scripts/check-no-process-exec.mjs` | The `file::fn` allow-list (a stale entry fails `--self-test`); the per-body scoping (rustfmt indentation ends a fn) and the dash / BSD-letter `ps` patterns, each pinned by a `--self-test` fixture; wired into `make check` |
+| `src-tauri/crates/tuic-core/src/process_info.rs` | The `ProcessSource` trait (a new method needs a `FakeProcessSource` answer or a default), per-platform reads and their fail-soft rules (`Unreadable`, zombies, the pid-listing growth loop, `hidepid`), the module docs; its `tests::live` cases, including the macOS `ps` oracle that reports `UNCHECKED` in the sandbox |
+| `docs/backend/pty.md` | Native process snapshot, the `ps` fallback and its removal plan |
+| `src-tauri/crates/tuic-test-support/{build.rs,src/identity_probe_main.rs}` | The identity probe tests install as a named foreground process (and as a local `ps` stand-in); its personalities, `tests/identity_probe.rs`, and the paragraph in `docs/guides/development-setup.md` → Testing |
+
 ### Config-instance scoping (`TUIC_APP_INSTANCE`)
 When changing which make target launches against which configuration directory:
 

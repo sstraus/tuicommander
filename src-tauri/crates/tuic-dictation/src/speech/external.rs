@@ -927,25 +927,17 @@ mod tests {
     fn assert_sleeper_stopped(workspace: &Path) {
         let pid = std::fs::read_to_string(workspace.join("sleeper.pid"))
             .expect("shell must publish the sleeper PID");
-        let pid = pid.trim();
+        let pid: u32 = pid.trim().parse().expect("sleeper PID must be numeric");
         let deadline = Instant::now() + Duration::from_secs(2);
-        let state = loop {
-            let output = Command::new("ps")
-                .args(["-o", "stat=", "-p", pid])
-                .output()
-                .unwrap();
-            let state = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-            if state.is_empty() || state.starts_with('Z') {
-                return;
-            }
+        // `info` is `None` once the process is gone or a zombie: the states `ps` printed as empty or Z.
+        while tuic_core::process_info::info(pid).is_some() {
             if Instant::now() >= deadline {
-                break state;
+                // Clean up the exact child this fixture started even on the RED run.
+                tuic_core::process_info::kill(pid);
+                panic!("sleep child {pid} survived stopping its shell");
             }
             std::thread::sleep(Duration::from_millis(10));
-        };
-        // Clean up the exact child this fixture started even on the RED run.
-        let _ = Command::new("kill").args(["-KILL", pid]).output();
-        panic!("sleep child {pid} survived stopping its shell: state={state}");
+        }
     }
 
     #[test]
