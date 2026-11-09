@@ -1037,6 +1037,66 @@ pub fn host_absolute(unix: &str) -> String {
     }
 }
 
+/// The identity probe `build.rs` compiled from `src/identity_probe_main.rs`.
+/// Install a copy with [`install_identity_probe`] rather than exec'ing this
+/// path, so the process carries the name the test needs.
+pub fn identity_probe_bin() -> &'static std::path::Path {
+    std::path::Path::new(env!("TUIC_IDENTITY_PROBE_BIN"))
+}
+
+/// Install the identity probe as `dir/name` (mode 0755 on Unix) and return
+/// that path. The started process then reports `dir/name` as its executable
+/// (macOS `proc_pidpath`, Linux `/proc/<pid>/exe`), so it stands in for any
+/// program a test needs to see in the foreground: `claude`, `bash`,
+/// `tuic-remote`, a `claude/versions/2.1.5` layout, or `ps` itself.
+///
+/// Personalities (see `src/identity_probe_main.rs`): no arguments copies stdin
+/// to stdout until EOF, staying alive like `cat` while its stdin is open;
+/// `--print <words…>` prints the words and exits 0; installed as `ps` (or run
+/// with `--ps`) it answers `-p <pid> -o comm=` natively.
+///
+/// Why not copy `/bin/cat` or `/bin/sleep`: a relocated Apple platform binary
+/// is SIGKILLed on exec in the agent sandbox ("Killed: 9"), and symlinks,
+/// scripts and `exec -a` report the wrong identity. No `codesign` step is
+/// needed either: the probe is this checkout's own build output, and the
+/// linker's ad-hoc signature (Apple Silicon) is part of the file's bytes, so
+/// it survives the copy.
+///
+/// The copy is staged and renamed into place, so re-installing over a probe
+/// that is still running never rewrites an executing file's pages in place
+/// (macOS kills a process whose signed pages change under it).
+pub fn install_identity_probe(dir: &std::path::Path, name: &str) -> std::path::PathBuf {
+    static INSTALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+    let destination = dir.join(name);
+    let parent = destination
+        .parent()
+        .expect("an install path below dir has a parent");
+    std::fs::create_dir_all(parent)
+        .unwrap_or_else(|error| panic!("create {}: {error}", parent.display()));
+    let staging = parent.join(format!(
+        ".tuic-identity-probe.{}.{}",
+        std::process::id(),
+        INSTALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    ));
+    std::fs::copy(identity_probe_bin(), &staging).unwrap_or_else(|error| {
+        panic!(
+            "copy the identity probe {} to {}: {error}",
+            identity_probe_bin().display(),
+            staging.display()
+        )
+    });
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&staging, std::fs::Permissions::from_mode(0o755))
+            .unwrap_or_else(|error| panic!("chmod {}: {error}", staging.display()));
+    }
+    std::fs::rename(&staging, &destination)
+        .unwrap_or_else(|error| panic!("install {}: {error}", destination.display()));
+    destination
+}
+
 /// HTTP request bytes captured by an IPC test server.
 pub struct HttpRequest {
     pub request_line: String,

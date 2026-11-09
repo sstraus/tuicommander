@@ -238,7 +238,7 @@ auto_connect = true
 When `check_local_port()` reports `AddrInUse`, the supervisor calls `kill_ssh_on_port()` before retrying:
 
 1. `lsof -ti tcp:<port> -sTCP:LISTEN` finds PIDs listening on the port
-2. `ps -p <pid> -o comm=` verifies each PID is an `ssh` process
+2. each PID's executable path (`proc_pidpath` / `/proc/<pid>/exe`, falling back to the kernel process name) must end in `ssh` — read natively through `tuic_core::process_info`, not by exec'ing `ps`, which sandboxed hosts refuse to run
 3. Only confirmed SSH processes receive `SIGTERM`
 
 This handles stale SSH tunnels left over from a previous app crash without killing unrelated processes.

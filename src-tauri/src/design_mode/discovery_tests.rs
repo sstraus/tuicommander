@@ -16,8 +16,16 @@ pub(in crate::design_mode) fn git(repo: &Path, args: &[&str]) {
         String::from_utf8_lossy(&result.stderr)
     );
 }
+/// lsof reports a listener's cwd resolved, so fixture roots must be spelled
+/// the same way (the test temp root can sit under macOS `/var` -> `/private/var`).
+fn canonical_temp_root() -> std::path::PathBuf {
+    crate::test_support::test_temp_root()
+        .canonicalize()
+        .expect("canonical test temp root")
+}
+
 pub(in crate::design_mode) fn repository() -> tempfile::TempDir {
-    let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let dir = tempfile::tempdir_in(canonical_temp_root()).unwrap();
     git(dir.path(), &["init"]);
     git(
         dir.path(),
@@ -193,7 +201,7 @@ async fn recorded_vite_processes_distinguish_worktrees_and_command_path_boundari
         repo.path(),
         &["worktree", "add", "--detach", worktree.to_str().unwrap()],
     );
-    let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let outside = tempfile::tempdir_in(canonical_temp_root()).unwrap();
     let linked = Server::start(&worktree, None);
     let fallback = Server::start(outside.path(), Some(&repo.path().join("vite.py")));
     let foreign = Server::start(
@@ -251,7 +259,7 @@ async fn non_html_listeners_are_not_dev_servers() {
 #[tokio::test]
 async fn unknown_or_foreign_session_lists_no_listeners() {
     let repo = repository();
-    let outside = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+    let outside = tempfile::tempdir_in(canonical_temp_root()).unwrap();
     let server = Server::start(repo.path(), None);
     let state = Arc::new(crate::state::tests_support::make_test_app_state());
     let response = discover_with_source(&state, repo.path(), Some("ghost"), |_| async {
@@ -315,4 +323,24 @@ fn tuic_pid_is_not_a_candidate() {
         ),
         [] as [serde_json::Value; 0]
     );
+}
+
+// Catches: an argument containing a newline forging a second `pid command` row, which
+// `command_owners` accepts, attributing an unrelated listener to a repo.
+#[test]
+fn a_newline_inside_an_argument_cannot_forge_a_command_row() {
+    let argv = vec![
+        "node".to_string(),
+        "x\n200 /repo/app/server.js".to_string(),
+        "y\r300 /repo/app/other.js".to_string(),
+    ];
+    let line = command_line(100, Some(&argv), "node");
+    assert_eq!(line.lines().count(), 1, "{line:?}");
+    assert!(line.starts_with("100 node x 200 /repo/app/server.js"));
+    let roots = vec![std::path::PathBuf::from("/repo/app")];
+    let owners = command_owners(&line, &roots);
+    assert!(!owners.contains_key(&200), "{owners:?}");
+    assert!(!owners.contains_key(&300), "{owners:?}");
+    // No readable argv: the short name stands in.
+    assert_eq!(command_line(7, None, "ssh"), "7 ssh\n");
 }

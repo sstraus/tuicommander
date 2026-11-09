@@ -57,6 +57,18 @@ pub fn read_process_argv0(pid: u32) -> Option<String> {
 #[cfg(target_os = "macos")]
 pub fn read_process_argv(pid: u32) -> Option<Vec<String>> {
     let buf = read_procargs2_raw(pid).ok()?;
+    let (argv, _env) = split_procargs2(&buf)?;
+    (!argv.is_empty()).then_some(argv)
+}
+
+/// Split a `KERN_PROCARGS2` buffer into `(argv, environment bytes)`.
+///
+/// Layout: `[i32 argc] [exec_path\0 ...padding NULs...] [argv[0]\0 ... argv[argc-1]\0] [env…]`.
+/// Only the padding after `exec_path` is skipped. Between arguments there is exactly one
+/// NUL, so an EMPTY argument (`tool "" --version`) stays in its slot; skipping NULs between
+/// arguments would swallow it and read the first environment entry to make up the count.
+#[cfg(target_os = "macos")]
+fn split_procargs2(buf: &[u8]) -> Option<(Vec<String>, &[u8])> {
     let int_size = std::mem::size_of::<libc::c_int>();
     if buf.len() < int_size {
         return None;
@@ -68,19 +80,17 @@ pub fn read_process_argv(pid: u32) -> Option<Vec<String>> {
     if !(0..=65535).contains(&n_args) {
         return None;
     }
-    // Layout: [i32 argc] [exec_path\0 ...padding...] [argv[0]\0 ... argv[n-1]\0] [env…]
-    let mut data = skip_cstring(&buf[int_size..]);
+    let mut data = skip_leading_nulls(skip_cstring(&buf[int_size..]));
     let mut argv = Vec::with_capacity(n_args as usize);
     for _ in 0..n_args {
-        data = skip_leading_nulls(data);
         if data.is_empty() {
             break;
         }
         let end = data.iter().position(|&b| b == 0).unwrap_or(data.len());
         argv.push(String::from_utf8_lossy(&data[..end]).into_owned());
-        data = &data[end..];
+        data = data.get(end + 1..).unwrap_or(&[]);
     }
-    (!argv.is_empty()).then_some(argv)
+    Some((argv, data))
 }
 
 #[cfg(target_os = "linux")]
@@ -223,38 +233,9 @@ fn read_environ_raw(pid: u32) -> Result<Vec<String>, std::io::Error> {
     use std::io::{Error, ErrorKind};
 
     let buf = read_procargs2_raw(pid)?;
-
-    // Step 3: parse the KERN_PROCARGS2 layout
-    //   [i32 argc] [exec_path\0 ...padding...] [argv[0]\0 ... argv[n-1]\0] [env[0]\0 ...]
-    let int_size = std::mem::size_of::<libc::c_int>();
-    if buf.len() < int_size {
-        return Err(Error::new(ErrorKind::InvalidData, "buffer too small"));
-    }
-
-    let mut n_args: libc::c_int = 0;
-    unsafe {
-        std::ptr::copy_nonoverlapping(buf.as_ptr(), (&raw mut n_args).cast::<u8>(), int_size);
-    }
-    if !(0..=65535).contains(&n_args) {
-        return Err(Error::new(ErrorKind::InvalidData, "implausible argc"));
-    }
-
-    let mut data = &buf[int_size..];
-
-    // Skip exec_path
-    data = skip_cstring(data);
-
-    // Skip n_args argv strings (with possible padding nulls between them)
-    for _ in 0..n_args {
-        data = skip_leading_nulls(data);
-        if data.is_empty() {
-            break;
-        }
-        data = skip_cstring(data);
-    }
-
-    // Remaining data is the env section
-    Ok(collect_cstrings(data))
+    let (_argv, env) = split_procargs2(&buf)
+        .ok_or_else(|| Error::new(ErrorKind::InvalidData, "unparseable procargs"))?;
+    Ok(collect_cstrings(env))
 }
 
 // ─── Linux ──────────────────────────────────────────────────────────────────
@@ -489,6 +470,23 @@ mod tests {
         // PID 0 or a very high PID should fail gracefully
         let val = read_process_env_var(99999999, "PATH");
         assert!(val.is_none());
+    }
+
+    // Catches: skipping NULs between arguments, which dropped an empty argument and pulled
+    // the first environment entry into argv.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn procargs2_keeps_empty_arguments_and_leaves_the_environment_alone() {
+        let mut buf = 3i32.to_ne_bytes().to_vec();
+        buf.extend_from_slice(b"/usr/bin/tool\0\0\0"); // exec_path + padding
+        buf.extend_from_slice(b"tool\0\0--version\0"); // argv: "tool", "", "--version"
+        buf.extend_from_slice(b"HOME=/h\0PATH=/p\0");
+        let (argv, env) = split_procargs2(&buf).expect("parses");
+        assert_eq!(argv, vec!["tool", "", "--version"]);
+        assert_eq!(collect_cstrings(env), vec!["HOME=/h", "PATH=/p"]);
+        // A truncated buffer yields what it has instead of reading past the end.
+        let short = &buf[..buf.len() - 20];
+        assert!(split_procargs2(short).is_some());
     }
 
     #[cfg(any(target_os = "macos", target_os = "linux"))]

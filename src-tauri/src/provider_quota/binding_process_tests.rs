@@ -15,8 +15,15 @@ fn spawn_process(state: &crate::AppState, id: &str, config: &str) {
             pixel_height: 0,
         })
         .unwrap();
-    let mut command = CommandBuilder::new("/bin/sleep");
-    command.arg("30");
+    // The identity probe, not /bin/sleep: an Apple platform binary's environment is not readable
+    // through KERN_PROCARGS2 (it reads back empty), which is the very thing these tests read. The
+    // probe blocks on its PTY stdin like `cat`, so it lives as long as the session does.
+    let scratch = tempfile::tempdir_in(crate::test_support::test_temp_root())
+        .unwrap()
+        .keep();
+    let probe = tuic_test_support::install_identity_probe(&scratch, "provider-quota-probe");
+    let command_path = probe;
+    let mut command = CommandBuilder::new(command_path);
     command.env("CLAUDE_CONFIG_DIR", config);
     command.env_remove("ANTHROPIC_API_KEY");
     command.env_remove("ANTHROPIC_AUTH_TOKEN");
@@ -38,7 +45,7 @@ fn spawn_process(state: &crate::AppState, id: &str, config: &str) {
             display_name_is_custom: false,
             display_name_from_spawn: false,
             is_remote: false,
-            shell: "/bin/sleep".into(),
+            shell: "/bin/sh".into(),
         }),
     );
     let session = SessionState {
@@ -134,11 +141,10 @@ async fn live_processes_with_different_config_dirs_get_distinct_bindings() {
 /// binding, so its tab shows no usage (3069).
 #[tokio::test]
 async fn codex_launched_by_tuic_binds_its_codex_home() {
-    use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
-    let program = dir.path().join("codex");
-    std::fs::write(&program, "#!/bin/sh\nread input\n").unwrap();
-    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+    // The identity probe named `codex`, not a `#!/bin/sh` script: a script's process image is
+    // /bin/sh, an Apple platform binary whose environment reads back empty.
+    let program = tuic_test_support::install_identity_probe(dir.path(), "codex");
     let codex_home = dir.path().join("codex-home");
     let state = Arc::new(make_test_app_state());
     let pair = native_pty_system()
@@ -209,11 +215,10 @@ async fn codex_launched_by_tuic_binds_its_codex_home() {
 /// Catches: an ego-shaped foreground process binds to an unrelated CLI login.
 #[tokio::test]
 async fn ego_process_never_binds_to_cli_credentials() {
-    use std::os::unix::fs::PermissionsExt;
     let dir = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
-    let program = dir.path().join("ego");
-    std::fs::write(&program, "#!/bin/sh\nread input\n").unwrap();
-    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+    // The identity probe named `ego`, not a `#!/bin/sh` script: a script's process image is
+    // /bin/sh, an Apple platform binary whose environment reads back empty.
+    let program = tuic_test_support::install_identity_probe(dir.path(), "ego");
     let ego_home = dir.path().join("ego-home");
     let session_dir = ego_home.join("sessions/01a02491-6a90-7ae2-9089-fd6a8532eb82");
     std::fs::create_dir_all(&session_dir).unwrap();
