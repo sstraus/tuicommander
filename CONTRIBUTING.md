@@ -21,6 +21,8 @@ make dev
 
 On macOS, `make dev` also requires Python 3. It launches a stable executable
 copy outside Cargo/mbx targets; see [Development Setup](docs/guides/development-setup.md).
+[mbx](docs/guides/development-setup.md#optional-mbx-shared-cargo-cache), a shared Cargo
+cache, is optional: every build path works with plain `cargo` when it isn't installed.
 
 `make check` also needs two cargo subcommands:
 
