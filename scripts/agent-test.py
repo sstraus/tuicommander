@@ -58,6 +58,18 @@ def build_runner() -> list[str]:
     return [slot] if slot and Path(slot).is_file() else []
 
 
+MBX_BIN = Path.home() / "Library/Application Support/mbx/bin"
+
+
+def mbx_active() -> bool:
+    """Whether builds run through mbx (https://mr-boxington.jdx.dev), an optional Cargo cache.
+
+    mbx is a developer convenience, never a requirement: without it the launcher builds with the
+    plain `cargo` on PATH, only slower. Set TUIC_NO_MBX=1 to ignore an installed mbx.
+    """
+    return os.environ.get("TUIC_NO_MBX") != "1" and shutil.which("mbx") is not None
+
+
 def plan(instance: str, port: str, speech_output: bool = False) -> dict:
     if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", instance) or instance == "default":
         raise ValueError("instance must be a non-default lowercase DNS label")
@@ -65,8 +77,8 @@ def plan(instance: str, port: str, speech_output: bool = False) -> dict:
         raise ValueError("port must be in 1024..65535 and must not be 9876")
     if speech_output and not instance.startswith("agent-test-"):
         raise ValueError("speech output requires an agent-test-<name> instance")
-    if os.environ.get("CARGO_TARGET_DIR"):
-        raise ValueError("unset CARGO_TARGET_DIR; mbx owns the target directory")
+    if mbx_active() and os.environ.get("CARGO_TARGET_DIR"):
+        raise ValueError("unset CARGO_TARGET_DIR: mbx leaves an explicitly chosen target directory unmanaged")
     # Short, instance-specific runtime files. The directory takes 8 hex digits
     # of the instance hash: with the full 16 a 49-byte macOS host temp dir puts
     # the socket at exactly the 104-byte SUN_LEN limit.
@@ -107,7 +119,7 @@ def plan(instance: str, port: str, speech_output: bool = False) -> dict:
                         **({"_RJEM_MALLOC_CONF": os.environ.get("_RJEM_MALLOC_CONF", "prof:true,prof_active:false")} if os.environ.get("AGENT_TEST_HEAP_PROFILE") == "1" else {})},
         "cargo": cargo,
         "frontend": ["pnpm", "exec", "vite", "build"],
-        "build_environment": {"PATH_prefix": str(Path.home() / "Library/Application Support/mbx/bin"), "TAURI_CONFIG": json.dumps(override)},
+        "build_environment": {"mbx": mbx_active(), "PATH_prefix": str(MBX_BIN) if mbx_active() and (MBX_BIN / "cargo").is_file() else None, "TAURI_CONFIG": json.dumps(override)},
         "launch": [str(executable)],
         "disabled": ["global shortcuts", "microphone" if speech_output else "dictation/microphone", "Telegram", "updater", "global MCP install", "global CLI mutations", "global agent hooks", "deep links", "sleep inhibition"],
     }
@@ -160,12 +172,23 @@ def start(launch: dict, reuse_sha256=None) -> int:
         # rustc can itself embed jemalloc without profiling: diagnostic options
         # belong to the app process, never mbx/rustc or frontend build tools.
         env.pop("_RJEM_MALLOC_CONF", None)
-        env["PATH"] = str(Path.home() / "Library/Application Support/mbx/bin") + os.pathsep + env["PATH"]
-        shim = Path.home() / "Library/Application Support/mbx/bin/cargo"
-        if shutil.which("cargo", path=env["PATH"]) != str(shim):
-            raise RuntimeError("cargo must resolve to the mbx shim")
+        use_mbx = launch["build_environment"]["mbx"]
+        if use_mbx:
+            # A standalone `mbx setup` shim lives under MBX_BIN; a mise-managed install wraps
+            # cargo elsewhere, so `mbx doctor` is the check that the active cargo is wrapped.
+            if launch["build_environment"]["PATH_prefix"]:
+                env["PATH"] = launch["build_environment"]["PATH_prefix"] + os.pathsep + env["PATH"]
+                if shutil.which("cargo", path=env["PATH"]) != str(MBX_BIN / "cargo"):
+                    raise RuntimeError("cargo must resolve to the mbx shim")
+        elif os.environ.get("TUIC_NO_MBX") == "1":
+            # A shim already on PATH would still wrap cargo; MBX_DISABLE=1 is mbx's own off switch.
+            env["MBX_DISABLE"] = "1"
         if reuse_sha256 is None:
-            subprocess.run(["mbx", "doctor"], env=env, cwd=ROOT, check=True)
+            if use_mbx:
+                subprocess.run(["mbx", "doctor"], env=env, cwd=ROOT, check=True)
+            else:
+                print("mbx not installed (or TUIC_NO_MBX=1): building with plain cargo; "
+                      "see docs/guides/development-setup.md#optional-mbx-shared-cargo-cache", file=sys.stderr)
             runner = build_runner()
             subprocess.run([*runner, *launch["frontend"]], env=env, cwd=ROOT, check=True)
             # Embedded assets, separate application identity, no dev server or bundle writes.

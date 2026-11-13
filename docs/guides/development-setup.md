@@ -112,13 +112,16 @@ make agent-test-stop
 
 The dry run does not build, create runtime files, read application configuration,
 or start a desktop process. The launch runs in the foreground. It builds the
-frontend, then uses one Cargo build through the mbx shim for
+frontend, then uses one Cargo build (through the mbx shim when mbx is
+installed, otherwise plain `cargo`; see [Optional: mbx](#optional-mbx-shared-cargo-cache)) for
 `tuicommander-agent-test`, `tuic-bridge` and `tuic`. A build admission wrapper
 (e.g. the orchestrator's build-slot script) serializes these builds when
 `TUIC_BUILD_SLOT` names an executable one; `scripts/replay-oracle.sh` honours it
 too. When `TUIC_BUILD_FREEZE` names an existing freeze file, the launch refuses to
-build unless that file allows it. `mbx doctor` must
-succeed. Do not set `CARGO_TARGET_DIR`. No Vite server, Tauri watcher, release
+build unless that file allows it. When mbx is installed, `mbx doctor` must
+succeed and `CARGO_TARGET_DIR` must be unset (mbx leaves an explicit target
+directory unmanaged, so its eviction and sharing would not apply);
+`TUIC_NO_MBX=1` ignores an installed mbx and sets `MBX_DISABLE=1` for the build. No Vite server, Tauri watcher, release
 bundle, signing operation or installed executable is involved. Embedded frontend
 assets use `tauri/custom-protocol` even though this is a debug build.
 
@@ -379,6 +382,42 @@ Connects to the Rust HTTP server via WebSocket/REST.
 > **Note:** `pnpm dev` runs `scripts/dev-server.mjs`, not `vite` directly. The dev server is pinned to port 1421 (Tauri's `devUrl`), so the launcher checks the port first: if this checkout is already serving there it prints `reusing it` and exits 0 — the second Tauri app attaches to the running server. Starting a second Vite would wipe the shared `node_modules/.vite/deps` cache and kill hot reload for the session already running. If the port is held by another checkout or a stray process, the launcher fails with an explicit message instead of serving the wrong sources.
 
 ## Build
+
+### Optional: mbx shared Cargo cache
+
+[mbx](https://mr-boxington.jdx.dev/guide) adds a shared compiler cache to Cargo, so
+a build that matches an earlier one (another worktree, for instance) restores outputs
+instead of recompiling. It is a convenience: **nothing in the build requires it**, and
+every `make`/`pnpm`/script path works with plain `cargo` (only slower). Without it you
+still get `sccache` where `build.sh` and CI configure it.
+
+To enable it on macOS (Apple Silicon), pick one route from the
+[installation page](https://mr-boxington.jdx.dev/installation):
+
+```bash
+# mise (recommended; mise 2026.9.2 or newer; the option must precede `rust`)
+mise use --global --tool-option mr_boxington=true rust mr-boxington
+# or: cargo install mbx --locked   (needs Rust 1.91+), then:
+mbx setup && mbx setup --status
+export PATH="$HOME/Library/Application Support/mbx/bin:$PATH"   # ~/.zshenv, for non-interactive tools
+mbx doctor            # confirm the active cargo/rustc are wrapped
+command -v cargo      # in a NEW shell: must resolve to the shim
+```
+
+Behavior to know about:
+
+- `make dev` exports `MBX_INCREMENTAL=1` (mbx otherwise forces `CARGO_INCREMENTAL=0`,
+  which recompiled the lib from scratch on every Rust edit). The variable is inert
+  without mbx. Per the mbx docs, incremental mode bypasses the shared cache for
+  workspace crates.
+- `make agent-test` detects mbx with `command -v mbx`. With mbx it prepends the standalone
+  shim directory (when present), runs `mbx doctor` and rejects `CARGO_TARGET_DIR`; without
+  mbx, or with `TUIC_NO_MBX=1` (which also sets `MBX_DISABLE=1`, so a shim already on `PATH`
+  stays out of the way), it prints a one-line notice and builds with plain `cargo`.
+- Calling `~/.cargo/bin/cargo` directly bypasses mbx. A target directory mbx populated
+  uses read-only hard links, so running plain Cargo in it can fail with
+  `output file ... is not writeable`; use `mbx build`, or a separate target directory.
+- mbx refuses to build when its cache or the Cargo output is on NFS.
 
 When using mbx, `src-tauri/build.rs` emits `MBX_SHARE_OUT_DIR=0` for the
 `tuicommander` crate only, because Tauri's `generate_context!` writes assets into
