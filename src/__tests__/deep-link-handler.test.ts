@@ -166,3 +166,45 @@ describe("deep link handler — cmd gateway (default-deny)", () => {
 		expect(mockInvoke).not.toHaveBeenCalled();
 	});
 });
+
+describe("deep link handler — install-plugin URL policy (#2667-6f19)", () => {
+	beforeEach(() => {
+		mockInvoke.mockReset();
+		mockInvoke.mockResolvedValue(undefined);
+		callbacks.confirm.mockClear();
+		callbacks.confirm.mockResolvedValue(true);
+	});
+
+	const link = (target: string) => `tuic://install-plugin?url=${encodeURIComponent(target)}`;
+
+	// catches: owner cannot install a locally served ZIP without HTTPS setup
+	it.each([
+		"http://localhost:8080/p.zip",
+		"http://127.0.0.1:8080/p.zip",
+		"http://[::1]:8080/p.zip",
+		"https://example.com/p.zip",
+	])("asks for confirmation, then installs %s", async (target) => {
+		await handleDeepLink(link(target), callbacks);
+		expect(callbacks.confirm).toHaveBeenCalledTimes(1);
+		expect(mockInvoke).toHaveBeenCalledWith("install_plugin_from_url", { url: target });
+	});
+
+	// catches: deceptive or remote plaintext hosts reach the downloader
+	it.each([
+		"http://example.com/p.zip",
+		"http://localhost.evil.com/p.zip",
+		"http://localhost@evil.com/p.zip",
+		"http://127.0.0.1.evil.com/p.zip",
+		"ftp://localhost/p.zip",
+	])("refuses %s without asking", async (target) => {
+		await handleDeepLink(link(target), callbacks);
+		expect(callbacks.confirm).not.toHaveBeenCalled();
+		expect(mockInvoke).not.toHaveBeenCalledWith("install_plugin_from_url", expect.anything());
+	});
+
+	it("does not install when the owner declines", async () => {
+		callbacks.confirm.mockResolvedValue(false);
+		await handleDeepLink(link("http://localhost:8080/p.zip"), callbacks);
+		expect(mockInvoke).not.toHaveBeenCalledWith("install_plugin_from_url", expect.anything());
+	});
+});

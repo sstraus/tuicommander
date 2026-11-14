@@ -40,6 +40,20 @@ const SHUTDOWN_GRACE: std::time::Duration = std::time::Duration::from_secs(5);
 /// Retry slowly enough that a failed endpoint cannot be hammered by queued requests.
 const RECONNECT_INITIAL_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 const RECONNECT_MAX_DELAY: std::time::Duration = std::time::Duration::from_secs(8);
+/// How long a handshake waits for the endpoint before it answers "unavailable".
+/// It covers the reconnect attempts at 1 s and 3 s after a failed start, and
+/// stays below `SHUTDOWN_GRACE` so a client that closes stdin still gets it.
+const HANDSHAKE_CONNECT_WAIT: std::time::Duration = std::time::Duration::from_secs(3);
+const HANDSHAKE_RETRY_POLL: std::time::Duration = std::time::Duration::from_millis(100);
+
+/// Methods that open or probe the session. A client drops the server when they
+/// fail, so they wait for the endpoint before the bridge answers offline.
+fn connect_wait(method: &str) -> std::time::Duration {
+    match method {
+        "initialize" | "server/discover" | "ping" => HANDSHAKE_CONNECT_WAIT,
+        _ => std::time::Duration::ZERO,
+    }
+}
 
 fn wait_timeout_ms(request: &Value) -> Option<u64> {
     let name = request.pointer("/params/name").and_then(Value::as_str)?;
@@ -188,7 +202,7 @@ fn ipc_endpoint() -> String {
 
 #[cfg(windows)]
 fn ipc_endpoint() -> String {
-    tuic_ipc::PIPE_NAME.to_string()
+    tuic_ipc::pipe_name(tuic_ipc::app_instance::current_app_instance())
 }
 
 /// Wrapper that provides a unified IPC stream type across platforms.
@@ -326,10 +340,10 @@ async fn connect_ipc() -> Result<IpcStream, String> {
     }
     #[cfg(windows)]
     {
-        const PIPE_NAME: &str = tuic_ipc::PIPE_NAME;
+        let pipe = ipc_endpoint();
         let client = tokio::net::windows::named_pipe::ClientOptions::new()
-            .open(PIPE_NAME)
-            .map_err(|e| format!("connect {PIPE_NAME}: {e}"))?;
+            .open(&pipe)
+            .map_err(|e| format!("connect {pipe}: {e}"))?;
         Ok(IpcStream::Pipe(client))
     }
 }
@@ -678,6 +692,10 @@ fn start_sse_listener(state: &Arc<BridgeState>) {
 }
 
 /// Respond when TUIC is not available.
+///
+/// The bridge cannot know which methods the offline server supports, so every
+/// method without a local answer gets a transient -32000. A -32601 here made
+/// clients drop TUIC as a server without `server/discover` (story 3044-ddeb).
 fn emit_offline_response(method: &str, id: &Value, request: &str) {
     let mut result = match method {
         "tools/list" => serde_json::json!({ "tools": [] }),
@@ -688,7 +706,7 @@ fn emit_offline_response(method: &str, id: &Value, request: &str) {
         _ => {
             emit(&serde_json::json!({
                 "jsonrpc": "2.0", "id": id,
-                "error": { "code": -32601, "message": format!("Method not found: {method}") }
+                "error": { "code": -32000, "message": "TUICommander MCP is unavailable" }
             }));
             return;
         }
@@ -712,7 +730,11 @@ fn emit_offline_response(method: &str, id: &Value, request: &str) {
 /// Concurrent request tasks all observe the same `connected == false`, so the
 /// lock (plus the re-check after acquiring it) collapses their reconnect attempts
 /// into a single `initialize` instead of one per queued request.
-async fn ensure_connected(state: &Arc<BridgeState>) {
+///
+/// `announce` emits `notifications/tools/list_changed` after a reconnect. The
+/// downstream `initialize` passes false: its client holds no tool list yet, and
+/// a notification before the initialize response can break a strict client.
+async fn ensure_connected(state: &Arc<BridgeState>, announce: bool) {
     let mut reconnect = state.reconnect_lock.lock().await;
     if state.shutting_down.load(Ordering::Acquire)
         || state.connected.load(Ordering::Acquire)
@@ -727,9 +749,35 @@ async fn ensure_connected(state: &Arc<BridgeState>) {
             *state.session_id.lock().unwrap() = Some(sid);
             state.connected.store(true, Ordering::Release);
             start_sse_listener(state);
-            emit_tools_changed();
+            if announce {
+                emit_tools_changed();
+            }
         }
         Err(_) => reconnect.failed(),
+    }
+}
+
+/// Try to reach the endpoint for at most `wait`, then report whether the bridge
+/// is connected. A zero `wait` makes exactly one attempt (subject to backoff).
+async fn wait_for_endpoint(
+    state: &Arc<BridgeState>,
+    wait: std::time::Duration,
+    announce: bool,
+) -> bool {
+    let deadline = std::time::Instant::now() + wait;
+    loop {
+        if state.connected.load(Ordering::Acquire) {
+            return true;
+        }
+        ensure_connected(state, announce).await;
+        if state.connected.load(Ordering::Acquire) {
+            return true;
+        }
+        let now = std::time::Instant::now();
+        if now >= deadline || state.shutting_down.load(Ordering::Acquire) {
+            return false;
+        }
+        tokio::time::sleep((deadline - now).min(HANDSHAKE_RETRY_POLL)).await;
     }
 }
 
@@ -742,10 +790,7 @@ async fn ensure_connected(state: &Arc<BridgeState>) {
 /// wait, and its own 10s transport timeout only started once the wait returned.
 /// JSON-RPC responses may complete out of order; each carries its own `id`.
 async fn proxy_request(state: Arc<BridgeState>, line: String, method: String, id: Value) {
-    if !state.connected.load(Ordering::Acquire) {
-        ensure_connected(&state).await;
-    }
-    if !state.connected.load(Ordering::Acquire) {
+    if !wait_for_endpoint(&state, connect_wait(&method), true).await {
         emit_offline_response(&method, &id, &line);
         return;
     }
@@ -796,27 +841,15 @@ async fn proxy_request(state: Arc<BridgeState>, line: String, method: String, id
 /// of session establishment, so a request-triggered reconnect can't open a second
 /// upstream session concurrently and clobber `session_id`.
 async fn handle_initialize(state: &Arc<BridgeState>, line: String, id: Value) {
+    // Same bounded wait as every other handshake method.
+    wait_for_endpoint(state, connect_wait("initialize"), false).await;
     let mut reconnect = state.reconnect_lock.lock().await;
     *state.downstream_initialize.lock().unwrap() = Some(line.clone());
     // Proxy to server when connected to get dynamic instructions.
     // The server response includes intent protocol, active sessions, etc.
-    // Fall back to a minimal local response only when offline.
-    let proxied = if state.connected.load(Ordering::Acquire) || {
-        // Try lazy connect if not yet connected
-        if !reconnect.ready() {
-            false
-        } else if let Ok((sid, _)) = server_initialize().await {
-            reconnect.succeeded();
-            eprintln!("tuic-bridge: connected to TUIC");
-            *state.session_id.lock().unwrap() = Some(sid);
-            state.connected.store(true, Ordering::Release);
-            start_sse_listener(state);
-            true
-        } else {
-            reconnect.failed();
-            false
-        }
-    } {
+    // Fall back to a minimal local response only when offline: a client that
+    // starts before TUIC keeps the server and gets `list_changed` later.
+    let proxied = if state.connected.load(Ordering::Acquire) {
         let sid = state.session_id.lock().unwrap().clone();
         match post_mcp(&line, sid.as_deref()).await {
             Ok((body, new_sid)) => {
@@ -1036,7 +1069,7 @@ async fn main() {
                     consecutive_failures = 0;
                 }
             } else {
-                ensure_connected(&bg_state).await;
+                ensure_connected(&bg_state, true).await;
                 if bg_state.connected.load(Ordering::Acquire) {
                     consecutive_failures = 0;
                 }
@@ -1129,6 +1162,7 @@ mod tests {
         reject_initializes: std::sync::atomic::AtomicBool,
         deletes: AtomicUsize,
         tool_calls: AtomicUsize,
+        discovers: AtomicUsize,
         /// Every `initialize` body the bridge posted, in order.
         ///
         /// Counting them proves a reconnect did not storm; reading them is the
@@ -1187,6 +1221,8 @@ mod tests {
                             .push(text.to_string());
                     } else if text.contains("tools/call") {
                         stats.tool_calls.fetch_add(1, Ordering::SeqCst);
+                    } else if text.contains("server/discover") {
+                        stats.discovers.fetch_add(1, Ordering::SeqCst);
                     }
 
                     let now = stats.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
@@ -1271,6 +1307,36 @@ mod tests {
             mock.stats.initializes.load(Ordering::SeqCst),
             2,
             "a failed endpoint must be retried after the pause"
+        );
+    }
+
+    /// Catches: a handshake answers "unavailable" at once while the endpoint
+    /// comes up a moment later, so a client that starts with TUIC drops it.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn handshake_waits_for_an_endpoint_that_comes_up_within_the_bound() {
+        let mock = start_mock_ipc(0).await;
+        mock.stats.reject_initializes.store(true, Ordering::SeqCst);
+        let state = Arc::new(BridgeState::new());
+        // As in main(): the start-up connect failed and armed the backoff.
+        state.reconnect_lock.lock().await.failed();
+        let stats = Arc::clone(&mock.stats);
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            stats.reject_initializes.store(false, Ordering::SeqCst);
+        });
+        proxy_request(
+            Arc::clone(&state),
+            r#"{"jsonrpc":"2.0","id":1,"method":"server/discover","params":{}}"#.to_string(),
+            "server/discover".to_string(),
+            serde_json::json!(1),
+        )
+        .await;
+        assert!(state.connected.load(Ordering::Acquire));
+        assert_eq!(
+            mock.stats.discovers.load(Ordering::SeqCst),
+            1,
+            "server/discover must reach the endpoint once it is up"
         );
     }
 

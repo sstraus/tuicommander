@@ -257,8 +257,14 @@ pub fn find_ego_composer(rows: &[impl AsRef<str>]) -> Option<(usize, bool)> {
             .and_then(|rest| rest.strip_suffix("s · Esc to interrupt"))
             .is_some_and(|seconds| seconds.parse::<u64>().is_ok())
     });
-    (working || (status.contains(" · ctx ") && status.contains(" · trust=")))
-        .then_some((prompt, working))
+    let legacy_idle = status.contains(" · ctx ") && status.contains(" · trust=");
+    // The compact status uses a ten-cell context bar instead of the old ctx label.
+    let compact_idle = status.split_whitespace().any(|field| {
+        field.chars().count() == 10 && field.chars().all(|cell| matches!(cell, '▰' | '▱'))
+    }) && status
+        .split_whitespace()
+        .any(|field| field.starts_with("trust="));
+    (working || legacy_idle || compact_idle).then_some((prompt, working))
 }
 
 /// Agent-specific chrome uses the same native composer shape as readiness.

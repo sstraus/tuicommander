@@ -58,14 +58,19 @@ fn event_kind(message: &AgentMessage) -> &'static str {
                 "exit_failure"
             }
             Some("exited") => "exit",
-            Some("failed" | "error") => "failure",
+            Some("failed" | "error" | "stalled") => "failure",
             Some("awaiting_input") => "awaiting",
             _ => "routine",
         },
         Some("exit" | "exited") => "exit",
-        Some("failure" | "failed" | "initial_prompt_timeout" | "prompt_delivery_failed") => {
+        Some("child_report") => "report",
+        Some(
             "failure"
-        }
+            | "failed"
+            | "initial_prompt_timeout"
+            | "prompt_delivery_failed"
+            | "delivery_failed",
+        ) => "failure",
         // Unknown system notices are actionable rather than silently suppressed.
         _ => "mail",
     }
@@ -154,7 +159,7 @@ impl MailSubscriptions {
             let action = args["action"].as_str().unwrap_or("");
             if action == "subscribe" {
                 let filter = args.get("filter").map(|v| v.as_str().ok_or("filter must be a string")).transpose()?.unwrap_or("actionable");
-                if !["actionable","all","exit","failure"].contains(&filter) { return Err("filter must be actionable, all, exit or failure".into()); }
+                if !["actionable","all","exit","failure","report"].contains(&filter) { return Err("filter must be actionable, all, exit, failure or report".into()); }
                 let existing: Option<String> = tx.query_row("SELECT filter FROM mail_subscriptions WHERE recipient=?1 AND id=?2", params![recipient,id], |r| r.get(0)).optional().map_err(|e| e.to_string())?;
                 if let Some(existing) = existing {
                     if existing != filter { return Err("Subscription filter is immutable; use a new subscription_id".into()); }
@@ -303,6 +308,7 @@ mod tests {
             from_name: "child".into(),
             content: body.into(),
             timestamp: 1,
+            report: None,
             delivered_via_channel: false,
         }
     }

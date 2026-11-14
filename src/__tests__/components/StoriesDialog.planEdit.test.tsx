@@ -1,3 +1,4 @@
+import "../fixtures/dialogActivityHydration";
 import { cleanup, fireEvent, render, waitFor, within } from "@solidjs/testing-library";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { StoriesDialog } from "../../components/StoriesDialog/StoriesDialog";
@@ -5,6 +6,7 @@ import { invoke } from "../../invoke";
 import { storiesUi } from "../../stores/storiesUi";
 import { openFileAction } from "../../utils/filePreview";
 import { handleOpenUrl } from "../../utils/openUrl";
+import { nativeBackendStatusReply } from "../fixtures/nativeBackendStatus";
 
 vi.mock("../../utils/filePreview", () => ({ openFileAction: vi.fn() }));
 vi.mock("../../utils/openUrl", () => ({ handleOpenUrl: vi.fn() }));
@@ -26,7 +28,12 @@ beforeEach(() => {
 	storiesUi.setView("list");
 	vi.mocked(invoke).mockReset();
 	vi.mocked(invoke).mockImplementation(async (command, args) => {
-		if (command === "story_capabilities") return true;
+		if (command === "story_capabilities") return { backend: "native", operations: {} };
+		if (
+			command === "story_action_command" &&
+			(args as { action?: { action?: string } })?.action?.action === "backend_status"
+		)
+			return nativeBackendStatusReply;
 		const action = (args as { action: { action: string; patch?: object } }).action;
 		if (action.action === "list_plan_sources")
 			return { type: "plan_sources", value: [{ title: "Repository plan", source: "repository-plan.md" }] };

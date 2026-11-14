@@ -2,12 +2,15 @@ import { expect, it, vi } from "vitest";
 // @ts-expect-error plain MV3 module
 import { syncHostErrors } from "../../../browser-extension/design-mode/hostErrors.js";
 
-it("registers granted remote error worlds and removes them after revocation", async () => {
-	// Catches: host grants enabling eval but never capturing errors on remote pages.
+it("registers error worlds for consented remote hosts and removes them when consent is gone", async () => {
+	// Catches: host consent enabling eval but never capturing errors on remote pages, or a Chrome-only
+	// origin record (capture grant, leftover host grant) injecting error scripts without TUIC consent.
+	let consents = [JSON.stringify(["A", "localhost"]), JSON.stringify(["A", "example.com"])];
 	const chrome = {
 		permissions: {
-			getAll: vi.fn(async () => ({ origins: ["http://localhost/*", "<all_urls>", "https://example.com/*"] })),
+			getAll: vi.fn(async () => ({ origins: ["http://localhost/*", "<all_urls>", "https://other.example/*"] })),
 		},
+		storage: { session: { get: vi.fn(async () => ({ hostConsents: consents })) } },
 		scripting: {
 			getRegisteredContentScripts: vi.fn(async () => [] as { id: string }[]),
 			unregisterContentScripts: vi.fn(async () => {}),
@@ -17,14 +20,14 @@ it("registers granted remote error worlds and removes them after revocation", as
 	await syncHostErrors(chrome);
 	expect(chrome.scripting.registerContentScripts).toHaveBeenCalledWith([
 		expect.objectContaining({
-			matches: ["https://example.com/*"],
+			matches: ["*://example.com/*"],
 			js: ["errors.js"],
 			world: "MAIN",
 			runAt: "document_start",
 		}),
-		expect.objectContaining({ matches: ["https://example.com/*"], js: ["errorsBridge.js"], world: "ISOLATED" }),
+		expect.objectContaining({ matches: ["*://example.com/*"], js: ["errorsBridge.js"], world: "ISOLATED" }),
 	]);
-	chrome.permissions.getAll.mockResolvedValue({ origins: ["http://localhost/*", "<all_urls>"] });
+	consents = [];
 	chrome.scripting.getRegisteredContentScripts.mockResolvedValue([
 		{ id: "tuic-granted-errors-main" },
 		{ id: "tuic-granted-errors-bridge" },

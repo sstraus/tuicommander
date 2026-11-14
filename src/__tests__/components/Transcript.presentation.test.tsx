@@ -1,12 +1,16 @@
 // @vitest-environment jsdom
 import { cleanup, render } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { Transcript } from "../../components/AIChatPanel/Transcript";
 import { buildAnswersTurn } from "../../components/Terminal/answersTurn";
 import type { AcpTranscriptEntry } from "../../stores/acpTranscript";
 import fixture from "./fixtures/chat-answer-parity.json";
 
+beforeAll(async () => {
+	const { activityStore } = await import("../../stores/activityStore");
+	await activityStore.hydrate();
+});
 afterEach(cleanup);
 
 function transcript(entries: AcpTranscriptEntry[]) {
@@ -27,7 +31,7 @@ describe("transcript presentation", () => {
 			"[TUIC] message available — read it with: agent action=inbox",
 			"[Request interrupted by user for tool use]",
 		]);
-		expect(container.querySelectorAll('button[aria-label="Copy user message"]')).toHaveLength(1);
+		expect(container.querySelectorAll('button[aria-label="User message actions"]')).toHaveLength(1);
 	});
 
 	// Catches: loading a completed tool history inventing a 0.0s execution duration.
@@ -62,7 +66,7 @@ describe("transcript presentation", () => {
 			{ id: "ack", kind: "agent", text: "TUICommander v1.8.0 is connected." },
 			{ id: "u", kind: "user", text: "Actual prompt" },
 		]);
-		expect(container.querySelectorAll('button[aria-label="Copy assistant message"]')).toHaveLength(1);
+		expect(container.querySelectorAll('button[aria-label="Assistant message actions"]')).toHaveLength(1);
 		expect(container.querySelector('[aria-label="Chat transcript"]')?.children).toHaveLength(2);
 	});
 
@@ -209,8 +213,30 @@ it("marks only pending user bubbles for pending styling", () => {
 	const pending = getByLabelText("Pending prompt");
 	expect(pending.getAttribute("data-pending")).toBe("true");
 	expect(container.querySelectorAll('[data-pending="true"]')).toHaveLength(1);
-	const received = [...container.querySelectorAll('button[aria-label="Copy user message"]')]
-		.map((button) => button.parentElement!)
+	const received = [...container.querySelectorAll('button[aria-label="User message actions"]')]
+		.map((button) => button.parentElement!.parentElement!)
 		.find((bubble) => bubble.textContent?.includes("Acknowledged prompt"))!;
 	expect(received.hasAttribute("data-pending")).toBe(false);
+});
+
+// Catches: sent bubbles keeping the raw path markers after Pending alone was fixed.
+it.each([false, true])("renders sent image previews in terminal mode %s", (terminalAgent) => {
+	const { container } = render(() => (
+		<Transcript
+			entries={() => [
+				{
+					id: "sent-images",
+					kind: "user",
+					text: "[image: /repo/first image.png]\nCompare [image: C:\\repo\\second.png]\nhttps://example.com",
+				},
+			]}
+			busy={() => false}
+			emptyMessage="Empty"
+			terminalAgent={terminalAgent ? "claude" : undefined}
+		/>
+	));
+	expect(container.querySelectorAll('img[alt="Attached image"]')).toHaveLength(2);
+	expect(container.textContent).not.toContain("[image:");
+	expect(container.textContent).toContain("Compare");
+	expect(container.querySelector('a[href="https://example.com"]')).not.toBeNull();
 });

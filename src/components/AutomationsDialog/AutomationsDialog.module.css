@@ -67,3 +67,6 @@
 
 .dialog button[data-control-layout="card"]:hover { background: var(--bg-highlight); color: var(--fg-primary); }
 .dialog button[data-control-layout="card"]:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* The anchored menu portals outside the dialog, above its overlay. */
+.timezoneMenu { z-index: 1001; }

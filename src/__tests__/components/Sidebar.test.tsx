@@ -153,10 +153,10 @@ import { appLogger } from "../../stores/appLogger";
 import { contextMenuActionsStore } from "../../stores/contextMenuActionsStore";
 import { githubStore } from "../../stores/github";
 import { globalWorkspaceStore } from "../../stores/globalWorkspace";
+import { keptCheckoutsStore } from "../../stores/keptCheckouts";
 import { progressStore } from "../../stores/progress";
 import { repositoriesStore } from "../../stores/repositories";
 import { settingsStore } from "../../stores/settings";
-import { sidebarPluginStore } from "../../stores/sidebarPluginStore";
 import { terminalsStore } from "../../stores/terminals";
 import { uiStore } from "../../stores/ui";
 import { workItemLinksStore } from "../../stores/workItemLinks";
@@ -215,8 +215,8 @@ function setRepos(repos: Record<string, unknown>, activeRepoPath?: string) {
 	mockGetGroupedLayout.mockReturnValue({ groups: [], ungrouped: repoValues });
 }
 
-// Legacy row interaction cases exercise compact mode; rich layout cases opt into auto.
-function densityMode(mode: "auto" | "compact") {
+// Legacy row interaction cases exercise compact mode; rich layout cases opt into rich.
+function densityMode(mode: "rich" | "compact") {
 	while (uiStore.state.sidebarDensityMode !== mode) uiStore.cycleSidebarDensityMode();
 }
 
@@ -249,7 +249,7 @@ describe("Sidebar", () => {
 	});
 
 	afterEach(() => {
-		densityMode("auto");
+		densityMode("rich");
 		vi.useRealTimers();
 	});
 
@@ -470,12 +470,14 @@ describe("Sidebar", () => {
 				path: "/old/missing",
 				branch: "feature",
 				state: "missing",
+				checkout_present: false,
 				guidance: "Run git worktree repair from the new location.",
 			},
 			{
 				path: "/other/duplicate",
 				branch: "main",
 				state: "duplicate_branch",
+				checkout_present: true,
 				guidance: "Use a distinct branch to select independently.",
 			},
 		];
@@ -485,9 +487,10 @@ describe("Sidebar", () => {
 		const rows = view.getAllByTestId("worktree-diagnostic");
 		expect(rows).toHaveLength(2);
 		rows.forEach((row, index) => {
-			expect(row).toHaveTextContent(diagnostics[index].path);
-			expect(row).toHaveTextContent(diagnostics[index].guidance);
-			expect(row.querySelector("button, [tabindex]")).toBeNull();
+			expect(row).toHaveTextContent(diagnostics[index].path.split("/").pop() ?? "");
+			expect(row.textContent).not.toContain(diagnostics[index].guidance);
+			expect(row.querySelector("[data-tooltip]")?.getAttribute("data-tooltip")).toContain(diagnostics[index].guidance);
+			expect(row.querySelector("[tabindex]")).toBeNull();
 			fireEvent.click(row);
 		});
 		expect(onBranchSelect).not.toHaveBeenCalled();
@@ -499,65 +502,14 @@ describe("Sidebar", () => {
 	});
 
 	describe("density attribute", () => {
-		beforeEach(() => densityMode("auto"));
-		const manyBranches = (n: number) =>
-			Object.fromEntries(
-				Array.from({ length: n }, (_, i) => [
-					`w${i}`,
-					{
-						workspaceId: `w${i}`,
-						branchName: `b${i}`,
-						isMain: i === 0,
-						worktreePath: null,
-						terminals: [],
-						additions: 0,
-						deletions: 0,
-					},
-				]),
-			);
-		const aside = (container: HTMLElement) => container.querySelector("aside#sidebar") as HTMLElement;
-		const originalMatchMedia = window.matchMedia;
-		afterEach(() => {
-			window.matchMedia = originalMatchMedia;
-		});
-
-		// Catches: the density never reaching the <aside> the CSS keys on (derived but not wired).
-		it("puts a short list on the aside as rich", () => {
-			setRepos({ "/repo1": makeRepo({ workspaces: manyBranches(3) }) });
+		it("follows the selected row layout — catches density not reaching the sidebar CSS", () => {
+			setRepos({ "/repo1": makeRepo() });
 			const { container } = render(() => <Sidebar {...defaultProps()} />);
-			expect(aside(container).dataset.density).toBe("rich");
-		});
-
-		// Catches: a long list still getting the roomy rows (row budget not read from the layout).
-		it("puts a long list on the aside as compact", () => {
-			setRepos({ "/repo1": makeRepo({ workspaces: manyBranches(20) }) });
-			const { container } = render(() => <Sidebar {...defaultProps()} />);
-			expect(aside(container).dataset.density).toBe("compact");
-		});
-
-		// Catches: plugin panel rows (rendered under every open repo) left out of the row budget.
-		it("counts an expanded plugin panel with many items toward the budget", () => {
-			const handle = sidebarPluginStore.registerPanel("density-test", { id: "p", label: "Panel", collapsed: false });
-			handle.setItems(Array.from({ length: 20 }, (_, i) => ({ id: `i${i}`, label: `item ${i}` })));
-			try {
-				setRepos({ "/repo1": makeRepo({ workspaces: manyBranches(3) }) });
-				const { container } = render(() => <Sidebar {...defaultProps()} />);
-				expect(aside(container).dataset.density).toBe("compact");
-			} finally {
-				sidebarPluginStore.clearPlugin("density-test");
-			}
-		});
-
-		// Catches: a coarse pointer ignored by the component (only the pure function handles it).
-		it("puts rich on the aside for a coarse pointer", () => {
-			window.matchMedia = vi.fn().mockReturnValue({
-				matches: true,
-				addEventListener: vi.fn(),
-				removeEventListener: vi.fn(),
-			});
-			setRepos({ "/repo1": makeRepo({ workspaces: manyBranches(20) }) });
-			const { container } = render(() => <Sidebar {...defaultProps()} />);
-			expect(aside(container).dataset.density).toBe("rich");
+			const aside = container.querySelector("aside#sidebar") as HTMLElement;
+			densityMode("rich");
+			expect(aside.dataset.density).toBe("rich");
+			densityMode("compact");
+			expect(aside.dataset.density).toBe("compact");
 		});
 	});
 
@@ -629,7 +581,7 @@ describe("Sidebar", () => {
 	});
 
 	describe("rich repo sections", () => {
-		beforeEach(() => densityMode("auto"));
+		beforeEach(() => densityMode("rich"));
 		// Catches: treating idle open terminals as inactive, sorting by work, or persisting the partition.
 		it("rich_repo_sections_use_open_terminals", () => {
 			const [repos, setReposLive] = createSignal([
@@ -690,7 +642,7 @@ describe("Sidebar", () => {
 	});
 
 	describe("rich layout", () => {
-		beforeEach(() => densityMode("auto"));
+		beforeEach(() => densityMode("rich"));
 		const richBranch = (over: Record<string, unknown> = {}) => ({
 			workspaceId: "feat",
 			branchName: "feat",
@@ -706,8 +658,33 @@ describe("Sidebar", () => {
 		});
 		const withBranch = (b: Record<string, unknown>) => setRepos({ "/repo1": makeRepo({ workspaces: { feat: b } }) });
 
+		it.each([
+			["compact", "prevents a long label crowding the compact row"],
+			["rich", "prevents an unlabeled reset in the rich row"],
+		] as const)("%s Reset Keep: %s", (mode, _bug) => {
+			densityMode(mode);
+			withBranch(richBranch());
+			keptCheckoutsStore.add("/repo1", "feat", 42);
+			const reset = vi.fn();
+			keptCheckoutsStore.setResetHandler(reset);
+			const onBranchSelect = vi.fn();
+			try {
+				const { container } = render(() => <Sidebar {...defaultProps({ onBranchSelect })} />);
+				const button = container.querySelector('[data-testid="reset-keep"]') as HTMLButtonElement;
+				expect(button.getAttribute("aria-label")).toBe("Reset Keep");
+				expect(button.textContent).toBe(mode === "compact" ? "" : "Reset Keep");
+				expect(!!button.querySelector("svg")).toBe(mode === "compact");
+				fireEvent.click(button);
+				expect(reset).toHaveBeenCalledExactlyOnceWith("/repo1", 42);
+				expect(onBranchSelect).not.toHaveBeenCalled();
+			} finally {
+				keptCheckoutsStore.clear();
+				keptCheckoutsStore.setResetHandler(null);
+			}
+		});
+
 		// Catches: unrelated branches masquerade as merged/stale or generic unmerged.
-		it.each(["compact", "auto"] as const)("shows unrelated history in %s rows", (mode) => {
+		it.each(["compact", "rich"] as const)("shows unrelated history in %s rows", (mode) => {
 			densityMode(mode);
 			withBranch(
 				richBranch({
@@ -797,7 +774,7 @@ describe("Sidebar", () => {
 		});
 		// Catches: a rich-only detail line leaking into the compact sidebar.
 		it("keeps the compact row free of detail lines", () => {
-			uiStore.cycleSidebarDensityMode(); // auto -> compact
+			uiStore.cycleSidebarDensityMode(); // rich -> compact
 			try {
 				withBranch(richBranch());
 				const { container } = render(() => <Sidebar {...defaultProps()} />);
@@ -3047,7 +3024,7 @@ describe("Sidebar", () => {
 		});
 
 		it("renders expanded terminal activity as one branch card", () => {
-			densityMode("auto");
+			densityMode("rich");
 			vi.setSystemTime(new Date("2026-09-22T12:10:00Z"));
 			mockTerminalsGet.mockImplementation((id: string) => {
 				const terminals = {
@@ -3891,7 +3868,7 @@ describe("Sidebar", () => {
 	describe("group sections", () => {
 		// Catches: flattening groups, moving repos between groups, or orphan Idle headings after filtering.
 		it("grouped_repo_activity_split_preserves_membership", () => {
-			densityMode("auto");
+			densityMode("rich");
 			const idle = makeRepo({ path: "/idle" });
 			const active = makeRepo({
 				path: "/active",
@@ -4503,6 +4480,124 @@ describe("Sidebar", () => {
 			popover = container.querySelector("[data-testid='pr-detail-popover']");
 			expect(popover).not.toBeNull();
 			expect(popover!.getAttribute("data-repo")).toBe("/repo2");
+		});
+	});
+
+	describe("H view (live harness only)", () => {
+		const ws = (name: string, terminals: string[]) => ({
+			workspaceId: name,
+			branchName: name,
+			isMain: false,
+			worktreePath: null,
+			terminals,
+			additions: 0,
+			deletions: 0,
+		});
+		const [terms, setTerms] = createSignal<Record<string, Record<string, unknown>>>({});
+		const text = (c: HTMLElement) => c.textContent ?? "";
+
+		beforeEach(() => {
+			const errors = vi.spyOn(appLogger, "error").mockImplementation(() => {});
+			settingsStore.setTabTreeEnabled(true);
+			errors.mockRestore();
+			setTerms({});
+			mockTerminalsGet.mockImplementation((id) => {
+				const t = terms()[id];
+				return t ? { id, name: id, shellState: "idle", agentType: null, ...t } : null;
+			});
+			uiStore.setRepoFilterHarnessOnly(true);
+		});
+		afterEach(() => {
+			uiStore.setRepoFilterHarnessOnly(false);
+			uiStore.setRepoFilterActiveOnly(false);
+		});
+
+		// Catches: treating any open terminal as a harness (shell-only branch stays visible).
+		it("hides a branch whose only terminal is a plain shell", () => {
+			setTerms({ sh: {}, ag: { agentType: "claude" } });
+			setRepos({ "/repo1": makeRepo({ workspaces: { shellb: ws("shellb", ["sh"]), liveb: ws("liveb", ["ag"]) } }) });
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			expect(text(container)).toContain("liveb");
+			expect(text(container)).not.toContain("shellb");
+		});
+
+		// Catches: an ended harness (process exited, agentType still set) keeping its row.
+		it("hides an exited harness session", () => {
+			setTerms({ dead: { agentType: "claude", shellState: "exited" }, ag: { agentType: "claude" } });
+			setRepos({ "/repo1": makeRepo({ workspaces: { deadb: ws("deadb", ["dead"]), liveb: ws("liveb", ["ag"]) } }) });
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			expect(text(container)).not.toContain("deadb");
+			expect(container.querySelector('[aria-label="Terminal tabs"]')?.textContent).not.toContain("dead");
+		});
+
+		// Catches: a harness state (working, idle, awaiting) being excluded from the filter.
+		it("keeps working, idle and awaiting harness sessions", () => {
+			setTerms({
+				w: { agentType: "claude", agentState: "working", shellState: "busy" },
+				i: { agentType: "claude", agentState: "idle" },
+				a: { agentType: "claude", awaitingInput: "question" },
+			});
+			setRepos({
+				"/repo1": makeRepo({ workspaces: { bw: ws("bw", ["w"]), bi: ws("bi", ["i"]), ba: ws("ba", ["a"]) } }),
+			});
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			for (const b of ["bw", "bi", "ba"]) expect(text(container)).toContain(b);
+		});
+
+		// Catches: filtering whole repos only, leaving sibling branches (and shell rows on a live branch) visible.
+		it("hides sibling branches and shell rows inside a qualifying repo", () => {
+			setTerms({ ag: { agentType: "claude" }, sh: {} });
+			setRepos({
+				"/repo1": makeRepo({
+					workspaces: { liveb: ws("liveb", ["ag", "sh"]), emptyb: ws("emptyb", []) },
+				}),
+			});
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			expect(text(container)).not.toContain("emptyb");
+			const tabs = container.querySelector('[aria-label="Terminal tabs"]')!.textContent;
+			expect(tabs).toContain("ag");
+			expect(tabs).not.toContain("sh");
+		});
+
+		// Catches: a repository or group with no live harness keeping its header.
+		it("drops repos and groups without a live harness", () => {
+			setTerms({ ag: { agentType: "claude" }, sh: {} });
+			const live = makeRepo({ path: "/live", displayName: "LiveRepo", workspaces: { b1: ws("b1", ["ag"]) } });
+			const shell = makeRepo({ path: "/shell", displayName: "ShellRepo", workspaces: { b2: ws("b2", ["sh"]) } });
+			const grouped = makeRepo({ path: "/grp", displayName: "GroupedShell", workspaces: { b3: ws("b3", ["sh"]) } });
+			setRepos({ "/live": live, "/shell": shell, "/grp": grouped });
+			mockGetGroupedLayout.mockReturnValue({
+				groups: [{ group: { id: "g1", name: "EmptyGroup", collapsed: false, repoOrder: [] }, repos: [grouped] }],
+				ungrouped: [live, shell],
+			});
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			expect(text(container)).toContain("LiveRepo");
+			expect(text(container)).not.toContain("ShellRepo");
+			expect(text(container)).not.toContain("GroupedShell");
+			expect(text(container)).not.toContain("EmptyGroup");
+		});
+
+		// Catches: no empty state / no way back when nothing qualifies.
+		it("shows an empty state with a way back to the unfiltered view", () => {
+			setTerms({ sh: {} });
+			setRepos({ "/repo1": makeRepo({ workspaces: { shellb: ws("shellb", ["sh"]) } }) });
+			const { container, getAllByText } = render(() => <Sidebar {...defaultProps()} />);
+			expect(text(container)).toContain("No live harness sessions");
+			fireEvent.click(getAllByText("Show all").at(-1)!);
+			expect(uiStore.state.repoFilterHarnessOnly).toBe(false);
+			expect(text(container)).toContain("shellb");
+		});
+
+		// Catches: visibility computed once (needs manual refresh) instead of following session state.
+		it("follows a harness starting and ending without a refresh", () => {
+			setTerms({ t1: {} });
+			setRepos({ "/repo1": makeRepo({ workspaces: { b1: ws("b1", ["t1"]) } }) });
+			const { container } = render(() => <Sidebar {...defaultProps()} />);
+			expect(text(container)).not.toContain("b1");
+			setTerms({ t1: { agentType: "claude" } });
+			expect(text(container)).toContain("b1");
+			setTerms({ t1: { agentType: "claude", shellState: "exited" } });
+			expect(text(container)).not.toContain("b1");
 		});
 	});
 });

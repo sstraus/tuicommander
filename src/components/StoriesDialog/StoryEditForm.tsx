@@ -33,9 +33,19 @@ export type StoryEditPatch = Partial<
 	>
 >;
 
+export interface StoryEdits {
+	title: boolean;
+	priority: boolean;
+	problem: boolean;
+	criteria_add: boolean;
+	single_change: boolean;
+}
+
 /** The snapshot is fixed for the lifetime of the form, including after a failed save. */
 export function StoryEditForm(props: {
 	story: EditableStory;
+	/** Absent for native/old consumers: preserve the existing full editor. */
+	storyEdits?: StoryEdits;
 	candidates: { id: string; title: string }[];
 	busy: boolean;
 	error: string;
@@ -43,6 +53,9 @@ export function StoryEditForm(props: {
 	onCancel: () => void;
 }) {
 	const baseline = props.story;
+	const restricted = () => props.storyEdits?.single_change === true;
+	const supports = (field: "title" | "priority" | "problem" | "criteria_add") =>
+		props.storyEdits === undefined || props.storyEdits[field] === true;
 	const [title, setTitle] = createSignal(baseline.title);
 	const validTitle = () => {
 		const length = Array.from(title().trim()).length;
@@ -95,6 +108,22 @@ export function StoryEditForm(props: {
 		changed("dependencies", dependencies());
 		return result;
 	};
+	const canSave = () => {
+		const changes = patch();
+		if (props.busy || !validTitle() || !Object.keys(changes).length) return false;
+		if (!restricted()) return true;
+		if (Object.keys(changes).length !== 1) return false;
+		if (changes.title !== undefined) return supports("title");
+		if (changes.priority !== undefined) return supports("priority");
+		if (changes.problem !== undefined) return supports("problem");
+		return (
+			!!changes.criteria &&
+			supports("criteria_add") &&
+			changes.criteria.length === baseline.criteria.length + 1 &&
+			baseline.criteria.every((text, index) => changes.criteria?.[index] === text) &&
+			!!changes.criteria.at(-1)?.trim()
+		);
+	};
 	function moveCriterion(index: number, direction: -1 | 1): void {
 		setCriteria((items) => {
 			const next = [...items];
@@ -109,7 +138,7 @@ export function StoryEditForm(props: {
 			aria-label={t("stories.edit.form", "Edit story")}
 			onSubmit={(event) => {
 				event.preventDefault();
-				if (validTitle()) props.onSave(patch());
+				if (canSave()) props.onSave(patch());
 			}}
 		>
 			<label>
@@ -120,7 +149,7 @@ export function StoryEditForm(props: {
 					aria-invalid={!validTitle()}
 					title={titleHint()}
 					value={title()}
-					disabled={props.busy}
+					disabled={props.busy || !supports("title")}
 					onInput={(event) => setTitle(event.currentTarget.value)}
 				/>
 			</label>
@@ -129,7 +158,7 @@ export function StoryEditForm(props: {
 					{t("stories.priority", "Priority")}
 					<Select
 						value={priority()}
-						disabled={props.busy}
+						disabled={props.busy || !supports("priority")}
 						onChange={(event) => setPriority(Number(event.currentTarget.value))}
 					>
 						<For each={[1, 2, 3]}>{(value) => <option value={value}>P{value}</option>}</For>
@@ -139,7 +168,7 @@ export function StoryEditForm(props: {
 					{t("stories.storyType", "Story type")}
 					<Select
 						value={storyType()}
-						disabled={props.busy}
+						disabled={props.busy || restricted()}
 						onChange={(event) => setStoryType(event.currentTarget.value as StoryType | "")}
 					>
 						<option value="">{t("stories.type.untyped", "Untyped")}</option>
@@ -155,7 +184,7 @@ export function StoryEditForm(props: {
 				{t("stories.edit.origin", "Origin")}
 				<Select
 					value={originType()}
-					disabled={props.busy}
+					disabled={props.busy || restricted()}
 					onChange={(event) => setOriginType(event.currentTarget.value as StoryOrigin["type"])}
 				>
 					<option value="native">{t("stories.edit.native", "Native")}</option>
@@ -169,7 +198,7 @@ export function StoryEditForm(props: {
 					<Input
 						required
 						value={step()}
-						disabled={props.busy}
+						disabled={props.busy || restricted()}
 						onInput={(event) => setStep(event.currentTarget.value)}
 					/>
 				</label>
@@ -183,7 +212,7 @@ export function StoryEditForm(props: {
 						min={1}
 						step={1}
 						value={issue()}
-						disabled={props.busy}
+						disabled={props.busy || restricted()}
 						onInput={(event) => setIssue(event.currentTarget.value)}
 					/>
 				</label>
@@ -194,7 +223,7 @@ export function StoryEditForm(props: {
 					rows={3}
 					maxlength={20000}
 					value={problem()}
-					disabled={props.busy}
+					disabled={props.busy || !supports("problem")}
 					onInput={(event) => setProblem(event.currentTarget.value)}
 				/>
 			</label>
@@ -202,7 +231,7 @@ export function StoryEditForm(props: {
 				{t("stories.edit.risk", "Risk (optional)")}
 				<Select
 					value={risk()}
-					disabled={props.busy}
+					disabled={props.busy || restricted()}
 					onChange={(event) => setRisk(event.currentTarget.value as StoryRisk | "")}
 				>
 					<option value="">{t("stories.unspecified", "Unspecified")}</option>
@@ -211,7 +240,7 @@ export function StoryEditForm(props: {
 					<option value="high">{t("stories.edit.riskHigh", "High")}</option>
 				</Select>
 			</label>
-			<fieldset disabled={props.busy} class={s.editCriteria}>
+			<fieldset disabled={props.busy || !supports("criteria_add")} class={s.editCriteria}>
 				<legend>{t("stories.criteria", "Acceptance criteria")}</legend>
 				<Index each={criteria()}>
 					{(criterion, index) => (
@@ -221,6 +250,7 @@ export function StoryEditForm(props: {
 								<Textarea
 									required
 									rows={3}
+									disabled={restricted() && index < baseline.criteria.length}
 									value={criterion()}
 									onInput={(event) => {
 										const text = event.currentTarget.value;
@@ -231,7 +261,7 @@ export function StoryEditForm(props: {
 							<div class={s.inline}>
 								<Button
 									type="button"
-									disabled={index === 0}
+									disabled={restricted() || index === 0}
 									aria-label={t("stories.edit.moveUp", "Move criterion {number} up", { number: String(index + 1) })}
 									onClick={() => moveCriterion(index, -1)}
 								>
@@ -239,7 +269,7 @@ export function StoryEditForm(props: {
 								</Button>
 								<Button
 									type="button"
-									disabled={index === criteria().length - 1}
+									disabled={restricted() || index === criteria().length - 1}
 									aria-label={t("stories.edit.moveDown", "Move criterion {number} down", { number: String(index + 1) })}
 									onClick={() => moveCriterion(index, 1)}
 								>
@@ -247,7 +277,7 @@ export function StoryEditForm(props: {
 								</Button>
 								<Button
 									type="button"
-									disabled={criteria().length === 1}
+									disabled={(restricted() && index < baseline.criteria.length) || criteria().length === 1}
 									aria-label={t("stories.edit.removeCriterion", "Remove criterion {number}", {
 										number: String(index + 1),
 									})}
@@ -259,7 +289,11 @@ export function StoryEditForm(props: {
 						</div>
 					)}
 				</Index>
-				<Button type="button" onClick={() => setCriteria((items) => [...items, ""])}>
+				<Button
+					type="button"
+					disabled={restricted() && criteria().length > baseline.criteria.length}
+					onClick={() => setCriteria((items) => [...items, ""])}
+				>
 					{t("stories.edit.addCriterion", "Add criterion")}
 				</Button>
 			</fieldset>
@@ -268,11 +302,11 @@ export function StoryEditForm(props: {
 				<Textarea
 					rows={3}
 					value={scope()}
-					disabled={props.busy}
+					disabled={props.busy || restricted()}
 					onInput={(event) => setScope(event.currentTarget.value)}
 				/>
 			</label>
-			<fieldset disabled={props.busy} class={s.editDependencies}>
+			<fieldset disabled={props.busy || restricted()} class={s.editDependencies}>
 				<legend>{t("stories.dependencies", "Dependencies")}</legend>
 				<For each={props.candidates}>
 					{(candidate) => (
@@ -293,18 +327,21 @@ export function StoryEditForm(props: {
 					)}
 				</For>
 			</fieldset>
+			<Show when={restricted()}>
+				<p>
+					{t(
+						"stories.edit.singleChange",
+						"This backend saves one change at a time: title, priority, or one new criterion.",
+					)}
+				</p>
+			</Show>
 			<Show when={props.error}>
 				<p role="alert" class={s.editError}>
 					{props.error}
 				</p>
 			</Show>
 			<div class={s.inline}>
-				<Button
-					variant="primary"
-					type="submit"
-					title={titleHint()}
-					disabled={props.busy || !validTitle() || !Object.keys(patch()).length}
-				>
+				<Button variant="primary" type="submit" title={titleHint()} disabled={!canSave()}>
 					{t("stories.edit.save", "Save")}
 				</Button>
 				<Button type="button" disabled={props.busy} onClick={props.onCancel}>

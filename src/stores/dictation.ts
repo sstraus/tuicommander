@@ -346,6 +346,7 @@ export const WHISPER_LANGUAGES: Record<string, string> = {
 
 /** Store state */
 interface DictationStoreState {
+	unavailable: boolean;
 	enabled: boolean;
 	hotkey: string;
 	language: string;
@@ -360,7 +361,8 @@ interface DictationStoreState {
 	/** Another TUICommander instance owns dictation; this one cannot record. */
 	ownedElsewhere: boolean;
 	loading: boolean; // Model is being loaded into memory on first use
-	downloading: boolean;
+	/** Whisper model being downloaded, or null. Not necessarily the selected model. */
+	downloadingModel: string | null;
 	downloadPercent: number;
 	corrections: Record<string, string>;
 	devices: AudioDevice[];
@@ -469,6 +471,7 @@ function createDictationStore() {
 	let edgeVoicesRequest = 0;
 
 	const [state, setState] = createStore<DictationStoreState>({
+		unavailable: false,
 		enabled: false,
 		hotkey: "F5",
 		language: "auto",
@@ -482,7 +485,7 @@ function createDictationStore() {
 		processing: false,
 		ownedElsewhere: false,
 		loading: false,
-		downloading: false,
+		downloadingModel: null,
 		downloadPercent: 0,
 		corrections: {},
 		devices: [],
@@ -685,6 +688,7 @@ function createDictationStore() {
 
 	const actions = {
 		startRemoteSync(): () => void {
+			if (state.unavailable) return () => {};
 			const stopVoice = settingsRefresh.register({
 				section: "voice",
 				read: () => invoke<DictationConfig>("get_dictation_config"),
@@ -702,6 +706,7 @@ function createDictationStore() {
 		},
 		/** Load config from Rust backend (file-based) */
 		async refreshConfig(): Promise<void> {
+			if (state.unavailable) return;
 			try {
 				const config = await invoke<DictationConfig>("get_dictation_config");
 				applyRemoteConfig(config, false);
@@ -714,6 +719,14 @@ function createDictationStore() {
 					);
 				}
 			} catch (err) {
+				const cause = err instanceof Error && err.cause ? err.cause : err;
+				if (
+					cause === "Command get_dictation_config not found" ||
+					(cause instanceof Error && cause.message === "Command get_dictation_config not found")
+				) {
+					setState("unavailable", true);
+					return;
+				}
 				appLogger.error("dictation", "Failed to get dictation config", err);
 			}
 		},
@@ -985,16 +998,17 @@ function createDictationStore() {
 
 		/** Download a Whisper model (defaults to selectedModel) */
 		async downloadModel(modelName?: string): Promise<void> {
-			setState("downloading", true);
+			const name = modelName ?? state.selectedModel;
+			setState("downloadingModel", name);
 			setState("downloadPercent", 0);
 			try {
-				await invoke<string>("download_whisper_model", { modelName: modelName ?? state.selectedModel });
+				await invoke<string>("download_whisper_model", { modelName: name });
 				await actions.refreshStatus();
 				await actions.refreshModels();
 			} catch (err) {
 				appLogger.error("dictation", "Model download failed", err);
 			} finally {
-				setState("downloading", false);
+				setState("downloadingModel", null);
 			}
 		},
 

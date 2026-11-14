@@ -2,6 +2,10 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Deserializer, Serialize};
 
+/// Legacy denial of the settings tool. Settings access is the host-only
+/// `settings_mcp_enabled` opt-in; this name survives only for migration.
+const SETTINGS_DENIAL: &str = "settings";
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, JsonSchema)]
 pub(crate) struct McpCapabilities {
     #[schemars(extend("x-setting" = {"sensitivity":"public","apply":"live","effect":"Updates MCP capability denials for the current owner.","operations":["get","set"],"confirmationClass":"ordinary"}))]
@@ -14,7 +18,7 @@ pub(crate) struct McpCapabilities {
 impl Default for McpCapabilities {
     fn default() -> Self {
         Self {
-            denied: vec!["settings".into(), "diagnostics".into()],
+            denied: vec!["diagnostics".into()],
             migration_unknown_tools: Vec::new(),
         }
     }
@@ -37,7 +41,7 @@ impl<'de> Deserialize<'de> for McpCapabilities {
                 denied,
                 migration_unknown_tools,
             } => Self {
-                denied,
+                denied: migrate_split_denials(denied),
                 migration_unknown_tools,
             },
             Input::Legacy(names) => Self::from_legacy(&names),
@@ -64,6 +68,14 @@ impl McpCapabilities {
         result
     }
 
+    /// Remove a saved `settings` denial. The caller turns it into the one opt-in
+    /// (`settings_mcp_enabled = false`), so the denial is never a hidden second gate.
+    pub(crate) fn take_settings_denial(&mut self) -> bool {
+        let before = self.denied.len();
+        self.denied.retain(|denied| denied != SETTINGS_DENIAL);
+        self.denied.len() != before
+    }
+
     pub(crate) fn allows(&self, tool: &str, action: Option<&str>) -> bool {
         let Some(parent) = tool_capability(tool) else {
             return true;
@@ -76,15 +88,29 @@ impl McpCapabilities {
     }
 }
 
+/// Stories left `workflow` for their own tool (#2804-6bd7). A saved member denial keeps
+/// denying the same actions under the new parent capability, so no saved denial widens.
+fn migrate_split_denials(denied: Vec<String>) -> Vec<String> {
+    let mut migrated: Vec<String> = Vec::with_capacity(denied.len());
+    for name in denied {
+        let name = if name == "workflow.story" {
+            "story".to_owned()
+        } else {
+            name
+        };
+        if !migrated.contains(&name) {
+            migrated.push(name);
+        }
+    }
+    migrated
+}
+
 fn legacy_capability(name: &str) -> Option<&'static str> {
     match name {
         "task" => Some("agent_tasks"),
-        "story" => Some("workflow.story"),
-        "workflow_run" => Some("workflow.run"),
-        "workflow_story_create" => Some("workflow.proposals"),
-        "workflow_report" => Some("workflow.reports"),
-        "workflow_launch" => Some("workflow.launch"),
         "design_mode" => Some("design"),
+        // Not a capability any more; the load migration turns this denial into the opt-in.
+        "settings" => Some(SETTINGS_DENIAL),
         other => tool_capability(other),
     }
 }
@@ -94,11 +120,11 @@ fn tool_capability(tool: &str) -> Option<&'static str> {
         "session" => Some("session"),
         "agent" => Some("agent"),
         "repo" => Some("repo"),
+        "story" => Some("story"),
         "workflow" => Some("workflow"),
         "automations" => Some("automations"),
         "ui" => Some("ui"),
         "secret" => Some("secret"),
-        "settings" => Some("settings"),
         "progress" => Some("progress"),
         "debug" => Some("diagnostics"),
         "plugin_dev_guide" => Some("plugin_reference"),
@@ -112,11 +138,6 @@ fn tool_capability(tool: &str) -> Option<&'static str> {
 fn action_capability(tool: &str, action: &str) -> Option<&'static str> {
     match (tool, action) {
         ("agent", "task_get" | "task_cancel") => Some("agent_tasks"),
-        ("workflow", "story") => Some("workflow.story"),
-        ("workflow", "run") => Some("workflow.run"),
-        ("workflow", "proposal_create") => Some("workflow.proposals"),
-        ("workflow", "report") => Some("workflow.reports"),
-        ("workflow", "launch") => Some("workflow.launch"),
         ("ui", action) if action.starts_with("design_") => Some("design"),
         _ => None,
     }
@@ -129,24 +150,20 @@ pub(crate) fn catalog() -> Vec<serde_json::Value> {
         ("agent", "Peers and mail", "Launch peers and exchange durable messages, including task actions.", "agent", "always"),
         ("agent_tasks", "Background task outcomes", "Read and cancel task outcomes, without killing terminals.", "agent", "always"),
         ("repo", "Repositories", "Manage repositories and worktrees.", "repo", "always"),
-        ("workflow", "Project workflows", "All story, run, proposal, report and launch actions.", "workflow", "always"),
-        ("workflow.story", "Stories and plans", "Read and update native stories and plans.", "workflow", "always"),
-        ("workflow.run", "Workflow runs", "Start and inspect published workflow graphs.", "workflow", "always"),
-        ("workflow.proposals", "Workflow story proposals", "Create idempotent coordinator proposals.", "workflow", "always"),
-        ("workflow.reports", "Workflow reports", "Submit caller-bound attempt outcomes.", "workflow", "always"),
-        ("workflow.launch", "Workflow agent launch", "Launch pinned workflow attempts.", "workflow", "always"),
+        ("story", "Stories and plans", "Read and update native stories, plans and Ideas.", "story", "always"),
+        ("workflow", "Project workflows", "Neutral workflow authoring, publication and runs.", "workflow", "always"),
         ("automations", "Scheduled automations", "Manage scheduled definitions and runs.", "automations", "always"),
         ("ui", "User interaction", "Tabs, notices and confirmation, including Design Mode actions.", "ui", "always"),
-        ("design", "Design Mode", "Browser inspection; existing extension host grants remain required.", "ui", "always"),
+        ("design", "Design Mode", "Browser inspection; sidebar host consent remains required.", "ui", "always"),
         ("secret", "Secrets", "Collect and use secrets through private forms.", "secret", "always"),
-        ("settings", "Settings access", "Read and propose settings; trusted UI opt-in is also required.", "settings", "always"),
+        ("settings", "Settings access", "Read and propose settings. Only the trusted Settings UI can turn this on.", "settings", "always"),
         ("progress", "Progress tracking", "Record outcomes; global Progress tracking must also be enabled.", "progress", "always"),
         ("diagnostics", "Diagnostics / JS inspection", "Inspect diagnostics and execute frontend inspection scripts.", "debug", "rare"),
         ("plugin_reference", "Plugin authoring reference", "Read the plugin development guide.", "plugin_dev_guide", "rare"),
         ("voice", "Spoken replies", "Caller-bound speech; voice configuration remains required.", "voice", "conditional"),
         ("telegram", "Telegram", "Send external messages; requires Telegram configuration.", "telegram", "conditional"),
         ("remote_deployment", "Remote daemon deployment", "Preview and update connected remote daemons with deployment consent.", "remote", "conditional"),
-    ].into_iter().map(|(id, title, description, domain, section)| serde_json::json!({"name":id,"title":title,"description":description,"domain":domain,"section":section,"parent": match id { "agent_tasks" => Some("agent"), "design" => Some("ui"), id if id.starts_with("workflow.") => Some("workflow"), _ => None }})).collect()
+    ].into_iter().map(|(id, title, description, domain, section)| serde_json::json!({"name":id,"title":title,"description":description,"domain":domain,"section":section,"parent": match id { "agent_tasks" => Some("agent"), "design" => Some("ui"), _ => None }})).collect()
 }
 
 #[cfg(test)]
@@ -163,6 +180,7 @@ mod tests {
                     "session",
                     "agent",
                     "repo",
+                    "story",
                     "workflow",
                     "automations",
                     "ui",
@@ -212,16 +230,6 @@ mod tests {
     fn legacy_denials_migrate_once_without_authority_expansion() {
         for (old, tool, denied_action, sibling) in [
             ("task", "agent", "task_get", "list_peers"),
-            ("story", "workflow", "story", "run"),
-            ("workflow_run", "workflow", "run", "story"),
-            (
-                "workflow_story_create",
-                "workflow",
-                "proposal_create",
-                "run",
-            ),
-            ("workflow_report", "workflow", "report", "run"),
-            ("workflow_launch", "workflow", "launch", "run"),
             ("design_mode", "ui", "design_status", "toast"),
         ] {
             let mut legacy = serde_json::to_value(crate::config::AppConfig::default()).unwrap();
@@ -243,6 +251,7 @@ mod tests {
             assert_eq!(again.mcp_capabilities, config.mcp_capabilities);
         }
         for (old, tool, action) in [
+            ("story", "story", "list_plans"),
             ("agent", "agent", "task_cancel"),
             ("workflow", "workflow", "report"),
             ("ui", "ui", "design_start"),
@@ -252,5 +261,24 @@ mod tests {
             let policy = McpCapabilities::from_legacy(&[old.into()]);
             assert!(!policy.allows(tool, Some(action)), "{old}");
         }
+    }
+
+    // Catches: the story split widening a saved `workflow.story` denial, or a legacy
+    // `story` denial no longer reaching the new tool (#2804-6bd7).
+    #[test]
+    fn saved_story_denials_follow_stories_into_their_own_tool() {
+        let config: crate::config::AppConfig = serde_json::from_value({
+            let mut saved = serde_json::to_value(crate::config::AppConfig::default()).unwrap();
+            saved["mcp_capabilities"] = serde_json::json!({"denied": ["workflow.story", "story"]});
+            saved
+        })
+        .unwrap();
+        let policy = &config.mcp_capabilities;
+        assert_eq!(policy.denied, ["story"]);
+        assert!(!policy.allows("story", Some("list_plans")));
+        assert!(policy.allows("workflow", Some("run")));
+        let workflow_only = McpCapabilities::from_legacy(&["workflow".into()]);
+        assert!(workflow_only.allows("story", Some("list_plans")));
+        assert!(!workflow_only.allows("workflow", Some("run")));
     }
 }

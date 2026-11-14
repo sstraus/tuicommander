@@ -41,13 +41,15 @@ use futures_util::future::BoxFuture;
 use futures_util::stream::FuturesUnordered;
 use tokio::sync::oneshot;
 
+use super::activity::ActivityTracker;
 use super::events::AcpEventJournal;
 use super::{
     AcpAttachKind, AcpAttachmentSnapshot, AcpAttachmentState, AcpCapabilitySnapshot,
-    AcpClientError, AcpClientEvent, AcpConnectionId, AcpDetachKind, AcpHoldState, AcpHostRequestId,
-    AcpInteractionSettlement, AcpOperation, AcpPendingInteraction, AcpQueuedPrompt,
-    AcpSessionAuthority, AcpTurnId, AcpTurnSnapshot, AcpTurnState, AcpUsageSnapshot,
-    EgoCompactRequest, EgoCompactResponse, EgoHoldRequest, EgoHoldResponse, ego_ext,
+    AcpChatActivity, AcpClientError, AcpClientEvent, AcpConnectionId, AcpDetachKind, AcpHoldState,
+    AcpHostRequestId, AcpHumanWait, AcpHumanWaitKind, AcpInteractionSettlement, AcpOperation,
+    AcpPendingInteraction, AcpQueuedPrompt, AcpSessionAuthority, AcpTurnId, AcpTurnSnapshot,
+    AcpTurnState, AcpUsageSnapshot, EgoCompactRequest, EgoCompactResponse, EgoHoldRequest,
+    EgoHoldResponse, ego_ext,
 };
 
 pub(super) type Reply<T> = oneshot::Sender<Result<T, AcpClientError>>;
@@ -344,12 +346,19 @@ pub(super) struct ConnectionActor {
     capabilities: Arc<AcpCapabilitySnapshot>,
     journal: Arc<AcpEventJournal>,
     attachments: HashMap<v1::SessionId, AcpAttachmentSnapshot>,
+    /// One immutable successful-turn boundary per attachment; never a streamed tip.
+    fork_boundaries: HashMap<v1::SessionId, ForkBoundary>,
     /// Pending load/resume sessions and usage received before their reply.
     attaching: HashMap<v1::SessionId, Option<AcpUsageSnapshot>>,
     /// Initial command offers can follow session/new's reply before the actor
     /// settles that reply. Hold at most one session offer per pending attachment
     /// whose id is not yet known, plus offers for explicitly claimed loads.
     initial_commands: HashMap<v1::SessionId, Vec<v1::AvailableCommand>>,
+    /// Config updates can follow session/new's reply the same way: ego's
+    /// deferred readiness reports `failed` right after a pending reply. Hold the
+    /// latest one per pending attachment whose id is not yet known; dropping it
+    /// leaves every waiter blind until its deadline.
+    initial_config: HashMap<v1::SessionId, v1::ConfigOptionUpdate>,
     unidentified_attaches: usize,
     /// Queued wire payloads stay here; snapshots and the journal carry summaries.
     queued_contents: HashMap<AcpTurnId, QueuedContent>,
@@ -373,6 +382,26 @@ pub(super) struct ConnectionActor {
     /// stretch of its own code, so no caller can be handed a result the
     /// snapshot has not caught up with yet.
     publish: Publish,
+    /// Tools and children per attachment: the activity facts the attachment
+    /// itself does not hold.
+    trackers: HashMap<v1::SessionId, ActivityTracker>,
+    /// Attachments whose activity changed since the last [`Self::flush_activity`].
+    activity_changed: Vec<v1::SessionId>,
+}
+
+#[derive(Default)]
+struct ForkBoundary {
+    pending_message: Option<String>,
+    completed_message: Option<String>,
+}
+
+impl ForkBoundary {
+    fn settle(&mut self, successful: bool) {
+        let pending = self.pending_message.take();
+        if successful && pending.is_some() {
+            self.completed_message = pending;
+        }
+    }
 }
 
 /// Hand a host the attachments as they now stand.
@@ -390,13 +419,17 @@ impl ConnectionActor {
             capabilities,
             journal,
             attachments: HashMap::new(),
+            fork_boundaries: HashMap::new(),
             attaching: HashMap::new(),
             initial_commands: HashMap::new(),
+            initial_config: HashMap::new(),
             unidentified_attaches: 0,
             queued_contents: HashMap::new(),
             seats: Vec::new(),
             contradicted: Arc::new(AtomicBool::new(false)),
             publish,
+            trackers: HashMap::new(),
+            activity_changed: Vec::new(),
         }
     }
 
@@ -405,8 +438,65 @@ impl ConnectionActor {
     /// Called before the answer that made it true is sent, never after: a
     /// caller that reads the snapshot the instant its request returns must not
     /// see the connection as it was before it asked.
-    fn publish(&self) {
+    ///
+    /// Every attachment's activity is derived again first, so the snapshot a
+    /// host reads never disagrees with the turn, seats and tools it was derived
+    /// from.
+    fn publish(&mut self) {
+        let mut changed = Vec::new();
+        for (session_id, attachment) in &mut self.attachments {
+            let turn_running = attachment.state != AcpAttachmentState::Paused
+                && attachment
+                    .active_turn
+                    .as_ref()
+                    .is_some_and(|turn| turn.state != AcpTurnState::Settled);
+            let human_waits = self
+                .seats
+                .iter()
+                .filter(|seat| &seat.session_id == session_id)
+                .map(|seat| AcpHumanWait {
+                    request_id: seat.request_id,
+                    kind: match seat.interaction {
+                        Interaction::Permission { .. } => AcpHumanWaitKind::Permission,
+                        Interaction::Elicitation { .. } => AcpHumanWaitKind::Question,
+                    },
+                })
+                .collect();
+            let next = self.trackers.entry(session_id.clone()).or_default().derive(
+                turn_running,
+                human_waits,
+                &attachment.activity,
+            );
+            if next.revision != attachment.activity.revision {
+                attachment.activity = next;
+                changed.push(session_id.clone());
+            }
+        }
+        for session_id in changed {
+            if !self.activity_changed.contains(&session_id) {
+                self.activity_changed.push(session_id);
+            }
+        }
         (self.publish)(self.attachments());
+    }
+
+    /// Put every activity change since the last call on the stream.
+    ///
+    /// Called by the supervisor after each command and each answer, so the
+    /// change follows the event that caused it rather than preceding it.
+    pub(super) fn flush_activity(&mut self) {
+        for session_id in std::mem::take(&mut self.activity_changed) {
+            let Some(attachment) = self.attachments.get(&session_id) else {
+                continue;
+            };
+            let turn_id = attachment.active_turn.as_ref().map(|turn| turn.turn_id);
+            let activity = attachment.activity.clone();
+            self.journal.append(
+                Some(session_id),
+                turn_id,
+                AcpClientEvent::ActivityChanged { activity },
+            );
+        }
     }
 
     /// Whether the agent has denied something it advertised.
@@ -1061,6 +1151,7 @@ impl ConnectionActor {
                 if self.unidentified_attaches == 0 {
                     self.initial_commands
                         .retain(|id, _| self.attaching.contains_key(id));
+                    self.initial_config.clear();
                 }
                 let _ = reply.send(outcome);
             }
@@ -1078,6 +1169,8 @@ impl ConnectionActor {
                     for queued in removed.queued_prompts {
                         self.queued_contents.remove(&queued.turn_id);
                     }
+                    self.trackers.remove(&session_id);
+                    self.fork_boundaries.remove(&session_id);
                     self.publish();
                     self.journal.append(
                         Some(session_id),
@@ -1156,6 +1249,16 @@ impl ConnectionActor {
                     );
                 }
             }
+            // Claimed loads journal their early updates below; only an id no
+            // reply has named yet is held, at most one per unidentified attach.
+            if let v1::SessionUpdate::ConfigOptionUpdate(update) = &notification.update
+                && !self.attaching.contains_key(&notification.session_id)
+                && (self.initial_config.contains_key(&notification.session_id)
+                    || self.initial_config.len() < self.unidentified_attaches)
+            {
+                self.initial_config
+                    .insert(notification.session_id.clone(), update.clone());
+            }
             // Ego sends replay chunks before answering session/load. This id is
             // known from the request even though its attachment is not yet
             // recorded; other unknown session ids must still be ignored.
@@ -1166,6 +1269,16 @@ impl ConnectionActor {
                         end_turn: None,
                     });
                 }
+                // A durable child in ego's load snapshot must survive until
+                // the attachment exists; record() keeps this tracker.
+                self.trackers
+                    .entry(notification.session_id.clone())
+                    .or_default()
+                    .observe(
+                        &notification.update,
+                        false,
+                        self.capabilities.ego_child_activity_version == Some(1),
+                    );
                 self.journal.append(
                     Some(notification.session_id),
                     None,
@@ -1177,6 +1290,27 @@ impl ConnectionActor {
             return;
         };
         let turn_id = attachment.active_turn.as_ref().map(|turn| turn.turn_id);
+        let turn_running = attachment
+            .active_turn
+            .as_ref()
+            .is_some_and(|turn| turn.state != AcpTurnState::Settled);
+        if turn_running
+            && let v1::SessionUpdate::AgentMessageChunk(chunk) = &notification.update
+            && let Some(message_id) = &chunk.message_id
+            && uuid::Uuid::parse_str(&message_id.to_string()).is_ok()
+            && chunk
+                .meta
+                .as_ref()
+                .and_then(|meta| meta.get("ego"))
+                .and_then(|ego| ego.get("salience"))
+                .and_then(serde_json::Value::as_str)
+                != Some("card")
+        {
+            self.fork_boundaries
+                .entry(notification.session_id.clone())
+                .or_default()
+                .pending_message = Some(message_id.to_string());
+        }
         let changed = match &notification.update {
             v1::SessionUpdate::UsageUpdate(usage) => {
                 attachment.usage = Some(AcpUsageSnapshot {
@@ -1194,11 +1328,21 @@ impl ConnectionActor {
             }
             v1::SessionUpdate::ConfigOptionUpdate(options) => {
                 attachment.config_options = options.config_options.clone();
+                attachment.config_failure = ego_ext::failed_configuration(options);
                 true
             }
             _ => false,
         };
-        if changed {
+        let tracked = self
+            .trackers
+            .entry(notification.session_id.clone())
+            .or_default()
+            .observe(
+                &notification.update,
+                turn_running,
+                self.capabilities.ego_child_activity_version == Some(1),
+            );
+        if changed || tracked {
             self.publish();
         }
         self.journal.append(
@@ -1284,6 +1428,28 @@ impl ConnectionActor {
         let operation = kind.operation();
         self.require(operation)?;
         self.require_authority(authority)?;
+        let source_running = self.attachments.get(&session_id).is_some_and(|attachment| {
+            attachment
+                .active_turn
+                .as_ref()
+                .is_some_and(|turn| turn.state != AcpTurnState::Settled)
+        });
+        let at_message_id = if matches!(kind, AcpAttachKind::Fork)
+            && source_running
+            && at_message_id.is_none()
+        {
+            // Never ask ego for a tip fork while its source writer is active.
+            // DEFERRED (2026-11-06): ACP v1 replay has no successful-turn markers.
+            // After a fresh load, require an observed completion or an explicit
+            // message cutoff that ego validates; do not guess from replay text.
+            Some(self.fork_boundaries.get(&session_id)
+                .and_then(|boundary| boundary.completed_message.clone())
+                .ok_or_else(|| AcpClientError::invalid_input(
+                    "No verified completed turn is available to fork while this turn runs. Wait for completion or fork an earlier reply.",
+                ))?)
+        } else {
+            at_message_id
+        };
         if at_message_id.is_some() && !self.capabilities.fork_at_message {
             return Err(AcpClientError::invalid_input(
                 "agent does not support fork at a message",
@@ -1493,6 +1659,10 @@ impl ConnectionActor {
             .attachments
             .get_mut(session_id)
             .expect("checked just above");
+        self.fork_boundaries
+            .entry(session_id.clone())
+            .or_default()
+            .pending_message = None;
         attachment.state = AcpAttachmentState::Prompting;
         attachment.active_turn = Some(AcpTurnSnapshot {
             turn_id,
@@ -1500,6 +1670,10 @@ impl ConnectionActor {
             stop_reason: None,
             usage: None,
         });
+        self.trackers
+            .entry(session_id.clone())
+            .or_default()
+            .turn_started();
         self.publish();
         self.journal.append(
             Some(session_id.clone()),
@@ -1757,7 +1931,15 @@ impl ConnectionActor {
             return false;
         }
 
+        self.fork_boundaries
+            .entry(session_id.clone())
+            .or_default()
+            .settle(
+                matches!(&outcome, Ok(response) if response.stop_reason == v1::StopReason::EndTurn),
+            );
         attachment.state = AcpAttachmentState::Idle;
+        let interrupted = matches!(&outcome, Ok(response)
+            if response.stop_reason == v1::StopReason::Cancelled);
         let event = match outcome {
             Ok(response) => {
                 attachment.active_turn = Some(AcpTurnSnapshot {
@@ -1803,6 +1985,10 @@ impl ConnectionActor {
                 }
             }
         };
+        self.trackers
+            .entry(session_id.clone())
+            .or_default()
+            .turn_ended(interrupted);
         self.publish();
         self.journal
             .append(Some(session_id.clone()), Some(turn_id), event);
@@ -1816,6 +2002,13 @@ impl ConnectionActor {
         authority: AcpSessionAuthority,
         usage: Option<AcpUsageSnapshot>,
     ) -> AcpAttachmentSnapshot {
+        // An update the actor took before this reply was sent after it: the
+        // agent cannot name a session/new id before answering with it.
+        let early_config = self.initial_config.remove(&attached.session_id);
+        let config_options = match &early_config {
+            Some(update) => update.config_options.clone(),
+            None => attached.config_options.unwrap_or_default(),
+        };
         let attachment = AcpAttachmentSnapshot {
             available_commands: self
                 .initial_commands
@@ -1825,13 +2018,17 @@ impl ConnectionActor {
             state: AcpAttachmentState::Idle,
             cwd: authority.cwd,
             additional_directories: authority.additional_directories,
-            config_options: attached.config_options.unwrap_or_default(),
+            config_options,
+            config_failure: early_config
+                .as_ref()
+                .and_then(ego_ext::failed_configuration),
             profile_warnings: attached.profile_warnings,
             usage,
             active_turn: None,
             queued_prompts: Vec::new(),
             pending_permission_ids: Vec::new(),
             pending_elicitation_ids: Vec::new(),
+            activity: AcpChatActivity::default(),
         };
         self.attachments
             .insert(attachment.session_id.clone(), attachment.clone());
@@ -1843,6 +2040,15 @@ impl ConnectionActor {
                 state: AcpAttachmentState::Idle,
             },
         );
+        if let Some(update) = early_config {
+            self.journal.append(
+                Some(attachment.session_id.clone()),
+                None,
+                AcpClientEvent::SessionUpdate {
+                    update: Box::new(v1::SessionUpdate::ConfigOptionUpdate(update)),
+                },
+            );
+        }
         attachment
     }
 
@@ -2008,7 +2214,10 @@ fn mcp_server_operation(server: &v1::McpServer) -> Option<AcpOperation> {
 ///
 /// Grouping is presentation: which header a value renders under says nothing
 /// about whether it can be chosen, so both shapes are searched the same way.
-fn offers_value(select: &v1::SessionConfigSelect, value: &v1::SessionConfigValueId) -> bool {
+pub(super) fn offers_value(
+    select: &v1::SessionConfigSelect,
+    value: &v1::SessionConfigValueId,
+) -> bool {
     match &select.options {
         v1::SessionConfigSelectOptions::Ungrouped(options) => {
             options.iter().any(|option| &option.value == value)

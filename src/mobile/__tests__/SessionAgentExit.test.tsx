@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library";
 import { createSignal, Show } from "solid-js";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { waitForAgentEnterGap } from "../../utils/sendCommand";
 import { SessionDetailScreen } from "../screens/SessionDetailScreen";
 import type { SessionInfo, SessionState } from "../useSessions";
 
@@ -93,6 +94,7 @@ describe("mobile viewed agent exit", () => {
 		await fireEvent.click(view.getByRole("button", { name: "Send" }));
 		await waitFor(() => expect(rpc).toHaveBeenCalledWith("write_pty", { sessionId: "exit-ego", data: "pwd" }));
 		await waitFor(() => expect(rpc).toHaveBeenCalledWith("write_pty", { sessionId: "exit-ego", data: "\r" }));
+		await waitForAgentEnterGap(null);
 		await waitFor(() => expect((view.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(false));
 		expect(rpc.mock.calls.some(([method]) => method === "submit_agent_reply")).toBe(false);
 	});

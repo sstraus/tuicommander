@@ -106,6 +106,7 @@ fn read_only(name: &str, action: &str) -> bool {
                     | "worktree_list"
                     | "worktree_lifecycle"
                     | "progress_list"
+                    | "get_settings"
                     | "work_item"
                     | "help"
             )
@@ -170,6 +171,64 @@ pub(super) struct Call<'a> {
     row: Option<Record>,
 }
 
+/// The tool name and arguments of a call, unwrapping the `call_tool` envelope.
+pub(super) fn call_target(params: &Value) -> (&str, &Value) {
+    let name = params["name"].as_str().unwrap_or("");
+    if name == "call_tool" {
+        (
+            params["arguments"]["tool_name"].as_str().unwrap_or(""),
+            &params["arguments"]["arguments"],
+        )
+    } else {
+        (name, &params["arguments"])
+    }
+}
+
+/// Catalogue-recognized operation name; unrecognized caller strings stay digested.
+pub(super) fn operation_of(state: &AppState, name: &str, args: &Value) -> String {
+    // Native/meta catalogue and connected upstream definitions supply safe operation names.
+    // Unrecognized caller strings stay digested; bodies are never copied.
+    match OPERATIONS.get(name) {
+        Some(actions) => {
+            let action = args["action"]
+                .as_str()
+                .filter(|action| actions.iter().any(|value| value == action));
+            action.map_or_else(|| name.to_owned(), |action| format!("{name}.{action}"))
+        }
+        None if matches!(name, "search_tools" | "get_tool_schema") => name.to_owned(),
+        None => {
+            let tools = state.mcp.upstream_registry.aggregated_tools();
+            if let Some(tool) = tools.iter().find(|tool| tool["name"] == name) {
+                let action = args["action"].as_str().filter(|action| {
+                    tool["inputSchema"]["properties"]["action"]["enum"]
+                        .as_array()
+                        .is_some_and(|actions| actions.iter().any(|value| value == action))
+                });
+                action.map_or_else(|| name.to_owned(), |action| format!("{name}.{action}"))
+            } else {
+                format!("opaque:{}", hex::encode(Sha256::digest(name.as_bytes())))
+            }
+        }
+    }
+}
+
+/// Sum of UTF-8 byte lengths of the top-level `text` content blocks of a reply.
+pub(super) fn response_text_bytes(formatted: &Value) -> usize {
+    formatted["content"].as_array().map_or(0, |content| {
+        content
+            .iter()
+            .filter_map(|block| {
+                if block["type"] == "text" {
+                    block["text"].as_str()
+                } else {
+                    None
+                }
+            })
+            .map(str::len)
+            .sum()
+    })
+}
+
 fn metadata_uuid(params: &Value, key: &str) -> Option<Uuid> {
     params["_meta"][key]
         .as_str()
@@ -186,41 +245,8 @@ impl<'a> Call<'a> {
                 row: None,
             };
         }
-        let name = params["name"].as_str().unwrap_or("");
-        let args = if name == "call_tool" {
-            &params["arguments"]["arguments"]
-        } else {
-            &params["arguments"]
-        };
-        let name = if name == "call_tool" {
-            params["arguments"]["tool_name"].as_str().unwrap_or("")
-        } else {
-            name
-        };
-        // Native/meta catalogue and connected upstream definitions supply safe operation names.
-        // Unrecognized caller strings stay digested; bodies are never copied.
-        let operation = match OPERATIONS.get(name) {
-            Some(actions) => {
-                let action = args["action"]
-                    .as_str()
-                    .filter(|action| actions.iter().any(|value| value == action));
-                action.map_or_else(|| name.to_owned(), |action| format!("{name}.{action}"))
-            }
-            None if matches!(name, "search_tools" | "get_tool_schema") => name.to_owned(),
-            None => {
-                let tools = state.mcp.upstream_registry.aggregated_tools();
-                if let Some(tool) = tools.iter().find(|tool| tool["name"] == name) {
-                    let action = args["action"].as_str().filter(|action| {
-                        tool["inputSchema"]["properties"]["action"]["enum"]
-                            .as_array()
-                            .is_some_and(|actions| actions.iter().any(|value| value == action))
-                    });
-                    action.map_or_else(|| name.to_owned(), |action| format!("{name}.{action}"))
-                } else {
-                    format!("opaque:{}", hex::encode(Sha256::digest(name.as_bytes())))
-                }
-            }
-        };
+        let (name, args) = call_target(params);
+        let operation = operation_of(state, name, args);
         let target_digest = ["to", "session_id", "path", "worktree_path", "id"]
             .into_iter()
             .find_map(|key| {
@@ -264,19 +290,7 @@ impl<'a> Call<'a> {
         } else {
             "replied"
         };
-        row.response_text_bytes = Some(formatted["content"].as_array().map_or(0, |content| {
-            content
-                .iter()
-                .filter_map(|block| {
-                    if block["type"] == "text" {
-                        block["text"].as_str()
-                    } else {
-                        None
-                    }
-                })
-                .map(str::len)
-                .sum()
-        }));
+        row.response_text_bytes = Some(response_text_bytes(formatted));
         // Reply construction observes handler completion, not delivery to the client
         // or completion of a queued external effect. An untyped upstream error can
         // still be a lost reply after send, so it must not imply rollback.

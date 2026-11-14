@@ -31,7 +31,6 @@
 - [AI Chat](./user-guide/ai-chat.md)
 - [Smart Prompts](./user-guide/smart-prompts.md)
 - [Prompt Library](./user-guide/prompt-library.md)
-- [Guided Event Configuration](./user-guide/event-driven-templates.md)
 - [Voice Dictation](./user-guide/dictation.md)
 
 ## Git & GitHub
@@ -77,13 +76,23 @@
 # Backend
 
 - [Configuration](./backend/config.md)
+- [Worktree Orphan Cleanup and Retention Audit](./backend/worktree-orphan-retention-audit.md)
 - [Workflow Contract Baseline](./backend/workflow-baseline/contract.md)
+- [Story Backend Protocol](./backend/story-backend-protocol.md)
+- [Native Workflows](./backend/workflows.md)
+  - [Structured Script Interface](./backend/workflow-script-interface.md)
+  - [Telegram Workflow Connector](./backend/workflow-telegram-connectors.md)
 - [PTY Management](./backend/pty.md)
 - [Output Parser](./backend/output-parser.md)
+- [Agent State Detection Rules](./backend/agent-state-detection.md)
+- [Agent Session Management](./backend/agent-session-management.md)
+- [Runtime Diagnostics](./backend/diagnostics.md)
 - [Error Classification](./backend/error-classification.md)
 - [Git Operations](./backend/git.md)
   - [Native Worktree Recycling Measurement](./evidence/worktree-recycling-1705-native.md)
 - [GitHub Integration](./backend/github.md)
+- [Workflow Trigger Admission](./backend/workflow-trigger-admission.md)
+- [Workflow HTTP Connectors](./backend/workflow-http-connectors.md)
 - [MCP & HTTP Server](./backend/mcp-http.md)
 - [ACP Client for ego](./backend/acp.md)
 - [MCP Proxy Hub](./backend/mcp-proxy.md)
@@ -102,6 +111,7 @@
 - [Transport Layer](./frontend/transport.md)
 - [Terminal Features](./frontend/terminal-features.md)
 - [Custom Glyph Rendering](./frontend/custom-glyph-rendering.md)
+- [Frontend Performance Instrumentation (perfDebug)](./frontend/perf-debug.md)
 - [Visual Style Guide](./frontend/STYLE_GUIDE.md)
 - [Plugin Dashboard Style Guide](./plugins-style.md)
 
@@ -121,13 +131,17 @@
 - [Development Setup](./guides/development-setup.md)
 - [Continuous Integration](./guides/ci.md)
 - [Performance Profiling](./guides/profiling.md)
+- [Agent Testing Rules](./guides/agent-testing-rules.md)
 - [Documentation Sync Matrix](./sync-matrix.md)
 - [Release & Tag Checklist](./release-checklist.md)
 - [Project History](./guides/project-history.md)
 
 ## Audits & Plans
 
+- [External Story Adapter Spike](./internals/2727-story-adapter-spike.md)
+
 - [Relay Remote Daemon Design (Proposal)](./design/2085-relay-remote-daemon.md)
 - [CanvasTerminal Feature Audit](./frontend/canvas-terminal-audit.md)
 - [Font Size Audit](./frontend/font-size-audit.md)
-- [Solid Refactoring Plan](./frontend/solid-refactoring-plan.md)
+
+- [Heap Profiling](./backend/heap-profiling.md)

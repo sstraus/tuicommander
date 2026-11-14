@@ -1,0 +1,11 @@
+// A person rejects the permission. The wait must leave the activity with the
+// seat, while the turn goes on to its end.
+{"step":"expect","method":"initialize","params":{"protocolVersion":1},"capture":"init"}
+{"step":"respond","to":"init","result_file":"ego-initialize.json"}
+{"step":"expect","method":"session/new","capture":"new"}
+{"step":"respond","to":"new","result":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","configOptions":[]}}
+{"step":"expect","method":"session/prompt","capture":"prompt"}
+{"step":"request","id":7,"method":"session/request_permission","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","toolCall":{"toolCallId":"call-1","title":"Write a file"},"options":[{"optionId":"allow","name":"Allow","kind":"allow_once"},{"optionId":"reject","name":"Reject","kind":"reject_once"}]}}
+{"step":"expect_response","id":7,"result":{"outcome":{"outcome":"selected","optionId":"reject"}}}
+{"step":"respond","to":"prompt","result":{"stopReason":"end_turn"}}
+{"step":"await_stdin_eof"}

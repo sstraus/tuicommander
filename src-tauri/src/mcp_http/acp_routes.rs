@@ -29,14 +29,13 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, post};
 use futures_util::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
-use tokio::sync::mpsc::UnboundedReceiver;
 
 use super::guards::{Authenticated, require_local_or_auth};
 use crate::AppState;
 use crate::acp::{
     AcpAttachKind, AcpClientError, AcpClientErrorCode, AcpConnectRequest, AcpConnectionId,
-    AcpDetachKind, AcpHostRequestId, AcpSessionAuthority, AcpStreamFrame, AcpTurnId,
-    EgoHoldRequest,
+    AcpDetachKind, AcpEventStream, AcpHostRequestId, AcpSessionAuthority, AcpStreamFrame,
+    AcpTurnId, EgoHoldRequest,
 };
 use crate::acp_commands;
 
@@ -46,6 +45,11 @@ pub(super) fn acp_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/workspace", get(workspace_root))
         .route("/chat/open", post(chat_open))
+        .route("/chat/{session_id}/reactions", get(message_reactions))
+        .route(
+            "/connections/{connection_id}/sessions/{session_id}/message-action",
+            post(message_action),
+        )
         .route(
             "/chat/selection",
             get(chat_selection).put(select_chat_conversation),
@@ -58,6 +62,7 @@ pub(super) fn acp_routes() -> Router<Arc<AppState>> {
         .route("/connections/{connection_id}/kill", post(kill))
         .route("/connections/{connection_id}/reconnect", post(reconnect))
         .route("/connections/{connection_id}/stream", get(stream_ws))
+        .route("/connections/{connection_id}/events", get(events_page))
         .route(
             "/connections/{connection_id}/sessions",
             get(session_list).post(session_new),
@@ -252,6 +257,14 @@ struct StreamQuery {
     after: Option<u64>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct PageQuery {
+    after: Option<u64>,
+    limit: Option<usize>,
+    max_bytes: Option<usize>,
+}
+
 // ---------------------------------------------------------------------------
 // Connection lifecycle.
 // ---------------------------------------------------------------------------
@@ -354,6 +367,8 @@ async fn chat_selection(State(state): State<Arc<AppState>>) -> Response {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct ChatSelectionBody {
     session_id: Option<String>,
+    #[serde(default)]
+    replacing: Option<String>,
 }
 
 async fn select_chat_conversation(
@@ -365,7 +380,9 @@ async fn select_chat_conversation(
     if let Err(resp) = require_local_or_auth(&addr, auth.is_some()) {
         return resp.into_response();
     }
-    super::json_result(crate::ai_chat_selection::select(state, body.session_id).await)
+    super::json_result(
+        crate::ai_chat_selection::select(state, body.session_id, body.replacing).await,
+    )
 }
 
 async fn workspace_root(State(state): State<Arc<AppState>>) -> Response {
@@ -689,28 +706,26 @@ async fn stream_ws(
     Query(query): Query<StreamQuery>,
     State(state): State<Arc<AppState>>,
 ) -> Response {
-    let (frames_tx, frames_rx) = tokio::sync::mpsc::unbounded_channel();
     let events = match state.acp.subscribe(connection_id, query.after.unwrap_or(0)) {
         Ok(events) => events,
         Err(error) => return failed(error),
     };
-    tokio::spawn(acp_commands::forward(events, move |frame| {
-        frames_tx.send(frame).is_ok()
-    }));
-    ws.on_upgrade(move |socket| pump(socket, frames_rx))
+    ws.on_upgrade(move |socket| pump(socket, events))
 }
 
 /// Forward frames to the socket until the stream ends or the client leaves.
 ///
-/// Nothing the client sends means anything here — the whole conversation with
-/// the agent goes through the request/response routes — so an inbound message
-/// is read only to notice a close.
-async fn pump(socket: WebSocket, mut frames: UnboundedReceiver<AcpStreamFrame>) {
+/// The next frame is read only after the socket took the previous one, so a
+/// client that stops reading holds nothing here but the journal's bounded live
+/// buffer: once it falls that far behind, its next frame is the terminal gap.
+/// Nothing the client sends means anything — the whole conversation with the
+/// agent goes through the request/response routes — so an inbound message is
+/// read only to notice a close.
+async fn pump(socket: WebSocket, mut events: AcpEventStream) {
     let (mut sender, mut receiver) = socket.split();
     loop {
         tokio::select! {
-            frame = frames.recv() => {
-                let Some(frame) = frame else { break };
+            frame = events.next_frame() => {
                 // A gap and an end are both terminal: the producer stops after
                 // either, so holding the socket open would only look alive.
                 let last = !matches!(frame, AcpStreamFrame::Event(_));
@@ -736,6 +751,23 @@ async fn pump(socket: WebSocket, mut frames: UnboundedReceiver<AcpStreamFrame>) 
     let _ = sender.close().await;
 }
 
+/// One bounded page of a connection's events, for a reader without a socket.
+///
+/// Same cursor and same gap as the stream; `limit` and `maxBytes` are capped
+/// by the journal, so no query can ask for an unbounded response.
+async fn events_page(
+    Path(connection_id): Path<AcpConnectionId>,
+    Query(query): Query<PageQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    answer(state.acp.page(
+        connection_id,
+        query.after.unwrap_or(0),
+        query.limit,
+        query.max_bytes,
+    ))
+}
+
 /// Conversation-specific executable authority uses the same spawn guard as connect.
 async fn chat_open(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -749,6 +781,21 @@ async fn chat_open(
     answer(crate::acp_chat::open(&state, request).await)
 }
 
+async fn message_reactions(
+    Path(session_id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Response {
+    Json(crate::acp_message_actions::reactions(&state, &session_id)).into_response()
+}
+
+async fn message_action(
+    Path((connection_id, session_id)): Path<(AcpConnectionId, v1::SessionId)>,
+    State(state): State<Arc<AppState>>,
+    Json(request): Json<crate::acp_message_actions::MessageActionRequest>,
+) -> Response {
+    answer(crate::acp_message_actions::send(&state, connection_id, session_id, request).await)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -756,6 +803,8 @@ mod tests {
     use axum::extract::connect_info::ConnectInfo;
     use axum::http::Request;
     use tower::ServiceExt;
+
+    use crate::acp::AcpClientEvent;
 
     const CID: &str = "01932d5e-0000-7000-8000-0000000000aa";
     const SID: &str = "01932d5e-0000-7000-8000-0000000000bb";
@@ -927,6 +976,12 @@ mod tests {
             (
                 "GET",
                 format!("/acp/connections/{CID}/interactions"),
+                None,
+                AcpClientErrorCode::NotFound,
+            ),
+            (
+                "GET",
+                format!("/acp/connections/{CID}/events?after=1&limit=10&maxBytes=4096"),
                 None,
                 AcpClientErrorCode::NotFound,
             ),
@@ -1129,6 +1184,217 @@ mod tests {
             .expect("a refused handshake still says why");
         let error: AcpClientError = serde_json::from_slice(body).unwrap();
         assert_eq!(error.code, AcpClientErrorCode::NotFound);
+    }
+
+    /// Serves the shared routes on a loopback port, the way a browser reaches them.
+    async fn serve(state: Arc<AppState>) -> SocketAddr {
+        let app = super::super::shared_routes().with_state(state);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            .unwrap();
+        });
+        addr
+    }
+
+    /// Catches: the stream queueing every frame for a client that stopped
+    /// reading, so TUIC memory grows with the agent's output.
+    ///
+    /// The producer is paced in batches far below the live buffer, so a
+    /// subscriber that keeps up never lags. The client reads nothing until the
+    /// producer is done, with ~32 MiB in flight — more than the loopback
+    /// buffers on both sides. A bounded stream cannot have held all of it, so
+    /// the client must end on the terminal gap. A client that receives every
+    /// event proves the server retained every event for it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_stalled_stream_client_gets_a_gap_instead_of_an_unbounded_queue() {
+        const TOTAL: usize = 4096;
+        const BATCH: usize = 64;
+        let state = super::super::tests::test_state();
+        let journal = state.acp.test_peer_journal("stalled-peer");
+        let first = journal.append(None, None, AcpClientEvent::TurnStarted);
+        let addr = serve(state).await;
+        let url = format!(
+            "ws://{addr}/acp/connections/{}/stream?after={}",
+            first.connection_id,
+            first.sequence + 1
+        );
+        let (mut client, _) = tokio_tungstenite::connect_async(url).await.unwrap();
+
+        let text = "x".repeat(8 * 1024);
+        for _ in 0..TOTAL / BATCH {
+            for _ in 0..BATCH {
+                journal.append(
+                    None,
+                    None,
+                    AcpClientEvent::PromptSent { text: text.clone() },
+                );
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+
+        let mut events = 0usize;
+        let mut last_kind = None;
+        loop {
+            let next = tokio::time::timeout(std::time::Duration::from_secs(5), client.next()).await;
+            let Ok(Some(Ok(message))) = next else { break };
+            let tokio_tungstenite::tungstenite::Message::Text(json) = message else {
+                continue;
+            };
+            let frame: serde_json::Value = serde_json::from_str(&json).unwrap();
+            let kind = frame["kind"].as_str().unwrap().to_string();
+            if kind == "event" {
+                events += 1;
+            }
+            last_kind = Some((kind, frame));
+        }
+        assert!(
+            events < TOTAL,
+            "the server delivered all {events} events to a client that read none \
+             of them while they were produced, so it queued them without bound"
+        );
+        let (kind, frame) = last_kind.expect("the stream sent nothing at all");
+        assert_eq!(kind, "gap", "a client left behind must be told: {frame}");
+        assert_eq!(frame["code"], "stream_gap", "{frame}");
+    }
+
+    async fn get_json(app: &Router, path: &str) -> (StatusCode, serde_json::Value) {
+        let resp = app
+            .clone()
+            .oneshot(request("GET", path, None))
+            .await
+            .unwrap();
+        let status = resp.status();
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        (status, serde_json::from_slice(&bytes).unwrap())
+    }
+
+    fn sequences(page: &serde_json::Value) -> Vec<u64> {
+        page["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|event| event["sequence"].as_u64().unwrap())
+            .collect()
+    }
+
+    /// Catches: a page that ignores `limit`, a `next` cursor that skips or
+    /// repeats an event, and a caught-up reader whose cursor moves backwards.
+    #[tokio::test]
+    async fn event_pages_honour_the_limit_and_chain_through_next() {
+        let state = super::super::tests::test_state();
+        let journal = state.acp.test_peer_journal("page-peer");
+        let first = journal.append(None, None, AcpClientEvent::TurnStarted);
+        for n in 0..9 {
+            journal.append(
+                None,
+                None,
+                AcpClientEvent::PromptSent {
+                    text: n.to_string(),
+                },
+            );
+        }
+        let app = super::super::shared_routes().with_state(state);
+        let base = format!("/acp/connections/{}/events", first.connection_id);
+
+        let mut after = 0;
+        let mut seen = Vec::new();
+        loop {
+            let (status, page) = get_json(&app, &format!("{base}?after={after}&limit=4")).await;
+            assert_eq!(status, StatusCode::OK, "{page}");
+            let got = sequences(&page);
+            assert!(got.len() <= 4, "limit 4 returned {got:?}");
+            assert_eq!(page["latest"], first.sequence + 9, "{page}");
+            if got.is_empty() {
+                assert_eq!(page["next"], after, "a caught-up cursor must stay put");
+                break;
+            }
+            seen.extend(got);
+            after = page["next"].as_u64().unwrap();
+        }
+        let expected: Vec<u64> = (first.sequence..=first.sequence + 9).collect();
+        assert_eq!(
+            seen, expected,
+            "the pages must chain without gaps or repeats"
+        );
+    }
+
+    /// Catches: a byte budget that is ignored, one that a large request can
+    /// lift past the cap, and an event larger than the budget stalling the
+    /// cursor forever.
+    #[tokio::test]
+    async fn event_pages_are_bounded_in_bytes_and_never_stall_on_a_large_event() {
+        let state = super::super::tests::test_state();
+        let journal = state.acp.test_peer_journal("bytes-peer");
+        let text = "y".repeat(64 * 1024);
+        let first = journal.append(
+            None,
+            None,
+            AcpClientEvent::PromptSent { text: text.clone() },
+        );
+        for _ in 0..99 {
+            journal.append(
+                None,
+                None,
+                AcpClientEvent::PromptSent { text: text.clone() },
+            );
+        }
+        let app = super::super::shared_routes().with_state(state);
+        let base = format!("/acp/connections/{}/events", first.connection_id);
+
+        let (status, page) = get_json(&app, &format!("{base}?maxBytes=1")).await;
+        assert_eq!(status, StatusCode::OK, "{page}");
+        assert_eq!(
+            sequences(&page),
+            vec![first.sequence],
+            "one oversized event, alone"
+        );
+        assert_eq!(page["next"], first.sequence + 1);
+
+        // 100 events of 64 KiB is ~6.4 MiB, beyond the 4 MiB ceiling.
+        let (_, page) = get_json(
+            &app,
+            &format!("{base}?limit=100000&maxBytes={}", usize::MAX),
+        )
+        .await;
+        let got = sequences(&page);
+        assert!(
+            !got.is_empty() && got.len() < 100,
+            "the byte ceiling must apply: {}",
+            got.len()
+        );
+        let bytes = serde_json::to_vec(&page["events"]).unwrap().len();
+        assert!(
+            bytes <= 4 * 1024 * 1024 + 4096,
+            "page carried {bytes} bytes"
+        );
+    }
+
+    /// Catches: a page read that answers a cursor the journal dropped with the
+    /// events that survived instead of the stream's gap.
+    #[tokio::test]
+    async fn an_event_page_before_the_journal_is_the_streams_gap() {
+        let state = super::super::tests::test_state();
+        let journal = state.acp.test_peer_journal("gap-peer");
+        let first = journal.append(None, None, AcpClientEvent::TurnStarted);
+        for _ in 0..1100 {
+            journal.append(None, None, AcpClientEvent::TurnStarted);
+        }
+        let app = super::super::shared_routes().with_state(state);
+        let path = format!(
+            "/acp/connections/{}/events?after={}",
+            first.connection_id, first.sequence
+        );
+        let (status, body) = get_json(&app, &path).await;
+        assert_eq!(status, StatusCode::GONE, "{body}");
+        assert_eq!(body["code"], "stream_gap", "{body}");
     }
 
     #[test]

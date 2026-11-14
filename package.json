@@ -1,10 +1,10 @@
 {
   "name": "tuicommander",
   "private": true,
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Multi-agent terminal orchestrator with native terminal and Tauri",
   "type": "module",
-  "packageManager": "pnpm@11.15.1",
+  "packageManager": "pnpm@12.15.0",
   "scripts": {
     "dev": "node scripts/dev-server.mjs",
     "build": "tsc && vite build && node scripts/report-frontend-bundles.mjs --check",
@@ -63,7 +63,7 @@
     "@types/qrcode": "^1.5.6",
     "@typescript/typescript6": "^6.0.2",
     "@vitest/coverage-v8": "^5.0.0",
-    "happy-dom": "20.11.0",
+    "happy-dom": "21.0.4",
     "jsdom": "^30.0.1",
     "lightningcss": "^1.33.0",
     "rollup": "4.62.2",

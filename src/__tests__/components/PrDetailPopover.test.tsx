@@ -247,6 +247,23 @@ describe("PrDetailPopover", () => {
 		expect(onClose).not.toHaveBeenCalled();
 	});
 
+	// Catches: the mount-time anchor measurement frame is scheduled without a cancel on unmount.
+	it("leaves no frame callback pending after unmount", () => {
+		const pending = new Set<number>();
+		let nextId = 0;
+		vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => {
+			pending.add(++nextId);
+			return nextId;
+		});
+		vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation((id) => {
+			pending.delete(id);
+		});
+		const { unmount } = render(() => <PrDetailPopover {...defaultProps} />);
+		expect(pending.size).toBeGreaterThan(0);
+		unmount();
+		expect(pending.size).toBe(0);
+	});
+
 	it("handles no-data gracefully", () => {
 		mockGetBranchPrData.mockReturnValue(null);
 

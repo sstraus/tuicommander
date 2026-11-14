@@ -31,7 +31,7 @@ const CONNECTION: &str = "- Connection: once per MCP connection or reconnect, yo
 const CONNECTION_INTENT: &str = " and the next line is the `intent:` line";
 const INTENT: &str = "- `intent: <desc> (<title>)` — the first text of your turn, before your first tool call, when the user sends a new request, changes direction, or you resume after an interruption or compaction. On any other turn, do not emit it. `<desc>`: the work in progress, present tense. `<title>`: ≤3 words, spaces not hyphens, the last parenthesis on the line.\n  Example: `intent: Fixing the mobile tab bar height (Mobile tab bar)`\n";
 const SUGGEST: &str = "- `suggest: [ A | B | C ]` — once, as the last line of the turn that completes the task or asks the user to choose. Never while work continues. EXACTLY 3 items separated by ` | `, each ≤40 chars.\n";
-const ANSWER: &str = "- `💬 ` — prefix every sentence that directly answers the user's question with `💬 ` at row start or at the start of a list item’s text (marker + space). Exclude status, tool and hook/task notices.\n";
+const ANSWER: &str = "- `💬 ` — begin each sentence that directly answers the user's question with `💬 ` (marker + space). Start a new line before each additional `💬 ` marker; never put it after prose on the same line. A list item may place `💬 ` after its list prefix. Exclude status, tool and hook/task notices.\n";
 
 /// The shipped text. A marker turned off for the agent is left out, so the
 /// launch text never demands what the MCP instructions withhold.
@@ -67,6 +67,8 @@ pub(crate) fn marker_flags(
 
 /// Boss text (2026-10-22), verbatim. Present only when mdkb is installed.
 pub(crate) const MDKB_RULE: &str = "## Code search\nUse MDKB for all code searches, including exact strings, symbols, and surrounding context. Prefer targeted retrieval over reading entire files. Grep, rg, and Bash-based searches are fallback tools only when MDKB cannot cover the target. Do not attempt alternative search commands when a search is blocked.\n";
+
+const MCP_FALLBACK_RULE: &str = "If `mcp__tuicommander__*` returns CONNECTION_CLOSED or is missing, run `tuic mcp init` (full rules), then `tuic mcp <tool> '<json>'` in the shell; never replace TUIC work with native subagents.\n";
 
 /// 0 = not checked, 1 = absent, 2 = installed. The check only stats files, and
 /// runs once per process, then again when the launch files are rewritten for a
@@ -235,6 +237,7 @@ fn effective_text_with(
             }
         }
     }
+    text.push_str(MCP_FALLBACK_RULE);
     if mdkb {
         if !text.is_empty() {
             text.push('\n');

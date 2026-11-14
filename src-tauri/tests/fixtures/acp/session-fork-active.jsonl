@@ -1,0 +1,24 @@
+// Controlled protocol choreography, not a recording of an ego provider run.
+{"step":"expect","method":"initialize","capture":"init"}
+{"step":"respond","to":"init","result":{"protocolVersion":1,"agentCapabilities":{"loadSession":true,"mcpCapabilities":{"acp":true},"sessionCapabilities":{"fork":{"_meta":{"ego":{"atMessage":true}}},"close":{}}}}}
+{"step":"expect","method":"session/new","capture":"new"}
+{"step":"respond","to":"new","result":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa"}}
+{"step":"expect","method":"session/prompt","capture":"first"}
+{"step":"notify","method":"session/update","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","update":{"sessionUpdate":"agent_message_chunk","messageId":"01932d5e-0000-7000-8000-000000000011","content":{"type":"text","text":"Unfinished first turn"}}}}
+{"step":"expect","method":"session/cancel"}
+{"step":"respond","to":"first","result":{"stopReason":"cancelled"}}
+{"step":"expect","method":"session/prompt","capture":"good"}
+{"step":"notify","method":"session/update","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","update":{"sessionUpdate":"agent_message_chunk","messageId":"01932d5e-0000-7000-8000-000000000012","content":{"type":"text","text":"Completed turn"}}}}
+{"step":"respond","to":"good","result":{"stopReason":"end_turn"}}
+{"step":"expect","method":"session/prompt","capture":"bad"}
+{"step":"notify","method":"session/update","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","update":{"sessionUpdate":"agent_message_chunk","messageId":"01932d5e-0000-7000-8000-000000000013","content":{"type":"text","text":"Failed turn"}}}}
+{"step":"error","to":"bad","code":-32000,"message":"known provider failure"}
+{"step":"expect","method":"session/prompt","capture":"active"}
+{"step":"notify","method":"session/update","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","update":{"sessionUpdate":"agent_message_chunk","messageId":"01932d5e-0000-7000-8000-000000000014","content":{"type":"text","text":"Partial active turn"}}}}
+{"step":"expect","method":"session/fork","capture":"fork","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","_meta":{"ego":{"atMessageId":"01932d5e-0000-7000-8000-000000000012"}}}}
+{"step":"respond","to":"fork","result":{"sessionId":"01932d5e-0000-7000-8000-0000000000bb"}}
+{"step":"expect","method":"session/prompt","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000bb"},"capture":"child"}
+{"step":"respond","to":"child","result":{"stopReason":"end_turn"}}
+{"step":"expect","method":"session/cancel","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa"}}
+{"step":"respond","to":"active","result":{"stopReason":"cancelled"}}
+{"step":"await_stdin_eof"}

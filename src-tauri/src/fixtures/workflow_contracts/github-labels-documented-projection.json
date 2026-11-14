@@ -1,0 +1,11 @@
+{
+  "kind": "official_documentation_field_projection",
+  "source": "https://docs.github.com/en/rest/issues/labels?apiVersion=2022-11-28#list-labels-for-a-repository",
+  "recorded_on": "2026-11-10",
+  "source_status_example": 200,
+  "selected_fields": ["id", "name"],
+  "items": [
+    {"id": 208045946, "name": "bug"},
+    {"id": 208045947, "name": "enhancement"}
+  ]
+}

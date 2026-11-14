@@ -19,7 +19,9 @@ Ctrl+Enter uses CSI u when Kitty flag 1 is active, or only for identified ego se
 
 ## Incremental base-grid painting
 
-Whole-row forward viewport movement can copy retained base-canvas pixels once.
+Whole-row viewport movement in either direction can copy retained base-canvas pixels once.
+The smooth wheel gesture uses the same path: each frame paints from the row cache
+with the absolute viewport origin, so it repaints only the rows it exposes.
 The renderer compares all retained cells before reusing them and repaints changed
 or newly exposed rows. Geometry, font, theme, explicit invalidation and hidden
 marker layouts disable the copy. Full wire frames replace decoded state without

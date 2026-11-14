@@ -13,6 +13,7 @@ import { ExpertSetting } from "../../ExpertSetting";
 import s from "../../Settings.module.css";
 import { SectionCard, SettingPageHeader, SettingRow } from "../../SettingsPrimitives";
 import { McpAuditPanel } from "./McpAuditPanel";
+import { McpUsagePanel } from "./McpUsagePanel";
 import layout from "./ServiceRestyle.module.css";
 import { type AppConfig, type McpCapability, saveConfigField, useMcpStatusPoll } from "./servicesShared";
 import { UpstreamMcpPanel } from "./UpstreamMcpPanel";
@@ -35,6 +36,7 @@ export const LocalMcpPanel: Component = () => {
 	const [settingsEnabled, setSettingsEnabled] = createSignal(false);
 	const [collapseTools, setCollapseTools] = createSignal<boolean>(false);
 	const [callAuditEnabled, setCallAuditEnabled] = createSignal(false);
+	const [usageRollupEnabled, setUsageRollupEnabled] = createSignal(true);
 	const [bridgeInfo, setBridgeInfo] = createSignal<{ bridge_path: string; config_snippet: string } | null>(null);
 	const [bridgeInfoOpen, setBridgeInfoOpen] = createSignal(false);
 	const [snippetCopied, setSnippetCopied] = createSignal(false);
@@ -54,13 +56,15 @@ export const LocalMcpPanel: Component = () => {
 				setSettingsEnabled(config.settings_mcp_enabled ?? false);
 				setCollapseTools(config.collapse_tools ?? false);
 				setCallAuditEnabled(config.mcp_call_audit_enabled ?? false);
+				setUsageRollupEnabled(config.mcp_usage_rollup_enabled ?? true);
 				setNativeToolsLoaded(true);
 			},
 		}),
 	);
 
+	// Settings has one switch, the host-only opt-in; it is never a capability denial.
 	const capabilityDenied = (name: string) =>
-		deniedCapabilities().includes(name) || (name === "settings" && !settingsEnabled());
+		name === "settings" ? !settingsEnabled() : deniedCapabilities().includes(name);
 	const capabilityRow = (capability: McpCapability) => {
 		const parentDenied = () => capability.parent !== null && capabilityDenied(capability.parent);
 		const hint = () =>
@@ -80,16 +84,19 @@ export const LocalMcpPanel: Component = () => {
 						disabled={parentDenied()}
 						onChange={(event) => {
 							const enabled = event.currentTarget.checked;
+							if (capability.name === "settings") {
+								setSettingsEnabled(enabled);
+								saveConfigField((config) => {
+									config.settings_mcp_enabled = enabled;
+								});
+								return;
+							}
 							const updated = enabled
 								? deniedCapabilities().filter((name) => name !== capability.name)
 								: [...deniedCapabilities(), capability.name];
 							setDeniedCapabilities(updated);
 							saveConfigField((config) => {
 								config.mcp_capabilities.denied = updated;
-								if (capability.name === "settings") {
-									config.settings_mcp_enabled = enabled;
-									setSettingsEnabled(enabled);
-								}
 							});
 						}}
 					/>
@@ -278,6 +285,35 @@ export const LocalMcpPanel: Component = () => {
 				</SettingRow>
 				<Show when={callAuditEnabled()}>
 					<McpAuditPanel />
+				</Show>
+			</SectionCard>
+			<SectionCard title={t("mcpUsage.title", "Usage")}>
+				<SettingRow
+					label={t("mcpUsage.toggle", "Count MCP usage")}
+					hint={t(
+						"mcpUsage.toggleHint",
+						"Keeps daily counts per role and tool for 90 days: calls, errors, rejections and reply sizes. No arguments, replies or names are stored.",
+					)}
+				>
+					{(id, descriptionId) => (
+						<Switch
+							role="checkbox"
+							data-setting-id="app.mcp_usage_rollup_enabled"
+							id={id}
+							aria-describedby={descriptionId()}
+							checked={usageRollupEnabled()}
+							onChange={async (e) => {
+								const enabled = e.currentTarget.checked;
+								await saveConfigField((c) => {
+									c.mcp_usage_rollup_enabled = enabled;
+								});
+								setUsageRollupEnabled(enabled);
+							}}
+						/>
+					)}
+				</SettingRow>
+				<Show when={usageRollupEnabled()}>
+					<McpUsagePanel />
 				</Show>
 			</SectionCard>
 		</div>

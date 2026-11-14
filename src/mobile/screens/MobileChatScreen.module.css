@@ -9,7 +9,7 @@
   background: var(--bg-primary);
 }
 
-.header, .controls {
+.header {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -18,10 +18,8 @@
   border-bottom: 1px solid var(--border);
 }
 
-.controls select { max-width: 60vw; }
-
-.controls label { display: flex; align-items: center; gap: 6px; min-width: 0; }
-.controls button { margin-left: auto; }
+.header > strong { flex-shrink: 0; }
+.header > select { flex: 1; }
 .banner { padding: 8px 12px; color: var(--warning); background: var(--bg-tertiary); }
 
 .tableDocument { position: fixed; inset: 0; z-index: 30; background: var(--bg-primary); overflow: auto; padding: 12px; }

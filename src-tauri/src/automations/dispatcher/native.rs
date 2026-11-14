@@ -27,7 +27,7 @@ impl DispatchEffects for NativeEffects {
                 id: None,
             }),
             Workspace::NewPerRun { base_branch } => {
-                let workspace = crate::mcp_http::mcp_transport::create_daemon_workflow_worktree(
+                let workspace = crate::mcp_http::mcp_transport::create_daemon_worktree(
                     &self.0,
                     &repository,
                     &format!("automation/{id}"),
@@ -70,32 +70,6 @@ impl DispatchEffects for NativeEffects {
         })
         .await
         .map_err(|e| format!("Automation launch task: {e}"))?
-    }
-
-    async fn start_event_workflow(
-        &self,
-        run: &AutomationRun,
-        workspace: &str,
-        prompt: &str,
-    ) -> Result<super::super::run::EventWorkflowBinding, String> {
-        let (state, run, workspace, prompt) = (
-            self.0.clone(),
-            run.clone(),
-            workspace.to_owned(),
-            prompt.to_owned(),
-        );
-        tokio::task::spawn_blocking(move || {
-            super::super::event_workflow::start(&state, &run, &workspace, &prompt)
-        })
-        .await
-        .map_err(|e| format!("Event workflow start task: {e}"))?
-    }
-
-    fn stop_event_workflow(
-        &self,
-        binding: &super::super::run::EventWorkflowBinding,
-    ) -> Result<(), String> {
-        super::super::event_workflow::stop(&self.0, binding)
     }
 
     fn publish(&self, run: &AutomationRun) {

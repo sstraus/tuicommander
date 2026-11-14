@@ -315,10 +315,16 @@ fn unreadable_transcript_recovers_for_the_snapshot_consumer() {
 // Recorded schemas are retained; only prompt payloads vary at the cleaning boundary.
 #[tokio::test]
 async fn pending_comparison_matches_native_receipts_at_cleaning_boundaries() {
+    // The cap ends in a marker naming the full length (#2915).
+    fn capped(unit: &str, total: usize) -> String {
+        let marker = format!("… [truncated, {total} chars total]");
+        let keep = 20_000 - marker.chars().count();
+        format!("{}{marker}", unit.repeat(keep))
+    }
     let cases = [
-        ("a".repeat(20_001), format!("{}…", "a".repeat(19_999))),
+        ("a".repeat(20_001), capped("a", 20_001)),
         ("🦀".repeat(20_000), "🦀".repeat(20_000)),
-        ("🦀".repeat(20_001), format!("{}…", "🦀".repeat(19_999))),
+        ("🦀".repeat(20_001), capped("🦀", 20_001)),
         (
             "inspect AKIAIOSFODNN7EXAMPLE".into(),
             "inspect [REDACTED]".into(),
@@ -363,4 +369,283 @@ async fn pending_comparison_matches_native_receipts_at_cleaning_boundaries() {
         let updates = codex::CodexAdapter::default().absorb(&codex_row.to_string());
         assert_eq!(updates[0]["content"]["text"], expected);
     }
+}
+
+/// The recorded Claude 2.1.316 session asked two questions at once.
+const PROBE_QUESTIONS: &str =
+    "Which color should the probe use?\n\nWhich size should the probe use?";
+
+// Catches: answered, cancelled or replayed transcript content restoring a settled
+// question card on a live wait, before or after a reload of the transcript tail.
+#[cfg(unix)]
+#[test]
+fn answered_transcript_question_never_reopens_card() {
+    let terminal = DiscoveredTerminal::new();
+    let session = "c73f5d6b-3f0a-4394-bd61-5e13f445d3bd";
+    let rows: Vec<&str> =
+        include_str!("../fixtures/agent_question/claude-answer-then-reopen-2.1.316.jsonl")
+            .lines()
+            .collect();
+    let cwd = terminal
+        .state
+        .session_maps
+        .sessions
+        .get("discovered")
+        .unwrap()
+        .lock()
+        .cwd
+        .clone()
+        .unwrap();
+    let pid = crate::pty::session_leaf_pid(&terminal.state, "discovered").unwrap();
+    // The exact registry Claude writes for its own pid; the newest-file fallback
+    // is never a binding.
+    let config = terminal.project.parent().unwrap().parent().unwrap();
+    std::fs::create_dir_all(config.join("sessions")).unwrap();
+    std::fs::write(
+        config.join(format!("sessions/{pid}.json")),
+        serde_json::json!({"pid": pid, "sessionId": session, "cwd": cwd}).to_string(),
+    )
+    .unwrap();
+    let path = terminal.project.join(format!("{session}.jsonl"));
+    std::fs::write(&path, format!("{}\n{}\n", rows[0], rows[1])).unwrap();
+
+    // The live wait a native PreToolUse(AskUserQuestion) hook produces: no text.
+    let mut wait = serde_json::to_value(crate::output_parser::ParsedEvent::Question {
+        prompt_text: String::new(),
+        confident: true,
+    })
+    .unwrap();
+    wait["_turn_epoch"] = 0.into();
+    crate::state::tests_support::apply_replay_event(
+        &terminal.state,
+        &AppEvent::PtyParsed {
+            session_id: "discovered".into(),
+            parsed: wait.into(),
+        },
+    );
+    let question = |state: &crate::state::AppState| {
+        let snapshot = state.session_state_with_shell("discovered").unwrap();
+        assert!(
+            snapshot.awaiting_input,
+            "the transcript never retires a wait"
+        );
+        snapshot.question_text
+    };
+    assert_eq!(
+        question(&terminal.state).as_deref(),
+        Some(PROBE_QUESTIONS),
+        "the open question in the exact transcript names the live wait"
+    );
+
+    // The answer row, then Claude's request replay of the same tool_use.
+    append(&path, &format!("{}\n{}\n", rows[2], rows[3]));
+    assert_eq!(question(&terminal.state).as_deref(), Some(""));
+    terminal.state.chat_views.invalidate("discovered");
+    assert_eq!(
+        question(&terminal.state).as_deref(),
+        Some(""),
+        "a reload re-reads the answer and keeps the request settled"
+    );
+}
+
+/// A Claude terminal whose transcript holds only the human prompt, as when the
+/// PreToolUse hook raises the wait. Returns the transcript path and the fixture rows.
+#[cfg(unix)]
+fn terminal_with_prompt_only_transcript(
+    terminal: &DiscoveredTerminal,
+) -> (PathBuf, Vec<&'static str>) {
+    let session = "c73f5d6b-3f0a-4394-bd61-5e13f445d3bd";
+    let rows: Vec<&str> =
+        include_str!("../fixtures/agent_question/claude-answer-then-reopen-2.1.316.jsonl")
+            .lines()
+            .collect();
+    let cwd = terminal
+        .state
+        .session_maps
+        .sessions
+        .get("discovered")
+        .unwrap()
+        .lock()
+        .cwd
+        .clone()
+        .unwrap();
+    let pid = crate::pty::session_leaf_pid(&terminal.state, "discovered").unwrap();
+    let config = terminal.project.parent().unwrap().parent().unwrap();
+    std::fs::create_dir_all(config.join("sessions")).unwrap();
+    std::fs::write(
+        config.join(format!("sessions/{pid}.json")),
+        serde_json::json!({"pid": pid, "sessionId": session, "cwd": cwd}).to_string(),
+    )
+    .unwrap();
+    let path = terminal.project.join(format!("{session}.jsonl"));
+    std::fs::write(&path, format!("{}\n", rows[0])).unwrap();
+    (path, rows)
+}
+
+#[cfg(unix)]
+fn empty_confident_wait() -> crate::state::AppEvent {
+    let mut wait = serde_json::to_value(crate::output_parser::ParsedEvent::Question {
+        prompt_text: String::new(),
+        confident: true,
+    })
+    .unwrap();
+    wait["_turn_epoch"] = 0.into();
+    crate::state::AppEvent::PtyParsed {
+        session_id: "discovered".into(),
+        parsed: wait.into(),
+    }
+}
+
+// Catches: a live wait whose transcript row trails the PreToolUse hook (recorded
+// 2026-11-03: the row appeared about 1.2 s after the hook) staying unnamed after
+// the row lands, because the first empty read was kept.
+#[cfg(unix)]
+#[test]
+fn transcript_row_trailing_the_hook_names_the_open_wait() {
+    let terminal = DiscoveredTerminal::new();
+    let (path, rows) = terminal_with_prompt_only_transcript(&terminal);
+    crate::state::tests_support::apply_replay_event(&terminal.state, &empty_confident_wait());
+    let question = |state: &crate::state::AppState| {
+        let snapshot = state.session_state_with_shell("discovered").unwrap();
+        assert!(snapshot.awaiting_input);
+        snapshot.question_text
+    };
+    assert_ne!(question(&terminal.state).as_deref(), Some(PROBE_QUESTIONS));
+
+    append(&path, &format!("{}\n", rows[1]));
+    assert_eq!(
+        question(&terminal.state).as_deref(),
+        Some(PROBE_QUESTIONS),
+        "the row that arrives after the hook fills the card"
+    );
+}
+
+// Catches: the card staying empty until the 30 s client poll because the backend
+// names the wait only when somebody pulls the snapshot (story 2787-347d).
+#[cfg(unix)]
+#[tokio::test]
+async fn transcript_row_trailing_the_hook_is_pushed_to_the_open_card() {
+    let terminal = DiscoveredTerminal::new();
+    let (path, rows) = terminal_with_prompt_only_transcript(&terminal);
+    let mut bus = terminal.state.event_bus.subscribe();
+    crate::state::AppState::spawn_session_state_accumulator(Arc::clone(&terminal.state));
+    terminal.state.emit_pty_event(empty_confident_wait());
+
+    // The wait is pushed first, still unnamed.
+    let opened = next_push(&mut bus, |pushed| pushed.awaiting_input).await;
+    assert_ne!(opened.question_text.as_deref(), Some(PROBE_QUESTIONS));
+
+    let landed = std::time::Instant::now();
+    append(&path, &format!("{}\n", rows[1]));
+    let named = next_push(&mut bus, |pushed| {
+        pushed.question_text.as_deref() == Some(PROBE_QUESTIONS)
+    })
+    .await;
+    assert!(named.awaiting_input);
+    assert!(
+        landed.elapsed() < Duration::from_secs(2),
+        "the push must follow the row within 2 s, took {:?}",
+        landed.elapsed()
+    );
+}
+
+/// The next `session-state-changed` of the probe terminal that `accept`s. The
+/// outer bound only stops a hang; the asserted latency is the caller's.
+#[cfg(unix)]
+async fn next_push(
+    bus: &mut tokio::sync::broadcast::Receiver<crate::state::AppEvent>,
+    accept: impl Fn(&crate::state::SessionState) -> bool,
+) -> crate::state::SessionState {
+    tokio::time::timeout(Duration::from_secs(40), async {
+        loop {
+            if let Ok(crate::state::AppEvent::SessionStateChanged { session_id, state }) =
+                bus.recv().await
+                && session_id == "discovered"
+                && accept(&state)
+            {
+                return *state;
+            }
+        }
+    })
+    .await
+    .expect("no matching session-state-changed push")
+}
+
+// Catches: an unresolved transcript question raising or naming a wait on its own,
+// or a ledger that survives the exit of the agent.
+#[cfg(unix)]
+#[test]
+fn transcript_question_never_sets_a_wait_and_exit_drops_it() {
+    let terminal = DiscoveredTerminal::new();
+    let session = "c73f5d6b-3f0a-4394-bd61-5e13f445d3bd";
+    let rows: Vec<&str> =
+        include_str!("../fixtures/agent_question/claude-answer-then-reopen-2.1.316.jsonl")
+            .lines()
+            .collect();
+    let cwd = terminal
+        .state
+        .session_maps
+        .sessions
+        .get("discovered")
+        .unwrap()
+        .lock()
+        .cwd
+        .clone()
+        .unwrap();
+    let pid = crate::pty::session_leaf_pid(&terminal.state, "discovered").unwrap();
+    let config = terminal.project.parent().unwrap().parent().unwrap();
+    std::fs::create_dir_all(config.join("sessions")).unwrap();
+    std::fs::write(
+        config.join(format!("sessions/{pid}.json")),
+        serde_json::json!({"pid": pid, "sessionId": session, "cwd": cwd}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(
+        terminal.project.join(format!("{session}.jsonl")),
+        format!("{}\n{}\n", rows[0], rows[1]),
+    )
+    .unwrap();
+
+    let snapshot = terminal
+        .state
+        .session_state_with_shell("discovered")
+        .unwrap();
+    assert!(!snapshot.awaiting_input);
+    assert_eq!(snapshot.question_text, None, "no live wait, no question");
+
+    let mut wait = serde_json::to_value(crate::output_parser::ParsedEvent::Question {
+        prompt_text: String::new(),
+        confident: true,
+    })
+    .unwrap();
+    wait["_turn_epoch"] = 0.into();
+    crate::state::tests_support::apply_replay_event(
+        &terminal.state,
+        &AppEvent::PtyParsed {
+            session_id: "discovered".into(),
+            parsed: wait.into(),
+        },
+    );
+    let snapshot = terminal
+        .state
+        .session_state_with_shell("discovered")
+        .unwrap();
+    assert_eq!(snapshot.question_text.as_deref(), Some(PROBE_QUESTIONS));
+
+    crate::state::tests_support::apply_replay_event(
+        &terminal.state,
+        &AppEvent::PtyExit {
+            session_id: "discovered".into(),
+        },
+    );
+    let snapshot = terminal
+        .state
+        .session_state_with_shell("discovered")
+        .unwrap();
+    assert!(!snapshot.awaiting_input);
+    assert_eq!(snapshot.question_text, None);
+    assert!(
+        terminal.state.chat_views.questions.lock().is_empty(),
+        "exit drops the ledger"
+    );
 }

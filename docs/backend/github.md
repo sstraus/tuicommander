@@ -4,6 +4,8 @@
 
 Integrates with GitHub via GraphQL API for PR status, CI checks, and batch queries. Supports OAuth Device Flow login as an alternative to environment tokens, plus **multiple accounts** (additional github.com logins and GitHub Enterprise Server) with per-repo bindings.
 
+The batch PR query fetches the 10 most recently updated closed PRs in a separate connection so the poller can detect an open-to-closed transition without reducing the open PR limit. An active PR takes precedence when both connections contain the same branch.
+
 Worktree deletion has a fail-closed, account-aware HTTP GraphQL proof through
 `RepoApi::resolve` and `graphql_pages`. It uses the repository binding and host,
 the shared HTTP client, and account-scoped breaker/rate-limit accounting.
@@ -367,7 +369,6 @@ with at most 100 job logs retained; output is sanitized before agent use.
 One 60-second async deadline covers the sweep and any external CI downloads.
 Only local Git head resolution uses a blocking worker; HTTP work is cancellable.
 
-
 Resolves the local branch head for auto-heal, or uses the supplied PR head SHA for a selected check, then lists matching workflow runs, inspects their jobs, and downloads logs for every completed failed job through the GitHub Actions jobs API. Job-level retrieval works while sibling jobs are still running, before the containing workflow has a final `failure` conclusion. Used by the CI auto-heal hook (`useCiHeal`) to inject failure context into agent terminals for automatic fix cycles (up to 3 delivered attempts per cycle).
 
 GitHub Actions jobs are downloaded through GitHub's jobs API. CircleCI checks are selected from a PR whose head SHA matches the local branch for auto-heal or the supplied PR head SHA for a selected check, including remote-only PRs, restricted to the repository's GitHub owner/repository, and fetched only when a CircleCI token is configured. A selected CircleCI check takes precedence over failed GitHub Actions jobs; an unselected auto-heal request keeps GitHub Actions priority. Every `gh` and `git` process on this path has a 30-second deadline; a timeout returns an error and auto-heal clears its in-flight state. The CircleCI job's `vcs_revision` must match that SHA. CircleCI API and action-log requests never follow redirects; pre-signed action-log downloads accept only Amazon S3 HTTPS hosts and do not receive that token. The JSON action output is parsed as a stream, retaining at most 64 KiB of recent message text before the shared sanitiser and 4,000-character output limit; a 16 MiB download ceiling bounds transient parser memory. Other external providers return a clear error naming the checks instead of the misleading "no jobs found". The auto-heal hook surfaces that message as a warn toast and does **not** consume an attempt (attempts increment only after a fix prompt is delivered).
@@ -599,21 +600,6 @@ The shared poller keeps intake and client issue delivery separate. For an intake
 
 GitHub applies assigned, created and mentioned client predicates with the resolved account viewer. The client connection keeps its existing 30-node bound and never adopts the intake selection. Disabled client issues publish an empty client snapshot. Complete intake snapshots use an internal event consumed only by the automation runtime and excluded from SSE; desktop and SSE receive the same filtered client snapshot. The runtime retains the full eligible set for capacity retries, and the run store still deduplicates event keys.
 
-### Automatic review-only PR intake
-
-The automation runtime can subscribe to registered github.com repositories through
-its separate `pull_request_reviews` allowlist. It consumes the shared poller's PR
-snapshots only from the single registered polling path selected for each
-repository. Snapshots from sibling checkouts cannot roll back the admitted head;
-after bus lag it waits for the selected path to resync. The ACP one-shot review reads the
-GitHub comparison of immutable base/head SHAs. Host-owned publication revalidates
-eligibility and uses a durable claim plus `COMMENT` and an explicit `commit_id`.
-It never sends the manual review panel's diff hash as a commit. Unknown POST
-outcomes are not retried, including after restart. This path cannot launch a PTY,
-create worktrees, push branches or create another PR. See the
-[automation guide](../user-guide/automations.md#incoming-pr-reviews-review-only).
-
-
 ### Host-owned issue triage publication (#2324-424d)
 
 When triage is configured, intake fetches every page of open issues without the
@@ -630,3 +616,5 @@ workspace remote are checked again before publication. Requests have durable
 at-most-once claims; a missing/ambiguous response is unknown, not permission to
 repeat. No issue is automatically closed or merged. The evaluator's read-only
 profile is operator-attested, not credential-isolated by TUIC.
+
+Auto-fix prompts sanitize issue titles, bodies, authors and comment bodies with the CI-log sanitizer before display or terminal submission. Terminal control sequences are removed; tabs and newlines remain. The dependency audit workflow requests plain cargo-audit output with `--color never`.

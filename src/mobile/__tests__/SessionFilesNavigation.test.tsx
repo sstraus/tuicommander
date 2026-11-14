@@ -65,7 +65,8 @@ beforeAll(async () => {
 		import("../screens/SessionDetailScreen"),
 		import("../screens/SettingsScreen"),
 	]);
-});
+	// Setup bound, not behavior: the default 10 s hook timeout fails under a loaded suite.
+}, 60_000);
 
 beforeEach(() => {
 	mockRepos.current = { "/repo": {}, "/repo/nested": {} };

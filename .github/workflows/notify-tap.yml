@@ -3,11 +3,22 @@ name: Notify homebrew tap
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        required: true
+        type: string
+      prerelease:
+        required: true
+        type: boolean
+    secrets:
+      HOMEBREW_TAP_TOKEN:
+        required: true
 
 jobs:
   notify:
     # The tap formula tracks stable releases; a beta or nightly must not replace it.
-    if: ${{ !github.event.release.prerelease }}
+    if: ${{ !inputs.prerelease && !github.event.release.prerelease && startsWith(inputs.tag || github.event.release.tag_name, 'v') }}
     timeout-minutes: 10
     runs-on: ubuntu-latest
     steps:
@@ -17,4 +28,4 @@ jobs:
           token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
           repository: sstraus/homebrew-tap
           event-type: release-published
-          client-payload: '{"repo": "tuicommander", "version": "${{ github.event.release.tag_name }}"}'
+          client-payload: '{"repo": "tuicommander", "version": "${{ inputs.tag || github.event.release.tag_name }}"}'

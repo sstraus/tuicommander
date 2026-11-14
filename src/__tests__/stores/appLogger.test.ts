@@ -576,6 +576,19 @@ describe("appLogger", () => {
 		});
 	});
 
+	// Catches: a coalesced warning keeps the first payload and drops the newer geometry/error data.
+	it("dedup keeps the data of the latest repeat", () => {
+		testInScope(() => {
+			appLogger.warn("terminal", "resize mismatch", { rows: 24, cols: 80 });
+			appLogger.warn("terminal", "resize mismatch", { rows: 41, cols: 110 });
+
+			const entries = appLogger.getEntries();
+			expect(entries).toHaveLength(1);
+			expect(entries[0].repeatCount).toBe(1);
+			expect(entries[0].data).toEqual({ rows: 41, cols: 110 });
+		});
+	});
+
 	it("dedup does not re-push to Rust backend", async () => {
 		testInScope(() => {
 			mockRpc.mockClear();

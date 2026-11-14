@@ -1,0 +1,63 @@
+{
+  "source": "github",
+  "kind": "issue",
+  "resource": "github:octo-org/example/issue/1347",
+  "generation": "1",
+  "event": "opened",
+  "delivery_id": "documented-fixture-001",
+  "schema": {
+    "fields": {
+      "repository": {
+        "value_type": "string",
+        "required": true,
+        "default": null
+      },
+      "number": {
+        "value_type": "integer",
+        "required": true,
+        "default": null
+      },
+      "action": {
+        "value_type": "string",
+        "required": true,
+        "default": null
+      },
+      "actor": {
+        "value_type": "string",
+        "required": false,
+        "default": null
+      },
+      "title": {
+        "value_type": "string",
+        "required": true,
+        "default": null
+      },
+      "material_digest": {
+        "value_type": "string",
+        "required": true,
+        "default": null
+      },
+      "labels": {
+        "value_type": "array",
+        "required": true,
+        "default": null
+      },
+      "label": {
+        "value_type": "string",
+        "required": false,
+        "default": null
+      }
+    }
+  },
+  "values": {
+    "repository": "octo-org/example",
+    "number": 1347,
+    "action": "opened",
+    "title": "Found a bug",
+    "material_digest": "c7dd41870de0897804a6dbb8caeadfc86fcebb9f0c28dcc9ddfcf766e0ee68f9",
+    "labels": [
+      "bug"
+    ]
+  },
+  "actor": null
+}

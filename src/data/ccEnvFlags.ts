@@ -1,8 +1,8 @@
 /**
  * Known Claude Code environment flags and parameters.
  *
- * Last updated: 2026-04-02
- * Sources: Official Anthropic docs, cc-changes.md, GitHub issues, community gists
+ * Last updated: 2026-11-13 (Claude Code 2.1.319 and 2.1.321 flags)
+ * Sources: Official Anthropic docs, Claude Code CHANGELOG.md, cc-changes.md, GitHub issues, community gists
  * See ideas/cc-env-flags.md for the full catalog (109 vars).
  */
 
@@ -120,6 +120,12 @@ export const CC_ENV_FLAGS: EnvFlagDef[] = [
 	{
 		key: "CLAUDE_CODE_SUBPROCESS_ENV_SCRUB",
 		description: "Scrub credentials from subprocesses",
+		type: "boolean",
+		category: "privacy",
+	},
+	{
+		key: "CLAUDE_CODE_DISABLE_FEATURE_FLAGS",
+		description: "Stop feature-flag fetching without turning off telemetry; every flag uses its built-in default",
 		type: "boolean",
 		category: "privacy",
 	},
@@ -287,6 +293,24 @@ export const CC_ENV_FLAGS: EnvFlagDef[] = [
 		type: "boolean",
 		category: "tasks",
 	},
+	{
+		key: "CLAUDE_CODE_DISABLE_MCP_TASKS",
+		description: "Turn off MCP tasks (tool calls that the MCP server runs as a task)",
+		type: "boolean",
+		category: "tasks",
+	},
+	{
+		key: "CLAUDE_CODE_DISABLE_MCP_TASK_BACKGROUND",
+		description: "Wait for an MCP task inside its tool call instead of moving it to the background at once",
+		type: "boolean",
+		category: "tasks",
+	},
+	{
+		key: "CLAUDE_CODE_LOOP_KEEPALIVE",
+		description: "Keep self-paced /loop alive with a fallback wakeup when a turn ends without rescheduling",
+		type: "boolean",
+		category: "tasks",
+	},
 
 	// ---------------------------------------------------------------------------
 	// Plugins
@@ -301,6 +325,13 @@ export const CC_ENV_FLAGS: EnvFlagDef[] = [
 		key: "FORCE_AUTOUPDATE_PLUGINS",
 		description: "Force plugin auto-updates even if main updater disabled",
 		type: "boolean",
+		category: "plugins",
+	},
+	{
+		key: "CLAUDE_CODE_PLUGIN_DIR_WATCH",
+		description: "0 stops headless sessions from reloading .claude/skills when their files change",
+		type: "enum",
+		options: ["0"],
 		category: "plugins",
 	},
 
@@ -386,6 +417,14 @@ export const CC_ENV_FLAGS: EnvFlagDef[] = [
 		key: "FALLBACK_FOR_ALL_PRIMARY_MODELS",
 		description: "Trigger fallback for all primary models on overload",
 		type: "boolean",
+		category: "network",
+	},
+	{
+		key: "CLAUDE_CODE_AUTO_MODE_SERVER",
+		description:
+			"Auto mode server-side check: 1 turns it on behind an LLM gateway; 0 keeps the built-in classifier when telemetry or feature flags are off",
+		type: "enum",
+		options: ["0", "1"],
 		category: "network",
 	},
 	{

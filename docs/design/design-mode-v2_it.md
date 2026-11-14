@@ -1,17 +1,17 @@
 # Design Mode v2 — sintesi in italiano
 
-Decisioni di Boss del 2026-10-08 integrate (§13). Solo piano, nessun codice modificato. Documento completo (inglese): `design-mode-v2.md`. Il brief indicava `plans/`, ma `plans/` è un symlink gitignorato verso il checkout principale: il piano sta in `docs/design/`.
+Proposta di design. Documento completo (inglese): [Design Mode v2](design-mode-v2.md).
 
 ## 1. Problema
 
 - L'ispezione Overlay di Chrome è sempre attiva e si mangia ogni click: la pagina non è navigabile.
 - Parte da qualsiasi tab terminale; il grab finisce nella riga dell'agente senza revisione, commento per pick o scelta dell'agente.
 - Nessun ciclo di ritorno dopo la modifica dell'agente; serve un URL (Repo Settings) altrimenti `about:blank`.
-- **Il banner "controllato da software di test automatico" è colpa nostra:** `browser.rs:104-110` lancia tramite `chromey` senza `disable_default_args()`, e chromey aggiunge `--enable-automation` e `--disable-extensions` (`chromey-2.58.2/src/browser.rs:1578-1608`). Su questo Mac c'è solo Edge 154, niente Google Chrome. **Aggiornamento (story 1593-987f, merge `2aabe9a9c`):** il lancio v1 non passa più `--enable-automation` né `--disable-extensions`; era un prerequisito per caricare l'estensione. Il lancio v1 usa ancora CDP.
+- **Il banner "controllato da software di test automatico" è colpa nostra:** `browser.rs:104-110` lancia tramite `chromey` senza `disable_default_args()`, e chromey aggiunge `--enable-automation` e `--disable-extensions` (`chromey-2.58.2/src/browser.rs:1578-1608`). **Aggiornamento:** il lancio v1 non passa più `--enable-automation` né `--disable-extensions`; era un prerequisito per caricare l'estensione. Il lancio v1 usa ancora CDP.
 
 ## 2. Cosa abbiamo già deciso (non si ripropone)
 
-Screencast CDP: scartato (rifare frame e input, jank, nessun frame con tab nascosta, story 002-993b). Child webview Tauri: scartato (tre motori, nessuno screenshot WebKit, vista nativa sopra l'HTML; ricontrollato nei sorgenti tauri 2.11.5, `add_child` richiede `unstable`). Port di un guest overlay: scartato. Iframe/proxy: non può ispezionare cross-origin.
+Screencast CDP: scartato (rifare frame e input, jank, nessun frame con tab nascosta). Child webview Tauri: scartato (tre motori, nessuno screenshot WebKit, vista nativa sopra l'HTML; ricontrollato nei sorgenti tauri 2.11.5, `add_child` richiede `unstable`). Port di un guest overlay: scartato. Iframe/proxy: non può ispezionare cross-origin.
 
 ## 3. Evidenze dall'analisi di un'implementazione esistente
 
@@ -39,7 +39,7 @@ Fatti verificati online: Chrome 137+ non onora più `--load-extension` (resta su
 
 - Content script in MAIN world, `all_frames`, `document_start`, solo host loopback di default: overlay in Shadow DOM chiuso, `extract.js` esistente, sonda HMR (wrapper di `WebSocket`), screenshot con `captureVisibleTab` + crop.
 - Side panel = sidebar: bottoni Pick / Multi-pick / Stop, card per pick (dati, commento, elimina), selettore agente, Send.
-- Canale con TUIC: **native messaging** (deciso da Boss, Q2: nessuna porta, ID estensione fissato in `allowed_origins`, host che inoltra a `mcp.sock`, adattatore con framing a lunghezza, vedi §14). Alternativa di riserva: HTTP loopback + token (nuovo listener, nuovo confine di fiducia). TUIC oggi non ha listener TCP sempre attivo.
+- Canale con TUIC: **native messaging** (nessuna porta, ID estensione fissato in `allowed_origins`, host che inoltra a `mcp.sock`, adattatore con framing a lunghezza, vedi §14). Alternativa di riserva: HTTP loopback + token (nuovo listener, nuovo confine di fiducia). TUIC oggi non ha listener TCP sempre attivo.
 
 ## 6. Ingresso e caso senza URL
 
@@ -53,7 +53,7 @@ Stessa regola agenti di Markdown (`reviewAgents`: stesso repo, primo come defaul
 
 ## 8. Reload
 
-TUIC calcola il busy→idle dopo l'invio e lo notifica all'estensione. Dopo la revisione Codex: nessun segnale basato su `enqueue`; si correla id comando → consegna → epoca turno → completamento confermato, ignorando idle a timer e `awaiting_input` di Codex pronto. Reload normale (non bypassCache) che con un form sporco non ricarica e mostra un avviso con pulsante **Reload** (deciso Q4); HMR non prova un aggiornamento riuscito. Coalescenza, toggle auto-reload, pulsante manuale.
+TUIC calcola il busy→idle dopo l'invio e lo notifica all'estensione. Nessun segnale basato su `enqueue`; si correla id comando → consegna → epoca turno → completamento confermato, ignorando idle a timer e `awaiting_input` di Codex pronto. Reload normale (non bypassCache) che con un form sporco non ricarica e mostra un avviso con pulsante **Reload** (deciso Q4); HMR non prova un aggiornamento riuscito. Coalescenza, toggle auto-reload, pulsante manuale.
 
 ## 9. Lancio, installazione, banner
 
@@ -69,11 +69,11 @@ La pagina è input non fidato. Le pagine non parlano mai con TUIC; solo l'estens
 
 ## 12. Slice e validazione
 
-S0 spike (Edge 154: load-extension, sidePanel, NativeMessagingHosts in profilo custom, vita del service worker, pick in iframe cross-origin, captureVisibleTab, HMR); S1 estensione + pick + card; S2 host native messaging + installazione; S3 agent picker + invio; S4 scoperta dev server (fixture `lsof` registrate su questo Mac); S5 ciclo reload (macchina a stati con eventi finti); S6 rimozione ingresso terminale e backend CDP (solo dopo che S0 prova le source map senza CDP; serve permesso esplicito di Boss); S7 distribuzione store non in elenco dopo il pilota.
+S0 spike (Edge 154: load-extension, sidePanel, NativeMessagingHosts in profilo custom, vita del service worker, pick in iframe cross-origin, captureVisibleTab, HMR); S1 estensione + pick + card; S2 host native messaging + installazione; S3 agent picker + invio; S4 scoperta dev server (fixture `lsof` registrate su macOS); S5 ciclo reload (macchina a stati con eventi finti); S6 rimozione ingresso terminale e backend CDP (solo dopo che S0 prova le source map senza CDP); S7 distribuzione store non in elenco dopo il pilota.
 
-## 13. Decisioni (Boss, 2026-10-08)
+## 13. Decisioni di design
 
-**Decise da Boss:**
+**Interazione e trasporto:**
 
 - Q2 Canale: native messaging (il browser avvia un piccolo programma TUIC che inoltra i messaggi; nessuna porta di rete).
 - Q3 Invio: in coda con idle gate, come le note di review di Markdown (subito se l'agente è idle, altrimenti a fine turno).
@@ -81,21 +81,19 @@ S0 spike (Edge 154: load-extension, sidePanel, NativeMessagingHosts in profilo c
 - Q8 Repo remoti/SSH: slice successiva, non in v2.0.
 - Q9 Browser: sceglie l'utente. Predefinito: finestra Edge/Chrome con profilo proprio per repository. Opzione: l'Edge/Chrome di tutti i giorni con l'estensione. Niente Safari.
 
-**Decise dal coordinatore:**
+**Migrazione e selezione URL:**
 
-- Q1 + Q5: si costruisce l'estensione. Il codice CDP (`browser.rs`, parti CDP di `manager.rs`) resta finché lo spike S0 non prova le source map senza CDP; la rimozione in S6 richiede il permesso di Boss.
+- Q1 + Q5: si costruisce l'estensione. Il codice CDP (`browser.rs`, parti CDP di `manager.rs`) resta finché lo spike S0 non prova le source map senza CDP; la rimozione in S6 segue la verifica delle source map.
 - Q4: con un form sporco niente reload, avviso con pulsante **Reload**.
 - Q7: prima l'URL configurato; accanto, etichettato, un URL PTY fresco.
 
-**Domande ancora aperte:** nessuna. Se S0 smentisce un'ipotesi (per esempio il comportamento di Edge 154), il piano torna a Boss.
+S0 può cambiare una scelta di design se il comportamento del browser smentisce un'ipotesi.
 
-## 14. Revisione Codex
+## 14. Rischi di design
 
-Revisore: Codex (astra), sola lettura, HEAD e25adff0e. Verdetto: X-A con native messaging, **condizionato a uno S0 più forte**; non cancellare ancora il CDP. Rischio principale: reload della pagina sbagliata / perdita dati. Nessun disaccordo: ho accettato tutti i punti.
-
-1. **Ranking rigido: d'accordo.** URL esplicito etichettato; URL PTY fresco e validato preferito alle porte nude se Vite incrementa; dedup; worktree e app monorepo distinti; Docker non prova l'identità del repo; includere listener wildcard/IPv6; `lsof` limitato e in cache con costo misurato su macOS; mai aprire in automatico un candidato ambiguo.
-2. **MAIN da solo non basta: d'accordo.** Picker/bridge in ISOLATED world più minimi hint MAIN (CSP della pagina, API sostituibili, origini per `all_frames`). Verificato `manager.rs:481`: le source map oggi arrivano da `Debugger.scriptParsed` (CDP); senza CDP la scoperta è più debole → test in S0. Il nonce MAIN non è autenticazione.
-3. **Native messaging: d'accordo.** Il bridge esistente non è riusabile così com'è (framing a riga, rifiuta argomenti: `tuic-bridge/src/main.rs:902,986`; verificato): serve un adattatore con framing a lunghezza e handshake esplicito dell'istanza.
-4. **Install: d'accordo.** Unpacked per il pilota (una volta per profilo), poi store non in elenco.
-5. **Euristica di reload sbagliata: d'accordo.** Correlare id comando → consegna reale → epoca del turno → completamento confermato; `awaiting_input` è sempre vero per Codex pronto (`pty.rs:8536-8542`, verificato); idle a timer è euristico; traffico HMR ≠ aggiornamento riuscito; reload normale che preserva i form sporchi.
+1. **Ranking rigido.** URL esplicito etichettato; URL PTY fresco e validato preferito alle porte nude se Vite incrementa; dedup; worktree e app monorepo distinti; Docker non prova l'identità del repo; includere listener wildcard/IPv6; `lsof` limitato e in cache con costo misurato su macOS; mai aprire in automatico un candidato ambiguo.
+2. **MAIN da solo non basta.** Picker/bridge in ISOLATED world più minimi hint MAIN (CSP della pagina, API sostituibili, origini per `all_frames`). Verificato `manager.rs:481`: le source map oggi arrivano da `Debugger.scriptParsed` (CDP); senza CDP la scoperta è più debole → test in S0. Il nonce MAIN non è autenticazione.
+3. **Native messaging.** Il bridge esistente non è riusabile così com'è (framing a riga, rifiuta argomenti: `tuic-bridge/src/main.rs:902,986`; verificato): serve un adattatore con framing a lunghezza e handshake esplicito dell'istanza.
+4. **Install.** Unpacked per il pilota (una volta per profilo), poi store non in elenco.
+5. **Euristica di reload sbagliata.** Correlare id comando → consegna reale → epoca del turno → completamento confermato; `awaiting_input` è sempre vero per Codex pronto (`pty.rs:8536-8542`, verificato); idle a timer è euristico; traffico HMR ≠ aggiornamento riuscito; reload normale che preserva i form sporchi.
 6. Mancanze accettate: `captureVisibleTab` richiede `activeTab`/all_urls, race tab/documento, trasformazioni di coordinate dei frame, aggiornamenti dell'estensione, sostituzione delle source map.

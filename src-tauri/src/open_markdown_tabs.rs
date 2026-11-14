@@ -83,11 +83,6 @@ fn select_tabs(
                 return None;
             }
             let root = tab.fs_root.as_deref().unwrap_or(&tab.repo_path);
-            if !roots.iter().any(|(repo, allowed)| {
-                normalized(repo) == normalized(owner) && normalized(root) == normalized(allowed)
-            }) {
-                return None;
-            }
             let file = tab.file_path.replace('\\', "/");
             if file.contains('\0') || file.split('/').any(|part| part == "..") {
                 return None;
@@ -97,20 +92,31 @@ fn select_tabs(
             } else {
                 format!("{}/{}", root.replace('\\', "/").trim_end_matches('/'), file)
             };
-            if !within(&absolute, root) {
+            if !absolute.to_lowercase().ends_with(".md") {
                 return None;
             }
-            let relative =
-                absolute.get(root.replace('\\', "/").trim_end_matches('/').len() + 1..)?;
-            if !relative.to_lowercase().ends_with(".md") {
-                return None;
-            }
+            let in_registered_root = within(&absolute, root)
+                && roots.iter().any(|(repo, allowed)| {
+                    normalized(repo) == normalized(owner) && normalized(root) == normalized(allowed)
+                });
+            // A file outside every registered root is addressed by its own directory: the phone
+            // opens an absolute path there through its FilesScreen fallback.
+            let (root, relative) = if in_registered_root {
+                let prefix_len = root.replace('\\', "/").trim_end_matches('/').len();
+                (root.to_owned(), absolute.get(prefix_len + 1..)?.to_owned())
+            } else {
+                let (dir, name) = absolute.rsplit_once('/')?;
+                (
+                    if dir.is_empty() { "/" } else { dir }.to_owned(),
+                    name.to_owned(),
+                )
+            };
             Some(OpenMarkdownTab {
                 id: tab.id.clone(),
                 title: relative.rsplit('/').next()?.to_owned(),
-                relative_path: relative.to_owned(),
+                relative_path: relative,
                 absolute_path: absolute.clone(),
-                fs_root: root.to_owned(),
+                fs_root: root,
                 opener_tuic_session: tab.opener_tuic_session.clone(),
             })
         })

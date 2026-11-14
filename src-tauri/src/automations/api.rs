@@ -51,10 +51,6 @@ pub(crate) enum AutomationAction {
     RunNow {
         id: String,
     },
-    TriageDecision {
-        id: String,
-        decision: super::triage::TriageDecision,
-    },
     Run {
         id: String,
     },
@@ -125,6 +121,17 @@ pub(crate) async fn execute_as(
     state: Arc<AppState>,
     caller: Caller,
 ) -> Result<Value, String> {
+    let reply = execute_action(input, state, caller).await?;
+    // Whether an automation exists decides if MCP lists `automations`.
+    crate::mcp_http::tool_usage::note_definitions_changed();
+    Ok(reply)
+}
+
+async fn execute_action(
+    input: Value,
+    state: Arc<AppState>,
+    caller: Caller,
+) -> Result<Value, String> {
     let mut action = parse(input)?;
     caller.creator(&action)?;
     if let AutomationAction::Create {
@@ -136,26 +143,6 @@ pub(crate) async fn execute_as(
     {
         super::create::assign_retry_id(definition, creator)?;
         *idempotent = true;
-    }
-    if let AutomationAction::TriageDecision { id, decision } = action {
-        let Caller::Agent(Some(peer)) = caller else {
-            return Err("Triage decision requires a bound agent caller".into());
-        };
-        let session = state
-            .live_pty_for_peer(&peer)
-            .ok_or("Triage caller has no live managed PTY")?;
-        let store = state
-            .automation_runtime
-            .notification_store()
-            .ok_or("Automation executor unavailable")?;
-        let run = tokio::task::spawn_blocking(move || {
-            store.record_triage_decision(&id, &session, decision, Utc::now().timestamp_millis())
-        })
-        .await
-        .map_err(|error| format!("Triage decision task: {error}"))??;
-        use super::completion::CompletionEffects;
-        super::completion::NativeCompletion(&state).publish(&run);
-        return value(run);
     }
     if let AutomationAction::RunNow { id } = action {
         return value(AutomationRuntime::run_now(&state, &id).await?);
@@ -268,10 +255,9 @@ fn execute_stored_configured(
             let mut items = Vec::new();
             let config = definitions.load()?;
             for definition in &config.definitions {
-                let review_only = config.review_only(&definition.id);
                 let cursor = cursor(runs, &definition.id)?;
                 let schedule = definition.schedule()?;
-                let next = if definition.enabled && !review_only && !schedule.is_completed(cursor) {
+                let next = if definition.enabled && !schedule.is_completed(cursor) {
                     schedule.next_after(now.max(cursor.unwrap_or(now)))?
                 } else {
                     None
@@ -280,7 +266,7 @@ fn execute_stored_configured(
                     .history(Some(&definition.id), 1, 0)?
                     .first()
                     .map(|run| run.status);
-                let profile_error = profiles.filter(|_| !review_only).and_then(|profiles| {
+                let profile_error = profiles.and_then(|profiles| {
                     profiles
                         .require_named_run_config(&definition.run_config)
                         .err()
@@ -369,11 +355,18 @@ fn execute_stored_configured(
             offset,
             group_failures,
         } => {
-            if group_failures {
-                value(runs.grouped_history(id.as_deref(), limit, offset)?)
+            let mut listed = if group_failures {
+                value(runs.grouped_history(id.as_deref(), limit, offset)?)?
             } else {
-                value(runs.history(id.as_deref(), limit, offset)?)
+                value(runs.history(id.as_deref(), limit, offset)?)?
+            };
+            // Full output only through `run`; a page of six runs once weighed 1.1 MB.
+            for run in listed.as_array_mut().into_iter().flatten() {
+                for stream in ["stdout", "stderr"] {
+                    excerpt(&mut run[stream]);
+                }
             }
+            Ok(listed)
         }
         AutomationAction::Summary { window } => {
             value(runs.summary(window, now.timestamp_millis())?)
@@ -405,9 +398,6 @@ fn execute_stored_configured(
             Err("Worktree cleanup requires local session state".into())
         }
         AutomationAction::RunNow { .. } => Err("Run Now requires the runtime owner".into()),
-        AutomationAction::TriageDecision { .. } => {
-            Err("Triage decision requires the bound runtime owner".into())
-        }
     }
 }
 fn create_reply(saved: AutomationDefinition, now: DateTime<Utc>) -> Result<Value, String> {
@@ -429,6 +419,22 @@ fn cursor(runs: &RunStore, id: &str) -> Result<Option<DateTime<Utc>>, String> {
         })
         .transpose()
 }
+/// Keep the tail of a saved output: the final report and error sit at the end.
+fn excerpt(output: &mut Value) {
+    let Some(text) = output["text"].as_str() else {
+        return;
+    };
+    if text.len() <= LIST_OUTPUT_EXCERPT {
+        return;
+    }
+    let mut start = text.len() - LIST_OUTPUT_EXCERPT;
+    while !text.is_char_boundary(start) {
+        start += 1;
+    }
+    output["text"] = text[start..].into();
+    output["truncated"] = true.into();
+}
+const LIST_OUTPUT_EXCERPT: usize = 2048;
 fn value(input: impl serde::Serialize) -> Result<Value, String> {
     serde_json::to_value(input).map_err(|error| error.to_string())
 }

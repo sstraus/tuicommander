@@ -12,6 +12,21 @@ const LEGACY_SIDEBAR_VISIBLE_KEY = "tui-commander-sidebar-visible";
 const LEGACY_SIDEBAR_WIDTH_KEY = "tui-commander-sidebar-width";
 const EDITOR_WRAP_KEY = "tui-commander-editor-wrap";
 
+function agentLaunchCounts(repoPath: string, branchName?: string): Record<string, number> {
+	try {
+		const saved = JSON.parse(localStorage.getItem(agentLaunchKey(repoPath, branchName)) ?? "{}");
+		return Object.fromEntries(
+			Object.entries(saved).filter((entry): entry is [string, number] => typeof entry[1] === "number" && entry[1] > 0),
+		);
+	} catch {
+		return {};
+	}
+}
+
+function agentLaunchKey(repoPath: string, branchName?: string): string {
+	return `tui-commander-agent-launches:${JSON.stringify([repoPath, branchName ?? null])}`;
+}
+
 function loadEditorWrapPrefs(): { text: boolean; code: boolean } {
 	try {
 		const saved: unknown = JSON.parse(localStorage.getItem(EDITOR_WRAP_KEY) ?? "null");
@@ -61,10 +76,14 @@ interface UIStoreState {
 	 *  toolbar filter icon next to the sidebar collapse button. */
 	repoFilterActiveOnly: boolean;
 
+	/** H view: when true the sidebar keeps only branches with a live harness
+	 *  session (and their repositories and groups). Derived from the saved mode. */
+	repoFilterHarnessOnly: boolean;
+
 	// Sidebar width
 	sidebarWidth: number;
 
-	/** Sidebar row density: auto (rich for a short list or a coarse pointer), compact or rich (forced). Persisted. */
+	/** Sidebar layout: rich, compact or harness-only with rich rows. Persisted. */
 	sidebarDensityMode: SidebarDensityMode;
 
 	// Panel visibility
@@ -136,8 +155,11 @@ function createUIStore() {
 		sidebarVisible: true,
 		focusMode: false,
 		repoFilterActiveOnly: false,
+		get repoFilterHarnessOnly() {
+			return this.sidebarDensityMode === "harness";
+		},
 		sidebarWidth: SIDEBAR_DEFAULT_WIDTH,
-		sidebarDensityMode: "auto" as SidebarDensityMode,
+		sidebarDensityMode: "rich" as SidebarDensityMode,
 		markdownPanelVisible: false,
 		ideasPanelVisible: false,
 		fileBrowserPanelVisible: false,
@@ -344,7 +366,9 @@ function createUIStore() {
 
 				const loaded = await invoke<UIPrefs>("load_ui_prefs");
 				uiPrefsWriter.loaded(loaded ?? {});
-				applyPrefs(loaded);
+				// H depends on live harnesses, which are not restored at startup.
+				// Only launch resets it; a runtime preferences sync keeps the user's H.
+				applyPrefs(loaded?.sidebar_density === "harness" ? { ...loaded, sidebar_density: "rich" } : loaded);
 			} catch (err) {
 				appLogger.debug("store", "Failed to hydrate UI prefs", err);
 			}
@@ -538,6 +562,13 @@ function createUIStore() {
 			setState("repoFilterActiveOnly", active);
 		},
 
+		setRepoFilterHarnessOnly(active: boolean): void {
+			if (active || state.sidebarDensityMode === "harness") {
+				setState("sidebarDensityMode", active ? "harness" : "rich");
+				saveUIPrefs();
+			}
+		},
+
 		setSidebarVisible(visible: boolean): void {
 			setState("sidebarVisible", visible);
 			saveUIPrefs();
@@ -584,6 +615,22 @@ function createUIStore() {
 	return {
 		state,
 		...actions,
+		recordAgentLaunch(repoPath: string, branchName: string, key: string): void {
+			for (const branch of [undefined, branchName]) {
+				const counts = agentLaunchCounts(repoPath, branch);
+				counts[key] = (counts[key] ?? 0) + 1;
+				try {
+					localStorage.setItem(agentLaunchKey(repoPath, branch), JSON.stringify(counts));
+				} catch (err) {
+					appLogger.warn("store", "Failed to save agent launch usage", err);
+				}
+			}
+		},
+		rankAgentLaunches<T extends { key: string }>(repoPath: string, branchName: string, entries: T[]): T[] {
+			const branch = agentLaunchCounts(repoPath, branchName);
+			const counts = Object.keys(branch).length ? branch : agentLaunchCounts(repoPath);
+			return entries.toSorted((a, b) => (counts[b.key] ?? 0) - (counts[a.key] ?? 0));
+		},
 		/** Write a pending debounced save now — the app is going away. */
 		flushSave(): void {
 			if (!saveTimer) return;

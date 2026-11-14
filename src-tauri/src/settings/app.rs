@@ -107,6 +107,17 @@ impl Store for AppSettingsStore {
         {
             return Err(Error::new("app", "out_of_range"));
         }
+        if latest.pointer("/services/push/added_providers")
+            != value.pointer("/services/push/added_providers")
+            && next
+                .services
+                .push
+                .added_providers
+                .iter()
+                .any(|entry| crate::push::provider_host(entry).is_none())
+        {
+            return Err(Error::new("app", "out_of_range"));
+        }
         Ok(())
     }
 
@@ -122,8 +133,10 @@ impl Store for AppSettingsStore {
         let latest = self.latest(&file)?;
         let json = serde_json::to_value(&latest).map_err(|_| Error::new("app", "store_failed"))?;
         let Prepared { value, mut reply } = prepare(&json)?;
-        let next: AppConfig =
+        let mut next: AppConfig =
             serde_json::from_value(value).map_err(|_| Error::new("app", "invalid_type"))?;
+        // A written `settings` denial switches the one opt-in off; it never persists as a second gate.
+        crate::config::migrate_settings_mcp_opt_in(&mut next, false);
         let canonical =
             serde_json::to_value(&next).map_err(|_| Error::new("app", "store_failed"))?;
         reply.revision = crate::settings::transaction::revision(&canonical)?;

@@ -24,6 +24,8 @@ export interface PtyConfig {
 	cwd: string | null;
 	/** Pre-generated stable session UUID — injected as `TUIC_SESSION` env var in the PTY. */
 	tuic_session?: string | null;
+	/** True only when recovering a saved identity, not when minting one. */
+	restored?: boolean;
 	/** Extra environment variables injected into the PTY process (e.g. agent feature flags). */
 	env?: Record<string, string>;
 	/** Pre-set agent type for sessions launched from a run config. Enables intent

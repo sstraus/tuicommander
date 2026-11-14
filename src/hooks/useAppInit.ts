@@ -30,7 +30,6 @@ import { terminalsStore } from "../stores/terminals";
 import { toastsStore } from "../stores/toasts";
 import { tunnelsStore } from "../stores/tunnels";
 import { uiStore } from "../stores/ui";
-import { workflowRunSignals } from "../stores/workflowRunSignals";
 import { applyAppTheme, listenForThemeChanges, loadThemes } from "../themes";
 import { isTauri, rpc, subscribeEvents } from "../transport";
 import { getSessionConnection } from "../transportRuntime";
@@ -473,13 +472,11 @@ export async function initApp(deps: AppInitDeps) {
 		{
 			"progress-recorded": (payload) => progressStore.presentLive(payload as ProgressRecordedPayload),
 			"automation-run-changed": (payload) => presentAutomationNotice(payload),
-			"workflow-run-changed": (payload) => workflowRunSignals.accept(payload),
 		},
 		{
 			onResync: () => {
 				const project = progressStore.requestedProject();
 				if (progressStore.dialogVisible() && project) void progressStore.refreshProject(project);
-				workflowRunSignals.resync();
 			},
 		},
 	).catch((err) => appLogger.error("app", "Failed to register progress-recorded listener", err));
@@ -503,7 +500,8 @@ export async function initApp(deps: AppInitDeps) {
 	// Repo watchers are started by the Rust setup closure (instant with raw notify).
 	// No frontend invoke needed — avoids IPC contention during hydration.
 
-	listen<{ repo_path: string; branch: string }>("head-changed", (event) => {
+	listen<{ repo_path: string; branch: string; __tuic_origin?: unknown }>("head-changed", (event) => {
+		if (event.payload.__tuic_origin !== undefined) return;
 		const { repo_path, branch } = event.payload;
 		const repo = repositoriesStore.get(repo_path);
 		if (!repo) return;
@@ -859,7 +857,12 @@ export async function initApp(deps: AppInitDeps) {
 		origin_repo_path?: string;
 		opener_tuic_session?: string;
 	}>("ui-tab", (event) => {
-		const { id, title, html, pinned, url, focus, origin_repo_path, opener_tuic_session } = event.payload;
+		const { id, title, html, pinned, focus, origin_repo_path, opener_tuic_session } = event.payload;
+		// The inline file:// reader reads UTF-8 text and fails on a binary image.
+		// Route a file:// image through the tuic://open image branch instead.
+		const rawUrl = event.payload.url;
+		const url =
+			rawUrl?.startsWith("file://") && isImageFile(rawUrl) ? `tuic://open/${rawUrl.slice("file://".length)}` : rawUrl;
 
 		// Intercept tuic:// protocol URLs — handle as commands, not iframe src
 		if (url?.startsWith("tuic://")) {
@@ -872,12 +875,14 @@ export async function initApp(deps: AppInitDeps) {
 				const activeRepoPath = repositoriesStore.state.activeRepoPath;
 				const callerRepoPath = resolveRepoForCwd(origin_repo_path);
 				const fallbackRepoPath = callerRepoPath ?? activeRepoPath;
-				// Registered file ownership wins; otherwise keep the tab with the
-				// calling session's repo even when another one is visible.
+				// The calling session's repo wins: a file owned by another registered
+				// repo is opened by absolute path under the caller's repo, like a file
+				// outside every repo. Without a caller, the file's owner decides.
 				let repoPath: string | null = null;
 				let relPath = filePath;
 				if (isAbsolutePath(filePath)) {
-					repoPath = resolveRepoPathFor(filePath);
+					const owner = resolveRepoPathFor(filePath);
+					repoPath = owner && (!callerRepoPath || owner === callerRepoPath) ? owner : null;
 					if (repoPath) relPath = pathStripPrefix(filePath, repoPath)!;
 				} else {
 					repoPath = fallbackRepoPath ?? null;
@@ -890,6 +895,7 @@ export async function initApp(deps: AppInitDeps) {
 				// their repo, but move focused opens to their owning repo first.
 				const tabRepoPath = repoPath ?? (isAbsolutePath(filePath) ? fallbackRepoPath : null);
 				if (focus !== false && tabRepoPath && tabRepoPath !== activeRepoPath) {
+					terminalsStore.noteModelNavigation();
 					repositoriesStore.setActive(tabRepoPath);
 				}
 
@@ -926,11 +932,13 @@ export async function initApp(deps: AppInitDeps) {
 					}
 				} else if (cmd === "edit") {
 					const line = parseInt(parsed.searchParams.get("line") || "0", 10);
+					const col = parseInt(parsed.searchParams.get("col") || "0", 10);
 					if (repoPath) {
 						mdTabsStore.closeMcpFile(id);
 						mdTabsStore.closeUiTab(id);
 						editorTabsStore.addMcpFile(id, repoPath, relPath, line || undefined, pinned, {
 							externalEditable: false,
+							initialCol: col || undefined,
 							background,
 						});
 					} else if (isAbsolutePath(filePath)) {
@@ -938,6 +946,7 @@ export async function initApp(deps: AppInitDeps) {
 						mdTabsStore.closeUiTab(id);
 						editorTabsStore.addMcpFile(id, fallbackRepoPath ?? "", filePath, line || undefined, pinned, {
 							externalEditable: true,
+							initialCol: col || undefined,
 							background,
 						});
 					} else {

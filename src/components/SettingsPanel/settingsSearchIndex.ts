@@ -401,6 +401,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 		configKey: "app.scrollback_reflow",
 	},
 	{ tab: "keyboard-shortcuts", section: "Keyboard Shortcuts", sectionKey: "settings.keyboardShortcuts" },
+	{ tab: "keyboard-shortcuts", section: "Prompt composers" },
 	{ tab: "keyboard-shortcuts", section: "Global Hotkey", platform: "desktop" },
 	{ tab: "keyboard-shortcuts", section: "Shortcut groups" },
 	{
@@ -649,6 +650,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 	{ tab: "mcp", section: "Server connections" },
 	{ tab: "mcp", section: "TUIC Tools" },
 	{ tab: "mcp", section: "Call audit", sectionKey: "mcpAudit.title" },
+	{ tab: "mcp", section: "Usage", sectionKey: "mcpUsage.title" },
 	{ tab: "mcp", section: "Upstream MCP Servers" },
 	{ tab: "mcp", section: "Server connections", label: "Server Status", labelKey: "services.label.serverStatus" },
 	{ tab: "mcp", section: "Server connections", label: "MCP Connection", labelKey: "services.label.mcpConnection" },
@@ -661,6 +663,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 	},
 	{ tab: "mcp", section: "TUIC Tools", label: "Capabilities" },
 	{ tab: "mcp", section: "Call audit", label: "Record MCP call outcomes", labelKey: "mcpAudit.toggle" },
+	{ tab: "mcp", section: "Usage", label: "Count MCP usage", labelKey: "mcpUsage.toggle" },
 	{ tab: "mcp", section: "Upstream MCP Servers", label: "Upstreams on" },
 	{ tab: "mcp", section: "Upstream MCP Servers", label: "Authentication" },
 	{ tab: "mcp", section: "Upstream MCP Servers", label: "Timeout (s):" },
@@ -769,6 +772,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 		configKey: "app.progress_tracking",
 	},
 	{ tab: "agents", section: "Agent behavior", label: "Launch instructions" },
+	{ tab: "agents", section: "Agent behavior", label: "Workflow agent profile" },
 	{ tab: "agents", section: "ego permissions", label: "Permissions" },
 	{ tab: "agents", section: "ego permissions", label: "Filesystem sandbox" },
 	{

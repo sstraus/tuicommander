@@ -7,16 +7,21 @@ vi.mock("../../utils/openUrl", () => ({ handleOpenUrl: mockOpenUrl }));
 
 import { handleExternalLinkClick } from "../../utils/externalLinkClick";
 
-function click(href: string): MouseEvent {
+function click(href: string): { defaultPrevented: boolean } {
 	document.body.innerHTML = "";
 	const a = document.createElement("a");
 	a.setAttribute("href", href);
 	a.textContent = "x";
 	document.body.appendChild(a);
 	const event = new MouseEvent("click", { bubbles: true, cancelable: true });
+	let defaultPrevented = false;
 	a.addEventListener("click", handleExternalLinkClick);
+	a.addEventListener("click", (e) => {
+		defaultPrevented = e.defaultPrevented;
+		e.preventDefault(); // Do not navigate after testing the handler.
+	});
 	a.dispatchEvent(event);
-	return event;
+	return { defaultPrevented };
 }
 
 describe("handleExternalLinkClick round 3", () => {

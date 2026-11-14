@@ -1,0 +1,34 @@
+## 1902-7010 — ego terminal provider recovery (requires Boss restart)
+
+  terminal ego against a provider double that fails then recovers. Check the tab
+  says recovering, the status bar shows phase/attempt/next-time/countdown, and
+  the parent gets recovery entry and exit notices. Click Force retry once and
+  verify `/retry` reaches only that tab. Repeat via MCP `session force_retry`.
+  Verify explicit clear, busy/idle and shell OSC 133 A remove the recovery display.
+  Check the visual layout at narrow and normal window widths. No desktop instance
+  was launched by the implementation agent.
+
+  provider recovery and click Force retry. The draft must remain unchanged and the
+  status bar must display the refusal. Clear the draft and verify one retry submits.
+
+- [ ] Tab hints (#1951-8fac): hold Cmd alone (Ctrl on Windows/Linux) for 450 ms and check the first nine terminal-tab badges; release, another key, mouse button, or scrolling must hide them. Automated hook/TabBar coverage and worktree dark/light screenshots passed. _(HUMAN 2026-11-05: needs trusted 450 ms modifier hold. Code-verified: hooks/useQuickSwitcherVisibility.ts:16,32,36 (Meta on mac/Control otherwise, 450 ms timer, release hides); TabBar.test.tsx covers.)_
+
+- [ ] Hands-free default shortcut (#1953-3da5): with dictation enabled and a live active terminal, Cmd+Alt+V (Ctrl+Alt+V on Windows/Linux) starts the conversation and a second press stops it. Disabled dictation must stay silent. Dispatcher/store tests pass; microphone/audio confirmation needs real hardware. _(HUMAN 2026-11-05: microphone/real chord. Code: keybindingDefaults.ts:181 toggle-hands-free Cmd+Alt+V, useKeyboardShortcuts.ts:364 dispatch.)_
+
+- [ ] After a manual `make dev` restart or release rebuild, verify a hands-free Italian reply uses Edge speech on the migrated endpoint with v1 GEC without HTTP 403 (#1952-bf91). The old Rust process does not hot-reload. _(HUMAN 2026-11-05: needs live Edge endpoint+audio. Code-verified: tuic-dictation/src/speech/edge.rs:24,53 v1 Sec-MS-GEC accepted (HTTP 101 confirmed per comment), :441 GEC computation, :492 maps 401/403 to error, :519 URL.)_
+
+- [ ] #1900-5ff6: After loading the updated mobile frontend, use the iPhone PWA normally. If the grey screen returns, do not reload until the visible URL and screenshot are recorded. On the next boot, inspect backend warnings with source `app` for `Mobile previous document lifecycle trail`, and compare root count, shell geometry, visual viewport, CSS app height/top and stream phases. The trail is automatic and per-tab; storage eviction can remove it. The original grey-screen reproduction/fix and three physical app-switch cycles remain unverified. No Rust restart is needed for this frontend-only diagnostic change. _(HUMAN 2026-11-05: needs iPhone PWA grey-screen recurrence. Live: GET /logs?source=app already contains "Mobile previous document lifecycle trail" entries (emitted by mobile/resumeTrail.ts:115-121 via push_log), so diagnostic upload path works. Physical app-switch cycles unverifiable.)_
+
+- [ ] #2851-f5c1: After the next manual `make dev` restart or release rebuild, complete one AI Chat turn, start another, and use Fork conversation or `/fork`. The child must contain the previous successful turn, not streaming output, and the parent must keep running. A selected unfinished reply must be refused. On a fresh load without an observed completion, use an earlier reply or wait for completion. This Rust change does not hot-reload; no daily instance was restarted.
+
+- [ ] Escape background-completion revocation (ego #1064-1e4e): after an owner-planned host rebuild/restart and matching CLI replacement, launch a detached command, queue an explicit request, then Escape. The explicit request must remain valid. Complete a newer explicit turn, then let the old command finish: keep its log and receipt without a new automatic turn. Newly admitted work must still notify. The source includes recorded native-frame and serialized-writer regressions; targeted host Rust validation is recorded in the story worklog; no live deployment is claimed. No daily app or unrelated session was restarted.
+
+- [ ] #2856-cddc: After a manual backend restart/rebuild, start an AI Chat conversation and reopen a saved one with an empty or custom master prompt. When a diagram is useful, check that the agent can use a rendered Mermaid block. The host guidance is additive and does not change the saved user prompt or unattended tasks. Rust does not hot-reload; no running app was restarted.
+
+- [x] #2868-afd6: Session Chat answer rails stay outside bullet, ordered and nested lists. Mixed lists keep unmarked items as context, and adjacent marked paragraphs/lists have no rail gap. _(verified: production Transcript browser fixture, before/after-wide.png in ~/Gits/.tmp/results/answer-bar; every outer rail x=16, nested pre-fix item rail x=72. No daily instance or backend restarted.)_
+
+- [ ] #2872-6aff: After a manual backend restart/rebuild, open an AI Chat answer's three-dot menu near the left edge. Add and remove a heart, then send a comment. Marks must remain visible after reopening; additions/removals/comments must reach the same conversation with the exact source message ID and quote, without replacing the composer draft. During work they queue normally. With a disconnected conversation, show an error without changing marks or starting another chat. This Rust change does not hot-reload; no daily instance was restarted.
+
+- [ ] #2375-cddf: In `make agent-test` (never the daily app), on a machine where replacing `/usr/local/bin/ego` is acceptable, open Settings > General > ego and press **Install latest**. The latest `sstraus/ego` release binary for the platform (`ego-macos-arm64` on Apple silicon) must be installed executable at `/usr/local/bin/ego` (elevation prompt when the folder is not writable), the status line must show "Configured at /usr/local/bin/ego" without reopening Settings, and AI Chat must connect. A download failure must show its error under the row. This Rust change does not hot-reload; no daily instance was restarted. _(NOTE: on a root-owned `/usr/local/bin` the elevation path is refused in `make agent-test` (`require_global_cli_mutation`), so the real release install is a daily-app check; agent-test only shows "disabled in agent-test" unless the install dir is writable.)_
+
+- [ ] After a manual rebuild/restart, configure a throwaway issue-intake triage definition with `triage_executor={kind:"ego",provider_env:"OPENROUTER_API_KEY"}` and a valid ego provider. Confirm that its structured decision appears without a terminal/peer and only the host publishes the expected comment/label. Repeat with the default managed executor to confirm its attestation requirement is unchanged. Rust does not hot-reload; no daily instance was restarted (2450-6845).

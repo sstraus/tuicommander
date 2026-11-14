@@ -43,3 +43,16 @@ export function scrollbarThumb({
 	const top = historySize > 0 ? (1 - displayOffset / historySize) * range : range;
 	return { height, range, top };
 }
+
+/**
+ * Display offset that puts the thumb centre under a click at `clickY` (CSS
+ * pixels from the track top), clamped to the track ends. The inverse of the
+ * `top` formula above, so the click and the paint use the same travel range:
+ * mapping the click over the whole track instead put the thumb up to its own
+ * height away from the pointer (#2776-d2f2).
+ */
+export function trackClickOffset(thumb: ScrollbarThumb, clickY: number, historySize: number): number {
+	if (thumb.range <= 0) return clickY < thumb.height / 2 ? historySize : 0;
+	const top = Math.max(0, Math.min(thumb.range, clickY - thumb.height / 2));
+	return Math.round((1 - top / thumb.range) * historySize);
+}

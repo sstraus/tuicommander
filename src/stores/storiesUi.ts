@@ -1,14 +1,59 @@
+import { emitTo } from "@tauri-apps/api/event";
 import { batch, createSignal } from "solid-js";
 import { togglePanel } from "../panelRouter";
 import type { StoryType, StoryVisibility } from "../types/stories.gen";
+import { appLogger } from "./appLogger";
 import { uiStore } from "./ui";
+
+/** Window event that hands a target to the detached Plans and Stories window. */
+export const STORIES_REVEAL_EVENT = "stories-reveal";
 
 const [visible, setVisible] = createSignal(false);
 const [project, setProject] = createSignal<string | null>(null);
 
-const [visibility, setVisibility] = createSignal<StoryVisibility>("all");
+const VISIBILITY_KEY = "tuic.stories.visibility";
+const VISIBILITIES: readonly string[] = ["all", "open", "closed", "qa"];
+
+/** Hide Done by default; the last choice survives reopen and restart. */
+function loadVisibility(): StoryVisibility {
+	try {
+		const saved = localStorage.getItem(VISIBILITY_KEY);
+		if (saved && VISIBILITIES.includes(saved)) return saved as StoryVisibility;
+	} catch {
+		// Storage unavailable: fall back to the default.
+	}
+	return "open";
+}
+
+const [visibility, setVisibilitySignal] = createSignal<StoryVisibility>(loadVisibility());
+const setVisibility = (next: StoryVisibility): void => {
+	setVisibilitySignal(next);
+	try {
+		localStorage.setItem(VISIBILITY_KEY, next);
+	} catch {
+		// Not persisted; the in-memory choice still applies.
+	}
+};
 const [storyType, setStoryType] = createSignal<StoryType | "all" | "untyped">("all");
 const [view, setView] = createSignal<"list" | "kanban">("list");
+
+/** Where Plans and Stories should land: a plan and optionally one of its stories. */
+export interface StoriesTarget {
+	project: string;
+	planId: string | null;
+	storyId: string | null;
+}
+const [target, setTarget] = createSignal<StoriesTarget | null>(null);
+
+function open(path: string | null | undefined): void {
+	if (!path) return;
+	if (uiStore.isDetached("stories")) {
+		togglePanel("stories");
+		return;
+	}
+	setProject(path);
+	setVisible(true);
+}
 
 export const storiesUi = {
 	controls: () => ({ visibility: visibility(), storyType: storyType(), view: view() }),
@@ -46,14 +91,27 @@ export const storiesUi = {
 	setView,
 	visible,
 	project,
-	open(path: string | null | undefined): void {
-		if (!path) return;
+	open,
+	target,
+	/** Open the project and select the target's story. */
+	reveal(next: StoriesTarget): void {
 		if (uiStore.isDetached("stories")) {
+			// The detached window owns its own store: hand it the target, never leave it pending here.
+			emitTo("panel-stories", STORIES_REVEAL_EVENT, next).catch((error: unknown) =>
+				appLogger.warn("panel", "Failed to reveal in detached Plans and Stories", { error: String(error) }),
+			);
 			togglePanel("stories");
 			return;
 		}
-		setProject(path);
-		setVisible(true);
+		setTarget(next);
+		open(next.project);
+	},
+	/** Consume the pending target when it belongs to this project. */
+	takeTarget(path: string): StoriesTarget | null {
+		const pending = target();
+		if (pending?.project !== path) return null;
+		setTarget(null);
+		return pending;
 	},
 	close(): void {
 		setVisible(false);

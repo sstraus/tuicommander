@@ -30,3 +30,22 @@ not evidence that the old serial engine had broken Join or publication behavior.
 The current tests replay these unchanged version-2 streams and separately
 exercise new version-3 starts. These are replay/migration-boundary fixtures;
 WF01 performs no active-run migration and no operational cutover.
+
+
+## Documented list-response projection
+
+`github-labels-documented-projection.json` records the `id` and `name` fields
+from the official HTTP 200 example under **List labels for a repository**:
+<https://docs.github.com/en/rest/issues/labels?apiVersion=2022-11-28#list-labels-for-a-repository>.
+The source was read on 2026-11-10. Other response fields are intentionally omitted;
+the metadata identifies this field projection, not a complete wire response.
+The documentation declares `page` and `per_page` for the list endpoint.
+
+This is an official documentation example, not a live repository response or a
+recorded pagination exchange. A read-only public API probe returned HTTP 403;
+no credentials were read and no external writes were attempted. The data-contract
+demonstration validates this API-shaped output, a pinned structured identity
+subflow, bounded source-order aggregation and a typed condition using production
+publication/data functions. It does not execute HTTP, fetch multiple pages or
+run a subflow scheduler. Adapter pagination/authentication/rate limits and the
+integrated live path remain required in the implementing connector stories.

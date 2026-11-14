@@ -1,0 +1,664 @@
+{
+  "provenance": "Observed neutral authoring services with internal host.increment fixture; not production native provider or external service evidence",
+  "project": "/home/rb/Gits/.tmp/r-54a9d98cs1/tuic-run.OCpOFx/.tmpD1ZH3B",
+  "catalog": {
+    "type": "catalog",
+    "value": {
+      "activities": [
+        {
+          "id": {
+            "namespace": "test",
+            "name": "increment",
+            "version": 1
+          },
+          "purpose": "Increment a typed value",
+          "handler": {
+            "name": "host.increment",
+            "version": 1
+          },
+          "target": null,
+          "config": {
+            "fields": {}
+          },
+          "inputs": {
+            "fields": {
+              "value": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              }
+            }
+          },
+          "subject": null,
+          "outputs": {
+            "fields": {
+              "next": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              },
+              "note": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "required_capabilities": [],
+          "execution_policies": [
+            "local"
+          ]
+        }
+      ],
+      "metanodes": [
+        {
+          "format_version": 11,
+          "id": "6052383d-6a7f-4387-9f26-08d34e3f6b3b",
+          "project": "/home/rb/Gits/.tmp/r-54a9d98cs1/tuic-run.OCpOFx/.tmpD1ZH3B",
+          "revision": 1,
+          "definition": {
+            "control": {
+              "nodes": {
+                "end": {
+                  "type": "end",
+                  "outcome": "done"
+                },
+                "start": {
+                  "type": "start"
+                },
+                "wait": {
+                  "type": "wait",
+                  "duration_ms": 2
+                },
+                "work": {
+                  "type": "activity",
+                  "activity": 0
+                }
+              },
+              "edges": {
+                "start": {
+                  "next": "work"
+                },
+                "wait": {
+                  "next": "end"
+                },
+                "work": {
+                  "ok": "wait"
+                }
+              }
+            },
+            "outputs": {
+              "fields": {
+                "answer": {
+                  "value_type": "integer",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "outcomes": [
+              "done"
+            ],
+            "inputs": {
+              "fields": {
+                "value": {
+                  "value_type": "integer",
+                  "required": true,
+                  "default": null
+                }
+              }
+            },
+            "subject": null,
+            "instances": [
+              {
+                "descriptor": {
+                  "namespace": "test",
+                  "name": "increment",
+                  "version": 1
+                },
+                "config": {},
+                "execution_policy": "local"
+              }
+            ],
+            "input_bindings": {
+              "0": {
+                "value": {
+                  "source": "workflow_input",
+                  "field": "value"
+                }
+              }
+            },
+            "conditions": {},
+            "collections": {},
+            "loops": {},
+            "forks": {},
+            "output_bindings": {
+              "answer": {
+                "source": "activity_output",
+                "activity": 0,
+                "field": "next"
+              }
+            },
+            "subflows": []
+          },
+          "pins": {
+            "pins": [
+              {
+                "id": {
+                  "namespace": "test",
+                  "name": "increment",
+                  "version": 1
+                },
+                "sha256": "d8b4100202c3f7667331ec8e85cde0d681f1b6e971580b8c649e3527aba77863"
+              }
+            ]
+          },
+          "subflow_pins": [],
+          "editor": {
+            "labels": {
+              "work": "Reviewer"
+            },
+            "presets": {}
+          }
+        }
+      ]
+    }
+  },
+  "draft": {
+    "type": "draft",
+    "value": {
+      "id": "6052383d-6a7f-4387-9f26-08d34e3f6b3b",
+      "project": "/home/rb/Gits/.tmp/r-54a9d98cs1/tuic-run.OCpOFx/.tmpD1ZH3B",
+      "name": "operation",
+      "revision": 1,
+      "latest_published_revision": 0,
+      "definition": {
+        "control": {
+          "nodes": {
+            "end": {
+              "type": "end",
+              "outcome": "done"
+            },
+            "start": {
+              "type": "start"
+            },
+            "wait": {
+              "type": "wait",
+              "duration_ms": 2
+            },
+            "work": {
+              "type": "activity",
+              "activity": 0
+            }
+          },
+          "edges": {
+            "start": {
+              "next": "work"
+            },
+            "wait": {
+              "next": "end"
+            },
+            "work": {
+              "ok": "wait"
+            }
+          }
+        },
+        "outputs": {
+          "fields": {
+            "answer": {
+              "value_type": "integer",
+              "required": true,
+              "default": null
+            }
+          }
+        },
+        "outcomes": [
+          "done"
+        ],
+        "inputs": {
+          "fields": {
+            "value": {
+              "value_type": "integer",
+              "required": true,
+              "default": null
+            }
+          }
+        },
+        "subject": null,
+        "instances": [
+          {
+            "descriptor": {
+              "namespace": "test",
+              "name": "increment",
+              "version": 1
+            },
+            "config": {},
+            "execution_policy": "local"
+          }
+        ],
+        "input_bindings": {
+          "0": {
+            "value": {
+              "source": "workflow_input",
+              "field": "value"
+            }
+          }
+        },
+        "conditions": {},
+        "collections": {},
+        "loops": {},
+        "forks": {},
+        "output_bindings": {
+          "answer": {
+            "source": "activity_output",
+            "activity": 0,
+            "field": "next"
+          }
+        },
+        "subflows": []
+      },
+      "editor": {
+        "labels": {
+          "work": "Reviewer"
+        },
+        "presets": {}
+      }
+    }
+  },
+  "updated_draft": {
+    "type": "draft",
+    "value": {
+      "id": "6052383d-6a7f-4387-9f26-08d34e3f6b3b",
+      "project": "/home/rb/Gits/.tmp/r-54a9d98cs1/tuic-run.OCpOFx/.tmpD1ZH3B",
+      "name": "operation",
+      "revision": 2,
+      "latest_published_revision": 1,
+      "definition": {
+        "control": {
+          "nodes": {
+            "end": {
+              "type": "end",
+              "outcome": "done"
+            },
+            "start": {
+              "type": "start"
+            },
+            "wait": {
+              "type": "wait",
+              "duration_ms": 2
+            },
+            "work": {
+              "type": "activity",
+              "activity": 0
+            }
+          },
+          "edges": {
+            "start": {
+              "next": "work"
+            },
+            "wait": {
+              "next": "end"
+            },
+            "work": {
+              "ok": "wait"
+            }
+          }
+        },
+        "outputs": {
+          "fields": {
+            "answer": {
+              "value_type": "integer",
+              "required": true,
+              "default": null
+            }
+          }
+        },
+        "outcomes": [
+          "done"
+        ],
+        "inputs": {
+          "fields": {
+            "value": {
+              "value_type": "integer",
+              "required": true,
+              "default": null
+            }
+          }
+        },
+        "subject": null,
+        "instances": [
+          {
+            "descriptor": {
+              "namespace": "test",
+              "name": "increment",
+              "version": 1
+            },
+            "config": {},
+            "execution_policy": "local"
+          }
+        ],
+        "input_bindings": {
+          "0": {
+            "value": {
+              "source": "workflow_input",
+              "field": "value"
+            }
+          }
+        },
+        "conditions": {},
+        "collections": {},
+        "loops": {},
+        "forks": {},
+        "output_bindings": {
+          "answer": {
+            "source": "activity_output",
+            "activity": 0,
+            "field": "next"
+          }
+        },
+        "subflows": []
+      },
+      "editor": {
+        "labels": {
+          "work": "Writer"
+        },
+        "presets": {}
+      }
+    }
+  },
+  "publication": {
+    "type": "publication",
+    "value": {
+      "format_version": 11,
+      "id": "6052383d-6a7f-4387-9f26-08d34e3f6b3b",
+      "project": "/home/rb/Gits/.tmp/r-54a9d98cs1/tuic-run.OCpOFx/.tmpD1ZH3B",
+      "revision": 1,
+      "definition": {
+        "control": {
+          "nodes": {
+            "end": {
+              "type": "end",
+              "outcome": "done"
+            },
+            "start": {
+              "type": "start"
+            },
+            "wait": {
+              "type": "wait",
+              "duration_ms": 2
+            },
+            "work": {
+              "type": "activity",
+              "activity": 0
+            }
+          },
+          "edges": {
+            "start": {
+              "next": "work"
+            },
+            "wait": {
+              "next": "end"
+            },
+            "work": {
+              "ok": "wait"
+            }
+          }
+        },
+        "outputs": {
+          "fields": {
+            "answer": {
+              "value_type": "integer",
+              "required": true,
+              "default": null
+            }
+          }
+        },
+        "outcomes": [
+          "done"
+        ],
+        "inputs": {
+          "fields": {
+            "value": {
+              "value_type": "integer",
+              "required": true,
+              "default": null
+            }
+          }
+        },
+        "subject": null,
+        "instances": [
+          {
+            "descriptor": {
+              "namespace": "test",
+              "name": "increment",
+              "version": 1
+            },
+            "config": {},
+            "execution_policy": "local"
+          }
+        ],
+        "input_bindings": {
+          "0": {
+            "value": {
+              "source": "workflow_input",
+              "field": "value"
+            }
+          }
+        },
+        "conditions": {},
+        "collections": {},
+        "loops": {},
+        "forks": {},
+        "output_bindings": {
+          "answer": {
+            "source": "activity_output",
+            "activity": 0,
+            "field": "next"
+          }
+        },
+        "subflows": []
+      },
+      "pins": {
+        "pins": [
+          {
+            "id": {
+              "namespace": "test",
+              "name": "increment",
+              "version": 1
+            },
+            "sha256": "d8b4100202c3f7667331ec8e85cde0d681f1b6e971580b8c649e3527aba77863"
+          }
+        ]
+      },
+      "subflow_pins": [],
+      "editor": {
+        "labels": {
+          "work": "Reviewer"
+        },
+        "presets": {}
+      }
+    }
+  },
+  "clone": {
+    "type": "draft",
+    "value": {
+      "id": "56ba9420-9602-4f24-9179-83c1dfd68342",
+      "project": "/home/rb/Gits/.tmp/r-54a9d98cs1/tuic-run.OCpOFx/.tmpD1ZH3B",
+      "name": "copy",
+      "revision": 1,
+      "latest_published_revision": 0,
+      "definition": {
+        "control": {
+          "nodes": {
+            "end": {
+              "type": "end",
+              "outcome": "done"
+            },
+            "start": {
+              "type": "start"
+            },
+            "wait": {
+              "type": "wait",
+              "duration_ms": 2
+            },
+            "work": {
+              "type": "activity",
+              "activity": 0
+            }
+          },
+          "edges": {
+            "start": {
+              "next": "work"
+            },
+            "wait": {
+              "next": "end"
+            },
+            "work": {
+              "ok": "wait"
+            }
+          }
+        },
+        "outputs": {
+          "fields": {
+            "answer": {
+              "value_type": "integer",
+              "required": true,
+              "default": null
+            }
+          }
+        },
+        "outcomes": [
+          "done"
+        ],
+        "inputs": {
+          "fields": {
+            "value": {
+              "value_type": "integer",
+              "required": true,
+              "default": null
+            }
+          }
+        },
+        "subject": null,
+        "instances": [
+          {
+            "descriptor": {
+              "namespace": "test",
+              "name": "increment",
+              "version": 1
+            },
+            "config": {},
+            "execution_policy": "local"
+          }
+        ],
+        "input_bindings": {
+          "0": {
+            "value": {
+              "source": "workflow_input",
+              "field": "value"
+            }
+          }
+        },
+        "conditions": {},
+        "collections": {},
+        "loops": {},
+        "forks": {},
+        "output_bindings": {
+          "answer": {
+            "source": "activity_output",
+            "activity": 0,
+            "field": "next"
+          }
+        },
+        "subflows": []
+      },
+      "editor": {
+        "labels": {
+          "work": "Reviewer"
+        },
+        "presets": {}
+      }
+    }
+  },
+  "preview": {
+    "type": "preview",
+    "value": {
+      "validation": {
+        "valid": true,
+        "diagnostics": []
+      },
+      "activities": [
+        {
+          "activity": 0,
+          "inputs": {
+            "value": {
+              "state": {
+                "state": "present",
+                "value": 7
+              },
+              "provenance": [
+                {
+                  "source": "workflow_input",
+                  "field": "value"
+                }
+              ]
+            }
+          },
+          "outputs": {
+            "fields": {
+              "next": {
+                "value_type": "integer",
+                "required": true,
+                "default": null
+              },
+              "note": {
+                "value_type": "string",
+                "required": false,
+                "default": null
+              }
+            }
+          },
+          "outcomes": [
+            "ok"
+          ],
+          "effect_intent": {
+            "mutation": false,
+            "resources": [],
+            "approval": null
+          },
+          "unavailable_reason": null
+        }
+      ],
+      "outputs": {
+        "fields": {
+          "answer": {
+            "value_type": "integer",
+            "required": true,
+            "default": null
+          }
+        }
+      }
+    }
+  },
+  "validation": {
+    "type": "validation",
+    "value": {
+      "valid": false,
+      "diagnostics": [
+        {
+          "path": "/definition",
+          "code": "invalid_contract",
+          "message": "binding.value: incompatible constant"
+        },
+        {
+          "path": "/definition/input_bindings/0/value",
+          "code": "invalid_contract",
+          "message": "binding.value: incompatible constant"
+        }
+      ]
+    }
+  }
+}

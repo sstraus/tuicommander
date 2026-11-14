@@ -1,6 +1,7 @@
 import type { Setter } from "solid-js";
 import { AGENTS, type AgentRunConfig, type AgentType } from "../agents";
 import type { ContextMenuItem } from "../components/ContextMenu";
+import type { AgentLaunchMenuItem } from "../components/ContextMenu/AgentLaunchMenu";
 import { invoke } from "../invoke";
 import { getModifierSymbol } from "../platform";
 import { agentConfigsForRepo, ensureAgentConfigsForRepo } from "../stores/agentConfigs";
@@ -10,6 +11,7 @@ import { paneLayoutStore } from "../stores/paneLayout";
 import { repositoriesStore } from "../stores/repositories";
 import { settingsStore } from "../stores/settings";
 import { terminalsStore } from "../stores/terminals";
+import { uiStore } from "../stores/ui";
 import { newTerminalShellFamily, scopedLaunchCommand } from "../utils/agentLaunchCommand";
 import { prepareAgentLaunchCommand } from "../utils/agentSession";
 import { writeClipboard } from "../utils/clipboard";
@@ -33,7 +35,7 @@ interface TerminalContextMenuOptions {
 
 /** Builds terminal and sidebar agent context menus while keeping launch behavior in one owner. */
 export function useTerminalContextMenus(options: TerminalContextMenuOptions): {
-	buildSidebarAgentMenuItems: (repoPath: string, branchName: string) => ContextMenuItem[];
+	buildSidebarAgentMenuItems: (repoPath: string, branchName: string, flat?: boolean) => AgentLaunchMenuItem[];
 	getContextMenuItems: () => ContextMenuItem[];
 } {
 	const launchAgentInActiveTerminal = async (agentType: AgentType, command: string, env?: AgentRunConfig["env"]) => {
@@ -50,7 +52,7 @@ export function useTerminalContextMenus(options: TerminalContextMenuOptions): {
 		);
 		terminalsStore.update(active.id, {
 			name: AGENTS[agentType].name,
-			nameIsCustom: true,
+			nameIsCustom: false,
 			agentLaunchCommand: command,
 		});
 	};
@@ -98,7 +100,7 @@ export function useTerminalContextMenus(options: TerminalContextMenuOptions): {
 				};
 			});
 
-	const buildSidebarAgentMenuItems = (repoPath: string, branchName: string): ContextMenuItem[] => {
+	const buildSidebarAgentMenuItems = (repoPath: string, branchName: string, flat = false): AgentLaunchMenuItem[] => {
 		const enabled = options.agentDetection
 			.getAvailable()
 			.filter((agent) => agent.type !== "git" && agent.type !== "api" && settingsStore.isAgentEnabled(agent.type));
@@ -112,7 +114,7 @@ export function useTerminalContextMenus(options: TerminalContextMenuOptions): {
 		const buildAgentEntry = (agent: (typeof enabled)[0]) => {
 			const config = AGENTS[agent.type];
 			const runConfigs = machineConfigs.getRunConfigs(agent.type);
-			const launchAgent = async (command: string, env?: AgentRunConfig["env"]) => {
+			const launchAgent = async (key: string, command: string, env?: AgentRunConfig["env"]) => {
 				const termId = await options.gitOps.handleAddTerminalToWorkspace(repoPath, branchName);
 				if (!termId) return;
 				const term = terminalsStore.get(termId);
@@ -120,21 +122,56 @@ export function useTerminalContextMenus(options: TerminalContextMenuOptions): {
 				const pendingInitCommand = await prepareAgentLaunchCommand(command, agentSessionId, agent.type, repoPath);
 				terminalsStore.update(termId, {
 					name: config.name,
-					nameIsCustom: true,
+					nameIsCustom: false,
 					pendingInitCommand: scopedLaunchCommand(pendingInitCommand, env, newTerminalShellFamily()),
 					agentType: agent.type,
 					agentLaunchCommand: command,
 				});
+				uiStore.recordAgentLaunch(repoPath, branchName, key);
 			};
-			const children: ContextMenuItem[] =
+			const children: (ContextMenuItem & { key: string })[] =
 				runConfigs.length > 0
 					? runConfigs.map((runConfig) => ({
+							key: JSON.stringify([agent.type, runConfig.name]),
 							label: runConfig.name + (runConfig.is_default ? " (Default)" : ""),
-							action: () => launchAgent([runConfig.command, ...runConfig.args].join(" "), runConfig.env),
+							action: () =>
+								launchAgent(
+									JSON.stringify([agent.type, runConfig.name]),
+									[runConfig.command, ...runConfig.args].join(" "),
+									runConfig.env,
+								),
 						}))
-					: [{ label: "(Default)", action: () => launchAgent(config.binary) }];
+					: [
+							{
+								key: JSON.stringify([agent.type, null]),
+								label: "(Default)",
+								action: () => launchAgent(JSON.stringify([agent.type, null]), config.binary),
+							},
+						];
 			return { config, children };
 		};
+
+		if (flat) {
+			return uiStore.rankAgentLaunches(
+				repoPath,
+				branchName,
+				enabled.flatMap((agent) => {
+					const { config, children } = buildAgentEntry(agent);
+					const runConfigs = machineConfigs.getRunConfigs(agent.type);
+					return children.map((child, index) => {
+						const configName = children.length > 1 ? runConfigs[index]?.name : undefined;
+						return {
+							...child,
+							label: configName ? `${config.name} ${configName}` : config.name,
+							agentType: agent.type,
+							agentName: config.name,
+							configName,
+							isDefault: runConfigs[index]?.is_default ?? true,
+						};
+					});
+				}),
+			);
+		}
 
 		if (enabled.length === 1) {
 			const { config, children } = buildAgentEntry(enabled[0]);

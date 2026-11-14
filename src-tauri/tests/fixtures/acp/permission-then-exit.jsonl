@@ -1,0 +1,9 @@
+// The agent asks a person and then exits before anyone answers. Nothing can
+// retract the wait after that, so the connection's end must.
+{"step":"expect","method":"initialize","params":{"protocolVersion":1},"capture":"init"}
+{"step":"respond","to":"init","result_file":"ego-initialize.json"}
+{"step":"expect","method":"session/new","capture":"new"}
+{"step":"respond","to":"new","result":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","configOptions":[]}}
+{"step":"expect","method":"session/prompt","capture":"prompt"}
+{"step":"request","id":7,"method":"session/request_permission","params":{"sessionId":"01932d5e-0000-7000-8000-0000000000aa","toolCall":{"toolCallId":"call-1","title":"Write a file"},"options":[{"optionId":"allow","name":"Allow","kind":"allow_once"}]}}
+{"step":"await_file","path":"exit-now"}

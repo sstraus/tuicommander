@@ -1952,8 +1952,7 @@ impl<T: EventListener> Handler for Term<T> {
             // with the handler contract because separating "scrolled off" from
             // "deleted by a control" changes `Grid::scroll_up`, and TUIC's
             // absolute row coordinate (`lines_scrolled`/`total_scrolled`) is
-            // built on its current meaning. Story #834-1878; evidence in
-            // `tests/terminal-stress/INTEGRITY_FINDINGS.md`.
+            // built on its current meaning.
             // DL removes lines; it does not scroll them off the bottom. Routing
             // this through the overflow path is what pushed the removed rows
             // into scrollback, and it accounted for 279 of the retained ANSI

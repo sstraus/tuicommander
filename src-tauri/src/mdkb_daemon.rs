@@ -139,7 +139,7 @@ impl MdkbDaemon {
         let bin = self
             .binary_path
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("mdkb binary not found in trusted directories"))?;
+            .ok_or_else(|| anyhow::anyhow!("mdkb binary not found on PATH"))?;
 
         Command::new(bin)
             .args(["serve", "--daemon", "--detach"])
@@ -154,7 +154,7 @@ impl MdkbDaemon {
         let bin = self
             .binary_path
             .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("mdkb binary not found in trusted directories"))?;
+            .ok_or_else(|| anyhow::anyhow!("mdkb binary not found on PATH"))?;
 
         let status = Command::new(bin)
             .args(["daemon", "restart"])

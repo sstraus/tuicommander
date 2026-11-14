@@ -1,8 +1,14 @@
 # Terminal Features & Keyboard Shortcuts
 
+## Returning to terminal tabs
+
+When you return to a terminal tab, it repaints the last visible viewport while it
+requests a fresh backend frame. Hidden tabs still release their canvas backing
+stores. Retained rows cover the viewport, not the full scrollback history.
+
 ## Pending Session Chat prompts
 
-Busy Session Chat sends wait in TUIC’s existing idle-gate queue on desktop and mobile. Each host-owned Pending prompt has Cancel and, for Claude, Codex and ego, a compact return-key action labelled **Send now: stop the current request**. Send now claims its queue id once; a prompt already taken by the idle gate is not sent again. Claude and Codex use Escape followed by confirmed idle; ego uses native Ctrl+Enter. Native CLI receipts from earlier direct sends remain read-only.
+Busy Session Chat sends wait in TUIC’s existing idle-gate queue on desktop and mobile. Each host-owned Pending prompt has Cancel and, for Claude, Codex and ego, a compact return-key Send now action. Send now uses one forced-steer flow for all three harnesses: reserve the next ready composer, send Escape to a working turn, confirm idle, then submit the selected full text before ordinary queued inputs or mail wakes. The tooltip reads **Send now: stop the current request**. An idle recipient skips Escape. A prompt already taken by the idle gate is not sent again, and a refused Send now keeps the prompt queued. Native CLI receipts from earlier direct sends remain read-only.
 
 Mobile keeps the visible draft when you switch between Chat and CLI. Chat holds the draft locally; CLI streams it to the native composer. A switch transfers this composer's known native draft without submitting it. Tab and history temporarily use the native composer, then return the result to the local Chat draft before a queued send.
 
@@ -73,6 +79,12 @@ main buffer alike (e.g. `grok --no-alt-screen`, or Claude Code, which enables mo
 tracking without switching to the alt screen). Hold **Shift** to force scrollback
 scrolling regardless of mouse mode (consistent with Shift bypassing mouse reporting
 for clicks/selection). The scrollbar thumb always moves TUIC history.
+
+Selection repaints use the displayed viewport, including while a local smooth
+scroll is ahead of the backend frame. Starting a selection does not restore the
+older backend viewport. Search highlights, the block-timestamp toggle and block
+folding repaint the same way: they never paint the backend frame over a local
+smooth scroll.
 
 **Quantization (forwarded to an app).** A physical wheel notch or trackpad flick
 delivers a burst of many small-delta DOM wheel events (macOS reports the whole
@@ -196,7 +208,7 @@ the command/message breakdown; the count remains available if details fail.
 
 ### Compose editor size
 
-Terminal Compose uses the shared auto-grow control bounds: one control line when empty (36px desktop, 44px touch), intrinsic CodeMirror growth for newlines and wrapping, and the existing 96px editor maximum. Longer drafts scroll inside the editor. Clearing or successfully submitting a draft restores the minimum. The queue list keeps its independent height cap.
+Terminal Compose uses the shared auto-grow control bounds: one control line when empty (36px desktop, 44px touch), intrinsic CodeMirror growth for newlines and wrapping, and the existing 96px editor maximum. Longer drafts scroll inside the editor. Clearing or successfully submitting a draft restores the minimum. The queue list keeps its independent height cap. Desktop CLI Compose reserves only the shared minimum editor row plus its natural footer height. Additional editor, image, or queue content overlays upward without changing terminal geometry. Outside Compose focus, the desktop editor collapses to its shared minimum and scrolls the retained draft; refocusing restores intrinsic overlay growth. Neither focus transition changes the grid. Closing releases the reservation. Chat remains fully docked; mobile retains its existing overlay and pin behavior.
 
 ### Compose editor shortcuts
 
@@ -240,4 +252,8 @@ are not recalled. The command is restored only if queue removal succeeds before
 delivery. A normal Send's muted **Pending** bubble belongs to the native CLI and
 cannot be withdrawn by this action. AI Chat's shared ACP composer supports the
 same shortcut for text-only queued turns. Nonempty drafts and slash menus keep
-their normal arrow-key behavior. See [coverage and evidence](chat-wrap-recall-evidence.md).
+their normal arrow-key behavior.
+
+### Compose queue item actions
+
+The Compose **N queued** list has a labelled **Cancel** action for each item and keeps **Clear all**. Supported items also show **Steer**, which uses the same backend delivery as Session Chat Send now. Claude Code, Codex and ego interrupt the running turn, confirm idle, then submit the selected full text. The tooltip states that the current request stops. Steer is hidden while a native question waits.

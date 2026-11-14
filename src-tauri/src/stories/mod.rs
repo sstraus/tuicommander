@@ -1,10 +1,11 @@
 mod api;
+pub(crate) mod backend;
 #[cfg(test)]
 mod critic_tests;
 pub(crate) mod draft;
 #[cfg(test)]
 mod filter_tests;
-mod filters;
+pub(crate) mod filters;
 pub(crate) mod ingest;
 #[cfg(test)]
 mod ingest_tests;
@@ -18,9 +19,18 @@ mod sources;
 mod store;
 
 pub use api::*;
+pub use backend::{
+    NATIVE_CAPABILITIES, StoryBackend, StoryCapabilities, StoryOperations, execution_ledger,
+    story_backend, story_backend_for, story_capabilities_for,
+};
 pub use model::*;
 pub use store::StoryStore;
+pub(crate) use store::assemble_plan_view;
 pub(crate) use store::validate_new_story as validate_workflow_proposal;
+pub(crate) use store::{
+    ExternalExecution, ExternalTransition, apply_command as evaluate_story_command,
+    only_manual_pending,
+};
 
 #[cfg(test)]
 mod tests {

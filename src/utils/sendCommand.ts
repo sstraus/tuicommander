@@ -123,6 +123,8 @@ export function clearShellFamilyCache(sessionId: string): void {
  *                      carrying shell metacharacters (spoofable via OSC 7770
  *                      from untrusted output). Default true.
  *  @param sessionId    PTY to probe when the foreground agent type is unknown.
+ *  @param clearInput   When false, no Ctrl-U is sent and the text is appended to the
+ *                      existing input (dictation: Ctrl-U also wipes pasted images). Default true.
  */
 export async function sendCommand(
 	writeFn: (data: string) => Promise<void>,
@@ -131,6 +133,7 @@ export async function sendCommand(
 	shellFamily?: ShellFamily,
 	submit = true,
 	sessionId?: string,
+	clearInput = true,
 ): Promise<void> {
 	let unknownForeground = false;
 	let foregroundProbeFailed = false;
@@ -144,15 +147,17 @@ export async function sendCommand(
 	}
 	const agentInput = Boolean(agentType) || unknownForeground;
 	const skipPrefix = !agentInput && isWindowsNative(shellFamily);
-	const prefix = skipPrefix ? "" : "\x15";
+	const prefix = skipPrefix || !clearInput ? "" : "\x15";
 	const payload = agentInputPayload(text, agentType);
 	if (agentInput) {
 		// Ctrl-U must reach an agent in its own read. Claude Code treats a long
 		// input chunk as a paste: a Ctrl-U inside it is stripped as an invisible
 		// character, and Claude then refuses the Enter that follows ("review and
 		// press Enter to send") — dictated text sat unsent even with a 500ms gap.
-		await writeFn(prefix);
-		await delay(AGENT_ENTER_GAP_MS);
+		if (prefix) {
+			await writeFn(prefix);
+			await delay(AGENT_ENTER_GAP_MS);
+		}
 		await writeFn(payload);
 	} else {
 		await writeFn(prefix + payload);

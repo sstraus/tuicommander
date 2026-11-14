@@ -4,6 +4,7 @@
 
 pub mod changelog;
 pub mod circleci;
+pub mod copy_provenance;
 pub mod cow;
 pub mod git;
 pub mod git_cli;
@@ -19,6 +20,8 @@ pub mod github_debug;
 pub mod github_poller;
 pub mod pr_review;
 pub mod review_bots;
+pub mod stash_check;
+pub mod text_diff;
 pub mod worktree;
 
 #[cfg(any(test, feature = "test-support"))]

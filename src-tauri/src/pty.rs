@@ -19,12 +19,20 @@ use crate::worktree::{
     WorktreeConfig, WorktreeResult, create_worktree_with_stale_recovery, remove_worktree_internal,
 };
 
+#[cfg(test)]
+mod background_completion_tests;
 mod bg_wake_diagnostics;
+mod claude_hooks;
+mod codex_tools;
+mod ego_events;
 pub(crate) mod frame_priority;
+mod grok_hooks;
+mod hook_inbox;
 mod injection;
 mod lifecycle;
 mod screen;
 
+pub(crate) use hook_inbox::{HookDelivery, HookInbox, HookStamp, deliver_hook_frames};
 pub(crate) use injection::*;
 pub(crate) use lifecycle::*;
 pub(crate) use screen::*;
@@ -33,6 +41,8 @@ pub(crate) use screen::*;
 mod child_reaping_tests;
 #[cfg(feature = "desktop")]
 mod commands;
+#[cfg(all(test, unix))]
+mod terminal_reply_tests;
 #[cfg(feature = "desktop")]
 pub(crate) use commands::*;
 
@@ -70,6 +80,31 @@ const WATCHER_BATCH_CAP: usize = 256 * 1024;
 /// rendered at second resolution and a boolean unread flag that latches on the
 /// first pulse.
 const ACTIVITY_PULSE_WINDOW: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// Publish the native owner's open request id (`agent_question`) and its
+/// payload card (`agent_hook_payload`). Written only on change, so a chunk
+/// does not take the session-state write lock. A card belongs to one request
+/// and never changes, so its id is the whole comparison.
+fn publish_wait_request(
+    state: &AppState,
+    session_id: &str,
+    request: Option<&str>,
+    card: Option<&crate::agent_hook_payload::QuestionCard>,
+) {
+    let card_id = card.map(|card| card.request_id.as_str());
+    let changed = state
+        .session_maps
+        .session_states
+        .get(session_id)
+        .is_some_and(|s| {
+            s.wait_request.as_deref() != request
+                || s.wait_card.as_ref().map(|card| card.request_id.as_str()) != card_id
+        });
+    if changed && let Some(mut session) = state.session_maps.session_states.get_mut(session_id) {
+        session.wait_request = request.map(str::to_owned);
+        session.wait_card = card.cloned().map(std::sync::Arc::new);
+    }
+}
 
 /// Tell this session's frontends that output is flowing. Payload-free by design
 /// — see [`ACTIVITY_PULSE_WINDOW`].
@@ -405,36 +440,80 @@ fn try_timer_idle_transition(
             };
         }
 
+        // Native turn truth is independent of the temporary BUSY claim used
+        // to serialize Enter delivery. A local command may consume that Enter
+        // without starting a model turn; only its stable empty composer can
+        // release the transport claim while the native producer remains idle.
+        let native_idle_claim = silence.native_state.activity() == Some(SHELL_IDLE)
+            && silence.busy_source_is("user-submit");
+        // Codex does not send its hook Stop when Esc cancels a turn. Its
+        // recorded interrupt banner confirms the interrupt we requested.
+        let codex_interrupted = agent_type == Some("codex")
+            && screen_activity == AgentScreenActivity::Interrupted
+            && silence.interrupt_pending();
+        if agent_type.is_some()
+            && silence.native_state.activity().is_some()
+            && !native_idle_claim
+            && !codex_interrupted
+        {
+            if agent_type == Some("ego")
+                && screen_activity == AgentScreenActivity::Ready
+                && silence.injection_delivery_uncertain
+            {
+                silence.recover_uncertain_injection_on_empty_composer();
+            }
+            return TimerIdleTransition {
+                transitioned: false,
+                force_cleared_subtasks: false,
+                screen_confirms_idle: silence.idle_confirmed(),
+                screen_newly_confirms_idle: false,
+                evidence: None,
+            };
+        }
         let idle_was_confirmed = silence.idle_confirmed();
-        let submission_stale = screen_activity == AgentScreenActivity::Unknown
+        let legacy_submission_stale = screen_activity == AgentScreenActivity::Unknown
             && agent_type == Some("claude")
             && silence.unacknowledged_submission_is_stale();
         let protocol_stale =
             screen_activity == AgentScreenActivity::Ready && silence.protocol_busy_is_stale();
-        let screen_confirms_idle = match screen_activity {
-            AgentScreenActivity::Ready
-                if agent_type == Some("ego") && silence.injection_delivery_uncertain =>
+        let screen_confirms_idle = if native_idle_claim {
+            if screen_activity == AgentScreenActivity::Ready
+                && !silence.injection_delivery_uncertain
             {
-                silence.recover_uncertain_injection_on_empty_composer()
-            }
-            AgentScreenActivity::Ready if protocol_stale => {
-                tracing::warn!(
-                    session_id = %session_id,
-                    activity_source = "protocol-stale",
-                    "authoritative busy signal became stale on a stable ready screen"
-                );
-                silence
-                    .evidence
-                    .force_idle(EvidenceRank::Process, "protocol-stale");
-                true
-            }
-            AgentScreenActivity::Ready => silence.note_ready_screen(),
-            AgentScreenActivity::Interrupted => silence.note_interrupted_screen(),
-            AgentScreenActivity::Unknown => {
-                silence.note_unknown_screen();
+                let since = *silence
+                    .screen_ready_pending_since
+                    .get_or_insert_with(std::time::Instant::now);
+                since.elapsed() >= AGENT_READY_CONFIRM
+            } else {
+                silence.screen_ready_pending_since = None;
                 false
             }
-            AgentScreenActivity::Working => false,
+        } else {
+            match screen_activity {
+                AgentScreenActivity::Ready
+                    if agent_type == Some("ego") && silence.injection_delivery_uncertain =>
+                {
+                    silence.recover_uncertain_injection_on_empty_composer()
+                }
+                AgentScreenActivity::Ready if protocol_stale => {
+                    tracing::warn!(
+                        session_id = %session_id,
+                        activity_source = "protocol-stale",
+                        "authoritative busy signal became stale on a stable ready screen"
+                    );
+                    silence
+                        .evidence
+                        .force_idle(EvidenceRank::Process, "protocol-stale");
+                    true
+                }
+                AgentScreenActivity::Ready => silence.note_ready_screen(),
+                AgentScreenActivity::Interrupted => silence.note_interrupted_screen(),
+                AgentScreenActivity::Unknown => {
+                    silence.note_unknown_screen();
+                    false
+                }
+                AgentScreenActivity::Working => false,
+            }
         };
         let screen_newly_confirms_idle = screen_confirms_idle && !idle_was_confirmed;
         let observed_shell = state
@@ -472,23 +551,24 @@ fn try_timer_idle_transition(
             screen_activity,
             AgentScreenActivity::Ready | AgentScreenActivity::Interrupted
         ) && !screen_confirms_idle;
-        let probe = if screen_confirms_idle {
+        let probe = if screen_confirms_idle && !native_idle_claim {
             foreground_probe(state, session_id, &lifecycle)
         } else {
             ForegroundProbe::Open
         };
-        let decision =
-            if submission_stale || (screen_confirms_idle && probe != ForegroundProbe::Pending) {
-                IdleDecision::yes(evidence_turn_epoch)
-            } else if screen_confirms_idle
-                || (silence.explicit_busy() && !nested_prompt)
-                || hold_for_ready_confirmation
-                || silence.is_api_retry_active()
-            {
-                IdleDecision::NO
-            } else {
-                should_transition_idle(state, session_id)
-            };
+        let decision = if legacy_submission_stale
+            || (screen_confirms_idle && probe != ForegroundProbe::Pending)
+        {
+            IdleDecision::yes(evidence_turn_epoch)
+        } else if screen_confirms_idle
+            || (silence.explicit_busy() && !nested_prompt)
+            || hold_for_ready_confirmation
+            || silence.is_api_retry_active()
+        {
+            IdleDecision::NO
+        } else {
+            should_transition_idle(state, session_id)
+        };
         if !decision.should_transition {
             return TimerIdleTransition {
                 transitioned: false,
@@ -498,7 +578,11 @@ fn try_timer_idle_transition(
                 evidence: None,
             };
         }
-        if probe == ForegroundProbe::Quiet {
+        if native_idle_claim {
+            silence
+                .evidence
+                .force_idle(EvidenceRank::Protocol, "hook-idle");
+        } else if probe == ForegroundProbe::Quiet {
             // The probe looked at the process table and found nothing left
             // running under the agent. That outranks the ready screen that
             // asked for it, so the turn closes on `activity_source=process`
@@ -513,7 +597,7 @@ fn try_timer_idle_transition(
                 .evidence
                 .force_idle(EvidenceRank::Process, "process");
         }
-        if submission_stale {
+        if legacy_submission_stale {
             silence
                 .evidence
                 .force_idle(EvidenceRank::Process, "submission-stale");
@@ -539,7 +623,7 @@ fn try_timer_idle_transition(
                 session_id,
                 expected: released_from,
                 new: SHELL_IDLE,
-                notify_parent: true,
+                notify_parent: !native_idle_claim,
                 observed_turn_epoch: decision.turn_epoch,
             },
             Some(&mut silence),
@@ -941,7 +1025,7 @@ fn spawn_silence_timer(
                 .get(&session_id)
                 .map(|s| s.hook_instrumented)
                 .unwrap_or(false);
-            if hook_configured && silence.lock().hook_state_seen {
+            if hook_configured && silence.lock().native_state_received() {
                 silence.lock().clear_stale_question();
                 continue;
             }
@@ -1003,14 +1087,16 @@ fn clean_action_required_title(title: &str) -> String {
 ///   (`line = -1`).
 /// - `prompt`   → same clear, sent only by the user-prompt-submit hook, and the only
 ///   one that carries the prompt row for the scrollbar marker
-/// - anything else (incl. `idle`, unknown) → `None`
+/// - `idle`     → same clear, including a modal that opens and closes in one chunk
+/// - `error`    → same clear: a refused turn has no open wait
+/// - anything else (unknown) → `None`
 fn tuic_state_awaiting_event(payload: &str, line: i64) -> Option<ParsedEvent> {
     match payload {
         "awaiting" => Some(ParsedEvent::Question {
             prompt_text: String::new(),
             confident: true,
         }),
-        "busy" => Some(ParsedEvent::UserInput {
+        "busy" | "idle" | "error" => Some(ParsedEvent::UserInput {
             content: String::new(),
             line: -1,
         }),
@@ -1032,12 +1118,27 @@ pub(crate) fn hook_instrumented_for(
     agents: &crate::config::AgentsConfig,
     agent_type: Option<&str>,
 ) -> bool {
+    hook_instrumented_on(
+        agents,
+        agent_type,
+        !crate::agent_hook::hooks_supported_on_host(),
+    )
+}
+
+fn hook_instrumented_on(
+    agents: &crate::config::AgentsConfig,
+    agent_type: Option<&str>,
+    unsupported_host: bool,
+) -> bool {
     let Some(agent_type) = agent_type else {
         return false;
     };
     // ego emits OSC 7770 natively: there is no hook to install or disable.
     if agent_type == "ego" {
         return true;
+    }
+    if unsupported_host {
+        return false;
     }
     let settings = agents.agents.get(agent_type);
     if matches!(agent_type, "claude" | "codex") {
@@ -1217,19 +1318,123 @@ fn suppress_heuristic_question(hook_instrumented: bool, event: &ParsedEvent) -> 
 /// land, and the accumulator keeps the LAST `prompt_text`: the tab then shows
 /// `⊠ … ✓ Submit` where the question should be. Not exotic, this is every
 /// non-hook `AskUserQuestion`'s opening frame.
+///
+/// `first_run_dialog` is the text of a managed child's first-run dialog that
+/// TUIC does not answer (`managed_first_run_dialog`). It has no Ink footer and
+/// is reported the same way, with its text, so the parent sees the block.
 fn rearm_awaiting_for_open_dialog(
     screen: &[String],
     awaiting_input: bool,
     has_choice_prompt: bool,
     question_this_tick: bool,
+    first_run_dialog: Option<&str>,
 ) -> Option<ParsedEvent> {
     if awaiting_input || has_choice_prompt || question_this_tick {
         return None;
     }
-    crate::output_parser::ink_dialog_footer(screen).map(|footer| ParsedEvent::Question {
-        prompt_text: footer.to_string(),
-        confident: true,
-    })
+    crate::output_parser::ink_dialog_footer(screen)
+        .or(first_run_dialog)
+        .map(|prompt| ParsedEvent::Question {
+            prompt_text: prompt.to_string(),
+            confident: true,
+        })
+}
+
+/// Upper bound of the dialog text reported to a parent.
+const FIRST_RUN_DIALOG_TEXT_MAX: usize = 2000;
+
+/// A first-run confirmation dialog: Claude's `Enter to confirm · Esc to cancel`
+/// footer, at most three columns in, is the last nonblank row (recorded in
+/// `claude-first-run-3017.tcap`). Returns the dialog rows below its top rule
+/// and above that footer, trimmed and joined.
+fn first_run_dialog_text(screen: &[String]) -> Option<String> {
+    let footer = screen.iter().rposition(|row| !row.trim().is_empty())?;
+    let row = screen[footer].trim_end();
+    let body = row.trim_start();
+    if row.len() - body.len() > 3 || !body.starts_with("Enter to confirm · Esc to cancel") {
+        return None;
+    }
+    let top = screen[..footer]
+        .iter()
+        .rposition(|row| row.trim_start().starts_with('─'))
+        .map_or(0, |rule| rule + 1);
+    let text = screen[top..footer]
+        .iter()
+        .map(|row| row.trim())
+        .filter(|row| !row.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    (!text.is_empty()).then(|| text.chars().take(FIRST_RUN_DIALOG_TEXT_MAX).collect())
+}
+
+/// The choice text of a row that carries the selection marker.
+fn selected_choice(row: &str) -> Option<&str> {
+    let row = row.trim_start();
+    row.strip_prefix('❯')
+        .or_else(|| row.strip_prefix('›'))
+        .or_else(|| row.strip_prefix('>'))
+        .map(str::trim_start)
+}
+
+/// The external CLAUDE.md imports dialog with its default `No` still selected.
+fn managed_claude_imports_dialog(screen: &[String]) -> bool {
+    screen
+        .iter()
+        .any(|row| row.contains("Allow external CLAUDE.md file imports?"))
+        && screen.iter().any(|row| {
+            selected_choice(row).is_some_and(|c| c.starts_with("No, disable external imports"))
+        })
+}
+
+/// Handle a first-run dialog of a managed child (agent spawn or workflow
+/// launch: both register in `managed_first_run`). Claude's workspace trust
+/// (unless opted out) and external imports (= No) are answered once, from
+/// their default selection. Returns the text of any other first-run dialog,
+/// which the caller reports as a wait; an answered dialog that is still on
+/// screen is neither answered again nor reported.
+fn managed_first_run_dialog(
+    state: &AppState,
+    session_id: &str,
+    agent_type: Option<&str>,
+    screen: &[String],
+) -> Option<String> {
+    let mut managed = state.managed_first_run.get_mut(session_id)?;
+    let text = first_run_dialog_text(screen)?;
+    let flat = text.replace('\n', " ");
+    let claude = agent_type == Some("claude");
+    let trust = claude
+        && managed.answer_trust
+        && flat.contains("Quick safety check:")
+        && flat.contains("Is this a project you created or one you trust?");
+    let imports = claude && flat.contains("Allow external CLAUDE.md file imports?");
+    let (answered, keys): (&mut bool, &[&[u8]]) = if trust {
+        (
+            &mut managed.trust_answered,
+            &[b"\x1b[B".as_slice(), b"\r".as_slice()],
+        )
+    } else if imports {
+        (&mut managed.imports_answered, &[b"\r".as_slice()])
+    } else {
+        return Some(text);
+    };
+    if *answered {
+        return None;
+    }
+    // A changed selection is no longer the default this policy confirms.
+    let default_selected = if trust {
+        managed_claude_trust_dialog(screen)
+    } else {
+        managed_claude_imports_dialog(screen)
+    };
+    if !default_selected {
+        return Some(text);
+    }
+    *answered = true;
+    drop(managed);
+    if let Err(error) = answer_managed_first_run_dialog(state, session_id, keys) {
+        tracing::warn!(source = "terminal", session_id, %error, "Could not answer a managed first-run dialog");
+    }
+    None
 }
 
 /// Only the first, default-No workspace trust picker of a managed Claude child.
@@ -1245,14 +1450,9 @@ fn managed_claude_trust_dialog(screen: &[String]) -> bool {
     let yes = screen
         .iter()
         .position(|row| row.trim_start().starts_with("Yes,"));
-    let selected_no = screen.iter().position(|row| {
-        let row = row.trim_start();
-        let choice = row
-            .strip_prefix('❯')
-            .or_else(|| row.strip_prefix('›'))
-            .or_else(|| row.strip_prefix('>'));
-        choice.is_some_and(|choice| choice.trim_start().contains("No, exit"))
-    });
+    let selected_no = screen
+        .iter()
+        .position(|row| selected_choice(row).is_some_and(|choice| choice.contains("No, exit")));
     matches!((yes, selected_no), (Some(yes), Some(no)) if no < yes)
 }
 
@@ -1284,27 +1484,44 @@ mod managed_claude_trust_tests {
     }
 }
 
-fn accept_managed_claude_trust_dialog(state: &AppState, session_id: &str) -> Result<(), String> {
+/// Write a dialog answer, one key at a time with the Enter gap between keys.
+fn answer_managed_first_run_dialog(
+    state: &AppState,
+    session_id: &str,
+    keys: &[&[u8]],
+) -> Result<(), String> {
     let writer = state
         .pty_writer(session_id)
         .ok_or_else(|| "Session not found".to_string())?;
     let mut writer = writer.lock();
     state.retire_turn_interrupt(session_id);
-    writer
-        .write_all(b"\x1b[B")
-        .and_then(|()| writer.flush())
-        .map_err(|error| format!("Trust selection failed: {error}"))?;
-    std::thread::sleep(INJECT_ENTER_GAP);
-    writer
-        .write_all(b"\r")
-        .and_then(|()| writer.flush())
-        .map_err(|error| format!("Trust confirmation failed: {error}"))
+    for (index, key) in keys.iter().enumerate() {
+        if index > 0 {
+            std::thread::sleep(INJECT_ENTER_GAP);
+        }
+        writer
+            .write_all(key)
+            .and_then(|()| writer.flush())
+            .map_err(|error| format!("Dialog answer failed: {error}"))?;
+    }
+    Ok(())
 }
 
 /// Per-session mutable state for processing PTY output chunks.
 /// Holds dedup state, parser, and session CWD for PlanFile resolution.
 /// Used by `spawn_reader_thread`.
 struct ChunkProcessor {
+    claude_hooks: claude_hooks::ClaudeHooks,
+    grok_hooks: grok_hooks::GrokHooks,
+    codex_tools: codex_tools::CodexTools,
+    ego_events: ego_events::EgoEvents,
+    /// `agent-tool` frames of the managed Pi extension and OpenCode plugin.
+    agent_tools: crate::agent_tool_readout::ToolReadout,
+    /// The tool readout last published, so only a change is sent.
+    published_tool: Option<String>,
+    /// The ego children and turn outcome last published, so only a change is sent.
+    published_children: Vec<String>,
+    published_outcome: Option<String>,
     secret_mask: crate::secrets::StreamMask,
     masked_data: Option<String>,
     /// An explicit idle marker asks the reader to flush after publishing this chunk.
@@ -1448,6 +1665,75 @@ fn alt_screen_toast_message(label: &str, agent_type: Option<&str>) -> String {
 }
 
 impl ChunkProcessor {
+    /// Publish the open native request and its card of whichever owner holds one.
+    fn publish_wait(&self, state: &AppState, session_id: &str) {
+        let wait_request = self
+            .claude_hooks
+            .wait_request()
+            .or(self.codex_tools.wait_request())
+            .or(self.ego_events.wait_request());
+        let wait_card = self
+            .claude_hooks
+            .wait_card()
+            .or(self.codex_tools.wait_card())
+            .or(self.ego_events.wait_card());
+        publish_wait_request(state, session_id, wait_request, wait_card);
+    }
+
+    /// The newest live native tool of whichever owner holds one, as a
+    /// `ToolActivity` event when it differs from the last one published.
+    fn publish_tool(&mut self) -> Option<ParsedEvent> {
+        let tool = self
+            .claude_hooks
+            .tools
+            .current()
+            .or(self.codex_tools.tools.current())
+            .or(self.grok_hooks.tools.current())
+            .or(self.ego_events.tools.current())
+            .or(self.agent_tools.current())
+            .map(str::to_owned);
+        if tool == self.published_tool {
+            return None;
+        }
+        self.published_tool = tool.clone();
+        Some(ParsedEvent::ToolActivity { name: tool })
+    }
+
+    fn receive_ego_background_event(&mut self, state: &AppState, session_id: &str, payload: &str) {
+        let before = self.ego_events.stop_generation();
+        self.ego_events.receive(payload);
+        if self.ego_events.stop_generation() != before {
+            revoke_background_completion_origin(state, session_id);
+        }
+    }
+
+    /// The native children in flight (ego and Codex, #2635-8052) and the last
+    /// ego turn outcome, each as an event when it differs from the last one
+    /// published.
+    fn publish_ego_turn(&mut self) -> impl Iterator<Item = ParsedEvent> {
+        let mut children = self.ego_events.children();
+        children.extend(self.codex_tools.children().map(str::to_owned));
+        let children = (children != self.published_children).then(|| {
+            self.published_children = children.clone();
+            ParsedEvent::ChildActivity { children }
+        });
+        let outcome = self.ego_events.outcome().map(str::to_owned);
+        let outcome = (outcome != self.published_outcome).then(|| {
+            self.published_outcome = outcome.clone();
+            ParsedEvent::TurnOutcome { outcome }
+        });
+        children.into_iter().chain(outcome)
+    }
+
+    /// A coarse idle, prompt or shell return ends every tool call of the turn.
+    fn retire_tools(&mut self) {
+        self.claude_hooks.tools.clear();
+        self.codex_tools.tools.clear();
+        self.grok_hooks.tools.clear();
+        self.ego_events.tools.clear();
+        self.agent_tools.clear();
+    }
+
     fn should_warn_alt_screen(&mut self, agent_type: Option<&str>, alt_screen: bool) -> bool {
         if agent_type.is_none() || !alt_screen || self.alt_screen_warned {
             return false;
@@ -1470,6 +1756,14 @@ impl ChunkProcessor {
 
     fn new(session_cwd: Option<String>, tuic_session: Option<String>) -> Self {
         Self {
+            claude_hooks: claude_hooks::ClaudeHooks::default(),
+            grok_hooks: grok_hooks::GrokHooks::default(),
+            codex_tools: codex_tools::CodexTools::default(),
+            ego_events: ego_events::EgoEvents::default(),
+            agent_tools: crate::agent_tool_readout::ToolReadout::default(),
+            published_tool: None,
+            published_children: Vec::new(),
+            published_outcome: None,
             queued_idle_flush: false,
             secret_mask: crate::secrets::StreamMask::default(),
             masked_data: None,
@@ -1503,21 +1797,29 @@ impl ChunkProcessor {
         }
     }
 
-    /// Handle OSC 7770 `state=idle|busy` from the TUIC protocol.
+    /// Handle OSC 7770 `state=idle|busy|prompt|error` from the TUIC protocol.
     fn handle_tuic_state(&self, payload: &str, session_id: &str, state: &AppState) {
         let (target, label) = match payload {
-            "idle" => (SHELL_IDLE, "idle"),
+            // A refused turn has ended: the shell is idle, the agent is not.
+            "idle" | "error" => (SHELL_IDLE, "idle"),
             "busy" | "prompt" => (SHELL_BUSY, "busy"),
             _ => return,
         };
-        // Native busy is evidence that the harness really started work. A
-        // submitted prompt (or idle after a failed turn) is not recovery.
-        // ego has no spinner StatusLine, so relying on that event alone leaves
-        // its successful later turns permanently red.
-        if payload == "busy"
+        // Mark the refusal before the idle edge below: that edge starts the
+        // queue flush and the orchestrator wake, which must already see it.
+        // Idle keeps the mark, because ego repaints a refused composer with
+        // `state=error`, not idle. A started turn or prompt clears it.
+        if payload != "idle"
             && let Some(mut session) = state.session_maps.session_states.get_mut(session_id)
         {
-            session.last_error = None;
+            session.agent_error = payload == "error";
+            // Native busy is evidence that the harness really started work. A
+            // submitted prompt (or idle after a failed turn) is not recovery.
+            // ego has no spinner StatusLine, so relying on that event alone
+            // leaves its successful later turns permanently red.
+            if payload == "busy" {
+                session.last_error = None;
+            }
         }
         transition_explicit_shell_state(state, session_id, target, label, true);
     }
@@ -1532,6 +1834,12 @@ impl ChunkProcessor {
     ) {
         match command {
             'A' => {
+                self.grok_hooks = grok_hooks::GrokHooks::default();
+                self.codex_tools = codex_tools::CodexTools::default();
+                // The agent is gone: its open question requests went with it.
+                self.claude_hooks.clear();
+                self.ego_events.clear();
+                self.agent_tools.clear();
                 crate::codex_binding::revoke(state, session_id);
                 transition_explicit_shell_state(state, session_id, SHELL_IDLE, "idle", false);
             }
@@ -1713,9 +2021,23 @@ impl ChunkProcessor {
             silence,
             session_id,
             state,
+            true,
         );
         self.masked_data = masked;
         processed
+    }
+
+    /// Process OSC 7770 frames that an agent hook posted to the local API
+    /// (#2749-bee7). They are not terminal output: they skip the secret mask,
+    /// the output ring, the WebSocket byte stream and the raw-stream parsers.
+    fn process_hook_frames(
+        &mut self,
+        frames: &str,
+        silence: &Arc<Mutex<SilenceState>>,
+        session_id: &str,
+        state: &AppState,
+    ) {
+        self.process_safe_chunk(frames, silence, session_id, state, false);
     }
 
     fn process_safe_chunk(
@@ -1724,6 +2046,7 @@ impl ChunkProcessor {
         silence: &Arc<Mutex<SilenceState>>,
         session_id: &str,
         state: &AppState,
+        terminal_output: bool,
     ) -> bool {
         if data.is_empty() {
             return false;
@@ -2066,15 +2389,12 @@ impl ChunkProcessor {
             )
         };
 
-        if screen_present
-            && agent_type.as_deref() == Some("claude")
-            && state.managed_trust_dialogs.contains(session_id)
-            && managed_claude_trust_dialog(&screen_buf)
-            && state.managed_trust_dialogs.remove(session_id).is_some()
-            && let Err(error) = accept_managed_claude_trust_dialog(state, session_id)
-        {
-            tracing::warn!(source = "terminal", session_id, %error, "Could not accept managed Claude workspace trust dialog");
-        }
+        // Reported below by the open-dialog recovery when TUIC does not answer it.
+        let unanswered_first_run_dialog = screen_present
+            .then(|| {
+                managed_first_run_dialog(state, session_id, agent_type.as_deref(), &screen_buf)
+            })
+            .flatten();
 
         if startup_alt_screen {
             let label = state
@@ -2118,6 +2438,16 @@ impl ChunkProcessor {
         // more, because the next reader builds the frontend half rather than
         // deleting the emit. The overlay reads the totals when it fetches a
         // chunk. `last_vt_log_total` stays: `vt_output_grew` is a real reader.
+
+        // Input bookkeeping runs outside this reader. Drain its actual choice
+        // resolution before a following native request can choose a new owner.
+        if std::mem::take(&mut silence.lock().choice_input_resolved_pending)
+            && self.claude_hooks.resolve_permission_input()
+        {
+            // Native waits have empty text: screen absence cannot retire that
+            // dedup marker because every row contains the empty string.
+            self.last_question_text = None;
+        }
 
         // Handle terminal events from alacritty (title, clipboard, PTY writes, OSC 133, TUIC)
         let mut tuic_events: Vec<ParsedEvent> = Vec::new();
@@ -2278,6 +2608,79 @@ impl ChunkProcessor {
                         payload,
                         line,
                     } => match verb.as_str() {
+                        "claude-hook" if agent_type.as_deref() == Some("claude") => {
+                            if let Some(activity) = self
+                                .claude_hooks
+                                .receive(&payload, self.tuic_session.as_deref())
+                            {
+                                self.handle_tuic_state(activity, session_id, state);
+                                tuic_events
+                                    .extend(tuic_state_awaiting_event(activity, line as i64));
+                            }
+                        }
+                        "state"
+                            if agent_type.as_deref() == Some("claude")
+                                && payload == "busy"
+                                && self.claude_hooks.awaiting() =>
+                        {
+                            // Another tool cannot resolve the permission owner.
+                        }
+                        "grok-hook" if agent_type.as_deref() == Some("grok") => {
+                            if let Some(activity) = self
+                                .grok_hooks
+                                .receive(&payload, self.tuic_session.as_deref())
+                            {
+                                explicit_idle_in_chunk |= activity == "idle";
+                                self.handle_tuic_state(activity, session_id, state);
+                                // Queue every clear, including idle, in receipt order.
+                                // The accumulator may not have applied an earlier wait yet.
+                                if let Some(event) = tuic_state_awaiting_event(
+                                    if activity == "idle" { "busy" } else { activity },
+                                    line as i64,
+                                ) {
+                                    tuic_events.push(event);
+                                }
+                            }
+                        }
+                        "state"
+                            if agent_type.as_deref() == Some("grok")
+                                && self.grok_hooks.active() =>
+                        {
+                            // Inherited coarse hooks cannot correlate their tool/turn.
+                        }
+                        // A plain shell tab learns `agent_type` only on the 1 s
+                        // silence tick, so ego's first frames arrive before it.
+                        "agent-event" if matches!(agent_type.as_deref(), None | Some("ego")) => {
+                            // Metadata only: ego's coarse state frames own the wait.
+                            self.receive_ego_background_event(state, session_id, &payload);
+                        }
+                        "agent-tool"
+                            if matches!(agent_type.as_deref(), Some("pi" | "opencode")) =>
+                        {
+                            // Metadata only: the coarse state frames own busy and idle.
+                            crate::agent_tool_readout::receive_frame(
+                                &mut self.agent_tools,
+                                &payload,
+                                self.tuic_session.as_deref(),
+                            );
+                        }
+                        "pi-event" if agent_type.as_deref() == Some("pi") => {
+                            // Metadata only: quota headers, never busy, idle or awaiting.
+                            crate::provider_quota::pi::receive_event(
+                                &state.provider_quota,
+                                session_id,
+                                &payload,
+                                self.tuic_session.as_deref(),
+                            );
+                        }
+                        // The refusal text of ego's next `state=error` (`;` sent as `,`).
+                        "error" if matches!(agent_type.as_deref(), None | Some("ego")) => {
+                            if let Some(mut session) =
+                                state.session_maps.session_states.get_mut(session_id)
+                            {
+                                session.last_error = Some(payload.clone());
+                            }
+                        }
                         "ego-recovery" if agent_type.as_deref() == Some("ego") => {
                             if let Some(event) =
                                 crate::output_parser::parse_provider_recovery(&payload)
@@ -2288,18 +2691,101 @@ impl ChunkProcessor {
                                 tuic_events.push(event);
                             }
                         }
-                        "codex-session" => crate::codex_binding::receive(
-                            state,
-                            session_id,
-                            self.tuic_session.as_deref(),
-                            &payload,
-                        ),
+                        "codex-session" => {
+                            // A Codex child's own prompt carries the lead's session
+                            // id and the child's rollout: never rebind Chat to it.
+                            if !codex_tools::CodexTools::is_child_identity(
+                                &payload,
+                                self.tuic_session.as_deref(),
+                            ) {
+                                crate::codex_binding::receive(
+                                    state,
+                                    session_id,
+                                    self.tuic_session.as_deref(),
+                                    &payload,
+                                );
+                            }
+                            self.codex_tools
+                                .observe_identity(&payload, self.tuic_session.as_deref());
+                        }
+                        "codex-tool" if agent_type.as_deref() == Some("codex") => {
+                            let native_session =
+                                state.session_maps.session_states.get(session_id).and_then(
+                                    |session| {
+                                        session
+                                            .codex_binding
+                                            .as_ref()
+                                            .map(|binding| binding.session_id.clone())
+                                    },
+                                );
+                            let activity = self.codex_tools.receive(
+                                &payload,
+                                self.tuic_session.as_deref(),
+                                native_session.as_deref(),
+                            );
+                            match activity {
+                                Some(codex_tools::Activity::Question(prompt_text)) => {
+                                    tuic_events.push(ParsedEvent::Question {
+                                        prompt_text,
+                                        confident: true,
+                                    });
+                                }
+                                Some(codex_tools::Activity::Busy) => {
+                                    // Tool noise must not dismiss an existing native or screen approval.
+                                    let waiting = self.codex_tools.awaiting()
+                                        || state
+                                            .session_maps
+                                            .session_states
+                                            .get(session_id)
+                                            .is_some_and(|session| session.awaiting_input);
+                                    if !waiting {
+                                        self.handle_tuic_state("busy", session_id, state);
+                                    }
+                                }
+                                Some(
+                                    activity @ (codex_tools::Activity::Answered
+                                    | codex_tools::Activity::Ended),
+                                ) => {
+                                    let activity =
+                                        if matches!(activity, codex_tools::Activity::Ended) {
+                                            "idle"
+                                        } else {
+                                            "busy"
+                                        };
+                                    explicit_idle_in_chunk |= activity == "idle";
+                                    self.handle_tuic_state(activity, session_id, state);
+                                    // Queue in wire order even if the accumulator has not seen the question yet.
+                                    tuic_events.extend(tuic_state_awaiting_event("busy", -1));
+                                }
+                                Some(codex_tools::Activity::Settled) => {
+                                    // The lead stopped earlier; its last child ends the turn.
+                                    // An open human wait is not touched.
+                                    explicit_idle_in_chunk = true;
+                                    self.handle_tuic_state("idle", session_id, state);
+                                }
+                                None => {}
+                            }
+                        }
                         "state" => {
+                            if agent_type.as_deref() == Some("codex") {
+                                // A Codex child's prompt is not a lead turn (#2635-8052).
+                                if payload == "prompt" && self.codex_tools.take_child_prompt() {
+                                    continue;
+                                }
+                                // Live children keep a lead that already stopped busy.
+                                if payload == "idle" && self.codex_tools.hold_for_children() {
+                                    continue;
+                                }
+                            }
+                            if agent_type.as_deref() == Some("claude") && payload == "idle" {
+                                self.claude_hooks.clear();
+                            }
                             // Codex can emit completion while an approval or /plan
                             // question is still unanswered. Require the same currently
                             // rendered dialog and its active controls. Real answer input
                             // retires the controls before subsequent idle is accepted.
-                            let open_codex_dialog = payload == "idle"
+                            let open_codex_dialog = !self.codex_tools.awaiting()
+                                && payload == "idle"
                                 && agent_type.as_deref() == Some("codex")
                                 && state
                                     .session_maps
@@ -2325,9 +2811,15 @@ impl ChunkProcessor {
                             // idle/busy drive the shell-state machine; awaiting is
                             // ignored here (it's a separate field). The awaiting_input
                             // field is driven by Question/UserInput events instead.
-                            explicit_idle_in_chunk |= payload == "idle";
+                            if matches!(payload.as_str(), "idle" | "prompt" | "error") {
+                                self.codex_tools.clear();
+                                self.retire_tools();
+                            }
+                            explicit_idle_in_chunk |= matches!(payload.as_str(), "idle" | "error");
                             self.handle_tuic_state(&payload, session_id, state);
-                            if matches!(payload.as_str(), "busy" | "idle") && recovery_active {
+                            if matches!(payload.as_str(), "busy" | "idle" | "error")
+                                && recovery_active
+                            {
                                 recovery_active = false;
                                 tuic_events.push(ParsedEvent::ProviderRecovery { recovery: None });
                             }
@@ -2398,9 +2890,11 @@ impl ChunkProcessor {
         let mut output_offset_after_chunk = 0;
         if let Some(ring) = state.session_maps.output_buffers.get(session_id) {
             let mut ring_guard = ring.lock();
-            ring_guard.write(data.as_bytes());
+            if terminal_output {
+                ring_guard.write(data.as_bytes());
+                crate::state::broadcast_to_ws_clients(&state.ws_clients, session_id, data);
+            }
             output_offset_after_chunk = ring_guard.total_written;
-            crate::state::broadcast_to_ws_clients(&state.ws_clients, session_id, data);
             drop(ring_guard);
         }
 
@@ -2408,13 +2902,20 @@ impl ChunkProcessor {
         // One critical section for every flag this chunk reads out of
         // SilenceState — `hook_state_seen` used to take the lock a second time
         // a few lines below, for a single bool.
-        let (in_resize_grace, in_startup_grace, parser_dedup_reset, hook_state_seen) = {
+        let (
+            in_resize_grace,
+            in_startup_grace,
+            parser_dedup_reset,
+            native_turn_source,
+            hook_state_seen,
+        ) = {
             let mut sl = silence.lock();
             (
                 sl.is_resize_grace(),
                 sl.is_startup_grace(),
                 sl.take_parser_dedup_reset(),
-                sl.hook_state_seen,
+                sl.native_state.activity().is_some(),
+                sl.native_state_received(),
             )
         };
         // A line was submitted since the last chunk: the same API error or
@@ -2423,7 +2924,11 @@ impl ChunkProcessor {
             self.parser.reset_input_dedup();
         }
         let suppress_notifications = in_resize_grace || in_startup_grace;
+        // After this chunk's hook receipts: name the request a live wait belongs to.
+        self.publish_wait(state, session_id);
         let mut events = tuic_events;
+        events.extend(self.publish_tool());
+        events.extend(self.publish_ego_turn());
         // Hook-instrumented sessions get awaiting from OSC 7770; drop heuristic
         // (regex) Question events from the parser so they don't double-fire.
         let hook_instrumented = state
@@ -2445,7 +2950,9 @@ impl ChunkProcessor {
             crate::pty_capture::record_with_geometry(session_id, data.as_bytes(), capture_geometry);
         }
 
-        raw_stream_events(&mut self.raw_carry, data, &mut events);
+        if terminal_output {
+            raw_stream_events(&mut self.raw_carry, data, &mut events);
+        }
         let agent_active_for_parse = state
             .session_maps
             .session_states
@@ -2604,20 +3111,28 @@ impl ChunkProcessor {
             );
         }
         let rows = structured_rows.as_deref().unwrap_or(&changed_rows);
-        // Claude redraws earlier responses while submitting the next composer.
-        // Only suggestions below the latest submitted prompt belong to this
-        // turn. Exclude the live input box so an unsent draft is not a boundary.
-        let suggest_floor = if agent_type.as_deref() == Some("claude") && screen_present {
-            let refs: Vec<&str> = screen_buf.iter().map(String::as_str).collect();
-            let end = crate::chrome::find_agent_chrome_cutoff(&refs, Some("claude"))
-                .unwrap_or(refs.len());
-            refs[..end].iter().rposition(|row| {
-                row.strip_prefix('❯')
-                    .is_some_and(|draft| !draft.trim().is_empty())
-            })
-        } else {
-            None
+        // Claude redraws earlier responses while submitting the next composer,
+        // and ego scrolls them up as the follow-up turn streams: a previous
+        // turn's `suggest:` row is re-parsed as a fresh suggestion and declares
+        // the new turn complete before it has worked (#2924-b811). Only
+        // suggestions below the latest submitted prompt belong to this turn.
+        // Exclude the live input box so an unsent draft is not a boundary.
+        let suggest_prompt_glyph = match agent_type.as_deref() {
+            Some("claude") => Some('❯'),
+            Some("ego") => Some('>'),
+            _ => None,
         };
+        let suggest_floor = suggest_prompt_glyph
+            .filter(|_| screen_present)
+            .and_then(|glyph| {
+                let refs: Vec<&str> = screen_buf.iter().map(String::as_str).collect();
+                let end = crate::chrome::find_agent_chrome_cutoff(&refs, agent_type.as_deref())
+                    .unwrap_or(refs.len());
+                refs[..end].iter().rposition(|row| {
+                    row.strip_prefix(glyph)
+                        .is_some_and(|draft| !draft.trim().is_empty())
+                })
+            });
         events.extend(
             self.parser
                 .parse_clean_lines_with_suggest_floor(rows, agent_active_for_parse, suggest_floor)
@@ -2690,6 +3205,20 @@ impl ChunkProcessor {
             }
         }
 
+        // Native receipts own permission/history heuristics, not strict Ask forms.
+        // Filter heuristic events before adding independently validated native dialogs.
+        if agent_type.as_deref() == Some("grok")
+            && self.grok_hooks.active()
+            && !self.grok_hooks.awaiting()
+        {
+            events.retain(|event| {
+                !matches!(
+                    event,
+                    ParsedEvent::Question { .. } | ParsedEvent::ChoicePrompt { .. }
+                )
+            });
+        }
+
         // ChoicePrompt detection — numbered confirmation dialogs rendered below
         // the prompt line (edit-confirm, bash-confirm, apply-patch). Runs on
         // every chunk (unlike slash_menu which is gated by slash_mode) because
@@ -2706,14 +3235,30 @@ impl ChunkProcessor {
         if let Some(screen) = screen_cache {
             let choice = if agent_type.as_deref() == Some("claude") {
                 crate::output_parser::parse_claude_ask_user_question(screen)
+                    .or_else(|| claude_hooks::permission_choices(screen))
                     .or_else(|| crate::output_parser::parse_choice_prompt(screen))
             } else if agent_type.as_deref() == Some("ego") {
                 let rows = ego_question_rows.as_deref().unwrap_or(screen);
                 crate::output_parser::parse_ego_question(rows)
                     .or_else(|| crate::output_parser::parse_ego_approval(rows))
             } else if agent_type.as_deref() == Some("grok") {
+                let permission_or_legacy = !self.grok_hooks.active() || self.grok_hooks.awaiting();
                 crate::output_parser::parse_grok_question(screen)
-                    .or_else(|| crate::output_parser::parse_choice_prompt(screen))
+                    .filter(|event| {
+                        permission_or_legacy
+                            || match event {
+                                ParsedEvent::Question { .. } => true, // Strict Ask free-text form.
+                                ParsedEvent::ChoicePrompt { options, .. } => {
+                                    options.last().is_some_and(|option| option.key == "z")
+                                }
+                                _ => false,
+                            }
+                    })
+                    .or_else(|| {
+                        permission_or_legacy
+                            .then(|| crate::output_parser::parse_choice_prompt(screen))
+                            .flatten()
+                    })
             } else {
                 crate::output_parser::parse_choice_prompt(screen)
             };
@@ -2825,6 +3370,7 @@ impl ChunkProcessor {
                 pending_awaiting.unwrap_or(awaiting),
                 has_choice,
                 pending_awaiting == Some(true),
+                unanswered_first_run_dialog.as_deref(),
             ) {
                 // Clear the dedup: the badge is off, so this event must reach state.
                 self.last_question_text = None;
@@ -2923,11 +3469,15 @@ impl ChunkProcessor {
             // soon as the prompt leaves the screen (see the screen-absence reset
             // above), so this guards one pending prompt, not the whole session.
             if let ParsedEvent::Question { prompt_text, .. } = event {
-                // Ego's empty title is a native awaiting marker, not screen
+                // Empty ego/Grok/Pi native titles are awaiting markers, not screen
                 // content. Each marker establishes a wait independently of the
                 // previous dialog's presence, shape or repaint bookkeeping.
                 if self.last_question_text.as_deref() == Some(prompt_text.as_str())
-                    && !(agent_type.as_deref() == Some("ego") && prompt_text.is_empty())
+                    && !(prompt_text.is_empty()
+                        && (agent_type.as_deref() == Some("ego")
+                            || agent_type.as_deref() == Some("pi")
+                            || (agent_type.as_deref() == Some("grok")
+                                && self.grok_hooks.awaiting())))
                 {
                     continue;
                 }
@@ -3143,18 +3693,28 @@ impl ChunkProcessor {
             });
         }
 
-        // Claude prints this tool result when Esc dismisses AskUserQuestion.
-        // A bare Esc has no line-input event, so its confident notification
-        // otherwise stays latched after the completed turn. Require the newly
-        // painted result and a ready composer; a dialog still on screen must
-        // retain its badge, including while Claude repaints its status line.
+        // Claude prints this tool result when Esc dismisses AskUserQuestion,
+        // and `User rejected Claude's plan:` when Esc refuses ExitPlanMode
+        // (2.1.316, `claude-plan-reject-2634.tcap`). A bare Esc has no
+        // line-input event and Claude sends no PostToolUse or Stop, so its
+        // confident notification otherwise stays latched after the completed
+        // turn. Require the newly painted result and a ready composer; a
+        // dialog still on screen must retain its badge, including while Claude
+        // repaints its status line.
         let declined_screen = agent_type.as_deref() == Some("claude")
             && screen_activity == AgentScreenActivity::Ready
             && changed_rows.iter().any(|row| {
-                row.text.contains("User declined") && row.text.contains("answer questions")
+                (row.text.contains("User declined") && row.text.contains("answer questions"))
+                    || row.text.contains("User rejected Claude's plan")
             })
-            && screen_cache
-                .is_some_and(|screen| crate::output_parser::ink_dialog_footer(screen).is_none())
+            && screen_cache.is_some_and(|screen| {
+                // Ink can leave the old footer below the ready composer. The
+                // choice parser has already retired it when no dialog remains.
+                crate::output_parser::ink_dialog_footer(screen).is_none()
+                    || events
+                        .iter()
+                        .any(|event| matches!(event, ParsedEvent::ChoiceCleared))
+            })
             && !events.iter().any(|event| {
                 matches!(
                     event,
@@ -3176,6 +3736,23 @@ impl ChunkProcessor {
                 (question, session.turn_epoch)
             });
         if let Some((question, turn_epoch)) = declined_session {
+            self.claude_hooks.clear();
+            self.publish_wait(state, session_id);
+            if let Some(event) = self.publish_tool()
+                && let Ok(mut json) = serde_json::to_value(event)
+            {
+                if let Some(object) = json.as_object_mut() {
+                    object.insert("_turn_epoch".to_string(), turn_epoch.into());
+                }
+                #[cfg(feature = "desktop")]
+                if let Some(app) = state.app_handle.read().as_ref() {
+                    let _ = app.emit(&format!("pty-parsed-{session_id}"), &json);
+                }
+                state.emit_pty_event(crate::state::AppEvent::PtyParsed {
+                    session_id: session_id.to_string(),
+                    parsed: json.into(),
+                });
+            }
             if let Some(expected_question_text) = question {
                 state.emit_pty_event(crate::state::AppEvent::PtyParsed {
                     session_id: session_id.to_string(),
@@ -3350,7 +3927,7 @@ impl ChunkProcessor {
             let mut sl = silence.lock();
             let mut working_applied = false;
             let mut reopened_completion = false;
-            if apply_working {
+            if apply_working && sl.native_state.activity().is_none() {
                 let turn_completed = state
                     .session_maps
                     .session_states
@@ -3387,6 +3964,7 @@ impl ChunkProcessor {
             // idle evidence. Doing them first bypasses record_busy's rank gate
             // and lets decorative repaints reopen a hook-completed turn.
             if real_activity
+                && sl.native_state.activity().is_none()
                 && (sl.evidence.busy.is_some()
                     || sl
                         .evidence
@@ -3460,7 +4038,9 @@ impl ChunkProcessor {
         // Working-evidence's CAS is unconditional once recorded (matching the
         // old `apply_working_evidence`, which was never gated by resize grace);
         // real/spinner activity's CAS keeps its own resize-grace gate.
-        let prev = if working_applied || (real_activity && !in_resize_grace_after) {
+        let prev = if !native_turn_source
+            && (working_applied || (real_activity && !in_resize_grace_after))
+        {
             state
                 .session_maps
                 .shell_states
@@ -3555,7 +4135,7 @@ fn process_kitty_actions(kitty_actions: &[KittyAction], session_id: &str, state:
 /// `ESC[?6c` was painted as the literal text `^[[?6c` at the top of the startup
 /// banner and never delivered. Claude, having received nothing, re-queried
 /// 100ms later from raw mode and got a clean answer. Withholding the premature
-/// reply therefore costs no information: the querier retries once it can read.
+/// reply avoids the echo, but it must be queued: not every querier retries.
 ///
 /// **The predicate is `ICANON`, not `ECHO`, and the difference is load-bearing.**
 /// `ECHO` decides whether the bytes are *also* painted on screen; `ICANON`
@@ -3591,13 +4171,36 @@ fn tty_would_swallow_reply(state: &AppState, session_id: &str) -> bool {
 /// thread is blocked in a kernel write, so the old session-lock deadlock cannot
 /// occur and mandatory replies are never discarded merely due to contention.
 ///
-/// Replies are withheld while the tty is canonical — see
-/// [`tty_would_swallow_reply`].
+/// Replies wait in reader order while the tty is canonical. The frame ticker
+/// retries them independently of output, since the child may silently go raw
+/// and wait for its reply. See [`tty_would_swallow_reply`].
 fn write_terminal_reply(state: &AppState, session_id: &str, response: &[u8], kind: &str) {
+    if !state.session_maps.sessions.contains_key(session_id) {
+        return;
+    }
+    let entry = state
+        .session_maps
+        .terminal_replies
+        .entry(session_id.to_string())
+        .or_default();
+    let mut pending = entry.lock();
+    pending.extend_from_slice(response);
+    drain_terminal_replies(state, session_id, &mut pending, kind);
+}
+
+fn flush_terminal_replies(state: &AppState, session_id: &str) {
+    let Some(entry) = state.session_maps.terminal_replies.get(session_id) else {
+        return;
+    };
+    let mut pending = entry.lock();
+    if !pending.is_empty() {
+        drain_terminal_replies(state, session_id, &mut pending, "queued reply");
+    }
+}
+
+fn drain_terminal_replies(state: &AppState, session_id: &str, pending: &mut Vec<u8>, kind: &str) {
     #[cfg(not(windows))]
     if tty_would_swallow_reply(state, session_id) {
-        tracing::debug!(source = "terminal", session_id = %session_id, %kind,
-            "Terminal reply withheld: tty is canonical, the querier cannot read it yet");
         return;
     }
     // Terminal protocol replies are not replacement user input.
@@ -3607,7 +4210,7 @@ fn write_terminal_reply(state: &AppState, session_id: &str, response: &[u8], kin
         .and_then(|writer| {
             let mut writer = writer.lock();
             writer
-                .write_all(response)
+                .write_all(pending)
                 .and_then(|()| writer.flush())
                 .map_err(|error| format!("Write failed: {error}"))
         });
@@ -3615,6 +4218,9 @@ fn write_terminal_reply(state: &AppState, session_id: &str, response: &[u8], kin
         tracing::warn!(source = "terminal", session_id = %session_id, %kind, %error,
             "Terminal reply failed");
     }
+    // A failed write may have delivered a prefix; replaying it would duplicate
+    // protocol bytes. Keep the existing failure reporting instead of retrying IO.
+    pending.clear();
 }
 
 /// Flush remaining bytes at EOF through the normal publication sanitizer.
@@ -3757,6 +4363,12 @@ pub(crate) fn record_submitted_line(
     line: i64,
 ) {
     note_submitted_input(state, session_id);
+    // A submitted line is user input: it lifts a refused turn's block on
+    // automated input before the UserInput event republishes the state. The
+    // turn is already busy, so no automated wake can claim the composer first.
+    if let Some(mut session) = state.session_maps.session_states.get_mut(session_id) {
+        session.agent_error = false;
+    }
     if content.split_whitespace().count() >= 10 {
         state
             .session_maps
@@ -3819,7 +4431,7 @@ pub(crate) fn spawn_reader_thread(
     // Frame ticker: decouples PTY read() from frame serialization.
     // Reader sets dirty flag; ticker serializes+sends on paced or input wakes.
     // Coalesces rapid writes (spinner erase+rewrite) into a single frame.
-    let frame_dirty = Arc::new(AtomicBool::new(false));
+    let frame_dirty = Arc::new(crate::pty::frame_priority::FrameDirty::new(false));
     state
         .grid
         .frame_dirty
@@ -3879,16 +4491,45 @@ pub(crate) fn spawn_reader_thread(
         let mut last_load_check: Option<std::time::Instant> = None;
         let mut system_saturated = false;
         ticker_priority.bind_ticker();
+        ticker_dirty.bind_ticker();
         let mut next_tick = std::time::Instant::now() + TICK;
         let mut priority_retry: Option<std::time::Instant> = None;
         while ticker_running.load(Ordering::Relaxed) {
-            let wake_at = priority_retry.map_or(next_tick, |retry| retry.min(next_tick));
-            std::thread::park_timeout(wake_at.saturating_duration_since(std::time::Instant::now()));
+            // An idle PTY owes nothing: park until the reader, a scroll or a
+            // subscribe sets dirty (FrameDirty::store wakes this thread), or the
+            // reader exits. Any debt keeps the 16 ms cadence.
+            let debt = frame_priority::TickerDebt {
+                dirty: ticker_dirty.load(Ordering::Relaxed),
+                sync_active: ticker_sync_active
+                    .as_ref()
+                    .is_some_and(|f| f.load(Ordering::Relaxed)),
+                watcher_batch: ticker_batcher.lock().has_pending(),
+                terminal_replies: ticker_state
+                    .session_maps
+                    .terminal_replies
+                    .get(&ticker_sid)
+                    .is_some_and(|pending| !pending.lock().is_empty()),
+                priority_retry,
+            };
+            match debt.wake_at(next_tick) {
+                Some(wake_at) => std::thread::park_timeout(
+                    wake_at.saturating_duration_since(std::time::Instant::now()),
+                ),
+                None => {
+                    if !ticker_running.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    std::thread::park();
+                }
+            }
             let now = std::time::Instant::now();
             let periodic_tick = now >= next_tick;
             priority_retry = None;
             if periodic_tick {
                 next_tick = now + TICK;
+                // A child can change termios and wait without writing again.
+                // Retry before dirty/subscriber guards, including hidden PTYs.
+                flush_terminal_replies(&ticker_state, &ticker_sid);
             } else if ticker_priority.request(now, last_sent).is_none() {
                 // Spurious/late notifications do not accelerate background output.
                 continue;
@@ -4161,7 +4802,14 @@ pub(crate) fn spawn_reader_thread(
                 .sessions
                 .get(&session_id)
                 .and_then(|s| s.lock().cwd.clone());
-            let mut processor = ChunkProcessor::new(session_cwd, tuic_session);
+            // Shared with the local API: agent hooks post their frames there
+            // instead of the tty (#2749-bee7). Locked per chunk, never across read().
+            let processor_cell = HookInbox::register(
+                &state,
+                &session_id,
+                ChunkProcessor::new(session_cwd, tuic_session),
+                silence.clone(),
+            );
             // Line reassembly for plugin watcher matching. Separate from the VT
             // parser: watchers match the byte stream as it scrolls past, not the
             // screen contents.
@@ -4174,6 +4822,7 @@ pub(crate) fn spawn_reader_thread(
                 match reader.read(&mut buf) {
                     Ok(0) => break,
                     Ok(n) => {
+                        let mut processor = processor_cell.lock();
                         // A chunk already being processed before input cannot
                         // consume the new input's wake hint.
                         let input_generation = input_priority.generation();
@@ -4287,6 +4936,7 @@ pub(crate) fn spawn_reader_thread(
                 }
             }
             running.store(false, Ordering::Relaxed);
+            frame_dirty.wake();
 
             if try_shell_transition(&state, &session_id, SHELL_BUSY, SHELL_IDLE, false) {
                 emit_shell_state(&state, &session_id, "idle");
@@ -4310,7 +4960,7 @@ pub(crate) fn spawn_reader_thread(
             let remaining = flush_eof(
                 &mut utf8_buf,
                 &mut esc_buf,
-                &mut processor,
+                &mut processor_cell.lock(),
                 &silence,
                 &session_id,
                 &state,
@@ -4387,6 +5037,7 @@ pub(crate) fn spawn_reader_thread(
             // reaches the code after its loop that removes this session's
             // grid_frame_dirty / sync_update_active entries.
             running.store(false, Ordering::Relaxed);
+            frame_dirty.wake();
             mark_session_exited(&sid_for_panic, &state_for_panic);
         }
     });

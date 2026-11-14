@@ -1,7 +1,6 @@
 use crate::AppState;
 use crate::mdkb_daemon::with_client;
 use serde::Serialize;
-use std::path::PathBuf;
 use std::sync::Arc;
 use tauri::State;
 
@@ -213,119 +212,15 @@ fn refresh_launch_files() {
     }
 }
 
-fn mdkb_install_path() -> PathBuf {
-    #[cfg(target_os = "macos")]
-    {
-        PathBuf::from("/usr/local/bin/mdkb")
-    }
-    #[cfg(target_os = "linux")]
-    {
-        PathBuf::from("/usr/local/bin/mdkb")
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let local = std::env::var("LOCALAPPDATA").unwrap_or_default();
-        PathBuf::from(format!("{local}\\Microsoft\\WindowsApps\\mdkb.exe"))
-    }
-}
-
-fn mdkb_asset_name() -> &'static str {
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    {
-        "mdkb-macos-arm64"
-    }
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    {
-        "mdkb-macos-x64"
-    }
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    {
-        "mdkb-linux-x64"
-    }
-    #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-    {
-        "mdkb-linux-arm64"
-    }
-    #[cfg(target_os = "windows")]
-    {
-        "mdkb-windows-x64.exe"
-    }
-}
-
-fn stage_mdkb_for_elevation(
-    base: &std::path::Path,
-    asset: &str,
-    bytes: &[u8],
-) -> std::io::Result<crate::private_scratch::StagedFile> {
-    crate::private_scratch::stage_for_elevated_copy(base, "mdkb-install-", asset, bytes)
-}
-
 #[tauri::command]
 pub async fn install_mdkb(state: State<'_, Arc<AppState>>) -> Result<String, String> {
-    let asset = mdkb_asset_name();
-    let url = format!("https://github.com/sstraus/mdkb/releases/latest/download/{asset}");
-
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .redirect(reqwest::redirect::Policy::limited(5))
-        .build()
-        .map_err(|e| format!("HTTP client error: {e}"))?;
-
-    let resp = client
-        .get(&url)
-        .send()
-        .await
-        .map_err(|e| format!("Download failed: {e}"))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("Download failed: HTTP {}", resp.status()));
-    }
-
-    let bytes = resp
-        .bytes()
-        .await
-        .map_err(|e| format!("Failed to read response: {e}"))?;
-
-    let install_path = mdkb_install_path();
-    let tmp_path = install_path.with_extension("tmp");
-
-    if let Some(parent) = install_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-
-    // Try direct write first
-    let direct_ok = std::fs::write(&tmp_path, &bytes).is_ok();
-
-    if direct_ok {
-        std::fs::rename(&tmp_path, &install_path)
-            .map_err(|e| format!("Failed to move binary: {e}"))?;
-    } else {
-        // Need elevation. The staged file is copied as root, so it must sit
-        // in a fresh private dir (random name, 0700), never a predictable
-        // `temp_dir()/mdkb-install` another local user could pre-create and
-        // swap the binary in. Dropping `staged` removes the dir on every path.
-        let _ = std::fs::remove_file(&tmp_path);
-        let staged = stage_mdkb_for_elevation(&std::env::temp_dir(), asset, &bytes)
-            .map_err(|e| format!("Failed to stage binary: {e}"))?;
-
-        crate::tuic_cli::copy_with_elevation(
-            &staged.path().to_string_lossy(),
-            &install_path.to_string_lossy(),
-        )?;
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&install_path, std::fs::Permissions::from_mode(0o755)).map_err(
-            |e| {
-                format!(
-                    "Installed but failed to set executable bit: {e}. Try: chmod +x {}",
-                    install_path.display()
-                )
-            },
-        )?;
-    }
+    let install_path = crate::release_install::install_path("mdkb");
+    crate::release_install::download_and_install(
+        &crate::release_install::latest_download_base("sstraus/mdkb"),
+        &crate::release_install::asset_name("mdkb"),
+        &install_path,
+    )
+    .await?;
 
     tracing::info!(source = "mdkb", path = %install_path.display(), "mdkb installed");
 
@@ -387,28 +282,6 @@ pub async fn uninstall_mdkb(state: State<'_, Arc<AppState>>) -> Result<(), Strin
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn staging_does_not_reuse_a_planted_install_path() {
-        // Catches the elevated installer adopting a directory controlled by another user.
-        let base = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-        let planted = base.path().join("mdkb-install");
-        std::fs::create_dir(&planted).unwrap();
-        let planted_binary = planted.join("mdkb-linux-x64");
-        std::fs::write(&planted_binary, b"attacker-controlled").unwrap();
-        let staged =
-            stage_mdkb_for_elevation(base.path(), "mdkb-linux-x64", b"downloaded").unwrap();
-        assert_ne!(
-            staged.path().parent().unwrap(),
-            planted,
-            "must not reuse a planted staging directory"
-        );
-        assert_eq!(std::fs::read(staged.path()).unwrap(), b"downloaded");
-        assert_eq!(
-            std::fs::read(&planted_binary).unwrap(),
-            b"attacker-controlled"
-        );
-    }
 
     fn symbol(name: &str, file: &str, line_start: u32) -> crate::mdkb_client::MdkbSymbol {
         crate::mdkb_client::MdkbSymbol {

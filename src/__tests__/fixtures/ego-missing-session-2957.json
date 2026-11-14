@@ -1,0 +1,1 @@
+{"code":"agent_error","message":"session not found: 00000000-0000-4000-8000-000000002957 (store root: /test/sessions): {\n  \"sessionId\": \"00000000-0000-4000-8000-000000002957\",\n  \"storeRoot\": \"/test/sessions\"\n}","connectionId":"01a1c96e-81f1-70f4-b0f0-62f3166d746f","sessionId":null,"operation":"load","retryable":false}

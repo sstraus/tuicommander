@@ -1,0 +1,325 @@
+{
+  "method": "Headless Chrome; full worktree mobile UI; owned mock HTTP responses; reduced visualViewport height simulates keyboard open; before CSS from main, after CSS from branch",
+  "evidence": [
+    {
+      "device": "iphone",
+      "width": 390,
+      "height": 844,
+      "visible": 500,
+      "version": "before",
+      "state": "idle",
+      "png": "iphone-before-idle.png",
+      "visualHeight": 500,
+      "appHeight": "500px",
+      "buttons": [
+        {
+          "text": "Ctrl",
+          "color": "rgb(160, 160, 160)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": "false"
+        },
+        {
+          "text": "Tab",
+          "color": "rgb(160, 160, 160)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        },
+        {
+          "text": "Esc",
+          "color": "rgb(160, 160, 160)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        }
+      ]
+    },
+    {
+      "device": "iphone",
+      "width": 390,
+      "height": 844,
+      "visible": 500,
+      "version": "before",
+      "state": "open",
+      "png": "iphone-before-open.png",
+      "visualHeight": 500,
+      "appHeight": "500px",
+      "buttons": [
+        {
+          "text": "Ctrl",
+          "color": "rgb(160, 160, 160)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": "true"
+        },
+        {
+          "text": "Tab",
+          "color": "rgb(160, 160, 160)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        },
+        {
+          "text": "Esc",
+          "color": "rgb(160, 160, 160)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        }
+      ]
+    },
+    {
+      "device": "iphone",
+      "width": 390,
+      "height": 844,
+      "visible": 500,
+      "version": "after",
+      "state": "idle",
+      "png": "iphone-after-idle.png",
+      "visualHeight": 500,
+      "appHeight": "500px",
+      "buttons": [
+        {
+          "text": "Ctrl",
+          "color": "rgb(204, 204, 204)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": "false"
+        },
+        {
+          "text": "Tab",
+          "color": "rgb(204, 204, 204)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        },
+        {
+          "text": "Esc",
+          "color": "rgb(204, 204, 204)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        }
+      ]
+    },
+    {
+      "device": "iphone",
+      "width": 390,
+      "height": 844,
+      "visible": 500,
+      "version": "after",
+      "state": "open",
+      "png": "iphone-after-open.png",
+      "visualHeight": 500,
+      "appHeight": "500px",
+      "buttons": [
+        {
+          "text": "Ctrl",
+          "color": "rgb(89, 168, 221)",
+          "border": "rgb(89, 168, 221)",
+          "background": "rgb(55, 55, 61)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": "true"
+        },
+        {
+          "text": "Tab",
+          "color": "rgb(204, 204, 204)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        },
+        {
+          "text": "Esc",
+          "color": "rgb(204, 204, 204)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        }
+      ]
+    },
+    {
+      "device": "ipad",
+      "width": 1024,
+      "height": 1366,
+      "visible": 966,
+      "version": "before",
+      "state": "idle",
+      "png": "ipad-before-idle.png",
+      "visualHeight": 966,
+      "appHeight": "966px",
+      "buttons": [
+        {
+          "text": "Ctrl",
+          "color": "rgb(160, 160, 160)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": "false"
+        },
+        {
+          "text": "Tab",
+          "color": "rgb(160, 160, 160)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        },
+        {
+          "text": "Esc",
+          "color": "rgb(160, 160, 160)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        }
+      ]
+    },
+    {
+      "device": "ipad",
+      "width": 1024,
+      "height": 1366,
+      "visible": 966,
+      "version": "before",
+      "state": "open",
+      "png": "ipad-before-open.png",
+      "visualHeight": 966,
+      "appHeight": "966px",
+      "buttons": [
+        {
+          "text": "Ctrl",
+          "color": "rgb(160, 160, 160)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": "true"
+        },
+        {
+          "text": "Tab",
+          "color": "rgb(160, 160, 160)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        },
+        {
+          "text": "Esc",
+          "color": "rgb(160, 160, 160)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        }
+      ]
+    },
+    {
+      "device": "ipad",
+      "width": 1024,
+      "height": 1366,
+      "visible": 966,
+      "version": "after",
+      "state": "idle",
+      "png": "ipad-after-idle.png",
+      "visualHeight": 966,
+      "appHeight": "966px",
+      "buttons": [
+        {
+          "text": "Ctrl",
+          "color": "rgb(204, 204, 204)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": "false"
+        },
+        {
+          "text": "Tab",
+          "color": "rgb(204, 204, 204)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        },
+        {
+          "text": "Esc",
+          "color": "rgb(204, 204, 204)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        }
+      ]
+    },
+    {
+      "device": "ipad",
+      "width": 1024,
+      "height": 1366,
+      "visible": 966,
+      "version": "after",
+      "state": "open",
+      "png": "ipad-after-open.png",
+      "visualHeight": 966,
+      "appHeight": "966px",
+      "buttons": [
+        {
+          "text": "Ctrl",
+          "color": "rgb(89, 168, 221)",
+          "border": "rgb(89, 168, 221)",
+          "background": "rgb(55, 55, 61)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": "true"
+        },
+        {
+          "text": "Tab",
+          "color": "rgb(204, 204, 204)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        },
+        {
+          "text": "Esc",
+          "color": "rgb(204, 204, 204)",
+          "border": "rgb(62, 62, 66)",
+          "background": "rgb(45, 45, 48)",
+          "opacity": "1",
+          "disabled": false,
+          "expanded": null
+        }
+      ]
+    }
+  ]
+}

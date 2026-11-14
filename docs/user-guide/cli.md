@@ -36,10 +36,9 @@ tuic /path/to/project
 
 # Open with --wait (for use as $EDITOR)
 tuic open --wait file.rs
-
-# Diff two files
-tuic diff old.rs new.rs
 ```
+
+Files open through the selected running server. An OS URL handler is not required.
 
 A directory lands in the sidebar and becomes the active repo. `tuic <dir>` and `tuic open <dir>` call the selected running server over local IPC through MCP `repo action=add`; development builds need no registered OS URL handler. Registration is explicit and takes effect immediately, without a confirmation dialog or a connected desktop window. Reopening preserves existing workspaces, terminals, names and groups. Registration does not create a terminal; use `tuic new` for a shell. Server errors produce a nonzero exit code.
 
@@ -133,6 +132,8 @@ cat <<'JSON' | tuic mcp agent -
 JSON
 ```
 
+`tuic mcp init` is not a tool: it prints the instructions the server returns from the MCP `initialize` handshake for the caller's session (the same text an MCP client reads), for an agent whose MCP connection dropped.
+
 Tool and protocol errors go to stderr with exit code 1. Invalid JSON or CLI
 arguments exit 2 before connecting. Managed callers send `$TUIC_SESSION` for
 peer binding; callers outside TUICommander register an external identity for
@@ -143,11 +144,11 @@ that invocation.
 `tuic workflow [<json>|-]` calls the grouped `workflow` MCP tool. Use a typed action envelope:
 
 ```bash
-tuic workflow '{"action":"story","input":{"action":"list_plans"}}'
+tuic workflow '{"action":"definition","input":{"action":"list_drafts"}}'
 tuic workflow '{"action":"run","input":{"action":"get","run_id":"run-id"}}'
 ```
 
-The other actions are `proposal_create`, `report` and `launch`, each with its typed payload under `input`. Proposal creation requires the run's active bound coordinator and a stable `proposalKey`; retries return the same story. Ordinary story creation is not a substitute. Managed callers retain their caller binding. `tuic story` still calls the shared story service with `--project` support; `tuic automations` still calls the separate scheduler and works when `workflow` is disabled. The old workflow MCP names are removed without aliases. Reconnect after installing the updated backend to discover the new tool.
+The other actions are `proposal_create`, `report` and `launch`, each with its typed payload under `input`. Proposal creation requires the run's active bound coordinator and a stable `proposalKey`; retries return the same story. Ordinary story creation is not a substitute. Managed callers retain their caller binding. Stories, plans and Ideas are not workflow actions: MCP clients use the separate `story` tool, and `tuic story` still calls the shared story service with `--project` support; `tuic automations` still calls the separate scheduler and works when `workflow` is disabled. The old workflow MCP names are removed without aliases. Reconnect after installing the updated backend to discover the new tool.
 
 Register an existing local directory directly through MCP:
 
@@ -170,17 +171,21 @@ code is written to `<log>.exit`. When it finishes, `tuic` requests a
 The `cmd` label contains only the first line and at most 120 Unicode characters,
 including a final `…` when text is omitted. Read the log header for the full command. If that session is busy, the wake is queued
 until it becomes idle. `<log>.wake` records the request outcome as JSON:
-`queued`, `mailed`, `retrying`, or `failed`, with `tuic_session` and the number
-of queue attempts. A queue lookup or request failure falls
-back to MCP agent mail addressed to the same `TUIC_SESSION`; that mail includes
-the `BG DONE` text and the queue error. `queued` means the queue took the
-request, not that the agent later submitted it. `mailed` means the mail was
-surfaced to the caller; inbox-only mail remains a failure. If both paths fail
-after a transient socket error or server error, the runner retries up to six
-queue-then-mail attempts with exponential delays of 0.2–3.2 seconds (6.2
-seconds of total retry waiting). A permanent queue rejection ends the retry
-immediately after mail fails. `retrying` records an attempt still in progress;
-`failed` records the last queue and mail errors. Each IPC read has its own
+`queued`, `retained`, `retrying`, or `uncertain`, with `tuic_session`, the
+completion text and the number of queue attempts. Launch captures a typed wake
+origin from the host. If the host is unavailable at launch, the command still runs
+but its completion is retained without an automatic wake. A host that predates
+wake origins publishes no origin field; then the completion is queued as before,
+without Escape revocation, until that host restarts. Escape revokes that origin: old results cannot start a new
+turn, even after a later explicit request completes. Already queued explicit
+requests remain valid. Logs and receipts remain available for inspection.
+`queued` means the queue took the request, not that the agent later submitted it.
+`retained` means no automatic wake is authorized; do not resend it through mail.
+A transient socket or server error retries the same keyed queue request up to
+six times with delays of 0.2–3.2 seconds (6.2 seconds total). A permanent error
+retains the completion immediately. `uncertain` means a queue request may have
+been accepted but its receipt was lost. There is no mail fallback that could
+bypass Escape. Each IPC read has its own
 three-second deadline, so a slow or unavailable server can extend the elapsed
 time beyond the retry waiting period. The command works
 on macOS, Linux, and Windows.
@@ -326,6 +331,18 @@ session. Outside one, it registers a headerless external caller for the MCP
 connection and prints a notice on stderr. It has no terminal, automatic wake-up,
 or managed parent relationship; a spawned child cannot reply to it.
 
+### Calling an agent from a script
+
+`tuic notify <alias|name|session-id> <text|->` sends the text to the agent's
+inbox through the same registry path as `tuic agent send`; `-` reads the text
+from stdin. An idle agent is woken, a working one gets a notice. Exit code 0
+only when the message reached the agent. An unknown recipient, or a message
+stored in the inbox that nothing surfaces, exits 1 with a message naming the
+recipient. It needs no `register` step: outside a TUICommander session the CLI
+registers an external caller by itself. An agent can write a script that ends
+with `tuic notify <its tuic_session> -`, hand it to you to run, and receive the
+result as mail. The launch rules and `tuic mcp init` tell agents so.
+
 ## tmux Compatibility
 
 `tuic` can act as a drop-in replacement for tmux. When invoked as `tmux` (via symlink), it translates tmux commands to TUICommander equivalents.
@@ -375,20 +392,43 @@ tuic alias
 tuic alias --remove
 ```
 
+## Agent Hook Transport
+
+```bash
+# Run by the generated agent hooks on native Windows, not by hand
+tuic agent-state state idle
+tuic agent-state claude busy < event.json
+tuic agent-state codex-notify -- <your notify argv> <payload>
+```
+
+`agent-state` builds the OSC 7770 frames of one hook event and posts them to
+the TUIC session in `TUIC_SESSION` over the local IPC. It is inert without
+`TUIC_SESSION` or a console, never fails its agent, and gives up after 5 s.
+See [AI Agents](ai-agents.md) for the fallback and ordering rules.
+
 ## IPC Architecture
 
 The CLI communicates with TUICommander via IPC:
 - **macOS/Linux:** Unix domain socket at `<platform config dir>/com.tuic.commander/mcp.sock` for the default instance.
-- **Windows:** Named pipe at `\\.\pipe\tuicommander-mcp`
+- **Windows:** Named pipe at `\\.\pipe\tuicommander-mcp` (a named instance uses `\\.\pipe\tuicommander-mcp-<instance id>`)
 
 Use `tuic --instance <id> <command>` or `TUIC_APP_INSTANCE=<id> tuic <command>`
 to select the same namespace as `tuic-remote --instance <id>`. An explicit
 `--instance` takes precedence over the environment. Invalid ids fail before any
-connection. Named Unix sockets use the server's short SHA-256-based name in the OS
-temp directory. The bridge accepts `tuic-bridge --instance <id>` and the same
+connection. Named Unix sockets use the server's short SHA-256-based name in the
+server's temp directory. The server also writes that socket path to `mcp-socket`
+in the instance config directory, and the CLI uses it when the socket exists, so a
+shell with a different `TMPDIR` (for example next to `make agent-test`) still
+reaches the instance. When a named instance is not running, a command that would
+start TUICommander fails with an error instead: the CLI starts only the default
+app. The bridge accepts `tuic-bridge --instance <id>` and the same
 environment variable; it searches only that instance's alternative sockets.
 
-On Unix, `TUIC_SOCKET` overrides the selected socket path. Windows retains the
+On Unix, an explicit CLI `--instance` overrides both `TUIC_APP_INSTANCE` and
+`TUIC_SOCKET`. When an inherited socket differs, the CLI prints the selected
+socket on stderr. Without `--instance`, `TUIC_SOCKET` still overrides the
+socket path, including an instance selected by `TUIC_APP_INSTANCE`. Background
+runners inherit the resolved socket target. Windows retains the
 existing named-pipe endpoint. The clients and server share instance validation,
 config paths and IPC names through `tuic-ipc`; CLI and bridge also share HTTP
 request and response framing.
@@ -425,4 +465,21 @@ an explicit create action. These actions match across HTTP, IPC, MCP and CLI.
 
 ### Design Mode through MCP UI actions
 
-Use `tuic mcp ui '{"action":"design_start","session_id":"<terminal>","url":"http://localhost:3000"}'` to start Design Mode. Browser commands use `design_stop`, `design_reload`, `design_navigate`, `design_screenshot`, `design_errors` or `design_eval` with `repo_path` from the lifecycle result; `design_navigate` also needs `url`, and `design_eval` needs `script`. `design_status` lists bindings for an armed caller. Caller ownership and extension host grants still apply. The old `tuic mcp design_mode` entry is removed with no alias. Also replace literal task calls with `tuic mcp agent` task_get/task_cancel, and story/workflow_* calls with `tuic workflow` and its typed actions. Reconnect cached MCP clients and review external allow rules for the grouped domains.
+Use `tuic mcp ui '{"action":"design_start","session_id":"<terminal>","url":"http://localhost:3000"}'` to start Design Mode. Browser commands use `design_stop`, `design_reload`, `design_navigate`, `design_screenshot`, `design_errors` or `design_eval` with `repo_path` from the lifecycle result; `design_navigate` also needs `url`, and `design_eval` needs `script` and accepts `result_offset` for the next result page. `design_status` lists bindings for an armed caller. Caller ownership and sidebar host consent still apply. The old `tuic mcp design_mode` entry is removed with no alias. Also replace literal task calls with `tuic mcp agent` task_get/task_cancel, and story/workflow_* calls with `tuic workflow` and its typed actions. Reconnect cached MCP clients and review external allow rules for the grouped domains.
+
+Typed report example: `tuic agent send <peer> "Ready for review" --report-state ready`.
+Use `--report-state waiting --wait-for boss --question-json '<question object>'`
+for a structured question. `tuic mcp agent '<JSON>'` accepts the identical MCP
+payload. Required message text and legacy mail behavior stay unchanged.
+See [typed reports](agent-teams.md#typed-reports-and-agent-stages).
+
+### Background command deadline
+
+`tuic bg` runs a detached command with a finite deadline: one hour by default.
+Set `TUIC_BG_TIMEOUT_SECONDS` before launch to choose 1 through 86400 seconds.
+Invalid values refuse launch. The child command gets its own process group on
+Unix; on Windows timeout stops the owned process tree. At the deadline the runner
+stops that group/tree, waits for its child to exit, writes `124` to `<log>.exit`,
+records `background deadline exceeded` in the log and sends the normal
+`BG DONE exit=124` wake. Other jobs and the caller remain running. Commands that
+deliberately detach into a different Unix group are outside this group boundary.

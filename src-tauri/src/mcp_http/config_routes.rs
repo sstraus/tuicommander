@@ -51,6 +51,18 @@ pub(super) async fn get_config(
     Json(json).into_response()
 }
 
+/// 403 for a raw write that changes an owner-confirmed setting; shared by every
+/// route that bypasses the settings facade.
+pub(crate) fn confirmation_required() -> (StatusCode, Json<serde_json::Value>) {
+    (
+        StatusCode::FORBIDDEN,
+        Json(serde_json::json!({
+            "error": crate::config::CONFIRMATION_REQUIRED,
+            "next_action": "POST /settings/action with the settings edit, then approve its proposal as the owner",
+        })),
+    )
+}
+
 pub(super) async fn put_config(
     State(state): State<Arc<AppState>>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
@@ -66,13 +78,16 @@ pub(super) async fn put_config(
     let saved = {
         let state = state.clone();
         tokio::task::spawn_blocking(move || {
-            crate::config::commit_config_save(&state, request.base, request.config)
+            crate::config::commit_config_save_unconfirmed(&state, request.base, request.config)
         })
         .await
     };
 
     let effects = match saved {
         Ok(Ok(effects)) => effects,
+        Ok(Err(e)) if e == crate::config::CONFIRMATION_REQUIRED => {
+            return confirmation_required();
+        }
         Ok(Err(e)) => {
             // A merge/validation failure is the caller's fault; a write failure is ours.
             let code = if e.starts_with("Invalid config") {

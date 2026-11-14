@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 if ($env:TUIC_FIXTURE_FEATURES) {
     $cargoArgs = @('test', '--workspace', '--no-run', '--features', $env:TUIC_FIXTURE_FEATURES)
 } else {
-    $cargoArgs = @('build', '--profile', 'test', '--no-default-features',
+    $cargoArgs = @('build', '--profile', 'test', '--no-default-features', '--features', 'test-fixtures',
         '--bin', 'tuic-acp-fixture-agent', '--bin', 'tuic-mcp-fixture-server')
 }
 # llvm-cov passes its target directory only to nextest. Its profile output

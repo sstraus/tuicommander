@@ -6,6 +6,7 @@
 /accounts/secret-form
 /acp/chat/open
 /acp/chat/selection
+/acp/chat/x/reactions
 /acp/connections
 /acp/connections/x
 /acp/connections/x/elicitations/x/response
@@ -21,6 +22,7 @@
 /acp/connections/x/sessions/x/config
 /acp/connections/x/sessions/x/fork
 /acp/connections/x/sessions/x/load
+/acp/connections/x/sessions/x/message-action
 /acp/connections/x/sessions/x/pause
 /acp/connections/x/sessions/x/prompt
 /acp/connections/x/sessions/x/queue/x
@@ -37,6 +39,8 @@
 /agent/discover-session
 /agent/open-in-custom
 /agents
+/agents/attention
+/agents/attention/outside-request
 /agents/detect
 /agents/detect-all
 /agents/ides
@@ -51,10 +55,12 @@
 /api/plugins/x/data/x
 /api/plugins/x/exec
 /api/plugins/x/fs/list
+/api/plugins/x/fs/range
 /api/plugins/x/fs/read
 /api/plugins/x/fs/read-base64
 /api/plugins/x/fs/read-batch
 /api/plugins/x/fs/rename
+/api/plugins/x/fs/size
 /api/plugins/x/fs/tail
 /api/plugins/x/fs/write
 /api/plugins/x/fs/write-base64
@@ -162,6 +168,7 @@
 /fs/delete
 /fs/gitignore
 /fs/list
+/fs/markdown-review-lines
 /fs/mkdir
 /fs/move-abs
 /fs/read
@@ -206,6 +213,7 @@
 /mcp/upstreams
 /mcp/upstreams/credential
 /mcp/upstreams/reconnect
+/mcp/usage
 /metrics
 /plugins/list
 /process/stats
@@ -221,6 +229,8 @@
 /prompt/process
 /prompt/resolve-prompt-variables
 /prompt/resolve-variables
+/provider-quotas
+/provider-quotas/refresh
 /registry/plugins
 /repo/apply-reverse-patch
 /repo/approve-pr
@@ -307,7 +317,9 @@
 /repo/stage
 /repo/stash
 /repo/stash/apply
+/repo/stash/check-drop
 /repo/stash/drop
+/repo/stash/facts
 /repo/stash/pop
 /repo/stash/show
 /repo/structure
@@ -317,6 +329,7 @@
 /repo/update-from-base
 /repo/update-pr-branch
 /repo/working-tree-status
+/repo/worktree-diagnostic/resolve
 /repo/worktree-dirty
 /secrets/forms/submit
 /sessions
@@ -326,6 +339,7 @@
 /sessions/worktree
 /sessions/x
 /sessions/x/chat-view
+/sessions/x/chat-view/messages/x/full-text
 /sessions/x/force-retry
 /sessions/x/foreground
 /sessions/x/has-foreground
@@ -340,6 +354,7 @@
 /sessions/x/queue
 /sessions/x/queue/x
 /sessions/x/queue/x/send-now
+/sessions/x/quota-binding
 /sessions/x/resize
 /sessions/x/resume
 /sessions/x/shell-family
@@ -394,8 +409,7 @@
 /watchers/hot-repos
 /watchers/repo
 /work-items/provider-bridge
-/workflows/definition/action
-/workflows/run/action
+/workflows/neutral/action
 /workitem-links
 /worktrees
 /worktrees/archive-retention

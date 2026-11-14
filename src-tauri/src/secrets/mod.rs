@@ -5,9 +5,16 @@ mod account_sink_tests;
 pub(crate) mod forms;
 mod mask;
 pub(crate) mod policy;
+pub(crate) mod provider;
+pub(crate) mod provider_op;
+#[cfg(test)]
+mod provider_tests;
 mod run;
 mod schema;
+#[cfg(test)]
+mod stream_query_tests;
 mod task;
+mod terminal_queries;
 pub(crate) use mask::StreamMask;
 use schema::valid_name;
 
@@ -16,6 +23,8 @@ fn valid_secret_value(value: &str) -> bool {
     !value.is_empty() && value.len() <= 16384 && !value.contains('\0')
 }
 pub(crate) use schema::{Field, FieldKind, Form};
+#[cfg(test)]
+mod argv_consent_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -84,18 +93,49 @@ struct ApprovedTemplate {
     cwd: String,
 }
 
+#[derive(Clone)]
+struct FormValue {
+    value: Zeroizing<String>,
+    kind: FieldKind,
+}
+
+impl FormValue {
+    fn as_str(&self) -> &str {
+        &self.value
+    }
+    fn mask_representations(&self) -> Vec<Zeroizing<String>> {
+        if self.kind == FieldKind::Username {
+            Vec::new()
+        } else {
+            mask::representations(&self.value)
+        }
+    }
+}
+
 #[derive(Default)]
 struct Inner {
-    values: BTreeMap<String, Zeroizing<String>>,
+    values: BTreeMap<String, FormValue>,
     templates: Vec<ApprovedTemplate>,
     scopes: BTreeMap<String, task::ScopedValues>,
     pending: Option<Pending>,
+}
+
+/// Owned snapshot of the mask needles of every stored secret.
+pub(crate) struct Masker(Vec<Zeroizing<String>>);
+
+impl Masker {
+    pub(crate) fn mask(&self, text: &str) -> String {
+        mask::mask(text, &self.0)
+    }
 }
 
 #[derive(Default)]
 pub(crate) struct SecretStore {
     inner: parking_lot::Mutex<Inner>,
     session_masks: dashmap::DashMap<String, std::sync::Arc<Vec<Zeroizing<String>>>>,
+    // PTY sessions whose owner granted literal diagnostic reads (#2643-6b38).
+    // Set only through the desktop IPC owner control; never persisted.
+    literal_reads: dashmap::DashSet<String>,
     // Window lifetime outlives the pending reply. Inspection stays blocked until
     // native destruction, including a submit/close race and failed destruction.
     // open() allows one form, so at most one window exists.
@@ -207,8 +247,20 @@ impl SecretStore {
         }
         // Validate the whole payload before consuming the nonce or mutating values.
         if submission.status == "stored" {
+            let kinds: BTreeMap<_, _> = form
+                .fields
+                .iter()
+                .map(|field| (field.name.clone(), field.kind.clone()))
+                .collect();
             for (name, value) in std::mem::take(&mut submission.values) {
-                inner.values.insert(name, Zeroizing::new(value));
+                let kind = kinds[&name].clone();
+                inner.values.insert(
+                    name,
+                    FormValue {
+                        value: Zeroizing::new(value),
+                        kind,
+                    },
+                );
             }
         }
         if let Some(template) = template {
@@ -235,13 +287,19 @@ impl SecretStore {
         Ok(result)
     }
     pub(crate) fn mask(&self, text: &str) -> String {
+        self.masker().mask(text)
+    }
+    /// Snapshot the needles under the lock; masking with the result holds no lock,
+    /// so a large text never stalls other secret operations.
+    pub(crate) fn masker(&self) -> Masker {
         let inner = self.inner.lock();
-        let needles: Vec<_> = inner
-            .values
-            .values()
-            .flat_map(|v| mask::representations(v))
-            .collect();
-        mask::mask(text, &needles)
+        Masker(
+            inner
+                .values
+                .values()
+                .flat_map(FormValue::mask_representations)
+                .collect(),
+        )
     }
     /// Mask registered values in full output without moving source-byte cursors.
     pub(crate) fn mask_preserving_offsets(&self, bytes: &[u8]) -> Zeroizing<Vec<u8>> {
@@ -249,7 +307,7 @@ impl SecretStore {
         let needles: Vec<_> = inner
             .values
             .values()
-            .flat_map(|v| mask::representations(v))
+            .flat_map(FormValue::mask_representations)
             .collect();
         mask::mask_preserving_offsets(bytes, &needles)
     }
@@ -273,7 +331,7 @@ impl SecretStore {
             inner.values.remove(name);
         }
     }
-    fn environment(&self, names: &[String]) -> Result<BTreeMap<String, Zeroizing<String>>, String> {
+    fn environment(&self, names: &[String]) -> Result<BTreeMap<String, FormValue>, String> {
         let inner = self.inner.lock();
         names
             .iter()
@@ -281,7 +339,7 @@ impl SecretStore {
                 inner
                     .values
                     .get(name)
-                    .map(|value| (name.clone(), Zeroizing::new(value.to_string())))
+                    .map(|value| (name.clone(), value.clone()))
                     .ok_or_else(|| "Requested secret is missing".into())
             })
             .collect()
@@ -289,18 +347,39 @@ impl SecretStore {
 }
 
 pub(crate) use forms::{form_http, submit_http};
+
+/// Owner grant for literal diagnostic reads of one PTY session (#2643-6b38).
+/// Desktop IPC only: models reach loopback HTTP and MCP, never the WebView IPC.
+#[cfg(feature = "desktop")]
+#[tauri::command]
+pub(crate) fn set_terminal_literal_reads(
+    state: tauri::State<'_, std::sync::Arc<crate::AppState>>,
+    session_id: String,
+    enabled: bool,
+) -> serde_json::Value {
+    state.secrets.set_literal_reads(&session_id, enabled);
+    serde_json::json!({
+        "session_id": session_id,
+        "enabled": state.secrets.literal_reads_granted(&session_id),
+    })
+}
 pub(crate) use run::handle_secret;
 
 pub(crate) fn tool_definition() -> serde_json::Value {
     serde_json::json!({
         "name": "secret",
-        "description": "Put task-scoped write-only values with a TTL in seconds, or request a private sensitive-field form, then run a user-approved argv with named values in the child environment only. Values are never returned. An approved command can exfiltrate. request opens a separate native form; HTTP/mobile entry uses its private one-time capability link. run uses user-approved command templates or asks for exact argv consent; shell/interpreter evaluation and environment dumpers are forbidden. Templates match exact argv, names and directory. Output masks exact values, JSON-escaped values and base64, hex and URL encodings, including line wraps and embedded Basic-auth payloads. Put values are selected with agent spawn scope and injected only into child env. TTL revokes new injection; masks survive until session teardown. Form values are shared by name across callers of this backend process and survive MCP reconnects. remove zeroizes named values and returns removed, including already absent names; it does not report prior presence. Requests require a desktop host; the phone can submit the desktop-opened form.",
+        "description": "Put task-scoped write-only values with a TTL in seconds, or request a private sensitive-field form, then run a user-approved argv with named values in the child environment only. Values are never returned. An approved command can exfiltrate. On a desktop host request opens a separate native form; HTTP/mobile entry uses its private one-time capability link. run takes names, argv, cwd and an optional reason, and uses user-approved command templates or asks for exact argv consent; consent, not option or program names, decides, and the program is spawned directly without a shell. Templates match exact argv, names and directory. Username fields are injected but never registered as output masks. Password, OTP and put values remain masked. Output masks exact sensitive values, JSON-escaped values and base64, hex and URL encodings, including line wraps and embedded Basic-auth payloads. put may take op:// references instead of values: they resolve once at put time through the same scope store, and a failed resolve stores nothing. Put values are selected with agent spawn scope and injected only into child env. TTL revokes new injection; masks survive until session teardown. Form values are shared by name across callers of this backend process and survive MCP reconnects. remove clears form-store query masks; existing terminal streams retain learned masks until session teardown, and in-flight approved commands retain their captured masks until completion. Already sanitized retained output is unchanged. remove zeroizes named values and returns removed, including already absent names; it does not report prior presence. On a headless host request opens no window: Web Push sends the owner its private one-time phone link and the call waits for submission; with a desktop the phone can also submit the desktop-opened form.",
         "inputSchema": {"type": "object", "properties": {
             "action": {"type": "string", "enum": ["request", "run", "remove", "put"]},
             "fields": {"type": "array", "items": {"type": "object", "properties": {
                 "name": {"type": "string"}, "kind": {"type": "string", "enum": ["username", "password", "otp", "sso"]}, "display": {"type": "string", "description": "HTTP(S) SSO link to display without navigating"}
             }, "required": ["name", "kind"], "additionalProperties": false}},
             "values": {"type": "array", "items": {"type": "string"}, "description": "Write-only values in names order (put)"},
+            "references": {"type": "array", "items": {"type": "object", "properties": {
+                "name": {"type": "string", "description": "Env var name in the child"},
+                "op": {"type": "string", "description": "op://vault/item/field, resolved now with the 1Password CLI"},
+                "account": {"type": "string", "description": "1Password account shorthand (op only)"}
+            }, "required": ["name", "op"], "additionalProperties": false}, "description": "put: resolve references instead of taking values; the reply carries names only"},
             "scope": {"type": "string", "description": "Task id (put); agent spawn scope selects these values"},
             "ttl": {"type": "integer", "minimum": 1, "description": "Seconds until new injection is revoked; existing session masks survive until teardown"},
             "reason": {"type": "string"}, "names": {"type": "array", "items": {"type": "string"}},
@@ -308,3 +387,6 @@ pub(crate) fn tool_definition() -> serde_json::Value {
         }, "required": ["action"], "additionalProperties": false}
     })
 }
+
+#[cfg(test)]
+mod username_tests;

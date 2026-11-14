@@ -31,7 +31,7 @@ it("catches losing the selected project or opening a second dialog while Stories
 	expect(invoke).toHaveBeenCalledWith("open_panel_window", {
 		panelId: "stories",
 		title: "Plans and Stories",
-		params: { project: "/selected-project", visibility: "all", storyType: "all", view: "list" },
+		params: { project: "/selected-project", visibility: "open", storyType: "all", view: "list" },
 		width: 1120,
 		height: 800,
 	});

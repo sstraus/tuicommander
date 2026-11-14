@@ -61,10 +61,14 @@ impl ProgressStore {
         })?;
         conn.busy_timeout(BUSY_TIMEOUT)
             .map_err(db_error("set progress busy timeout"))?;
+        if crate::sqlite_once::is_prepared(&self.db_path) {
+            return Ok(conn);
+        }
         // WAL survives the timeout: several TUIC processes do write this file,
         // and a reader must not block the writer that is recording an entry.
         conn.pragma_update(None, "journal_mode", "WAL")
             .map_err(db_error("enable WAL on the progress store"))?;
+        crate::sqlite_once::hold_open(&self.db_path);
         conn.execute_batch(
             // AUTOINCREMENT, not a bare rowid. A plain `INTEGER PRIMARY KEY`
             // hands out `max(rowid) + 1`, so deleting the newest entry and
@@ -124,6 +128,7 @@ impl ProgressStore {
              CREATE INDEX IF NOT EXISTS entries_by_pty ON entries (project, pty_id, id DESC);",
         )
         .map_err(db_error("index terminal progress"))?;
+        crate::sqlite_once::mark_prepared(&self.db_path);
         Ok(conn)
     }
 

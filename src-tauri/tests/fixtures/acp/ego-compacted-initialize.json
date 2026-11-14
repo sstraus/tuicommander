@@ -1,0 +1,70 @@
+{
+  "protocolVersion": 1,
+  "agentCapabilities": {
+    "loadSession": true,
+    "promptCapabilities": {
+      "image": true,
+      "audio": true,
+      "embeddedContext": true
+    },
+    "mcpCapabilities": {
+      "http": true,
+      "sse": true,
+      "acp": true
+    },
+    "sessionCapabilities": {
+      "list": {},
+      "delete": {
+        "_meta": {
+          "ego": {
+            "force": true
+          }
+        }
+      },
+      "fork": {
+        "_meta": {
+          "ego": {
+            "atMessage": true
+          }
+        }
+      },
+      "resume": {},
+      "close": {}
+    },
+    "auth": {},
+    "_meta": {
+      "ego": {
+        "childActivity": {
+          "version": 1,
+          "update": "session_info_update",
+          "field": "_meta.ego.childActivity"
+        },
+        "steer": {
+          "version": 1,
+          "method": "_ego/steer",
+          "contentTypes": [
+            "text"
+          ]
+        },
+        "retry": {
+          "version": 1,
+          "method": "_ego/retry"
+        },
+        "compact": {
+          "version": 1,
+          "method": "_ego/compact"
+        },
+        "compacted": {
+          "version": 1,
+          "update": "session_info_update",
+          "field": "_meta.ego.compacted"
+        },
+        "hold": {
+          "version": 1,
+          "pause": "_ego/pause",
+          "resume": "_ego/resume"
+        }
+      }
+    }
+  }
+}

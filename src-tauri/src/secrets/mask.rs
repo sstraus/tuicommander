@@ -325,6 +325,28 @@ impl StreamMask {
         if self.needles.is_empty() {
             return None;
         }
+        // Queries delimit producer tokens: finish the candidate before the
+        // terminal answers, so cursor reports include all preceding text.
+        // Assumption: a producer never inserts a query inside a secret token.
+        // SGR, wraps and other non-query controls remain transparent to matching.
+        let queries = super::terminal_queries::ranges(data);
+        if queries.is_empty() {
+            return Some(self.push_segment(data, false));
+        }
+        let mut output = String::new();
+        let mut start = 0;
+        for query in queries {
+            output.push_str(&self.push_segment(&data[start..query.start], true));
+            // Only parsed, payload-free protocol queries take this path;
+            // arbitrary CSI/OSC content still goes through the sanitizer.
+            output.push_str(&data[query.clone()]);
+            start = query.end;
+        }
+        output.push_str(&self.push_segment(&data[start..], false));
+        Some(output)
+    }
+
+    fn push_segment(&mut self, data: &str, finish: bool) -> String {
         self.pending.push_str(data);
         let bytes = self.pending.as_bytes();
         let (flat, starts, ends) = flatten(bytes);
@@ -347,12 +369,15 @@ impl StreamMask {
         {
             cutoff = cutoff.min(starts[i]);
         }
+        if finish {
+            cutoff = bytes.len();
+        }
         // A hostile stream can insert arbitrarily many wraps/escapes into a
         // candidate. Withhold rather than retain unbounded sensitive bytes.
         if bytes.len().saturating_sub(cutoff) > 256 * 1024 {
             self.pending.zeroize();
             self.pending_marks.clear();
-            return Some("[REDACTED]".into());
+            return "[REDACTED]".into();
         }
         let mut marked = marked_bytes(bytes, &self.needles);
         for (mark, previous) in marked.iter_mut().zip(&self.pending_marks) {
@@ -373,7 +398,7 @@ impl StreamMask {
         self.pending_marks = marked[cutoff..].to_vec();
         self.pending.zeroize();
         self.pending = tail;
-        Some(result)
+        result
     }
 }
 

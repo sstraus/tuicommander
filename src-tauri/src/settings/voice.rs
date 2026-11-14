@@ -85,7 +85,7 @@ impl VoiceSettingsStore {
     ) -> Result<Value, Failure> {
         use crate::dictation::{DictationState, commands};
         use tauri::Manager;
-        caller.check(!matches!(action, VoiceAction::Assets))?;
+        caller.check()?;
         // The asset commands own the live runtime and machine asset directory. A
         // path-scoped fixture must not accidentally operate on that live owner.
         if self.path != crate::config::config_dir().join(DICTATION_CONFIG_FILE) {

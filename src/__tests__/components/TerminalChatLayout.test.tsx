@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render } from "@solidjs/testing-library";
+import { cleanup, fireEvent, render, screen } from "@solidjs/testing-library";
 import { createSignal } from "solid-js";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, expect, it, vi } from "vitest";
 import { Transcript } from "../../components/AIChatPanel/Transcript";
 import type { AcpTranscriptEntry } from "../../stores/acpTranscript";
 
@@ -48,9 +48,10 @@ it("copies all marked answer blocks in one turn without merging the next turn", 
 	]);
 	await Promise.resolve();
 	expect(container.querySelectorAll("[data-answer-card]")).toHaveLength(2);
-	const copies = getAllByRole("button", { name: "Copy assistant message" });
+	const copies = getAllByRole("button", { name: "Assistant message actions" });
 	expect(copies).toHaveLength(2);
 	await fireEvent.click(copies[0]);
+	await fireEvent.click(screen.getByRole("menuitem", { name: "Copy message" }));
 	expect(clipboard).toHaveBeenCalledWith("First answer.\n\nSecond answer.\n\nThird paragraph.");
 });
 
@@ -105,7 +106,7 @@ it("hides the exact inbox wake and leaves other notices and quoted text alone", 
 		"[Request interrupted by user]",
 	]);
 	expect(container.textContent).toContain("Explain [TUIC] message available");
-	expect(container.querySelectorAll('button[aria-label="Copy user message"]')).toHaveLength(1);
+	expect(container.querySelectorAll('button[aria-label="User message actions"]')).toHaveLength(1);
 });
 
 // Catches: inventing tool descriptions when Bash has no usable description.
@@ -136,7 +137,8 @@ it("groups unmarked Codex replies while keeping tool-followed status outside the
 	expect(card?.textContent).toContain("Second result.");
 	expect(card?.textContent).not.toContain("Checking files.");
 	expect(container.querySelectorAll('[role="separator"]')).toHaveLength(0);
-	await fireEvent.click(getAllByRole("button", { name: "Copy assistant message" }).at(-1)!);
+	await fireEvent.click(getAllByRole("button", { name: "Assistant message actions" }).at(-1)!);
+	await fireEvent.click(screen.getByRole("menuitem", { name: "Copy message" }));
 	expect(clipboard).toHaveBeenCalledWith("First result.\n\nSecond result.");
 });
 
@@ -165,3 +167,8 @@ it("keeps an earlier answer's DOM node when the transcript grows, while the last
 	expect(roots[0]).toBe(before);
 	expect(roots[1].textContent).toContain("Second answer, longer.");
 });
+
+// Settle the shared UI persistence owner imported by the control utilities.
+import { activityStore } from "../../stores/activityStore";
+
+beforeAll(() => activityStore.hydrate());

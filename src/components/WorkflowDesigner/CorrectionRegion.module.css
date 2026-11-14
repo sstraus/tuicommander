@@ -1,0 +1,6 @@
+.panel { flex: 0 0 auto; max-height: 45vh; overflow: auto; padding: 12px 18px; border-top: 1px solid var(--border); background: var(--bg-secondary); }
+.panel summary { color: var(--fg-secondary); cursor: pointer; }
+.panel label { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; color: var(--fg-secondary); font-size: var(--font-sm); }
+.panel h4 { margin: 12px 0 6px; font-size: var(--font-sm); }
+.panel p { margin: 6px 0; font-size: var(--font-sm); }
+.panel pre { max-height: 180px; overflow: auto; padding: 8px; background: var(--bg-primary); border: 1px solid var(--border); border-radius: var(--radius-sm); white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--font-xs); }

@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render } from "@solidjs/testing-library";
+import { createSignal } from "solid-js";
 import { afterEach, expect, it, vi } from "vitest";
 import { CommandInput } from "../components/CommandInput";
 
@@ -89,5 +90,40 @@ it("shows the access notice while retaining the uploaded attachment in the draft
 		true,
 	);
 	expect(container.querySelector("textarea")!.value).toBe("@/tuic/attachments/pty-ego/file.txt");
+	toast.mockRestore();
+});
+
+// Catches: an upload that finishes after a session switch adds its path to the new session's draft.
+it("keeps a late upload receipt out of the draft of a session selected during the upload", async () => {
+	const { toastsStore } = await import("../../stores/toasts");
+	const toast = vi.spyOn(toastsStore, "add").mockReturnValue(1);
+	let finishUpload!: (receipt: { path: string; size: number }) => void;
+	vi.mocked(uploadAttachment).mockReturnValue(
+		new Promise((resolve) => {
+			finishUpload = resolve;
+		}),
+	);
+	vi.mocked(rpc).mockResolvedValue(undefined as never);
+	const [session, setSession] = createSignal("upload-owner");
+	const { container } = render(() => <CommandInput sessionId={session()} />);
+	fireEvent.change(container.querySelector<HTMLInputElement>('input[type="file"]')!, {
+		target: { files: [new File(["file"], "file.txt")] },
+	});
+	setSession("replacement");
+	const input = container.querySelector("textarea")!;
+	fireEvent.input(input, { target: { value: "other draft" } });
+	vi.mocked(rpc).mockClear();
+	finishUpload({ path: "/tuic/attachments/pty-upload-owner/file.txt", size: 4 });
+	await Promise.resolve();
+	await Promise.resolve();
+	expect(uploadAttachment).toHaveBeenCalledWith(expect.any(File), { kind: "pty", id: "upload-owner" });
+	expect(input.value).toBe("other draft");
+	expect(vi.mocked(rpc).mock.calls.filter(([command]) => command === "write_pty")).toEqual([]);
+	expect(toast).toHaveBeenCalledWith(
+		"Attachment not added",
+		expect.stringContaining("/tuic/attachments/pty-upload-owner/file.txt"),
+		"warn",
+		true,
+	);
 	toast.mockRestore();
 });

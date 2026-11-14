@@ -207,7 +207,7 @@ pub(crate) async fn launch(
         .to_string_lossy()
         .into_owned();
     #[cfg(windows)]
-    let endpoint = tuic_ipc::PIPE_NAME.to_owned();
+    let endpoint = crate::mcp_http::pipe_name();
     if endpoint.is_empty() {
         return Err("This instance has no bound local IPC endpoint".into());
     }

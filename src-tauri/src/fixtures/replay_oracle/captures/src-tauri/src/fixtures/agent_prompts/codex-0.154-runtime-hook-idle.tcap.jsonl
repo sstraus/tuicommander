@@ -1,4 +1,5 @@
 {"fixture":"src-tauri/src/fixtures/agent_prompts/codex-0.154-runtime-hook-idle.tcap","agent":"codex","geometry":[41,128]}
 {"record":0,"event":{"type":"shell-state","state":"idle","agent_type":"codex"}}
+{"record":0,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":0,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"ring_len":53289}

@@ -2,6 +2,7 @@ import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import claudeLongInput from "../../../src-tauri/src/fixtures/agent_prompts/claude-long-dictation-2502.json";
+import type { AgentType } from "../../agents";
 import { useDictation } from "../../hooks/useDictation";
 import { appLogger } from "../../stores/appLogger";
 import { dictationStore } from "../../stores/dictation";
@@ -189,9 +190,25 @@ describe("dictation delivery target", () => {
 		await hook.handleDictationStop();
 		const payload = `\x1b[200~${claudeLongInput.sent}\x1b[201~`;
 		expect(write.mock.calls).toEqual(
-			(autoSend ? ["\x15", payload, "\r"] : [payload]).map((data) => ["long-dictation-session", data]),
+			(autoSend ? [payload, "\r"] : [payload]).map((data) => ["long-dictation-session", data]),
 		);
 	});
+
+	// Catches: dictation writes Ctrl-U and wipes the user's existing prompt (pasted image included).
+	it.each<AgentType | null>(["claude", null])(
+		"never writes Ctrl-U when auto-sending dictation (agent=%s)",
+		async (agentType) => {
+			const id = terminal("append-session");
+			if (agentType) terminalsStore.update(id, { agentType });
+			mockInvoke.mockResolvedValueOnce({}).mockResolvedValueOnce(undefined);
+			await dictationStore.saveConfig({ auto_send: true });
+			await hook.handleDictationStart();
+			await hook.handleDictationStop();
+			const sent = write.mock.calls.map((c) => c[1]);
+			expect(sent.join("")).not.toContain("\x15");
+			expect(sent).toEqual(["hello world", "\r"]);
+		},
+	);
 
 	// Catches: metadata accidentally includes a dictated body or omits the correlation id.
 	it("logs correlated delivery metadata without transcript text", async () => {

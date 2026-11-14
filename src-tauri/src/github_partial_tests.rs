@@ -170,6 +170,12 @@ impl PollHttpFixture {
                     healthy["intakeIssues"] = healthy["issues"].clone();
                     healthy["intakeIssues"]["pageInfo"] =
                         serde_json::json!({"hasNextPage": false, "endCursor": null});
+                    // Full neutral intake selects labels pageInfo as well as
+                    // nodes; model a complete GraphQL connection in the simulator.
+                    for issue in healthy["intakeIssues"]["nodes"].as_array_mut().unwrap() {
+                        issue["labels"]["pageInfo"] =
+                            serde_json::json!({"hasNextPage":false,"endCursor":null});
+                    }
                     if request["query"].as_str().unwrap().contains("filterBy:") {
                         healthy["issues"]["nodes"] = serde_json::json!([]);
                     }
@@ -238,81 +244,6 @@ impl PollHttpFixture {
         self.handle.shutdown();
         self.server.await.unwrap().unwrap();
     }
-}
-
-// Catches client-side filtering after an unfiltered 30-issue cap.
-#[tokio::test]
-async fn intake_admits_labelled_issue_beyond_first_thirty() {
-    let recorded: serde_json::Value =
-        serde_json::from_str(include_str!("fixtures/github-intake-page-2415.json")).unwrap();
-    let target = recorded["data"]["repository"]["issues"]["nodes"][0].clone();
-    let fixture = PollHttpFixture::with_response(move |request| {
-        let query = request["query"].as_str().unwrap();
-        // Provider simulator: 31 newer unlabelled issues precede the recorded target.
-        // A server-side label predicate removes them before first:N is applied.
-        let selection = query.split("intakeIssues:").nth(1).unwrap();
-        let mut nodes: Vec<_> = (1..=31).map(|n| {
-            let mut node = target.clone();
-            node["number"] = serde_json::json!(200000 + n);
-            node["url"] = serde_json::json!(format!("https://github.com/rust-lang/rust/issues/{}", 200000 + n));
-            node["labels"]["nodes"] = serde_json::json!([]);
-            node
-        }).collect();
-        nodes.push(target.clone());
-        if selection.contains("labels: [\"C-bug\"]") {
-            nodes.retain(|node| node["number"] == 11361);
-        }
-        let first = regex::Regex::new(r"issues\(first: (\d+)").unwrap();
-        let limit: usize = first.captures(selection).unwrap()[1].parse().unwrap();
-        nodes.truncate(limit);
-        serde_json::json!({"data":{"r0":{"intakeIssues":{"nodes":nodes,"pageInfo":{"hasNextPage":false,"endCursor":null}}}}})
-    }).await;
-    let mut intake = std::collections::HashMap::new();
-    poll_one_account(
-        &fixture.state,
-        &github_com_account(&fixture.state),
-        None,
-        &[("/repo".into(), "rust-lang".into(), "rust".into())],
-        false,
-        "disabled",
-        false,
-        &mut Default::default(),
-        &mut Default::default(),
-        Some("C-bug"),
-        &mut intake,
-    )
-    .await
-    .unwrap();
-    let config: crate::automations::model::AutomationsConfig = serde_json::from_value(serde_json::json!({
-        "event_intake":{"repositories":["rust-lang/rust"],"label":"C-bug","definition_id":"pilot"},
-        "definitions":[{"id":"pilot","name":"Pilot","prompt":"Resolve issue","run_config":"claude",
-        "repository":"/repo","workspace":{"mode":"new_per_run","base_branch":"main"},"cron":"0 * * * *",
-        "timezone":"UTC","enabled":true,"grace_secs":1800,"overlap":"skip","max_duration_secs":3600,"precheck":null}]
-    })).unwrap();
-    let scratch = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-    let owner =
-        crate::automations::store::RunOwner::acquire_at(&scratch.path().join("runs.sqlite3"), 0)
-            .unwrap();
-    let runs = crate::automations::event_intake::admit_issues(
-        owner.store(),
-        &config,
-        &intake["/repo"],
-        10,
-    )
-    .unwrap();
-    fixture.close().await;
-    assert_eq!(
-        runs.len(),
-        1,
-        "the labelled issue beyond the first thirty was never admitted"
-    );
-    assert!(matches!(
-        runs[0].trigger,
-        crate::automations::run::RunTrigger::Event {
-            issue_number: 11361,
-            ..
-        }
-    ));
 }
 
 // Catches a first-page-only intake that loses the 101st eligible issue, and a
@@ -420,12 +351,12 @@ async fn intake_rejects_missing_or_repeated_cursors_without_publishing_partial_p
     }
 }
 
-// Catches: all-open triage polling loses an intake label beyond ten display labels,
+// Catches: all-open intake polling loses a label beyond ten display labels,
 // including on ordinary repositories sharing the same poll batch.
 #[tokio::test]
-async fn triage_poll_retains_eleventh_label_in_mixed_repository_intake() {
+async fn all_open_poll_retains_eleventh_label_in_mixed_repository_intake() {
     let recorded: serde_json::Value =
-        serde_json::from_str(include_str!("automations/fixtures/triage-issue.json")).unwrap();
+        serde_json::from_str(include_str!("fixtures/github-issue-119.json")).unwrap();
     let fixture = PollHttpFixture::with_response(move |request| {
         let query = request["query"].as_str().unwrap();
         let labels: Vec<_> = (0..11)
@@ -478,30 +409,4 @@ async fn triage_poll_retains_eleventh_label_in_mixed_repository_intake() {
             "{path}: all-open polling discarded the eleventh intake label"
         );
     }
-    let config: crate::automations::model::AutomationsConfig = serde_json::from_value(serde_json::json!({
-        "event_intake":{"repositories":["sstraus/triaged","sstraus/ordinary"],"label":"tuic-run","definition_id":"pilot",
-            "triage":[{"repository":"sstraus/triaged","definition_id":"triage","policy_version":"v1","read_only_attested":true,"rejection_label":"declined"}]},
-        "definitions":[{"id":"pilot","name":"Pilot","prompt":"Resolve issue","run_config":"claude",
-        "repository":"/ordinary","workspace":{"mode":"new_per_run","base_branch":"main"},"cron":"0 * * * *",
-        "timezone":"UTC","enabled":true,"grace_secs":1800,"overlap":"skip","max_duration_secs":3600,"precheck":null},
-        {"id":"triage","name":"Triage","prompt":"Evaluate issue","run_config":"readonly",
-        "repository":"/triaged","workspace":{"mode":"existing"},"cron":"0 * * * *",
-        "timezone":"UTC","enabled":true,"grace_secs":1800,"overlap":"skip","max_duration_secs":3600,"precheck":null}]
-    })).unwrap();
-    let scratch = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
-    let owner =
-        crate::automations::store::RunOwner::acquire_at(&scratch.path().join("runs.sqlite3"), 0)
-            .unwrap();
-    let runs = crate::automations::event_intake::admit_issues(
-        owner.store(),
-        &config,
-        &intake["/ordinary"],
-        10,
-    )
-    .unwrap();
-    assert_eq!(
-        runs.len(),
-        1,
-        "triage on a sibling repository must not suppress labelled intake"
-    );
 }

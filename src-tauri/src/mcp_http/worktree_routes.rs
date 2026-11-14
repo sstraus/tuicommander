@@ -72,6 +72,7 @@ pub(super) struct CreatedWorktree {
     pub workspace_id: String,
     pub branch: String,
     pub base_commit: String,
+    pub creator_session: Option<String>,
     pub setup_script: Option<serde_json::Value>,
     pub setup_script_error: Option<serde_json::Value>,
 }
@@ -90,6 +91,7 @@ pub(super) async fn list_worktrees_http(State(state): State<Arc<AppState>>) -> i
                     "path": wt.path.to_string_lossy(),
                     "branch": wt.branch,
                     "base_repo": wt.base_repo.to_string_lossy(),
+                    "creator_session": crate::worktree::worktree_creator_session(&wt.path),
                     "warm_artifacts": crate::worktree::warm_status(&wt.path),
                 })
             })
@@ -138,6 +140,7 @@ pub(super) async fn create_worktree_http(
         body.base_ref.clone(),
         None,
         false,
+        None,
     )
     .await
     {
@@ -158,6 +161,7 @@ pub(super) async fn create_worktree_http(
         "workspace_id": &created.workspace_id,
         "branch": created.worktree.branch,
         "base_commit": created.base_commit,
+        "creator_session": created.creator_session,
         "base_repo": created.worktree.base_repo.to_string_lossy(),
     });
     if let Some(setup_script) = created.setup_script {
@@ -177,6 +181,7 @@ pub(super) async fn create_worktree_shared(
     base_ref: Option<String>,
     creator_session: Option<String>,
     spawn_session: bool,
+    creator_peer: Option<String>,
 ) -> Result<CreatedWorktree, (StatusCode, Json<serde_json::Value>)> {
     validate_repo_path(&base_repo)?;
     // Model provides only branch_name and optionally base_ref (start point).
@@ -199,12 +204,14 @@ pub(super) async fn create_worktree_shared(
     let config_bg = config.clone();
     let worktrees_dir_bg = worktrees_dir.clone();
     let allocation_state = Arc::clone(state);
+    let creator_for_allocation = creator_peer.clone();
     let result = match tokio::task::spawn_blocking(move || {
-        let (workspace, recycled) = crate::worktree::allocate_workspace(
+        let (workspace, recycled) = crate::worktree::allocate_workspace_with_creator(
             &allocation_state,
             &worktrees_dir_bg,
             &config_bg,
             base_ref.as_deref(),
+            creator_for_allocation.as_deref(),
         )?;
         // Read before setup scripts can commit or switch branches. Both transports
         // report the actual allocation commit, including recycled checkouts.
@@ -287,6 +294,7 @@ pub(super) async fn create_worktree_shared(
                 workspace_id,
                 branch: branch_name,
                 base_commit,
+                creator_session: creator_peer,
                 setup_script,
                 setup_script_error,
             })
@@ -508,37 +516,16 @@ pub(super) async fn remove_orphan_worktree_http(
     let safe_only = body.safe_only;
     let confirmed_sessions = body.confirmed_sessions.clone();
     let guard_state = state.clone();
-    // A refused guard is the caller's to act on (400); a removal that fails
-    // after the guard keeps its old mapping.
     let result = tokio::task::spawn_blocking(move || {
-        crate::worktree::validate_worktree_path(&repo_path, &worktree_path)
-            .and_then(|()| {
-                crate::worktree::orphan_removal_guard(
-                    &guard_state,
-                    &repo_path,
-                    &worktree_path,
-                    safe_only,
-                    &confirmed_sessions,
-                )
-            })
-            .map_err(|error| (StatusCode::BAD_REQUEST, error))?;
-        let worktree = crate::state::WorktreeInfo {
-            name: std::path::Path::new(&worktree_path)
-                .file_name()
-                .map(|n| n.to_string_lossy().to_string())
-                .unwrap_or_else(|| worktree_path.clone()),
-            path: std::path::PathBuf::from(&worktree_path),
-            branch: None,
-            base_repo: std::path::PathBuf::from(&repo_path),
-        };
-        tuic_git::worktree::remove_orphan_worktree_internal(&worktree).map_err(|error| {
-            let status = if safe_only {
-                StatusCode::BAD_REQUEST
-            } else {
-                StatusCode::INTERNAL_SERVER_ERROR
-            };
-            (status, error)
-        })
+        crate::worktree::remove_orphan_checkout(
+            &guard_state,
+            &repo_path,
+            &worktree_path,
+            safe_only,
+            &confirmed_sessions,
+            None,
+        )
+        .map_err(|error| (StatusCode::BAD_REQUEST, error))
     })
     .await;
     match result {
@@ -549,6 +536,33 @@ pub(super) async fn remove_orphan_worktree_http(
         Ok(Err((status, error))) => {
             (status, Json(serde_json::json!({"error": error}))).into_response()
         }
+        Err(e) => err_500(&format!("task panic: {e}")),
+    }
+}
+
+pub(super) async fn resolve_worktree_diagnostic_http(
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<super::types::ResolveWorktreeDiagnosticRequest>,
+) -> Response {
+    if let Err(e) = validate_repo_path(&body.repo_path) {
+        return e.into_response();
+    }
+    let (repo_path, worktree_path, action) =
+        (body.repo_path.clone(), body.worktree_path, body.action);
+    let result = tokio::task::spawn_blocking(move || {
+        tuic_git::worktree::resolve_worktree_diagnostic(&repo_path, &worktree_path, action)
+    })
+    .await;
+    match result {
+        Ok(Ok(())) => {
+            state.invalidate_repo_caches(&body.repo_path);
+            (StatusCode::OK, Json(serde_json::json!({"ok": true}))).into_response()
+        }
+        Ok(Err(error)) => (
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": error})),
+        )
+            .into_response(),
         Err(e) => err_500(&format!("task panic: {e}")),
     }
 }
@@ -806,8 +820,14 @@ mod warm_tests {
             branch: Some("first".into()),
             create_branch: true,
         };
-        let (first, _) =
-            crate::worktree::allocate_workspace(&state, &directory, &first_config, None).unwrap();
+        let (first, _) = crate::worktree::allocate_workspace_with_creator(
+            &state,
+            &directory,
+            &first_config,
+            None,
+            Some("first-creator"),
+        )
+        .unwrap();
         let outcome = crate::worktree::remove_worktree_by_workspace_id_with_confirmation(
             &state,
             &first_config.base_repo,
@@ -827,8 +847,19 @@ mod warm_tests {
             branch: Some("second".into()),
             ..first_config
         };
-        let (second, rename) =
-            crate::worktree::allocate_workspace(&state, &directory, &second_config, None).unwrap();
+        let (second, rename) = crate::worktree::allocate_workspace_with_creator(
+            &state,
+            &directory,
+            &second_config,
+            None,
+            Some("second-creator"),
+        )
+        .unwrap();
+        // Catches: a recycled checkout inherits its previous allocation's creator.
+        assert_eq!(
+            crate::worktree::worktree_creator_session(&second.path).as_deref(),
+            Some("second-creator")
+        );
         assert_eq!(
             rename.as_ref().unwrap()["new_path"],
             second.path.to_string_lossy().as_ref()
@@ -847,8 +878,33 @@ mod warm_tests {
             matches!(event, crate::state::AppEvent::WorktreeRemoved(ref payload) if payload.workspace_id == "first")
         );
         assert_eq!(
-            crate::worktree::get_worktree_paths(second_config.base_repo).unwrap()["second"].path,
+            crate::worktree::get_worktree_paths(second_config.base_repo.clone()).unwrap()["second"]
+                .path,
             second.path.to_string_lossy()
+        );
+        // Catches: restoring an archived branch skips the new creator write.
+        crate::worktree::remove_worktree_by_workspace_id_with_confirmation(
+            &state,
+            &second_config.base_repo,
+            "second",
+            false,
+            None,
+            false,
+            false,
+            None,
+        )
+        .unwrap();
+        let (restored, _) = crate::worktree::allocate_workspace_with_creator(
+            &state,
+            &directory,
+            &second_config,
+            None,
+            Some("restored-creator"),
+        )
+        .unwrap();
+        assert_eq!(
+            crate::worktree::worktree_creator_session(&restored.path).as_deref(),
+            Some("restored-creator")
         );
     }
 
@@ -952,6 +1008,7 @@ mod warm_tests {
                 None,
                 None,
                 false,
+                Some("creator-before-setup".into()),
             )
             .await
         });
@@ -961,6 +1018,11 @@ mod warm_tests {
         assert_eq!(
             paths["pending-setup"].warm_artifacts.as_ref().unwrap()["status"],
             "pending"
+        );
+        // Catches: publishing inventory before creator metadata, or waiting until response delivery.
+        assert_eq!(
+            paths["pending-setup"].creator_session.as_deref(),
+            Some("creator-before-setup")
         );
         std::fs::write(&gate, "release").unwrap();
         let created = create
@@ -1004,6 +1066,7 @@ mod warm_tests {
                 None,
                 None,
                 false,
+                None,
             )
             .await
         });

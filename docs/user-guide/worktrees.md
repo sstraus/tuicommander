@@ -120,12 +120,27 @@ Global defaults apply to all repos. Per-repo overrides take precedence when set.
 | **Storage** | Sibling / App directory / Inside repo / Claude Code default | Sibling |
 | **Prompt on create** | On / Off | On |
 | **Delete branch on remove** | On / Off | On |
-| **Auto-archive merged** | On / Off | Off |
+| **Auto-archive merged** | On / Off | Off — archives a clean merged worktree, then deletes its branch (the tip stays recoverable under `refs/archive/`); a locked or dirty one stays and its row says why |
 | **Archived worktree retention (days)** | 0 (Off) or a positive number of days | Off |
 | **Orphan cleanup** | Ask before removing / Auto-remove / Keep | Ask |
 | **Safe orphan countdown** (Expert Mode) | 5 / 10 / 20 / 30 seconds | 10 seconds |
 | **PR merge strategy** | Merge / Squash / Rebase | Merge |
 | **After merge** | Archive / Delete / Ask | Archive |
+
+Automatic archive runs after the repository lifecycle refresh. It inspects each linked
+checkout with fresh backend proof, including PR-only merges that local ancestry does
+not report as merged. Missing, failed, stale or unsafe proof keeps the checkout.
+Dirty or untracked files, submodule hazards, open sessions and locks still block
+automatic cleanup; the backend checks again before it acts, without force.
+
+Each inspection records the exact workspace, branch tip, integration base, proof
+source and time, separately from a cleanup decision. The decision is one of
+merged (eligible), uncertain, unmerged or safety-blocked. Proof older than 60
+seconds, or without a named tip, base and source, is uncertain and never eligible.
+The archive call carries the inspected checkout fingerprint, so changed work is
+refused. A failed archive is retried once, after a new inspection that must show
+the same tip and still be eligible. A recreated workspace is inspected again and
+never skipped because an earlier one with the same id was archived.
 
 A detached HEAD does not mean that a branch was deleted. Cleanup excludes a
 checkout when a non-default local branch still points at its HEAD. Cleanup also
@@ -142,7 +157,7 @@ checks. Clean, reachable checkouts without live sessions are removed silently;
 other candidates require review in Ask mode. Choosing **Keep** holds until the
 checkout fingerprint changes. An agent can answer an open review through MCP
 `repo action=orphan_cleanup_answer path=<repo> decision=remove|keep`; the backend
-checks removal again. Failed removals remain available for a later attempt.
+checks removal again. A confirmed dirty checkout is removed only when its reviewed fingerprint still matches. The fingerprint includes collapsed ignored path names, but does not detect edits within an already-dirty file or new entries inside an already-ignored directory. The final check and Git removal are not atomic. Dirty orphan removal is available only through the desktop confirmation path. A failed removal shows its error and is not offered again until the fingerprint changes or the app restarts.
 
 The scan runs during repository refresh, not on a dedicated orphan timer. It
 runs at startup and after repository operations or `repo-changed` events. Event
@@ -362,7 +377,9 @@ Explicit repository additions, branch checkouts and merge cleanup refresh the af
 A safe removal keeps a clean, integrated checkout in the archive area for reuse.
 A later worktree creation can reuse it under the new branch name without copying
 ignored build artifacts. Freshly created worktrees stay reserved even before a session
-starts. Dirty, unmerged, locked, and live worktrees are not reused.
+starts. Dirty, unmerged, locked, and live worktrees are not reused. Proven copied
+files that Git still lists as untracked permit safe cleanup but prevent reuse;
+the new allocation must not inherit the old copy receipt.
 
 The remove confirmation says so: for such a checkout it reads "Archive workspace?"
 with an Archive button and states that the local branch is kept. The archived
@@ -374,7 +391,7 @@ A checkout without a branch remains visible in the sidebar. Its row shows the di
 
 ### Worktree discovery diagnostics
 
-Missing or moved registrations appear as read-only diagnostic rows with their recorded path and repair guidance. Restore the checkout, or run `git worktree repair` from its new location. Review `git worktree list --porcelain` before manually pruning a registration for a deleted checkout. Discovery never prunes it automatically.
+Missing or moved registrations appear as one compact row each: a warning icon, the worktree name and a short label (`link broken` or `folder missing`). The full path and guidance are in the tooltip. A `link broken` row (the folder exists but its `.git` pointer is dead) has a **Repair** button that runs `git worktree repair <path>` from the main checkout. A `folder missing` row has a **Prune** button; it asks for a second click to confirm, drops only the registration and never deletes files. A failed action shows its error under the row. Discovery never prunes automatically.
 
 If `git worktree add --force` puts a branch in several checkouts, the lexicographically smallest path keeps the existing branch workspace. Other checkouts appear as read-only diagnostics. Use a distinct branch when you need an independent selectable workspace. Bisect and rebase keep the original branch identity when Git records it.
 

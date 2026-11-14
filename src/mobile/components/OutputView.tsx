@@ -90,9 +90,31 @@ export function OutputView(props: OutputViewProps) {
 	// return to the bottom.
 	let userScrolledUp = false;
 	// Tracks the oldest log offset we've loaded — 0 means full history is loaded.
-	// DEFERRED (2026-10-12) — live-tail eviction needs source cursor metadata to
-	// advance this boundary correctly; chrome filtering makes row counts unsafe.
 	let oldestLoadedOffset = 0;
+	// Loaded rows grouped by the log offset range each fetch or frame covered.
+	// Chrome rows occupy offsets without being returned, so a row count cannot
+	// locate a row; only these range boundaries are exact.
+	let sourceChunks: { count: number; start: number; end: number }[] = [];
+	const loadedEnd = () => sourceChunks.at(-1)?.end ?? oldestLoadedOffset;
+
+	/** Trim the live tail to MAX_LINES and move the history cursor to the first retained row. */
+	function evictTail(lines: LogLine[]): LogLine[] {
+		const excess = lines.length - MAX_LINES;
+		if (excess <= 0) return lines;
+		let removed = 0;
+		// Drop whole ranges so the cursor lands on an exact boundary.
+		while (sourceChunks.length > 1 && removed < excess) removed += sourceChunks.shift()!.count;
+		if (removed < excess && sourceChunks.length === 1) {
+			// One frame exceeds the cap. Its retained rows start at or before `end - count`,
+			// so paging from there can repeat chrome-separated rows but never skips one.
+			const [only] = sourceChunks;
+			only.count -= excess - removed;
+			only.start = only.end - only.count;
+			removed = excess;
+		}
+		oldestLoadedOffset = sourceChunks[0]?.start ?? loadedEnd();
+		return lines.slice(removed);
+	}
 
 	// Capture the visible row before changing metrics. CSS rewraps the log locally;
 	// resizing the shared PTY would also change the desktop terminal's columns.
@@ -135,8 +157,15 @@ export function OutputView(props: OutputViewProps) {
 				offset?: number;
 				screen?: string[];
 			};
+			const total = json.total_lines ?? 0;
+			// The backend reports where the returned window actually starts. Deriving it
+			// from lines.length would drift: chrome lines (agent prompt box, footer)
+			// occupy offsets without being returned, so the subtraction lands inside the
+			// window we already hold and replays those lines on scroll-up.
+			const windowStart = json.offset ?? Math.max(0, total - (json.lines?.length ?? 0));
 			if (json.lines && json.lines.length > 0) {
 				setLogLines(json.lines.map(normalizeLogLine));
+				sourceChunks = [{ count: json.lines.length, start: windowStart, end: total }];
 			}
 			if (json.screen && json.screen.length > 0) {
 				reconcileScreenRows(json.screen as unknown[]);
@@ -146,12 +175,7 @@ export function OutputView(props: OutputViewProps) {
 				const il = (json as Record<string, unknown>).input_line;
 				props.onInputLine(typeof il === "string" ? il : null);
 			}
-			const total = json.total_lines ?? 0;
-			// The backend reports where the returned window actually starts. Deriving it
-			// from lines.length would drift: chrome lines (agent prompt box, footer)
-			// occupy offsets without being returned, so the subtraction lands inside the
-			// window we already hold and replays those lines on scroll-up.
-			oldestLoadedOffset = json.offset ?? Math.max(0, total - (json.lines?.length ?? 0));
+			oldestLoadedOffset = windowStart;
 			scrollToBottom(true);
 			return total;
 		} catch (err) {
@@ -191,6 +215,7 @@ export function OutputView(props: OutputViewProps) {
 			// tail cap here discards that page immediately once the tail is full.
 			setLogLines((prev) => [...older, ...prev]);
 			const addedHeight = (containerEl?.scrollHeight ?? 0) - prevHeight;
+			sourceChunks.unshift({ count: older.length, start: fetchOffset, end: oldestLoadedOffset });
 			oldestLoadedOffset = fetchOffset;
 			requestAnimationFrame(() => {
 				if (containerEl) {
@@ -341,19 +366,25 @@ export function OutputView(props: OutputViewProps) {
 							connecting();
 							scheduleRetry();
 						}
+						sourceChunks.push({ count: 1, start: loadedEnd(), end: loadedEnd() });
 						setLogLines((prev) => [...prev, { spans: [{ text: "--- session exited ---" }] }]);
 						reconcileScreenRows([]);
 					},
 					{
 						format: "log",
 						logOffset: offset,
-						onLogLines(rawLines) {
+						onLogLines(rawLines, source) {
+							sourceChunks.push({
+								count: rawLines.length,
+								start: source?.offset ?? loadedEnd(),
+								end: source?.total ?? loadedEnd(),
+							});
 							setLogLines((prev) => {
 								const incoming = rawLines.map(normalizeLogLine);
 								const next = [...prev, ...incoming];
 								// Keep the reader's rows mounted while detached (or touching).
 								// Resume the bounded tail when following resumes.
-								return userScrolledUp || touchActive ? next : next.slice(-MAX_LINES);
+								return userScrolledUp || touchActive ? next : evictTail(next);
 							});
 							scrollToBottom();
 						},

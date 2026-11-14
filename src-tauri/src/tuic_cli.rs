@@ -116,6 +116,12 @@ pub(crate) fn set_last_seen_version(version: String) {
     let _ = std::fs::write(path, version);
 }
 
+/// Where the installed `tuic` CLI lives, when it is there.
+pub(crate) fn installed_cli_path() -> Option<std::path::PathBuf> {
+    let path = std::path::PathBuf::from(resolve_install_path());
+    path.is_file().then_some(path)
+}
+
 /// Auto-update: if the CLI is installed, atomically replace it with the current sidecar.
 /// Called off the setup path — silent, no elevation prompt (relies on directory permissions).
 pub(crate) fn auto_update_cli() {

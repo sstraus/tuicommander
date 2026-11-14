@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A Month of TUICommander — Engineering Retrospective</title>
+<style>
+  :root {
+    --bg: #0b0d10;
+    --surface: #13161b;
+    --surface-2: #1a1e26;
+    --border: #262b35;
+    --text: #e6e9ef;
+    --text-dim: #8b95a7;
+    --accent: #7dd3fc;
+    --accent-2: #c084fc;
+    --accent-3: #86efac;
+    --warn: #fbbf24;
+    --glow: rgba(125, 211, 252, 0.15);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-size: 16px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    background-image:
+      radial-gradient(ellipse at top left, rgba(125, 211, 252, 0.08) 0%, transparent 40%),
+      radial-gradient(ellipse at bottom right, rgba(192, 132, 252, 0.06) 0%, transparent 50%);
+    min-height: 100vh;
+  }
+  .container { max-width: 920px; margin: 0 auto; padding: 80px 40px 120px; }
+
+  .eyebrow {
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin-bottom: 24px;
+  }
+  h1 {
+    font-size: clamp(36px, 6vw, 64px);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    margin-bottom: 24px;
+    background: linear-gradient(135deg, #ffffff 0%, #8b95a7 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .lede {
+    font-size: 22px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    max-width: 780px;
+    margin-bottom: 48px;
+  }
+
+  .context {
+    margin-bottom: 80px;
+    padding: 28px 32px;
+    background: linear-gradient(135deg, rgba(134, 239, 172, 0.06) 0%, rgba(125, 211, 252, 0.04) 100%);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent-3);
+    border-radius: 4px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 24px;
+  }
+  .context-item .label {
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 11px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 6px;
+  }
+  .context-item .value {
+    font-size: 18px;
+    color: var(--text);
+    font-weight: 500;
+    line-height: 1.3;
+  }
+
+  h2 {
+    font-size: 14px;
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 80px 0 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 26px; font-weight: 600; letter-spacing: -0.01em; margin: 40px 0 14px; }
+  p { color: var(--text-dim); margin-bottom: 20px; max-width: 780px; }
+  p.body-emphasis { color: var(--text); font-size: 18px; }
+
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 20px;
+    margin: 24px 0 32px;
+  }
+  .stat-card {
+    padding: 24px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    text-align: left;
+  }
+  .stat-card .n {
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 40px;
+    font-weight: 700;
+    line-height: 1;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 10px;
+    letter-spacing: -0.02em;
+  }
+  .stat-card .lbl {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.4;
+  }
+
+  .category-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 14px;
+    margin: 24px 0 40px;
+  }
+  .category-grid .cat {
+    padding: 18px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 14px;
+    line-height: 1.5;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+  .category-grid .cat:hover { border-color: var(--accent); transform: translateY(-2px); }
+  .category-grid .cat strong { color: var(--text); display: block; margin-bottom: 6px; font-size: 15px; }
+  .category-grid .cat span { color: var(--text-dim); }
+
+  .lenses {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(380px, 1fr));
+    gap: 20px;
+    margin: 32px 0;
+  }
+  .lens {
+    background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.3s, transform 0.3s;
+  }
+  .lens:hover { border-color: var(--accent); transform: translateY(-4px); }
+  .lens::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(circle at top right, var(--glow) 0%, transparent 60%);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  .lens:hover::before { opacity: 1; }
+  .lens-index {
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 11px;
+    color: var(--accent);
+    letter-spacing: 0.2em;
+    margin-bottom: 16px;
+  }
+  .lens h4 {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    margin-bottom: 16px;
+    color: var(--text);
+  }
+  .multiplier {
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 48px;
+    font-weight: 700;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 20px;
+    display: block;
+  }
+  .multiplier .unit {
+    font-size: 20px;
+    color: var(--text-dim);
+    -webkit-text-fill-color: var(--text-dim);
+    margin-left: 6px;
+    font-weight: 500;
+  }
+  .lens p {
+    font-size: 15px;
+    color: var(--text-dim);
+    line-height: 1.6;
+    margin-bottom: 0;
+  }
+
+  .pull {
+    margin: 72px 0;
+    padding: 40px;
+    background: linear-gradient(135deg, rgba(125, 211, 252, 0.05) 0%, rgba(192, 132, 252, 0.05) 100%);
+    border-left: 3px solid var(--accent);
+    border-radius: 4px;
+  }
+  .pull p {
+    font-size: 22px;
+    color: var(--text);
+    font-weight: 500;
+    line-height: 1.5;
+    margin-bottom: 0;
+    max-width: none;
+  }
+
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin: 32px 0 48px;
+  }
+  .comp-card {
+    padding: 28px;
+    border-radius: 14px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .comp-card.team { opacity: 0.75; }
+  .comp-card.solo { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .comp-label {
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+  .comp-card.solo .comp-label { color: var(--accent); }
+  .comp-card h5 { font-size: 18px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+  .comp-card ul { list-style: none; }
+  .comp-card li {
+    padding: 8px 0;
+    color: var(--text-dim);
+    font-size: 14px;
+    line-height: 1.5;
+    border-bottom: 1px solid var(--border);
+  }
+  .comp-card li:last-child { border-bottom: none; }
+  .comp-card.solo li { color: var(--text); }
+
+  .caveat {
+    margin: 48px 0;
+    padding: 28px 32px;
+    background: rgba(251, 191, 36, 0.03);
+    border: 1px solid rgba(251, 191, 36, 0.2);
+    border-left: 3px solid var(--warn);
+    border-radius: 4px;
+  }
+  .caveat h4 {
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 12px;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--warn);
+    margin-bottom: 16px;
+  }
+  .caveat ul { list-style: none; }
+  .caveat li {
+    padding: 10px 0;
+    color: var(--text);
+    font-size: 15px;
+    line-height: 1.6;
+    border-bottom: 1px solid rgba(251, 191, 36, 0.1);
+    padding-left: 24px;
+    position: relative;
+  }
+  .caveat li:last-child { border-bottom: none; }
+  .caveat li::before {
+    content: '!';
+    position: absolute;
+    left: 0;
+    top: 10px;
+    color: var(--warn);
+    font-weight: 700;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  footer {
+    margin-top: 120px;
+    padding-top: 32px;
+    border-top: 1px solid var(--border);
+    font-family: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  footer .tag { color: var(--accent); }
+
+  @media (max-width: 640px) {
+    .container { padding: 48px 24px 80px; }
+    .pull { padding: 28px 24px; }
+    .pull p { font-size: 18px; }
+    .lens { padding: 24px; }
+    .multiplier { font-size: 40px; }
+    .comparison { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+  <div class="container">
+
+    <div class="eyebrow">April · TUICommander · Engineering Retrospective</div>
+    <h1>What One Person Can Ship in a Month</h1>
+    <p class="lede">This is the retrospective of one month of work on TUICommander — a Tauri terminal orchestrator for AI coding agents. No team. No product owner. No project manager. One engineer with thirty years of software experience, working evenings and weekends on a personal project, averaging three to four hours per day, directing a stack of Claude Code sessions.</p>
+
+    <div class="context">
+      <div class="context-item">
+        <div class="label">Window</div>
+        <div class="value">30 calendar days</div>
+      </div>
+      <div class="context-item">
+        <div class="label">Schedule</div>
+        <div class="value">Evenings &amp; weekends</div>
+      </div>
+      <div class="context-item">
+        <div class="label">Daily Effort</div>
+        <div class="value">3–4 hours</div>
+      </div>
+      <div class="context-item">
+        <div class="label">Total Attention</div>
+        <div class="value">~100 hours</div>
+      </div>
+      <div class="context-item">
+        <div class="label">Team Size</div>
+        <div class="value">One</div>
+      </div>
+    </div>
+
+    <h2>What Actually Shipped</h2>
+    <p class="body-emphasis">The month covered fifteen public releases, including the 1.0.0 milestone. Two hundred and twenty-six discrete entries in the changelog — features added, bugs fixed, systems reworked. Here is the grain of it.</p>
+
+    <div class="stats-row">
+      <div class="stat-card">
+        <div class="n">15</div>
+        <div class="lbl">Public releases<br>(including 1.0.0 milestone)</div>
+      </div>
+      <div class="stat-card">
+        <div class="n">226</div>
+        <div class="lbl">Changelog entries<br>Added · Fixed · Changed</div>
+      </div>
+      <div class="stat-card">
+        <div class="n">~100</div>
+        <div class="lbl">Plans dispatched<br>(3–4 per day)</div>
+      </div>
+      <div class="stat-card">
+        <div class="n">89k</div>
+        <div class="lbl">Lines of code added<br>Rust · TypeScript · UI</div>
+      </div>
+    </div>
+
+    <h3>Major surfaces touched, rewritten, or invented</h3>
+    <div class="category-grid">
+      <div class="cat"><strong>Smart Prompts system</strong><span>24 built-in prompts · 6 LLM providers · inject/headless/API execution modes · per-prompt system prompts · variable dropdown editor</span></div>
+      <div class="cat"><strong>Upstream OAuth for MCP</strong><span>Discovery (RFC 9728, RFC 8414) · PKCE · token refresh · race-safe authentication · deep-link callback</span></div>
+      <div class="cat"><strong>Tailscale HTTPS</strong><span>Auto cert provisioning · dual HTTP/HTTPS on same port · QR code with TLS · 24h cert renewal · cross-platform</span></div>
+      <div class="cat"><strong>PWA &amp; mobile</strong><span>Web Push notifications · VAPID keys · iOS standalone detection · lazy viewport loading · touch scroll · iOS hover fixes</span></div>
+      <div class="cat"><strong>Diff &amp; review tooling</strong><span>Side-by-side diff viewer · word-level highlighting · hunk-level restore · line-range revert · continuous scroll diff</span></div>
+      <div class="cat"><strong>Base branch tracking</strong><span>Base ref stored in git config · ahead/behind sidebar · rebase from base · grouped Local/Remote ref picker</span></div>
+      <div class="cat"><strong>Command palette</strong><span>File search · content search · cross-terminal search · prefix modes · mode commands · explicit discoverability</span></div>
+      <div class="cat"><strong>Run-config resolution</strong><span>Unified pipeline across MCP and headless agents · env vars per config · param merging · prompt substitution</span></div>
+      <div class="cat"><strong>Global hotkeys</strong><span>OS-level window toggle · validation with clear errors · configurable combos · cycle visibility states</span></div>
+      <div class="cat"><strong>File browser</strong><span>Tree view with lazy expand · file icons from plugins · full-text content search · drag-and-drop with real paths</span></div>
+      <div class="cat"><strong>Performance layer</strong><span>PTY write coalescing (RAF batching) · 25 git commands async-ified · watcher-driven cache invalidation · bundle splitting · RwLock for MCP</span></div>
+      <div class="cat"><strong>Per-repo MCP scoping</strong><span>3-layer allowlist · quick toggle popup · per-repo status · transport badges · tool counts</span></div>
+      <div class="cat"><strong>Website rewrite</strong><span>New IDE positioning · restructured sections · comparison table · docs navbar · footer credits</span></div>
+      <div class="cat"><strong>Deep-link SDK</strong><span>tuic://cmd/{tool}/{action} · external tool invocation surface · parsing · routing · validation</span></div>
+      <div class="cat"><strong>OSC 133 integration</strong><span>Shell command block detection · block navigation · gutter exit-code markers · copy single-block output · cross-terminal overview</span></div>
+      <div class="cat"><strong>Reactive correctness</strong><span>Thundering-herd fix · batched store writes · deferred reactive flushes · debounced repo watcher · first-mount defer</span></div>
+    </div>
+
+    <h2>Four Lenses on Speedup</h2>
+    <p>Speedup is not a single number — it depends on the question. Across four independent measurements, the signal is consistent.</p>
+
+    <div class="lenses">
+      <div class="lens">
+        <div class="lens-index">Lens 01 · Effort Ratio</div>
+        <span class="multiplier">35–55<span class="unit">×</span></span>
+        <h4>Per hour of personal attention</h4>
+        <p>Denominator: the engineer's own 100 hours of focused attention. Numerator: the equivalent scope a senior developer would book — 450 to 700 engineering-days for what shipped. Each hour of dispatch-and-review produces roughly a working week of conventional delivery.</p>
+      </div>
+
+      <div class="lens">
+        <div class="lens-index">Lens 02 · Calendar Compression</div>
+        <span class="multiplier">20–32<span class="unit">×</span></span>
+        <h4>Time-to-ship vs. solo senior</h4>
+        <p>Scope that a solo senior would plan across roughly two years of full-time work ships in a single month of part-time effort. Against a small team, the compression is still measured in years, not months.</p>
+      </div>
+
+      <div class="lens">
+        <div class="lens-index">Lens 03 · Release Cadence</div>
+        <span class="multiplier">1<span class="unit">/2d</span></span>
+        <h4>One release every two days</h4>
+        <p>Fifteen public releases in thirty days, including a major milestone. This is a cadence most funded teams never sustain — and it is held by one person working part-time around a day job.</p>
+      </div>
+
+      <div class="lens">
+        <div class="lens-index">Lens 04 · Raw Code Output</div>
+        <span class="multiplier">17–42<span class="unit">×</span></span>
+        <h4>Lines of production code</h4>
+        <p>Nearly ninety thousand lines written across Rust, TypeScript and UI layers simultaneously — and not boilerplate. Systems code, state machines, async orchestration, framework plumbing. Volume without loss of density.</p>
+      </div>
+    </div>
+
+    <h2>Why It Scales Better Than a Team</h2>
+    <p>The most surprising finding is not that the output is high. It is that a single engineer outperforms multi-person setups on the same scope. The reason is not model capability alone — it is the absence of organizational friction.</p>
+
+    <div class="comparison">
+      <div class="comp-card team">
+        <div class="comp-label">Traditional Team</div>
+        <h5>Coordination is the tax</h5>
+        <ul>
+          <li>Product owner translates intent into tickets</li>
+          <li>Project manager schedules and chases dependencies</li>
+          <li>Handoffs between frontend / backend / design / QA</li>
+          <li>Alignment meetings to rebuild shared context</li>
+          <li>Review queues and approval round-trips</li>
+          <li>Context loss at every cross-department boundary</li>
+        </ul>
+      </div>
+      <div class="comp-card solo">
+        <div class="comp-label">Solo + Claude Code</div>
+        <h5>Zero coordination overhead</h5>
+        <ul>
+          <li>No PO — intent lives in the engineer's head</li>
+          <li>No PM — dispatch <em>is</em> the plan</li>
+          <li>No handoffs — one mind owns every layer</li>
+          <li>No meetings — the product vision doesn't fragment</li>
+          <li>Review is inline, one hop from the work</li>
+          <li>Context held end-to-end, without compression</li>
+        </ul>
+      </div>
+    </div>
+
+    <p>A team gets more headcount and more hours. A solo operator with Claude Code gets <strong>more throughput per hour</strong> — because none of the hours are spent rebuilding shared context. Scale arrives through parallelism of machines, not people.</p>
+
+    <div class="pull">
+      <p>A team multiplies by adding people. This setup multiplies by removing the friction people introduce.</p>
+    </div>
+
+    <h2>What Actually Drives the Multiplier</h2>
+    <div class="category-grid">
+      <div class="cat"><strong>Parallel sessions</strong><span>Five to seven Claude sessions running concurrently via TUIC dispatch. One thread of attention directing many threads of execution.</span></div>
+      <div class="cat"><strong>Model-level pattern competence</strong><span>For known patterns — OAuth flows, reactive stores, state machines — the first draft arrives in minutes. Unknowns collapse.</span></div>
+      <div class="cat"><strong>Unified product vision</strong><span>One engineer holds the full mental model. No translation layer between intent and code. No lossy compression into tickets.</span></div>
+      <div class="cat"><strong>Dispatch-and-review loop</strong><span>The engineer directs code, does not type it. Time flows into decisions, review, merges — not keystrokes.</span></div>
+    </div>
+
+    <h2>Honest Caveats</h2>
+    <p>The multiplier is real, but it is not universal. This report would mislead without naming the conditions that produced it.</p>
+
+    <div class="caveat">
+      <h4>Read this before concluding anything</h4>
+      <ul>
+        <li><strong>Thirty years of software experience is doing heavy lifting.</strong> The ability to spot a dead end in seconds, reject a wrong architectural turn before a single line is written, and distinguish a real fix from a symptom patch — that is an experience filter. A less experienced engineer with the same tooling would get dragged into rabbit holes the model cannot see.</li>
+        <li><strong>Context switching at this pace is exhausting.</strong> Running five to seven parallel sessions while keeping the full product in mind is not sustainable at eight hours a day. Burnout is a real risk. Three to four hours per day is already dense — and only holds because the work is motivating, not because the rhythm is comfortable.</li>
+        <li><strong>Passion is part of the multiplier.</strong> A personal project with a clear product vision removes the friction of "what are we actually building and why." Most professional environments cannot replicate that. Remove the passion and the same setup would produce less.</li>
+        <li><strong>The subscription is the speed limit.</strong> The Max plan quota is a hard monthly ceiling. Everything scales until active hours are consumed. Plan size is the lever — there is no infinite dial.</li>
+        <li><strong>Not all code survives the first write.</strong> Roughly a third of the lines written were later deleted or rewritten. The raw output is real, but iteration is part of the process — as it is for humans.</li>
+      </ul>
+    </div>
+
+    <h2>What This Means for a Corporate Senior Dev</h2>
+    <p>The numbers above are outlier conditions: a personal project, three decades of experience, no stakeholders, total ownership. Enterprise engineering is a different environment. Here is what the same toolchain realistically delivers for an average senior developer working inside a company.</p>
+
+    <div class="lenses">
+      <div class="lens">
+        <div class="lens-index">Profile A · AI Pair Programmer</div>
+        <span class="multiplier">1.5–2<span class="unit">×</span></span>
+        <h4>In-editor assistant use</h4>
+        <p>Completion, chat for explanations, targeted debug help. The developer still writes the code — the model suggests. Consistent with published Copilot studies. Floor for "I use AI at work."</p>
+      </div>
+
+      <div class="lens">
+        <div class="lens-index">Profile B · Single-Session Dispatch</div>
+        <span class="multiplier">3–4<span class="unit">×</span></span>
+        <h4>Active agentic workflow</h4>
+        <p>Delegates discrete tasks to Claude Code in one session. Loop: dispatch, read, correct, merge. Bounded by corporate review gates, cross-team dependencies, and alignment overhead — each of which taxes 20–30% of the time.</p>
+      </div>
+
+      <div class="lens">
+        <div class="lens-index">Profile C · Multi-Session Power User</div>
+        <span class="multiplier">5–8<span class="unit">×</span></span>
+        <h4>TUIC-style orchestration</h4>
+        <p>Two or three parallel sessions, plan-driven work, disciplined review. Never reaches the 35–55× of the outlier case because peer review, stakeholder alignment, and less dead-end filtering each reclaim part of the gain.</p>
+      </div>
+    </div>
+
+    <p>The honest middle — the realistic number most senior developers will actually sustain inside an enterprise — is around <strong>three to five times</strong>. Not the outlier multiplier. Not the pair-programmer multiplier either. Enough to reshape planning assumptions, team sizing, and roadmap ambition.</p>
+
+    <h2>Takeaway</h2>
+    <p class="body-emphasis">One month of TUICommander, shipped by one person in evenings and weekends, covers scope that conventional planning books at a team-year or more. The multiplier holds across four independent lenses — effort, calendar, cadence, raw output — so it is a method, not a fluke. But the conditions matter: a senior engineer, a passion project, and a subscription plan are all part of the equation. Remove any one and the numbers bend. Keep all three and the result is an engineering velocity that looks, from the outside, like it has no team behind it — because it doesn't.</p>
+
+    <footer>
+      <span>TUICommander · Engineering Retrospective · Solo · Part-time</span>
+      <span class="tag">2026-04-15</span>
+    </footer>
+  </div>
+</body>
+</html>

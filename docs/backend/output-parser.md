@@ -17,6 +17,11 @@ characters. A combining mark received in a later PTY chunk marks its base cell
 dirty, so changed-row consumers receive the updated text. This preserves the
 stored sequence without normalizing it or changing parser matching rules.
 
+A Codex interrupt banner beside the live composer can close native busy only
+while a host-requested interrupt is pending. The existing interrupted-screen
+transition retires native busy as well as shell busy; historical banners and
+still-working screens do not override native activity (#2961-8724).
+
 ## Usage
 
 ```rust
@@ -138,6 +143,8 @@ Guards against false positives:
 - **User echo suppression**: 500ms window after user input ignores PTY echo of typed text
 - **Resize grace**: 1s suppression after terminal resize to avoid re-detection of redrawn content
 
+The managed native v2 plugin translates recorded OpenCode 2.2.3 `form.created` and `permission.asked` events to OSC 7770 awaiting. Matching `form.replied`, `form.cancelled` and `permission.replied` events restore current busy/idle activity, not activity saved when the prompt opened. Execution settlement and session/location/plugin teardown clear owned waits. This uses the existing OSC/state accumulator, not a new text parser; shared native background servers remain inactive because they do not own one TUIC terminal.
+
 Hook-instrumented agents report explicit question-tool waits through OSC 7770
 `state=awaiting`. Plan and skill Ink pickers are detected by their rendered
 footer, including the full-screen presence recovery when a hook does not fire.
@@ -180,7 +187,10 @@ full screen has returned to the ready composer without an open Ink dialog,
 `pty.rs` emits `protocol-question-cleared` with the expected question text and
 turn epoch. A still-open dialog or a new question in that output chunk remains
 awaiting; the reducer checks the expected text and epoch before applying the
-clear.
+clear. Claude can leave an old footer below the ready composer. A choice-clear
+event permits recovery when the choice parser no longer finds the dialog. The
+same transition retires the native tool and wait records and publishes the new
+tool value.
 
 A `progress type=blocked` report from an agent with a live PTY emits a
 confident `question` with `source: "progress-blocked"`, and the reducer records
@@ -255,6 +265,13 @@ failures became green. Plain busy repaints and submitted `continue` input do not
 clear an error. A working status row or native OSC 7770 `state=busy` clears the backend error; a subsequent
 successful idle turn therefore returns to Done.
 
+The backend owns the retry (`src-tauri/src/api_retry.rs`: budget, timer, Ink-safe
+submit), so sessions without a mounted Terminal (mobile companion, headless) retry
+too; the frontend only shows the red state and the tip. One owner means no double
+submit. The timer fires only if its arming is still current. A shell that still reads
+busy is rechecked every 5s instead of dropping the attempt; an idle shell gets
+`continue`.
+
 `error_kind: "server"` enables TUIC auto-retry when the agent's
 `auto_retry_on_error` setting is true (default false). Backoff is 5s, 15s and 30s,
 with at most three injected `continue` commands. The red indicator remains until
@@ -303,6 +320,7 @@ parameters, not invented captured transcripts. Pattern names refer to
 | ego: final connection loss, timeout, 5xx or auth | OSC 777 `notify;εgo;{cause}; review the output, then send a new prompt to continue`, followed by OSC 7770 `state=idle` | `ego-provider-failure`; HTTP 401/403 causes classify as auth, others as server |
 | ego: startup auth refusal | `εgo: the provider returned HTTP {status}: {cause}` with 401/403 | `ego-startup-auth` |
 | ego: intermediate retry | OSC 7770 `ego-recovery={...}` (`waiting` / `retrying`), then `clear` | Existing provider-recovery overlay, not ApiError |
+| ego: turn refused by its own request (preflight gap) | OSC 7770 `error={message}` (`;` sent as `,`), then `state=error`, on every refused turn; a bare `state=error` keeps the last message | Not ApiError: the PTY reader sets `last_error` and the `agent_state=error` input before the idle edge. Peer mail wakes, notices, orchestrator wakes, MCP agent submits, guarded automated input and API auto-retry type nothing until a submitted user line or native `busy`/`prompt`. Human replies and queued Compose commands still pass. `busy` clears `last_error` (#3011-1784) |
 
 **Sources:**
 
@@ -385,6 +403,8 @@ parentheses. Ambiguous unbalanced or nested markers remain literal body text.
 It leaves fenced or indented code and prose mentions literal. This is a separate
 logical-line projection of the terminal grammar: reusing the Rust VT parser here would require
 a new backend ACP projection and wire contract, including HTTP/IPC parity.
+
+AI Chat busy, awaiting and idle state is not parsed from terminal output. It is derived in Rust from the ACP turn, open seats, tool calls and ego child frames (`src-tauri/src/acp/activity.rs`) and never enters `ParsedEvent` or the PTY session-state accumulator (#2637-c6d3).
 
 Answer rendering is shared by the grid and Chat through `answerExtent` in `suggestOverlay.ts`. Adjacent answer markers extend one region across blank rows; non-answer output and prompt rows still end it. The renderer blanks marker cells without changing parsed or copied text. Fenced examples keep literal markers.
 
@@ -698,23 +718,40 @@ The `strip_ansi()` function pre-processes CUF (Cursor Forward, `\x1b[nC`) escape
 
 ### Hook-Instrumented Session Suppression
 
-When native hook instrumentation is configured, heuristic `Question` events are
-suppressed only after the session actually emits an OSC 7770 `state=` marker.
-The runtime handshake avoids trusting a stale flag when hook installation or an
-agent upgrade has broken delivery. Hook `busy` is authoritative over silence;
-hook `idle`, a confirmed interrupted screen, or process exit ends it. For known
-agents, explicit IDLE waits for a process snapshot newer than the marker before
-publishing parent idle/completed lifecycle mail, so background descendants remain
-working even while the shell is ready. Other parsed events continue unchanged.
-See `suppress_heuristic_question()` and the
-explicit-state fields in `SilenceState` (`src-tauri/src/pty.rs`).
+Native turn authority starts only after the foreground agent actually emits
+OSC 7770 busy (including prompt). A legacy completion-only notifier supplies no
+busy half of that protocol and keeps its working adapter. Configuration intent is not proof of delivery. Before
+that receipt, and for agents without native signals, the existing screen,
+process and silence adapters remain available.
 
-Claude Stop hooks can block after Claude has already emitted a Stop/suggest
-marker. If the current screen still contains a semantic active phase (spinner
-prefix, active verb ending in an ellipsis, and parenthesized progress), the PTY
-lifecycle reopens the same turn. Undelivered choices survive until final readiness;
-already-published choices are discarded. A plain
-empty composer or completed-duration summary does not provide this evidence.
+After a native receipt, busy/idle/awaiting belongs to the native producer. A
+retained Working row, Ready screen, OSC 133 shell marker, timer, suggestion or
+process descendant cannot override it. Real foreground exit retires that native
+authority before another agent uses the terminal. Native dialog metadata still
+controls the question card; it is not an alternative turn detector.
+
+Ego keeps emitting busy after a parent model turn if its own journal has an
+unsettled subagent or detached exec. The final settlement/continuation emits
+idle through the existing OSC contract. Delegation outside ego creates no owned
+work. There is no new OSC state or TUIC consumer. Process ownership remains
+stored for suspend safety, but native session snapshots and stage do not promote
+it into model activity. Suggestions are next actions, not a stronger completion
+receipt than native busy. One internal ownership enum distinguishes unseen, completion-only, native busy
+and native idle, replacing a receipt flag, latest-hook value and screen-reopen
+flag. A completion-only notifier retains the legacy five-minute recovery of an
+unconsumed submission in an unreadable transcript; native busy/idle never use
+that timer. This is internal receipt ownership, not a new protocol state.
+
+Enter delivery can temporarily claim the internal shell atomic as busy. That
+claim is not model activity: native snapshots still project the delivered native
+state. A local command that starts no model turn can release the transport claim
+on a stable empty composer, restoring the already-known native idle. This does
+not create a model completion or parent lifecycle notification. Native busy is
+never released by that transport recovery.
+
+This removes native screen reopen and its idle-restoration bookkeeping, plus
+native timer/process state arbitration. Non-native screen reopen and ranking
+remain unchanged. See `docs/internals/2026-11-09-agent-state-2930-analysis.md`.
 
 Slash-menu parsing is gated by the input FSM's slash mode and intentionally
 does not emit a per-chunk debug record. Sustained output with a stale slash flag
@@ -838,6 +875,8 @@ submission path. It does not attach ACP or launch another ego process.
 
 ## Codex native session identity
 
+Codex native `codex-tool=<TUIC_SESSION>:<base64 JSON>` frames carry tool and interruption/session-end receipts. The receipt decoder applies no additional size limit, so large tool results and submitted prompts preserve activity; only the bound native session and current prompt turn are accepted. `PreToolUse`/`PostToolUse` restore busy without clearing an existing wait. The native `request_user_input` start enters the existing confident `Question` event path with question text; only its matching result clears that wait. Prompt, stop, interruption and exit also retire it. Screen parsing supplies native answer keys rather than inventing a numeric mapping from JSON options. `PermissionRequest` is neither installed nor consumed (#2695-41da).
+
 The existing OSC 7770 consumer accepts `codex-session=<TUIC_SESSION>:<base64>`
 from managed native SessionStart/UserPromptSubmit hooks. JSON carries
 `session_id`, `transcript_path`, `cwd` and `hook_event_name`; encoded payloads
@@ -851,6 +890,23 @@ It is delivered in original OSC order, including clears in the same chunk.
 `SessionState.provider_recovery` is the durable per-session presentation value;
 repeat snapshots do not generate additional parent entry notices. The existing
 session-state stream carries updates to desktop and browser consumers.
+
+### Tool readout (`tool-activity`)
+
+`tool-activity` with `name` (string or null) carries the newest live native
+tool of the session. It is not parsed from screen text: native hook receipts,
+ego `agent-event` frames and the `agent-tool=<TUIC_SESSION>:<base64>` verb of
+the managed Pi extension and OpenCode plugin feed it (see `backend/pty.md`).
+It is emitted only when the value changes, and it never sets busy, idle or
+awaiting. The accumulator writes `SessionState.current_tool`.
+
+### Ego turn readout (`child-activity`, `turn-outcome`)
+
+`child-activity` with `children` (array of labels, empty when none) and
+`turn-outcome` with `outcome` (string or null) come only from ego `agent-event`
+frames (see `backend/pty.md`). Each is emitted only when its value changes and
+never sets busy, idle or awaiting. The accumulator writes
+`SessionState.native_children` and `native_turn_outcome`; `PtyExit` clears both.
 
 ### Ego selector row boundaries
 
@@ -924,7 +980,24 @@ added. The native question tab row stays in the title, and the unnumbered
 Desktop PTY Chat and mobile share `ChoicePromptOverlay`: multiline hints use a
 monospace block, while ordinary keyboard hints remain inline.
 
+### Pi extension modal frames
+
+The managed Pi extension emits OSC 7770 coarse state from Pi 0.84.2 lifecycle callbacks. Its shared public UI context wraps `select`, `confirm`, `input`, `editor` and `custom` with token-owned waits and `finally` retraction. Tool callbacks update underlying activity without publishing busy through an open modal. Session shutdown invalidates old promise owners. No native `ui_prompt_start` event is assumed. Empty native awaiting titles are lifecycle markers, not rendered text, and are never suppressed by question repaint deduplication. Accepted idle also appends an ordered clear event: awaiting and immediate idle may arrive in one PTY read before the accumulator has applied the wait. The existing unanswered-native-dialog idle guard still runs before this clear.
+
+## Grok native receipt correlation
+
+The PTY adapter handles `grok-hook` receipts before publishing shared state events. It accepts at most 1 MiB of encoded payload, bounds correlation identifiers to 256 bytes and retains at most 64 pending requests. Child and wrong-owner events are ignored. A permission notification lacks a tool identifier, so it binds to the newest unanswered PreToolUse in the current native session and turn. Matching success/failure/denial clears it; prompt replacement and all stop/exit outcomes clear pending requests. Late cancellation with an older prompt ID is ignored. Idle/task-complete notifications never request human input. Arguments and tool results are not published in parsed state events.
+
+Strict native Ask selectors and their text-only continuation remain independent of permission-hook ownership. Grok 1.0.70 reports Ask attention as `elicitation_dialog`, not `permission_prompt` (`grok-hook-ask-2624.tcap`). Native permission/history gating must not suppress these strict Ask forms. The strict form accepts the installed version’s complete navigation and submit/back footer, but not arbitrary output after a retained form.
+
+After SessionEnd, a UserPromptSubmit with a new prompt ID reopens the same native session, including resumed conversations without OSC 133 shell integration. Replayed old submits and old-prompt completions do not reopen or close the resumed turn.
+
 Codex global hook trust is setup state, not a parsed terminal wait. Native
 `hooks/list` verification can report `reviewRequired` in Settings without
 emitting awaiting/busy/idle. Launch-scoped status notifications, PTY event
 accumulation and ego PTY/ACP request ownership are unchanged.
+
+
+### Windows hook fallback
+
+Native Windows does not install or inject TUIC's external POSIX status hooks. Hook state returns `unsupported`, and hook/status setters reject changes before writing preferences or user hook files. Saved preferences and existing hooks remain intact. Settings hides these controls based on the owning backend response, including remote machines. External agents retain heuristic detection; ego keeps native PTY OSC signals and its separate ACP path.

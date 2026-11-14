@@ -1,6 +1,7 @@
 .chatView {
   display: flex;
   flex-direction: column;
+  position: relative;
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -38,4 +39,33 @@
   flex-shrink: 0;
   max-height: 40vh;
   overflow-y: auto;
+}
+
+.fullText {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+}
+
+.fullTextBar {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.fullTextBody {
+  flex: 1;
+  margin: 0;
+  padding: 8px 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: inherit;
+  color: var(--fg-primary);
+  user-select: text;
 }

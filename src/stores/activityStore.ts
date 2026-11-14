@@ -20,6 +20,18 @@ function toPersistedItems(items: ActivityItem[]): PersistedActivityItem[] {
 
 let activityLoaded = false;
 let pendingActivitySave = false;
+let activityHydrated = false;
+let markHydrated: () => void = () => {};
+/** Settles after the first hydrate, so a writer cannot shadow a persisted item's state.
+ *  Created on first request: a module-level pending promise leaks in every importer that never hydrates. */
+let hydrated: Promise<void> | null = null;
+function whenHydrated(): Promise<void> {
+	if (activityHydrated) return Promise.resolve();
+	hydrated ??= new Promise<void>((resolve) => {
+		markHydrated = resolve;
+	});
+	return hydrated;
+}
 
 /** Fire-and-forget persist to Rust backend */
 function persistActivityNow(items: ActivityItem[]): void {
@@ -83,6 +95,9 @@ function createActivityStore() {
 			}
 		} catch (err) {
 			appLogger.debug("store", "Failed to hydrate activity", err);
+		} finally {
+			activityHydrated = true;
+			markHydrated();
 		}
 	}
 
@@ -261,6 +276,7 @@ function createActivityStore() {
 	return {
 		state,
 		hydrate,
+		whenHydrated,
 		registerSection,
 		getSections,
 		addItem,

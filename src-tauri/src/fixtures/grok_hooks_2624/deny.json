@@ -1,0 +1,40 @@
+[
+  {
+    "hookEventName": "user_prompt_submit",
+    "hook_event_name": "UserPromptSubmit",
+    "sessionId": "recorded-id-6",
+    "promptId": "recorded-id-7"
+  },
+  {
+    "hookEventName": "session_start",
+    "hook_event_name": "SessionStart",
+    "sessionId": "recorded-id-6"
+  },
+  {
+    "hookEventName": "pre_tool_use",
+    "hook_event_name": "PreToolUse",
+    "sessionId": "recorded-id-6",
+    "toolUseId": "recorded-id-8",
+    "toolName": "run_terminal_command"
+  },
+  {
+    "hookEventName": "notification",
+    "hook_event_name": "Notification",
+    "sessionId": "recorded-id-6",
+    "notificationType": "permission_prompt"
+  },
+  {
+    "hookEventName": "permission_denied",
+    "hook_event_name": "PermissionDenied",
+    "sessionId": "recorded-id-6",
+    "toolUseId": "recorded-id-8",
+    "toolName": "run_terminal_command"
+  },
+  {
+    "hookEventName": "stop_cancelled",
+    "hook_event_name": "StopCancelled",
+    "sessionId": "recorded-id-6",
+    "promptId": "recorded-id-7",
+    "reason": "permission_rejected"
+  }
+]

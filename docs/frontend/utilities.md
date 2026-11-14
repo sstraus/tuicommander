@@ -187,6 +187,12 @@ paths and shortens the home directory to `~`.
 
 `handleOpenUrl` accepts only HTTP, HTTPS and mailto URLs. Desktop calls use
 `open_default_app`; browser clients use `window.open` on their own machine.
+`openConfirmedLink` serves owner clicks on network (UNC) and custom-scheme links
+(`isHandlerLink`): it shows the exact target in the app confirmation dialog
+(registered by `App.tsx` through `registerLinkConfirm`; Cancel is the default)
+and only then calls `open_default_app` with `kind: "handler"`. Without a
+registered dialog it opens nothing. Handler failures show an error toast.
+Browser clients open custom schemes with `window.open` and cannot open UNC paths.
 `openLocalPath` sends trusted local paths to the same desktop command and does
 not launch a host application in browser mode. Settings plugin documentation
 links and File Browser default-app actions use these helpers. Reveal in file

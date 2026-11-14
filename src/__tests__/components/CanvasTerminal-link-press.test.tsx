@@ -9,9 +9,15 @@ import { VisibleIntersectionObserver } from "../helpers/visibleIntersectionObser
  * contract without mouse reporting (Claude with the alternate screen disabled).
  */
 
-const { invoke, frameSink } = vi.hoisted(() => ({
+const { invoke, frameSink, openConfirmedLink } = vi.hoisted(() => ({
 	invoke: vi.fn(),
 	frameSink: { current: null as ((data: ArrayBuffer) => void) | null },
+	openConfirmedLink: vi.fn(),
+}));
+
+vi.mock("../../utils/openUrl", async (importOriginal) => ({
+	...(await importOriginal<typeof import("../../utils/openUrl")>()),
+	openConfirmedLink,
 }));
 
 vi.mock("../../components/Terminal/canvasTerminalTransport", async (importOriginal) => ({
@@ -93,6 +99,7 @@ describe("CanvasTerminal link press under mouse reporting", () => {
 	let screenRow0 = ROW0;
 	let lateFileExists = false;
 	let osc8Active = false;
+	let osc8Uri = "followups.md";
 	let canvas: Element;
 	let unmount: () => void;
 
@@ -102,11 +109,13 @@ describe("CanvasTerminal link press under mouse reporting", () => {
 		screenRow0 = ROW0;
 		lateFileExists = false;
 		osc8Active = false;
+		osc8Uri = "followups.md";
+		openConfirmedLink.mockClear();
 		invoke.mockImplementation(
 			async (cmd: string, args: { candidate?: string; candidates?: string[]; col?: number }) => {
 				if (cmd === "terminal_hyperlink_span") {
 					const col = args.col ?? -1;
-					return osc8Active && col >= 6 && col < 9 ? [6, 9, "followups.md"] : null;
+					return osc8Active && col >= 6 && col < 9 ? [6, 9, osc8Uri] : null;
 				}
 				if (cmd === "terminal_get_row_text") return screenRow0.trimEnd();
 				if (cmd === "terminal_get_logical_line") return [0, screenRow0.trimEnd()];
@@ -272,6 +281,22 @@ describe("CanvasTerminal link press under mouse reporting", () => {
 		click(canvas, OSC8_COL, OSC8_COL);
 		await waitFor(() => expect(onOpen).toHaveBeenCalledWith("/cwd/followups.md", undefined, undefined));
 		expect(ptyWrites()).toEqual([]);
+	});
+
+	// Catches: an OSC 8 editor-protocol link from untrusted output opening without a click,
+	// or a click bypassing the owner-confirmed handler route.
+	it("sends a clicked OSC 8 custom-scheme link to the confirmed handler route only", async () => {
+		osc8Active = true;
+		osc8Uri = "editor://open?file=/cwd/a.rs";
+		screenRow0 = OSC8_ROW;
+		(frameSink.current as ((data: ArrayBuffer) => void) | null)?.(frame(OSC8_ROW, 0));
+		fire(document.body, "mousemove", OSC8_COL);
+		await waitFor(() => expect(canvas.getAttribute("style") ?? "").toContain("pointer"));
+		expect(openConfirmedLink).not.toHaveBeenCalled();
+		click(canvas, OSC8_COL, OSC8_COL);
+		await waitFor(() => expect(openConfirmedLink).toHaveBeenCalledWith("editor://open?file=/cwd/a.rs"));
+		expect(openConfirmedLink).toHaveBeenCalledTimes(1);
+		expect(onOpen).not.toHaveBeenCalled();
 	});
 
 	// Catches: the hover fallback claiming a press over plain text that was never a link.

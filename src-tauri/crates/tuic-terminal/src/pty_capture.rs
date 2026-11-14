@@ -27,7 +27,7 @@
 
 use parking_lot::Mutex;
 use std::collections::HashMap;
-use std::io::Write;
+use std::io::{Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -67,8 +67,9 @@ static ENABLED: AtomicBool = AtomicBool::new(false);
 struct CaptureState {
     /// When set, only this session is recorded. `None` records every session.
     session_filter: Option<String>,
-    /// Open capture files and how many bytes each has taken.
-    files: HashMap<String, (std::fs::File, u64)>,
+    /// Open capture files, how many bytes each has taken, and whether the header
+    /// holds a real geometry yet.
+    files: HashMap<String, (std::fs::File, u64, bool)>,
     dir: Option<PathBuf>,
     started_at: std::time::Instant,
 }
@@ -125,7 +126,7 @@ pub fn capture_status() -> serde_json::Value {
             "session_filter": state.session_filter,
             "dir": state.dir.as_ref().map(|d| d.display().to_string()),
             "sessions": state.files.iter()
-                .map(|(id, (_, len))| serde_json::json!({ "session_id": id, "bytes": len }))
+                .map(|(id, (_, len, _))| serde_json::json!({ "session_id": id, "bytes": len }))
                 .collect::<Vec<_>>(),
         }),
         None => serde_json::json!({ "enabled": false }),
@@ -174,12 +175,31 @@ fn record_direction(
                 return;
             }
             tracing::info!("[capture] recording {session_id} to {}", path.display());
-            state
-                .files
-                .entry(session_id.to_string())
-                .or_insert((file, (CAPTURE_MAGIC.len() + GEOMETRY_BYTES) as u64))
+            state.files.entry(session_id.to_string()).or_insert((
+                file,
+                (CAPTURE_MAGIC.len() + GEOMETRY_BYTES) as u64,
+                geometry.is_some(),
+            ))
         }
     };
+    // HTTP input can open a capture before any output reports the terminal size.
+    // Fill the header from the first record that knows it, not 0x0 forever.
+    if !entry.2
+        && let Some((rows, cols)) = geometry
+    {
+        let mut header = [0u8; GEOMETRY_BYTES];
+        header[..2].copy_from_slice(&rows.to_le_bytes());
+        header[2..].copy_from_slice(&cols.to_le_bytes());
+        let patched = entry
+            .0
+            .seek(SeekFrom::Start(CAPTURE_MAGIC.len() as u64))
+            .and_then(|_| entry.0.write_all(&header))
+            .and_then(|_| entry.0.seek(SeekFrom::End(0)));
+        if patched.is_err() {
+            return;
+        }
+        entry.2 = true;
+    }
     if entry.1 >= MAX_CAPTURE_BYTES {
         return;
     }
@@ -294,6 +314,25 @@ mod tests {
         assert!(wanted.starts_with(CAPTURE_MAGIC));
         assert_eq!(wanted.len() as u64, MAX_CAPTURE_BYTES);
         assert!(!dir.join("other.tcap").exists());
+    }
+
+    // Catches: a capture whose first record is geometry-less HTTP input latches a 0x0 header.
+    #[test]
+    fn input_first_capture_records_the_first_known_geometry() {
+        let _guard = TEST_LOCK.lock();
+        let scratch = tempfile::tempdir_in(tuic_test_support::test_temp_root()).unwrap();
+        let dir = scratch.path().join("input-first");
+        set_enabled(true, None, dir.clone());
+
+        record_input("http", b"ls\r");
+        record_with_geometry("http", b"listing", Some((41, 110)));
+        record_with_geometry("http", b"resized", Some((50, 120)));
+        set_enabled(false, None, dir.clone());
+
+        let capture = decode_capture(&std::fs::read(dir.join("http.tcap")).unwrap()).unwrap();
+        assert_eq!(capture.geometry, Some((41, 110)));
+        let data: Vec<&[u8]> = capture.records.iter().map(|r| r.data.as_slice()).collect();
+        assert_eq!(data, [&b"ls\r"[..], b"listing", b"resized"]);
     }
 
     #[test]

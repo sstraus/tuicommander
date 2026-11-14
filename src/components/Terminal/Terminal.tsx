@@ -284,27 +284,11 @@ export const Terminal: Component<TerminalProps> = (props) => {
 		unlistenClipboardStore = undefined;
 	};
 
-	const RETRY_DELAYS = [5_000, 15_000, 30_000];
-	let retryCount = 0;
-	let retryTimer: ReturnType<typeof setTimeout> | undefined;
+	// Auto-retry after a server error is owned by the backend (api_retry.rs), so a
+	// session without a mounted Terminal retries too. This component only shows the hint.
 	const [retryHint, setRetryHint] = createSignal(false);
-	let retryWorkObserved = false;
 	createEffect(() => {
 		if (terminalsStore.get(props.id)?.awaitingInput !== "error") setRetryHint(false);
-	});
-	// Reset only after a recovered turn reaches idle. A late pre-error idle
-	// snapshot can briefly have no last_error; it must not cancel the retry.
-	createEffect(() => {
-		const terminal = terminalsStore.get(props.id);
-		if (!terminal || terminal.awaitingInput !== null) return;
-		if (terminal.shellState === "busy") {
-			retryWorkObserved = true;
-		} else if (terminal.shellState === "idle" && retryWorkObserved) {
-			retryCount = 0;
-			retryWorkObserved = false;
-			clearTimeout(retryTimer);
-			retryTimer = undefined;
-		}
 	});
 	let agentDetectTimer: ReturnType<typeof setTimeout> | undefined;
 	let rafHandle = 0;
@@ -443,15 +427,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
 				case "progress": {
 					if (parsed.state === 0) {
 						terminalsStore.update(props.id, { progress: null });
-					} else if (parsed.state === 1 || parsed.state === 2 || parsed.state === 3) {
+					} else if (parsed.state === 3) {
+						terminalsStore.update(props.id, { progress: "indeterminate" });
+					} else if (parsed.state === 1 || parsed.state === 2 || parsed.state === 4) {
 						terminalsStore.update(props.id, { progress: Math.min(100, Math.max(0, parsed.value)) });
 					}
 					break;
 				}
 				case "status-line": {
-					// Working evidence cancels a parked injection, not the retry budget.
-					clearTimeout(retryTimer);
-					retryTimer = undefined;
 					terminalsStore.update(props.id, {
 						currentTask: parsed.task_name,
 					});
@@ -558,53 +541,10 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					const kindLabel = kind === "server" ? "server error" : kind === "auth" ? "auth failure" : "API error";
 					appLogger.error("terminal", `${label}: ${kindLabel} (${patternName})`);
 
-					// Keep failure visible until the backend observes real recovery. An
-					// injected continue that stays idle is not a successful turn.
-					retryWorkObserved = false;
+					// Keep failure visible until the backend observes real recovery. The
+					// backend owns the retry itself.
 					terminalsStore.setAwaitingInput(props.id, "error");
 					setRetryHint(kind === "server");
-
-					const willAutoRetry =
-						kind === "server" &&
-						agent &&
-						agentConfigsForRepo(props.cwd).isAutoRetryEnabled(agent) &&
-						!retryTimer &&
-						retryCount < RETRY_DELAYS.length;
-
-					if (willAutoRetry) {
-						const delay = RETRY_DELAYS[retryCount];
-						const attempt = retryCount + 1;
-						appLogger.info(
-							"terminal",
-							`[AutoRetry] ${label}: attempt ${attempt}/${RETRY_DELAYS.length} in ${delay / 1000}s`,
-						);
-						retryTimer = setTimeout(() => {
-							retryTimer = undefined;
-							const current = terminalsStore.get(props.id);
-							if (sessionId && current?.shellState !== "busy") {
-								appLogger.info("terminal", `[AutoRetry] ${label}: injecting "continue" (attempt ${attempt})`);
-								// Route through sendCommand (never raw text+\r): Ink-based agents in
-								// raw mode drop the Enter when bundled with text, defeating the retry.
-								pty
-									.sendCommand(sessionId, "continue", current?.agentType)
-									.catch((err) => appLogger.error("terminal", "[AutoRetry] Failed to write", { error: String(err) }));
-							}
-						}, delay);
-						retryCount++;
-					} else {
-						terminalsStore.setAwaitingInput(props.id, "error");
-						if (
-							kind === "server" &&
-							agent &&
-							agentConfigsForRepo(props.cwd).isAutoRetryEnabled(agent) &&
-							retryCount >= RETRY_DELAYS.length
-						) {
-							appLogger.warn(
-								"terminal",
-								`[AutoRetry] ${label}: exhausted ${RETRY_DELAYS.length} retries, manual intervention needed`,
-							);
-						}
-					}
 					break;
 				}
 				case "tool-error":
@@ -752,6 +692,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 							sessionId: null,
 							...(notifyOnExit ? { completionNotified: true } : {}),
 							currentTask: null,
+							currentTool: null,
 							agentType: null,
 							agentSessionId: null,
 						});
@@ -962,6 +903,7 @@ export const Terminal: Component<TerminalProps> = (props) => {
 					shell: settingsStore.state.shell ?? null,
 					cwd: props.cwd || null,
 					tuic_session: termData?.tuicSession ?? null,
+					restored: termData?.restoredIdentity ?? false,
 					alias: termData?.alias ?? null,
 					env: machineConfigs.getEnvFlags("claude"),
 					agent_type: termData?.pendingInitCommand ? (termData.agentType ?? null) : null,
@@ -1131,7 +1073,6 @@ export const Terminal: Component<TerminalProps> = (props) => {
 
 	onCleanup(() => {
 		disposed = true;
-		clearTimeout(retryTimer);
 		clearTimeout(agentDetectTimer);
 		clearTimeout(questionDebounceTimer);
 		detachSessionListeners();
@@ -1212,6 +1153,12 @@ export const Terminal: Component<TerminalProps> = (props) => {
 		openComposeWithText: (text: string) => {
 			setPendingComposeText(text);
 			if (!chatActive()) setComposeOpen(true);
+			setComposeTextRequest((n) => n + 1);
+		},
+		quoteIntoCompose: (text: string) => {
+			if (insertComposeText?.(text)) return;
+			setPendingComposeText(pendingComposeText() ? `${pendingComposeText().replace(/\s+$/, "")}\n\n${text}` : text);
+			setComposeOpen(true);
 			setComposeTextRequest((n) => n + 1);
 		},
 		searchBuffer: (query: string) => {
@@ -1598,12 +1545,14 @@ export const Terminal: Component<TerminalProps> = (props) => {
 			<Show when={composeVisible()}>
 				<Suspense>
 					<ComposePanel
+						sessionId={sessionId ?? props.id}
 						isOpen={composeVisible}
 						initialText={pendingComposeText}
 						onTextChange={setPendingComposeText}
 						onSubmitted={finishCompose}
 						pinned={composeDocked}
 						persistent={chatActive}
+						reserveMinimum={() => !chatActive()}
 						onTogglePin={() => setComposePinned(!composePinned())}
 						onDismiss={() => {
 							setComposePinned(false);
@@ -1648,6 +1597,18 @@ export const Terminal: Component<TerminalProps> = (props) => {
 							} catch (err) {
 								appLogger.error("terminal", "ComposePanel recall queued failed", { sessionId: owner, error: err });
 								return null;
+							}
+						}}
+						canSteerQueued={() => !terminalsStore.get(props.id)?.awaitingInput}
+						onSteerQueued={async (commandId) => {
+							const owner = sessionId;
+							if (!owner) return;
+							try {
+								await invoke("send_queued_agent_command_now", { sessionId: owner, commandId });
+							} finally {
+								const remaining = await pty.listQueuedCommands(owner);
+								if (sessionId === owner) terminalsStore.update(props.id, { queuedCommands: remaining.length });
+								void chatViewStore.refreshQueue(owner).catch(() => {});
 							}
 						}}
 						onRemoveQueued={async (commandId) => {

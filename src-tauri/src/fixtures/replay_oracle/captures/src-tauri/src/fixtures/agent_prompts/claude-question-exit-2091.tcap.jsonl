@@ -152,40 +152,38 @@
 {"record":143,"state":{"shell":1,"agent":"awaiting_input","awaiting":true,"question":"Claude needs your permission","confident":true,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
 {"record":144,"event":{"type":"protocol-question-cleared"}}
 {"record":144,"event":{"type":"shell-state","state":"idle","agent_type":"claude"}}
-{"record":144,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":145,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":146,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":147,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":148,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":149,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":150,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":152,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":153,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":154,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":155,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":157,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":158,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":159,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":160,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":161,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":162,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":163,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":164,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":165,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":166,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":167,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":168,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":169,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":170,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":171,"event":{"type":"shell-state","state":"busy","agent_type":"claude"}}
-{"record":171,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":172,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":173,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":174,"event":{"type":"shell-state","state":"idle","agent_type":"claude"}}
-{"record":174,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":175,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":176,"state":{"shell":2,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":177,"event":{"type":"shell-state","state":"busy","agent_type":"claude"}}
-{"record":177,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
-{"record":178,"state":{"shell":1,"agent":"working","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":144,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
+{"record":144,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":145,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":146,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":147,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":148,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":149,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":150,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":152,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":153,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":154,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":155,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":157,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":158,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":159,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":160,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":161,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":162,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":163,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":164,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":165,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":166,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":167,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":168,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":169,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":170,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":171,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":172,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":173,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":174,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":175,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":176,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":177,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
+{"record":178,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":"Proceed with the isolated exit regression check?|1,2,3,4","fullscreen":false}}
 {"ring_len":19857}

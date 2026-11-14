@@ -215,7 +215,7 @@ pub struct StoryPatch {
     clippy::option_option,
     reason = "the outer option distinguishes a present null from omission"
 )]
-fn nullable_patch<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
+pub(crate) fn nullable_patch<'de, D, T>(deserializer: D) -> Result<Option<Option<T>>, D::Error>
 where
     D: serde::Deserializer<'de>,
     T: Deserialize<'de>,
@@ -282,6 +282,10 @@ pub struct StoryRead {
     #[serde(flatten)]
     pub story: Story,
     pub abandoned: bool,
+    /// Done in its external backend without a TUIC integration receipt: it
+    /// releases no workflow dependent.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub completed_outside: bool,
 }
 
 /// Progress over the active plans of a project: plans not yet complete, stories being worked on,
@@ -367,6 +371,10 @@ pub enum StoryCommand {
     Unblock,
     /// Cancels the story.
     WontFix,
+    /// Done -> in_progress for a batch critic FIX. Only the owning workflow may
+    /// send it; released dependants stay released.
+    #[schemars(skip)]
+    Reopen,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -374,7 +382,13 @@ pub enum StoryCommand {
 pub enum StoryTransitionActor {
     Human,
     LocalApi,
-    ManagedSession { session_id: String },
+    ManagedSession {
+        session_id: String,
+    },
+    /// The daemon of the workflow run that owns the story.
+    Workflow {
+        run_id: String,
+    },
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]

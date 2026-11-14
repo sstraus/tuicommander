@@ -1,0 +1,95 @@
+{
+  "root": "/Users/stefano.straus/Gits/.tmp/2727-spike/run-1793639665721",
+  "node": "v26.13.0",
+  "platform": "darwin/arm64",
+  "wiz": "/Users/stefano.straus/.claude/plugins/cache/lansweeper-tools/wiz/6.0.0-beta.3",
+  "source_head": "dbefa5be83e5a5d791c6d6ac7a1fafed3be6acc5",
+  "count": 385,
+  "initialize": {
+    "n": 50,
+    "median_ms": 0.047416999999995824,
+    "p95_ms": 0.12291599999980463,
+    "max_ms": 0.17174999999997453
+  },
+  "cold_initialize_ms": 72.09558400000014,
+  "story_id": "2450-6845",
+  "get_story": {
+    "n": 50,
+    "median_ms": 186.45495800000026,
+    "p95_ms": 815.5607079999991,
+    "max_ms": 1513.8659590000007
+  },
+  "list_stories": {
+    "n": 50,
+    "median_ms": 204.7903750000005,
+    "p95_ms": 932.3399170000012,
+    "max_ms": 1010.8347499999982
+  },
+  "changes": {
+    "n": 50,
+    "median_ms": 184.937417000001,
+    "p95_ms": 901.1963329999999,
+    "max_ms": 2890.1259999999966
+  },
+  "watch_hint": {
+    "n": 10,
+    "median_ms": 50.90358300000662,
+    "p95_ms": 61.693208999997296,
+    "max_ms": 61.693208999997296
+  },
+  "stale_version": {
+    "jsonrpc": "2.0",
+    "id": 205,
+    "error": {
+      "code": -32001,
+      "message": "conflict"
+    }
+  },
+  "race": [
+    {
+      "external_title": "External winner 0",
+      "final_title": "Adapter title 0",
+      "error": null,
+      "elapsed_ms": 403.940290999999
+    },
+    {
+      "external_title": "External winner 1",
+      "final_title": "Adapter title 1",
+      "error": null,
+      "elapsed_ms": 1056.902750000001
+    },
+    {
+      "external_title": "External winner 2",
+      "final_title": "Adapter title 2",
+      "error": null,
+      "elapsed_ms": 382.0137079999986
+    },
+    {
+      "external_title": "External winner 3",
+      "final_title": "Adapter title 3",
+      "error": null,
+      "elapsed_ms": 468.49395899999945
+    },
+    {
+      "external_title": "External winner 4",
+      "final_title": "Adapter title 4",
+      "error": null,
+      "elapsed_ms": 337.3319999999949
+    }
+  ],
+  "complete": {
+    "jsonrpc": "2.0",
+    "id": 228,
+    "error": {
+      "code": -32002,
+      "message": "refused",
+      "data": {
+        "status": 1,
+        "reason": "\u001b[33mWarning: skipping states (pending → complete)\u001b[0m\n\u001b[90m         Typical: pending → ready → in_progress → complete\u001b[0m\n\u001b[33mWarning: story 2450-6845 has no QA section\u001b[0m\n\u001b[90mAdd QA: stories-cli.js qa 2450-6845 \"None — covered by tests\"\u001b[0m\n\u001b[33mWarning: 2 unchecked acceptance criteria for story 2450-6845:\u001b[0m\n\u001b[90m  1. [ ] Design note: which ego policy enforces no push credentials and no write tools for the triage run\u001b[0m\n\u001b[90m  2. [ ] The triage definition can select the ego executor; the docs say which guarantee each executor gives\u001b[0m\n\u001b[31mError: cannot complete: 2 acceptance criteria not met\u001b[0m\n\u001b[90mHint: Check off each criterion (- [x]) after verifying. Only [MANUAL]/[VISUAL]/[HUMAN] tagged criteria can be skipped (- [~])\u001b[0m\n"
+      }
+    }
+  },
+  "complete_ms": 147.54716700000426,
+  "final_status": "pending",
+  "verdict": "NO-GO: check then CLI write is not atomic; competing title overwritten in 5/5 controlled races"
+}

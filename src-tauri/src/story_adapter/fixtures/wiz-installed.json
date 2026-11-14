@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "plugins": {
+    "wiz@lansweeper-tools": [
+      {
+        "scope": "user",
+        "installPath": "/Users/stefano.straus/.claude/plugins/cache/lansweeper-tools/wiz/5.12.1",
+        "version": "5.12.1",
+        "installedAt": "2026-04-22T22:50:00.000Z",
+        "lastUpdated": "2026-04-25T00:00:00.000Z",
+        "gitCommitSha": "9f3726093cae3a138ba6c9052a5ef060a4dbca38"
+      }
+    ]
+  }
+}

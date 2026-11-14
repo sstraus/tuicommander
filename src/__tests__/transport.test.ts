@@ -3,6 +3,20 @@ import { join } from "node:path";
 import * as ts from "@typescript/typescript6";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+// Catches: the decision view works over desktop IPC but has no browser route.
+it("maps the Boss attention projection to its HTTP twin", () => {
+	expect(mapCommandToHttp("boss_attention", {})).toEqual({ method: "GET", path: "/agents/attention" });
+});
+
+// Catches: the outside request answer works over desktop IPC but has no browser route.
+it("maps the outside request answer to its HTTP twin", () => {
+	expect(mapCommandToHttp("answer_outside_request", { requestId: "d1", decision: "accept" })).toEqual({
+		method: "POST",
+		path: "/agents/attention/outside-request",
+		body: { requestId: "d1", decision: "accept" },
+	});
+});
+
 // Catches: browser reload dropping the changed-ID filter and scanning every plugin.
 it("maps targeted plugin discovery with the same ID array as IPC", () => {
 	const ids = ["plugin-a", "odd,id"];
@@ -475,10 +489,29 @@ describe("transport", () => {
 			});
 		});
 
+		it.each([
+			{ action: "backend_status" },
+			{
+				action: "approve_connector",
+				installation: "/installed/wiz/6.0.0",
+				expected_identity: "6.0.0:displayed-sha256",
+			},
+			{ action: "set_backend", backend: "native" },
+		])("preserves connector status and approval actions on HTTP", (action) => {
+			expect(mapCommandToHttp("story_action_command", { project: "/repo a", action })).toEqual({
+				method: "POST",
+				path: "/stories/action?path=%2Frepo%20a",
+				body: { action },
+			});
+		});
 		it("routes native story actions to the owning project", () => {
 			expect(mapCommandToHttp("story_capabilities", {})).toEqual({
 				method: "GET",
 				path: "/stories/capabilities",
+			});
+			expect(mapCommandToHttp("story_capabilities", { project: "/repo a" })).toEqual({
+				method: "GET",
+				path: "/stories/capabilities?path=%2Frepo%20a",
 			});
 			const action = { action: "get_story", story_id: "story-1" };
 			expect(mapCommandToHttp("story_action_command", { project: "/repo a", action })).toEqual({
@@ -510,58 +543,6 @@ describe("transport", () => {
 				body: { action },
 			});
 		});
-		it("routes versioned workflow definitions to their owning project", () => {
-			const action = { action: "get_published", id: "flow-1", revision: 2 };
-			expect(mapCommandToHttp("workflow_definition_action", { project: "/repo a", action })).toEqual({
-				method: "POST",
-				path: "/workflows/definition/action?path=%2Frepo%20a",
-				body: action,
-			});
-		});
-		it.each([
-			{ action: "events", run_id: "run-1", after_sequence: 4, limit: 20 },
-			{ action: "incidents", run_id: "run-1" },
-		])("routes workflow run actions to their owning project: $action", (action) => {
-			expect(mapCommandToHttp("workflow_run_action", { project: "/repo a", action })).toEqual({
-				method: "POST",
-				path: "/workflows/run/action?path=%2Frepo%20a",
-				body: action,
-			});
-		});
-
-		it("preserves pinned graph start and recovery payloads through HTTP", () => {
-			// Catches: graph controls being dropped or reshaped on the browser transport.
-			for (const action of [
-				{
-					action: "start_graph",
-					target: { type: "story", id: "story-1" },
-					expected_revision: 3,
-					definition_id: "flow-1",
-					definition_revision: 2,
-					request_id: "start-key",
-				},
-				{
-					action: "command",
-					run_id: "run-1",
-					command_id: "resume-key",
-					expected_sequence: 4,
-					command: { action: "resume_graph", execution_id: "root", activation_id: "a3", resolution: "Reviewed" },
-				},
-				{
-					action: "command",
-					run_id: "run-1",
-					command_id: "cancel-key",
-					expected_sequence: 4,
-					command: { action: "cancel" },
-				},
-			])
-				expect(mapCommandToHttp("workflow_run_action", { project: "/repo a", action })).toEqual({
-					method: "POST",
-					path: "/workflows/run/action?path=%2Frepo%20a",
-					body: action,
-				});
-		});
-
 		it("maps typed project progress controls", () => {
 			// The whole Progress surface: record, list, delete, and the divider.
 			// Every control the rejected design added — status, pause, resume,
@@ -661,14 +642,19 @@ describe("transport", () => {
 			expect(result.body).toEqual({ text: "run tests" });
 		});
 
-		// Catches: HTTP drops the idempotency key supplied to the desktop command.
-		it("preserves queue idempotency keys across HTTP and Tauri arguments", () => {
+		// Catches: HTTP drops retry identity or stop-bound completion authority.
+		it("preserves queue identity and completion authority across transports", () => {
 			const result = mapCommandToHttp("enqueue_agent_command", {
 				sessionId: "abc",
 				text: "run tests",
 				idempotencyKey: "bg-job-1",
+				automaticCompletionOrigin: "launch-origin",
 			});
-			expect(result.body).toEqual({ text: "run tests", idempotencyKey: "bg-job-1" });
+			expect(result.body).toEqual({
+				text: "run tests",
+				idempotencyKey: "bg-job-1",
+				automaticCompletionOrigin: "launch-origin",
+			});
 		});
 
 		it("maps clear_queued_agent_commands to DELETE /sessions/{id}/queue", () => {
@@ -813,6 +799,12 @@ describe("transport", () => {
 			const result = mapCommandToHttp("get_mcp_audit", {});
 			expect(result.method).toBe("GET");
 			expect(result.path).toBe("/mcp/audit");
+		});
+
+		it("maps the MCP usage rollup read to GET /mcp/usage", () => {
+			const result = mapCommandToHttp("get_mcp_usage", {});
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/mcp/usage");
 		});
 
 		it("maps upstream saves with both the loaded base and desired config", () => {
@@ -1155,6 +1147,21 @@ describe("transport", () => {
 			expect(result.path).toBe("/repo/files?path=%2Fmy%2Frepo");
 		});
 
+		// Catches: the transport drops `scope`, so a browser or remote client
+		// asking for the staged diff (or a commit's files) gets the unstaged one.
+		it.each([
+			["get_git_diff", "/repo/diff"],
+			["get_diff_stats", "/repo/diff-stats"],
+			["get_changed_files", "/repo/files"],
+		])("forwards scope for %s", (command, route) => {
+			expect(mapCommandToHttp(command, { path: "/my/repo", scope: "staged" }).path).toBe(
+				`${route}?path=%2Fmy%2Frepo&scope=staged`,
+			);
+			expect(mapCommandToHttp(command, { path: "/my/repo", scope: "abc 123" }).path).toBe(
+				`${route}?path=%2Fmy%2Frepo&scope=abc%20123`,
+			);
+		});
+
 		it("maps get_github_status to GET /repo/github?path=", () => {
 			const result = mapCommandToHttp("get_github_status", { path: "/my/repo" });
 			expect(result.method).toBe("GET");
@@ -1230,6 +1237,12 @@ describe("transport", () => {
 			});
 			expect(next.path).toBe("/sessions/s1/chat-view");
 			expect(next.body).toEqual({ epoch: 2, fromSeq: 17, pendingTexts: ["secret prompt"] });
+		});
+
+		it("maps chat_view_full_text to a GET on the message path", () => {
+			const r = mapCommandToHttp("chat_view_full_text", { sessionId: "s1", messageId: "a/b c" });
+			expect(r.method).toBe("GET");
+			expect(r.path).toBe("/sessions/s1/chat-view/messages/a%2Fb%20c/full-text");
 		});
 
 		it("maps terminal_search to POST with transform", () => {
@@ -1381,6 +1394,21 @@ describe("transport", () => {
 			expect(result.path).toBe("/fs/stat?path=%2Frepo%2Ffile.md");
 		});
 
+		// Catches: a page request reaching the editor route without its offset, which the
+		// remote router answers with the 10 MB whole-file refusal instead of a page.
+		it("maps editor page reads to the editor routes with an explicit offset", () => {
+			expect(
+				mapCommandToHttp("read_editor_file_page", { repoPath: "/repo", file: "a b.log", offset: 1048576 }),
+			).toEqual({
+				method: "GET",
+				path: "/fs/read-editor?repoPath=%2Frepo&file=a%20b.log&offset=1048576",
+			});
+			expect(mapCommandToHttp("read_editor_file_external_page", { path: "/repo/x.log", offset: 0 })).toEqual({
+				method: "GET",
+				path: "/fs/read-editor-external?path=%2Frepo%2Fx.log&offset=0",
+			});
+		});
+
 		it("maps warm_content_index to POST /fs/warm-index", () => {
 			const result = mapCommandToHttp("warm_content_index", { repoPath: "/repo" });
 			expect(result.method).toBe("POST");
@@ -1393,6 +1421,21 @@ describe("transport", () => {
 			expect(result.method).toBe("POST");
 			expect(result.path).toBe("/fs/write-external");
 			expect(result.body).toEqual({ path: "/repo/a.md", content: "hi" });
+		});
+
+		// Catches: browser review requests drop snapshots or reach a different command than desktop.
+		it("maps Markdown review snapshots to the shared HTTP range command", () => {
+			expect(
+				mapCommandToHttp("markdown_review_changed_lines", {
+					path: "/repo/review.md",
+					baseline: "- [ ] a",
+					expected: "- [x] a",
+				}),
+			).toEqual({
+				method: "POST",
+				path: "/fs/markdown-review-lines",
+				body: { path: "/repo/review.md", baseline: "- [ ] a", expected: "- [x] a" },
+			});
 		});
 
 		it("maps write_file_if_unchanged to POST /fs/write-if-unchanged with the expected text", () => {
@@ -1559,6 +1602,20 @@ describe("transport", () => {
 			});
 		});
 
+		it("routes quota commands without losing the key or session identity", () => {
+			expect(mapCommandToHttp("get_provider_quotas", {})).toMatchObject({ method: "GET", path: "/provider-quotas" });
+			expect(mapCommandToHttp("get_session_quota_binding", { sessionId: "a/b" })).toMatchObject({
+				method: "GET",
+				path: "/sessions/a%2Fb/quota-binding",
+			});
+			const key = { owner: "ego", provider: "openai", credential: "/home/a" };
+			expect(mapCommandToHttp("refresh_provider_quota", { key })).toMatchObject({
+				method: "POST",
+				path: "/provider-quotas/refresh",
+				body: { key },
+			});
+		});
+
 		it("maps get_claude_usage_api to GET /claude/usage", () => {
 			const result = mapCommandToHttp("get_claude_usage_api", {});
 			expect(result.method).toBe("GET");
@@ -1607,6 +1664,15 @@ describe("transport", () => {
 			const result = mapCommandToHttp("get_branches_detail", { path: "/r" });
 			expect(result.method).toBe("GET");
 			expect(result.path).toBe("/repo/branches-detail?path=%2Fr");
+		});
+
+		// Catches: the HTTP mapping reading a different argument name than the
+		// Tauri command (`path`), so browser mode throws and the Branches tab
+		// shows no merged badges (#2777-1579).
+		it("maps get_merged_branches with the same path argument as the Tauri command", () => {
+			const result = mapCommandToHttp("get_merged_branches", { path: "/r" });
+			expect(result.method).toBe("GET");
+			expect(result.path).toBe("/repo/branches/merged?path=%2Fr");
 		});
 
 		it("maps get_recent_branches with optional limit", () => {
@@ -2247,10 +2313,12 @@ describe("transport", () => {
 				binary: "mdkb",
 				args: ["--version"],
 				cwd: "/home/user",
+				timeoutMs: 600_000,
 			});
 			expect(ex.method).toBe("POST");
 			expect(ex.path).toBe("/api/plugins/my-plugin/exec");
-			expect(ex.body).toEqual({ binary: "mdkb", args: ["--version"], cwd: "/home/user" });
+			// Catches: browser mode dropping the raised deadline, so a build dies at the default.
+			expect(ex.body).toEqual({ binary: "mdkb", args: ["--version"], cwd: "/home/user", timeoutMs: 600_000 });
 
 			// Catches: browser-mode B6/B7 requests lose account or reference identity.
 			const githubReference = { providerId: "github", accountId: "selected", id: "owner/repo/pull/12" };
@@ -2441,7 +2509,15 @@ describe("transport", () => {
 				{ sessionId: "selected" },
 				"PUT",
 				"/acp/chat/selection",
-				{ sessionId: "selected" },
+				{ sessionId: "selected", replacing: null },
+			],
+			// Catches: a browser host dropping the compaction source, so followers append the successor.
+			[
+				"select_ai_chat_conversation",
+				{ sessionId: "successor", replacing: "source" },
+				"PUT",
+				"/acp/chat/selection",
+				{ sessionId: "successor", replacing: "source" },
 			],
 			["acp_workspace_root", {}, "GET", "/acp/workspace", undefined],
 			[
@@ -2519,6 +2595,22 @@ describe("transport", () => {
 				"POST",
 				`/acp/connections/${CONNECTION}/sessions/${SESSION}/close`,
 				undefined,
+			],
+			["acp_message_reactions", { sessionId: SESSION }, "GET", `/acp/chat/${SESSION}/reactions`, undefined],
+			[
+				"acp_message_action",
+				{
+					connectionId: CONNECTION,
+					sessionId: SESSION,
+					request: {
+						messageId: "source-id",
+						text: "answer",
+						action: { kind: "reaction", reaction: "heart", remove: true },
+					},
+				},
+				"POST",
+				`/acp/connections/${CONNECTION}/sessions/${SESSION}/message-action`,
+				{ messageId: "source-id", text: "answer", action: { kind: "reaction", reaction: "heart", remove: true } },
 			],
 			[
 				"acp_session_prompt",
@@ -4293,7 +4385,8 @@ describe("automation command transport", () => {
 	it.each([
 		{ action: "list" },
 		{ action: "get", id: "a" },
-		{ action: "create", definition: { id: "a" } },
+		{ action: "create", definition: { id: "a", close_on_finish: true } },
+		{ action: "update", definition: { id: "a", close_on_finish: false } },
 		{ action: "update", id: "a", enabled: false },
 		{ action: "delete", id: "a" },
 		{ action: "run_now", id: "a" },
@@ -4443,5 +4536,20 @@ it("maps a queue claim to the send-now HTTP route", () => {
 	expect(mapCommandToHttp("send_queued_agent_command_now", { sessionId: "pending", commandId: 17 })).toEqual({
 		method: "POST",
 		path: "/sessions/pending/queue/17/send-now",
+	});
+});
+
+// Catches: neutral authoring reaches a different action body or project in browsers.
+it("maps neutral workflow actions without changing casing or nested mappings", () => {
+	const action = {
+		action: "update_draft",
+		id: "draft",
+		expected_revision: 2,
+		definition: { input_bindings: { "0": { text: { source: "workflow_input", field: "prompt" } } } },
+	};
+	expect(mapCommandToHttp("workflow_neutral_action", { project: "/repo a", action })).toEqual({
+		method: "POST",
+		path: "/workflows/neutral/action?path=%2Frepo%20a",
+		body: action,
 	});
 });

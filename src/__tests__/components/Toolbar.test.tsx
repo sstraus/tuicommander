@@ -147,17 +147,30 @@ describe("Toolbar", () => {
 	});
 
 	// Catches: the sidebar layout mode readable only through title/tooltip, which touch never shows.
-	it("prints the sidebar layout mode on the density toggle and cycles it", () => {
+	it("cycles R, C, H without a separate harness button — catches Auto or duplicate H controls", () => {
 		const { container } = render(() => <Toolbar />);
 		const label = () => container.querySelector("[data-testid='sidebar-density-label']")?.textContent;
 		const toggle = container.querySelector("[data-testid='sidebar-density-toggle']") as HTMLElement;
-		expect(label()).toBe("A");
-		fireEvent.click(toggle);
-		expect(label()).toBe("C");
-		fireEvent.click(toggle);
-		expect(label()).toBe("R");
-		fireEvent.click(toggle);
-		expect(label()).toBe("A");
+		const richRowGlyph = toggle.querySelector("svg path")?.getAttribute("d");
+		for (const [letter, harness] of [
+			["R", false],
+			["C", false],
+			["H", true],
+			["R", false],
+		] as const) {
+			expect(label()).toBe(letter);
+			expect(uiStore.state.repoFilterHarnessOnly).toBe(harness);
+			if (harness) {
+				// Catches: an H-shaped glyph duplicating the visible H label.
+				expect(toggle.querySelector("svg path")?.getAttribute("d")).toBe(richRowGlyph);
+			}
+			fireEvent.click(toggle);
+		}
+		// The final click leaves compact; restore rich for other toolbar cases.
+		uiStore.cycleSidebarDensityMode();
+		uiStore.cycleSidebarDensityMode();
+		expect(container.querySelector("[data-testid='toolbar-filter-harness']")).toBeNull();
+		expect(container.querySelector("button[title*='open terminals']")).not.toBeNull();
 	});
 
 	it("renders sidebar toggle button", () => {

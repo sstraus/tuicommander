@@ -16,6 +16,7 @@ export async function chatVoiceTargets(): Promise<ChatVoiceTarget[]> {
 
 /** Closing or leaving a chat must not leave its microphone or speaker bound. */
 export async function stopChatVoice(sessionId?: string | null): Promise<void> {
+	if (dictationStore.state.unavailable) return;
 	try {
 		const status = await invoke<HandsFreeStatus>("get_hands_free_status");
 		if (!status?.armed || !status.sessionId?.startsWith("acp:")) return;

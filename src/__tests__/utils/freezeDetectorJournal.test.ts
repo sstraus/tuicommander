@@ -16,7 +16,6 @@ afterEach(() => {
 it("includes a numeric freeze gap so persistence need not store or parse breadcrumb strings", async () => {
 	vi.resetModules();
 	vi.useFakeTimers();
-	vi.stubGlobal("requestAnimationFrame", vi.fn());
 	vi.spyOn(document, "hasFocus").mockReturnValue(true);
 	vi.spyOn(document, "hidden", "get").mockReturnValue(false);
 	const { startFreezeDetector } = await import("../../utils/freezeDetector");

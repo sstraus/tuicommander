@@ -16,6 +16,7 @@
 {"record":18,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
 {"record":18,"event":{"type":"intent","text":"First task","title":"εgo","_turn_epoch":0}}
 {"record":18,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
+{"record":18,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":18,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":19,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":21,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
@@ -36,6 +37,7 @@
 {"record":42,"event":{"type":"shell-state","state":"busy","agent_type":"ego"}}
 {"record":42,"event":{"type":"shell-state","state":"idle","agent_type":"ego"}}
 {"record":42,"event":{"type":"intent","text":"Second task","title":"εgo","_turn_epoch":0}}
+{"record":42,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":42,"event":{"type":"user-input","content":"","line":-1,"_turn_epoch":0}}
 {"record":42,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}
 {"record":43,"state":{"shell":2,"agent":"idle","awaiting":false,"question":null,"confident":false,"last_question":null,"choice_sig":null,"fullscreen":false}}

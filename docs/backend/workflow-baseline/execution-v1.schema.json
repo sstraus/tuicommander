@@ -1,0 +1,446 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tuicommander:workflow:execution:v1",
+  "title": "Workflow typed execution intent or receipt v1",
+  "description": "WF01 schema only. No adapter or operational authority is activated. Unknown requires lookup; stop proof precedes release/retry/cleanup. Schema validity alone is not evidence acceptance.",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/ExecutionEffect"
+    },
+    {
+      "$ref": "#/$defs/ExecutionReceipt"
+    }
+  ],
+  "$defs": {
+    "EffectIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "runId",
+        "executionId",
+        "activationId",
+        "attemptId",
+        "effectId",
+        "generation"
+      ],
+      "properties": {
+        "runId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "executionId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "activationId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attemptId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "effectId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "PolicyImport": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "domain",
+        "source",
+        "revision",
+        "sha256"
+      ],
+      "properties": {
+        "domain": {
+          "enum": [
+            "global_routing",
+            "repository_gates",
+            "publication_authority"
+          ]
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "ArtifactSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "artifactId",
+        "repositoryKey",
+        "commit",
+        "tree",
+        "requirementsSha256"
+      ],
+      "properties": {
+        "artifactId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repositoryKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "commit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tree": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requirementsSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "type": {
+          "const": "artifact"
+        }
+      }
+    },
+    "ExecutionPayload": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "argv"
+          ],
+          "properties": {
+            "type": {
+              "const": "argv"
+            },
+            "argv": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "promptSha256",
+            "profile"
+          ],
+          "properties": {
+            "type": {
+              "const": "prompt"
+            },
+            "promptSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            "profile": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "name",
+            "payloadSha256"
+          ],
+          "properties": {
+            "type": {
+              "const": "tool"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "payloadSha256": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            }
+          }
+        }
+      ]
+    },
+    "ExecutionEffect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "identity",
+        "kind",
+        "idempotencyKey",
+        "payloadSha256",
+        "subject",
+        "workspaceId",
+        "payload",
+        "targetRequirements",
+        "resourceKeys",
+        "deadlineMs",
+        "secretRefs",
+        "outputSchemaSha256",
+        "policyImports",
+        "ownerDaemonId"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "identity": {
+          "$ref": "#/$defs/EffectIdentity"
+        },
+        "kind": {
+          "enum": [
+            "agent",
+            "command",
+            "tool",
+            "integration",
+            "publication",
+            "notification",
+            "cleanup"
+          ]
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "minLength": 1
+        },
+        "payloadSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "subject": {
+          "$ref": "#/$defs/ExecutionSubject"
+        },
+        "workspaceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "payload": {
+          "$ref": "#/$defs/ExecutionPayload"
+        },
+        "targetRequirements": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "resourceKeys": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "deadlineMs": {
+          "type": "integer"
+        },
+        "secretRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "outputSchemaSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "policyImports": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/PolicyImport"
+          }
+        },
+        "ownerDaemonId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ExecutionReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "identity",
+        "payloadSha256",
+        "subject",
+        "executorId",
+        "executorFence",
+        "target",
+        "toolchainSha256",
+        "commandConfigScopeSha256",
+        "logSha256",
+        "artifactDigests",
+        "outcome",
+        "stopProof",
+        "matchedTestCount",
+        "usageReceiptRefs",
+        "ownerDaemonId"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "identity": {
+          "$ref": "#/$defs/EffectIdentity"
+        },
+        "payloadSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "subject": {
+          "$ref": "#/$defs/ExecutionSubject"
+        },
+        "executorId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "executorFence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "target": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toolchainSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "commandConfigScopeSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "logSha256": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "artifactDigests": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "outcome": {
+          "enum": [
+            "succeeded",
+            "failed",
+            "cancelled",
+            "unknown"
+          ]
+        },
+        "stopProof": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "matchedTestCount": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "usageReceiptRefs": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "ownerDaemonId": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ExternalSubject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "type",
+        "provider",
+        "resourceId",
+        "expectedRevision",
+        "payloadSha256",
+        "requirementsSha256"
+      ],
+      "properties": {
+        "type": {
+          "const": "external"
+        },
+        "provider": {
+          "type": "string",
+          "minLength": 1
+        },
+        "resourceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "expectedRevision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "payloadSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "requirementsSha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        }
+      }
+    },
+    "ExecutionSubject": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ArtifactSubject"
+        },
+        {
+          "$ref": "#/$defs/ExternalSubject"
+        }
+      ]
+    }
+  }
+}

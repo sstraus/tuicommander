@@ -927,7 +927,8 @@ pub async fn install_plugin_from_zip(
     install_zip_inner(&zip_path, &app_handle)
 }
 
-/// Install a plugin from an HTTPS URL: download to a temp file, then extract.
+/// Install a plugin from an HTTPS URL (or an owner-local `http://` loopback URL):
+/// download to a temp file, then extract.
 // DESKTOP-ONLY (HTTP parity): takes AppHandle; local-FS install/emit
 #[cfg(feature = "desktop")]
 #[tauri::command]
@@ -935,13 +936,69 @@ pub async fn install_plugin_from_url(
     url: String,
     app_handle: AppHandle,
 ) -> Result<PluginManifest, String> {
-    // Security: only HTTPS URLs
-    if !url.starts_with("https://") {
-        return Err("Only HTTPS URLs are allowed for plugin installation".into());
+    let temp_file = download_plugin_zip(&url).await?;
+    install_zip_inner(temp_file.path(), &app_handle)
+}
+
+/// Whether `url` may serve a plugin archive: HTTPS from anywhere, plain HTTP
+/// only from the owner's own machine (`localhost` or a loopback address).
+fn plugin_url_allowed(url: &url::Url) -> bool {
+    match url.scheme() {
+        "https" => true,
+        "http" => match url.host() {
+            Some(url::Host::Domain(domain)) => domain.eq_ignore_ascii_case("localhost"),
+            Some(url::Host::Ipv4(ip)) => ip.is_loopback(),
+            Some(url::Host::Ipv6(ip)) => ip.is_loopback(),
+            None => false,
+        },
+        _ => false,
+    }
+}
+
+fn is_plain_http(url: &url::Url) -> bool {
+    url.scheme() == "http"
+}
+
+/// Redirect rule: every hop must itself be allowed, and a plaintext loopback hop
+/// is only followed when the whole chain so far is plaintext loopback too. A
+/// remote page redirecting to `http://localhost` is a website reaching a local
+/// service, not the owner serving a file.
+fn plugin_redirect_allowed(previous: &[url::Url], next: &url::Url) -> bool {
+    plugin_url_allowed(next)
+        && (!is_plain_http(next) || previous.iter().all(plugin_url_allowed_plain_http))
+}
+
+fn plugin_url_allowed_plain_http(url: &url::Url) -> bool {
+    is_plain_http(url) && plugin_url_allowed(url)
+}
+
+/// Download a plugin archive into a temp file.
+///
+/// A `NamedTempFile` is created 0600 with an unguessable name and removed on
+/// drop, so a panic or early return cannot leak the archive into shared /tmp.
+async fn download_plugin_zip(url: &str) -> Result<tempfile::NamedTempFile, String> {
+    let parsed = url::Url::parse(url).map_err(|e| format!("Invalid plugin URL: {e}"))?;
+    if !plugin_url_allowed(&parsed) {
+        return Err(
+            "Only HTTPS URLs (or http://localhost) are allowed for plugin installation".into(),
+        );
     }
 
-    // Download to temp file
-    let response = reqwest::get(&url)
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() >= 10 {
+                attempt.error("too many redirects")
+            } else if plugin_redirect_allowed(attempt.previous(), attempt.url()) {
+                attempt.follow()
+            } else {
+                attempt.error("redirect target is not an allowed plugin URL")
+            }
+        }))
+        .build()
+        .map_err(|e| format!("Download failed: {e}"))?;
+    let response = client
+        .get(parsed)
+        .send()
         .await
         .map_err(|e| format!("Download failed: {e}"))?;
 
@@ -954,8 +1011,6 @@ pub async fn install_plugin_from_url(
         .await
         .map_err(|e| format!("Failed to read download: {e}"))?;
 
-    // A `NamedTempFile` is created 0600 with an unguessable name and removed on
-    // drop, so a panic or early return cannot leak the archive into shared /tmp.
     let mut temp_file = tempfile::Builder::new()
         .prefix("tuic-plugin-")
         .suffix(".zip")
@@ -964,8 +1019,7 @@ pub async fn install_plugin_from_url(
     std::io::Write::write_all(&mut temp_file, &bytes)
         .and_then(|()| std::io::Write::flush(&mut temp_file))
         .map_err(|e| format!("Failed to write temp file: {e}"))?;
-
-    install_zip_inner(temp_file.path(), &app_handle)
+    Ok(temp_file)
 }
 
 // ---------------------------------------------------------------------------
@@ -1293,7 +1347,7 @@ fn find_manifest_in_zip(archive: &zip::ZipArchive<std::fs::File>) -> Result<Stri
 /// Dispose of a plugin's live runtime state on uninstall. Without this the
 /// process leaks, for its whole lifetime: an OS thread + fs watcher per
 /// registered watch (the `debounce_loop`), the capability grant, and the
-/// exec:cli rate-limiter history.
+/// exec:cli execution slots.
 pub(crate) fn dispose_plugin_runtime_state(state: &crate::AppState, id: &str) {
     state.plugin_settings.unregister(id);
     // Drop every watcher this plugin registered. Dropping the `RecommendedWatcher`
@@ -1301,8 +1355,8 @@ pub(crate) fn dispose_plugin_runtime_state(state: &crate::AppState, id: &str) {
     state.plugin_watchers.retain(|_, (pid, _)| pid != id);
     // Revoke the capability grant so a re-install starts clean.
     state.loaded_plugins.remove(id);
-    // Clear the exec:cli sliding-window rate-limiter entry for this id.
-    crate::plugin_exec::clear_rate_limit(id);
+    // Clear the exec:cli execution slots for this id.
+    crate::plugin_exec::clear_exec_slots(id);
     // Descriptors leave with the plugin; accounts and their credentials stay.
     crate::accounts::unregister_providers(id);
 }
@@ -2089,6 +2143,144 @@ mod tests {
         assert!(result.is_ok());
         let path = result.unwrap();
         assert!(path.ends_with("my-plugin/data/cache/v1/data.json"));
+    }
+
+    // -- Plugin download URL policy (#2667-6f19) --
+
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    fn url(value: &str) -> url::Url {
+        url::Url::parse(value).unwrap()
+    }
+
+    /// One-shot HTTP server on loopback answering every request with `response`
+    /// (a closure of the bound port, so a redirect can point back at itself).
+    async fn serve(response: impl Fn(u16) -> Vec<u8> + Send + 'static) -> u16 {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port = listener.local_addr().unwrap().port();
+        tokio::spawn(async move {
+            while let Ok((mut socket, _)) = listener.accept().await {
+                let mut buf = [0u8; 2048];
+                let _ = socket.read(&mut buf).await;
+                let _ = socket.write_all(&response(port)).await;
+            }
+        });
+        port
+    }
+
+    fn http_ok(body: &[u8]) -> Vec<u8> {
+        let mut out = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            body.len()
+        )
+        .into_bytes();
+        out.extend_from_slice(body);
+        out
+    }
+
+    fn http_redirect(location: &str) -> Vec<u8> {
+        format!("HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            .into_bytes()
+    }
+
+    /// catches: owner cannot install a locally served ZIP without HTTPS setup
+    #[tokio::test]
+    async fn confirmed_localhost_http_plugin_install_succeeds() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let zip_path = create_test_zip(
+            dir.path(),
+            &[("manifest.json", &valid_manifest_json("loc"))],
+        );
+        let zip_bytes = std::fs::read(&zip_path).unwrap();
+        let port = serve(move |_| http_ok(&zip_bytes)).await;
+
+        for host in ["localhost", "127.0.0.1"] {
+            let downloaded = download_plugin_zip(&format!("http://{host}:{port}/p.zip"))
+                .await
+                .unwrap_or_else(|e| panic!("{host}: {e}"));
+            let file = std::fs::File::open(downloaded.path()).unwrap();
+            let archive = zip::ZipArchive::new(file).unwrap();
+            assert!(find_manifest_in_zip(&archive).is_ok());
+        }
+    }
+
+    /// catches: an untrusted redirect or deceptive host bypasses the HTTPS rule
+    #[tokio::test]
+    async fn plugin_install_blocks_remote_http_redirect_and_unsafe_zip() {
+        // Loopback origin redirecting to a remote plaintext host.
+        let port = serve(|_| http_redirect("http://example.com/p.zip")).await;
+        let error = download_plugin_zip(&format!("http://127.0.0.1:{port}/p.zip"))
+            .await
+            .expect_err("remote plaintext redirect must be refused");
+        // A followed redirect also ends in "Download failed" (404 or no network),
+        // so only the redirect error proves the policy refused the hop.
+        assert!(error.contains("error following redirect"), "{error}");
+
+        // Remote plaintext origin is refused before any connection.
+        for bad in [
+            "http://example.com/p.zip",
+            "http://localhost.evil.com/p.zip",
+            "http://localhost@evil.com/p.zip",
+            "http://127.0.0.1.evil.com/p.zip",
+            "http://0.0.0.0/p.zip",
+            "http://192.168.1.5/p.zip",
+            "ftp://localhost/p.zip",
+            "file:///etc/passwd",
+        ] {
+            // Any download of these fails anyway; the message proves the URL
+            // policy refused it rather than the network.
+            let error = download_plugin_zip(bad).await.expect_err(bad);
+            assert!(error.starts_with("Only HTTPS URLs"), "{bad}: {error}");
+        }
+    }
+
+    #[test]
+    fn plugin_url_policy_covers_loopback_forms_and_preserves_https() {
+        for ok in [
+            "https://example.com/p.zip",
+            "http://localhost/p.zip",
+            "http://LOCALHOST:8080/p.zip",
+            "http://127.0.0.1:8080/p.zip",
+            "http://127.1.2.3/p.zip",
+            "http://[::1]:8080/p.zip",
+        ] {
+            assert!(plugin_url_allowed(&url(ok)), "{ok}");
+        }
+        for bad in [
+            "http://example.com/",
+            "http://[::2]/",
+            "http://localhost.evil.com/",
+            "ws://localhost/",
+        ] {
+            assert!(!plugin_url_allowed(&url(bad)), "{bad}");
+        }
+    }
+
+    /// catches: a remote HTTPS page redirecting to a local service
+    #[test]
+    fn plugin_redirect_chain_rules() {
+        let remote = url("https://example.com/a");
+        let local = url("http://localhost:1/b");
+        assert!(!plugin_redirect_allowed(
+            std::slice::from_ref(&remote),
+            &local
+        ));
+        assert!(plugin_redirect_allowed(
+            std::slice::from_ref(&local),
+            &local
+        ));
+        assert!(plugin_redirect_allowed(
+            std::slice::from_ref(&local),
+            &remote
+        ));
+        assert!(plugin_redirect_allowed(
+            std::slice::from_ref(&remote),
+            &remote
+        ));
+        assert!(!plugin_redirect_allowed(
+            &[local],
+            &url("http://example.com/c")
+        ));
     }
 
     // -- ZIP installation helpers --

@@ -5,6 +5,8 @@ import { subscribeEvents } from "../transport";
 export interface AiChatSelection {
 	workspace: string;
 	sessionId: string | null;
+	/** The tab `sessionId` continues, set while the selection is a compaction successor. */
+	replacing?: string | null;
 }
 
 /** Invalidations and reconnects both reread the owner. Adoption never writes. */
@@ -34,9 +36,9 @@ export function createAiChatSelectionSync(adopt: (selection: AiChatSelection) =>
 		invalidate(): void {
 			++revision;
 		},
-		select(sessionId: string | null): Promise<void> {
+		select(sessionId: string | null, replacing?: string): Promise<void> {
 			++revision;
-			const write = writes.then(() => invoke<void>("select_ai_chat_conversation", { sessionId }));
+			const write = writes.then(() => invoke<void>("select_ai_chat_conversation", { sessionId, replacing }));
 			writes = write.catch(() => {});
 			return write;
 		},

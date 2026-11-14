@@ -1,0 +1,114 @@
+# Standalone iOS simulator Chat measurement — 2026-10-23
+
+Story: #1770-3e28. **This does not satisfy the physical-phone criterion.**
+
+## Results
+
+All values are milliseconds. Each row has five samples. Percentiles use nearest
+rank, so p95 is the maximum of five observations, not a reliable tail estimate.
+
+| Transition | Samples, in run order | p50 | p95 |
+| --- | --- | ---: | ---: |
+| First Chat open in a fresh PWA document | 13131, 13351, 14257, 13371, 13095 | 13351 | 14257 |
+| Retained Chat, background then foreground | 58, 19, 55, 59, 57 | 57 | 59 |
+| CLI → Chat remount in the same document | 13514, 21848, 16468, 12991, 13146 | 13514 | 21848 |
+| Chat → CLI after that remount | 41, 126, 163, 42, 42 | 42 | 163 |
+| Sum of CLI → Chat and Chat → CLI render intervals | 13555, 21974, 16631, 13033, 13188 | 13555 | 21974 |
+
+The sum excludes the XCUITest wait and screenshot between the two taps. It is
+not a continuous user-action round-trip measurement. The initial Chat → CLI
+transition used to prepare each remount is also in the raw log but not in that row.
+
+## Environment and real path
+
+- Source/build base: `638dda1ebe0e0b22c43a19322b2121c28761a96b`.
+- Native macOS `make agent-test AGENT_TEST_INSTANCE=agent-test-1770
+  AGENT_TEST_PORT=19876`, from the linked measurement worktree, through the
+  target's mbx/build-slot path. The port was free before launch. No installed
+  executable was replaced. No request targeted the daily app's ports.
+- Agent-test binary SHA-256 from its health response:
+  `cfc8dbe8da776dcc827b7e784d93f926ded116a8a1a353dd3eb00911f18edf20`.
+- New, task-owned iPhone 13 simulator, iOS 26.4.1, build `23E254a`;
+  UUID `FF210FCB-A0C6-4F23-8EFE-908719E3BC45`. No existing device was reused.
+- Safari Add to Home Screen, launched from its SpringBoard icon as
+  `com.apple.webapp`. Every accepted sample reports both `navigator.standalone`
+  and the standalone display-mode media query as true. This is iOS WebKit,
+  not desktop Playwright WebKit or Chromium device emulation.
+- Full application screenshot: 390 × 844 points, 1170 × 2532 pixels. The live
+  Chat document reports 390 × 797 after the iOS status-bar inset settles.
+- Loopback-only measurement proxy on `127.0.0.1:11770`, forwarding to the isolated
+  instance's Unix socket. It serves that binary's embedded production assets,
+  forwards HTTP/SSE/WebSocket traffic, and injects only the measurement script
+  into HTML. No Vite development server is involved.
+- Synthetic Claude JSONL in a new directory under `~/Gits/.tmp/results/1770-simulator`.
+  It contains 1,000 human prompts and 1,000 assistant replies, with distinct
+  message IDs and short plain-text paragraphs. It has no model calls, tools,
+  images or long code blocks. An inert local C executable supplies a PTY and
+  readable `CLAUDE_CONFIG_DIR`; its exact PID registry binds the fixture.
+- Preflight calls the real `/sessions/{id}/chat-view` backend and rejects a
+  snapshot other than 2,000 updates. The real mobile session, shared transcript
+  renderer, snapshot store and transport remain in use. No snapshot route is mocked.
+
+## Clock and endpoint
+
+XCUITest supplies native taps. The HTML probe starts its clock in a capture-phase
+**trusted click** handler on the real Chat/CLI controls, before their handlers
+run. It finds the final sentinel in the actual transcript and waits until its
+bounding rectangle intersects the viewport. The endpoint is the next animation
+frame after that check. It then records all 2,000 distinct entry markers.
+Every Chat and foreground sample contains exactly 2,000 markers; the final
+paragraph's rectangle is x=32, y=579, width=326, height=88.
+
+This is a **post-layout frame-opportunity proxy**, not proof of the compositor's
+first presented frame or the physical display's first paint. It excludes input
+routing before the click handler. XCUITest captures the app after the ready
+marker, not exactly at the first frame. CLI completion means Chat was removed
+and two frame opportunities elapsed; it does not instrument CanvasTerminal's
+first presented pixel.
+
+For foreground resume, the clock starts at `visibilitychange` to visible. It
+excludes the native app activation and animation before that event. The short
+background interval retains the document and transcript. No new entry is
+appended while hidden, and no memory eviction or full-reset recovery is tested.
+A fast retained resume therefore does not contradict the slow Chat remount.
+
+Before each first-open sample, XCUITest terminates the webapp, opens its home
+screen icon, enters the session if needed, then taps Chat. Assets and backend
+file caches can be warm. This is a fresh frontend document, not a cold-device,
+cold-network or cold-backend measurement. The host was shared; no controlled
+thermal or CPU-load baseline was imposed.
+
+## Evidence and validation
+
+- [Raw browser events](events.jsonl), including setup and the rejected selector-only attempt.
+- [Machine-readable statistics](summary.json), generated by
+  `node scripts/chat-simulator/summarize.mjs <events.jsonl>`. The summarizer
+  rejects missing transitions, untrusted taps, non-standalone samples and
+  rendered-entry counts other than 2,000.
+- App-only XCUITest attachments: [first open](first-open-1.png),
+  [foreground resume](resume-1.png), [returned CLI](cli-roundtrip-1.png).
+  All 15 app-only attachments remain in the external result bundle. No Mac
+  whole-screen capture was taken. These files were exported and their PNG
+  dimensions checked; no separate pixel-level visual review is claimed.
+- XCUITest install run: `install2.log`, exit 0, 17.620 seconds in the test.
+- XCUITest measurement run: `measure2.log`, exit 0, 281.811 seconds in the test;
+  all five iterations completed. Both use `build-slot.sh xcodebuild test`, the
+  task-owned simulator UUID, repository-external derived data under `~/Gits`,
+  `-parallel-testing-enabled NO`, and `-collect-test-diagnostics never`.
+- External evidence root: `~/Gits/.tmp/results/1770-simulator/`, including
+  `measure2.xcresult`, all screenshots, backend snapshot and startup logs.
+- Setup failures were not counted: agent launch flags rejected an inert system
+  program; a shell/system-binary attempt did not expose a usable binding; the
+  first fixture omitted the human origin and produced only 1,000 updates;
+  the first install run had no reachable proxy; and the first measurement
+  selector requested a Button where iOS exposes a Switch. The local inert
+  executable, explicit human origin, live proxy and type-independent selector
+  resolved these harness errors. No application behavior or test was changed.
+
+The owned PTY was deleted, the proxy and `agent-test-1770` were stopped, and the
+owned simulator was shut down and deleted. Both owned TCP ports were confirmed
+closed. No full application suite was run for this evidence-only change.
+
+**Limit:** simulator CPU/GPU, memory, lifecycle and loopback networking do not
+represent a phone. Boss must still record the physical-phone first-open and
+resume measurements; criterion 5 stays unchecked.

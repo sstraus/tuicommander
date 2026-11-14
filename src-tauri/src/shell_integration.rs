@@ -35,23 +35,12 @@ tuic_suggest() { printf '\e]7770;suggest=%s\a' "$*"; }
 tuic_intent()  { printf '\e]7770;intent=%s\a' "$*"; }
 # Auto-inject --name for Goose so tab↔session mapping is deterministic
 if [[ -n "$TUIC_SESSION" ]]; then
-  printf '%s\n' "$TUIC_CLAUDE_HELP" | awk '__TUIC_CLAUDE_HELP_USABLE__' || TUIC_CLAUDE_HELP=__TUIC_RECORDED_CLAUDE_HELP__
+__TUIC_WINDOWS_CLAUDE_ZSH__
   __tuic_screen_arg() {
     local flag="$1" skip="$2" a; shift 2
     [[ -n "$flag" && ( -z "$skip" || "$1" != "$skip" ) ]] || return 0
     for a in "$@"; do [[ "$a" == "$flag" ]] && return 0; done
     printf '%s' "$flag"
-  }
-  claude() {
-    case "$1" in
-      ""|-*) ;;
-      remote-control) command claude "$@"; return;;
-      *) if printf '%s\n' "$TUIC_CLAUDE_HELP" | awk -v verb="$1" '/^Commands:/ {commands=1; next} commands && /^  [^ ]/ {split($1, names, "|"); for (i in names) if (names[i] == verb) found=1} END {exit !found}'; then command claude "$@"; return; fi;;
-    esac
-    local a; for a in "$@"; do
-      case "$a" in --settings|--settings=*|--bare) command claude "$@"; return;; esac
-    done
-    if [[ -n "$TUIC_CLAUDE_SETTINGS" ]]; then command claude --settings "$TUIC_CLAUDE_SETTINGS" "$@"; else command claude "$@"; fi
   }
   codex() {
     local a prev screen
@@ -123,23 +112,12 @@ tuic_suggest() { printf '\e]7770;suggest=%s\a' "$*"; }
 tuic_intent()  { printf '\e]7770;intent=%s\a' "$*"; }
 # Auto-inject --name for Goose so tab↔session mapping is deterministic
 if [[ -n "$TUIC_SESSION" ]]; then
-  printf '%s\n' "$TUIC_CLAUDE_HELP" | awk '__TUIC_CLAUDE_HELP_USABLE__' || TUIC_CLAUDE_HELP=__TUIC_RECORDED_CLAUDE_HELP__
+__TUIC_WINDOWS_CLAUDE_BASH__
   __tuic_screen_arg() {
     local flag="$1" skip="$2" a; shift 2
     [[ -n "$flag" && ( -z "$skip" || "$1" != "$skip" ) ]] || return 0
     for a in "$@"; do [[ "$a" == "$flag" ]] && return 0; done
     printf '%s' "$flag"
-  }
-  claude() {
-    case "$1" in
-      ""|-*) ;;
-      remote-control) command claude "$@"; return;;
-      *) if printf '%s\n' "$TUIC_CLAUDE_HELP" | awk -v verb="$1" '/^Commands:/ {commands=1; next} commands && /^  [^ ]/ {split($1, names, "|"); for (i in names) if (names[i] == verb) found=1} END {exit !found}'; then command claude "$@"; return; fi;;
-    esac
-    local a; for a in "$@"; do
-      case "$a" in --settings|--settings=*|--bare) command claude "$@"; return;; esac
-    done
-    if [[ -n "$TUIC_CLAUDE_SETTINGS" ]]; then command claude --settings "$TUIC_CLAUDE_SETTINGS" "$@"; else command claude "$@"; fi
   }
   codex() {
     local a prev screen
@@ -205,9 +183,7 @@ function tuic_suggest; printf '\e]7770;suggest=%s\a' (string join " " $argv); en
 function tuic_intent;  printf '\e]7770;intent=%s\a' (string join " " $argv); end
 # Auto-inject --name for Goose so tab↔session mapping is deterministic
 if set -q TUIC_SESSION
-  if not printf '%s\n' "$TUIC_CLAUDE_HELP" | awk '__TUIC_CLAUDE_HELP_USABLE__'
-    set -gx TUIC_CLAUDE_HELP __TUIC_RECORDED_CLAUDE_HELP__
-  end
+__TUIC_WINDOWS_CLAUDE_FISH__
   function __tuic_screen_arg
     set -l flag $argv[1]
     set -l skip $argv[2]
@@ -224,30 +200,6 @@ if set -q TUIC_SESSION
       end
     end
     printf '%s' "$flag"
-  end
-  function claude --wraps claude
-    if test (count $argv) -gt 0
-      switch $argv[1]
-        case '-*'
-        case remote-control
-          command claude $argv; return
-        case '*'
-          if printf '%s\n' "$TUIC_CLAUDE_HELP" | awk -v verb="$argv[1]" '/^Commands:/ {commands=1; next} commands && /^  [^ ]/ {split($1, names, "|"); for (i in names) if (names[i] == verb) found=1} END {exit !found}'
-            command claude $argv; return
-          end
-      end
-    end
-    for a in $argv
-      switch $a
-        case --settings '--settings=*' --bare
-          command claude $argv; return
-      end
-    end
-    if set -q TUIC_CLAUDE_SETTINGS
-      command claude --settings $TUIC_CLAUDE_SETTINGS $argv
-    else
-      command claude $argv
-    end
   end
   function codex --wraps codex
     set -l flag ''
@@ -327,9 +279,10 @@ end
 /// the front at every prompt (a user rc may prepend the agent's own dir later).
 /// So a typed command, an alias, a shell function's `command <agent>` and a
 /// wrapper script that runs the agent by name all reach it; an absolute path
-/// does not. It adds only the launch instructions, which are safe in any child
-/// process. The status hooks stay in the shell functions: they must apply only to
-/// a command typed in the tab, never to a `codex exec` an agent runs as a tool.
+/// does not. Redirected ego advisors are isolated from implicit host context.
+/// Claude settings are applied here too, so `env` and script wrappers cannot
+/// bypass them. Consume the exported setting before exec so agent tools do not
+/// inherit it. Other status hooks stay in their shell functions.
 ///
 /// It reads the instruction file at exec time, so a Settings edit applies to the
 /// next launch without reopening the shell. An empty or missing file means off.
@@ -337,6 +290,8 @@ end
 const AGENT_SHIM: &str = r#"#!/bin/sh
 # TUIC agent shim: add TUIC's launch instructions, then exec the real agent.
 name=${0##*/}
+claude_settings=$TUIC_CLAUDE_SETTINGS
+unset TUIC_CLAUDE_SETTINGS
 real=
 set -f
 old_ifs=$IFS
@@ -352,6 +307,45 @@ set +f
 if [ -z "$real" ]; then
   printf 'tuic: %s: command not found\n' "$name" >&2
   exit 127
+fi
+# Alias expansion happens after Rust prepares a terminal command. Normalize at
+# this final argv boundary, where flags from both paths are visible. Never
+# change prompt arguments after --, or any argument other than the screen flag.
+screen_flag=
+case $name in
+__TUIC_SCREEN_POLICIES__
+esac
+if [ -n "$screen_flag" ]; then
+  remaining=$#
+  seen=
+  while [ "$remaining" -gt 0 ]; do
+    arg=$1
+    shift
+    remaining=$((remaining - 1))
+    if [ "$arg" = -- ]; then screen_flag=; fi
+    if [ -n "$screen_flag" ] && [ "$arg" = "$screen_flag" ]; then
+      [ -z "$seen" ] || continue
+      seen=1
+    fi
+    set -- "$@" "$arg"
+  done
+fi
+# A redirected advisor is not the terminal's managed peer. Mark the exec'd
+# process as an ancestry boundary too: ego can scrub its bridge's environment.
+# Explicit hosts opt in for this launch only; do not leak the opt-in to tools.
+if [ "$name" = ego ]; then
+  case $1 in
+    __TUIC_EGO_NON_RUN_COMMANDS__) exec "$real" "$@";;
+  esac
+  hosted=$TUIC_EGO_HOSTED
+  unset TUIC_EGO_HOSTED
+  [ "$hosted" != 1 ] || unset TUIC_CONTEXT_ISOLATED
+  if [ "$hosted" != 1 ] && { [ "$1" = run ] || [ ! -t 0 ] || [ ! -t 1 ]; }; then
+    unset TUIC_SESSION TUIC_ATTACHMENTS_DIR TUIC_AGENT_INSTRUCTIONS_DIR TUIC_SPAWNED_CHILD
+    TUIC_CONTEXT_ISOLATED=1
+    export TUIC_CONTEXT_ISOLATED
+    exec "$real" "$@"
+  fi
 fi
 ext=md
 [ "$name" = codex ] && ext=toml
@@ -377,6 +371,11 @@ if [ "$name" = claude ]; then
       printf '%s\n' "$help" | awk '__TUIC_CLAUDE_HELP_USABLE__' || help=__TUIC_RECORDED_CLAUDE_HELP__
       if printf '%s\n' "$help" | awk -v verb="$1" '/^Commands:/ {commands=1; next} commands && /^  [^ ]/ {split($1, names, "|"); for (i in names) if (names[i] == verb) found=1} END {exit !found}'; then exec "$real" "$@"; fi;;
   esac
+  # Explicit settings and bare mode own the hook policy for this launch.
+  for arg in "$@"; do
+    case $arg in --settings|--settings=*|--bare) claude_settings=; break;; esac
+  done
+  [ -z "$claude_settings" ] || set -- --settings "$claude_settings" "$@"
   [ -z "$TUIC_ATTACHMENTS_DIR" ] || set -- "--add-dir=$TUIC_ATTACHMENTS_DIR" "$@"
 fi
 [ -n "$file" ] && [ -s "$file" ] || exec "$real" "$@"
@@ -428,14 +427,73 @@ esac
 exec "$real" "$@"
 "#;
 
-/// Agents the shim serves. OpenCode is absent: TUIC shells export its native
-/// `OPENCODE_CONFIG_CONTENT`, which reaches absolute-path launches too.
+/// Agents the shim serves. OpenCode uses it only for screen-flag normalization;
+/// its instructions use the native `OPENCODE_CONFIG_CONTENT` environment value.
 #[cfg(unix)]
-const SHIM_AGENTS: [&str; 7] = ["claude", "codex", "grok", "goose", "pi", "ego", "gemini"];
+const SHIM_AGENTS: [&str; 8] = [
+    "claude", "codex", "grok", "goose", "pi", "ego", "gemini", "opencode",
+];
 
 /// The marker file the shim looks for to skip a TUIC shim dir on `PATH`.
 #[cfg(unix)]
 const SHIM_FILE: &str = "tuic-agent-shim";
+
+const WINDOWS_CLAUDE_ZSH: &str = r#"  printf '%s\n' "$TUIC_CLAUDE_HELP" | awk '__TUIC_CLAUDE_HELP_USABLE__' || TUIC_CLAUDE_HELP=__TUIC_RECORDED_CLAUDE_HELP__
+  claude() {
+    case "$1" in
+      ""|-*) ;;
+      remote-control) command claude "$@"; return;;
+      *) if printf '%s\n' "$TUIC_CLAUDE_HELP" | awk -v verb="$1" '/^Commands:/ {commands=1; next} commands && /^  [^ ]/ {split($1, names, "|"); for (i in names) if (names[i] == verb) found=1} END {exit !found}'; then command claude "$@"; return; fi;;
+    esac
+    local a; for a in "$@"; do
+      case "$a" in --settings|--settings=*|--bare) command claude "$@"; return;; esac
+    done
+    if [[ -n "$TUIC_CLAUDE_SETTINGS" ]]; then command claude --settings "$TUIC_CLAUDE_SETTINGS" "$@"; else command claude "$@"; fi
+  }
+"#;
+
+const WINDOWS_CLAUDE_BASH: &str = r#"  printf '%s\n' "$TUIC_CLAUDE_HELP" | awk '__TUIC_CLAUDE_HELP_USABLE__' || TUIC_CLAUDE_HELP=__TUIC_RECORDED_CLAUDE_HELP__
+  claude() {
+    case "$1" in
+      ""|-*) ;;
+      remote-control) command claude "$@"; return;;
+      *) if printf '%s\n' "$TUIC_CLAUDE_HELP" | awk -v verb="$1" '/^Commands:/ {commands=1; next} commands && /^  [^ ]/ {split($1, names, "|"); for (i in names) if (names[i] == verb) found=1} END {exit !found}'; then command claude "$@"; return; fi;;
+    esac
+    local a; for a in "$@"; do
+      case "$a" in --settings|--settings=*|--bare) command claude "$@"; return;; esac
+    done
+    if [[ -n "$TUIC_CLAUDE_SETTINGS" ]]; then command claude --settings "$TUIC_CLAUDE_SETTINGS" "$@"; else command claude "$@"; fi
+  }
+"#;
+
+const WINDOWS_CLAUDE_FISH: &str = r#"  if not printf '%s\n' "$TUIC_CLAUDE_HELP" | awk '__TUIC_CLAUDE_HELP_USABLE__'
+    set -gx TUIC_CLAUDE_HELP __TUIC_RECORDED_CLAUDE_HELP__
+  end
+  function claude --wraps claude
+    if test (count $argv) -gt 0
+      switch $argv[1]
+        case '-*'
+        case remote-control
+          command claude $argv; return
+        case '*'
+          if printf '%s\n' "$TUIC_CLAUDE_HELP" | awk -v verb="$argv[1]" '/^Commands:/ {commands=1; next} commands && /^  [^ ]/ {split($1, names, "|"); for (i in names) if (names[i] == verb) found=1} END {exit !found}'
+            command claude $argv; return
+          end
+      end
+    end
+    for a in $argv
+      switch $a
+        case --settings '--settings=*' --bare
+          command claude $argv; return
+      end
+    end
+    if set -q TUIC_CLAUDE_SETTINGS
+      command claude --settings $TUIC_CLAUDE_SETTINGS $argv
+    else
+      command claude $argv
+    end
+  end
+"#;
 
 /// Template for the ZDOTDIR `.zshenv` wrapper.  At runtime `{script}` is
 /// replaced with the absolute path to `tuic-integration.zsh`.
@@ -459,7 +517,15 @@ pub(crate) fn inject(app_data_dir: &Path, shell: &str, cmd: &mut portable_pty::C
     if std::fs::create_dir_all(&base).is_err() {
         return;
     }
-    if crate::agent_hook_launch::enabled("claude") {
+    // Do not inherit another TUIC host's POSIX status-hook paths.
+    cmd.env_remove("TUIC_CLAUDE_SETTINGS");
+    cmd.env_remove("TUIC_CLAUDE_HELP");
+    cmd.env_remove("TUIC_CODEX_NOTIFY");
+    // Windows CLI hooks name a Windows path, which a WSL shell cannot run;
+    // the Windows Codex notify is not a script (#2632-97ef).
+    let posix =
+        crate::agent_hook::HookTransport::host() == Some(crate::agent_hook::HookTransport::Posix);
+    if crate::agent_hook_launch::enabled("claude") && (posix || !crate::pty::is_wsl_shell(shell)) {
         // Publish installed help, or the same recorded fallback used by managed launches.
         let help = crate::agent::cli_help("claude");
         cmd.env(
@@ -472,7 +538,7 @@ pub(crate) fn inject(app_data_dir: &Path, shell: &str, cmd: &mut portable_pty::C
             app_data_dir.join("agent-hooks/claude.json"),
         );
     }
-    if crate::agent_hook_launch::enabled("codex") {
+    if posix && crate::agent_hook_launch::enabled("codex") {
         cmd.env(
             "TUIC_CODEX_NOTIFY",
             app_data_dir.join("agent-hooks/codex-notify.sh"),
@@ -498,7 +564,8 @@ pub(crate) fn inject(app_data_dir: &Path, shell: &str, cmd: &mut portable_pty::C
 }
 
 /// Launch instructions for agents started from this shell: OpenCode through its
-/// env var, the other agents through the PATH shim (unix shells only).
+/// env var, the other agents through the PATH shim (unix shells only). OpenCode
+/// also has a shim link to normalize screen flags after alias expansion.
 fn inject_launch_instructions(
     app_data_dir: &Path,
     base: &Path,
@@ -541,10 +608,19 @@ fn inject_launch_instructions(
 /// The shim with the recorded Claude help and ego verbs filled in.
 #[cfg(unix)]
 fn render_shim() -> String {
-    render_integration(AGENT_SHIM).replace(
-        "__TUIC_EGO_NON_RUN_COMMANDS__",
-        &crate::agent_hook_launch::EGO_NON_RUN_COMMANDS.join("|"),
-    )
+    render_integration(AGENT_SHIM)
+        .replace(
+            "__TUIC_EGO_NON_RUN_COMMANDS__",
+            &crate::agent_hook_launch::EGO_NON_RUN_COMMANDS.join("|"),
+        )
+        .replace(
+            "__TUIC_SCREEN_POLICIES__",
+            &crate::agent_hook_launch::SCREEN_POLICIES
+                .iter()
+                .map(|(agent, flag, _)| format!("  {agent}) screen_flag={flag};;"))
+                .collect::<Vec<_>>()
+                .join("\n"),
+        )
 }
 
 /// Write the shim once (an unchanged file keeps its inode, so the exec-time
@@ -665,8 +741,15 @@ const OPENCODE_VALUE_OPTIONS: &str = "--log-level|--port|--hostname|--mdns-domai
 
 /// Embed the recorded help as one shell-quoted value, shared by all wrappers.
 fn render_integration(template: &str) -> String {
+    render_integration_for_platform(template, cfg!(windows))
+}
+
+fn render_integration_for_platform(template: &str, windows: bool) -> String {
     let help = crate::agent_hook_launch::RECORDED_CLAUDE_HELP.replace('\'', "'\\''");
     template
+        .replace("__TUIC_WINDOWS_CLAUDE_ZSH__", if windows { WINDOWS_CLAUDE_ZSH } else { "" })
+        .replace("__TUIC_WINDOWS_CLAUDE_BASH__", if windows { WINDOWS_CLAUDE_BASH } else { "" })
+        .replace("__TUIC_WINDOWS_CLAUDE_FISH__", if windows { WINDOWS_CLAUDE_FISH } else { "" })
         .replace("__TUIC_OPENCODE_COMMANDS__", OPENCODE_COMMANDS)
         .replace("__TUIC_OPENCODE_COMMANDS_FISH__", &OPENCODE_COMMANDS.replace('|', " "))
         .replace("__TUIC_OPENCODE_VALUE_OPTIONS__", OPENCODE_VALUE_OPTIONS)
@@ -781,12 +864,17 @@ mod tests {
         crate::config::save_agents_config(crate::config::AgentsConfig::default(), config).unwrap();
         let mut cmd = portable_pty::CommandBuilder::new("bash");
         cmd.env("TUIC_CODEX_SCREEN_FLAG", "stale");
+        cmd.env("TUIC_CLAUDE_SETTINGS", "stale");
+        cmd.env("TUIC_CODEX_NOTIFY", "stale");
         inject(dir.path(), "bash", &mut cmd);
         assert_eq!(cmd.get_env("TUIC_CODEX_SCREEN_FLAG"), None);
         assert_eq!(cmd.get_env("TUIC_GROK_SCREEN_FLAG"), None);
         assert_eq!(cmd.get_env("TUIC_OPENCODE_SCREEN_FLAG"), None);
-        assert!(cmd.get_env("TUIC_CLAUDE_SETTINGS").is_some());
-        assert!(cmd.get_env("TUIC_CODEX_NOTIFY").is_some());
+        assert_eq!(
+            cmd.get_env("TUIC_CLAUDE_SETTINGS").is_some(),
+            crate::agent_hook::hooks_supported_on_host()
+        );
+        assert_eq!(cmd.get_env("TUIC_CODEX_NOTIFY").is_some(), !cfg!(windows));
         assert_eq!(
             cmd.get_env("TUIC_SHELL_INTEGRATION"),
             Some(OsStr::new(
@@ -843,10 +931,6 @@ mod tests {
         for agent in SHIM_AGENTS {
             assert_shim_hard_link(&bin, agent);
         }
-        assert!(
-            !bin.join("opencode").exists(),
-            "opencode uses its env var, not the shim"
-        );
         // A second shell must not stack a second copy of the dir.
         inject(dir.path(), "zsh", &mut cmd);
         assert_eq!(
@@ -1052,37 +1136,16 @@ mod tests {
     }
 
     fn assert_wrapper_paths(shell: &str, script: &str) {
-        let claude_inject = script
-            .matches("--settings \"$TUIC_CLAUDE_SETTINGS\"")
-            .count()
-            + script.matches("--settings $TUIC_CLAUDE_SETTINGS").count();
         let codex_inject = script
             .matches("notify=[\\\"$TUIC_CODEX_NOTIFY\\\"]")
             .count();
-        assert_eq!(claude_inject, 1, "{shell}: inject Claude settings once");
         assert_eq!(codex_inject, 1, "{shell}: inject Codex notify once");
 
-        assert!(
-            script.contains("--settings=*"),
-            "{shell}: skip explicit Claude --settings=value"
-        );
-        assert!(
-            script.contains("--settings"),
-            "{shell}: skip explicit Claude --settings value"
-        );
-        assert!(
-            script.contains("--bare"),
-            "{shell}: skip Claude injection in bare mode"
-        );
         assert!(
             script.contains("notify=*"),
             "{shell}: skip explicit Codex notify override"
         );
 
-        assert!(
-            script.contains("else\n      command claude") || script.contains("else command claude"),
-            "{shell}: Claude setting-off passthrough"
-        );
         assert!(
             script.contains("else\n      command codex") || script.contains("else command codex"),
             "{shell}: Codex setting-off passthrough"
@@ -1219,6 +1282,7 @@ mod tests {
                     .args(["--version", "argument with spaces"])
                     .env("PATH", &path)
                     .env_remove("TUIC_AGENT_INSTRUCTIONS_DIR")
+                    .env_remove("TUIC_CLAUDE_SETTINGS")
                     .env_remove("TUIC_ATTACHMENTS_DIR")
                     .output()
                     .unwrap();
@@ -1280,6 +1344,32 @@ mod tests {
             std::fs::write(&staging, render_integration(body)).expect("write integration script");
             std::fs::rename(&staging, &path).expect("install integration script");
             path
+        }
+
+        // Catches: Windows Bash has no Unix shim, so manual launches lose hooks.
+        #[test]
+        fn windows_bash_manual_claude_receives_settings_without_shim() {
+            let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+            let script = dir.path().join("integration.bash");
+            std::fs::write(
+                &script,
+                super::super::render_integration_for_platform(BASH_INTEGRATION, true),
+            )
+            .unwrap();
+            let output = Command::new("bash")
+                .args(["--noprofile", "--norc", "-c"])
+                .arg(format!("source '{}'; claude --resume abc; claude --settings custom; claude remote-control", script.display()))
+                .env("PATH", format!("{}:/usr/bin:/bin", agent_bin_dir().display()))
+                .env("TUIC_SESSION", "test")
+                .env("TUIC_CLAUDE_SETTINGS", "/hook/settings.json")
+                .env_remove("TUIC_AGENT_SHIM_DIR")
+                .output().unwrap();
+            assert!(output.status.success(), "{:?}", output);
+            assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+            assert_eq!(
+                String::from_utf8(output.stdout).unwrap(),
+                "--settings /hook/settings.json --resume abc\n--settings custom\nremote-control\n"
+            );
         }
 
         /// Flags that stop `shell` from reading the machine's dotfiles.
@@ -1362,6 +1452,9 @@ mod tests {
                 .env("PATH", path)
                 // The wrappers are defined only inside a TUIC session.
                 .env("TUIC_SESSION", "wrapper-launch-test")
+                // This argv-only harness redirects stdio; explicitly model a hosted
+                // launch. The real-PTY probe below covers automatic tty detection.
+                .env("TUIC_EGO_HOSTED", "1")
                 .env(
                     "TUIC_CLAUDE_HELP",
                     include_str!("../tests/fixtures/agent-help/claude-2026-10-04.txt"),
@@ -1376,7 +1469,10 @@ mod tests {
                 .env_remove("TUIC_AGENT_INSTRUCTIONS_DIR")
                 .env_remove("TUIC_ATTACHMENTS_DIR")
                 .env_remove("GEMINI_CLI_TRUSTED_FOLDERS_PATH")
-                .env_remove("TUIC_AGENT_SHIM_DIR");
+                .env_remove("TUIC_AGENT_SHIM_DIR")
+                // A test run from a TUIC managed child inherits =1, which makes
+                // the shim read the -child instructions (#2827-6819).
+                .env_remove("TUIC_SPAWNED_CHILD");
             for (key, value) in tuic_env {
                 cmd.env(key, value);
             }
@@ -1480,6 +1576,64 @@ mod tests {
             the_prompt_puts_the_shim_back_in_front,
         );
 
+        // Catches: external env bypasses shell functions and loses hooks on launch/resume.
+        fn env_prefixed_claude_keeps_hooks_and_instructions(shell: &str) {
+            let claude = instruction_file("claude");
+            let actual = run_with_instructions(
+                shell,
+                "env CLAUDE_CONFIG_DIR=/safe/profile claude --dangerously-skip-permissions\n\
+                 env CLAUDE_CONFIG_DIR=/safe/profile claude --dangerously-skip-permissions --resume safe-id",
+            );
+            assert_eq!(
+                actual,
+                [
+                    format!(
+                        "--append-system-prompt-file {claude} --settings {CLAUDE_SETTINGS} --dangerously-skip-permissions"
+                    ),
+                    format!(
+                        "--append-system-prompt-file {claude} --settings {CLAUDE_SETTINGS} --dangerously-skip-permissions --resume safe-id"
+                    ),
+                ],
+                "{shell}: env-prefixed launch and resume"
+            );
+        }
+
+        launch_matrix!(env_prefixed_claude_keeps_hooks_and_instructions);
+
+        // Catches: moving hooks to PATH leaks the parent hook policy into agent tool launches.
+        #[test]
+        fn shim_consumes_hook_settings_before_agent_tools_run() {
+            let root = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+            let probe = crate::test_support::fake_ssh_script(
+                "claude-hook-env-consumed",
+                "printf 'SETTINGS=%s\\n' \"$TUIC_CLAUDE_SETTINGS\"; for arg do printf 'ARG=%s\\n' \"$arg\"; done",
+                "",
+            );
+            std::os::unix::fs::symlink(probe, root.path().join("claude")).unwrap();
+            let path = format!(
+                "{}:{}:/usr/bin:/bin",
+                shim_dir().display(),
+                root.path().display()
+            );
+            let output = Command::new(shim_dir().join("claude"))
+                .arg("--resume")
+                .arg("safe-id")
+                .env("PATH", path)
+                .env("TUIC_CLAUDE_SETTINGS", CLAUDE_SETTINGS)
+                .env_remove("TUIC_AGENT_INSTRUCTIONS_DIR")
+                .env_remove("TUIC_ATTACHMENTS_DIR")
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+            assert_eq!(
+                String::from_utf8(output.stdout).unwrap(),
+                format!(
+                    "SETTINGS=\nARG=--settings\nARG={CLAUDE_SETTINGS}\nARG=--resume\nARG=safe-id\n"
+                )
+            );
+        }
+
         /// TUIC shell environment with the status signals and the instructions on.
         fn instructions_on() -> Vec<(&'static str, String)> {
             let dir = instructions_dir();
@@ -1535,6 +1689,174 @@ mod tests {
                     .any(|arg| arg == "--add-dir=/tuic/attachments/pty-settings-off"),
                 "disabling marker instructions removed attachment access: {lines:?}"
             );
+        }
+
+        // Executes the installed shim, not a model or an approximation of ego.
+        // The downstream probe prints exactly what the real executable receives.
+        fn ego_context_probe(args: &[&str], hosted: bool, terminal: bool) -> String {
+            use std::io::Read;
+            use std::os::unix::fs::PermissionsExt;
+            let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+            let probe = dir.path().join("ego");
+            std::fs::write(&probe, r#"#!/bin/sh
+for arg do printf 'ARG=%s\n' "$arg"; done
+printf 'SESSION=%s\nATTACHMENTS=%s\nINSTRUCTIONS=%s\nISOLATED=%s\nHOSTED=%s\n' "$TUIC_SESSION" "$TUIC_ATTACHMENTS_DIR" "$TUIC_AGENT_INSTRUCTIONS_DIR" "$TUIC_CONTEXT_ISOLATED" "$TUIC_EGO_HOSTED"
+"#).unwrap();
+            std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o755)).unwrap();
+            let shim = shim_dir();
+            let path = format!("{}:{}:/usr/bin:/bin", shim.display(), dir.path().display());
+            let instructions = instructions_dir();
+            let env = [
+                ("PATH", path.as_str()),
+                ("TUIC_SESSION", "550e8400-e29b-41d4-a716-4466554417e0"),
+                ("TUIC_ATTACHMENTS_DIR", "/parent/attachments"),
+                (
+                    "TUIC_AGENT_INSTRUCTIONS_DIR",
+                    instructions.to_str().unwrap(),
+                ),
+                ("TUIC_EGO_HOSTED", if hosted { "1" } else { "" }),
+                ("TUIC_CONTEXT_ISOLATED", ""),
+                ("TUIC_SPAWNED_CHILD", ""),
+            ];
+            if terminal {
+                let pair = portable_pty::native_pty_system()
+                    .openpty(portable_pty::PtySize::default())
+                    .unwrap();
+                let mut cmd = portable_pty::CommandBuilder::new(shim.join("ego"));
+                cmd.args(args);
+                for (key, value) in env {
+                    cmd.env(key, value);
+                }
+                let mut child = pair.slave.spawn_command(cmd).unwrap();
+                drop(pair.slave);
+                let mut reader = pair.master.try_clone_reader().unwrap();
+                // Read until the probe's last line, never to EOF: Linux ends a
+                // PTY read with EIO once the child exits, macOS keeps blocking
+                // (#2827-6819).
+                let (sender, receiver) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let mut buf = [0u8; 4096];
+                    while let Ok(n) = reader.read(&mut buf) {
+                        if n == 0 || sender.send(buf[..n].to_vec()).is_err() {
+                            break;
+                        }
+                    }
+                });
+                let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                let mut output = String::new();
+                while !output
+                    .split_once("HOSTED=")
+                    .is_some_and(|(_, tail)| tail.contains('\n'))
+                {
+                    let left = deadline.saturating_duration_since(std::time::Instant::now());
+                    match receiver.recv_timeout(left) {
+                        Ok(chunk) => output.push_str(&String::from_utf8_lossy(&chunk)),
+                        Err(error @ std::sync::mpsc::RecvTimeoutError::Timeout)
+                        | Err(error @ std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                            panic!("the ego probe printed no HOSTED line ({error}): {output:?}")
+                        }
+                    }
+                }
+                assert!(child.wait().unwrap().success());
+                output.replace("\r\n", "\n")
+            } else {
+                let output = Command::new(shim.join("ego"))
+                    .args(args)
+                    .envs(env)
+                    .stdin(std::process::Stdio::null())
+                    .output()
+                    .unwrap();
+                assert!(output.status.success(), "{:?}", output.stderr);
+                assert!(output.stderr.is_empty(), "{:?}", output.stderr);
+                String::from_utf8(output.stdout).unwrap()
+            }
+        }
+
+        // Catches: redirected advisors reuse parent identity, UI rules or attachments.
+        #[test]
+        fn redirected_ego_advisor_does_not_inherit_parent_context_2719() {
+            for args in [&["--sandbox", "ro", "-"][..], &["run", "-"][..]] {
+                let output = ego_context_probe(args, false, false);
+                assert!(
+                    output.contains("SESSION=\n"),
+                    "parent identity leaked: {output}"
+                );
+                assert!(
+                    output.contains("ATTACHMENTS=\n"),
+                    "parent attachment context leaked: {output}"
+                );
+                assert!(
+                    output.contains("INSTRUCTIONS=\n"),
+                    "parent rules leaked: {output}"
+                );
+                assert!(
+                    output.contains("ISOLATED=1\n"),
+                    "missing ancestry boundary: {output}"
+                );
+                let argv: Vec<_> = output
+                    .lines()
+                    .filter_map(|s| s.strip_prefix("ARG="))
+                    .collect();
+                assert_eq!(argv, args, "implicit flags or retry changes");
+            }
+        }
+
+        // Catches: caller-supplied context or finite retry options get stripped.
+        #[test]
+        fn redirected_ego_preserves_explicit_flags_2719() {
+            let args = [
+                "run",
+                "--append-system",
+                "@/caller/rules.md",
+                "--read-only-dir=/caller/files",
+                "--retry",
+                "0",
+                "-",
+            ];
+            let output = ego_context_probe(&args, false, false);
+            let argv: Vec<_> = output
+                .lines()
+                .filter_map(|s| s.strip_prefix("ARG="))
+                .collect();
+            assert_eq!(argv, args);
+            assert!(output.contains("SESSION=\n"), "{output}");
+        }
+
+        // Catches: tty detection breaks direct managed terminals, or explicit
+        // redirected hosts lose context. The one-shot opt-in must be consumed.
+        #[test]
+        fn managed_ego_launches_keep_host_context_2719() {
+            for (hosted, terminal) in [(false, true), (true, false)] {
+                let output = ego_context_probe(&[], hosted, terminal);
+                assert!(output.contains("ARG=--append-system\n"), "{output}");
+                assert!(
+                    output.contains("ARG=--read-only-dir=/parent/attachments\n"),
+                    "{output}"
+                );
+                assert!(
+                    output.contains("SESSION=550e8400-e29b-41d4-a716-4466554417e0\n"),
+                    "{output}"
+                );
+                assert!(output.contains("HOSTED=\n"), "opt-in leaked: {output}");
+                assert!(output.contains("ISOLATED=\n"), "{output}");
+            }
+        }
+
+        // Catches: CLI utility commands acquire launch flags or lose their env.
+        #[test]
+        fn ego_non_run_commands_keep_pass_through_2719() {
+            for command in crate::agent_hook_launch::EGO_NON_RUN_COMMANDS {
+                let output = ego_context_probe(&[command], false, false);
+                let argv: Vec<_> = output
+                    .lines()
+                    .filter_map(|s| s.strip_prefix("ARG="))
+                    .collect();
+                assert_eq!(argv, [*command]);
+                assert!(
+                    output.contains("SESSION=550e8400-e29b-41d4-a716-4466554417e0\n"),
+                    "{output}"
+                );
+            }
         }
 
         // Catches: typed ego launches lose the independent read-only attachment grant.
@@ -1635,13 +1957,14 @@ mod tests {
         }
 
         /// Catches: a wrapper script (c2) that runs the agent by name launching
-        /// without the instructions. The status hooks stay with the typed
-        /// command on purpose, so the child gets the instructions only.
+        /// without either the instructions or the launch-scoped hook settings.
         fn a_wrapper_script_by_name_reaches_the_shim(shell: &str) {
             let claude = instruction_file("claude");
             assert_eq!(
                 run_with_instructions(shell, "/bin/sh -c 'exec claude \"$@\"' c2 --model opus"),
-                [format!("--append-system-prompt-file {claude} --model opus")],
+                [format!(
+                    "--append-system-prompt-file {claude} --settings {CLAUDE_SETTINGS} --model opus"
+                )],
                 "{shell}: script wrapper"
             );
         }
@@ -1671,7 +1994,9 @@ mod tests {
                         outer.display()
                     ),
                 ),
-                [format!("--append-system-prompt-file {claude} --model opus")],
+                [format!(
+                    "--append-system-prompt-file {claude} --settings {CLAUDE_SETTINGS} --model opus"
+                )],
                 "{shell}: nested shim dirs"
             );
         }
@@ -1695,10 +2020,62 @@ mod tests {
             let claude = instruction_file("claude");
             assert_eq!(
                 run_with_instructions(shell, &invocation),
-                [format!("--append-system-prompt-file {claude} --model opus")],
+                [format!(
+                    "--append-system-prompt-file {claude} --settings {CLAUDE_SETTINGS} --model opus"
+                )],
                 "{shell}: prompt re-prepends the shim"
             );
         }
+
+        // Catches: shell preparation plus an alias delivers a repeated screen
+        // switch; checking only whether a flag is present does not remove it.
+        fn prepared_alias_screen_flags_are_unique(shell: &str) {
+            let probe = crate::test_support::fake_ssh_script(
+                "screen-alias-preparation",
+                "printf '%s\\n' '--no-alt-screen --mini'",
+                "echo --no-alt-screen --mini",
+            );
+            for (agent, flag, alias_args) in [
+                (
+                    "codex",
+                    "--no-alt-screen",
+                    "--dangerously-bypass-approvals-and-sandbox --no-alt-screen",
+                ),
+                ("grok", "--no-alt-screen", "--no-alt-screen"),
+                ("opencode", "--mini", "--mini"),
+            ] {
+                let prepared = crate::agent_hook_launch::build_agent_launch_args(
+                    agent,
+                    &probe.to_string_lossy(),
+                    &[],
+                );
+                assert_eq!(
+                    prepared,
+                    [flag],
+                    "the preparation path must add the first flag"
+                );
+                let enable_aliases = if shell == "bash" {
+                    "shopt -s expand_aliases\n"
+                } else {
+                    ""
+                };
+                let actual = wrapper_command_lines(
+                    shell,
+                    &[],
+                    &format!(
+                        "{enable_aliases}alias {agent}='{agent} {alias_args}'\neval '{agent} {}'\ncommand {agent} {flag} {flag} -- '{flag}' '{flag}'",
+                        prepared.join(" "),
+                    ),
+                );
+                assert_eq!(
+                    actual,
+                    [alias_args.to_owned(), format!("{flag} -- {flag} {flag}")],
+                    "{shell}: {agent}"
+                );
+            }
+        }
+
+        launch_matrix!(prepared_alias_screen_flags_are_unique);
 
         fn screen_flags_follow_manual_agent_commands(shell: &str) {
             let flags = [

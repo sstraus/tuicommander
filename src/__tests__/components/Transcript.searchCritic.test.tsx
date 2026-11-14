@@ -85,3 +85,29 @@ describe("transcript search critic regressions", () => {
 		expect(window.getSelection()?.toString()).toBe("");
 	});
 });
+
+describe("transcript search field focus (#2892-b774)", () => {
+	// Catches: typing in the find field wipes the document selection, because the field sits inside the
+	// transcript container and WebKit reports the field's own caret range under the find bar.
+	it("typing in the find field keeps the field's own selection and focus", async () => {
+		const view = render(() => (
+			<Transcript
+				entries={() => [{ id: "a", kind: "agent", text: "alpha beta" }]}
+				busy={() => false}
+				emptyMessage="Empty"
+			/>
+		));
+		await Promise.resolve();
+		fireEvent.keyDown(view.getByLabelText("Chat transcript"), { key: "f", ctrlKey: true });
+		await Promise.resolve();
+		const input = view.getByRole("textbox", { name: "Find in chat" });
+		input.focus();
+		const caret = document.createRange();
+		caret.selectNodeContents(input.parentElement as HTMLElement);
+		window.getSelection()?.removeAllRanges();
+		window.getSelection()?.addRange(caret);
+		fireEvent.input(input, { target: { value: "a" } });
+		expect(window.getSelection()?.rangeCount).toBe(1);
+		expect(document.activeElement).toBe(input);
+	});
+});

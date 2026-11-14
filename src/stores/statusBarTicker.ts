@@ -158,29 +158,32 @@ function createStatusBarTicker() {
 		},
 
 		/**
-		 * Get rotation state for the TickerArea component.
-		 * Respects priority tiers: urgent pins, normal rotates, low is popover-only.
+		 * Messages eligible for the status bar, in display order. Urgent messages pin and
+		 * exclude the rest; low priority is popover-only. Messages matching `hidden` are
+		 * removed before indexing, so a hidden message never takes a slot.
 		 */
-		getRotationState(): RotationState {
-			const active = activeMessages();
-			if (active.length === 0) return { message: null, current: 0, total: 0 };
-
-			// Separate by priority tier
+		getPool(hidden?: (m: TickerMessage) => boolean): TickerMessage[] {
+			const active = hidden ? activeMessages().filter((m) => !hidden(m)) : activeMessages();
 			const urgent = active.filter((m) => m.priority >= URGENT_PRIORITY);
 			const normal = active.filter((m) => m.priority >= LOW_PRIORITY_THRESHOLD && m.priority < URGENT_PRIORITY);
-
-			// Urgent messages take precedence
 			const pool = urgent.length > 0 ? urgent : normal;
-			if (pool.length === 0) return { message: null, current: 0, total: 0 };
+			return pool.toSorted((a, b) => b.priority - a.priority || a.createdAt - b.createdAt);
+		},
 
-			// Sort by priority descending for stable ordering
-			pool.sort((a, b) => b.priority - a.priority || a.createdAt - b.createdAt);
+		/**
+		 * Get rotation state for the TickerArea component. The first `skip` messages of the
+		 * pool are shown elsewhere (side by side); only the rest rotate, and current/total
+		 * count that rest.
+		 */
+		getRotationState(hidden?: (m: TickerMessage) => boolean, skip = 0): RotationState {
+			const rotating = this.getPool(hidden).slice(skip);
+			if (rotating.length === 0) return { message: null, current: 0, total: 0 };
 
-			const idx = rotationIndex() % pool.length;
+			const idx = rotationIndex() % rotating.length;
 			return {
-				message: pool[idx],
+				message: rotating[idx],
 				current: idx + 1,
-				total: pool.length,
+				total: rotating.length,
 			};
 		},
 

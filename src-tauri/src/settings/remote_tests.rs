@@ -741,18 +741,7 @@ async fn tunnel_forwards_patch_replaces_atomic_list_and_reads_back() {
     );
     assert_eq!(saved[0].name, profile.name);
     assert_eq!(saved[0].host, profile.host);
-    let proposal = f
-        .registry
-        .execute(Request::Set {
-            target: Target::Machine,
-            store: "tunnels".into(),
-            path: path.clone(),
-            value: json!([]),
-            expected_revision: read.revision.clone(),
-        })
-        .await
-        .unwrap_err();
-    assert_eq!(proposal.code, "confirmation_required");
+    // Clearing forwards removes authority, so it needs no confirmation.
     let reply = set(&f, "tunnels", read.revision, &path, json!([]))
         .await
         .unwrap();

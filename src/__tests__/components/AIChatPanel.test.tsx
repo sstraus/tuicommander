@@ -7,10 +7,12 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { cleanup, render } from "@solidjs/testing-library";
 import { createRoot, createSignal } from "solid-js";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import recordedCommands from "../fixtures/ego-available-commands-2393.json";
+import recordedCompacted from "../fixtures/ego-compacted-2812.json";
 import missingCatalogue from "../fixtures/ego-missing-catalogue-2383.json";
 import missingSession from "../fixtures/ego-missing-session-2348.json";
+import currentMissingSession from "../fixtures/ego-missing-session-2957.json";
 import recordedModelChange from "../fixtures/ego-model-change-2388.json";
 import recordedProviderRetry from "../fixtures/ego-provider-retry.json";
 import { chatFontSize, loadChatTypography } from "../helpers/chatFontSize";
@@ -143,11 +145,13 @@ import { Composer } from "../../components/AIChatPanel/Composer";
 import { aiChatDraft } from "../../components/AIChatPanel/draft";
 import { elicitationFields } from "../../components/AIChatPanel/Interactions";
 import { createAcpChat, resetAcpChatBindings } from "../../components/AIChatPanel/useAcpChat";
+import { useKeyboardRedirect } from "../../hooks/useKeyboardRedirect";
 import { useTerminalLifecycle } from "../../hooks/useTerminalLifecycle";
 import { useKeyboardCorrection } from "../../mobile/useKeyboardCorrection";
 import { aiChatPanelAdapter } from "../../panelAdapters/aiChat";
 import { acpStore } from "../../stores/acp";
 import { acpTranscript } from "../../stores/acpTranscript";
+import { activityStore } from "../../stores/activityStore";
 import { aiChatTabs } from "../../stores/aiChatTabs";
 import { dictationStore } from "../../stores/dictation";
 import { terminalsStore } from "../../stores/terminals";
@@ -307,6 +311,8 @@ function renderIdlePanel() {
 	return render(() => <AIChatPanel visible={true} repoPath={ROOT} onClose={() => {}} />);
 }
 
+beforeAll(() => activityStore.hydrate());
+
 beforeEach(() => {
 	vi.clearAllMocks();
 	window.history.replaceState(null, "", "/");
@@ -411,6 +417,69 @@ it("dev_missing_command_explains_backend_frontend_mismatch_without_retry", async
 	expect(container.textContent).toContain("Restart make dev");
 	expect(container.textContent).toContain("select_ai_chat_conversation");
 	expect([...container.querySelectorAll("button")].some((button) => button.textContent === "Retry")).toBe(false);
+});
+
+// Catches: clicking chat prose or a chat control routes subsequent typing into the adjacent terminal.
+it("chat clicks own keyboard input without stealing focus from controls or text selection", async () => {
+	const write = vi.fn();
+	const terminalInput = document.createElement("textarea");
+	document.body.append(terminalInput);
+	const previous = terminalsStore.state.activeId;
+	const terminal = terminalsStore.add({
+		name: "focus regression",
+		sessionId: "focus-regression",
+		cwd: ROOT,
+		fontSize: 13,
+		awaitingInput: null,
+	});
+	terminalsStore.update(terminal, { ref: { write, focus: () => terminalInput.focus() } as never });
+	terminalsStore.setActive(terminal);
+	const view = render(() => {
+		useKeyboardRedirect();
+		return <AIChatPanel visible={true} repoPath={ROOT} onClose={() => {}} />;
+	});
+	try {
+		await settle();
+		const panel = view.container.querySelector<HTMLElement>("#ai-chat-panel")!;
+		const composer = panel.querySelector<HTMLTextAreaElement>("textarea")!;
+		const transcript = panel.querySelector<HTMLElement>('[aria-label="Chat transcript"]')!;
+		terminalInput.focus();
+		transcript.click();
+		expect(document.activeElement).toBe(composer);
+		composer.dispatchEvent(new KeyboardEvent("keydown", { key: "a", bubbles: true, cancelable: true }));
+		expect(write).not.toHaveBeenCalled();
+
+		aiChatDraft.set("Draft to park");
+		const control = panel.querySelector<HTMLButtonElement>('button[aria-label="Park draft"]')!;
+		terminalInput.focus();
+		control.click();
+		expect(document.activeElement).toBe(control);
+		control.dispatchEvent(new KeyboardEvent("keydown", { key: "b", bubbles: true, cancelable: true }));
+		expect(write).not.toHaveBeenCalled();
+
+		composer.focus();
+		composer.click();
+		expect(document.activeElement).toBe(composer);
+		const selectable = document.createElement("span");
+		selectable.textContent = "Selected transcript";
+		transcript.append(selectable);
+		// A browser pointer selection first leaves the textarea; HTMLElement.click
+		// does not perform that focus default in jsdom.
+		transcript.focus();
+		const selection = window.getSelection()!;
+		selection.selectAllChildren(selectable);
+		transcript.click();
+		expect(selection.toString()).toBe("Selected transcript");
+		expect(document.activeElement).toBe(transcript);
+		transcript.dispatchEvent(new KeyboardEvent("keydown", { key: "c", bubbles: true, cancelable: true }));
+		expect(write).not.toHaveBeenCalled();
+		selection.removeAllRanges();
+	} finally {
+		view.unmount();
+		terminalInput.remove();
+		terminalsStore.remove(terminal);
+		terminalsStore.setActive(previous);
+	}
 });
 
 describe("AIChatPanel: repository profile warnings", () => {
@@ -582,15 +651,15 @@ describe("AIChatPanel: transcript actions", () => {
 				},
 			});
 			await settle();
-			const assistantCopy = container.querySelector('button[aria-label="Copy assistant message"]')!;
-			const actions = assistantCopy.parentElement!;
+			const assistantCopy = container.querySelector('button[aria-label="Assistant message actions"]')!;
+			const actions = assistantCopy.parentElement!.parentElement!;
 			// The real-browser aiChatGeometry regression measures containment and
 			// nonintersection; this DOM environment only verifies normal flow.
 			expect(["absolute", "fixed"]).not.toContain(getComputedStyle(actions).position);
 			// A user bubble hugs its text: its Copy sits outside the bubble instead of
 			// holding an invisible row that made "che model usi?" look two lines tall.
-			const userCopy = container.querySelector('button[aria-label="Copy user message"]')!;
-			expect(getComputedStyle(userCopy).position).toBe("absolute");
+			const userCopy = container.querySelector('button[aria-label="User message actions"]')!;
+			expect(getComputedStyle(userCopy.parentElement!).position).toBe("absolute");
 			const count = container.querySelector(".toolCallCount")!;
 			expect(getComputedStyle(count).whiteSpace).toBe("nowrap");
 		} finally {
@@ -644,6 +713,48 @@ describe("AIChatPanel: transcript actions", () => {
 		expect(container.querySelector('[role="status"][aria-label="Working…"]')).not.toBeNull();
 		expect(transcript.scrollTop).toBe(900);
 	});
+	// Catches: a live background child after the turn ended either hiding the
+	// working indicator, or being read as a running turn so the composer turns
+	// into Stop and the next prompt cannot be sent.
+	it("shows working for a live child after the turn ends without taking the composer", async () => {
+		const { container } = await renderPanel();
+		await settle();
+		feed({
+			kind: "activityChanged",
+			activity: {
+				state: "busy",
+				humanWaits: [],
+				tools: [],
+				children: [{ turnId: "t", itemId: "i", child: { kind: "durable" } }],
+				interrupted: false,
+				revision: 1,
+			},
+		});
+		await settle();
+		expect(container.querySelector('[role="status"][aria-label="Working…"]')).not.toBeNull();
+		expect(container.querySelector('button[aria-label="Send"]')).not.toBeNull();
+	});
+	// Catches: Quote reply sending the message, dropping an existing draft, or targeting another session.
+	it("quote reply appends the quoted answer to the composer draft without sending", async () => {
+		const { container } = await renderPanel();
+		await settle();
+		aiChatDraft.activate(SESSION);
+		aiChatDraft.set("my note");
+		feed({
+			kind: "sessionUpdate",
+			update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Line one\nLine two" } },
+		});
+		await settle();
+		container.querySelector<HTMLElement>('button[aria-label="Assistant message actions"]')!.click();
+		await settle();
+		[...document.querySelectorAll<HTMLElement>('[role="menuitem"]')]
+			.find((i) => i.textContent === "Quote reply")!
+			.click();
+		await settle();
+		expect(aiChatDraft.text()).toBe("my note\n\n> Line one\n> Line two\n\n");
+		expect(client.prompt).not.toHaveBeenCalled();
+	});
+
 	// Catches: a permanently visible Copy label or a button removed from keyboard focus.
 	it("hides message Copy at rest while keeping it keyboard focusable", async () => {
 		const style = document.createElement("style");
@@ -661,7 +772,7 @@ describe("AIChatPanel: transcript actions", () => {
 				update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Answer" } },
 			});
 			await settle();
-			for (const label of ["Copy user message", "Copy assistant message"]) {
+			for (const label of ["User message actions", "Assistant message actions"]) {
 				const button = container.querySelector<HTMLButtonElement>(`button[aria-label="${label}"]`)!;
 				expect(getComputedStyle(button).opacity, label).toBe("0");
 				button.focus();
@@ -809,9 +920,13 @@ describe("AIChatPanel: transcript actions", () => {
 			},
 		});
 		await settle();
-		const buttons = [...container.querySelectorAll<HTMLButtonElement>('button[aria-label^="Copy "]')];
-		for (const button of buttons) button.click();
-		await settle();
+		const triggers = [...container.querySelectorAll<HTMLButtonElement>('button[aria-label$=" message actions"]')];
+		for (const trigger of triggers) {
+			trigger.click();
+			await settle();
+			document.querySelector<HTMLElement>('[role="menuitem"]')!.click();
+			await settle();
+		}
 		expect(mockWriteClipboard.mock.calls.map(([text]) => text)).toContain("Question <one>");
 		expect(mockWriteClipboard.mock.calls.map(([text]) => text)).toContain("Answer **two**\n\n```sh\necho three\n```");
 		expect(mockWriteClipboard.mock.calls.map(([text]) => text)).not.toContain("echo three");
@@ -1294,6 +1409,45 @@ describe("AIChatPanel: parallel tabs", () => {
 		expect(container.textContent).not.toContain("session not found");
 		await typeAndSend(container, "The selected chat still works");
 		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, "The selected chat still works", [], ROOT);
+	});
+
+	// Catches: opening one missing conversation leaves a stale second tab or a retry-only panel.
+	it.each([missingSession, currentMissingSession])(
+		"replaces the only missing tab on panel open: $message",
+		async (failure) => {
+			const stale = "00000000-0000-4000-8000-000000002957";
+			aiChatTabs.add("global", stale);
+			vi.mocked(invoke).mockImplementation(async (command) => {
+				if (command === "ai_chat_selection") return { workspace: CHAT_ROOT, sessionId: stale };
+				if (command === "load_config") return { ai_chat_sessions: { [CHAT_ROOT]: stale } };
+				if (command === "acp_workspace_root") return CHAT_ROOT;
+				return undefined;
+			});
+			client.loadSession.mockRejectedValue(failure);
+			const { container } = await renderPanel();
+			await settle();
+			expect(client.newSession).toHaveBeenCalledTimes(1);
+			expect(container.querySelector('[role="tablist"][aria-label="AI Chat tabs"]')).toBeNull();
+			expect(container.querySelector<HTMLSelectElement>('select[title="Conversation"]')?.value).toBe(SESSION);
+			expect(container.textContent).not.toContain("Retry");
+		},
+	);
+
+	// Catches: another session's missing error discarding the selected conversation.
+	it("keeps a saved tab when a missing-session refusal names a different session", async () => {
+		const stale = "00000000-0000-4000-8000-000000002958";
+		aiChatTabs.add("global", stale);
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "ai_chat_selection") return { workspace: CHAT_ROOT, sessionId: stale };
+			if (command === "load_config") return { ai_chat_sessions: { [CHAT_ROOT]: stale } };
+			if (command === "acp_workspace_root") return CHAT_ROOT;
+			return undefined;
+		});
+		client.loadSession.mockRejectedValue(currentMissingSession);
+		const { container } = await renderPanel();
+		await settle();
+		expect(client.newSession).not.toHaveBeenCalled();
+		expect(container.textContent).toContain("Retry");
 	});
 
 	// Catches: remount replays the selected missing tab without recovery, leaving
@@ -1853,31 +2007,34 @@ describe("AIChatPanel: parallel tabs", () => {
 		await settle();
 		expect((container.querySelector("textarea") as HTMLTextAreaElement).value).toBe("Explain this selected error");
 	});
-	it("parks a draft with Ctrl+S, blocks browser Save, and restores it after the next send", async () => {
-		const { container } = await renderPanel();
-		const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
-		textarea.value = "Long-running thought";
-		textarea.dispatchEvent(new Event("input", { bubbles: true }));
-		const shortcut = new KeyboardEvent("keydown", { key: "s", ctrlKey: true, bubbles: true, cancelable: true });
-		textarea.dispatchEvent(shortcut);
-		expect(shortcut.defaultPrevented).toBe(true);
-		expect(textarea.value).toBe("");
-		expect(container.querySelector('button[aria-pressed="true"][aria-label$="parked draft"]')).not.toBeNull();
-		const repeated = new KeyboardEvent("keydown", {
-			key: "s",
-			ctrlKey: true,
-			repeat: true,
-			bubbles: true,
-			cancelable: true,
-		});
-		textarea.dispatchEvent(repeated);
-		expect(repeated.defaultPrevented).toBe(true);
-		expect(textarea.value).toBe("");
-		await typeAndSend(container, "Quick interruption");
-		expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, "Quick interruption", [], ROOT);
-		expect(textarea.value).toBe("Long-running thought");
-		expect(container.querySelector('button[aria-pressed="true"][aria-label$="parked draft"]')).toBeNull();
-	});
+	it.each([{ ctrlKey: true }, { metaKey: true }])(
+		"parks a draft with Save %o, blocks browser Save, and restores it after the next send",
+		async (modifiers) => {
+			const { container } = await renderPanel();
+			const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+			textarea.value = "Long-running thought";
+			textarea.dispatchEvent(new Event("input", { bubbles: true }));
+			const shortcut = new KeyboardEvent("keydown", { key: "s", ...modifiers, bubbles: true, cancelable: true });
+			textarea.dispatchEvent(shortcut);
+			expect(shortcut.defaultPrevented).toBe(true);
+			expect(textarea.value).toBe("");
+			expect(container.querySelector('button[aria-pressed="true"][aria-label$="parked draft"]')).not.toBeNull();
+			const repeated = new KeyboardEvent("keydown", {
+				key: "s",
+				ctrlKey: true,
+				repeat: true,
+				bubbles: true,
+				cancelable: true,
+			});
+			textarea.dispatchEvent(repeated);
+			expect(repeated.defaultPrevented).toBe(true);
+			expect(textarea.value).toBe("");
+			await typeAndSend(container, "Quick interruption");
+			expect(client.prompt).toHaveBeenCalledWith(CONNECTION, SESSION, "Quick interruption", [], ROOT);
+			expect(textarea.value).toBe("Long-running thought");
+			expect(container.querySelector('button[aria-pressed="true"][aria-label$="parked draft"]')).toBeNull();
+		},
+	);
 	it("warns when browser storage cannot keep a parked draft across reload", async () => {
 		const { container } = await renderPanel();
 		const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
@@ -2284,6 +2441,53 @@ describe("AIChatPanel: transcript keyboard", () => {
 		transcript.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
 		await settle();
 		expect(container.textContent).not.toContain("Second answer");
+		// Catches: clearing the local view silently looks like deleting durable agent context.
+		expect(toastsStore.toasts.at(-1)?.title).toBe("Conversation view cleared");
+		expect(toastsStore.toasts.at(-1)?.message).toContain("Saved history and agent context are unchanged");
+		expect(client.deleteSession).not.toHaveBeenCalled();
+		expect(client.prompt).not.toHaveBeenCalled();
+	});
+
+	it("Escape closes an open message menu without stopping a busy turn — catches the menu Escape reaching the panel stop", async () => {
+		const { container } = await renderPanel();
+		await typeAndSend(container, "Start work");
+		feed({ kind: "promptSent", text: "Start work" });
+		acpStore.applySnapshot(
+			snapshot({
+				attachments: [
+					attachment({
+						state: "prompting",
+						activeTurn: { turnId: "turn-1", state: "running", stopReason: null, usage: null },
+					}),
+				],
+			}),
+		);
+		await settle();
+		const trigger = container.querySelector<HTMLButtonElement>('button[aria-label="User message actions"]')!;
+		trigger.click();
+		await settle();
+		const item = document.activeElement as HTMLElement;
+		expect(item.getAttribute("role")).toBe("menuitem");
+		item.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+		await settle();
+		expect(container.querySelector('[role="menu"]')).toBeNull();
+		expect(client.cancel).not.toHaveBeenCalled();
+	});
+
+	it("clicking the composer while a message menu is open keeps focus there — catches close stealing focus back to the trigger", async () => {
+		const { container } = await renderPanel();
+		await settle();
+		feed({ kind: "promptSent", text: "Question" });
+		await settle();
+		container.querySelector<HTMLButtonElement>('button[aria-label="User message actions"]')!.click();
+		await settle();
+		await new Promise((resolve) => requestAnimationFrame(resolve));
+		const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+		textarea.focus();
+		textarea.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+		await settle();
+		expect(container.querySelector('[role="menu"]')).toBeNull();
+		expect(document.activeElement).toBe(textarea);
 	});
 });
 
@@ -2738,6 +2942,37 @@ describe("AIChatPanel: a turn", () => {
 		).toBe(true);
 	});
 
+	// Catches: the setup action opens the wrong Settings tab, or appears under an unrelated failed turn.
+	it("offers Settings > AI Chat only under a no-model failure", async () => {
+		const opened: string[] = [];
+		const view = render(() => (
+			<AIChatPanel
+				visible={true}
+				repoPath={ROOT}
+				onClose={() => {}}
+				onOpenSettings={(tab, section) => opened.push(`${tab}/${section ?? ""}`)}
+			/>
+		));
+		await settle();
+		const label = "Set up provider and model";
+		feed({ kind: "turnFailed", message: "model unavailable", state: "idle" }, SESSION, "turn-1");
+		await settle();
+		expect(view.queryByRole("button", { name: label })).toBeNull();
+		feed(
+			{
+				kind: "turnFailed",
+				message:
+					"Internal error: no model: pass --model provider/model, set EGO_MODEL, or put `model` in a config file",
+				state: "idle",
+			},
+			SESSION,
+			"turn-2",
+		);
+		await settle();
+		view.getByRole("button", { name: label }).click();
+		expect(opened).toEqual(["ai-chat/"]);
+	});
+
 	it("shows that a normally settled turn without an agent reply ended", async () => {
 		const { container } = await renderPanel();
 		await settle();
@@ -2765,14 +3000,16 @@ describe("AIChatPanel: a turn", () => {
 					attachment({
 						state: "prompting",
 						activeTurn: { turnId: "running", state: "running", stopReason: null, usage: null },
-						queuedPrompts: [{ turnId: "phone-queued", summary: "from phone" }],
+						queuedPrompts: [{ turnId: "phone-queued", summary: "[image: /repo/phone.png]\nfrom phone" }],
 					}),
 				],
 			}),
 		);
 		await settle();
 		expect(container.textContent).toContain("from phone");
-		const remove = container.querySelector('button[aria-label="Cancel queued prompt from phone"]') as HTMLButtonElement;
+		expect(container.querySelectorAll('[data-prompt-images="single"] img')).toHaveLength(1);
+		expect(container.querySelector('[aria-label="Queued prompts"]')?.textContent).not.toContain("[image:");
+		const remove = container.querySelector('button[aria-label^="Cancel queued prompt"]') as HTMLButtonElement;
 		expect(remove).not.toBeNull();
 		remove.click();
 		await settle();
@@ -4256,6 +4493,136 @@ describe("AIChatPanel: pause, resume and compact", () => {
 		},
 	);
 
+	// Catches: after a compacted update and an app restart the chat reopens the source session instead of the successor.
+	it("follows an announced automatic compaction to the successor and persists it", async () => {
+		client.loadSession.mockImplementationOnce(() => openSession(SECOND_SESSION));
+		client.listSessions.mockResolvedValue({ sessions: [], nextCursor: null });
+		const { container } = await renderPanel();
+		await settle();
+		expect(aiChatTabs.active("global")).toBe(SESSION);
+		const announced = {
+			...recordedCompacted,
+			_meta: {
+				ego: {
+					compacted: {
+						...recordedCompacted._meta.ego.compacted,
+						sourceSessionId: SESSION,
+						targetSessionId: SECOND_SESSION,
+					},
+				},
+			},
+		};
+		acpStore.applySnapshot(snapshot({ attachments: [attachment({ state: "prompting" })] }));
+		feed({ kind: "sessionUpdate", update: announced as never }, SESSION, "turn-1");
+		await settle();
+		// The turn still streams in the source: nothing moves until it settles.
+		expect(client.loadSession).not.toHaveBeenCalled();
+		expect(aiChatTabs.active("global")).toBe(SESSION);
+		acpStore.applySnapshot(snapshot({ attachments: [attachment({ state: "idle" })] }));
+		await settle();
+		expect(client.loadSession).toHaveBeenCalledExactlyOnceWith(CONNECTION, SECOND_SESSION, expect.anything());
+		// What a restart reads back.
+		expect(aiChatTabs.active("global")).toBe(SECOND_SESSION);
+		expect(JSON.parse(localStorage.getItem("tuic-ai-chat-tabs") ?? "{}").global.active).toBe(SECOND_SESSION);
+		expect(toastsStore.toasts.map((toast) => toast.title)).toContain("Conversation compacted");
+		expect(container).toBeTruthy();
+	});
+
+	// Catches: an automatic compaction leaving the stale source tab next to the successor (2957-469c:
+	// Boss found a second "Untitled conversation" tab holding a compacted thread he never opened).
+	it("keeps one tab when ego compacts automatically: the successor takes the source tab and its pin", async () => {
+		client.loadSession.mockImplementationOnce(() => openSession(SECOND_SESSION));
+		const { container } = await renderPanel();
+		await settle();
+		aiChatTabs.pinRepo("global", SESSION, ROOT);
+		feed(
+			{
+				kind: "sessionUpdate",
+				update: {
+					...recordedCompacted,
+					_meta: {
+						ego: {
+							compacted: {
+								...recordedCompacted._meta.ego.compacted,
+								sourceSessionId: SESSION,
+								targetSessionId: SECOND_SESSION,
+							},
+						},
+					},
+				} as never,
+			},
+			SESSION,
+		);
+		await settle();
+		expect(client.loadSession).toHaveBeenCalledExactlyOnceWith(CONNECTION, SECOND_SESSION, expect.anything());
+		expect(aiChatTabs.ids("global")).toEqual([SECOND_SESSION]);
+		expect(container.querySelector('[role="tablist"]')).toBeNull();
+		expect(aiChatTabs.pinnedRepo("global", SECOND_SESSION)).toBe(ROOT);
+		// What the next panel open reads back.
+		expect(JSON.parse(localStorage.getItem("tuic-ai-chat-tabs") ?? "{}").global.ids).toEqual([SECOND_SESSION]);
+		// Catches: the host publishing the successor without its source, so a follower cannot replace it.
+		expect(invoke).toHaveBeenCalledWith("select_ai_chat_conversation", {
+			sessionId: SECOND_SESSION,
+			replacing: SESSION,
+		});
+	});
+
+	// Catches: a phone or browser following the host appending the compaction successor beside its
+	// source (3039-fea4), or replacing the wrong tab, or dropping the source's repository pin.
+	it("a follower replaces the source tab in place when the host selects its compaction successor", async () => {
+		let selection: { workspace: string; sessionId: string; replacing?: string } = {
+			workspace: CHAT_ROOT,
+			sessionId: SESSION,
+		};
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "ai_chat_selection") return selection;
+			if (command === "load_config") return { ai_chat_sessions: { [CHAT_ROOT]: SESSION } };
+			if (command === "acp_workspace_root") return CHAT_ROOT;
+			return undefined;
+		});
+		client.loadSession.mockImplementation((_id, session) => openSession(session));
+		aiChatTabs.add("global", CHILD_SESSION);
+		aiChatTabs.add("global", SESSION);
+		aiChatTabs.pinRepo("global", SESSION, ROOT);
+		await renderPanel();
+		await settle();
+		expect(aiChatTabs.ids("global")).toEqual([CHILD_SESSION, SESSION]);
+		selection = { workspace: CHAT_ROOT, sessionId: SECOND_SESSION, replacing: SESSION };
+		const [handlers] = vi
+			.mocked(subscribeEvents)
+			.mock.calls.find(([handlers]) => "ai-chat-selection-changed" in handlers)!;
+		handlers["ai-chat-selection-changed"]({});
+		await settle();
+		expect(aiChatTabs.ids("global")).toEqual([CHILD_SESSION, SECOND_SESSION]);
+		expect(aiChatTabs.active("global")).toBe(SECOND_SESSION);
+		expect(aiChatTabs.pinnedRepo("global", SECOND_SESSION)).toBe(ROOT);
+	});
+
+	// Catches: Compact replacing the wrong tab, or reordering the tabs around it.
+	it("Compact replaces only its own tab, in place", async () => {
+		client.newSession.mockImplementationOnce(() => openSession(SESSION));
+		const { container } = await renderPanel();
+		await settle();
+		client.newSession.mockImplementationOnce(() => openSession(CHILD_SESSION));
+		(container.querySelector('button[aria-label="New chat tab"]') as HTMLButtonElement).click();
+		await settle();
+		[...container.querySelectorAll<HTMLElement>('[role="tab"]')][0].click();
+		await settle();
+		expect(aiChatTabs.ids("global")).toEqual([SESSION, CHILD_SESSION]);
+		expect(aiChatTabs.active("global")).toBe(SESSION);
+		client.loadSession.mockImplementationOnce(() => openSession(SECOND_SESSION));
+		client.compact.mockResolvedValueOnce({
+			sourceSessionId: SESSION,
+			targetSessionId: SECOND_SESSION,
+			publication: { kind: "published_durably", diagnostic: null },
+		});
+		container.querySelector<HTMLButtonElement>('button[aria-label="Compact the conversation"]')!.click();
+		await settle();
+		expect(aiChatTabs.ids("global")).toEqual([SECOND_SESSION, CHILD_SESSION]);
+		expect(aiChatTabs.active("global")).toBe(SECOND_SESSION);
+		expect(container.querySelectorAll('[role="tab"]')).toHaveLength(2);
+	});
+
 	it("keeps original attachments and repository on overflow replay — catches changed context on retry", async () => {
 		let dispose = () => {};
 		let repo = ROOT;
@@ -4740,8 +5107,9 @@ describe("AIChatPanel: provider retry status", () => {
 		try {
 			const { container } = await retryingPanel();
 			feed({ kind: "promptSent", text: "A real user prompt" });
-			const copy = container.querySelector<HTMLElement>('[aria-label="Copy user message"]');
+			const copy = container.querySelector<HTMLElement>('[aria-label="User message actions"]');
 			expect(copy).not.toBeNull();
+			expect(getComputedStyle(copy!.parentElement!).position).toBe("absolute");
 			expect(getComputedStyle(copy!).whiteSpace).toBe("nowrap");
 		} finally {
 			style.remove();
@@ -4749,8 +5117,8 @@ describe("AIChatPanel: provider retry status", () => {
 	});
 
 	// Catches: the absolutely positioned user Copy collapsing to 7.9px and wrapping at a 500px panel.
-	// jsdom has no layout engine. Chromium measured the one-line label at 27.109375x16.5px;
-	// verify the production CSS preserves that intrinsic line and budgets enough transcript gutter.
+	// jsdom has no layout engine. The actions trigger is at most the 44px touch target;
+	// verify the production CSS budgets enough transcript gutter for it.
 	it("keeps Copy within the transcript gutter at a 500px AI Chat panel", async () => {
 		const style = document.createElement("style");
 		style.textContent = readFileSync(
@@ -4772,19 +5140,15 @@ describe("AIChatPanel: provider retry status", () => {
 			});
 			await settle();
 			const transcript = container.querySelector<HTMLElement>('[aria-label="Chat transcript"]')!;
-			const userCopy = container.querySelector<HTMLElement>('[aria-label="Copy user message"]')!;
-			const assistantCopy = container.querySelector<HTMLElement>('[aria-label="Copy assistant message"]')!;
-			expect(userCopy.textContent).toBe("Copy");
-			expect(assistantCopy.textContent).toBe("Copy");
-			const copy = getComputedStyle(userCopy);
-			const bubble = getComputedStyle(userCopy.parentElement!);
+			const userCopy = container.querySelector<HTMLElement>('[aria-label="User message actions"]')!;
+			const copy = getComputedStyle(userCopy.parentElement!);
+			const bubble = getComputedStyle(userCopy.parentElement!.parentElement!);
 			const list = getComputedStyle(transcript);
-			expect(copy.whiteSpace).toBe("nowrap");
 			expect(copy.position).toBe("absolute");
 			expect(copy.right).toBe("100%");
 			const rowWidth = 500 - parseFloat(list.paddingLeft) - parseFloat(list.paddingRight);
 			const gutter = rowWidth * (1 - parseFloat(bubble.maxWidth) / 100);
-			expect(gutter).toBeGreaterThanOrEqual(27.109375 + parseFloat(copy.marginRight));
+			expect(gutter).toBeGreaterThanOrEqual(44 + parseFloat(copy.marginRight));
 		} finally {
 			style.remove();
 		}
@@ -4854,6 +5218,56 @@ describe("AIChatPanel: provider retry status", () => {
 });
 
 describe("AIChatPanel: fork at message", () => {
+	// Catches: a busy parent suppresses all fork entry points even when immutable cutoffs are supported.
+	it("forks a selected reply while the parent turn keeps running", async () => {
+		const { container } = await renderPanel();
+		acpStore.applySnapshot(
+			snapshot({
+				attachments: [
+					attachment({
+						state: "prompting",
+						activeTurn: { turnId: "parent-turn", state: "running", stopReason: null, usage: null },
+					}),
+				],
+				capabilities: { ...snapshot().capabilities!, fork: true, forkAtMessage: true },
+			}),
+		);
+		acpTranscript.restore(SESSION, [
+			{ id: "reply", kind: "agent", text: "Completed reply", messageId: "completed-reply" },
+		]);
+		client.forkSession.mockResolvedValue(CHILD_SESSION);
+		await settle();
+		const fork = container.querySelector<HTMLButtonElement>('[aria-label="Fork"]')!;
+		expect(fork.disabled).toBe(false);
+		fork.click();
+		await settle();
+		expect(client.forkSession).toHaveBeenCalledWith(CONNECTION, SESSION, CHAT_ROOT, "completed-reply");
+		expect(client.cancel).not.toHaveBeenCalled();
+		expect(
+			acpStore.connection(CONNECTION)?.attachments.find((row) => row.sessionId === SESSION)?.activeTurn?.state,
+		).toBe("running");
+	});
+
+	// Catches: /fork is blocked while busy, or accidentally sent to the model instead of the backend cutoff selector.
+	it("routes busy slash fork to the backend without stopping the parent", async () => {
+		const { container } = await renderPanel();
+		acpStore.applySnapshot(
+			snapshot({
+				attachments: [
+					attachment({
+						state: "prompting",
+						activeTurn: { turnId: "parent-turn", state: "running", stopReason: null, usage: null },
+					}),
+				],
+				capabilities: { ...snapshot().capabilities!, fork: true, forkAtMessage: true },
+			}),
+		);
+		client.forkSession.mockResolvedValue(CHILD_SESSION);
+		await typeAndSend(container, "/fork");
+		expect(client.forkSession).toHaveBeenCalledWith(CONNECTION, SESSION, CHAT_ROOT);
+		expect(client.cancel).not.toHaveBeenCalled();
+		expect(client.prompt).not.toHaveBeenCalled();
+	});
 	// Catches: offering a message fork to an agent that can only fork at its tip.
 	it("hides the per-reply fork without the at-message capability", async () => {
 		const { container } = await renderPanel();
@@ -4875,8 +5289,10 @@ describe("AIChatPanel: fork at message", () => {
 		acpTranscript.restore(SESSION, [{ id: "reply", kind: "agent", text: "Answer", messageId: "reply-id" }]);
 		client.forkSession.mockResolvedValue(CHILD_SESSION);
 		await settle();
-		const copy = container.querySelector<HTMLButtonElement>('[aria-label="Copy assistant message"]');
+		const copy = container.querySelector<HTMLButtonElement>('[aria-label="Assistant message actions"]');
 		copy?.click();
+		await settle();
+		document.querySelector<HTMLElement>('[role="menuitem"]')!.click();
 		await settle();
 		expect(mockWriteClipboard).toHaveBeenCalledWith("Answer");
 		expect(client.forkSession).not.toHaveBeenCalled();
@@ -5913,6 +6329,10 @@ describe("AIChatPanel: ACP slash commands", () => {
 		expect(container.textContent).toContain("Context 100 / 400 tokens (25%) · USD 2");
 		await typeAndSend(container, "/clear");
 		expect(container.querySelector("textarea")!.value).toBe("");
+		// Catches: /clear succeeds without visible feedback, or claims agent context was removed.
+		expect(container.querySelector('[role="status"]')?.textContent).toContain(
+			"Composer and attachments cleared. Conversation history and agent context are unchanged.",
+		);
 		expect(acpTranscript.usage(SESSION)?.used).toBe(100);
 		expect(client.prompt).not.toHaveBeenCalled();
 	});
@@ -6095,7 +6515,9 @@ it("follows shared selection events and reconnect without republishing the adopt
 	const writesBefore = vi
 		.mocked(invoke)
 		.mock.calls.filter(([command]) => command === "select_ai_chat_conversation").length;
-	const [handlers, options] = vi.mocked(subscribeEvents).mock.calls[0];
+	const [handlers, options] = vi
+		.mocked(subscribeEvents)
+		.mock.calls.find(([handlers]) => "ai-chat-selection-changed" in handlers)!;
 	handlers["ai-chat-selection-changed"]({});
 	await settle();
 	expect(view.container.querySelector(`[data-chat-session="${SECOND_SESSION}"]`)).not.toBeNull();
@@ -6109,6 +6531,80 @@ it("follows shared selection events and reconnect without republishing the adopt
 	expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "select_ai_chat_conversation")).toHaveLength(
 		writesBefore,
 	);
+});
+
+// Catches: a resync (phone resume) during the startup load revokes the attach but nobody clears
+// "starting", so the chat stays "Connecting conversation…" forever and the mobile composer never renders.
+it("leaves starting when a shared-selection resync arrives during the conversation load", async () => {
+	vi.mocked(invoke).mockImplementation(async (command) => {
+		if (command === "ai_chat_selection") return { workspace: CHAT_ROOT, sessionId: SESSION };
+		if (command === "load_config") return { ai_chat_sessions: { [CHAT_ROOT]: SESSION } };
+		if (command === "acp_workspace_root") return CHAT_ROOT;
+		return undefined;
+	});
+	const loads: (() => void)[] = [];
+	client.loadSession.mockImplementation(
+		(_id, session) =>
+			new Promise<void>((resolve) => {
+				loads.push(() => {
+					acpStore.applySnapshot(snapshot({ attachments: [attachment({ sessionId: session })] }));
+					resolve();
+				});
+			}),
+	);
+	const view = renderIdlePanel();
+	await settle();
+	expect(loads.length).toBeGreaterThan(0);
+	const [, options] = vi
+		.mocked(subscribeEvents)
+		.mock.calls.find(([handlers]) => "ai-chat-selection-changed" in handlers)!;
+	options?.onResync?.("reconnect");
+	await settle();
+	for (const finish of loads.splice(0)) finish();
+	await settle();
+	for (const finish of loads.splice(0)) finish();
+	await settle();
+	expect(view.container.textContent).not.toContain("Connecting conversation…");
+	// Catches: the retry reuses the revoked attempt, which loads but never binds the conversation.
+	expect(view.container.textContent).not.toContain("Conversation disconnected");
+	await typeAndSend(view.container, "after resume");
+	expect(client.prompt).toHaveBeenLastCalledWith(CONNECTION, SESSION, "after resume", [], ROOT);
+});
+
+// Catches: a selection that arrives during a cold launch reuses the revoked launch, which never clears "starting".
+it("leaves starting when a shared selection arrives during a cold launch", async () => {
+	let selected: string | null = null;
+	vi.mocked(invoke).mockImplementation(async (command) => {
+		if (command === "ai_chat_selection") return { workspace: CHAT_ROOT, sessionId: selected };
+		if (command === "load_config") return { ai_chat_sessions: {} };
+		if (command === "acp_workspace_root") return CHAT_ROOT;
+		return undefined;
+	});
+	let finishConnect!: () => void;
+	client.connect.mockImplementation(
+		() =>
+			new Promise((resolve) => {
+				finishConnect = () => {
+					const opened = snapshot();
+					acpStore.applySnapshot(opened);
+					acpStore.markStreaming(CONNECTION);
+					resolve(opened);
+				};
+			}),
+	);
+	const view = renderIdlePanel();
+	await settle();
+	expect(view.container.textContent).toContain("Connecting conversation…");
+	selected = SECOND_SESSION;
+	const [handlers] = vi
+		.mocked(subscribeEvents)
+		.mock.calls.find(([handlers]) => "ai-chat-selection-changed" in handlers)!;
+	handlers["ai-chat-selection-changed"]({});
+	await settle();
+	finishConnect();
+	await settle();
+	await settle();
+	expect(view.container.textContent).not.toContain("Connecting conversation…");
 });
 
 describe("queued prompt recall", () => {
@@ -6335,4 +6831,82 @@ describe("detached AI Chat dictation", () => {
 			await dictationStore.refreshStatus();
 		},
 	);
+});
+
+// Catches: a message action using a draft, dropping source identity, starting a new conversation when the original attachment is offline.
+it("message actions retain their exact source conversation and refuse offline without a fallback", async () => {
+	let dispose = () => {};
+	const chat = createRoot((cleanup) => {
+		dispose = cleanup;
+		return createAcpChat(
+			() => ROOT,
+			() => true,
+			client,
+		);
+	});
+	try {
+		await chat.ensureStarted();
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "acp_message_action") return { turnId: "action-turn", reactions: { "native-answer": ["heart"] } };
+			if (command === "acp_message_reactions") return { "native-answer": ["heart"] };
+			return undefined;
+		});
+		await chat.messageActions.send("native-answer", "Exact **source**.", {
+			kind: "reaction",
+			reaction: "heart",
+			remove: false,
+		});
+		expect(invoke).toHaveBeenCalledWith("acp_message_action", {
+			connectionId: CONNECTION,
+			sessionId: SESSION,
+			request: {
+				messageId: "native-answer",
+				text: "Exact **source**.",
+				action: { kind: "reaction", reaction: "heart", remove: false },
+			},
+		});
+		expect(chat.messageActions.reactions()["native-answer"]).toEqual(["heart"]);
+		acpStore.markStopped(CONNECTION);
+		const before = vi.mocked(invoke).mock.calls.filter(([command]) => command === "acp_message_action").length;
+		await expect(
+			chat.messageActions.send("native-answer", "Exact **source**.", {
+				kind: "reaction",
+				reaction: "heart",
+				remove: true,
+			}),
+		).rejects.toThrow("Action not sent");
+		expect(vi.mocked(invoke).mock.calls.filter(([command]) => command === "acp_message_action")).toHaveLength(before);
+		expect(chat.messageActions.reactions()["native-answer"]).toEqual(["heart"]);
+		expect(client.prompt).not.toHaveBeenCalled();
+	} finally {
+		dispose();
+	}
+});
+
+// Catches: a delayed action receipt overwriting a newer reaction removal from another device.
+it("message actions reread backend marks after a stale receipt", async () => {
+	let dispose = () => {};
+	const chat = createRoot((cleanup) => {
+		dispose = cleanup;
+		return createAcpChat(
+			() => ROOT,
+			() => true,
+			client,
+		);
+	});
+	try {
+		await chat.ensureStarted();
+		vi.mocked(invoke).mockImplementation(async (command) => {
+			if (command === "acp_message_action")
+				return { turnId: "older-receipt", reactions: { "native-answer": ["heart"] } };
+			if (command === "acp_message_reactions") return {};
+			return undefined;
+		});
+		await chat.messageActions.send("native-answer", "Earlier answer.", { kind: "comment", comment: "Keep this." });
+		await settle();
+		expect(chat.messageActions.reactions()).toEqual({});
+		expect(invoke).toHaveBeenCalledWith("acp_message_reactions", { sessionId: SESSION });
+	} finally {
+		dispose();
+	}
 });

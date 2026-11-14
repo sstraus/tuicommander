@@ -89,4 +89,12 @@ describe("deriveStatus", () => {
 			expect(deriveStatus(makeSession({ shell_state: "busy", active_sub_tasks: 1 }))).toBe("busy");
 		});
 	});
+
+	// Catches: a working agent silent past the stall threshold still shown as
+	// Working (story 3050: wa-2 read working for 6.3 h).
+	it("stalled beats busy, a question beats stalled", () => {
+		const stalled = { shell_state: "busy", agent_state: "working", stalled: true };
+		expect(deriveStatus(makeSession(stalled))).toBe("stalled");
+		expect(deriveStatus(makeSession({ ...stalled, awaiting_input: true }))).toBe("question");
+	});
 });

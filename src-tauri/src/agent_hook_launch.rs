@@ -1,6 +1,6 @@
 //! Launch-scoped native status integration for agent CLIs.
 
-use crate::agent_hook::{SENTINEL, claude_hook_map};
+use crate::agent_hook::{HookTransport, SENTINEL, claude_hook_map_on};
 use serde_json::{Map, Value};
 use std::path::Path;
 
@@ -21,11 +21,12 @@ pub(crate) fn claude_help_is_usable(help: &str) -> bool {
 }
 
 pub(crate) fn enabled(agent_type: &str) -> bool {
-    crate::config::load_agents_config()
-        .agents
-        .get(agent_type)
-        .and_then(|settings| settings.native_status_signals)
-        .unwrap_or(true)
+    crate::agent_hook::hooks_supported_on_host()
+        && crate::config::load_agents_config()
+            .agents
+            .get(agent_type)
+            .and_then(|settings| settings.native_status_signals)
+            .unwrap_or(true)
 }
 
 pub(crate) static SCREEN_POLICIES: &[(&str, &str, Option<&str>)] = &[
@@ -56,9 +57,12 @@ pub(crate) fn prevents_alt_screen(agent_type: &str) -> bool {
     prevents_alt_screen_in(&crate::config::load_agents_config(), agent_type)
 }
 
-fn claude_document() -> Value {
+/// The Claude status line relay, next to `claude.json` (spike S5).
+const CLAUDE_STATUS_LINE_RELAY: &str = "claude-statusline.sh";
+
+fn claude_document(transport: &HookTransport, dir: &Path) -> Value {
     let mut hooks = Map::new();
-    for (event, matcher, command) in claude_hook_map() {
+    for (event, matcher, command) in claude_hook_map_on(transport) {
         let group = serde_json::json!({
             "matcher": matcher,
             "hooks": [{"type": "command", "command": command}],
@@ -70,7 +74,20 @@ fn claude_document() -> Value {
             .expect("new hook event is an array")
             .push(group);
     }
-    serde_json::json!({"hooks": hooks, "_tuic": SENTINEL})
+    let mut document = serde_json::json!({"hooks": hooks, "_tuic": SENTINEL});
+    if *transport == HookTransport::Posix {
+        // Only `type` and `command`: Claude merges `statusLine` field by field,
+        // so the user's `padding` and `refreshInterval` still apply (S5).
+        let relay = dir.join(CLAUDE_STATUS_LINE_RELAY);
+        document["statusLine"] = serde_json::json!({
+            "type": "command",
+            "command": format!("sh {}", shell_quote(&relay.to_string_lossy())),
+        });
+    }
+    // DEFERRED (2026-11-12) — Windows relay through tuic.exe agent-state; needs a
+    // Windows Claude Code status line observation first. Without it the user
+    // status line stays unchanged and the quota uses the active read.
+    document
 }
 
 fn shell_quote(value: &str) -> String {
@@ -114,14 +131,34 @@ fn codex_script(user_notify: &[String]) -> String {
 payload=${{1:-}}
 case "$payload" in
   *'"type":"agent-turn-complete"'*|*'"type": "agent-turn-complete"'*)
-    tty=$(ps -o tty= -p "$PPID" 2>/dev/null | tr -d '[:space:]')
-    case "$tty" in *[0-9]*) tty="/dev/${{tty#/dev/}}";; *) tty=/dev/tty;; esac
-    printf '\033]7770;state=idle\033\\' > "$tty" 2>/dev/null || true
+    __f=$(printf '\033]7770;state=idle\033\\')
+    {{ {post}; }} >/dev/null 2>&1 || true
     ;;
 esac
 {chain}exit 0
-"#
+"#,
+        post = crate::agent_hook::post_frames(crate::agent_hook::TTY_FRAMES),
     )
+}
+
+/// Codex `notify` argv. POSIX runs the generated script, which chains the
+/// user's own notify. Windows runs `tuic agent-state codex-notify -- <user
+/// notify argv>`; Codex appends the payload, and the CLI chains the user's
+/// command with it (#2632-97ef).
+fn codex_notify_argv(transport: &HookTransport, config_dir: &Path) -> Vec<String> {
+    match transport {
+        HookTransport::Posix => vec![
+            config_dir
+                .join("agent-hooks/codex-notify.sh")
+                .to_string_lossy()
+                .into_owned(),
+        ],
+        HookTransport::Cli(cli) => [cli.as_str(), "agent-state", "codex-notify", "--"]
+            .into_iter()
+            .map(str::to_owned)
+            .chain(codex_user_notify())
+            .collect(),
+    }
 }
 
 /// Boot-time entry shared by the desktop and both headless binaries: a
@@ -137,10 +174,32 @@ pub(crate) fn regenerate_launch_assets_at_boot(config_dir: &Path) {
 }
 
 pub(crate) fn regenerate_launch_assets(config_dir: &Path) -> Result<(), String> {
+    regenerate_launch_assets_on(config_dir, HookTransport::host().as_ref())
+}
+
+/// `transport` is `None` on a host where generated hooks cannot run.
+fn regenerate_launch_assets_on(
+    config_dir: &Path,
+    transport: Option<&HookTransport>,
+) -> Result<(), String> {
+    let Some(transport) = transport else {
+        // Instruction documents are portable; these external hook commands are not.
+        return crate::launch_instructions::write_files(config_dir);
+    };
     let dir = config_dir.join("agent-hooks");
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
-    let claude = serde_json::to_vec_pretty(&claude_document()).map_err(|e| e.to_string())?;
+    let claude =
+        serde_json::to_vec_pretty(&claude_document(transport, &dir)).map_err(|e| e.to_string())?;
     crate::config::persist_atomic(&dir.join("claude.json"), &claude)?;
+    if *transport != HookTransport::Posix {
+        // The Windows Codex notify is the CLI itself (`codex_notify_argv`).
+        return crate::launch_instructions::write_files(config_dir);
+    }
+    crate::config::persist_atomic_with_mode(
+        &dir.join(CLAUDE_STATUS_LINE_RELAY),
+        crate::provider_quota::status_line::posix_script().as_bytes(),
+        0o700,
+    )?;
     let codex = codex_script(&codex_user_notify());
     let codex_path = dir.join("codex-notify.sh");
     crate::config::persist_atomic_with_mode(&codex_path, codex.as_bytes(), 0o700)?;
@@ -232,41 +291,6 @@ fn ego_permission_args(config: &crate::config::AgentsConfig, args: &[String]) ->
     result
 }
 
-/// The permission-skipping option a launch of `args` would carry, after configured ego choices apply.
-pub(crate) fn permission_bypass_flag(
-    config: &crate::config::AgentsConfig,
-    agent_type: &str,
-    args: &[String],
-) -> Option<String> {
-    let effective = if agent_type == "ego" {
-        ego_permission_args(config, args)
-    } else {
-        args.to_vec()
-    };
-    let mut rest = effective.iter();
-    while let Some(arg) = rest.next() {
-        if arg == "--" {
-            break;
-        }
-        if arg.starts_with("--dangerously-") || arg == "--yolo" || arg == "--mode=yolo" {
-            return Some(arg.clone());
-        }
-        for (flag, value) in [
-            ("--mode", "yolo"),
-            ("--permission-mode", "bypassPermissions"),
-            ("--sandbox", "danger-full-access"),
-            ("-s", "danger-full-access"),
-        ] {
-            if arg == &format!("{flag}={value}")
-                || (arg == flag && rest.clone().next().is_some_and(|next| next == value))
-            {
-                return Some(format!("{flag} {value}"));
-            }
-        }
-    }
-    None
-}
-
 /// Structured launches: status integration, then the marker instructions.
 pub(crate) fn launch_args(
     agent_type: &str,
@@ -334,6 +358,55 @@ pub(crate) fn launch_args_for(
     result
 }
 
+/// Workspace trust and the TUICommander MCP server for an ego child that TUIC
+/// launches. Without trust the child stops at ego's trust question; without the
+/// server it cannot mail its parent. A caller's own trust or `--mcp` choice wins.
+/// The injected server comes with `--mcp-only` (ego 0.4.11): an enabled
+/// configured TUIC server of the owner would publish the same tool names and
+/// reach the owner's app, not the one that spawned the child (3020-5de1).
+/// Like `--read-only-dir`, only the ego binary itself gets the options.
+pub(crate) fn managed_ego_args(
+    binary_path: &str,
+    args: Vec<String>,
+    trust: bool,
+    mcp_server_file: Option<&Path>,
+) -> Vec<String> {
+    let binary_name = binary_path
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(binary_path);
+    if binary_name.strip_suffix(".exe").unwrap_or(binary_name) != "ego"
+        || args
+            .first()
+            .is_some_and(|first| EGO_NON_RUN_COMMANDS.contains(&first.as_str()))
+    {
+        return args;
+    }
+    let options = args.iter().take_while(|arg| *arg != "--");
+    let mut has_trust = false;
+    let mut has_mcp = false;
+    for arg in options {
+        has_trust |= arg == "--trust-workspace" || arg == "--trust-development-programs";
+        has_mcp |= arg == "--mcp" || arg.starts_with("--mcp=");
+    }
+    let mut added = Vec::new();
+    if trust && !has_trust {
+        added.push("--trust-workspace".to_string());
+    }
+    if let Some(file) = mcp_server_file.filter(|_| !has_mcp) {
+        added.push("--mcp".to_string());
+        added.push(format!("@{}", file.display()));
+        added.push("--mcp-only".to_string());
+    }
+    let insertion = usize::from(
+        args.first()
+            .is_some_and(|arg| ["run", "resume"].contains(&arg.as_str())),
+    );
+    let mut result = args;
+    result.splice(insertion..insertion, added);
+    result
+}
+
 /// A Claude verb (`mcp list`, `auth status`) takes no launch flags. Probes the
 /// installed help only when the first argument could be one.
 fn is_claude_subcommand(agent_type: &str, binary_path: &str, args: &[String]) -> bool {
@@ -382,14 +455,19 @@ fn augment_launch(
     )
 }
 
-/// Use the same screen policy for commands typed into an existing terminal.
-/// The frontend owns shell quoting, while this function owns the agent-specific
-/// flag and its capability check.
+/// Apply Claude status hooks and the shared screen/permission policies to
+/// commands typed into an existing terminal. Callers own shell quoting.
 pub(crate) fn build_agent_launch_args(
     agent_type: &str,
     binary_path: &str,
     args: &[String],
 ) -> Vec<String> {
+    if agent_type == "claude" {
+        if is_claude_subcommand(agent_type, binary_path, args) {
+            return args.to_vec();
+        }
+        return augment_launch(agent_type, binary_path, args, &crate::config::config_dir());
+    }
     if agent_type == "ego" {
         return ego_permission_args(&crate::config::load_agents_config(), args);
     }
@@ -411,9 +489,11 @@ pub(crate) async fn prepare_agent_launch_args(
     args: Vec<String>,
 ) -> Vec<String> {
     let fallback = args.clone();
-    tokio::task::spawn_blocking(move || build_agent_launch_args(&agent_type, &binary_path, &args))
-        .await
-        .unwrap_or(fallback)
+    tokio::task::spawn_blocking(move || {
+        crate::session_resume::prepare_shell_launch_args(&agent_type, &binary_path, &args)
+    })
+    .await
+    .unwrap_or(fallback)
 }
 
 fn screen_flag_candidate(agent_type: &str, args: &[String]) -> Option<&'static str> {
@@ -468,10 +548,27 @@ fn augment_args_when(
     args: &[String],
     config_dir: &Path,
 ) -> Vec<String> {
+    augment_args_on(
+        enabled,
+        agent_type,
+        args,
+        config_dir,
+        HookTransport::host().as_ref(),
+    )
+}
+
+/// `transport` is `None` on a host where generated hooks cannot run.
+fn augment_args_on(
+    enabled: bool,
+    agent_type: &str,
+    args: &[String],
+    config_dir: &Path,
+    transport: Option<&HookTransport>,
+) -> Vec<String> {
     let mut result = args.to_vec();
-    if !enabled {
+    let Some(transport) = transport.filter(|_| enabled) else {
         return result;
-    }
+    };
     match agent_type {
         "claude"
             if !claude_is_subcommand(args, "")
@@ -496,10 +593,10 @@ fn augment_args_when(
                 }) =>
         {
             result.push("-c".into());
-            let path = config_dir.join("agent-hooks/codex-notify.sh");
             result.push(format!(
-                "notify=[{}]",
-                serde_json::to_string(&path.to_string_lossy()).expect("path serializes")
+                "notify={}",
+                serde_json::to_string(&codex_notify_argv(transport, config_dir))
+                    .expect("argv serializes")
             ));
         }
         _ => {}
@@ -510,6 +607,165 @@ fn augment_args_when(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Catches: restoring a discovered absolute Claude binary bypasses the shell
+    // function and launches without the state-hook settings (#2858-2b1c).
+    #[test]
+    fn restored_claude_launch_args_include_state_hooks() {
+        let dir = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
+        let config_dir = dir.path().join("config with spaces");
+        let _guard = tuic_core::config_dir::set_override(config_dir.clone());
+        let binary = dir.path().join("claude").to_string_lossy().into_owned();
+        let args = vec!["--resume".into(), "recorded-session".into()];
+        let actual = build_agent_launch_args("claude", &binary, &args);
+        let mut expected = args.clone();
+        if crate::agent_hook::hooks_supported_on_host() {
+            expected.extend([
+                "--settings".into(),
+                config_dir
+                    .join("agent-hooks/claude.json")
+                    .to_string_lossy()
+                    .into_owned(),
+            ]);
+        }
+        assert_eq!(actual, expected, "absolute restore lost state hooks");
+        assert_eq!(
+            actual,
+            augment_launch("claude", &binary, &args, &config_dir)
+        );
+        let shell_args = vec![
+            "--resume".into(),
+            crate::prompt::shell_quote("recorded-session"),
+            "--model".into(),
+            "\"$CLAUDE_MODEL\"".into(),
+        ];
+        let mut expected_shell = shell_args.clone();
+        expected_shell.extend(
+            expected[args.len()..]
+                .iter()
+                .map(|arg| crate::prompt::shell_quote(arg)),
+        );
+        assert_eq!(
+            crate::session_resume::prepare_shell_launch_args("claude", &binary, &shell_args),
+            expected_shell,
+            "terminal preparation must preserve original shell words and quote new settings"
+        );
+        let custom = vec![
+            crate::prompt::shell_quote("--settings"),
+            crate::prompt::shell_quote("custom settings.json"),
+        ];
+        assert_eq!(
+            crate::session_resume::prepare_shell_launch_args("claude", &binary, &custom),
+            custom,
+            "persisted quoted settings must not acquire another settings option"
+        );
+        for args in [
+            vec!["--settings".into(), "custom settings.json".into()],
+            vec!["--settings=custom.json".into()],
+            vec!["--bare".into()],
+            vec!["mcp".into(), "list".into()],
+        ] {
+            assert_eq!(build_agent_launch_args("claude", &binary, &args), args);
+        }
+        crate::config::save_agents_config(
+            crate::config::AgentsConfig::default(),
+            crate::config::AgentsConfig {
+                agents: [(
+                    "claude".into(),
+                    crate::config::AgentSettings {
+                        native_status_signals: Some(false),
+                        ..Default::default()
+                    },
+                )]
+                .into(),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(build_agent_launch_args("claude", &binary, &args), args);
+    }
+
+    // Catches: native Windows receives POSIX settings/notify hooks even with a saved override.
+    #[test]
+    fn windows_launch_does_not_inject_posix_hook() {
+        let dir = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
+        for agent in ["claude", "codex"] {
+            for enabled in [false, true] {
+                for args in [
+                    vec![],
+                    vec!["--resume".into(), "session".into()],
+                    vec!["--settings=custom.json".into()],
+                    vec!["-cnotify=user".into()],
+                ] {
+                    assert_eq!(
+                        augment_args_on(enabled, agent, &args, dir.path(), None),
+                        args,
+                        "Windows must preserve explicit argv without TUIC hooks: {agent}/{enabled}"
+                    );
+                }
+            }
+        }
+    }
+
+    // Catches: boot rewrites previously installed POSIX assets on Windows.
+    #[test]
+    fn windows_boot_preserves_existing_posix_assets() {
+        let dir = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
+        regenerate_launch_assets_on(dir.path(), None).unwrap();
+        let hooks = dir.path().join("agent-hooks");
+        assert!(!hooks.join("claude.json").exists());
+        assert!(!hooks.join("codex-notify.sh").exists());
+        assert!(hooks.join("instructions-ego.md").exists());
+        for name in ["claude.json", "codex-notify.sh"] {
+            std::fs::write(hooks.join(name), b"user-owned").unwrap();
+        }
+        regenerate_launch_assets_on(dir.path(), None).unwrap();
+        for name in ["claude.json", "codex-notify.sh"] {
+            assert_eq!(std::fs::read(hooks.join(name)).unwrap(), b"user-owned");
+        }
+    }
+
+    // Catches: a Windows host with the bundled CLI still gets no status hooks,
+    // gets a POSIX Codex notify script it cannot run, or a Claude settings
+    // file whose commands are `sh` (#2632-97ef).
+    #[test]
+    fn windows_launch_uses_the_cli_transport() {
+        let dir = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
+        let cli = r"C:\Program Files\TUICommander\tuic.exe";
+        let t = HookTransport::windows_cli(Path::new(cli)).unwrap();
+        regenerate_launch_assets_on(dir.path(), Some(&t)).unwrap();
+        let hooks = dir.path().join("agent-hooks");
+        assert!(!hooks.join("codex-notify.sh").exists());
+        let claude: Value =
+            serde_json::from_slice(&std::fs::read(hooks.join("claude.json")).unwrap()).unwrap();
+        let commands: Vec<&str> = claude["hooks"]
+            .as_object()
+            .unwrap()
+            .values()
+            .flat_map(|groups| groups.as_array().unwrap())
+            .map(|group| group["hooks"][0]["command"].as_str().unwrap())
+            .collect();
+        assert_eq!(commands.len(), crate::agent_hook::claude_hook_map().len());
+        for command in commands {
+            assert!(
+                command.starts_with(&format!("\"{cli}\" agent-state ")),
+                "{command}"
+            );
+        }
+
+        let claude = augment_args_on(true, "claude", &[], dir.path(), Some(&t));
+        assert_eq!(claude[0], "--settings");
+        let codex = augment_args_on(true, "codex", &[], dir.path(), Some(&t));
+        assert_eq!(codex[0], "-c");
+        let notify: Vec<String> =
+            serde_json::from_str(codex[1].strip_prefix("notify=").unwrap()).unwrap();
+        assert_eq!(notify[..4], [cli, "agent-state", "codex-notify", "--"]);
+        assert_eq!(
+            augment_args_on(false, "codex", &[], dir.path(), Some(&t)),
+            Vec::<String>::new(),
+            "the saved opt-out still wins"
+        );
+    }
 
     /// Catches: a successful probe publishes unusable stdout/stderr as Claude help.
     #[test]
@@ -552,8 +808,9 @@ mod tests {
         for prompt in ["fix-bug", "Explain the remote-control failure"] {
             let args = vec![prompt.to_string()];
             let actual = augment_args("claude", &binary.to_string_lossy(), &args, dir.path());
-            assert!(
+            assert_eq!(
                 actual.iter().any(|arg| arg == "--settings"),
+                crate::agent_hook::hooks_supported_on_host(),
                 "prompt {prompt:?} lost native status settings: {actual:?}"
             );
         }
@@ -630,13 +887,15 @@ mod tests {
             vec!["--resume".into(), "x".into()],
         ] {
             let mut expected = args.clone();
-            expected.extend([
-                "--settings".into(),
-                dir.path()
-                    .join("agent-hooks/claude.json")
-                    .to_string_lossy()
-                    .into_owned(),
-            ]);
+            if crate::agent_hook::hooks_supported_on_host() {
+                expected.extend([
+                    "--settings".into(),
+                    dir.path()
+                        .join("agent-hooks/claude.json")
+                        .to_string_lossy()
+                        .into_owned(),
+                ]);
+            }
             assert_eq!(augment_args("claude", &binary, &args, dir.path()), expected);
         }
         let args = vec!["remote-control".into(), "--resume".into(), "x".into()];
@@ -661,6 +920,64 @@ mod tests {
             let _ = augment_args(agent, &binary, &args, Path::new("/unused"));
             assert!(!marker.exists(), "{agent} {args:?} needlessly ran --help");
         }
+    }
+
+    /// Catches: an ego child that stops at the workspace trust question or has no
+    /// TUICommander MCP server (2881-4e8c), a second server added next to the
+    /// caller's own `--mcp` choice, and options placed before the `run` verb.
+    /// Also catches (3020-5de1): the owner's enabled configured TUIC server is
+    /// attached next to the invocation server, so the child exits on duplicate
+    /// tool names or, selected by name, mails the daily app instead of its own.
+    #[test]
+    fn managed_ego_child_gets_workspace_trust_and_the_bridge_server() {
+        // ego 0.4.11, `ego run --help`, recorded 2026-11-13.
+        let help = include_str!("../tests/fixtures/agent-help/ego-run-2026-11-13.txt");
+        assert!(
+            help.contains("--trust-workspace")
+                && help.contains("--mcp <NAME|@FILE>")
+                && help.contains("--mcp-only")
+        );
+        let file = Path::new("/attachments/ego-tuic-mcp.json");
+        let args = |list: &[&str]| list.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+
+        assert_eq!(
+            managed_ego_args("/bin/ego", args(&["run", "task"]), true, Some(file)),
+            args(&[
+                "run",
+                "--trust-workspace",
+                "--mcp",
+                "@/attachments/ego-tuic-mcp.json",
+                "--mcp-only",
+                "task"
+            ])
+        );
+        // No bridge binary: no invocation server, so the configured servers stay.
+        assert_eq!(
+            managed_ego_args("/bin/ego", args(&["run", "task"]), true, None),
+            args(&["run", "--trust-workspace", "task"])
+        );
+        assert_eq!(
+            managed_ego_args("/bin/ego", args(&["--mcp=tuic", "task"]), false, Some(file)),
+            args(&["--mcp=tuic", "task"])
+        );
+        assert_eq!(
+            managed_ego_args(
+                "/bin/ego",
+                args(&["--mcp", "tuic", "--trust-workspace", "task"]),
+                true,
+                Some(file)
+            ),
+            args(&["--mcp", "tuic", "--trust-workspace", "task"])
+        );
+        // skip_trust_dialog = false keeps ego's question; a wrapper takes no ego options.
+        assert_eq!(
+            managed_ego_args("/bin/ego", args(&["task"]), false, None),
+            args(&["task"])
+        );
+        assert_eq!(
+            managed_ego_args("/bin/sh", args(&["-c", "ego"]), true, Some(file)),
+            args(&["-c", "ego"])
+        );
     }
 
     /// Catches: UI spelling diverges from installed ego, or unset injects a default.
@@ -1011,8 +1328,8 @@ mod tests {
     }
     #[test]
     fn generated_assets_have_protocol_and_ownership_markers() {
-        let dir = tempfile::TempDir::new().unwrap();
-        regenerate_launch_assets(dir.path()).unwrap();
+        let dir = tempfile::TempDir::new_in(crate::test_support::test_temp_root()).unwrap();
+        regenerate_launch_assets_on(dir.path(), Some(&HookTransport::Posix)).unwrap();
         let claude = std::fs::read_to_string(dir.path().join("agent-hooks/claude.json")).unwrap();
         let codex =
             std::fs::read_to_string(dir.path().join("agent-hooks/codex-notify.sh")).unwrap();
@@ -1020,6 +1337,37 @@ mod tests {
         assert!(claude.contains("UserPromptSubmit"));
         assert!(codex.contains("agent-turn-complete"));
         assert!(codex.contains("7770;state=idle"));
+    }
+
+    // Catches: launch-scoped settings omit permission/failure hooks or subscribe to ordinary idle notices.
+    #[test]
+    fn claude_launch_document_installs_scoped_permission_events() {
+        let document = claude_document(&HookTransport::Posix, Path::new("/config/agent-hooks"));
+        let hooks = &document["hooks"];
+        for event in ["PermissionRequest", "PostToolUseFailure", "StopFailure"] {
+            assert!(!hooks[event].as_array().unwrap().is_empty(), "{event}");
+        }
+        assert_eq!(hooks["Notification"].as_array().unwrap().len(), 1);
+        assert_eq!(hooks["Notification"][0]["matcher"], "permission_prompt");
+        assert_eq!(hooks["PostToolUse"].as_array().unwrap().len(), 2);
+        let dir = tempfile::tempdir_in(crate::test_support::test_temp_root()).unwrap();
+        let path = dir.path().join("settings.json");
+        let user = serde_json::json!({"hooks":{"Notification":[{"matcher":"idle_prompt","hooks":[{"type":"command","command":"user-owned"}]}]}});
+        std::fs::write(&path, serde_json::to_vec(&user).unwrap()).unwrap();
+        crate::agent_hook_commands::apply_at("claude", &path, true).unwrap();
+        let installed: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(
+            installed["hooks"]["Notification"][0],
+            user["hooks"]["Notification"][0]
+        );
+        assert_eq!(
+            installed["hooks"]["PermissionRequest"],
+            hooks["PermissionRequest"]
+        );
+        assert_eq!(
+            installed["hooks"]["PostToolUseFailure"],
+            hooks["PostToolUseFailure"]
+        );
     }
 
     #[test]
@@ -1035,11 +1383,6 @@ mod tests {
     /// shell script that reads the controlling tty through `ps -o tty=`. The
     /// additivity it proves is Claude's, not the platform's.
     ///
-    /// DEFERRED (2026-09-15) — `hook_command` and `codex_script` are generated
-    /// on every platform, so a Windows install writes agent hooks that no shell
-    /// there can run and the agent-state badge never leaves its initial value.
-    /// Giving Windows its own hook shape is a feature, not part of making the
-    /// suite pass; raised with Boss rather than guessed at here.
     #[cfg(unix)]
     #[test]
     fn claude_settings_hooks_are_additive_with_same_event_global_and_project_hooks() {
@@ -1058,7 +1401,7 @@ mod tests {
                 "command": format!("printf project > {}", shell_quote(&project_marker.to_string_lossy()))
             }]}]}
         });
-        let tuic = claude_document();
+        let tuic = claude_document(&HookTransport::Posix, Path::new("/config/agent-hooks"));
 
         // Claude documents `--settings` as an additional settings source. Model
         // that source loading directly: same-event arrays concatenate rather
@@ -1100,7 +1443,7 @@ mod critic_1302_tests {
     fn concurrent_boots_never_expose_a_torn_claude_json() {
         let dir = tempfile::TempDir::new().unwrap();
         let path = dir.path().join("agent-hooks/claude.json");
-        regenerate_launch_assets_at_boot(dir.path());
+        regenerate_launch_assets_on(dir.path(), Some(&HookTransport::Posix)).unwrap();
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let writers: Vec<_> = (0..4)
             .map(|_| {
@@ -1108,7 +1451,7 @@ mod critic_1302_tests {
                 let stop = stop.clone();
                 std::thread::spawn(move || {
                     while !stop.load(std::sync::atomic::Ordering::Relaxed) {
-                        regenerate_launch_assets_at_boot(&root);
+                        regenerate_launch_assets_on(&root, Some(&HookTransport::Posix)).unwrap();
                     }
                 })
             })

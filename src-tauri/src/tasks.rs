@@ -198,6 +198,16 @@ impl TaskRegistry {
             .collect()
     }
 
+    /// Managed-child diagnostics share the task's existing collection window,
+    /// rather than expiring after the ordinary terminal tombstone TTL.
+    pub(crate) fn retains_session_output(&self, session_id: &str) -> bool {
+        let now = unix_now();
+        self.tasks.iter().any(|entry| {
+            let record = entry.value();
+            record.session_id.as_deref() == Some(session_id) && record.expires_at > now
+        })
+    }
+
     /// Test-only: total tasks held, live or terminal.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {

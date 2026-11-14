@@ -2,6 +2,7 @@ import { fireEvent, render } from "@solidjs/testing-library";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import "../../mocks/tauri";
 import type { SavedPrompt } from "../../../stores/promptLibrary";
+import { nextAnimationFrame } from "../../helpers/animationFrame";
 
 /** One smart prompt, enough to exercise the row → editor path */
 const SMART_PROMPT: SavedPrompt = {
@@ -131,6 +132,21 @@ describe("SettingsPanel — Smart Prompts navigation", () => {
 		fireEvent.click(getByRole("button", { name: "{branch} Current branch name" }));
 		expect(updatePrompt).toHaveBeenCalledWith("sp-test", { content: "Do {branch} thing" });
 		expect(queryByRole("button", { name: "{branch} Current branch name" })).toBeNull();
+	});
+
+	// Catches: the cursor-restore frame outlives the editor, so a pending timer survives test teardown.
+	it("cancels the cursor-restore frame when the editor unmounts first", async () => {
+		const { getByRole, unmount } = render(() => (
+			<SettingsPanel visible onClose={() => {}} initialTab="smart-prompts" />
+		));
+		fireEvent.click(getByRole("button", { name: "Edit Test Smart Prompt" }));
+		const content = getByRole("textbox", { name: "Content *" }) as HTMLTextAreaElement;
+		fireEvent.click(getByRole("button", { name: "Insert variable... ▼" }));
+		fireEvent.click(getByRole("button", { name: "{branch} Current branch name" }));
+		const focus = vi.spyOn(content, "focus");
+		unmount();
+		await nextAnimationFrame();
+		expect(focus).not.toHaveBeenCalled();
 	});
 
 	it("keeps execution and send-immediately controls editable in the expanded editor", () => {

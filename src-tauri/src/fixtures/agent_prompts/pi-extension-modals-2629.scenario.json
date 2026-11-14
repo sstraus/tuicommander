@@ -1,0 +1,78 @@
+{
+  "agent": "pi",
+  "recorded_at": "2026-11-01",
+  "status": "captured",
+  "provenance": "pi-extension-modals-2629.md",
+  "sha256": "7b5518c430ce7afa275c649b8e286c5d8e59bbf1c1480d12c4b975e451428b03",
+  "expected_states": [
+    {
+      "awaiting": false
+    },
+    {
+      "awaiting": true
+    },
+    {
+      "awaiting": false
+    },
+    {
+      "awaiting": true
+    },
+    {
+      "awaiting": false
+    },
+    {
+      "awaiting": true
+    },
+    {
+      "awaiting": false
+    },
+    {
+      "awaiting": true
+    },
+    {
+      "awaiting": false
+    },
+    {
+      "awaiting": true
+    },
+    {
+      "awaiting": false
+    },
+    {
+      "awaiting": true
+    },
+    {
+      "awaiting": false
+    },
+    {
+      "awaiting": true
+    },
+    {
+      "awaiting": false
+    },
+    {
+      "awaiting": true
+    },
+    {
+      "awaiting": false
+    },
+    {
+      "awaiting": true
+    },
+    {
+      "awaiting": false
+    },
+    {
+      "awaiting": true
+    },
+    {
+      "awaiting": false
+    },
+    {
+      "awaiting": true
+    },
+    {
+      "awaiting": false
+    }
+  ]
+}

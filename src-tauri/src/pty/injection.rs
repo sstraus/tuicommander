@@ -50,8 +50,42 @@ pub(super) fn describe_lifecycle_payload(
     payload: &serde_json::Value,
 ) -> String {
     let child = short_session(child_session);
+    if payload.get("type").and_then(|t| t.as_str()) == Some("capability_denied") {
+        let call = [payload["tool"].as_str(), payload["action"].as_str()]
+            .into_iter()
+            .flatten()
+            .collect::<Vec<_>>()
+            .join(" ");
+        return format!(
+            "child agent {child} was refused {call}: it lacks the {} capability",
+            payload["capability"].as_str().unwrap_or("required"),
+        );
+    }
+    if payload.get("type").and_then(|t| t.as_str()) == Some("child_report") {
+        if let Some(step @ ("reprompt" | "retry")) = payload["recovery"].as_str() {
+            return format!(
+                "child agent {child} stopped without a report ({}); TUIC took one automatic {step}, and reports a second stop",
+                payload["state"].as_str().unwrap_or("stopped"),
+            );
+        }
+        return format!(
+            "child agent {child} stopped without a RESULT or BLOCKED report ({}) — read the child_report mail",
+            payload["state"].as_str().unwrap_or("stopped"),
+        );
+    }
+    if payload.get("type").and_then(|t| t.as_str()) == Some("delivery_failed") {
+        return format!(
+            "child agent {child} started no turn for your mail ({}); the mail stays in its inbox",
+            payload["reason"].as_str().unwrap_or("no_turn_started"),
+        );
+    }
     if payload.get("type").and_then(|t| t.as_str()) == Some("prompt_delivered") {
         return format!("child agent {child} has taken its initial prompt after all");
+    }
+    if payload.get("type").and_then(|t| t.as_str()) == Some("prompt_unconfirmed") {
+        return format!(
+            "child agent {child} had its initial prompt typed, but the submission was not confirmed; it is not retyped, so check the child before re-delivering"
+        );
     }
     if payload.get("type").and_then(|t| t.as_str()) == Some("prompt_delivery_failed") {
         return match payload.get("reason").and_then(|r| r.as_str()) {
@@ -69,6 +103,21 @@ pub(super) fn describe_lifecycle_payload(
             "child agent {child} is waiting for provider recovery (phase {}, attempt {}, next_attempt_ms {}) — force retry with session action=force_retry",
             recovery["phase"], recovery["attempt"], recovery["next_attempt_ms"]
         );
+    }
+    if payload["state"] == "error" {
+        // One composer line: flatten the agent's message and bound it.
+        let flat = payload["error"]
+            .as_str()
+            .unwrap_or("no message")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
+        let message = if flat.chars().count() > 200 {
+            format!("{}…", flat.chars().take(200).collect::<String>())
+        } else {
+            flat
+        };
+        return format!("child agent {child} refused its turn (error): {message}");
     }
     let state_desc = payload
         .get("state")
@@ -98,6 +147,31 @@ pub(super) fn describe_lifecycle_payload(
     }
 }
 
+/// The parent notice for a turn that ended without a completion declaration.
+/// A refused turn (OSC 7770 `state=error`) ends on the same edge as an idle
+/// one: report it as error with the agent's message, never as idle.
+pub(super) fn turn_end_payload(state: &AppState, session_id: &str) -> serde_json::Value {
+    let refusal = state
+        .session_maps
+        .session_states
+        .get(session_id)
+        .filter(|session| session.agent_error)
+        .map(|session| session.last_error.clone());
+    match refusal {
+        Some(error) => serde_json::json!({
+            "type": "state_change",
+            "state": "error",
+            "session_id": session_id,
+            "error": error,
+        }),
+        None => serde_json::json!({
+            "type": "state_change",
+            "state": "idle",
+            "session_id": session_id,
+        }),
+    }
+}
+
 /// Enqueue the authoritative parent lifecycle message without touching the
 /// parent's PTY lifecycle lock. BUSY→IDLE and completed paths call this while
 /// holding the child's SilenceState transaction lock.
@@ -119,11 +193,12 @@ pub(super) fn enqueue_state_change_to_parent(
         .unwrap_or_default()
         .as_millis() as u64;
     let msg = crate::state::AgentMessage {
-        id: format!("tuic-auto-{}-{}", session_id, now_ms),
+        id: format!("tuic-auto-{}-{}", session_id, uuid::Uuid::new_v4()),
         from_tuic_session: session_id.to_string(),
         from_name: "tuic".to_string(),
         content: serde_json::to_string(&payload).unwrap_or_default(),
         timestamp: now_ms,
+        report: None,
         delivered_via_channel: false,
     };
     let message_id = msg.id.clone();
@@ -195,6 +270,68 @@ pub(crate) fn push_state_change_to_parent(
     }
 }
 
+/// Nudge one stalled worker through its own inbox and terminal. Never stops
+/// the PTY: only an explicit parent decision does (story 2748).
+pub(crate) fn nudge_stalled_pty(state: &Arc<AppState>, session_id: &str, peer: &str, delay: u64) {
+    let minutes = delay / 60_000;
+    nudge_pty(
+        state,
+        session_id,
+        peer,
+        serde_json::json!({
+            "type": "stall_nudge", "session_id": session_id, "threshold_ms": delay,
+        }),
+        &format!(
+            "[TUIC] No output or report for {minutes} min. Send your parent a progress, BLOCKED or RESULT report."
+        ),
+    );
+}
+
+/// Put one TUIC notice in a worker's inbox and type `framed` into its terminal
+/// when the composer is free (queued until then).
+pub(crate) fn nudge_pty(
+    state: &Arc<AppState>,
+    session_id: &str,
+    peer: &str,
+    payload: serde_json::Value,
+    framed: &str,
+) {
+    let message_id = format!(
+        "{}{}-{session_id}-{}",
+        crate::state::LIFECYCLE_MSG_ID_PREFIX,
+        payload["type"]
+            .as_str()
+            .unwrap_or("nudge")
+            .replace('_', "-"),
+        uuid::Uuid::new_v4()
+    );
+    let framed = framed.to_owned();
+    state.push_agent_inbox(
+        peer,
+        crate::state::AgentMessage {
+            id: message_id.clone(),
+            from_tuic_session: session_id.to_string(),
+            from_name: "tuic".to_string(),
+            content: serde_json::to_string(&payload).unwrap_or_default(),
+            timestamp: now_epoch_ms(),
+            report: None,
+            delivered_via_channel: false,
+        },
+    );
+    if state.assign_agent_delivery(peer, &message_id, true)
+        != crate::state::AgentDeliveryAssignment::Terminal
+    {
+        return;
+    }
+    let state = Arc::clone(state);
+    let session_id = session_id.to_string();
+    let peer = peer.to_string();
+    spawn_injection_job(move || {
+        let outcome = deliver_notice_to_managed_pty(&state, &session_id, &framed);
+        settle_terminal_delivery(&state, &peer, &message_id, outcome);
+    });
+}
+
 /// Emit the single exceptional-path notification for an initial prompt that has
 /// not reached the child's composer yet.
 ///
@@ -258,6 +395,7 @@ pub(crate) fn notify_initial_prompt_timeout_if_pending(
             from_name: "tuic".to_string(),
             content: serde_json::to_string(&payload).unwrap_or_default(),
             timestamp: now_ms,
+            report: None,
             delivered_via_channel: false,
         },
     );
@@ -293,6 +431,23 @@ pub(crate) fn notify_initial_prompt_timeout_if_pending(
 /// orchestrator that was told the task never landed must not be left believing
 /// that. Silence would be the worse of the two lies, because the only recovery
 /// it leaves is re-delivering a prompt that is already running.
+/// Correct an earlier `prompt_delivery_failed` (`retrying: true`) once the prompt
+/// was typed but the screen did not confirm the submission: it will not be typed
+/// again, so a parent must check the child before re-delivering it.
+fn notify_initial_prompt_unconfirmed(state: &AppState, session_id: &str) {
+    if let Some(dispatch) = enqueue_state_change_to_parent(
+        state,
+        session_id,
+        serde_json::json!({
+            "type": "prompt_unconfirmed",
+            "session_id": session_id,
+            "retrying": false,
+        }),
+    ) {
+        dispatch_parent_lifecycle(state, dispatch);
+    }
+}
+
 fn notify_initial_prompt_delivered(state: &AppState, session_id: &str) {
     if let Some(dispatch) = enqueue_state_change_to_parent(
         state,
@@ -423,6 +578,16 @@ pub(crate) fn agent_submission_prompt_kind(
     })
 }
 
+/// The agent refused its last turn (OSC 7770 `state=error`): every automated
+/// wake would repeat the refusal, so only user input may reach it.
+fn agent_refused_turn(state: &AppState, session_id: &str) -> bool {
+    state
+        .session_maps
+        .session_states
+        .get(session_id)
+        .is_some_and(|session| session.agent_error)
+}
+
 fn submission_ready(
     state: &AppState,
     session_id: &str,
@@ -430,6 +595,9 @@ fn submission_ready(
     user_command: bool,
 ) -> bool {
     if !session_is_agent(state, session_id) {
+        return false;
+    }
+    if !human_reply && !user_command && agent_refused_turn(state, session_id) {
         return false;
     }
     if state
@@ -590,6 +758,18 @@ pub(super) fn claim_idle_for_injection(
 }
 
 fn claim_idle_for_submission(
+    state: &AppState,
+    session_id: &str,
+    human_reply: bool,
+    user_command: bool,
+) -> Option<InjectionClaim> {
+    if state.session_maps.steering_sessions.contains(session_id) {
+        return None;
+    }
+    claim_ready_composer(state, session_id, human_reply, user_command)
+}
+
+fn claim_ready_composer(
     state: &AppState,
     session_id: &str,
     human_reply: bool,
@@ -838,6 +1018,9 @@ fn agent_composer_rejection(
     {
         return Some(("awaiting_input", "empty"));
     }
+    if !human_reply && !user_command && agent_refused_turn(state, session_id) {
+        return Some(("agent_error", "empty"));
+    }
     if !submission_ready(state, session_id, human_reply, user_command) {
         return Some(("agent_not_ready", "empty"));
     }
@@ -862,6 +1045,12 @@ pub(crate) fn agent_submission_rejection_detail(
         "partial_composer" => "The composer contains unfinished user input. Submit or clear that input before sending another command.".into(),
         "selection_required" => "This question requires an option selection. Open the question and use its answer controls.".into(),
         "awaiting_input" => "An approval or question owns the composer. Have the user answer it, or use an explicit human reply; automated submit must wait.".into(),
+        "agent_error" => {
+            let error = state.session_maps.session_states.get(session_id)
+                .and_then(|session| session.last_error.clone())
+                .unwrap_or_else(|| "no message".into());
+            format!("The agent refused its last turn ({error}), and an automated submission would repeat it. The user must fix the cause in the terminal; automated input resumes after a submitted user line or a new agent turn.")
+        }
         "agent_not_ready" => {
             if state.session_maps.session_states.get(session_id).is_some_and(|session| {
                 session.spawn_root_role == crate::state::SpawnRootRole::Unknown || session.foreground_input_blocked
@@ -907,6 +1096,11 @@ pub(super) fn agent_submission_rejection(
     if let Some(rejection) = agent_composer_rejection(state, session_id, human_reply, true) {
         return Some(rejection);
     }
+    // An agent's submit is an automated wake. A queued Compose command shares
+    // its flags in the composer checks above, so the refusal gate sits here.
+    if !human_reply && agent_refused_turn(state, session_id) {
+        return Some(("agent_error", "empty"));
+    }
     // Readiness is checked BEFORE the queue, and the order is the fix. An agent
     // whose idle is unconfirmed can never drain its queue — `flush_pending_injections`
     // is gated on the same predicate — so reporting `queued_commands_pending`
@@ -917,10 +1111,12 @@ pub(super) fn agent_submission_rejection(
     // cannot drain until the answer clears the question, and must not prevent
     // that answer from reaching the composer. A direct answer to a progress-tool
     // wait has the same priority over parked automated entries.
+    // The same holds for automated entries parked behind a refused turn.
     if !(waiting_on_progress_report(state, session_id)
         || (human_reply
             && (human_reply_waiting(state, session_id)
-                || blocked_on_confident_question(state, session_id))))
+                || blocked_on_confident_question(state, session_id)
+                || agent_refused_turn(state, session_id))))
     {
         // The agent IS ready, so anything still parked can be typed right now.
         // Level-triggered: the BUSY→IDLE edge that normally drains this queue may
@@ -1353,6 +1549,57 @@ fn write_agent_command_with_submit_key(
     text: &str,
     submit_key: &[u8],
 ) -> (InjectionOutcome, u64) {
+    write_command_with_origin(state, session_id, text, submit_key, None)
+}
+
+/// Native stop observation and automatic delivery share the PTY writer lock:
+/// either the delivery starts first, or the revoked origin writes no bytes.
+pub(super) fn revoke_background_completion_origin(state: &AppState, session_id: &str) {
+    let writer = state.pty_writer(session_id);
+    let _writer = writer.as_ref().map(|writer| writer.lock());
+    if let Some(mut session) = state.session_maps.session_states.get_mut(session_id) {
+        session.background_wake_origin = crate::state::BackgroundWakeOrigin::default();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod background_completion_write_tests {
+    use super::*;
+
+    // Catches: stop wins after queue claim but the serialized write still
+    // clears the composer, types the old result or sends Enter.
+    #[test]
+    fn revoked_origin_writes_no_clear_payload_or_enter() {
+        let state = crate::state::tests_support::make_test_app_state();
+        let sid = "revoked-completion-write";
+        crate::test_support::agent_session(&state, sid, SHELL_IDLE);
+        let bytes = crate::test_support::insert_recording_session(&state, sid);
+        let origin = state
+            .session_maps
+            .session_states
+            .get(sid)
+            .unwrap()
+            .background_wake_origin
+            .0
+            .clone();
+        revoke_background_completion_origin(&state, sid);
+        let (outcome, _) =
+            write_command_with_origin(&state, sid, "OLD-RESULT", b"\r", Some(&origin));
+        assert!(matches!(outcome, InjectionOutcome::NotStarted(_)));
+        assert!(
+            bytes.lock().unwrap().is_empty(),
+            "a revoked result wrote PTY bytes"
+        );
+    }
+}
+
+fn write_command_with_origin(
+    state: &AppState,
+    session_id: &str,
+    text: &str,
+    submit_key: &[u8],
+    origin: Option<&str>,
+) -> (InjectionOutcome, u64) {
     let agent_type = state
         .session_maps
         .session_states
@@ -1374,6 +1621,12 @@ fn write_agent_command_with_submit_key(
     // splicing bytes into the command while the child is allowed to consume the
     // payload as a separate read.
     let mut writer = writer.lock();
+    if origin.is_some_and(|origin| !automatic_completion_is_current(state, session_id, origin)) {
+        return (
+            InjectionOutcome::NotStarted("Automatic completion retained after stop".into()),
+            0,
+        );
+    }
     state.retire_turn_interrupt(session_id);
     // Ctrl-U first, alone: see `injection_payload`. It types nothing, so a
     // failure before the first text byte cannot make a retry type the command
@@ -1445,6 +1698,7 @@ fn submit_and_confirm(
     state: &AppState,
     session_id: &str,
     text: &str,
+    origin: Option<&str>,
 ) -> (InjectionOutcome, &'static str) {
     let initial_screen = agent_submission_ack_kind(state, session_id);
     let legacy_write = state
@@ -1458,13 +1712,17 @@ fn submit_and_confirm(
             )
         });
     let (write_outcome, acknowledgement_offset) =
-        write_agent_command_with_boundary(state, session_id, text);
+        write_command_with_origin(state, session_id, text, b"\r", origin);
     let mut enter_retry = "none";
     let outcome = if write_outcome == InjectionOutcome::Submitted
         && !legacy_write
         && !wait_for_queued_submission(state, session_id, acknowledgement_offset, initial_screen)
     {
-        if retry_enter_for_retained_composer(state, session_id, text, initial_screen) {
+        // An automatic completion never retries Enter after an uncertain
+        // delivery: a user stop may have revoked its authority in the meantime.
+        if origin.is_none()
+            && retry_enter_for_retained_composer(state, session_id, text, initial_screen)
+        {
             enter_retry = "confirmed";
             InjectionOutcome::Submitted
         } else {
@@ -1522,7 +1780,7 @@ fn run_claimed_injection(
     apply_claimed_injection_outcome(state, session_id, text, claim, outcome, kind)
 }
 
-/// The notice used by normal and urgent peer mail (not opt-in interrupt mail).
+/// The payload-free notice used by normal peer mail. Urgent mail forces steering.
 ///
 /// It is a pointer, not the message. Typing the payload itself was the whole
 /// defect: a recipient's TUI cannot tell an injected line from something its
@@ -1533,168 +1791,96 @@ fn run_claimed_injection(
 pub(crate) const PEER_MAIL_WAKE: &str =
     "[TUIC] message available — read it with: agent action=inbox";
 
-pub(super) const URGENT_NOTICE_NAME_MAX_CHARS: usize = 40;
-
-/// Label a sender in the urgent notice. Display names are peer-controlled
-/// prompt text, so the name (then the TUIC-generated terminal alias) is shown
-/// only when it is one token of `[A-Za-z0-9._-]` and at most
-/// `URGENT_NOTICE_NAME_MAX_CHARS` long. `@` is excluded: it opens the file
-/// picker in Claude and Codex composers. Anything else falls back to the
-/// validated UUID, or `unknown-peer` when that is not a UUID either.
-pub(super) fn urgent_notice_sender_label(
-    sender_identity: &str,
-    sender_name: &str,
-    sender_alias: Option<&str>,
-) -> String {
-    let single_token = |text: &str| {
-        !text.is_empty()
-            && text.chars().count() <= URGENT_NOTICE_NAME_MAX_CHARS
-            && text
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
-    };
-    if single_token(sender_name) {
-        return sender_name.to_string();
-    }
-    if let Some(alias) = sender_alias.filter(|alias| single_token(alias)) {
-        return alias.to_string();
-    }
-    uuid::Uuid::parse_str(sender_identity)
-        .map(|id| id.to_string())
-        .unwrap_or_else(|_| "unknown-peer".to_string())
+/// Forced steering owns the next ready edge, not an ordinary queue position.
+/// The reservation spans cancellation and idle confirmation so a FIFO drain or
+/// mail wake cannot steal the interrupted composer's first input (#2773-3f33).
+struct SteerReservation<'a> {
+    state: &'a AppState,
+    session_id: &'a str,
 }
 
-/// Submit an inbox pointer into a busy Claude Code, Codex, or ego composer.
-/// Claude/Codex live probes (2026-09-27) show that Enter queues the line for the
-/// next tool boundary. ego's busy admission durably queues plain Enter and
-/// delivers it after the running tool batch. Ctrl+Enter and Escape interrupt
-/// active work and are not used.
-/// The peer's message body never enters this writer or the pending PTY queue.
-pub(crate) fn deliver_urgent_mail_notice(
-    state: &AppState,
-    session_id: &str,
-    sender_identity: &str,
-    sender_name: &str,
-) -> Result<(), &'static str> {
-    if !state.session_maps.sessions.contains_key(session_id) {
-        return Err("recipient_exited");
-    }
-    let agent_type = state
-        .session_maps
-        .session_states
-        .get(session_id)
-        .and_then(|session| session.agent_type.clone());
-    if !matches!(agent_type.as_deref(), Some("claude" | "codex" | "ego")) {
-        return Err("unknown_agent_type");
-    }
-    if blocked_on_confident_question(state, session_id) {
-        return Err("dialog_open");
-    }
-    if has_partial_user_input(state, session_id) {
-        return Err("composer_has_user_text");
-    }
-    let shell_busy = state
-        .session_maps
-        .shell_states
-        .get(session_id)
-        .is_some_and(|shell| shell.load(std::sync::atomic::Ordering::Acquire) == SHELL_BUSY);
-    if shell_busy {
-        if state
-            .session_state_with_shell(session_id)
-            .is_none_or(|session| session.agent_state.as_deref() != Some("working"))
-        {
-            return Err("recipient_not_ready");
-        }
-    } else if !should_inject_now(state, session_id) {
-        return Err("recipient_not_ready");
-    }
-    let sender_alias = state.live_pty_for_peer(sender_identity).and_then(|pty| {
-        state
+impl Drop for SteerReservation<'_> {
+    fn drop(&mut self) {
+        self.state
             .session_maps
-            .term_aliases
-            .get(&pty)
-            .map(|alias| alias.value().clone())
-    });
-    let sender_label =
-        urgent_notice_sender_label(sender_identity, sender_name, sender_alias.as_deref());
-    let notice = format!(
-        "URGENT mail from {sender_label}: read agent inbox before your next step (agent action=inbox)"
-    );
-    let Some(claim) = claim_composer_for_human_input(state, session_id) else {
-        return Err(if has_partial_user_input(state, session_id) {
-            "composer_has_user_text"
-        } else {
-            "composer_in_flight"
-        });
-    };
-    if blocked_on_confident_question(state, session_id) {
-        rollback_injection_claim(state, session_id, claim);
-        return Err("dialog_open");
-    }
-    match run_claimed_injection(
-        state,
-        session_id,
-        &notice,
-        claim,
-        ClaimedInjectionKind::Message,
-    ) {
-        InjectionOutcome::Submitted => Ok(()),
-        InjectionOutcome::NotStarted(_) => Err("write_not_started"),
-        InjectionOutcome::Uncertain(_) => Err("write_uncertain"),
+            .steering_sessions
+            .remove(self.session_id);
     }
 }
 
-/// Explicit opt-in only: interrupt a working CLI, then submit mail as a new turn.
-/// Never infer idle from a successful Esc write. Hooks/ready-screen detection must
-/// independently confirm it within ten seconds; a dialog or draft aborts the wait.
+fn reserve_steer<'a>(
+    state: &'a AppState,
+    session_id: &'a str,
+) -> Result<SteerReservation<'a>, &'static str> {
+    interrupt_mail_safety(state, session_id)?;
+    if !state
+        .session_maps
+        .steering_sessions
+        .insert(session_id.to_string())
+    {
+        return Err("composer_in_flight");
+    }
+    Ok(SteerReservation { state, session_id })
+}
+
+/// Idle wait of a steer. The MCP bridge abandons a reply after 10 s, so the wait
+/// must end well before it and let the caller read the delivery path (#2906-1916).
+const STEER_IDLE_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// All PTY steer callers cancel the active turn, then submit the full text.
+/// Never infer idle from Esc, and never fall back to Enter on a busy composer.
 pub(crate) fn deliver_interrupting_mail(
     state: &AppState,
     session_id: &str,
     text: &str,
 ) -> Result<(), &'static str> {
     let transaction = state.input_transaction(session_id);
+    let reservation = {
+        let _input = transaction.lock();
+        reserve_steer(state, session_id)?
+    };
+    deliver_reserved_steer(&reservation, text, false)
+}
+
+/// `user_command` marks the user's own queued text, which may reach an agent
+/// that refused its last turn; automated mail may not.
+fn deliver_reserved_steer(
+    reservation: &SteerReservation<'_>,
+    text: &str,
+    user_command: bool,
+) -> Result<(), &'static str> {
+    let SteerReservation { state, session_id } = *reservation;
+    let transaction = state.input_transaction(session_id);
     {
-        let Some(_input) = transaction.try_lock() else {
-            return Err("composer_in_flight");
-        };
+        let _input = transaction.lock();
         interrupt_mail_safety(state, session_id)?;
-        if !should_inject_now(state, session_id) {
+        if !submission_ready(state, session_id, false, user_command) {
             if state
                 .session_state_with_shell(session_id)
                 .is_none_or(|session| session.agent_state.as_deref() != Some("working"))
             {
                 return Err("recipient_not_ready");
             }
-            let Some(claim) = claim_composer_for_human_input(state, session_id) else {
-                return Err("composer_in_flight");
-            };
-            if let Err(reason) = interrupt_mail_safety(state, session_id) {
-                rollback_injection_claim(state, session_id, claim);
-                return Err(reason);
+            let already_interrupted = state
+                .session_maps
+                .silence_states
+                .get(session_id)
+                .is_some_and(|silence| silence.lock().interrupt_pending());
+            if !already_interrupted {
+                write_interrupt(state, session_id)?;
             }
-            // Arm intent before the child can repaint its interrupted screen.
-            if let Some(silence) = state.session_maps.silence_states.get(session_id) {
-                silence.lock().note_interrupt_requested();
-            }
-            let written = state.write_pty_parts(session_id, &[b"\x1b"]);
-            rollback_injection_claim(state, session_id, claim);
-            written.map_err(|_| "interrupt_write_failed")?;
         }
     }
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let deadline = std::time::Instant::now() + STEER_IDLE_WAIT;
+    let mut restored_prompt_cleared = false;
     loop {
-        // Do not hold the input transaction across the wait: the user must still
-        // be able to answer a newly opened dialog or take control of the terminal.
+        // Raw user input remains available while cancellation settles.
         {
-            let Some(_input) = transaction.try_lock() else {
-                return Err("composer_in_flight");
-            };
+            // A FIFO flush can briefly hold this lock without owning input.
+            // Serialize with it instead of misreporting a lost force request.
+            let _input = transaction.lock();
             interrupt_mail_safety(state, session_id)?;
-            if let Some(claim) = claim_idle_for_injection(state, session_id) {
-                if let Err(reason) = interrupt_mail_safety(state, session_id) {
-                    rollback_injection_claim(state, session_id, claim);
-                    return Err(reason);
-                }
+            if let Some(claim) = claim_ready_composer(state, session_id, false, user_command) {
                 return match run_claimed_injection(
                     state,
                     session_id,
@@ -1708,11 +1894,54 @@ pub(crate) fn deliver_interrupting_mail(
                 };
             }
         }
+        if !restored_prompt_cleared && claude_restored_prompt_on_screen(state, session_id) {
+            // Claude restored the cancelled prompt into the composer, which keeps
+            // the screen from reading Ready. Clear it once; it is Claude's text,
+            // because interrupt_mail_safety refused any tracked user draft.
+            let _input = transaction.lock();
+            interrupt_mail_safety(state, session_id)?;
+            state
+                .write_pty_parts(session_id, &[b"\x15"])
+                .map_err(|_| "interrupt_write_failed")?;
+            restored_prompt_cleared = true;
+        }
         if std::time::Instant::now() >= deadline {
             return Err("idle_timeout");
         }
         std::thread::sleep(std::time::Duration::from_millis(50));
     }
+}
+
+fn claude_restored_prompt_on_screen(state: &AppState, session_id: &str) -> bool {
+    state
+        .session_maps
+        .session_states
+        .get(session_id)
+        .is_some_and(|session| session.agent_type.as_deref() == Some("claude"))
+        && state
+            .grid
+            .vt_log_buffers
+            .get(session_id)
+            .is_some_and(|vt| claude_composer_holds_text(&vt.lock().screen_rows()))
+}
+
+/// Write Esc into a working CLI under a composer claim. The caller holds the
+/// input transaction and has already proved the turn is working.
+fn write_interrupt(state: &AppState, session_id: &str) -> Result<(), &'static str> {
+    let Some(claim) = claim_composer_for_human_input(state, session_id) else {
+        return Err("composer_in_flight");
+    };
+    if let Err(reason) = interrupt_mail_safety(state, session_id) {
+        rollback_injection_claim(state, session_id, claim);
+        return Err(reason);
+    }
+    // Arm intent before the child can repaint its interrupted screen.
+    if let Some(silence) = state.session_maps.silence_states.get(session_id) {
+        silence.lock().note_interrupt_requested();
+    }
+    let written = state.write_pty_parts(session_id, &[b"\x1b"]);
+    rollback_injection_claim(state, session_id, claim);
+    written.map_err(|_| "interrupt_write_failed")
 }
 
 fn interrupt_mail_safety(state: &AppState, session_id: &str) -> Result<(), &'static str> {
@@ -1805,10 +2034,13 @@ pub(super) fn summarize_lifecycle_group(
 /// confirmed, and neither a question nor partial input owns the composer.
 /// Other lifecycle states fail closed.
 pub(crate) fn managed_mail_wake_allowed(state: &AppState, session_id: &str) -> bool {
+    if state.session_maps.steering_sessions.contains(session_id) {
+        return false;
+    }
     let Some(session) = state.session_state_with_shell(session_id) else {
         return false;
     };
-    match session.agent_state.as_deref() {
+    let lifecycle_allows = match session.agent_state.as_deref() {
         Some("idle" | "completed") => true,
         Some("working") => {
             session.background_work
@@ -1816,7 +2048,22 @@ pub(crate) fn managed_mail_wake_allowed(state: &AppState, session_id: &str) -> b
                 && should_inject_now(state, session_id)
         }
         _ => false,
-    }
+    };
+    // An owner command at the FIFO head owns this idle edge: the flush that
+    // follows types it. The wake stays owed and the next idle edge carries it.
+    lifecycle_allows && !owner_command_at_queue_head(state, session_id)
+}
+
+fn owner_command_at_queue_head(state: &AppState, session_id: &str) -> bool {
+    state
+        .pending_injections
+        .get(session_id)
+        .is_some_and(|queue| {
+            matches!(
+                queue.front(),
+                Some(crate::state::PendingInjection::UserCommand { .. })
+            )
+        })
 }
 
 /// Submit one notification only when the registered parent's lifecycle or
@@ -1991,6 +2238,20 @@ pub(super) fn apply_claimed_injection_outcome(
         }
         InjectionOutcome::Uncertain(error) => {
             tracing::warn!(session = %session_id, error, "agent command injection outcome uncertain; preserving busy state");
+            // The text was typed and its queue entry is gone, so nothing retypes it.
+            // Keeping the marker would hold the stage at initial_prompt_pending while
+            // the agent works and leave a parent believing a retry is coming.
+            if state
+                .pending_initial_prompts
+                .get(session_id)
+                .is_some_and(|pending| pending.prompt == text)
+                && state
+                    .pending_initial_prompts
+                    .remove(session_id)
+                    .is_some_and(|(_, pending)| pending.notified)
+            {
+                notify_initial_prompt_unconfirmed(state, session_id);
+            }
             match kind {
                 ClaimedInjectionKind::OrchestratorNotice => {
                     mark_orchestrator_notice_uncertain(state, session_id, claim)
@@ -2049,6 +2310,11 @@ pub(crate) fn deliver_notice_to_pty(
     // Never queue for a non-agent — shells and dead sessions have no wake path.
     if !session_is_agent(state, session_id) {
         return PtyDelivery::Unavailable;
+    }
+    // Inbox observation can win after terminal assignment but before this
+    // handoff. Do not recreate a wake that the read already cancelled.
+    if framed == PEER_MAIL_WAKE && state.mail_wake_is_obsolete(session_id) {
+        return PtyDelivery::Typed;
     }
     if let Some(claim) = claim_idle_for_injection(state, session_id) {
         if matches!(
@@ -2401,6 +2667,68 @@ fn wait_for_queued_submission(
     }
 }
 
+/// Output-ring position of a session: the boundary that a later busy edge of
+/// the agent is compared with.
+pub(crate) fn output_offset(state: &AppState, session_id: &str) -> u64 {
+    state
+        .session_maps
+        .output_buffers
+        .get(session_id)
+        .map(|buffer| buffer.lock().total_written)
+        .unwrap_or(0)
+}
+
+/// True when the agent itself started a turn after `offset`: its own output
+/// moved, and a native busy hook or a Working screen was recorded past the
+/// boundary. The same evidence confirms a queued submission. TUIC's own
+/// submission bookkeeping is not evidence (story 3015).
+pub(crate) fn agent_turn_started_after(state: &AppState, session_id: &str, offset: u64) -> bool {
+    output_offset(state, session_id) > offset
+        && state
+            .session_maps
+            .silence_states
+            .get(session_id)
+            .is_some_and(|silence| {
+                let silence = silence.lock();
+                silence.last_hook_busy_offset.is_some_and(|at| at >= offset)
+                    || silence.last_working_screen_offset > offset
+            })
+}
+
+/// Why a mail wake typed or queued for an idle agent started no turn.
+pub(crate) fn mail_wake_failure_reason(state: &AppState, session_id: &str) -> &'static str {
+    if !state.session_maps.sessions.contains_key(session_id)
+        || state.session_maps.exit_codes.contains_key(session_id)
+    {
+        return "exited";
+    }
+    let awaiting = state
+        .session_maps
+        .session_states
+        .get(session_id)
+        .is_some_and(|session| session.awaiting_input);
+    if state
+        .pending_injections
+        .get(session_id)
+        .is_some_and(|queue| queue.iter().any(|entry| entry.text() == PEER_MAIL_WAKE))
+    {
+        return if awaiting {
+            "awaiting_input"
+        } else {
+            "agent_not_ready"
+        };
+    }
+    if state
+        .session_maps
+        .silence_states
+        .get(session_id)
+        .is_some_and(|silence| silence.lock().injection_delivery_uncertain)
+    {
+        return "composer_not_confirmed";
+    }
+    "no_turn_started"
+}
+
 /// Drain and inject any messages queued for a session that can receive them now.
 /// Self-guarded by `should_inject_now`: skips (leaves queued) unless the session
 /// is an idle agent not blocked on a confident question, so a peer message never
@@ -2419,6 +2747,25 @@ pub(crate) fn flush_pending_injections_blocking(state: &AppState, session_id: &s
     // confirmation so native answers and raw input can still take the composer.
     let transaction = state.input_transaction(session_id);
     let input = transaction.lock();
+    if state.session_maps.steering_sessions.contains(session_id) {
+        return;
+    }
+    // A failed write can put a notice back after the inbox read removed the
+    // queued copy. Revalidate on flush, rather than waking for already-read mail.
+    if state.mail_wake_is_obsolete(session_id)
+        && let Some(mut queue) = state.pending_injections.get_mut(session_id)
+    {
+        queue.retain(|entry| entry.text() != PEER_MAIL_WAKE);
+    }
+    // Recheck under the existing input transaction: arrival-time admission
+    // cannot authorize delivery after Escape or a later explicit turn.
+    if let Some(mut queue) = state.pending_injections.get_mut(session_id) {
+        queue.retain(|entry| {
+            entry
+                .automatic_origin()
+                .is_none_or(|origin| automatic_completion_is_current(state, session_id, origin))
+        });
+    }
     let queued_before = queued_command_count(state, session_id);
     let snapshot = state.session_state_with_shell(session_id);
     let agent_state = snapshot
@@ -2429,16 +2776,22 @@ pub(crate) fn flush_pending_injections_blocking(state: &AppState, session_id: &s
         .as_ref()
         .and_then(|session| session.shell_state.as_deref())
         .unwrap_or("unknown");
-    // Bind the permission to this exact FIFO head. A concurrent removal must
+    // Bind the permission to this exact entry. A concurrent removal must
     // not transfer a user reply's permission to a server-authored notice.
+    // While the agent refused its turn, automated entries cannot drain, so the
+    // first user command goes ahead of them instead of waiting behind them.
+    let refused = agent_refused_turn(state, session_id);
     let Some((head_id, queued_user_command)) =
         state.pending_injections.get(session_id).and_then(|queue| {
-            queue.front().map(|head| {
-                (
-                    head.id(),
-                    matches!(head, crate::state::PendingInjection::UserCommand { .. }),
-                )
-            })
+            let is_user = |entry: &&crate::state::PendingInjection| {
+                matches!(entry, crate::state::PendingInjection::UserCommand { .. })
+            };
+            let head = if refused {
+                queue.iter().find(is_user).or_else(|| queue.front())
+            } else {
+                queue.front()
+            };
+            head.map(|head| (head.id(), is_user(&head)))
         })
     else {
         return;
@@ -2478,8 +2831,9 @@ pub(crate) fn flush_pending_injections_blocking(state: &AppState, session_id: &s
         .pending_injections
         .get_mut(session_id)
         .and_then(|mut queue| {
-            (queue.front().is_some_and(|head| head.id() == head_id))
-                .then(|| queue.pop_front())
+            let index = queue.iter().position(|entry| entry.id() == head_id)?;
+            (refused || index == 0)
+                .then(|| queue.remove(index))
                 .flatten()
         });
     let Some(injection) = pending else {
@@ -2498,7 +2852,12 @@ pub(crate) fn flush_pending_injections_blocking(state: &AppState, session_id: &s
         return;
     };
     drop(input);
-    let (outcome, enter_retry) = submit_and_confirm(state, session_id, injection.text());
+    let (outcome, enter_retry) = submit_and_confirm(
+        state,
+        session_id,
+        injection.text(),
+        injection.automatic_origin(),
+    );
     let outcome = apply_claimed_injection_outcome(
         state,
         session_id,
@@ -2520,7 +2879,11 @@ pub(crate) fn flush_pending_injections_blocking(state: &AppState, session_id: &s
         InjectionOutcome::NotStarted(_) => ("no", false, "not_sent"),
         InjectionOutcome::Uncertain(_) => ("uncertain", false, "uncertain"),
     };
-    if matches!(outcome, InjectionOutcome::NotStarted(_)) {
+    if matches!(outcome, InjectionOutcome::NotStarted(_))
+        && injection
+            .automatic_origin()
+            .is_none_or(|origin| automatic_completion_is_current(state, session_id, origin))
+    {
         requeue_injection_front(state, session_id, injection);
     }
     if let InjectionOutcome::Uncertain(ref reason) = outcome {
@@ -2566,10 +2929,35 @@ pub(crate) struct QueuedCommand {
     pub text: String,
     /// `user_command`, `notice` or `initial_prompt` — see `PendingInjection`.
     pub kind: &'static str,
+    /// What Send now does for this harness; absent when it has no Send now.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub send_now: Option<SendNowMode>,
+}
+
+/// Supported steer actions all interrupt; no harness may use plain busy Enter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SendNowMode {
+    Interrupt,
+}
+
+pub(crate) fn send_now_mode(agent_type: Option<&str>) -> Option<SendNowMode> {
+    match agent_type {
+        Some("claude" | "codex" | "ego") => Some(SendNowMode::Interrupt),
+        _ => None,
+    }
 }
 
 /// Everything still parked, in delivery order.
 pub(crate) fn list_queued_commands(state: &AppState, session_id: &str) -> Vec<QueuedCommand> {
+    let send_now = send_now_mode(
+        state
+            .session_maps
+            .session_states
+            .get(session_id)
+            .and_then(|session| session.agent_type.clone())
+            .as_deref(),
+    );
     state
         .pending_injections
         .get(session_id)
@@ -2580,6 +2968,7 @@ pub(crate) fn list_queued_commands(state: &AppState, session_id: &str) -> Vec<Qu
                     id: entry.id(),
                     text: entry.text().to_string(),
                     kind: entry.kind(),
+                    send_now,
                 })
                 .collect()
         })
@@ -2602,64 +2991,55 @@ pub(crate) fn remove_queued_command(state: &AppState, session_id: &str, id: u64)
     take_queued_command(state, session_id, id).is_some()
 }
 
-/// Claim a parked prompt before any interrupt. The FIFO drain and every client
-/// remove under the same queue lock; a lost claim never injects replacement text.
+/// Transfer a selected entry out of the FIFO into the shared forced-steer flow.
+/// Only a refusal before payload bytes restores it; uncertain writes never retry.
 pub(crate) fn send_queued_command_now(
     state: &AppState,
     session_id: &str,
     id: u64,
 ) -> Result<bool, String> {
     let transaction = state.input_transaction(session_id);
-    let entry = {
+    let (reservation, entry) = {
         let _input = transaction.lock();
-        interrupt_mail_safety(state, session_id).map_err(str::to_string)?;
-        take_queued_command(state, session_id, id)
+        if !state
+            .pending_injections
+            .get(session_id)
+            .is_some_and(|queue| queue.iter().any(|entry| entry.id() == id))
+        {
+            return Ok(false);
+        }
+        let reservation = reserve_steer(state, session_id).map_err(str::to_string)?;
+        let Some(entry) = take_queued_command(state, session_id, id) else {
+            return Ok(false);
+        };
+        (reservation, entry)
     };
-    let Some(entry) = entry else {
-        return Ok(false);
-    };
-    let text = entry.text();
-    let ego = state
-        .session_maps
-        .session_states
-        .get(session_id)
-        .is_some_and(|session| session.agent_type.as_deref() == Some("ego"));
-    let result = if ego {
-        let transaction = state.input_transaction(session_id);
-        let _input = transaction.lock();
-        (|| {
-            interrupt_mail_safety(state, session_id)?;
-            let claim =
-                claim_composer_for_human_input(state, session_id).ok_or("composer_in_flight")?;
-            // CSI-u Ctrl+Enter: ego's native BusySteer, not an ordinary queued Enter.
-            let outcome =
-                write_agent_command_with_submit_key(state, session_id, text, b"\x1b[13;5u").0;
-            match apply_claimed_injection_outcome(
-                state,
-                session_id,
-                text,
-                claim,
-                outcome,
-                ClaimedInjectionKind::Message,
-            ) {
-                InjectionOutcome::Submitted => Ok(()),
-                InjectionOutcome::NotStarted(_) => Err("write_not_started"),
-                InjectionOutcome::Uncertain(_) => Err("write_uncertain"),
-            }
-        })()
-    } else {
-        deliver_interrupting_mail(state, session_id, text)
-    };
-    // Never retry ambiguous input. Return the original prompt for manual recovery
-    // rather than quietly dropping it or enqueueing a possible second delivery.
-    result.map(|()| true).map_err(|reason| format!(
-        "Send now did not confirm delivery ({reason}). Check the CLI before retrying. Prompt: {text}"
-    ))
+    let user_command = matches!(entry, crate::state::PendingInjection::UserCommand { .. });
+    match deliver_reserved_steer(&reservation, entry.text(), user_command) {
+        Ok(()) => Ok(true),
+        Err("write_uncertain") => Err(format!(
+            "Steer delivery is uncertain. Check the CLI before retrying. Prompt: {}",
+            entry.text()
+        )),
+        Err(reason) => {
+            state
+                .pending_injections
+                .entry(session_id.to_string())
+                .or_default()
+                .push_front(entry);
+            Err(format!(
+                "Steer refused ({reason}). The prompt stays queued."
+            ))
+        }
+    }
 }
 
 /// What the idle gate did with a user-composed command.
 #[derive(Clone, Copy, Debug, Serialize)]
 pub(crate) struct EnqueuedCommand {
+    /// The completion lost wake authority; its runner retains the log and receipt.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub retained: bool,
     /// Accepted now or recognized as an earlier keyed acceptance; not a PTY receipt.
     pub accepted: bool,
     /// The agent was already idle, so the text was typed and submitted at once.
@@ -2687,6 +3067,45 @@ pub(crate) fn enqueue_user_command(
     text: &str,
     idempotency_key: Option<&str>,
 ) -> Result<EnqueuedCommand, String> {
+    enqueue_command_with_origin(state, session_id, text, idempotency_key, None)
+}
+
+pub(crate) fn enqueue_automatic_completion(
+    state: &AppState,
+    session_id: &str,
+    text: &str,
+    idempotency_key: Option<&str>,
+    origin: &str,
+) -> Result<EnqueuedCommand, String> {
+    if origin.is_empty() || origin.len() > 128 {
+        return Err("Invalid automatic completion origin".into());
+    }
+    enqueue_command_with_origin(state, session_id, text, idempotency_key, Some(origin))
+}
+
+fn automatic_completion_is_current(state: &AppState, session_id: &str, origin: &str) -> bool {
+    state
+        .session_maps
+        .session_states
+        .get(session_id)
+        .is_some_and(|session| session.background_wake_origin.0 == origin)
+}
+
+fn enqueue_command_with_origin(
+    state: &AppState,
+    session_id: &str,
+    text: &str,
+    idempotency_key: Option<&str>,
+    origin: Option<&str>,
+) -> Result<EnqueuedCommand, String> {
+    if origin.is_some_and(|origin| !automatic_completion_is_current(state, session_id, origin)) {
+        return Ok(EnqueuedCommand {
+            accepted: true,
+            typed: false,
+            retained: true,
+            queued: queued_command_count(state, session_id),
+        });
+    }
     if let Some(key) = idempotency_key
         && (key.is_empty() || key.len() > 128)
     {
@@ -2701,7 +3120,7 @@ pub(crate) fn enqueue_user_command(
     if !session_is_agent(state, session_id) {
         return Err("Session is not running an agent".to_string());
     }
-    let queued = if let Some(key) = idempotency_key {
+    let (typed, queued) = if let Some(key) = idempotency_key {
         // Hold this per-session entry only through append, never through the
         // blocking flush. Concurrent retries cannot both reserve the same key.
         let mut keys = state
@@ -2710,16 +3129,22 @@ pub(crate) fn enqueue_user_command(
             .or_default();
         if keys.iter().any(|recent| recent == key) {
             return Ok(EnqueuedCommand {
+                retained: false,
                 accepted: true,
                 typed: false,
                 queued: queued_command_count(state, session_id),
             });
         }
+        let command = match origin {
+            Some(origin) => crate::state::PendingInjection::automatic_completion(text, origin),
+            None => crate::state::PendingInjection::user_command(text),
+        };
+        let id = command.id();
         state
             .pending_injections
             .entry(session_id.to_string())
             .or_default()
-            .push_back(crate::state::PendingInjection::user_command(text));
+            .push_back(command);
         // Bounded in-memory retry window: 128 completions per live PTY.
         if keys.len() == 128 {
             keys.pop_front();
@@ -2727,20 +3152,31 @@ pub(crate) fn enqueue_user_command(
         keys.push_back(key.to_string());
         drop(keys);
         flush_pending_injections_blocking(state, session_id);
-        queued_command_count(state, session_id)
+        let still_parked = state
+            .pending_injections
+            .get(session_id)
+            .is_some_and(|queue| queue.iter().any(|entry| entry.id() == id));
+        (!still_parked, queued_command_count(state, session_id))
     } else {
-        let (_, _, queued) = append_and_flush(
+        let (_, typed, queued) = append_and_flush(
             state,
             session_id,
-            crate::state::PendingInjection::user_command(text),
+            match origin {
+                Some(origin) => crate::state::PendingInjection::automatic_completion(text, origin),
+                None => crate::state::PendingInjection::user_command(text),
+            },
         );
-        queued
+        (typed, queued)
     };
-    // An empty queue after the flush means our command was the only one waiting
-    // and reached the composer; any remaining entry means it is still parked.
+    // Read per entry: a refused agent types this command ahead of a parked
+    // automated wake, so a non-empty queue does not mean it is still parked.
+    // A stop that rotated the origin before delivery drops the parked entry.
+    let retained = !typed
+        && origin.is_some_and(|origin| !automatic_completion_is_current(state, session_id, origin));
     Ok(EnqueuedCommand {
+        retained,
         accepted: true,
-        typed: queued == 0,
+        typed,
         queued,
     })
 }

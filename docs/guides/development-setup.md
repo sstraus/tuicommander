@@ -17,6 +17,26 @@ The macOS desktop app supports macOS 12 Monterey or later and requires system We
 pnpm install
 ```
 
+### Dependency release policy
+
+The application and the standalone `website/` project pin pnpm 12.15.0 in
+`packageManager`. CI uses that pin through `pnpm/action-setup`.
+Each project's `pnpm-workspace.yaml` sets `minimumReleaseAge: 10080`:
+new direct and transitive package releases must be at least seven days old.
+There are no release-age exclusions. Use `pnpm install --frozen-lockfile`
+for reproducible installs. pnpm 12 also verifies locked releases against this
+policy, so an existing lockfile is not an exception.
+
+Do not approve a young release interactively or add an exclusion to make an
+install pass. Wait for the release to mature, or ask for an explicit policy
+decision. `minimumReleaseAgeExclude` exists, but this project does not use it.
+See the [pnpm release-age settings](https://pnpm.io/settings/dependency-resolution#minimumreleaseage).
+
+Package popularity is a separate review. npm reports downloads, not users.
+Use last-week downloads as the agreed proxy and review every package below
+10,000 downloads per week, including transitive and development packages.
+A low count is not permission to remove or replace a dependency.
+
 ### TypeScript target
 
 The app uses `ES2024` for the TypeScript target and standard library, with
@@ -31,26 +51,20 @@ on `~2.4.0` and updater on `~2.11.0` in both manifests until their next minor
 versions are validated together. The direct `rfd` dependency must match the
 version and features used by `tauri-plugin-dialog`; dialog 2.8.1 uses `rfd 0.16`.
 
-### Temporary dependency audit exception
+### Dependency audit exceptions
 
-`pnpm-workspace.yaml` configures `auditConfig.ignoreGhsas` for
-[GHSA-vfj7-8cjw-p6xm](https://github.com/advisories/GHSA-vfj7-8cjw-p6xm) only.
-Boss approved this exception on 2026-10-04; it expires on **2026-11-04**.
-At approval time, `braces` 3.0.3 had no patched version on npm (`3.0.4`
-returned 404). Its only dependency path is build-only:
-`vite-plugin-purgecss → purgecss → fast-glob → micromatch → braces`.
-The advisory concerns stack exhaustion from deeply nested patterns. This path
-processes repository build inputs, rather than runtime terminal or Markdown
-content. Remove the exception when a patch becomes available, and review it
-by the expiry date; pnpm does not enforce the date automatically.
-No other advisory is ignored. `pnpm-workspace.yaml` pins DOMPurify 3.4.16
-for the application and Mermaid, and the development-only `qs` to 6.16.0.
-Rechecked on 2026-10-09: npm still publishes 3.0.3 as latest, and the advisory
-still lists no patch. The dependency tree still has only the build path above;
-retain the existing exception and its expiry. The frontend audit now requires
-Seroval >=1.6.3 and source-map-js >=1.2.2. KaTeX 0.16.47 remains under
-Mermaid 11; its patched >=0.18.2 line requires the separate Mermaid upgrade
-and browser compatibility review. No KaTeX advisory is ignored.
+`pnpm-workspace.yaml` ignores no advisory. The former exception for
+GHSA-vfj7-8cjw-p6xm (build-only `braces` 3.0.3, approved 2026-10-04, expired
+2026-11-04) was removed on 2026-11-14: GitHub withdrew that advisory, and
+`pnpm audit --audit-level=high` passes without it. Transitive security pins
+live in the `overrides` block of `pnpm-workspace.yaml`, each with its reason:
+DOMPurify for the application and Mermaid, the development-only `qs`, Seroval
+>=1.6.3, source-map-js >=1.2.2, and the test-only zod ^4.6.6 and undici
+^8.12.2. KaTeX 0.16.47 remains under Mermaid 11; its patched >=0.18.2 line
+requires the separate Mermaid upgrade and browser compatibility review.
+Rust exceptions live in `src-tauri/.cargo/audit.toml`, each with a reason and
+a review date.
+
 pnpm 11 ignores the legacy `pnpm.auditConfig` field in `package.json`.
 
 ## Development
@@ -69,6 +83,21 @@ The existing MCP bridge installation still verifies and preserves its own revisi
 The macOS application firewall uses code signing for initial and tracking decisions ([Apple TN2206](https://developer.apple.com/library/archive/technotes/tn2206/)). Its UI also selects applications by filesystem path ([Apple firewall settings](https://support.apple.com/guide/mac-help/block-connections-to-your-mac-with-a-firewall-mh34041/mac)). Both the executable path and signing identity matter: a stable existing path contains the missing-executable failure, but does not promise unchanged firewall permission after a rebuild changes the signature. Confirm LAN and tailnet access after the next launch; no firewall setting is changed by the runner.
 Vite excludes backend files and repository tooling output such as `.tmp/`, `target/`, `dist/`, coverage, reports, plans, stories, and docs from its watcher. Mutation testing keeps its disposable checkout under `.tmp/`; its HTML files must not reload the live WebView. Changes to this watch configuration require restarting the Vite dev server.
 The watch allowlist and Tauri version are resolved from the directory containing `vite.config.ts`, so starting Vite from another working directory still uses this checkout's inputs.
+
+### macOS application icon
+
+`src-tauri/tauri.macos.conf.json` selects the macOS-only PNG for window icons
+and `icons/icon.icns` for the application bundle. Tauri also embeds the ICNS
+for the Dock when running `pnpm tauri dev` (it uses a PNG only if the ICNS
+is missing). Restart the development process after changing these assets.
+The shared PNGs and ICO remain unchanged for Linux and Windows.
+
+Run `bash scripts/generate-macos-icon.sh` on macOS with ImageMagick to rebuild
+these assets from the shared `src-tauri/icons/icon.png` art. The macOS canvas
+is 1024 pixels with a centered 824-pixel rounded body and transparent margins.
+Run `bash scripts/test-macos-icon.sh` to check transparent margins and an opaque
+body in the PNG and every ICNS representation. The check needs ImageMagick and
+the system `iconutil` command.
 
 ### Isolated agent desktop checks (macOS)
 
@@ -102,6 +131,9 @@ as a ready-to-run `connect` command in the launch JSON:
 ```bash
 curl --unix-socket '<socket from launch JSON>' http://localhost/health
 ```
+
+`tuic --instance <instance> <command>` reaches the same socket from any shell:
+the app publishes the path in its instance config directory.
 
 Replace `/health` with the endpoint needed for the check. The socket does not
 require HTTP authentication. TCP requests to `127.0.0.1:<port>` require Basic
@@ -474,7 +506,10 @@ TUICommander process. The worktrees' `tuic-terminal` builds have the same Cargo
 fingerprint key, while [Cargo checks path sources by file mtime](https://doc.rust-lang.org/stable/nightly-rustc/cargo/core/compiler/fingerprint/index.html);
 sharing one target can therefore make an older checkout look fresh against an
 artifact from another checkout. The wrapper also keeps test scratch files under
-`~/Gits`.
+`~/Gits`. mbx binds its cache socket inside `TMPDIR`, and a Unix socket path
+holds at most 103 bytes on macOS, so a scratch root longer than 51 bytes (a
+deep worktree's `.tmp/tuic-tests`) moves to `~/Gits/.tmp/tuic-tests`; when no
+short root exists, the wrapper stops with an error that names the limit.
 
 ### TypeScript mutation testing
 
@@ -652,3 +687,40 @@ src-tauri\target\release\bundle\nsis\TUICommander_0.x.x_x64-setup.exe
 | WiX `.msi` bundle fails | WiX `light.exe` tooling issue | Use `--bundles nsis` instead |
 | App window opens but shows a **black screen** | Navigation guard in `lib.rs` blocked `http://tauri.localhost/` (Windows' internal Tauri URL) | Fixed in current code — `tauri.localhost` is explicitly allowed |
 | `Update check failed: windows-x86_64-nsis not found` | Custom local build isn't listed in official release manifest | Harmless — auto-update simply won't trigger |
+
+### Updater diagnostics and fixture binaries
+
+Product builds leave Cargo's `test-fixtures` feature disabled. The ACP and MCP
+fixture executables are never product sidecars. Nextest's fixture setup enables
+this feature for the library consumers and the `main` integration-test binary;
+plain Cargo integration runs must use `--features test-fixtures`.
+
+On macOS, verify release binary selection without compiling the app:
+`PYTHON=python3 scripts/with-test-tmp.sh node --test scripts/test-release-fixture-binaries.mjs`
+(Python 3.11+ and the installed Tauri CLI are required). This probes the real
+bundler against the manifest declarations, with stale fixture executables present.
+
+The checked updater resource is installed by TUIC's host-only `install_app_update`
+command. It downloads and verifies through the plugin, checks the macOS extraction
+volume, and uses the plugin's native installer. It preserves nested IO causes in
+the returned error. A resource id and progress Channel belong to the calling
+WebView, so HTTP clients cannot use this command to replace the host application.
+
+The macOS preflight sums archive entries rounded to the volume's allocation unit
+and adds 1 MiB of metadata headroom. Download bytes stay in memory; extraction and
+backup use the same volume and renames. The check reports required and available
+bytes; concurrent disk use can still cause a later install failure, whose cause
+is retained. Relaunch deferral remains owned by the existing updater store.
+
+### Reusing a pinned agent-test build
+
+For workflow restart evidence, pass `AGENT_TEST_REUSE_BUILD_SHA256=<full-sha256>`
+to `make agent-test` with the same named instance and port. It verifies the exact
+existing binary and all three regular executable artifacts before launch; no
+rebuild or copy occurs. Capture the digest from the original build and health
+response. Worktree and process isolation still apply. Use the normal build path
+after application-source changes.
+
+### Heap diagnostic preset
+
+Set `AGENT_TEST_HEAP_PROFILE=1` with a named isolated `make agent-test` instance to compile the opt-in whole-backend allocator profiler. Set `_RJEM_MALLOC_CONF` before launch; use the shared diagnostic HTTP endpoints to verify activation. Preserve the exact executable and symbols before rebuilding. See [Heap profiling](../backend/heap-profiling.md).

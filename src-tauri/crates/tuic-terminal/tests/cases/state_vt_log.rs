@@ -281,6 +281,83 @@ mod state {
             );
         }
 
+        /// A panel toggle in a plain shell: the height grows, pulling logged history
+        /// rows back onto the screen, then shrinks and pushes the same rows out again.
+        /// Catches: the shrink counts those rows as resize-displaced output and logs
+        /// them a second time.
+        #[test]
+        fn test_vt_log_height_grow_then_shrink_logs_history_once() {
+            let mut buf = VtLogBuffer::new(10, 80, 1000);
+            for i in 0..30 {
+                buf.process(format!("shell-{i:02}\r\n").as_bytes());
+            }
+            buf.resize(20, 80);
+            buf.process(b"");
+            buf.resize(10, 80);
+            buf.process(b"");
+
+            let texts = log_texts(&buf);
+            for i in 0..30 {
+                let row = format!("shell-{i:02}");
+                assert!(
+                    texts.iter().filter(|line| **line == row).count() <= 1,
+                    "{row} logged more than once: {texts:?}"
+                );
+            }
+        }
+
+        /// The shell after an agent that drew with DEC 2026 (Claude Code exited).
+        /// Catches: the sticky sync flag defers the displaced rows until a screenful
+        /// of new output, so `format=log` misses them while the shell is idle.
+        #[test]
+        fn test_vt_log_height_shrink_logs_rows_after_sync_program_exits() {
+            let mut buf = VtLogBuffer::new(10, 80, 1000);
+            buf.process(b"\x1b[?2026hagent frame\r\n\x1b[?2026l");
+            for i in 0..15 {
+                buf.process(format!("answer-{i:02}\r\n").as_bytes());
+            }
+            buf.resize(5, 80);
+            buf.process(b"$ ");
+
+            let texts = log_texts(&buf);
+            for i in 0..=10 {
+                let row = format!("answer-{i:02}");
+                assert!(
+                    texts.contains(&row),
+                    "{row} is in history but not in the log: {texts:?}"
+                );
+            }
+        }
+
+        /// A soft-wrapped line whose head is logged and whose continuation is the
+        /// top screen row when the height shrinks. Both halves are logged.
+        /// Catches: the resize still flags a capture gap, so `lines_since_logical`
+        /// (MCP `format=log`) shows `[REDACTED]` instead of the captured line.
+        #[test]
+        fn test_vt_log_height_shrink_keeps_wrapped_line_readable() {
+            let mut buf = VtLogBuffer::new(6, 20, 1000);
+            for i in 0..10 {
+                buf.process(format!("pre-{i:02}\r\n").as_bytes());
+            }
+            buf.process(b"wrapped-head-xxxxxxxtail-of-line\r\n");
+            for i in 0..4 {
+                buf.process(format!("post-{i}\r\n").as_bytes());
+            }
+            buf.resize(3, 20);
+            buf.process(b"");
+
+            let (lines, _, _) = buf.lines_since_logical(0, usize::MAX);
+            let texts: Vec<String> = lines.iter().map(|ll| ll.text()).collect();
+            assert!(
+                !texts.iter().any(|line| line == "[REDACTED]"),
+                "a fully logged wrapped line was redacted: {texts:?}"
+            );
+            assert!(
+                texts.concat().contains("wrapped-head-xxxxxxxtail-of-line"),
+                "wrapped line missing from the log: {texts:?}"
+            );
+        }
+
         /// resize() updates parser dimensions.
         #[test]
         fn test_vt_log_resize() {

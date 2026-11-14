@@ -9,6 +9,11 @@ function encodeArg(command: string, args: Record<string, unknown>, key: string):
 	return encodeURIComponent(String(val));
 }
 
+/** Optional diff `scope` query (staged, head, a commit hash, base:<ref>, base-uncommitted:<ref>, range:<from>..<to>); the diff routes share one grammar. */
+function scopeQuery(args: Record<string, unknown>): string {
+	return args?.scope ? `&scope=${encodeURIComponent(String(args.scope))}` : "";
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -25,6 +30,14 @@ type CommandTableEntry = { map: (args: Record<string, unknown>, p: ArgEncoder) =
  * The `p` helper encodes a required argument for URL usage (throws if missing).
  */
 export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
+	boss_attention: { map: () => ({ method: "GET", path: "/agents/attention" }) },
+	answer_outside_request: {
+		map: (args) => ({
+			method: "POST",
+			path: "/agents/attention/outside-request",
+			body: { requestId: args.requestId, decision: args.decision },
+		}),
+	},
 	resume_session: {
 		map: (args) => ({ method: "POST", path: "/sessions/wake", body: { tuicSession: args.tuicSession } }),
 	},
@@ -205,7 +218,21 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 		map: () => ({ method: "GET", path: "/acp/chat/selection" }),
 	},
 	select_ai_chat_conversation: {
-		map: (args) => ({ method: "PUT", path: "/acp/chat/selection", body: { sessionId: args.sessionId ?? null } }),
+		map: (args) => ({
+			method: "PUT",
+			path: "/acp/chat/selection",
+			body: { sessionId: args.sessionId ?? null, replacing: args.replacing ?? null },
+		}),
+	},
+	acp_message_reactions: {
+		map: (_args, p) => ({ method: "GET", path: `/acp/chat/${p("sessionId")}/reactions` }),
+	},
+	acp_message_action: {
+		map: (args, p) => ({
+			method: "POST",
+			path: `/acp/connections/${p("connectionId")}/sessions/${p("sessionId")}/message-action`,
+			body: args.request,
+		}),
 	},
 	acp_workspace_root: {
 		map: () => ({ method: "GET", path: "/acp/workspace" }),
@@ -470,6 +497,9 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 				text: args.text,
 				...(args.expectedDraft != null ? { expectedDraft: args.expectedDraft } : {}),
 				...(args.idempotencyKey != null ? { idempotencyKey: args.idempotencyKey } : {}),
+				...(args.automaticCompletionOrigin != null
+					? { automaticCompletionOrigin: args.automaticCompletionOrigin }
+					: {}),
 			},
 		}),
 	},
@@ -671,6 +701,12 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			body: { epoch: args.epoch ?? null, fromSeq: args.fromSeq ?? 0, pendingTexts: args.pendingTexts ?? [] },
 		}),
 	},
+	chat_view_full_text: {
+		map: (args) => ({
+			method: "GET",
+			path: `/sessions/${args.sessionId}/chat-view/messages/${encodeURIComponent(String(args.messageId))}/full-text`,
+		}),
+	},
 	terminal_styled_rows: {
 		map: (args) => ({
 			method: "GET",
@@ -718,6 +754,14 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	get_process_stats: { map: () => ({ method: "GET", path: "/process/stats" }) },
 
 	get_session_usage: { map: (_args, p) => ({ method: "GET", path: `/sessions/${p("sessionId")}/usage` }) },
+
+	get_provider_quotas: { map: () => ({ method: "GET", path: "/provider-quotas" }) },
+	get_session_quota_binding: {
+		map: (_args, p) => ({ method: "GET", path: `/sessions/${p("sessionId")}/quota-binding` }),
+	},
+	refresh_provider_quota: {
+		map: (args) => ({ method: "POST", path: "/provider-quotas/refresh", body: { key: args.key } }),
+	},
 
 	// --- Claude Usage dashboard ---
 	get_claude_usage_api: {
@@ -859,21 +903,13 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 		}),
 	},
 	story_capabilities: {
-		map: () => ({ method: "GET", path: "/stories/capabilities" }),
-	},
-	workflow_definition_action: {
 		map: (args, p) => ({
-			method: "POST",
-			path: `/workflows/definition/action?path=${p("project")}`,
-			body: args.action,
+			method: "GET",
+			path: args.project === undefined ? "/stories/capabilities" : `/stories/capabilities?path=${p("project")}`,
 		}),
 	},
-	workflow_run_action: {
-		map: (args, p) => ({
-			method: "POST",
-			path: `/workflows/run/action?path=${p("project")}`,
-			body: args.action,
-		}),
+	workflow_neutral_action: {
+		map: (args, p) => ({ method: "POST", path: `/workflows/neutral/action?path=${p("project")}`, body: args.action }),
 	},
 	progress_delete: {
 		map: (args, p) => ({ method: "POST", path: `/progress/delete?path=${p("project")}`, body: args.input }),
@@ -958,8 +994,7 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			transform: (data) => (data == null ? null : typeof data === "string" ? data : JSON.stringify(data)),
 		}),
 	},
-	// write_plugin_data: POST to the same path; content travels in the body. Fixes the
-	// browser-mode credential-consent flow (pluginRegistry.ts) which threw before this.
+	// write_plugin_data: POST to the same path; content travels in the body.
 	// delete_plugin_data has no frontend caller, so it is intentionally not mapped.
 	write_plugin_data: {
 		map: (args, p) => ({
@@ -1085,22 +1120,21 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 		}),
 	},
 	get_git_diff: {
-		map: (_args, p) => ({
+		map: (args, p) => ({
 			method: "GET",
-			path: `/repo/diff?path=${p("path")}`,
+			path: `/repo/diff?path=${p("path")}${scopeQuery(args)}`,
 			transform: (data) => (data as { diff: string }).diff,
 		}),
 	},
 	get_diff_stats: {
-		map: (_args, p) => ({ method: "GET", path: `/repo/diff-stats?path=${p("path")}` }),
+		map: (args, p) => ({ method: "GET", path: `/repo/diff-stats?path=${p("path")}${scopeQuery(args)}` }),
 	},
 	get_changed_files: {
-		map: (_args, p) => ({ method: "GET", path: `/repo/files?path=${p("path")}` }),
+		map: (args, p) => ({ method: "GET", path: `/repo/files?path=${p("path")}${scopeQuery(args)}` }),
 	},
 	get_file_diff: {
 		map: (args, p) => {
-			let diffUrl = `/repo/file-diff?path=${p("path")}&file=${p("file")}`;
-			if (args?.scope) diffUrl += `&scope=${encodeURIComponent(String(args.scope))}`;
+			let diffUrl = `/repo/file-diff?path=${p("path")}&file=${p("file")}${scopeQuery(args)}`;
 			if (args?.untracked) diffUrl += `&untracked=true`;
 			return { method: "GET", path: diffUrl };
 		},
@@ -1476,7 +1510,7 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 		map: (_args, p) => ({ method: "GET", path: `/repo/branches?path=${p("path")}` }),
 	},
 	get_merged_branches: {
-		map: (_args, p) => ({ method: "GET", path: `/repo/branches/merged?path=${p("repoPath")}` }),
+		map: (_args, p) => ({ method: "GET", path: `/repo/branches/merged?path=${p("path")}` }),
 	},
 	get_repo_summary: {
 		map: (_args, p) => ({ method: "GET", path: `/repo/summary?path=${p("repoPath")}` }),
@@ -1615,6 +1649,19 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			path: `/repo/stash/show?path=${p("path")}&stash_ref=${p("stashRef")}`,
 		}),
 	},
+	git_stash_facts: {
+		map: (_args, p) => ({
+			method: "GET",
+			path: `/repo/stash/facts?path=${p("path")}&stash_ref=${p("stashRef")}`,
+		}),
+	},
+	git_stash_check_drop: {
+		map: (args) => ({
+			method: "POST",
+			path: "/repo/stash/check-drop",
+			body: { path: args.path, stash_ref: args.stashRef, hash: args.hash, verdict: args.verdict },
+		}),
+	},
 	get_file_history: {
 		map: (args, p) => {
 			let url = `/repo/file-history?path=${p("path")}&file=${p("file")}`;
@@ -1728,7 +1775,15 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 				worktreePath: args.worktreePath,
 				safeOnly: args.safeOnly ?? false,
 				confirmedSessions: args.confirmedSessions ?? [],
+				...(args.expectedFingerprint === undefined ? {} : { expectedFingerprint: args.expectedFingerprint }),
 			},
+		}),
+	},
+	resolve_worktree_diagnostic_cmd: {
+		map: (args) => ({
+			method: "POST",
+			path: "/repo/worktree-diagnostic/resolve",
+			body: { repoPath: args.repoPath, worktreePath: args.worktreePath, action: args.action },
 		}),
 	},
 	run_setup_script: {
@@ -1970,6 +2025,7 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	// --- MCP status ---
 	get_mcp_status: { map: () => ({ method: "GET", path: "/mcp/status" }) },
 	get_mcp_audit: { map: () => ({ method: "GET", path: "/mcp/audit" }) },
+	get_mcp_usage: { map: () => ({ method: "GET", path: "/mcp/usage" }) },
 
 	// --- Network ---
 	get_local_ip: { map: () => ({ method: "GET", path: "/system/local-ip" }) },
@@ -2012,11 +2068,27 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 	read_editor_file_external: {
 		map: (_args, p) => ({ method: "GET", path: `/fs/read-editor-external?path=${p("path")}` }),
 	},
+	read_editor_file_page: {
+		map: (_args, p) => ({
+			method: "GET",
+			path: `/fs/read-editor?repoPath=${p("repoPath")}&file=${p("file")}&offset=${p("offset")}`,
+		}),
+	},
+	read_editor_file_external_page: {
+		map: (_args, p) => ({ method: "GET", path: `/fs/read-editor-external?path=${p("path")}&offset=${p("offset")}` }),
+	},
 	write_file: {
 		map: (args) => ({
 			method: "POST",
 			path: "/fs/write",
 			body: { repoPath: args.repoPath, file: args.file, content: args.content },
+		}),
+	},
+	markdown_review_changed_lines: {
+		map: (args) => ({
+			method: "POST",
+			path: "/fs/markdown-review-lines",
+			body: { path: args.path, baseline: args.baseline, expected: args.expected },
 		}),
 	},
 	write_file_if_unchanged: {
@@ -2323,6 +2395,15 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 			return { method: "GET", path };
 		},
 	},
+	plugin_file_size: {
+		map: (_args, p) => ({ method: "GET", path: `/api/plugins/${p("pluginId")}/fs/size?path=${p("path")}` }),
+	},
+	plugin_read_file_range: {
+		map: (_args, p) => ({
+			method: "GET",
+			path: `/api/plugins/${p("pluginId")}/fs/range?path=${p("path")}&offset=${p("offset")}&length=${p("length")}`,
+		}),
+	},
 	plugin_read_file_tail: {
 		map: (_args, p) => ({
 			method: "GET",
@@ -2391,7 +2472,7 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
 		map: (args, p) => ({
 			method: "POST",
 			path: `/api/plugins/${p("pluginId")}/exec`,
-			body: { binary: args.binary, args: args.args, cwd: args.cwd },
+			body: { binary: args.binary, args: args.args, cwd: args.cwd, timeoutMs: args.timeoutMs },
 		}),
 	},
 	plugin_github_action: {
@@ -2480,6 +2561,8 @@ export const COMMAND_TABLE: Record<string, CommandTableEntry> = {
  * This is NOT a feature gap — these commands have no meaning off the host machine.
  */
 export const INTENTIONALLY_UNMAPPED: ReadonlySet<string> = new Set<string>([
+	// Native updater resources and Channels belong to the calling desktop webview.
+	"install_app_update",
 	// Native desktop lifecycle; remote clients must not hide or quit the host.
 	"request_quit",
 	"resolve_close",
@@ -2490,6 +2573,9 @@ export const INTENTIONALLY_UNMAPPED: ReadonlySet<string> = new Set<string>([
 	// A native window identity grants nonce bootstrap. HTTP clients use the
 	// capability link shown only in that window, never a discoverable bootstrap.
 	"secret_form_bootstrap",
+	// Owner grant for literal terminal reads (#2643-6b38). Models reach loopback
+	// HTTP and MCP, so only the native window may grant it.
+	"set_terminal_literal_reads",
 	// Data leaves the machine; source paths come from Finder and cannot be gated
 	// to registered roots. HTTP token holders must not trigger exfiltration.
 	"fs_transfer_remote_paths",
@@ -2545,6 +2631,8 @@ export const INTENTIONALLY_UNMAPPED: ReadonlySet<string> = new Set<string>([
 	// mdkb daemon install/management — host binary lifecycle.
 	"install_mdkb",
 	"uninstall_mdkb",
+	// ego install — downloads a host binary and selects it in Settings.
+	"install_ego",
 	// Terminal grid push — browser uses its session WebSocket instead of Tauri channels.
 	"subscribe_terminal_grid",
 	"unsubscribe_terminal_grid",
